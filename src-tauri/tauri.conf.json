@@ -29,7 +29,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": ["python/transcription_engine.py"],
+    "resources": [
+      "python/transcription_engine.py",
+      "resources/sounds/HANDY_LICENSE.txt"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

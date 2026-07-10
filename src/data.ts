@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   language: "auto",
   pythonCommand: "python3",
   inputDevice: "default",
+  recordingSounds: true,
   outputStyle: "smart",
   autoPaste: true,
   pasteMethod: "ctrlV",

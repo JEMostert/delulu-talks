@@ -813,6 +813,7 @@ dependencies = [
  "cpal",
  "enigo",
  "hound",
+ "rodio",
  "serde",
  "serde_json",
  "tauri",
@@ -3169,6 +3170,16 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
+]
+
+[[package]]
+name = "rodio"
+version = "0.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7ceb6607dd738c99bc8cb28eff249b7cd5c8ec88b9db96c0608c1480d140fb1"
+dependencies = [
+ "cpal",
+ "hound",
 ]
 
 [[package]]

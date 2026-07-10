@@ -1,4 +1,4 @@
-import { Check, ClipboardPaste, Clock3, Download, Keyboard, Mic2, Save, ShieldCheck, SlidersHorizontal, Terminal, Trash2 } from "lucide-react";
+import { Check, ClipboardPaste, Clock3, Download, Keyboard, Mic2, Save, ShieldCheck, SlidersHorizontal, Terminal, Trash2, Volume2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LANGUAGES, PARAKEET_LANGUAGES } from "../data";
 import type { AppSettings } from "../types";
@@ -25,6 +25,7 @@ export function SettingsPage({ settings, devices, saving, onSave, onSetup, onRes
         <SettingRow icon={Keyboard} title="Global shortcut" description="Click the field and type the combination you want."><input className="compact-input" value={draft.shortcut} onChange={(event) => setDraft({ ...draft, shortcut: event.target.value })} /></SettingRow>
         <SettingRow icon={Mic2} title="Microphone" description="The input Delulu records from."><select value={draft.inputDevice} onChange={(event) => setDraft({ ...draft, inputDevice: event.target.value })}>{devices.map((device) => <option key={device} value={device}>{device === "default" ? "System default" : device}</option>)}</select></SettingRow>
         <SettingRow icon={Mic2} title="Recording behavior" description="Hold for quick dictation; if KDE misses release, press once more to stop. Toggle suits longer thoughts."><div className="segmented"><button className={draft.recordingMode === "hold" ? "active" : ""} onClick={() => setDraft({ ...draft, recordingMode: "hold" })}>Hold</button><button className={draft.recordingMode === "toggle" ? "active" : ""} onClick={() => setDraft({ ...draft, recordingMode: "toggle" })}>Toggle</button></div></SettingRow>
+        <SettingRow icon={Volume2} title="Recording sounds" description="Play Handy's marimba cue before recording starts and after it stops."><button className={`toggle ${draft.recordingSounds ? "on" : ""}`} onClick={() => setDraft({ ...draft, recordingSounds: !draft.recordingSounds })}><i /></button></SettingRow>
       </section>
 
       <section className="settings-group paper-card"><div className="group-heading"><p className="eyebrow">OUTPUT</p><h3>How your words land</h3></div>

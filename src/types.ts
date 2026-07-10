@@ -20,6 +20,7 @@ export type AppSettings = {
   language: string;
   pythonCommand: string;
   inputDevice: string;
+  recordingSounds: boolean;
   outputStyle: OutputStyle;
   autoPaste: boolean;
   pasteMethod: PasteMethod;

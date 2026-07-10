@@ -1,7 +1,7 @@
 use std::{
     ffi::OsString,
     fs,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Cursor, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
@@ -26,6 +26,7 @@ use enigo::{
     Enigo, Key, Keyboard, Settings,
 };
 use hound::{SampleFormat as WavSampleFormat, WavSpec, WavWriter};
+use rodio::{Decoder, OutputStream, Sink};
 use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{Menu, MenuItem},
@@ -45,6 +46,8 @@ const OVERLAY_LABEL: &str = "overlay";
 const DEFAULT_INPUT_DEVICE: &str = "default";
 const OVERLAY_BOTTOM_GAP_LOGICAL_PX: f64 = 56.0;
 const MIN_RECORDING_DURATION_MS: u64 = 180;
+const RECORDING_START_SOUND: &[u8] = include_bytes!("../resources/sounds/marimba_start.wav");
+const RECORDING_STOP_SOUND: &[u8] = include_bytes!("../resources/sounds/marimba_stop.wav");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -121,6 +124,12 @@ enum PasteMethod {
     CtrlShiftV,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum RecordingSound {
+    Start,
+    Stop,
+}
+
 impl PasteMethod {
     fn shortcut_label(self) -> &'static str {
         match self {
@@ -161,6 +170,7 @@ struct AppSettings {
     language: String,
     python_command: String,
     input_device: String,
+    recording_sounds: bool,
     output_style: OutputStyle,
     auto_paste: bool,
     paste_method: PasteMethod,
@@ -178,6 +188,7 @@ impl Default for AppSettings {
             language: "auto".to_string(),
             python_command: "python3".to_string(),
             input_device: DEFAULT_INPUT_DEVICE.to_string(),
+            recording_sounds: true,
             output_style: OutputStyle::Smart,
             auto_paste: true,
             paste_method: PasteMethod::CtrlV,
@@ -1324,6 +1335,33 @@ fn copy_text_to_clipboard(state: &Arc<AppRuntime>, transcript: &str) -> Result<(
         .map_err(|err| format!("Failed to write transcript to clipboard: {err}"))
 }
 
+fn recording_sound_bytes(sound: RecordingSound) -> &'static [u8] {
+    match sound {
+        RecordingSound::Start => RECORDING_START_SOUND,
+        RecordingSound::Stop => RECORDING_STOP_SOUND,
+    }
+}
+
+fn play_recording_sound(sound: RecordingSound) -> Result<(), String> {
+    let (_stream, stream_handle) =
+        OutputStream::try_default().map_err(|err| format!("Failed to open audio output: {err}"))?;
+    let sink = Sink::try_new(&stream_handle)
+        .map_err(|err| format!("Failed to create recording sound output: {err}"))?;
+    let source = Decoder::new(Cursor::new(recording_sound_bytes(sound)))
+        .map_err(|err| format!("Failed to decode recording sound: {err}"))?;
+    sink.append(source);
+    sink.sleep_until_end();
+    Ok(())
+}
+
+fn play_recording_sound_async(sound: RecordingSound) {
+    thread::spawn(move || {
+        if let Err(err) = play_recording_sound(sound) {
+            eprintln!("Could not play recording sound: {err}");
+        }
+    });
+}
+
 fn paste_clipboard_at_cursor(method: PasteMethod) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let modifier = Key::Meta;
@@ -1555,6 +1593,12 @@ fn worker_start(app: &AppHandle, state: &Arc<AppRuntime>, active: &mut Option<Re
         }
     };
 
+    if settings.recording_sounds {
+        if let Err(err) = play_recording_sound(RecordingSound::Start) {
+            eprintln!("Could not play recording start sound: {err}");
+        }
+    }
+
     match start_recorder(app, &settings) {
         Ok(session) => {
             *active = Some(session);
@@ -1581,6 +1625,12 @@ fn worker_stop(app: &AppHandle, state: &Arc<AppRuntime>, active: &mut Option<Rec
         return;
     };
 
+    let recording_sounds = state
+        .settings
+        .lock()
+        .map(|settings| settings.recording_sounds)
+        .unwrap_or(false);
+
     let (audio_path, duration_ms) = match session.finalize() {
         Ok(result) => result,
         Err(err) => {
@@ -1589,6 +1639,10 @@ fn worker_stop(app: &AppHandle, state: &Arc<AppRuntime>, active: &mut Option<Rec
             return;
         }
     };
+
+    if recording_sounds {
+        play_recording_sound_async(RecordingSound::Stop);
+    }
 
     let captured_bytes = fs::metadata(&audio_path)
         .map(|metadata| metadata.len())
@@ -2234,7 +2288,12 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{concise_asr_error, normalize_shortcut_text, AppSettings, PasteMethod};
+    use super::{
+        concise_asr_error, normalize_shortcut_text, recording_sound_bytes, AppSettings,
+        PasteMethod, RecordingSound,
+    };
+    use rodio::Decoder;
+    use std::io::Cursor;
 
     #[test]
     fn sidecar_errors_skip_hugging_face_noise() {
@@ -2262,9 +2321,20 @@ mod tests {
         let settings: AppSettings = serde_json::from_str(r#"{"autoPaste":true}"#).unwrap();
 
         assert_eq!(settings.paste_method, PasteMethod::CtrlV);
+        assert!(settings.recording_sounds);
         assert_eq!(
             serde_json::to_string(&PasteMethod::CtrlShiftV).unwrap(),
             r#""ctrlShiftV""#
         );
+    }
+
+    #[test]
+    fn bundled_recording_sounds_are_valid_wav_files() {
+        for sound in [RecordingSound::Start, RecordingSound::Stop] {
+            assert!(Decoder::new(Cursor::new(recording_sound_bytes(sound))).is_ok());
+        }
+
+        let disabled: AppSettings = serde_json::from_str(r#"{"recordingSounds":false}"#).unwrap();
+        assert!(!disabled.recording_sounds);
     }
 }
