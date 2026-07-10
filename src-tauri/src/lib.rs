@@ -1,8 +1,9 @@
 use std::{
     ffi::OsString,
     fs,
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, Sender},
@@ -37,6 +38,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 const SETTINGS_FILE: &str = "settings.json";
 const HISTORY_FILE: &str = "history.json";
 const ASR_ERROR_FILE: &str = "last-asr-error.log";
+const ASR_SIDECAR_LOG_FILE: &str = "asr-sidecar.log";
 const DICTATION_EVENT: &str = "dictation-state";
 const TRANSCRIPT_EVENT: &str = "dictation-transcript";
 const OVERLAY_LABEL: &str = "overlay";
@@ -256,6 +258,67 @@ impl RecorderSession {
     }
 }
 
+struct AsrSidecar {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+    model: ModelOption,
+}
+
+impl Drop for AsrSidecar {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AsrSidecarRequest<'a> {
+    audio: String,
+    model: &'a str,
+    language: &'a str,
+    output_style: &'a str,
+    custom_words: &'a [CustomWord],
+    punctuation: bool,
+}
+
+impl AsrSidecar {
+    fn request(&mut self, request: &AsrSidecarRequest<'_>) -> Result<TranscriptionResult, String> {
+        serde_json::to_writer(&mut self.stdin, request)
+            .map_err(|err| format!("Failed to encode ASR request: {err}"))?;
+        self.stdin
+            .write_all(b"\n")
+            .and_then(|_| self.stdin.flush())
+            .map_err(|err| format!("Failed to send ASR request: {err}"))?;
+
+        let mut response = String::new();
+        let bytes = self
+            .stdout
+            .read_line(&mut response)
+            .map_err(|err| format!("Failed to read ASR response: {err}"))?;
+        if bytes == 0 {
+            let status = self
+                .child
+                .try_wait()
+                .ok()
+                .flatten()
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            return Err(format!("ASR sidecar exited unexpectedly ({status})"));
+        }
+
+        let value: serde_json::Value = serde_json::from_str(response.trim())
+            .map_err(|err| format!("Invalid response from ASR sidecar: {err}"))?;
+        if let Some(error) = value.get("error").and_then(|item| item.as_str()) {
+            return Err(error.to_string());
+        }
+
+        serde_json::from_value(value)
+            .map_err(|err| format!("Invalid transcript from ASR sidecar: {err}"))
+    }
+}
+
 struct AppRuntime {
     settings: Mutex<AppSettings>,
     phase: Mutex<RuntimePhase>,
@@ -264,6 +327,7 @@ struct AppRuntime {
     setup_in_progress: AtomicBool,
     bootstrap_lock: Mutex<()>,
     registered_shortcut: Mutex<String>,
+    asr_sidecar: Mutex<Option<AsrSidecar>>,
     worker_tx: Sender<WorkerCommand>,
 }
 
@@ -299,6 +363,11 @@ fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> 
 fn asr_error_path(app: &AppHandle) -> Result<PathBuf, String> {
     let settings = settings_path(app)?;
     Ok(settings.with_file_name(ASR_ERROR_FILE))
+}
+
+fn asr_sidecar_log_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let settings = settings_path(app)?;
+    Ok(settings.with_file_name(ASR_SIDECAR_LOG_FILE))
 }
 
 fn concise_asr_error(stderr: &str) -> String {
@@ -961,6 +1030,7 @@ fn bootstrap_asr_runtime(
 
     let _ = set_runtime_ready(state, true);
     emit_status(app, DictationPhase::Idle, Some("Ready".to_string()));
+    preload_asr_sidecar(app.clone(), state.clone(), settings);
     Ok(())
 }
 
@@ -987,6 +1057,7 @@ fn initialize_runtime_readiness(app: &AppHandle, state: &Arc<AppRuntime>, settin
     if is_asr_environment_ready(app, settings) {
         let _ = set_runtime_ready(state, true);
         emit_status(app, DictationPhase::Idle, Some("Ready".to_string()));
+        preload_asr_sidecar(app.clone(), state.clone(), settings.clone());
     } else {
         let _ = set_runtime_ready(state, false);
         emit_status(
@@ -997,7 +1068,99 @@ fn initialize_runtime_readiness(app: &AppHandle, state: &Arc<AppRuntime>, settin
     }
 }
 
-fn transcribe_audio(
+fn output_style_name(style: OutputStyle) -> &'static str {
+    match style {
+        OutputStyle::Smart => "smart",
+        OutputStyle::Plain => "plain",
+        OutputStyle::SpeakerAware => "speaker-aware",
+    }
+}
+
+fn spawn_asr_sidecar(settings: &AppSettings, app: &AppHandle) -> Result<AsrSidecar, String> {
+    let script_path = resolve_transcriber_script(app)?;
+    let log_file = fs::File::create(asr_sidecar_log_path(app)?)
+        .map_err(|err| format!("Failed to create ASR sidecar log: {err}"))?;
+
+    let mut command = venv_python_command(app)?;
+    command
+        .arg(script_path)
+        .arg("--serve")
+        .arg("--model")
+        .arg(settings.model.as_hf_id())
+        .arg("--language")
+        .arg(&settings.language)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::from(log_file));
+    configure_child_process(&mut command);
+
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("Failed to start persistent ASR sidecar: {err}"))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "Persistent ASR sidecar has no stdin".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Persistent ASR sidecar has no stdout".to_string())?;
+    let mut sidecar = AsrSidecar {
+        child,
+        stdin,
+        stdout: BufReader::new(stdout),
+        model: settings.model,
+    };
+
+    let mut ready = String::new();
+    let bytes = sidecar
+        .stdout
+        .read_line(&mut ready)
+        .map_err(|err| format!("Failed waiting for ASR sidecar warmup: {err}"))?;
+    if bytes == 0 {
+        return Err("Persistent ASR sidecar exited during warmup".to_string());
+    }
+    let response: serde_json::Value = serde_json::from_str(ready.trim())
+        .map_err(|err| format!("Invalid ASR sidecar warmup response: {err}"))?;
+    if let Some(error) = response.get("error").and_then(|value| value.as_str()) {
+        return Err(error.to_string());
+    }
+    if response.get("ready").and_then(|value| value.as_bool()) != Some(true) {
+        return Err("ASR sidecar did not report ready".to_string());
+    }
+
+    Ok(sidecar)
+}
+
+fn stop_asr_sidecar(state: &Arc<AppRuntime>) {
+    if let Ok(mut sidecar) = state.asr_sidecar.lock() {
+        sidecar.take();
+    }
+}
+
+fn preload_asr_sidecar(app: AppHandle, state: Arc<AppRuntime>, settings: AppSettings) {
+    if settings.model != ModelOption::ParakeetTdt06bV3 {
+        return;
+    }
+
+    thread::spawn(move || {
+        let Ok(mut guard) = state.asr_sidecar.lock() else {
+            return;
+        };
+        if guard
+            .as_ref()
+            .is_some_and(|sidecar| sidecar.model == settings.model)
+        {
+            return;
+        }
+        match spawn_asr_sidecar(&settings, &app) {
+            Ok(sidecar) => *guard = Some(sidecar),
+            Err(err) => eprintln!("Could not preload ASR sidecar: {err}"),
+        }
+    });
+}
+
+fn transcribe_audio_once(
     settings: &AppSettings,
     app: &AppHandle,
     audio_path: &Path,
@@ -1014,11 +1177,7 @@ fn transcribe_audio(
         .arg("--language")
         .arg(&settings.language)
         .arg("--output-style")
-        .arg(match settings.output_style {
-            OutputStyle::Smart => "smart",
-            OutputStyle::Plain => "plain",
-            OutputStyle::SpeakerAware => "speaker-aware",
-        })
+        .arg(output_style_name(settings.output_style))
         .arg("--vocabulary-json")
         .arg(
             serde_json::to_string(&settings.custom_words)
@@ -1051,6 +1210,70 @@ fn transcribe_audio(
         .map_err(|err| format!("Invalid UTF-8 from sidecar: {err}"))?;
     let transcript: TranscriptionResult = serde_json::from_str(stdout.trim())
         .map_err(|err| format!("Invalid response from ASR sidecar: {err}"))?;
+
+    if transcript.text.trim().is_empty() {
+        return Err("ASR returned empty transcript".to_string());
+    }
+
+    Ok(transcript)
+}
+
+fn transcribe_audio(
+    settings: &AppSettings,
+    app: &AppHandle,
+    state: &Arc<AppRuntime>,
+    audio_path: &Path,
+) -> Result<TranscriptionResult, String> {
+    if settings.model != ModelOption::ParakeetTdt06bV3 {
+        return transcribe_audio_once(settings, app, audio_path);
+    }
+
+    let request = AsrSidecarRequest {
+        audio: audio_path.display().to_string(),
+        model: settings.model.as_hf_id(),
+        language: &settings.language,
+        output_style: output_style_name(settings.output_style),
+        custom_words: &settings.custom_words,
+        punctuation: settings.punctuation,
+    };
+
+    let mut guard = state
+        .asr_sidecar
+        .lock()
+        .map_err(|_| "Failed to lock persistent ASR sidecar".to_string())?;
+    if guard
+        .as_ref()
+        .is_none_or(|sidecar| sidecar.model != settings.model)
+    {
+        *guard = Some(spawn_asr_sidecar(settings, app)?);
+    }
+
+    let first_result = guard
+        .as_mut()
+        .ok_or_else(|| "Persistent ASR sidecar is unavailable".to_string())?
+        .request(&request);
+    let transcript_result = match first_result {
+        Ok(transcript) => Ok(transcript),
+        Err(first_error) => {
+            *guard = None;
+            match spawn_asr_sidecar(settings, app) {
+                Ok(mut sidecar) => {
+                    let result = sidecar.request(&request);
+                    *guard = Some(sidecar);
+                    result
+                }
+                Err(restart_error) => Err(format!(
+                    "{first_error}; restarting sidecar failed: {restart_error}"
+                )),
+            }
+        }
+    };
+    let transcript = transcript_result.map_err(|err| {
+        if let Ok(path) = asr_error_path(app) {
+            let _ = fs::write(path, err.as_bytes());
+        }
+        format!("ASR sidecar failed: {err}")
+    })?;
 
     if transcript.text.trim().is_empty() {
         return Err("ASR returned empty transcript".to_string());
@@ -1092,7 +1315,7 @@ fn paste_clipboard_at_cursor() -> Result<(), String> {
 
     // Give X11/Wayland clipboard ownership time to settle before requesting a
     // paste in the previously focused application.
-    thread::sleep(Duration::from_millis(90));
+    thread::sleep(Duration::from_millis(60));
 
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|err| format!("Input automation init failed: {err}"))?;
@@ -1375,7 +1598,7 @@ fn worker_stop(app: &AppHandle, state: &Arc<AppRuntime>, active: &mut Option<Rec
         }
     };
 
-    let transcript = transcribe_audio(&settings, app, &audio_path);
+    let transcript = transcribe_audio(&settings, app, state, &audio_path);
 
     let completion_message = match transcript {
         Ok(result) => {
@@ -1800,6 +2023,7 @@ fn update_settings(
     drop(current);
 
     if should_mark_not_ready {
+        stop_asr_sidecar(state.inner());
         let _ = set_runtime_ready(state.inner(), false);
         emit_status(
             &app,
@@ -1819,6 +2043,7 @@ fn setup_asr_environment(app: AppHandle, state: State<'_, Arc<AppRuntime>>) -> R
         .map_err(|_| "Failed to lock settings".to_string())?
         .clone();
 
+    stop_asr_sidecar(state.inner());
     let _ = set_runtime_ready(state.inner(), false);
     spawn_bootstrap_task(app, state.inner().clone(), settings)
 }
@@ -1841,6 +2066,7 @@ fn reset_asr_environment(app: AppHandle, state: State<'_, Arc<AppRuntime>>) -> R
             .to_string()
     })?;
 
+    stop_asr_sidecar(state.inner());
     let environment_dir = asr_venv_dir(&app)?;
     if environment_dir.exists() {
         fs::remove_dir_all(&environment_dir)
@@ -1906,6 +2132,7 @@ pub fn run() {
                 setup_in_progress: AtomicBool::new(false),
                 bootstrap_lock: Mutex::new(()),
                 registered_shortcut: Mutex::new(initial_settings.shortcut.clone()),
+                asr_sidecar: Mutex::new(None),
                 worker_tx,
             });
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local transcription adapter for Delulu Talks' three specialized engines."""
+"""Local transcription adapter for Delulu Talks' four specialized engines."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ PARAKEET_LANGUAGES = {
     "lv", "lt", "mt", "pl", "pt", "ro", "ru", "sk", "sl", "es", "sv", "uk",
 }
 SUPPORTED_MODELS = {MOSS, COHERE, NEMOTRON, PARAKEET}
+_parakeet_model: Any | None = None
 
 
 @dataclass
@@ -39,14 +40,17 @@ class Segment:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Transcribe speech with a local Hugging Face model")
     parser.add_argument("--audio")
-    parser.add_argument("--model", required=True, choices=sorted(SUPPORTED_MODELS))
+    parser.add_argument("--model", choices=sorted(SUPPORTED_MODELS))
     parser.add_argument("--language", default="auto")
     parser.add_argument("--output-style", default="smart", choices=["smart", "plain", "speaker-aware"])
     parser.add_argument("--vocabulary-json", default="[]")
     parser.add_argument("--punctuation", action="store_true")
     parser.add_argument("--warmup", action="store_true")
+    parser.add_argument("--serve", action="store_true")
     args = parser.parse_args()
-    if not args.warmup and not args.audio:
+    if not args.model:
+        parser.error("--model is required")
+    if not args.serve and not args.warmup and not args.audio:
         parser.error("--audio is required unless --warmup is used")
     return args
 
@@ -233,7 +237,11 @@ def transcribe_nemotron(torch: Any, transformers: Any, args: argparse.Namespace)
     return str(raw).strip(), [], args.language
 
 
-def transcribe_parakeet(args: argparse.Namespace) -> tuple[str, list[Segment], str]:
+def parakeet_model() -> Any:
+    global _parakeet_model
+    if _parakeet_model is not None:
+        return _parakeet_model
+
     try:
         import transcribe_cpp
         from huggingface_hub import hf_hub_download
@@ -248,21 +256,38 @@ def transcribe_parakeet(args: argparse.Namespace) -> tuple[str, list[Segment], s
     )
     backend = "vulkan" if nvidia else "auto"
     gpu_device = nvidia.index if nvidia else 0
+    _parakeet_model = transcribe_cpp.Model(model_path, backend=backend, gpu_device=gpu_device)
+    return _parakeet_model
 
-    with transcribe_cpp.Model(model_path, backend=backend, gpu_device=gpu_device) as model:
-        if args.warmup:
-            return "", [], args.language
 
-        import soundfile as sf
+def transcribe_parakeet(args: argparse.Namespace) -> tuple[str, list[Segment], str]:
+    model = parakeet_model()
 
-        samples, sample_rate = sf.read(args.audio, dtype="float32", always_2d=True)
-        if sample_rate != 16_000:
-            raise RuntimeError(f"Parakeet expected 16 kHz audio, received {sample_rate} Hz")
-        mono = samples.mean(axis=1)
+    if args.warmup:
+        # Loading the GGUF does not compile/initialize every Vulkan kernel.
+        # Run a short silent request while the app starts so the first real
+        # dictation does not pay that one-time GPU cost after key release.
+        import numpy as np
+
         language_hint = args.language if args.language in PARAKEET_LANGUAGES else None
-
         with model.session() as session:
-            result = session.run(mono, language=language_hint, timestamps="segment")
+            session.run(
+                np.zeros(80_000, dtype=np.float32),
+                language=language_hint,
+                timestamps="segment",
+            )
+        return "", [], args.language
+
+    import soundfile as sf
+
+    samples, sample_rate = sf.read(args.audio, dtype="float32", always_2d=True)
+    if sample_rate != 16_000:
+        raise RuntimeError(f"Parakeet expected 16 kHz audio, received {sample_rate} Hz")
+    mono = samples.mean(axis=1)
+    language_hint = args.language if args.language in PARAKEET_LANGUAGES else None
+
+    with model.session() as session:
+        result = session.run(mono, language=language_hint, timestamps="segment")
 
     segments = [
         Segment(item.t0_ms / 1000.0, item.t1_ms / 1000.0, "", item.text.strip())
@@ -286,8 +311,7 @@ def format_output(raw: str, segments: list[Segment], style: str) -> str:
     return "\n".join(f"[{stamp(segment.start)}] {segment.speaker}: {segment.text}" for segment in segments)
 
 
-def main() -> int:
-    args = parse_args()
+def run_transcription(args: argparse.Namespace) -> dict[str, Any]:
     vocabulary = active_vocabulary(args.vocabulary_json)
     temporary_audio: str | None = None
     try:
@@ -306,29 +330,82 @@ def main() -> int:
                 raw, segments, language = transcribe_nemotron(torch, transformers, args)
 
         if args.warmup:
-            print(json.dumps({"ready": True}))
-            return 0
+            return {"ready": True}
 
         text = apply_vocabulary(format_output(raw, segments, args.output_style), vocabulary)
         if not args.punctuation:
             text = re.sub(r"[^\w\s'-]", "", text, flags=re.UNICODE).lower().strip()
-        payload = {
+        return {
             "text": text,
             "rawText": raw,
             "language": language,
             "segments": [asdict(segment) for segment in segments],
         }
-        print(json.dumps(payload, ensure_ascii=False))
-        return 0
-    except Exception as exc:
-        print(f"Transcription failed: {exc}", file=sys.stderr)
-        return 3
     finally:
         if temporary_audio:
             try:
                 os.unlink(temporary_audio)
             except FileNotFoundError:
                 pass
+
+
+def serve(args: argparse.Namespace) -> int:
+    try:
+        warmup_args = argparse.Namespace(**vars(args))
+        warmup_args.warmup = True
+        run_transcription(warmup_args)
+
+        # Pay import and resampler initialization costs before the first
+        # recording. Microphones commonly capture at 48 kHz while Parakeet
+        # expects 16 kHz; warming the exact conversion path keeps the first
+        # dictation as responsive as every subsequent one.
+        import librosa
+        import numpy as np
+        import soundfile  # noqa: F401
+
+        librosa.resample(
+            np.zeros(240_000, dtype=np.float32),
+            orig_sr=48_000,
+            target_sr=16_000,
+        )
+        print(json.dumps({"ready": True}), flush=True)
+    except Exception as exc:
+        print(json.dumps({"error": f"Sidecar warmup failed: {exc}"}), flush=True)
+        return 3
+
+    for line in sys.stdin:
+        try:
+            request = json.loads(line)
+            request_args = argparse.Namespace(
+                audio=request["audio"],
+                model=request.get("model", args.model),
+                language=request.get("language", "auto"),
+                output_style=request.get("outputStyle", "smart"),
+                vocabulary_json=json.dumps(request.get("customWords", [])),
+                punctuation=bool(request.get("punctuation", True)),
+                warmup=False,
+                serve=False,
+            )
+            payload = run_transcription(request_args)
+            print(json.dumps(payload, ensure_ascii=False), flush=True)
+        except Exception as exc:
+            print(json.dumps({"error": f"Transcription failed: {exc}"}), flush=True)
+
+    return 0
+
+
+def main() -> int:
+    args = parse_args()
+    if args.serve:
+        return serve(args)
+
+    try:
+        payload = run_transcription(args)
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
+    except Exception as exc:
+        print(f"Transcription failed: {exc}", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":
