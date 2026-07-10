@@ -3,7 +3,7 @@ import type { AppSettings, ModelInfo } from "./types";
 export const DEFAULT_SETTINGS: AppSettings = {
   shortcut: "Ctrl+Shift+Space",
   recordingMode: "hold",
-  model: "mossTranscribeDiarize",
+  model: "parakeetTdt06bV3",
   language: "auto",
   pythonCommand: "python3",
   inputDevice: "default",
@@ -15,6 +15,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export const MODELS: ModelInfo[] = [
+  {
+    id: "parakeetTdt06bV3",
+    name: "Parakeet TDT 0.6B v3",
+    maker: "NVIDIA",
+    role: "Best for fast dictation",
+    description: "High-throughput FastConformer transcription with automatic language detection, punctuation, and capitalization.",
+    size: "0.6B",
+    languages: "25 languages",
+    latency: "GPU-fast",
+    accent: "violet",
+    badges: ["Dutch", "Auto language", "FastConformer"],
+  },
   {
     id: "mossTranscribeDiarize",
     name: "MOSS Transcribe Diarize",

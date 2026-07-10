@@ -18,7 +18,8 @@ from typing import Any
 MOSS = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
 COHERE = "CohereLabs/cohere-transcribe-03-2026"
 NEMOTRON = "nvidia/nemotron-3.5-asr-streaming-0.6b"
-SUPPORTED_MODELS = {MOSS, COHERE, NEMOTRON}
+PARAKEET = "nvidia/parakeet-tdt-0.6b-v3"
+SUPPORTED_MODELS = {MOSS, COHERE, NEMOTRON, PARAKEET}
 
 
 @dataclass
@@ -217,7 +218,20 @@ def transcribe_nemotron(torch: Any, transformers: Any, args: argparse.Namespace)
     device = 0 if torch.cuda.is_available() else -1
     pipe = transformers.pipeline(
         "automatic-speech-recognition", model=NEMOTRON, device=device,
-        torch_dtype=torch.float16 if device == 0 else torch.float32,
+        dtype=torch.float16 if device == 0 else torch.float32,
+    )
+    if args.warmup:
+        return "", [], args.language
+    result = pipe(args.audio)
+    raw = result.get("text", "") if isinstance(result, dict) else str(result)
+    return str(raw).strip(), [], args.language
+
+
+def transcribe_parakeet(torch: Any, transformers: Any, args: argparse.Namespace) -> tuple[str, list[Segment], str]:
+    device = 0 if torch.cuda.is_available() else -1
+    pipe = transformers.pipeline(
+        "automatic-speech-recognition", model=PARAKEET, device=device,
+        dtype=torch.float16 if device == 0 else torch.float32,
     )
     if args.warmup:
         return "", [], args.language
@@ -249,7 +263,9 @@ def main() -> int:
         if not args.warmup:
             args.audio, temporary_audio = normalize_recorded_wav(args.audio)
 
-        if args.model == MOSS:
+        if args.model == PARAKEET:
+            raw, segments, language = transcribe_parakeet(torch, transformers, args)
+        elif args.model == MOSS:
             raw, segments, language = transcribe_moss(torch, transformers, args, vocabulary)
         elif args.model == COHERE:
             raw, segments, language = transcribe_cohere(torch, transformers, args)

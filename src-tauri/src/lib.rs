@@ -54,6 +54,7 @@ enum RecordingMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum ModelOption {
+    ParakeetTdt06bV3,
     MossTranscribeDiarize,
     CohereTranscribe,
     Nemotron35Streaming,
@@ -62,6 +63,7 @@ enum ModelOption {
 impl ModelOption {
     fn as_hf_id(self) -> &'static str {
         match self {
+            Self::ParakeetTdt06bV3 => "nvidia/parakeet-tdt-0.6b-v3",
             Self::MossTranscribeDiarize => "OpenMOSS-Team/MOSS-Transcribe-Diarize",
             Self::CohereTranscribe => "CohereLabs/cohere-transcribe-03-2026",
             Self::Nemotron35Streaming => "nvidia/nemotron-3.5-asr-streaming-0.6b",
@@ -86,6 +88,7 @@ impl ModelOption {
             Self::CohereTranscribe | Self::Nemotron35Streaming => {
                 packages.push("transformers>=5.4.0")
             }
+            Self::ParakeetTdt06bV3 => packages.push("transformers>=5.13.0"),
         }
 
         packages
@@ -143,7 +146,7 @@ impl Default for AppSettings {
         Self {
             shortcut: "Ctrl+Shift+Space".to_string(),
             recording_mode: RecordingMode::Hold,
-            model: ModelOption::MossTranscribeDiarize,
+            model: ModelOption::ParakeetTdt06bV3,
             language: "auto".to_string(),
             python_command: "python3".to_string(),
             input_device: DEFAULT_INPUT_DEVICE.to_string(),
@@ -841,6 +844,7 @@ fn ensure_python_dependencies(app: &AppHandle, settings: &AppSettings) -> Result
 
 fn dependency_check_script(model: ModelOption) -> &'static str {
     match model {
+        ModelOption::ParakeetTdt06bV3 => "import torch, transformers, soundfile, librosa; assert hasattr(transformers, 'AutoModelForTDT')",
         ModelOption::MossTranscribeDiarize => "import torch, transformers, soundfile, librosa, moss_transcribe_diarize",
         ModelOption::CohereTranscribe => "import torch, transformers, soundfile, librosa; assert hasattr(transformers, 'CohereAsrForConditionalGeneration')",
         ModelOption::Nemotron35Streaming => "import torch, transformers, soundfile, librosa",

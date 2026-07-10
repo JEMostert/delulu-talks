@@ -1,6 +1,6 @@
 export type Page = "home" | "models" | "vocabulary" | "history" | "settings";
 export type RecordingMode = "hold" | "toggle";
-export type ModelId = "mossTranscribeDiarize" | "cohereTranscribe" | "nemotron35Streaming";
+export type ModelId = "parakeetTdt06bV3" | "mossTranscribeDiarize" | "cohereTranscribe" | "nemotron35Streaming";
 export type OutputStyle = "smart" | "plain" | "speakerAware";
 export type DictationPhase = "idle" | "bootstrapping" | "listening" | "transcribing" | "error";
 
