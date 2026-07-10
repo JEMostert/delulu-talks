@@ -146,7 +146,7 @@ impl Default for AppSettings {
         Self {
             shortcut: "Ctrl+Shift+Space".to_string(),
             recording_mode: RecordingMode::Hold,
-            model: ModelOption::ParakeetTdt06bV3,
+            model: ModelOption::MossTranscribeDiarize,
             language: "auto".to_string(),
             python_command: "python3".to_string(),
             input_device: DEFAULT_INPUT_DEVICE.to_string(),
