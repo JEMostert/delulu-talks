@@ -13,6 +13,9 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
@@ -37,6 +40,7 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 const SETTINGS_FILE: &str = "settings.json";
+const AUTH_FILE: &str = "auth.json";
 const HISTORY_FILE: &str = "history.json";
 const ASR_ERROR_FILE: &str = "last-asr-error.log";
 const ASR_SIDECAR_LOG_FILE: &str = "asr-sidecar.log";
@@ -216,6 +220,18 @@ struct DictationStatus {
     message: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HuggingFaceAuthStatus {
+    configured: bool,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct AppAuth {
+    hugging_face_token: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TranscriptSegment {
@@ -388,6 +404,68 @@ fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> 
     let serialized = serde_json::to_string_pretty(settings)
         .map_err(|err| format!("Failed to serialize settings: {err}"))?;
     fs::write(path, serialized).map_err(|err| format!("Failed to persist settings: {err}"))
+}
+
+fn auth_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(settings_path(app)?.with_file_name(AUTH_FILE))
+}
+
+fn read_app_auth(path: &Path) -> Result<AppAuth, String> {
+    if !path.exists() {
+        return Ok(AppAuth::default());
+    }
+    let raw = fs::read_to_string(path).map_err(|err| format!("Failed to read auth.json: {err}"))?;
+    serde_json::from_str(&raw).map_err(|err| format!("Failed to parse auth.json: {err}"))
+}
+
+fn write_app_auth(path: &Path, auth: &AppAuth) -> Result<(), String> {
+    let serialized = serde_json::to_string_pretty(auth)
+        .map_err(|err| format!("Failed to serialize auth.json: {err}"))?;
+    #[cfg(unix)]
+    if path.exists() {
+        fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+            .map_err(|err| format!("Failed to secure auth.json: {err}"))?;
+    }
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
+        .open(path)
+        .map_err(|err| format!("Failed to open auth.json: {err}"))?;
+    file.write_all(serialized.as_bytes())
+        .and_then(|_| file.sync_all())
+        .map_err(|err| format!("Failed to save auth.json: {err}"))?;
+    #[cfg(unix)]
+    fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+        .map_err(|err| format!("Failed to secure auth.json: {err}"))?;
+    Ok(())
+}
+
+fn stored_hugging_face_token(app: &AppHandle) -> Result<Option<String>, String> {
+    let token = read_app_auth(&auth_path(app)?)?.hugging_face_token;
+    if token.trim().is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(token))
+    }
+}
+
+fn validate_hugging_face_token(token: &str) -> Result<&str, String> {
+    let token = token.trim();
+    if !token.starts_with("hf_") || token.len() < 20 {
+        return Err(
+            "Enter a valid Hugging Face user access token starting with 'hf_'.".to_string(),
+        );
+    }
+    Ok(token)
+}
+
+fn apply_hugging_face_token(app: &AppHandle, command: &mut Command) -> Result<(), String> {
+    if let Some(token) = stored_hugging_face_token(app)? {
+        command.env("HF_TOKEN", token);
+    }
+    Ok(())
 }
 
 fn asr_error_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -670,13 +748,8 @@ fn resolve_transcriber_script(app: &AppHandle) -> Result<PathBuf, String> {
         candidates.push(resource_dir.join("python").join("transcription_engine.py"));
     }
 
-    candidates.push(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("python")
-            .join("transcription_engine.py"),
-    );
-
     if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(current_dir.join("python").join("transcription_engine.py"));
         candidates.push(
             current_dir
                 .join("src-tauri")
@@ -684,6 +757,12 @@ fn resolve_transcriber_script(app: &AppHandle) -> Result<PathBuf, String> {
                 .join("transcription_engine.py"),
         );
     }
+
+    candidates.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("python")
+            .join("transcription_engine.py"),
+    );
 
     candidates
         .into_iter()
@@ -984,6 +1063,7 @@ fn warmup_selected_model(settings: &AppSettings, app: &AppHandle) -> Result<(), 
         .arg(settings.model.as_hf_id())
         .arg("--language")
         .arg(&settings.language);
+    apply_hugging_face_token(app, &mut command)?;
     configure_child_process(&mut command);
 
     let output = command
@@ -1128,6 +1208,7 @@ fn spawn_asr_sidecar(settings: &AppSettings, app: &AppHandle) -> Result<AsrSidec
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::from(log_file));
+    apply_hugging_face_token(app, &mut command)?;
     configure_child_process(&mut command);
 
     let mut child = command
@@ -1222,6 +1303,7 @@ fn transcribe_audio_once(
     if settings.punctuation {
         command.arg("--punctuation");
     }
+    apply_hugging_face_token(app, &mut command)?;
     configure_child_process(&mut command);
 
     let output = command.output().map_err(|err| {
@@ -2150,6 +2232,55 @@ fn update_settings(
 }
 
 #[tauri::command]
+fn get_hugging_face_auth_status(app: AppHandle) -> Result<HuggingFaceAuthStatus, String> {
+    Ok(HuggingFaceAuthStatus {
+        configured: stored_hugging_face_token(&app)?.is_some(),
+    })
+}
+
+#[tauri::command]
+fn save_hugging_face_token(
+    app: AppHandle,
+    state: State<'_, Arc<AppRuntime>>,
+    token: String,
+) -> Result<HuggingFaceAuthStatus, String> {
+    let token = validate_hugging_face_token(&token)?;
+    write_app_auth(
+        &auth_path(&app)?,
+        &AppAuth {
+            hugging_face_token: token.to_string(),
+        },
+    )?;
+    stop_asr_sidecar(state.inner());
+    set_runtime_ready(state.inner(), false)?;
+    emit_status(
+        &app,
+        DictationPhase::Idle,
+        Some("Hugging Face token saved. Rebuild the selected model to use it.".to_string()),
+    );
+    Ok(HuggingFaceAuthStatus { configured: true })
+}
+
+#[tauri::command]
+fn remove_hugging_face_token(
+    app: AppHandle,
+    state: State<'_, Arc<AppRuntime>>,
+) -> Result<HuggingFaceAuthStatus, String> {
+    let path = auth_path(&app)?;
+    if path.exists() {
+        fs::remove_file(path).map_err(|err| format!("Failed to remove auth.json: {err}"))?;
+    }
+    stop_asr_sidecar(state.inner());
+    set_runtime_ready(state.inner(), false)?;
+    emit_status(
+        &app,
+        DictationPhase::Idle,
+        Some("Hugging Face token removed.".to_string()),
+    );
+    Ok(HuggingFaceAuthStatus { configured: false })
+}
+
+#[tauri::command]
 fn setup_asr_environment(app: AppHandle, state: State<'_, Arc<AppRuntime>>) -> Result<(), String> {
     let settings = state
         .settings
@@ -2305,6 +2436,9 @@ pub fn run() {
             clear_history,
             copy_text,
             normalize_shortcut,
+            get_hugging_face_auth_status,
+            save_hugging_face_token,
+            remove_hugging_face_token,
             update_settings,
             setup_asr_environment,
             reset_asr_environment,
@@ -2321,11 +2455,12 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        concise_asr_error, normalize_shortcut_text, recording_sound_bytes, runtime_status,
-        AppSettings, DictationPhase, PasteMethod, RecordingSound, RuntimePhase,
+        concise_asr_error, normalize_shortcut_text, read_app_auth, recording_sound_bytes,
+        runtime_status, validate_hugging_face_token, write_app_auth, AppAuth, AppSettings,
+        DictationPhase, PasteMethod, RecordingSound, RuntimePhase,
     };
     use rodio::Decoder;
-    use std::io::Cursor;
+    use std::{fs, io::Cursor};
 
     #[test]
     fn sidecar_errors_skip_hugging_face_noise() {
@@ -2337,6 +2472,42 @@ mod tests {
             concise_asr_error(stderr),
             "Transcription failed: Audio must contain at least one sample"
         );
+    }
+
+    #[test]
+    fn hugging_face_tokens_are_validated_before_storage() {
+        assert!(validate_hugging_face_token("not-a-token").is_err());
+        assert_eq!(
+            validate_hugging_face_token("  hf_abcdefghijklmnopqrstuvwxyz  ").unwrap(),
+            "hf_abcdefghijklmnopqrstuvwxyz"
+        );
+    }
+
+    #[test]
+    fn auth_json_round_trips_separately_from_settings() {
+        let path = std::env::temp_dir().join(format!(
+            "delulu-auth-test-{}-{}.json",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("thread")
+        ));
+        let auth = AppAuth {
+            hugging_face_token: "hf_test_token_not_a_real_secret".to_string(),
+        };
+
+        write_app_auth(&path, &auth).unwrap();
+        assert_eq!(
+            read_app_auth(&path).unwrap().hugging_face_token,
+            auth.hugging_face_token
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

@@ -1,5 +1,6 @@
-import { Check, ClipboardPaste, Clock3, Download, Keyboard, Mic2, Save, ShieldCheck, SlidersHorizontal, Terminal, Trash2, Volume2 } from "lucide-react";
+import { Check, ClipboardPaste, Clock3, Download, KeyRound, Keyboard, Mic2, Save, ShieldCheck, SlidersHorizontal, Terminal, Trash2, Volume2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { bridge } from "../bridge";
 import { LANGUAGES, PARAKEET_LANGUAGES } from "../data";
 import type { AppSettings } from "../types";
 
@@ -9,7 +10,46 @@ function SettingRow({ icon: Icon, title, description, children }: { icon: typeof
 
 export function SettingsPage({ settings, devices, saving, onSave, onSetup, onReset }: { settings: AppSettings; devices: string[]; saving: boolean; onSave: (settings: AppSettings) => void; onSetup: () => void; onReset: () => void }) {
   const [draft, setDraft] = useState(settings);
+  const [hfToken, setHfToken] = useState("");
+  const [hfConfigured, setHfConfigured] = useState(false);
+  const [hfBusy, setHfBusy] = useState(false);
+  const [hfMessage, setHfMessage] = useState("");
   useEffect(() => setDraft(settings), [settings]);
+  useEffect(() => {
+    void bridge.getHuggingFaceAuthStatus()
+      .then((status) => setHfConfigured(status.configured))
+      .catch((error) => setHfMessage(String(error)));
+  }, []);
+
+  async function saveHuggingFaceToken() {
+    setHfBusy(true);
+    setHfMessage("");
+    try {
+      const status = await bridge.saveHuggingFaceToken(hfToken);
+      setHfConfigured(status.configured);
+      setHfToken("");
+      setHfMessage("Token saved securely. Rebuild the selected model to use it.");
+    } catch (error) {
+      setHfMessage(String(error));
+    } finally {
+      setHfBusy(false);
+    }
+  }
+
+  async function removeHuggingFaceToken() {
+    setHfBusy(true);
+    setHfMessage("");
+    try {
+      const status = await bridge.removeHuggingFaceToken();
+      setHfConfigured(status.configured);
+      setHfToken("");
+      setHfMessage("Hugging Face token removed from auth.json.");
+    } catch (error) {
+      setHfMessage(String(error));
+    } finally {
+      setHfBusy(false);
+    }
+  }
   const availableLanguages = draft.model === "parakeetTdt06bV3"
     ? LANGUAGES.filter(([code]) => PARAKEET_LANGUAGES.has(code))
     : LANGUAGES;
@@ -39,6 +79,7 @@ export function SettingsPage({ settings, devices, saving, onSave, onSetup, onRes
 
       <section className="settings-group paper-card"><div className="group-heading"><p className="eyebrow">LOCAL RUNTIME</p><h3>Model environment</h3></div>
         <SettingRow icon={Terminal} title="Python command" description="Python 3.11 or 3.12 is recommended for the local model environment."><input className="compact-input" value={draft.pythonCommand} onChange={(event) => setDraft({ ...draft, pythonCommand: event.target.value })} /></SettingRow>
+        <SettingRow icon={KeyRound} title="Hugging Face API key" description="Stored separately in auth.json with access restricted to your user account."><div className="credential-control"><input className="compact-input" type="password" autoComplete="new-password" value={hfToken} placeholder={hfConfigured ? "Token is stored in auth.json" : "hf_…"} onChange={(event) => setHfToken(event.target.value)} /><div className="credential-actions"><button className="secondary-button" disabled={hfBusy || !hfToken.trim()} onClick={() => void saveHuggingFaceToken()}>{hfBusy ? "Saving…" : hfConfigured ? "Replace" : "Save key"}</button>{hfConfigured && <button className="danger-button" disabled={hfBusy} onClick={() => void removeHuggingFaceToken()}>Remove</button>}</div>{hfMessage && <small className="credential-message">{hfMessage}</small>}</div></SettingRow>
         <div className="runtime-setup"><ShieldCheck /><div><strong>Private by default</strong><p>Audio and transcripts stay on your machine. Hugging Face is only contacted to download model weights.</p></div><div className="runtime-actions"><button className="secondary-button" onClick={onSetup}><Download /> Build environment</button><button className="danger-button" onClick={() => { if (window.confirm("Remove Delulu Talks' local Python environment? Your transcripts and downloaded model cache will stay untouched.")) onReset(); }}><Trash2 /> Remove Python env</button></div></div>
       </section>
     </div>

@@ -49,6 +49,8 @@ Open **Model studio**, select an engine, then choose **Set up selected model**. 
 
 MOSS setup installs the official `MOSS-Transcribe-Diarize` package. Cohere and Nemotron use Transformers 5.4 or newer. A CUDA GPU is recommended for MOSS and Cohere; Nemotron is the lightest option.
 
+Gated models such as Cohere require a Hugging Face user access token after the account has been granted access on the model page. Save or remove that token under **Settings → Local runtime → Hugging Face API key**. Delulu Talks keeps it separate from normal preferences in `auth.json`; on Unix systems the file is restricted to the current user (`0600`). The token is only passed to local model processes through `HF_TOKEN` and is never returned to the frontend after saving.
+
 If setup becomes damaged or a model dependency changes, open **Settings → Runtime & storage**, choose **Remove Python environment**, then return to Model studio and set up the selected model again. This removes only the app-managed environment; settings, vocabulary, history, and downloaded Hugging Face model caches are preserved.
 
 ## Verification

@@ -34,6 +34,10 @@ export type DictationStatus = {
   message?: string | null;
 };
 
+export type HuggingFaceAuthStatus = {
+  configured: boolean;
+};
+
 export type TranscriptSegment = {
   start: number;
   end: number;

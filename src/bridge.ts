@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { DEFAULT_SETTINGS } from "./data";
-import type { AppSettings, DictationStatus, TranscriptRecord } from "./types";
+import type { AppSettings, DictationStatus, HuggingFaceAuthStatus, TranscriptRecord } from "./types";
 
 const isTauri = () => "__TAURI_INTERNALS__" in window;
 
@@ -41,6 +41,16 @@ export const bridge = {
     if (isTauri()) return invoke("update_settings", { settings });
     localStorage.setItem("delulu-demo-settings", JSON.stringify(settings));
     return settings;
+  },
+  async getHuggingFaceAuthStatus(): Promise<HuggingFaceAuthStatus> {
+    return isTauri() ? invoke("get_hugging_face_auth_status") : { configured: false };
+  },
+  async saveHuggingFaceToken(token: string): Promise<HuggingFaceAuthStatus> {
+    if (isTauri()) return invoke("save_hugging_face_token", { token });
+    return { configured: token.trim().length > 0 };
+  },
+  async removeHuggingFaceToken(): Promise<HuggingFaceAuthStatus> {
+    return isTauri() ? invoke("remove_hugging_face_token") : { configured: false };
   },
   async getStatus(): Promise<DictationStatus> {
     return isTauri() ? invoke("get_runtime_status") : { phase: "idle", message: "Ready to capture" };

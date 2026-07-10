@@ -209,8 +209,31 @@ def transcribe_cohere(torch: Any, transformers: Any, args: argparse.Namespace) -
 
     language = "en" if args.language == "auto" else args.language
     processor = transformers.AutoProcessor.from_pretrained(COHERE, trust_remote_code=True)
-    model_class = getattr(transformers, "CohereAsrForConditionalGeneration", transformers.AutoModelForSpeechSeq2Seq)
-    model = model_class.from_pretrained(COHERE, device_map="auto", trust_remote_code=True)
+    # The checkpoint ships a custom Conformer implementation. Instantiating
+    # Transformers' similarly named built-in class bypasses that implementation
+    # and is incompatible with the processor's `length` input. The July 2026
+    # checkpoint also declares its ignored load keys as a list while current
+    # Transformers expects a set, so normalize that class attribute before
+    # `from_pretrained` finalizes model loading.
+    from transformers.dynamic_module_utils import get_class_from_dynamic_module
+
+    model_class = get_class_from_dynamic_module(
+        "modeling_cohere_asr.CohereAsrForConditionalGeneration", COHERE
+    )
+    from transformers.generation import GenerationMixin
+
+    if not issubclass(model_class, GenerationMixin):
+        model_class = type(
+            "CompatibleCohereAsrForConditionalGeneration",
+            (model_class, GenerationMixin),
+            {},
+        )
+    ignored_keys = getattr(model_class, "_keys_to_ignore_on_load_unexpected", None)
+    if isinstance(ignored_keys, list):
+        model_class._keys_to_ignore_on_load_unexpected = set(ignored_keys)
+    model = model_class.from_pretrained(
+        COHERE, device_map="auto", trust_remote_code=True
+    )
     if args.warmup:
         return "", [], language
 
