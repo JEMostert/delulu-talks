@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Check, LoaderCircle } from "lucide-react";
 import { bridge } from "./bridge";
-import { DEFAULT_SETTINGS } from "./data";
+import { DEFAULT_SETTINGS, PARAKEET_LANGUAGES } from "./data";
 import { Sidebar } from "./components/Sidebar";
 import { Overlay } from "./components/Overlay";
 import { HomePage } from "./pages/HomePage";
@@ -140,7 +140,7 @@ function App() {
 
         <div className="page-scroll">
           {page === "home" && <HomePage settings={settings} status={status} history={history} onToggle={() => void bridge.toggleDictation()} onNavigate={setPage} onCopy={(text) => void bridge.copyText(text).then(() => setToast("Copied to clipboard"))} />}
-          {page === "models" && <ModelsPage selected={settings.model} saving={saving} onSelect={(model) => void saveSettings({ ...settings, model }, "Model switched — setup may be required")} onSetup={() => void setupModelEnvironment()} />}
+          {page === "models" && <ModelsPage selected={settings.model} saving={saving} onSelect={(model) => void saveSettings({ ...settings, model, language: model === "parakeetTdt06bV3" && !PARAKEET_LANGUAGES.has(settings.language) ? "auto" : settings.language }, "Model switched — setup may be required")} onSetup={() => void setupModelEnvironment()} />}
           {page === "vocabulary" && <VocabularyPage words={settings.customWords} saving={saving} onChange={(customWords) => void saveSettings({ ...settings, customWords }, "Vocabulary updated")} />}
           {page === "history" && <HistoryPage history={history} onCopy={(text) => void bridge.copyText(text).then(() => setToast("Copied to clipboard"))} onDelete={(id) => void bridge.deleteHistory(id).then(() => setHistory((items) => items.filter((item) => item.id !== id)))} onClear={() => void bridge.clearHistory().then(() => setHistory([]))} />}
           {page === "settings" && <SettingsPage settings={settings} devices={devices} saving={saving} onSave={saveSettings} onSetup={() => void setupModelEnvironment()} onReset={() => void resetPythonEnvironment()} />}

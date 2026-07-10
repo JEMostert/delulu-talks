@@ -71,6 +71,15 @@ impl ModelOption {
     }
 
     fn required_python_packages(self) -> Vec<&'static str> {
+        if self == Self::ParakeetTdt06bV3 {
+            return vec![
+                "transcribe-cpp==0.1.2",
+                "huggingface-hub>=1.0.0",
+                "soundfile",
+                "librosa",
+            ];
+        }
+
         let mut packages = vec![
             "torch",
             "torchaudio",
@@ -88,7 +97,7 @@ impl ModelOption {
             Self::CohereTranscribe | Self::Nemotron35Streaming => {
                 packages.push("transformers>=5.4.0")
             }
-            Self::ParakeetTdt06bV3 => packages.push("transformers>=5.13.0"),
+            Self::ParakeetTdt06bV3 => unreachable!(),
         }
 
         packages
@@ -844,7 +853,7 @@ fn ensure_python_dependencies(app: &AppHandle, settings: &AppSettings) -> Result
 
 fn dependency_check_script(model: ModelOption) -> &'static str {
     match model {
-        ModelOption::ParakeetTdt06bV3 => "import torch, transformers, soundfile, librosa; assert hasattr(transformers, 'AutoModelForTDT')",
+        ModelOption::ParakeetTdt06bV3 => "import transcribe_cpp, huggingface_hub, soundfile, librosa",
         ModelOption::MossTranscribeDiarize => "import torch, transformers, soundfile, librosa, moss_transcribe_diarize",
         ModelOption::CohereTranscribe => "import torch, transformers, soundfile, librosa; assert hasattr(transformers, 'CohereAsrForConditionalGeneration')",
         ModelOption::Nemotron35Streaming => "import torch, transformers, soundfile, librosa",

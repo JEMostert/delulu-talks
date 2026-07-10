@@ -19,6 +19,12 @@ MOSS = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
 COHERE = "CohereLabs/cohere-transcribe-03-2026"
 NEMOTRON = "nvidia/nemotron-3.5-asr-streaming-0.6b"
 PARAKEET = "nvidia/parakeet-tdt-0.6b-v3"
+PARAKEET_GGUF_REPO = "handy-computer/parakeet-tdt-0.6b-v3-gguf"
+PARAKEET_GGUF_FILE = "parakeet-tdt-0.6b-v3-Q8_0.gguf"
+PARAKEET_LANGUAGES = {
+    "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it",
+    "lv", "lt", "mt", "pl", "pt", "ro", "ru", "sk", "sl", "es", "sv", "uk",
+}
 SUPPORTED_MODELS = {MOSS, COHERE, NEMOTRON, PARAKEET}
 
 
@@ -227,17 +233,43 @@ def transcribe_nemotron(torch: Any, transformers: Any, args: argparse.Namespace)
     return str(raw).strip(), [], args.language
 
 
-def transcribe_parakeet(torch: Any, transformers: Any, args: argparse.Namespace) -> tuple[str, list[Segment], str]:
-    device = 0 if torch.cuda.is_available() else -1
-    pipe = transformers.pipeline(
-        "automatic-speech-recognition", model=PARAKEET, device=device,
-        dtype=torch.float16 if device == 0 else torch.float32,
+def transcribe_parakeet(args: argparse.Namespace) -> tuple[str, list[Segment], str]:
+    try:
+        import transcribe_cpp
+        from huggingface_hub import hf_hub_download
+    except ImportError as exc:
+        raise RuntimeError("Parakeet's transcribe.cpp runtime is missing; rebuild the selected model environment") from exc
+
+    model_path = hf_hub_download(repo_id=PARAKEET_GGUF_REPO, filename=PARAKEET_GGUF_FILE)
+    devices = transcribe_cpp.backends()
+    nvidia = next(
+        (device for device in devices if device.kind == "vulkan" and "nvidia" in device.description.casefold()),
+        None,
     )
-    if args.warmup:
-        return "", [], args.language
-    result = pipe(args.audio)
-    raw = result.get("text", "") if isinstance(result, dict) else str(result)
-    return str(raw).strip(), [], args.language
+    backend = "vulkan" if nvidia else "auto"
+    gpu_device = nvidia.index if nvidia else 0
+
+    with transcribe_cpp.Model(model_path, backend=backend, gpu_device=gpu_device) as model:
+        if args.warmup:
+            return "", [], args.language
+
+        import soundfile as sf
+
+        samples, sample_rate = sf.read(args.audio, dtype="float32", always_2d=True)
+        if sample_rate != 16_000:
+            raise RuntimeError(f"Parakeet expected 16 kHz audio, received {sample_rate} Hz")
+        mono = samples.mean(axis=1)
+        language_hint = args.language if args.language in PARAKEET_LANGUAGES else None
+
+        with model.session() as session:
+            result = session.run(mono, language=language_hint, timestamps="segment")
+
+    segments = [
+        Segment(item.t0_ms / 1000.0, item.t1_ms / 1000.0, "", item.text.strip())
+        for item in result.segments
+    ]
+    language = language_hint or result.language or "auto"
+    return result.text.strip(), segments, language
 
 
 def format_output(raw: str, segments: list[Segment], style: str) -> str:
@@ -256,7 +288,6 @@ def format_output(raw: str, segments: list[Segment], style: str) -> str:
 
 def main() -> int:
     args = parse_args()
-    torch, transformers = load_runtime()
     vocabulary = active_vocabulary(args.vocabulary_json)
     temporary_audio: str | None = None
     try:
@@ -264,13 +295,15 @@ def main() -> int:
             args.audio, temporary_audio = normalize_recorded_wav(args.audio)
 
         if args.model == PARAKEET:
-            raw, segments, language = transcribe_parakeet(torch, transformers, args)
-        elif args.model == MOSS:
-            raw, segments, language = transcribe_moss(torch, transformers, args, vocabulary)
-        elif args.model == COHERE:
-            raw, segments, language = transcribe_cohere(torch, transformers, args)
+            raw, segments, language = transcribe_parakeet(args)
         else:
-            raw, segments, language = transcribe_nemotron(torch, transformers, args)
+            torch, transformers = load_runtime()
+            if args.model == MOSS:
+                raw, segments, language = transcribe_moss(torch, transformers, args, vocabulary)
+            elif args.model == COHERE:
+                raw, segments, language = transcribe_cohere(torch, transformers, args)
+            else:
+                raw, segments, language = transcribe_nemotron(torch, transformers, args)
 
         if args.warmup:
             print(json.dumps({"ready": True}))

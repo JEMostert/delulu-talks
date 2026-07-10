@@ -1,6 +1,6 @@
 import { Check, Clock3, Download, Keyboard, Mic2, Save, ShieldCheck, SlidersHorizontal, Terminal, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { LANGUAGES } from "../data";
+import { LANGUAGES, PARAKEET_LANGUAGES } from "../data";
 import type { AppSettings } from "../types";
 
 function SettingRow({ icon: Icon, title, description, children }: { icon: typeof Keyboard; title: string; description: string; children: React.ReactNode }) {
@@ -10,6 +10,12 @@ function SettingRow({ icon: Icon, title, description, children }: { icon: typeof
 export function SettingsPage({ settings, devices, saving, onSave, onSetup, onReset }: { settings: AppSettings; devices: string[]; saving: boolean; onSave: (settings: AppSettings) => void; onSetup: () => void; onReset: () => void }) {
   const [draft, setDraft] = useState(settings);
   useEffect(() => setDraft(settings), [settings]);
+  const availableLanguages = draft.model === "parakeetTdt06bV3"
+    ? LANGUAGES.filter(([code]) => PARAKEET_LANGUAGES.has(code))
+    : LANGUAGES;
+  const languageDescription = draft.model === "parakeetTdt06bV3"
+    ? "Choose a preferred language to condition Parakeet, or use automatic detection."
+    : "Cohere needs a language; MOSS and Nemotron can detect it.";
 
   return (
     <div className="content-stack settings-page">
@@ -22,7 +28,7 @@ export function SettingsPage({ settings, devices, saving, onSave, onSetup, onRes
       </section>
 
       <section className="settings-group paper-card"><div className="group-heading"><p className="eyebrow">OUTPUT</p><h3>How your words land</h3></div>
-        <SettingRow icon={SlidersHorizontal} title="Language" description="Cohere needs a language; Parakeet, MOSS, and Nemotron can detect it."><select value={draft.language} onChange={(event) => setDraft({ ...draft, language: event.target.value })}>{LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></SettingRow>
+        <SettingRow icon={SlidersHorizontal} title="Language" description={languageDescription}><select value={draft.language} onChange={(event) => setDraft({ ...draft, language: event.target.value })}>{availableLanguages.map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></SettingRow>
         <SettingRow icon={SlidersHorizontal} title="Output style" description="Smart preserves speakers with MOSS and stays clean for dictation."><select value={draft.outputStyle} onChange={(event) => setDraft({ ...draft, outputStyle: event.target.value as AppSettings["outputStyle"] })}><option value="smart">Smart</option><option value="plain">Plain text</option><option value="speakerAware">Speaker-aware</option></select></SettingRow>
         <SettingRow icon={SlidersHorizontal} title="Automatic paste" description="Insert the transcript wherever your cursor was."><button className={`toggle ${draft.autoPaste ? "on" : ""}`} onClick={() => setDraft({ ...draft, autoPaste: !draft.autoPaste })}><i /></button></SettingRow>
         <SettingRow icon={Clock3} title="Keep local history" description="Store finished transcripts on this device for quick reuse."><button className={`toggle ${draft.keepHistory ? "on" : ""}`} onClick={() => setDraft({ ...draft, keepHistory: !draft.keepHistory })}><i /></button></SettingRow>

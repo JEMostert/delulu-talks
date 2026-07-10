@@ -6,7 +6,7 @@ A private, local-first desktop dictation studio built with Tauri, React, Rust, a
 
 This release is a ground-up product and interface rebuild. The old wall of model settings has been replaced by four specialist engines:
 
-- **NVIDIA Parakeet TDT 0.6B v3** — fast multilingual dictation with automatic language detection.
+- **NVIDIA Parakeet TDT 0.6B v3** — fast GGUF-backed multilingual dictation with automatic detection or an explicit language hint.
 - **MOSS Transcribe Diarize 0.9B** — speaker-aware meetings, timestamps, acoustic events, and native hotwords.
 - **Cohere Transcribe 03-2026** — high-accuracy long-form transcription across 14 languages.
 - **NVIDIA Nemotron 3.5 ASR Streaming 0.6B** — lightweight, low-latency multilingual dictation.

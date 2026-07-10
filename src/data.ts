@@ -20,7 +20,7 @@ export const MODELS: ModelInfo[] = [
     name: "Parakeet TDT 0.6B v3",
     maker: "NVIDIA",
     role: "Best for fast dictation",
-    description: "High-throughput FastConformer transcription with automatic language detection, punctuation, and capitalization.",
+    description: "High-throughput GGUF transcription with automatic detection or explicit language conditioning.",
     size: "0.6B",
     languages: "25 languages",
     latency: "GPU-fast",
@@ -65,11 +65,20 @@ export const MODELS: ModelInfo[] = [
   },
 ];
 
+export const PARAKEET_LANGUAGES = new Set([
+  "auto", "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it",
+  "lv", "lt", "mt", "pl", "pt", "ro", "ru", "sk", "sl", "es", "sv", "uk",
+]);
+
 export const LANGUAGES = [
-  ["auto", "Automatic"], ["en", "English"], ["zh", "Chinese"], ["nl", "Dutch"],
-  ["de", "German"], ["fr", "French"], ["es", "Spanish"], ["pt", "Portuguese"],
-  ["it", "Italian"], ["ar", "Arabic"], ["ja", "Japanese"], ["ko", "Korean"],
-  ["vi", "Vietnamese"], ["pl", "Polish"], ["el", "Greek"], ["cs", "Czech"],
+  ["auto", "Automatic"], ["bg", "Bulgarian"], ["hr", "Croatian"], ["cs", "Czech"],
+  ["da", "Danish"], ["nl", "Dutch"], ["en", "English"], ["et", "Estonian"],
+  ["fi", "Finnish"], ["fr", "French"], ["de", "German"], ["el", "Greek"],
+  ["hu", "Hungarian"], ["it", "Italian"], ["lv", "Latvian"], ["lt", "Lithuanian"],
+  ["mt", "Maltese"], ["pl", "Polish"], ["pt", "Portuguese"], ["ro", "Romanian"],
+  ["ru", "Russian"], ["sk", "Slovak"], ["sl", "Slovenian"], ["es", "Spanish"],
+  ["sv", "Swedish"], ["uk", "Ukrainian"], ["zh", "Chinese"], ["ar", "Arabic"],
+  ["ja", "Japanese"], ["ko", "Korean"], ["vi", "Vietnamese"],
 ] as const;
 
 export function modelById(id: AppSettings["model"]) {
