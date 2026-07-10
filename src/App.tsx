@@ -86,15 +86,17 @@ function App() {
     home: "Home", models: "Model studio", vocabulary: "My vocabulary", history: "History", settings: "Settings",
   }[page]), [page]);
 
-  async function saveSettings(next: AppSettings, message = "Changes saved") {
+  async function saveSettings(next: AppSettings, message = "Changes saved"): Promise<boolean> {
     setSettings(next);
     setSaving(true);
     try {
       const persisted = await bridge.updateSettings(next);
       setSettings(persisted);
       setToast(message);
+      return true;
     } catch (error) {
       setStatus({ phase: "error", message: String(error) });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -114,8 +116,25 @@ function App() {
     try {
       setStatus({ phase: "bootstrapping", message: "Starting local model setup…" });
       await bridge.setupModel();
+      while (true) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        const runtimeStatus = await bridge.getStatus();
+        setStatus(runtimeStatus);
+        if (runtimeStatus.phase !== "bootstrapping") break;
+      }
     } catch (error) {
       setStatus({ phase: "error", message: String(error) });
+    }
+  }
+
+  async function selectModel(model: AppSettings["model"]) {
+    const next = {
+      ...settings,
+      model,
+      language: model === "parakeetTdt06bV3" && !PARAKEET_LANGUAGES.has(settings.language) ? "auto" : settings.language,
+    };
+    if (await saveSettings(next, "Model switched — preparing local runtime")) {
+      await setupModelEnvironment();
     }
   }
 
@@ -140,7 +159,7 @@ function App() {
 
         <div className="page-scroll">
           {page === "home" && <HomePage settings={settings} status={status} history={history} onToggle={() => void bridge.toggleDictation()} onNavigate={setPage} onCopy={(text) => void bridge.copyText(text).then(() => setToast("Copied to clipboard"))} />}
-          {page === "models" && <ModelsPage selected={settings.model} saving={saving} onSelect={(model) => void saveSettings({ ...settings, model, language: model === "parakeetTdt06bV3" && !PARAKEET_LANGUAGES.has(settings.language) ? "auto" : settings.language }, "Model switched — setup may be required")} onSetup={() => void setupModelEnvironment()} />}
+          {page === "models" && <ModelsPage selected={settings.model} saving={saving} settingUp={status.phase === "bootstrapping"} onSelect={(model) => void selectModel(model)} onSetup={() => void setupModelEnvironment()} />}
           {page === "vocabulary" && <VocabularyPage words={settings.customWords} saving={saving} onChange={(customWords) => void saveSettings({ ...settings, customWords }, "Vocabulary updated")} />}
           {page === "history" && <HistoryPage history={history} onCopy={(text) => void bridge.copyText(text).then(() => setToast("Copied to clipboard"))} onDelete={(id) => void bridge.deleteHistory(id).then(() => setHistory((items) => items.filter((item) => item.id !== id)))} onClear={() => void bridge.clearHistory().then(() => setHistory([]))} />}
           {page === "settings" && <SettingsPage settings={settings} devices={devices} saving={saving} onSave={saveSettings} onSetup={() => void setupModelEnvironment()} onReset={() => void resetPythonEnvironment()} />}

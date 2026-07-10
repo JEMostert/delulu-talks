@@ -354,6 +354,7 @@ struct AppRuntime {
     ready: Mutex<bool>,
     clipboard: Mutex<Option<Clipboard>>,
     setup_in_progress: AtomicBool,
+    setup_error: Mutex<Option<String>>,
     bootstrap_lock: Mutex<()>,
     registered_shortcut: Mutex<String>,
     asr_sidecar: Mutex<Option<AsrSidecar>>,
@@ -1071,10 +1072,16 @@ fn spawn_bootstrap_task(
     if state.setup_in_progress.swap(true, Ordering::SeqCst) {
         return Err("ASR setup is already running.".to_string());
     }
+    if let Ok(mut setup_error) = state.setup_error.lock() {
+        *setup_error = None;
+    }
 
     thread::spawn(move || {
         if let Err(err) = bootstrap_asr_runtime(&app, &state, settings) {
             let _ = set_runtime_ready(&state, false);
+            if let Ok(mut setup_error) = state.setup_error.lock() {
+                *setup_error = Some(err.clone());
+            }
             emit_status(&app, DictationPhase::Error, Some(err));
         }
         state.setup_in_progress.store(false, Ordering::SeqCst);
@@ -2016,13 +2023,13 @@ fn get_settings(state: State<'_, Arc<AppRuntime>>) -> Result<AppSettings, String
         .map_err(|_| "Failed to lock settings".to_string())
 }
 
-#[tauri::command]
-fn get_runtime_status(state: State<'_, Arc<AppRuntime>>) -> Result<DictationStatus, String> {
-    let phase = current_phase(state.inner())?;
-    let ready = is_runtime_ready(state.inner())?;
-    let setup_in_progress = state.setup_in_progress.load(Ordering::SeqCst);
-
-    Ok(match phase {
+fn runtime_status(
+    phase: RuntimePhase,
+    ready: bool,
+    setup_in_progress: bool,
+    setup_error: Option<String>,
+) -> DictationStatus {
+    match phase {
         RuntimePhase::Listening => DictationStatus {
             phase: DictationPhase::Listening,
             message: Some("Listening...".to_string()),
@@ -2035,6 +2042,10 @@ fn get_runtime_status(state: State<'_, Arc<AppRuntime>>) -> Result<DictationStat
             phase: DictationPhase::Bootstrapping,
             message: Some("Preparing the selected model...".to_string()),
         },
+        RuntimePhase::Idle if setup_error.is_some() => DictationStatus {
+            phase: DictationPhase::Error,
+            message: setup_error,
+        },
         RuntimePhase::Idle => DictationStatus {
             phase: DictationPhase::Idle,
             message: Some(if ready {
@@ -2043,7 +2054,21 @@ fn get_runtime_status(state: State<'_, Arc<AppRuntime>>) -> Result<DictationStat
                 "ASR environment setup required".to_string()
             }),
         },
-    })
+    }
+}
+
+#[tauri::command]
+fn get_runtime_status(state: State<'_, Arc<AppRuntime>>) -> Result<DictationStatus, String> {
+    let phase = current_phase(state.inner())?;
+    let ready = is_runtime_ready(state.inner())?;
+    let setup_in_progress = state.setup_in_progress.load(Ordering::SeqCst);
+    let setup_error = state
+        .setup_error
+        .lock()
+        .map_err(|_| "Failed to lock setup error state".to_string())?
+        .clone();
+
+    Ok(runtime_status(phase, ready, setup_in_progress, setup_error))
 }
 
 #[tauri::command]
@@ -2110,6 +2135,9 @@ fn update_settings(
 
     if should_mark_not_ready {
         stop_asr_sidecar(state.inner());
+        if let Ok(mut setup_error) = state.setup_error.lock() {
+            *setup_error = None;
+        }
         let _ = set_runtime_ready(state.inner(), false);
         emit_status(
             &app,
@@ -2153,6 +2181,9 @@ fn reset_asr_environment(app: AppHandle, state: State<'_, Arc<AppRuntime>>) -> R
     })?;
 
     stop_asr_sidecar(state.inner());
+    if let Ok(mut setup_error) = state.setup_error.lock() {
+        *setup_error = None;
+    }
     let environment_dir = asr_venv_dir(&app)?;
     if environment_dir.exists() {
         fs::remove_dir_all(&environment_dir)
@@ -2216,6 +2247,7 @@ pub fn run() {
                 ready: Mutex::new(false),
                 clipboard: Mutex::new(Clipboard::new().ok()),
                 setup_in_progress: AtomicBool::new(false),
+                setup_error: Mutex::new(None),
                 bootstrap_lock: Mutex::new(()),
                 registered_shortcut: Mutex::new(initial_settings.shortcut.clone()),
                 asr_sidecar: Mutex::new(None),
@@ -2289,8 +2321,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        concise_asr_error, normalize_shortcut_text, recording_sound_bytes, AppSettings,
-        PasteMethod, RecordingSound,
+        concise_asr_error, normalize_shortcut_text, recording_sound_bytes, runtime_status,
+        AppSettings, DictationPhase, PasteMethod, RecordingSound, RuntimePhase,
     };
     use rodio::Decoder;
     use std::io::Cursor;
@@ -2336,5 +2368,24 @@ mod tests {
 
         let disabled: AppSettings = serde_json::from_str(r#"{"recordingSounds":false}"#).unwrap();
         assert!(!disabled.recording_sounds);
+    }
+
+    #[test]
+    fn completed_setup_never_reports_stale_bootstrapping() {
+        let failed = runtime_status(
+            RuntimePhase::Idle,
+            false,
+            false,
+            Some("model setup failed".to_string()),
+        );
+        assert!(matches!(failed.phase, DictationPhase::Error));
+        assert_eq!(failed.message.as_deref(), Some("model setup failed"));
+
+        let setup_required = runtime_status(RuntimePhase::Idle, false, false, None);
+        assert!(matches!(setup_required.phase, DictationPhase::Idle));
+        assert_eq!(
+            setup_required.message.as_deref(),
+            Some("ASR environment setup required")
+        );
     }
 }
