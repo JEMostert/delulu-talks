@@ -1,13 +1,15 @@
 use std::{
+    ffi::OsString,
     fs,
     path::{Path, PathBuf},
     process::Command,
     sync::{
+        atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, Sender},
         Arc, Mutex,
     },
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(windows)]
@@ -33,10 +35,14 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 const SETTINGS_FILE: &str = "settings.json";
+const HISTORY_FILE: &str = "history.json";
+const ASR_ERROR_FILE: &str = "last-asr-error.log";
 const DICTATION_EVENT: &str = "dictation-state";
 const TRANSCRIPT_EVENT: &str = "dictation-transcript";
 const OVERLAY_LABEL: &str = "overlay";
 const DEFAULT_INPUT_DEVICE: &str = "default";
+const OVERLAY_BOTTOM_GAP_LOGICAL_PX: f64 = 56.0;
+const MIN_RECORDING_DURATION_MS: u64 = 180;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,15 +54,70 @@ enum RecordingMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum ModelOption {
-    Qwen3Asr17b,
-    Qwen3Asr06b,
+    MossTranscribeDiarize,
+    CohereTranscribe,
+    Nemotron35Streaming,
 }
 
 impl ModelOption {
     fn as_hf_id(self) -> &'static str {
         match self {
-            Self::Qwen3Asr17b => "Qwen/Qwen3-ASR-1.7B",
-            Self::Qwen3Asr06b => "Qwen/Qwen3-ASR-0.6B",
+            Self::MossTranscribeDiarize => "OpenMOSS-Team/MOSS-Transcribe-Diarize",
+            Self::CohereTranscribe => "CohereLabs/cohere-transcribe-03-2026",
+            Self::Nemotron35Streaming => "nvidia/nemotron-3.5-asr-streaming-0.6b",
+        }
+    }
+
+    fn required_python_packages(self) -> Vec<&'static str> {
+        let mut packages = vec![
+            "torch",
+            "torchaudio",
+            "accelerate",
+            "soundfile",
+            "librosa",
+            "sentencepiece",
+            "protobuf",
+        ];
+
+        match self {
+            Self::MossTranscribeDiarize => {
+                packages.push("git+https://github.com/OpenMOSS/MOSS-Transcribe-Diarize.git")
+            }
+            Self::CohereTranscribe | Self::Nemotron35Streaming => {
+                packages.push("transformers>=5.4.0")
+            }
+        }
+
+        packages
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum OutputStyle {
+    Smart,
+    Plain,
+    SpeakerAware,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct CustomWord {
+    id: String,
+    term: String,
+    sounds_like: String,
+    replacement: String,
+    enabled: bool,
+}
+
+impl Default for CustomWord {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            term: String::new(),
+            sounds_like: String::new(),
+            replacement: String::new(),
+            enabled: true,
         }
     }
 }
@@ -70,6 +131,11 @@ struct AppSettings {
     language: String,
     python_command: String,
     input_device: String,
+    output_style: OutputStyle,
+    auto_paste: bool,
+    keep_history: bool,
+    punctuation: bool,
+    custom_words: Vec<CustomWord>,
 }
 
 impl Default for AppSettings {
@@ -77,10 +143,15 @@ impl Default for AppSettings {
         Self {
             shortcut: "Ctrl+Shift+Space".to_string(),
             recording_mode: RecordingMode::Hold,
-            model: ModelOption::Qwen3Asr17b,
+            model: ModelOption::MossTranscribeDiarize,
             language: "auto".to_string(),
-            python_command: "python".to_string(),
+            python_command: "python3".to_string(),
             input_device: DEFAULT_INPUT_DEVICE.to_string(),
+            output_style: OutputStyle::Smart,
+            auto_paste: true,
+            keep_history: true,
+            punctuation: true,
+            custom_words: Vec::new(),
         }
     }
 }
@@ -102,6 +173,37 @@ struct DictationStatus {
     message: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptSegment {
+    start: f64,
+    end: f64,
+    speaker: String,
+    text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptionResult {
+    text: String,
+    raw_text: String,
+    language: String,
+    segments: Vec<TranscriptSegment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptRecord {
+    id: String,
+    created_at: u64,
+    duration_ms: u64,
+    text: String,
+    raw_text: String,
+    model: ModelOption,
+    language: String,
+    segments: Vec<TranscriptSegment>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RuntimePhase {
     Idle,
@@ -119,10 +221,12 @@ struct RecorderSession {
     stream: Stream,
     writer: Arc<Mutex<Option<WavWriter<std::io::BufWriter<std::fs::File>>>>>,
     path: PathBuf,
+    started_at: Instant,
 }
 
 impl RecorderSession {
-    fn finalize(self) -> Result<PathBuf, String> {
+    fn finalize(self) -> Result<(PathBuf, u64), String> {
+        let duration_ms = self.started_at.elapsed().as_millis() as u64;
         drop(self.stream);
 
         if let Some(writer) = self
@@ -136,7 +240,7 @@ impl RecorderSession {
                 .map_err(|err| format!("Failed to finalize WAV file: {err}"))?;
         }
 
-        Ok(self.path)
+        Ok((self.path, duration_ms))
     }
 }
 
@@ -144,6 +248,8 @@ struct AppRuntime {
     settings: Mutex<AppSettings>,
     phase: Mutex<RuntimePhase>,
     ready: Mutex<bool>,
+    clipboard: Mutex<Option<Clipboard>>,
+    setup_in_progress: AtomicBool,
     bootstrap_lock: Mutex<()>,
     registered_shortcut: Mutex<String>,
     worker_tx: Sender<WorkerCommand>,
@@ -176,6 +282,58 @@ fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> 
     let serialized = serde_json::to_string_pretty(settings)
         .map_err(|err| format!("Failed to serialize settings: {err}"))?;
     fs::write(path, serialized).map_err(|err| format!("Failed to persist settings: {err}"))
+}
+
+fn asr_error_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let settings = settings_path(app)?;
+    Ok(settings.with_file_name(ASR_ERROR_FILE))
+}
+
+fn concise_asr_error(stderr: &str) -> String {
+    let detail = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            !line.is_empty()
+                && !line.contains("unauthenticated requests")
+                && !line.contains("Loading weights")
+                && !line.contains("feature_extractor_class")
+        })
+        .last()
+        .unwrap_or("The ASR sidecar exited without a readable error.");
+
+    detail.chars().take(500).collect()
+}
+
+fn history_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("Failed to resolve app data dir: {err}"))?;
+    fs::create_dir_all(&dir).map_err(|err| format!("Failed to create app data dir: {err}"))?;
+    Ok(dir.join(HISTORY_FILE))
+}
+
+fn load_history(app: &AppHandle) -> Result<Vec<TranscriptRecord>, String> {
+    let path = history_path(app)?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = fs::read_to_string(path).map_err(|err| format!("Failed to read history: {err}"))?;
+    serde_json::from_str(&raw).map_err(|err| format!("Failed to parse history: {err}"))
+}
+
+fn save_history(app: &AppHandle, records: &[TranscriptRecord]) -> Result<(), String> {
+    let raw = serde_json::to_string_pretty(records)
+        .map_err(|err| format!("Failed to encode history: {err}"))?;
+    fs::write(history_path(app)?, raw).map_err(|err| format!("Failed to write history: {err}"))
+}
+
+fn append_history(app: &AppHandle, record: TranscriptRecord) -> Result<(), String> {
+    let mut records = load_history(app)?;
+    records.insert(0, record);
+    records.truncate(250);
+    save_history(app, &records)
 }
 
 fn list_input_devices_internal() -> Result<Vec<String>, String> {
@@ -213,6 +371,27 @@ fn next_wav_path(app: &AppHandle) -> Result<PathBuf, String> {
 
     cache_dir.push(format!("dictation-{ts}.wav"));
     Ok(cache_dir)
+}
+
+fn cleanup_stale_recordings(app: &AppHandle) {
+    let Ok(cache_dir) = app.path().app_cache_dir() else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(cache_dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_stale_recording = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.starts_with("dictation-") && name.ends_with(".wav"))
+            .unwrap_or(false);
+        if is_stale_recording {
+            let _ = fs::remove_file(path);
+        }
+    }
 }
 
 fn write_i16_samples(
@@ -369,6 +548,7 @@ fn start_recorder(app: &AppHandle, settings: &AppSettings) -> Result<RecorderSes
         stream,
         writer,
         path: wav_path,
+        started_at: Instant::now(),
     })
 }
 
@@ -376,13 +556,13 @@ fn resolve_transcriber_script(app: &AppHandle) -> Result<PathBuf, String> {
     let mut candidates = Vec::new();
 
     if let Ok(resource_dir) = app.path().resource_dir() {
-        candidates.push(resource_dir.join("python").join("qwen_asr_transcribe.py"));
+        candidates.push(resource_dir.join("python").join("transcription_engine.py"));
     }
 
     candidates.push(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("python")
-            .join("qwen_asr_transcribe.py"),
+            .join("transcription_engine.py"),
     );
 
     if let Ok(current_dir) = std::env::current_dir() {
@@ -390,14 +570,14 @@ fn resolve_transcriber_script(app: &AppHandle) -> Result<PathBuf, String> {
             current_dir
                 .join("src-tauri")
                 .join("python")
-                .join("qwen_asr_transcribe.py"),
+                .join("transcription_engine.py"),
         );
     }
 
     candidates
         .into_iter()
         .find(|path| path.exists())
-        .ok_or_else(|| "Could not locate qwen_asr_transcribe.py".to_string())
+        .ok_or_else(|| "Could not locate transcription_engine.py".to_string())
 }
 
 fn command_error(prefix: &str, stderr: &[u8]) -> String {
@@ -409,39 +589,207 @@ fn command_error(prefix: &str, stderr: &[u8]) -> String {
     }
 }
 
-fn configure_child_process(command: &mut Command) {
+fn configure_child_process(_command: &mut Command) {
     #[cfg(windows)]
     {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
+        _command.creation_flags(CREATE_NO_WINDOW);
     }
 }
 
+fn python_version(command_name: &str) -> Result<(u32, u32, u32), String> {
+    let (program, args) = command_program_and_args(command_name);
+    let mut command = Command::new(program);
+    command.args(args);
+    command.args([
+        "-c",
+        "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')",
+    ]);
+    configure_child_process(&mut command);
+
+    let output = command
+        .output()
+        .map_err(|err| format!("Python command '{command_name}' failed to start: {err}"))?;
+
+    if !output.status.success() {
+        return Err(command_error(
+            &format!("Python command '{command_name}' is not usable"),
+            &output.stderr,
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let version_text = stdout.trim();
+    let mut parts = version_text
+        .split('.')
+        .filter_map(|part| part.parse::<u32>().ok());
+
+    let major = parts
+        .next()
+        .ok_or_else(|| format!("Could not parse Python version from '{version_text}'"))?;
+    let minor = parts
+        .next()
+        .ok_or_else(|| format!("Could not parse Python version from '{version_text}'"))?;
+    let patch = parts.next().unwrap_or(0);
+
+    Ok((major, minor, patch))
+}
+
+fn supports_asr_packages(version: (u32, u32, u32)) -> bool {
+    version.0 == 3 && (10..=13).contains(&version.1)
+}
+
+fn resolve_base_python_command(settings: &AppSettings) -> Result<String, String> {
+    let configured = settings.python_command.trim();
+    if configured.is_empty() {
+        return Err("Python command cannot be empty".to_string());
+    }
+
+    let generic_python = configured == "python" || configured == "python3";
+    let candidates: Vec<String> = if generic_python {
+        #[cfg(windows)]
+        {
+            vec![
+                "py -3.12".to_string(),
+                "py -3.11".to_string(),
+                configured.to_string(),
+            ]
+        }
+        #[cfg(not(windows))]
+        {
+            vec![
+                "python3.12".to_string(),
+                "python3.11".to_string(),
+                "python3.10".to_string(),
+                configured.to_string(),
+            ]
+        }
+    } else {
+        vec![configured.to_string()]
+    };
+
+    let mut errors = Vec::new();
+    for candidate in candidates {
+        match python_version(&candidate) {
+            Ok(version) if supports_asr_packages(version) => return Ok(candidate),
+            Ok(version) => errors.push(format!(
+                "{candidate} is Python {}.{}.{}; ASR dependencies need Python 3.10-3.13",
+                version.0, version.1, version.2
+            )),
+            Err(err) => errors.push(err),
+        }
+    }
+
+    Err(format!(
+        "No supported Python runtime found. Install Python 3.11 or 3.12, or set Python Command explicitly. Checked: {}",
+        errors.join("; ")
+    ))
+}
+
+fn command_program_and_args(command_text: &str) -> (OsString, Vec<OsString>) {
+    let mut parts = command_text.split_whitespace();
+    let program = parts.next().unwrap_or(command_text).into();
+    let args = parts.map(OsString::from).collect();
+    (program, args)
+}
+
+fn python_command(settings: &AppSettings) -> Result<Command, String> {
+    let resolved = resolve_base_python_command(settings)?;
+    let (program, args) = command_program_and_args(&resolved);
+    let mut command = Command::new(program);
+    command.args(args);
+    Ok(command)
+}
+
+fn asr_venv_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(settings_path(app)?
+        .parent()
+        .ok_or_else(|| "Failed to resolve app data directory".to_string())?
+        .join("asr-venv"))
+}
+
+fn asr_venv_python(app: &AppHandle) -> Result<PathBuf, String> {
+    let mut path = asr_venv_dir(app)?;
+
+    #[cfg(windows)]
+    {
+        path.push("Scripts");
+        path.push("python.exe");
+    }
+
+    #[cfg(not(windows))]
+    {
+        path.push("bin");
+        path.push("python");
+    }
+
+    Ok(path)
+}
+
+fn venv_python_command(app: &AppHandle) -> Result<Command, String> {
+    let python_path = asr_venv_python(app)?;
+    if !python_path.exists() {
+        return Err("ASR environment is not set up yet. Open Runtime and run setup.".to_string());
+    }
+
+    Ok(Command::new(python_path))
+}
+
 fn ensure_python_binary(settings: &AppSettings) -> Result<(), String> {
-    let mut command = Command::new(&settings.python_command);
+    let resolved = resolve_base_python_command(settings)?;
+    let mut command = python_command(settings)?;
     command.arg("--version");
     configure_child_process(&mut command);
 
-    let output = command.output().map_err(|err| {
-        format!(
-            "Python command '{}' failed to start: {err}",
-            settings.python_command
-        )
-    })?;
+    let output = command
+        .output()
+        .map_err(|err| format!("Python command '{resolved}' failed to start: {err}",))?;
 
     if output.status.success() {
         Ok(())
     } else {
         Err(command_error(
-            &format!("Python command '{}' is not usable", settings.python_command),
+            &format!("Python command '{resolved}' is not usable"),
             &output.stderr,
         ))
     }
 }
 
-fn ensure_python_dependencies(settings: &AppSettings) -> Result<(), String> {
-    let mut check_command = Command::new(&settings.python_command);
-    check_command.args(["-c", "import qwen_asr, torch, torchvision"]);
+fn ensure_asr_venv(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
+    let venv_python = asr_venv_python(app)?;
+    if venv_python.exists() {
+        return Ok(());
+    }
+
+    let venv_dir = asr_venv_dir(app)?;
+    if let Some(parent) = venv_dir.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("Failed to create app data directory: {err}"))?;
+    }
+
+    let mut command = python_command(settings)?;
+    command.args(["-m", "venv"]);
+    command.arg(&venv_dir);
+    configure_child_process(&mut command);
+
+    let output = command
+        .output()
+        .map_err(|err| format!("Failed launching Python venv creation: {err}"))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(command_error(
+            "Failed to create ASR Python environment",
+            &output.stderr,
+        ))
+    }
+}
+
+fn ensure_python_dependencies(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
+    let mut check_command = venv_python_command(app)?;
+    let dependency_check = dependency_check_script(settings.model);
+    check_command.args(["-c", dependency_check]);
     configure_child_process(&mut check_command);
 
     let check = check_command.output().map_err(|err| {
@@ -455,16 +803,25 @@ fn ensure_python_dependencies(settings: &AppSettings) -> Result<(), String> {
         return Ok(());
     }
 
-    let mut install_command = Command::new(&settings.python_command);
-    install_command.args([
-        "-m",
-        "pip",
-        "install",
-        "-U",
-        "qwen-asr",
-        "torch",
-        "torchvision",
-    ]);
+    let packages = settings.model.required_python_packages();
+    let mut install_command = venv_python_command(app)?;
+    install_command.args(["-m", "pip", "install", "--upgrade", "pip"]);
+    configure_child_process(&mut install_command);
+
+    let pip = install_command
+        .output()
+        .map_err(|err| format!("Failed launching pip upgrade: {err}"))?;
+
+    if !pip.status.success() {
+        return Err(command_error(
+            "Failed to upgrade ASR environment pip",
+            &pip.stderr,
+        ));
+    }
+
+    let mut install_command = venv_python_command(app)?;
+    install_command.args(["-m", "pip", "install", "-U"]);
+    install_command.args(&packages);
     configure_child_process(&mut install_command);
 
     let install = install_command
@@ -474,17 +831,40 @@ fn ensure_python_dependencies(settings: &AppSettings) -> Result<(), String> {
     if install.status.success() {
         Ok(())
     } else {
-        Err(command_error(
-            "Auto-install failed (pip install -U qwen-asr torch torchvision)",
-            &install.stderr,
-        ))
+        let install_hint = format!(
+            "Auto-install failed (pip install -U {})",
+            packages.join(" ")
+        );
+        Err(command_error(&install_hint, &install.stderr))
     }
+}
+
+fn dependency_check_script(model: ModelOption) -> &'static str {
+    match model {
+        ModelOption::MossTranscribeDiarize => "import torch, transformers, soundfile, librosa, moss_transcribe_diarize",
+        ModelOption::CohereTranscribe => "import torch, transformers, soundfile, librosa; assert hasattr(transformers, 'CohereAsrForConditionalGeneration')",
+        ModelOption::Nemotron35Streaming => "import torch, transformers, soundfile, librosa",
+    }
+}
+
+fn is_asr_environment_ready(app: &AppHandle, settings: &AppSettings) -> bool {
+    let Ok(mut check_command) = venv_python_command(app) else {
+        return false;
+    };
+
+    check_command.args(["-c", dependency_check_script(settings.model)]);
+    configure_child_process(&mut check_command);
+
+    check_command
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
 }
 
 fn warmup_selected_model(settings: &AppSettings, app: &AppHandle) -> Result<(), String> {
     let script_path = resolve_transcriber_script(app)?;
 
-    let mut command = Command::new(&settings.python_command);
+    let mut command = venv_python_command(app)?;
     command
         .arg(script_path)
         .arg("--warmup")
@@ -527,9 +907,16 @@ fn bootstrap_asr_runtime(
     emit_status(
         app,
         DictationPhase::Bootstrapping,
-        Some("Ensuring ASR dependencies are installed...".to_string()),
+        Some("Creating app ASR environment...".to_string()),
     );
-    ensure_python_dependencies(&settings)?;
+    ensure_asr_venv(app, &settings)?;
+
+    emit_status(
+        app,
+        DictationPhase::Bootstrapping,
+        Some("Installing ASR dependencies into app environment...".to_string()),
+    );
+    ensure_python_dependencies(app, &settings)?;
 
     emit_status(
         app,
@@ -538,28 +925,73 @@ fn bootstrap_asr_runtime(
     );
     warmup_selected_model(&settings, app)?;
 
+    let selection_is_current = state
+        .settings
+        .lock()
+        .map(|current| {
+            current.model == settings.model && current.python_command == settings.python_command
+        })
+        .map_err(|_| "Failed to verify selected model after setup".to_string())?;
+
+    if !selection_is_current {
+        let _ = set_runtime_ready(state, false);
+        emit_status(
+            app,
+            DictationPhase::Idle,
+            Some(
+                "Setup finished for the previous selection. Run setup for the current model."
+                    .to_string(),
+            ),
+        );
+        return Ok(());
+    }
+
     let _ = set_runtime_ready(state, true);
     emit_status(app, DictationPhase::Idle, Some("Ready".to_string()));
     Ok(())
 }
 
-fn spawn_bootstrap_task(app: AppHandle, state: Arc<AppRuntime>, settings: AppSettings) {
+fn spawn_bootstrap_task(
+    app: AppHandle,
+    state: Arc<AppRuntime>,
+    settings: AppSettings,
+) -> Result<(), String> {
+    if state.setup_in_progress.swap(true, Ordering::SeqCst) {
+        return Err("ASR setup is already running.".to_string());
+    }
+
     thread::spawn(move || {
         if let Err(err) = bootstrap_asr_runtime(&app, &state, settings) {
             let _ = set_runtime_ready(&state, false);
             emit_status(&app, DictationPhase::Error, Some(err));
         }
+        state.setup_in_progress.store(false, Ordering::SeqCst);
     });
+    Ok(())
+}
+
+fn initialize_runtime_readiness(app: &AppHandle, state: &Arc<AppRuntime>, settings: &AppSettings) {
+    if is_asr_environment_ready(app, settings) {
+        let _ = set_runtime_ready(state, true);
+        emit_status(app, DictationPhase::Idle, Some("Ready".to_string()));
+    } else {
+        let _ = set_runtime_ready(state, false);
+        emit_status(
+            app,
+            DictationPhase::Idle,
+            Some("ASR environment setup required".to_string()),
+        );
+    }
 }
 
 fn transcribe_audio(
     settings: &AppSettings,
     app: &AppHandle,
     audio_path: &Path,
-) -> Result<String, String> {
+) -> Result<TranscriptionResult, String> {
     let script_path = resolve_transcriber_script(app)?;
 
-    let mut command = Command::new(&settings.python_command);
+    let mut command = venv_python_command(app)?;
     command
         .arg(script_path)
         .arg("--audio")
@@ -567,59 +999,96 @@ fn transcribe_audio(
         .arg("--model")
         .arg(settings.model.as_hf_id())
         .arg("--language")
-        .arg(&settings.language);
+        .arg(&settings.language)
+        .arg("--output-style")
+        .arg(match settings.output_style {
+            OutputStyle::Smart => "smart",
+            OutputStyle::Plain => "plain",
+            OutputStyle::SpeakerAware => "speaker-aware",
+        })
+        .arg("--vocabulary-json")
+        .arg(
+            serde_json::to_string(&settings.custom_words)
+                .map_err(|err| format!("Failed to encode vocabulary: {err}"))?,
+        );
+    if settings.punctuation {
+        command.arg("--punctuation");
+    }
     configure_child_process(&mut command);
 
     let output = command.output().map_err(|err| {
         format!(
             "Failed to launch Python process '{}': {err}",
-            settings.python_command
+            asr_venv_python(app)
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|_| settings.python_command.clone())
         )
     })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("ASR sidecar failed: {stderr}"));
+        let _ = fs::write(asr_error_path(app)?, stderr.as_bytes());
+        return Err(format!(
+            "ASR sidecar failed: {}",
+            concise_asr_error(&stderr)
+        ));
     }
 
     let stdout = String::from_utf8(output.stdout)
         .map_err(|err| format!("Invalid UTF-8 from sidecar: {err}"))?;
-    let transcript = stdout.trim().to_string();
+    let transcript: TranscriptionResult = serde_json::from_str(stdout.trim())
+        .map_err(|err| format!("Invalid response from ASR sidecar: {err}"))?;
 
-    if transcript.is_empty() {
+    if transcript.text.trim().is_empty() {
         return Err("ASR returned empty transcript".to_string());
     }
 
     Ok(transcript)
 }
 
-fn inject_text_at_cursor(transcript: &str) -> Result<(), String> {
+fn copy_text_to_clipboard(state: &Arc<AppRuntime>, transcript: &str) -> Result<(), String> {
     if transcript.is_empty() {
         return Ok(());
     }
 
-    let mut clipboard = Clipboard::new().map_err(|err| format!("Clipboard init failed: {err}"))?;
-    let previous_clipboard = clipboard.get_text().ok();
+    let mut clipboard_guard = state
+        .clipboard
+        .lock()
+        .map_err(|_| "Failed to lock clipboard state".to_string())?;
+
+    if clipboard_guard.is_none() {
+        *clipboard_guard = Some(
+            Clipboard::new().map_err(|err| format!("Clipboard initialization failed: {err}"))?,
+        );
+    }
+
+    let clipboard = clipboard_guard
+        .as_mut()
+        .ok_or_else(|| "Clipboard is unavailable".to_string())?;
     clipboard
         .set_text(transcript.to_string())
-        .map_err(|err| format!("Failed to write transcript to clipboard: {err}"))?;
+        .map_err(|err| format!("Failed to write transcript to clipboard: {err}"))
+}
+
+fn paste_clipboard_at_cursor() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let modifier = Key::Meta;
+
+    #[cfg(not(target_os = "macos"))]
+    let modifier = Key::Control;
+
+    // Give X11/Wayland clipboard ownership time to settle before requesting a
+    // paste in the previously focused application.
+    thread::sleep(Duration::from_millis(90));
 
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|err| format!("Input automation init failed: {err}"))?;
 
     enigo
-        .key(Key::Control, Press)
+        .key(modifier, Press)
         .and_then(|_| enigo.key(Key::Unicode('v'), Click))
-        .and_then(|_| enigo.key(Key::Control, Release))
-        .map_err(|err| format!("Failed to paste transcript: {err}"))?;
-
-    thread::sleep(Duration::from_millis(140));
-
-    if let Some(previous) = previous_clipboard {
-        let _ = clipboard.set_text(previous);
-    }
-
-    Ok(())
+        .and_then(|_| enigo.key(modifier, Release))
+        .map_err(|err| format!("Auto-paste failed: {err}"))
 }
 
 fn show_settings_window(app: &AppHandle) -> Result<(), String> {
@@ -672,11 +1141,20 @@ fn place_overlay_bottom_center(app: &AppHandle) {
         return;
     };
 
-    let monitor = window
-        .current_monitor()
-        .ok()
-        .flatten()
-        .or_else(|| window.primary_monitor().ok().flatten());
+    // Resolve from the center of the main window instead of the hidden overlay.
+    // `current_monitor` alone is unreliable when a window crosses display edges.
+    let monitor = app
+        .get_webview_window("main")
+        .and_then(|main| {
+            let position = main.outer_position().ok()?;
+            let size = main.outer_size().ok()?;
+            let center_x = position.x as f64 + size.width as f64 / 2.0;
+            let center_y = position.y as f64 + size.height as f64 / 2.0;
+            main.monitor_from_point(center_x, center_y).ok().flatten()
+        })
+        .or_else(|| window.current_monitor().ok().flatten());
+
+    let monitor = monitor.or_else(|| window.primary_monitor().ok().flatten());
 
     let Some(monitor) = monitor else {
         return;
@@ -689,10 +1167,14 @@ fn place_overlay_bottom_center(app: &AppHandle) {
     };
 
     let x = work_area.position.x + ((work_area.size.width as i32 - overlay_size.width as i32) / 2);
-    let y = work_area.position.y + ((work_area.size.height as f32 * 0.90) as i32)
-        - (overlay_size.height as i32 / 2);
+    let bottom_margin = (OVERLAY_BOTTOM_GAP_LOGICAL_PX * monitor.scale_factor()).round() as i32;
+    let y = work_area.position.y + work_area.size.height as i32
+        - overlay_size.height as i32
+        - bottom_margin;
 
-    let _ = window.set_position(Position::Physical(PhysicalPosition::new(x, y)));
+    if let Err(error) = window.set_position(Position::Physical(PhysicalPosition::new(x, y))) {
+        eprintln!("Could not place dictation overlay at bottom center: {error}");
+    }
 }
 
 fn emit_status(app: &AppHandle, phase: DictationPhase, message: Option<String>) {
@@ -711,8 +1193,23 @@ fn emit_status(app: &AppHandle, phase: DictationPhase, message: Option<String>) 
                 let _ = overlay.hide();
             }
             _ => {
-                place_overlay_bottom_center(app);
+                // Map the native window first. Several Linux window managers apply
+                // their default centered placement when a hidden window is shown,
+                // which would otherwise overwrite our bottom-center coordinates.
                 let _ = overlay.show();
+                let _ = overlay.set_always_on_top(true);
+                place_overlay_bottom_center(app);
+
+                // Reapply once after the compositor has finished mapping the
+                // window. This is especially important under KDE/XWayland.
+                let app_handle = app.clone();
+                thread::spawn(move || {
+                    thread::sleep(Duration::from_millis(60));
+                    if let Some(overlay) = app_handle.get_webview_window(OVERLAY_LABEL) {
+                        let _ = overlay.set_always_on_top(true);
+                        place_overlay_bottom_center(&app_handle);
+                    }
+                });
             }
         }
     }
@@ -819,14 +1316,31 @@ fn worker_stop(app: &AppHandle, state: &Arc<AppRuntime>, active: &mut Option<Rec
         return;
     };
 
-    let audio_path = match session.finalize() {
-        Ok(path) => path,
+    let (audio_path, duration_ms) = match session.finalize() {
+        Ok(result) => result,
         Err(err) => {
             let _ = set_phase(state, RuntimePhase::Idle);
             emit_status(app, DictationPhase::Error, Some(err));
             return;
         }
     };
+
+    let captured_bytes = fs::metadata(&audio_path)
+        .map(|metadata| metadata.len())
+        .unwrap_or_default();
+    if duration_ms < MIN_RECORDING_DURATION_MS || captured_bytes <= 44 {
+        let _ = fs::remove_file(&audio_path);
+        let _ = set_phase(state, RuntimePhase::Idle);
+        emit_status(
+            app,
+            DictationPhase::Error,
+            Some(
+                "Recording was too short. Hold the shortcut while speaking, then release."
+                    .to_string(),
+            ),
+        );
+        return;
+    }
 
     let _ = set_phase(state, RuntimePhase::Transcribing);
     emit_status(
@@ -850,26 +1364,55 @@ fn worker_stop(app: &AppHandle, state: &Arc<AppRuntime>, active: &mut Option<Rec
 
     let transcript = transcribe_audio(&settings, app, &audio_path);
 
-    match transcript {
-        Ok(text) => {
-            let _ = app.emit(TRANSCRIPT_EVENT, text.clone());
+    let completion_message = match transcript {
+        Ok(result) => {
+            let created_at = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let record = TranscriptRecord {
+                id: format!("capture-{created_at}"),
+                created_at,
+                duration_ms,
+                text: result.text.clone(),
+                raw_text: result.raw_text,
+                model: settings.model,
+                language: result.language,
+                segments: result.segments,
+            };
+            if settings.keep_history {
+                let _ = append_history(app, record.clone());
+            }
+            let _ = app.emit(TRANSCRIPT_EVENT, record.clone());
 
             if let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) {
                 let _ = overlay.hide();
             }
 
-            if let Err(err) = inject_text_at_cursor(&text) {
-                emit_status(app, DictationPhase::Error, Some(err));
+            match copy_text_to_clipboard(state, &record.text) {
+                Ok(()) if settings.auto_paste => match paste_clipboard_at_cursor() {
+                    Ok(()) => Some("Copied and pasted transcript".to_string()),
+                    Err(err) => Some(format!(
+                        "Transcript copied — paste manually with Ctrl+V ({err})"
+                    )),
+                },
+                Ok(()) => Some("Transcript copied to clipboard".to_string()),
+                Err(err) => Some(format!(
+                    "Transcript saved, but clipboard copy failed: {err}"
+                )),
             }
         }
         Err(err) => {
+            let _ = fs::remove_file(&audio_path);
+            let _ = set_phase(state, RuntimePhase::Idle);
             emit_status(app, DictationPhase::Error, Some(err));
+            return;
         }
-    }
+    };
 
     let _ = fs::remove_file(&audio_path);
     let _ = set_phase(state, RuntimePhase::Idle);
-    emit_status(app, DictationPhase::Idle, None);
+    emit_status(app, DictationPhase::Idle, completion_message);
 }
 
 fn run_worker_loop(app: AppHandle, state: Arc<AppRuntime>, rx: Receiver<WorkerCommand>) {
@@ -989,11 +1532,6 @@ fn normalize_shortcut_key_token(token: &str) -> Result<String, String> {
 }
 
 fn normalize_shortcut_text(shortcut_text: &str) -> Result<String, String> {
-    let parsed_direct: Result<Shortcut, _> = shortcut_text.trim().parse();
-    if let Ok(shortcut) = parsed_direct {
-        return Ok(shortcut.into_string());
-    }
-
     let mut tokens: Vec<String> = shortcut_text
         .split('+')
         .map(|token| token.trim())
@@ -1031,6 +1569,14 @@ fn normalize_shortcut_text(shortcut_text: &str) -> Result<String, String> {
         }
     }
 
+    modifiers.sort_by_key(|modifier| match modifier.as_str() {
+        "Ctrl" => 0,
+        "Shift" => 1,
+        "Alt" => 2,
+        "Super" => 3,
+        _ => 4,
+    });
+
     let key = normalize_shortcut_key_token(&key_token)?;
     let normalized = if modifiers.is_empty() {
         key
@@ -1038,10 +1584,7 @@ fn normalize_shortcut_text(shortcut_text: &str) -> Result<String, String> {
         format!("{}+{key}", modifiers.join("+"))
     };
 
-    normalized
-        .parse::<Shortcut>()
-        .map(|shortcut| shortcut.into_string())
-        .map_err(|error| {
+    normalized.parse::<Shortcut>().map(|_| normalized).map_err(|error| {
             format!(
                 "Invalid shortcut '{shortcut_text}'. Try keys like F8, Space, Ctrl+Shift+Space: {error}"
             )
@@ -1074,6 +1617,9 @@ fn register_shortcut(
             match settings.recording_mode {
                 RecordingMode::Hold => {
                     if event.state == ShortcutState::Pressed {
+                        // Some desktops emit repeated Pressed events while the
+                        // shortcut remains held. Start is idempotent, so those
+                        // repeats cannot accidentally stop a long dictation.
                         let _ = start_dictation_internal(&state_for_handler);
                     }
 
@@ -1149,8 +1695,60 @@ fn get_settings(state: State<'_, Arc<AppRuntime>>) -> Result<AppSettings, String
 }
 
 #[tauri::command]
+fn get_runtime_status(state: State<'_, Arc<AppRuntime>>) -> Result<DictationStatus, String> {
+    let phase = current_phase(state.inner())?;
+    let ready = is_runtime_ready(state.inner())?;
+    let setup_in_progress = state.setup_in_progress.load(Ordering::SeqCst);
+
+    Ok(match phase {
+        RuntimePhase::Listening => DictationStatus {
+            phase: DictationPhase::Listening,
+            message: Some("Listening...".to_string()),
+        },
+        RuntimePhase::Transcribing => DictationStatus {
+            phase: DictationPhase::Transcribing,
+            message: Some("Transcribing speech...".to_string()),
+        },
+        RuntimePhase::Idle if setup_in_progress => DictationStatus {
+            phase: DictationPhase::Bootstrapping,
+            message: Some("Preparing the selected model...".to_string()),
+        },
+        RuntimePhase::Idle => DictationStatus {
+            phase: DictationPhase::Idle,
+            message: Some(if ready {
+                "Ready".to_string()
+            } else {
+                "ASR environment setup required".to_string()
+            }),
+        },
+    })
+}
+
+#[tauri::command]
 fn list_input_devices() -> Result<Vec<String>, String> {
     list_input_devices_internal()
+}
+
+#[tauri::command]
+fn get_history(app: AppHandle) -> Result<Vec<TranscriptRecord>, String> {
+    load_history(&app)
+}
+
+#[tauri::command]
+fn delete_history_item(app: AppHandle, id: String) -> Result<(), String> {
+    let mut history = load_history(&app)?;
+    history.retain(|item| item.id != id);
+    save_history(&app, &history)
+}
+
+#[tauri::command]
+fn clear_history(app: AppHandle) -> Result<(), String> {
+    save_history(&app, &[])
+}
+
+#[tauri::command]
+fn copy_text(state: State<'_, Arc<AppRuntime>>, text: String) -> Result<(), String> {
+    copy_text_to_clipboard(state.inner(), &text)
 }
 
 #[tauri::command]
@@ -1164,7 +1762,16 @@ fn update_settings(
     state: State<'_, Arc<AppRuntime>>,
     mut settings: AppSettings,
 ) -> Result<AppSettings, String> {
-    let normalized_shortcut = register_shortcut(&app, state.inner(), &settings.shortcut)?;
+    let normalized_shortcut = normalize_shortcut_text(&settings.shortcut)?;
+    let registered_shortcut = state
+        .registered_shortcut
+        .lock()
+        .map_err(|_| "Failed to lock shortcut state".to_string())?
+        .clone();
+
+    if registered_shortcut != normalized_shortcut {
+        register_shortcut(&app, state.inner(), &normalized_shortcut)?;
+    }
     settings.shortcut = normalized_shortcut;
     save_settings(&app, &settings)?;
 
@@ -1173,19 +1780,67 @@ fn update_settings(
         .lock()
         .map_err(|_| "Failed to lock settings".to_string())?;
 
-    let should_rebootstrap = current.python_command != settings.python_command
-        || current.model != settings.model
-        || current.language != settings.language;
+    let should_mark_not_ready =
+        current.python_command != settings.python_command || current.model != settings.model;
 
     *current = settings.clone();
     drop(current);
 
-    if should_rebootstrap {
+    if should_mark_not_ready {
         let _ = set_runtime_ready(state.inner(), false);
-        spawn_bootstrap_task(app.clone(), state.inner().clone(), settings.clone());
+        emit_status(
+            &app,
+            DictationPhase::Idle,
+            Some("Settings saved. Run ASR setup to apply runtime changes.".to_string()),
+        );
     }
 
     Ok(settings)
+}
+
+#[tauri::command]
+fn setup_asr_environment(app: AppHandle, state: State<'_, Arc<AppRuntime>>) -> Result<(), String> {
+    let settings = state
+        .settings
+        .lock()
+        .map_err(|_| "Failed to lock settings".to_string())?
+        .clone();
+
+    let _ = set_runtime_ready(state.inner(), false);
+    spawn_bootstrap_task(app, state.inner().clone(), settings)
+}
+
+#[tauri::command]
+fn reset_asr_environment(app: AppHandle, state: State<'_, Arc<AppRuntime>>) -> Result<(), String> {
+    if current_phase(state.inner())? != RuntimePhase::Idle {
+        return Err("Stop dictation before removing the Python environment.".to_string());
+    }
+
+    if state.setup_in_progress.load(Ordering::SeqCst) {
+        return Err(
+            "ASR setup is currently running. Wait for it to finish before removing the environment."
+                .to_string(),
+        );
+    }
+
+    let _bootstrap_guard = state.bootstrap_lock.try_lock().map_err(|_| {
+        "ASR setup is currently running. Wait for it to finish before removing the environment."
+            .to_string()
+    })?;
+
+    let environment_dir = asr_venv_dir(&app)?;
+    if environment_dir.exists() {
+        fs::remove_dir_all(&environment_dir)
+            .map_err(|err| format!("Failed to remove Python environment: {err}"))?;
+    }
+
+    set_runtime_ready(state.inner(), false)?;
+    emit_status(
+        &app,
+        DictationPhase::Idle,
+        Some("Python environment removed. Select a model and run setup again.".to_string()),
+    );
+    Ok(())
 }
 
 #[tauri::command]
@@ -1215,10 +1870,18 @@ fn hide_settings(app: AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("GDK_BACKEND").is_none() {
+        // Wayland compositors commonly reject app-controlled window coordinates
+        // and topmost requests. XWayland preserves the intended floating overlay.
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
+            cleanup_stale_recordings(app.handle());
             let initial_settings = load_settings(app.handle());
             let (worker_tx, worker_rx) = mpsc::channel::<WorkerCommand>();
 
@@ -1226,6 +1889,8 @@ pub fn run() {
                 settings: Mutex::new(initial_settings.clone()),
                 phase: Mutex::new(RuntimePhase::Idle),
                 ready: Mutex::new(false),
+                clipboard: Mutex::new(Clipboard::new().ok()),
+                setup_in_progress: AtomicBool::new(false),
                 bootstrap_lock: Mutex::new(()),
                 registered_shortcut: Mutex::new(initial_settings.shortcut.clone()),
                 worker_tx,
@@ -1264,20 +1929,27 @@ pub fn run() {
                 });
             }
 
-            let bootstrap_settings = runtime
+            let startup_settings = runtime
                 .settings
                 .lock()
                 .map_err(|_| "Failed to lock settings".to_string())?
                 .clone();
-            spawn_bootstrap_task(app.handle().clone(), runtime.clone(), bootstrap_settings);
+            initialize_runtime_readiness(app.handle(), &runtime, &startup_settings);
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
+            get_runtime_status,
             list_input_devices,
+            get_history,
+            delete_history_item,
+            clear_history,
+            copy_text,
             normalize_shortcut,
             update_settings,
+            setup_asr_environment,
+            reset_asr_environment,
             start_dictation,
             stop_dictation,
             toggle_dictation,
@@ -1286,4 +1958,30 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{concise_asr_error, normalize_shortcut_text};
+
+    #[test]
+    fn sidecar_errors_skip_hugging_face_noise() {
+        let stderr = "Warning: You are sending unauthenticated requests to the HF Hub.\n\
+                      Loading weights: 100%\n\
+                      Transcription failed: Audio must contain at least one sample";
+
+        assert_eq!(
+            concise_asr_error(stderr),
+            "Transcription failed: Audio must contain at least one sample"
+        );
+    }
+
+    #[test]
+    fn shortcut_input_is_normalized_consistently() {
+        assert_eq!(
+            normalize_shortcut_text("shift + control + space").unwrap(),
+            "Ctrl+Shift+Space"
+        );
+        assert!(normalize_shortcut_text("").is_err());
+    }
 }

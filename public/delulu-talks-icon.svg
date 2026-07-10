@@ -1,32 +1,49 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
-  <title>Delulu Talks - Full Blue Gradient Logo</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Delulu Talks</title>
+  <desc id="desc">An orbital cyan microphone inside a futuristic blue speech core.</desc>
   <defs>
-    <linearGradient id="blueDoodleGrad" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#00E5FF" />
-      <stop offset="100%" stop-color="#2962FF" />
+    <linearGradient id="core" x1="42" y1="32" x2="211" y2="226" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#102E56"/>
+      <stop offset=".52" stop-color="#07172D"/>
+      <stop offset="1" stop-color="#020A16"/>
     </linearGradient>
-    
-    <clipPath id="mic-hole">
-      <path d="M0,0 H256 V256 H0 Z M120,60 h16 a40,40 0 0 1 40,40 v60 a40,40 0 0 1 -40,40 h-16 a40,40 0 0 1 -40,-40 v-60 a40,40 0 0 1 40,-40 Z" fill-rule="evenodd" clip-rule="evenodd" />
-    </clipPath>
+    <linearGradient id="energy" x1="38" y1="38" x2="218" y2="218" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6CF6FF"/>
+      <stop offset=".48" stop-color="#00C8FF"/>
+      <stop offset="1" stop-color="#3971FF"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop stop-color="#00D8FF" stop-opacity=".42"/>
+      <stop offset="1" stop-color="#00D8FF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
   </defs>
 
-  <g clip-path="url(#mic-hole)" fill="none" stroke="url(#blueDoodleGrad)" stroke-width="6" stroke-linecap="round">
-    <path d="M 128 20 C 190 20 230 60 230 120 C 230 180 190 220 128 220 C 66 220 26 180 26 120 C 26 60 66 20 128 20 Z" transform="rotate(5 128 128) translate(4 4)" />
-    <path d="M 128 20 C 190 20 230 60 230 120 C 230 180 190 220 128 220 C 66 220 26 180 26 120 C 26 60 66 20 128 20 Z" transform="rotate(-8 128 128) translate(-6 -2)" />
-    <path d="M 128 20 C 190 20 230 60 230 120 C 230 180 190 220 128 220 C 66 220 26 180 26 120 C 26 60 66 20 128 20 Z" transform="scale(0.95) translate(6 12)" />
-    
-    <path d="M 60 190 Q 20 230 10 250 Q 40 210 80 205" stroke-width="10" />
-    <path d="M 50 195 Q 15 235 5 255" stroke-width="4" />
+  <circle cx="128" cy="126" r="112" fill="url(#glow)"/>
+  <path d="M128 14 214 62v99l-86 49-86-49V62z" fill="url(#core)" stroke="#163C68" stroke-width="5"/>
+  <path d="M128 25 204 68v86l-76 43-76-43V68z" fill="none" stroke="url(#energy)" stroke-width="2" stroke-dasharray="4 7" opacity=".72"/>
+
+  <g fill="none" stroke="url(#energy)" stroke-linecap="round">
+    <path d="M30 119a99 99 0 0 1 19-56" stroke-width="5"/>
+    <path d="M207 62a99 99 0 0 1 20 58" stroke-width="5"/>
+    <path d="M219 162a100 100 0 0 1-40 46" stroke-width="5"/>
+    <path d="M77 210a100 100 0 0 1-40-45" stroke-width="5"/>
   </g>
 
-  <g stroke="url(#blueDoodleGrad)" fill="none" transform="translate(0, -6)">
-    <rect x="110" y="74" width="36" height="56" rx="18" stroke-width="12" />
-    
-    <path d="M 88 110 A 40 40 0 0 0 168 110" stroke-width="12" stroke-linecap="round" />
-    
-    <line x1="128" y1="150" x2="128" y2="186" stroke-width="12" stroke-linecap="round" />
-    
-    <line x1="96" y1="186" x2="160" y2="186" stroke-width="12" stroke-linecap="round" />
+  <g filter="url(#softGlow)" stroke="url(#energy)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="103" y="69" width="50" height="72" rx="25" stroke-width="10"/>
+    <path d="M84 119v3a44 44 0 0 0 88 0v-3" stroke-width="9"/>
+    <path d="M128 166v22M105 188h46" stroke-width="9"/>
   </g>
+
+  <g fill="#7AF7FF" filter="url(#softGlow)">
+    <circle cx="41" cy="62" r="5"/>
+    <circle cx="216" cy="62" r="5"/>
+    <circle cx="227" cy="132" r="4"/>
+    <circle cx="29" cy="132" r="4"/>
+  </g>
+  <path d="M90 224h76l-15 18h-46z" fill="url(#energy)" opacity=".9"/>
 </svg>
