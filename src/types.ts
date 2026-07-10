@@ -2,6 +2,7 @@ export type Page = "home" | "models" | "vocabulary" | "history" | "settings";
 export type RecordingMode = "hold" | "toggle";
 export type ModelId = "parakeetTdt06bV3" | "mossTranscribeDiarize" | "cohereTranscribe" | "nemotron35Streaming";
 export type OutputStyle = "smart" | "plain" | "speakerAware";
+export type PasteMethod = "ctrlV" | "ctrlShiftV";
 export type DictationPhase = "idle" | "bootstrapping" | "listening" | "transcribing" | "error";
 
 export type CustomWord = {
@@ -21,6 +22,7 @@ export type AppSettings = {
   inputDevice: string;
   outputStyle: OutputStyle;
   autoPaste: boolean;
+  pasteMethod: PasteMethod;
   keepHistory: boolean;
   punctuation: boolean;
   customWords: CustomWord[];

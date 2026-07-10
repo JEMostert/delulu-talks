@@ -114,6 +114,22 @@ enum OutputStyle {
     SpeakerAware,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum PasteMethod {
+    CtrlV,
+    CtrlShiftV,
+}
+
+impl PasteMethod {
+    fn shortcut_label(self) -> &'static str {
+        match self {
+            Self::CtrlV => "Ctrl+V",
+            Self::CtrlShiftV => "Ctrl+Shift+V",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct CustomWord {
@@ -147,6 +163,7 @@ struct AppSettings {
     input_device: String,
     output_style: OutputStyle,
     auto_paste: bool,
+    paste_method: PasteMethod,
     keep_history: bool,
     punctuation: bool,
     custom_words: Vec<CustomWord>,
@@ -163,6 +180,7 @@ impl Default for AppSettings {
             input_device: DEFAULT_INPUT_DEVICE.to_string(),
             output_style: OutputStyle::Smart,
             auto_paste: true,
+            paste_method: PasteMethod::CtrlV,
             keep_history: true,
             punctuation: true,
             custom_words: Vec::new(),
@@ -1306,7 +1324,7 @@ fn copy_text_to_clipboard(state: &Arc<AppRuntime>, transcript: &str) -> Result<(
         .map_err(|err| format!("Failed to write transcript to clipboard: {err}"))
 }
 
-fn paste_clipboard_at_cursor() -> Result<(), String> {
+fn paste_clipboard_at_cursor(method: PasteMethod) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let modifier = Key::Meta;
 
@@ -1322,9 +1340,20 @@ fn paste_clipboard_at_cursor() -> Result<(), String> {
 
     enigo
         .key(modifier, Press)
-        .and_then(|_| enigo.key(Key::Unicode('v'), Click))
-        .and_then(|_| enigo.key(modifier, Release))
-        .map_err(|err| format!("Auto-paste failed: {err}"))
+        .map_err(|err| format!("Auto-paste failed: {err}"))?;
+    if method == PasteMethod::CtrlShiftV {
+        if let Err(err) = enigo.key(Key::Shift, Press) {
+            let _ = enigo.key(modifier, Release);
+            return Err(format!("Auto-paste failed: {err}"));
+        }
+    }
+
+    let paste_result = enigo.key(Key::Unicode('v'), Click);
+    if method == PasteMethod::CtrlShiftV {
+        let _ = enigo.key(Key::Shift, Release);
+    }
+    let _ = enigo.key(modifier, Release);
+    paste_result.map_err(|err| format!("Auto-paste failed: {err}"))
 }
 
 fn show_settings_window(app: &AppHandle) -> Result<(), String> {
@@ -1626,12 +1655,15 @@ fn worker_stop(app: &AppHandle, state: &Arc<AppRuntime>, active: &mut Option<Rec
             }
 
             match copy_text_to_clipboard(state, &record.text) {
-                Ok(()) if settings.auto_paste => match paste_clipboard_at_cursor() {
-                    Ok(()) => Some("Copied and pasted transcript".to_string()),
-                    Err(err) => Some(format!(
-                        "Transcript copied — paste manually with Ctrl+V ({err})"
-                    )),
-                },
+                Ok(()) if settings.auto_paste => {
+                    match paste_clipboard_at_cursor(settings.paste_method) {
+                        Ok(()) => Some("Copied and pasted transcript".to_string()),
+                        Err(err) => Some(format!(
+                            "Transcript copied — paste manually with {} ({err})",
+                            settings.paste_method.shortcut_label()
+                        )),
+                    }
+                }
                 Ok(()) => Some("Transcript copied to clipboard".to_string()),
                 Err(err) => Some(format!(
                     "Transcript saved, but clipboard copy failed: {err}"
@@ -2202,7 +2234,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{concise_asr_error, normalize_shortcut_text};
+    use super::{concise_asr_error, normalize_shortcut_text, AppSettings, PasteMethod};
 
     #[test]
     fn sidecar_errors_skip_hugging_face_noise() {
@@ -2223,5 +2255,16 @@ mod tests {
             "Ctrl+Shift+Space"
         );
         assert!(normalize_shortcut_text("").is_err());
+    }
+
+    #[test]
+    fn legacy_settings_default_to_standard_paste() {
+        let settings: AppSettings = serde_json::from_str(r#"{"autoPaste":true}"#).unwrap();
+
+        assert_eq!(settings.paste_method, PasteMethod::CtrlV);
+        assert_eq!(
+            serde_json::to_string(&PasteMethod::CtrlShiftV).unwrap(),
+            r#""ctrlShiftV""#
+        );
     }
 }

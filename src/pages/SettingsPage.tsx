@@ -1,4 +1,4 @@
-import { Check, Clock3, Download, Keyboard, Mic2, Save, ShieldCheck, SlidersHorizontal, Terminal, Trash2 } from "lucide-react";
+import { Check, ClipboardPaste, Clock3, Download, Keyboard, Mic2, Save, ShieldCheck, SlidersHorizontal, Terminal, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LANGUAGES, PARAKEET_LANGUAGES } from "../data";
 import type { AppSettings } from "../types";
@@ -31,6 +31,7 @@ export function SettingsPage({ settings, devices, saving, onSave, onSetup, onRes
         <SettingRow icon={SlidersHorizontal} title="Language" description={languageDescription}><select value={draft.language} onChange={(event) => setDraft({ ...draft, language: event.target.value })}>{availableLanguages.map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></SettingRow>
         <SettingRow icon={SlidersHorizontal} title="Output style" description="Smart preserves speakers with MOSS and stays clean for dictation."><select value={draft.outputStyle} onChange={(event) => setDraft({ ...draft, outputStyle: event.target.value as AppSettings["outputStyle"] })}><option value="smart">Smart</option><option value="plain">Plain text</option><option value="speakerAware">Speaker-aware</option></select></SettingRow>
         <SettingRow icon={SlidersHorizontal} title="Automatic paste" description="Insert the transcript wherever your cursor was."><button className={`toggle ${draft.autoPaste ? "on" : ""}`} onClick={() => setDraft({ ...draft, autoPaste: !draft.autoPaste })}><i /></button></SettingRow>
+        <SettingRow icon={ClipboardPaste} title="Paste method" description="Use the standard paste shortcut, or Ctrl+Shift+V for terminals and apps that require it."><select value={draft.pasteMethod} onChange={(event) => setDraft({ ...draft, pasteMethod: event.target.value as AppSettings["pasteMethod"] })}><option value="ctrlV">Ctrl+V</option><option value="ctrlShiftV">Ctrl+Shift+V</option></select></SettingRow>
         <SettingRow icon={Clock3} title="Keep local history" description="Store finished transcripts on this device for quick reuse."><button className={`toggle ${draft.keepHistory ? "on" : ""}`} onClick={() => setDraft({ ...draft, keepHistory: !draft.keepHistory })}><i /></button></SettingRow>
         <SettingRow icon={SlidersHorizontal} title="Punctuation" description="Return readable sentences instead of raw word streams."><button className={`toggle ${draft.punctuation ? "on" : ""}`} onClick={() => setDraft({ ...draft, punctuation: !draft.punctuation })}><i /></button></SettingRow>
       </section>

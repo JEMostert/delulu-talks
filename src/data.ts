@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   inputDevice: "default",
   outputStyle: "smart",
   autoPaste: true,
+  pasteMethod: "ctrlV",
   keepHistory: true,
   punctuation: true,
   customWords: [],
