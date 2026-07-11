@@ -38,6 +38,10 @@ export type HuggingFaceAuthStatus = {
   configured: boolean;
 };
 
+export type AudioLevel = {
+  level: number;
+};
+
 export type TranscriptSegment = {
   start: number;
   end: number;

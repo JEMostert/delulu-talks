@@ -2,7 +2,7 @@ import type { AppSettings, ModelInfo } from "./types";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   shortcut: "Ctrl+Shift+Space",
-  recordingMode: "hold",
+  recordingMode: "toggle",
   model: "parakeetTdt06bV3",
   language: "auto",
   pythonCommand: "python3",

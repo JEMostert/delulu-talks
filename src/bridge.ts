@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { DEFAULT_SETTINGS } from "./data";
-import type { AppSettings, DictationStatus, HuggingFaceAuthStatus, TranscriptRecord } from "./types";
+import type { AppSettings, AudioLevel, DictationStatus, HuggingFaceAuthStatus, TranscriptRecord } from "./types";
 
 const isTauri = () => "__TAURI_INTERNALS__" in window;
 
@@ -83,6 +83,10 @@ export const bridge = {
   onStatus(callback: (status: DictationStatus) => void) {
     if (!isTauri()) return Promise.resolve(() => undefined);
     return listen<DictationStatus>("dictation-state", (event) => callback(event.payload));
+  },
+  onAudioLevel(callback: (level: AudioLevel) => void) {
+    if (!isTauri()) return Promise.resolve(() => undefined);
+    return listen<AudioLevel>("dictation-audio-level", (event) => callback(event.payload));
   },
   onTranscript(callback: (record: TranscriptRecord) => void) {
     if (!isTauri()) return Promise.resolve(() => undefined);

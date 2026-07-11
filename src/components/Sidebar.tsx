@@ -2,7 +2,7 @@ import { AudioLines, BookOpenText, Clock3, Home, Settings2, Sparkles } from "luc
 import type { DictationStatus, Page } from "../types";
 
 const items: Array<{ id: Page; label: string; icon: typeof Home }> = [
-  { id: "home", label: "Home", icon: Home },
+  { id: "home", label: "Overview", icon: Home },
   { id: "models", label: "Model studio", icon: Sparkles },
   { id: "vocabulary", label: "My vocabulary", icon: BookOpenText },
   { id: "history", label: "History", icon: Clock3 },

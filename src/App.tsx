@@ -83,7 +83,7 @@ function App() {
   }, [toast]);
 
   const pageTitle = useMemo(() => ({
-    home: "Home", models: "Model studio", vocabulary: "My vocabulary", history: "History", settings: "Settings",
+    home: "Overview", models: "Model studio", vocabulary: "My vocabulary", history: "History", settings: "Settings",
   }[page]), [page]);
 
   async function saveSettings(next: AppSettings, message = "Changes saved"): Promise<boolean> {

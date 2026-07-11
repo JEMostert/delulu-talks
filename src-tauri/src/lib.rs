@@ -6,7 +6,7 @@ use std::{
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, Sender},
+        mpsc::{self, Receiver, Sender, SyncSender},
         Arc, Mutex,
     },
     thread,
@@ -45,6 +45,7 @@ const HISTORY_FILE: &str = "history.json";
 const ASR_ERROR_FILE: &str = "last-asr-error.log";
 const ASR_SIDECAR_LOG_FILE: &str = "asr-sidecar.log";
 const DICTATION_EVENT: &str = "dictation-state";
+const AUDIO_LEVEL_EVENT: &str = "dictation-audio-level";
 const TRANSCRIPT_EVENT: &str = "dictation-transcript";
 const OVERLAY_LABEL: &str = "overlay";
 const DEFAULT_INPUT_DEVICE: &str = "default";
@@ -187,7 +188,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             shortcut: "Ctrl+Shift+Space".to_string(),
-            recording_mode: RecordingMode::Hold,
+            recording_mode: RecordingMode::Toggle,
             model: ModelOption::ParakeetTdt06bV3,
             language: "auto".to_string(),
             python_command: "python3".to_string(),
@@ -218,6 +219,11 @@ enum DictationPhase {
 struct DictationStatus {
     phase: DictationPhase,
     message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AudioLevel {
+    level: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -373,6 +379,7 @@ struct AppRuntime {
     setup_error: Mutex<Option<String>>,
     bootstrap_lock: Mutex<()>,
     registered_shortcut: Mutex<String>,
+    shortcut_pressed: AtomicBool,
     asr_sidecar: Mutex<Option<AsrSidecar>>,
     worker_tx: Sender<WorkerCommand>,
 }
@@ -637,6 +644,70 @@ fn write_f32_samples(
     }
 }
 
+fn normalized_audio_level(rms: f32) -> f32 {
+    const NOISE_GATE_RMS: f32 = 0.015;
+    const FULL_SCALE_RMS: f32 = 0.18;
+
+    if rms <= NOISE_GATE_RMS {
+        return 0.0;
+    }
+
+    ((rms - NOISE_GATE_RMS) / (FULL_SCALE_RMS - NOISE_GATE_RMS))
+        .clamp(0.0, 1.0)
+        .powf(0.7)
+}
+
+fn queue_audio_level(rms: f32, last_emit: &Arc<Mutex<Instant>>, sender: &SyncSender<f32>) {
+    let Ok(mut last_emit) = last_emit.try_lock() else {
+        return;
+    };
+    if last_emit.elapsed() < Duration::from_millis(40) {
+        return;
+    }
+
+    *last_emit = Instant::now();
+    let _ = sender.try_send(normalized_audio_level(rms));
+}
+
+fn rms_i16(samples: &[i16]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum = samples
+        .iter()
+        .map(|&sample| {
+            let value = sample as f32 / i16::MAX as f32;
+            value * value
+        })
+        .sum::<f32>();
+    (sum / samples.len() as f32).sqrt()
+}
+
+fn rms_u16(samples: &[u16]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum = samples
+        .iter()
+        .map(|&sample| {
+            let value = (sample as f32 - 32_768.0) / 32_768.0;
+            value * value
+        })
+        .sum::<f32>();
+    (sum / samples.len() as f32).sqrt()
+}
+
+fn rms_f32(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum = samples
+        .iter()
+        .map(|&sample| sample.clamp(-1.0, 1.0).powi(2))
+        .sum::<f32>();
+    (sum / samples.len() as f32).sqrt()
+}
+
 fn resolve_input_device(settings: &AppSettings) -> Result<cpal::Device, String> {
     let host = cpal::default_host();
 
@@ -684,6 +755,14 @@ fn start_recorder(app: &AppHandle, settings: &AppSettings) -> Result<RecorderSes
     let writer = WavWriter::create(&wav_path, spec)
         .map_err(|err| format!("Failed to create WAV writer: {err}"))?;
     let writer = Arc::new(Mutex::new(Some(writer)));
+    let last_level_emit = Arc::new(Mutex::new(Instant::now() - Duration::from_millis(40)));
+    let (level_tx, level_rx) = mpsc::sync_channel::<f32>(1);
+    let app_for_level = app.clone();
+    thread::spawn(move || {
+        while let Ok(level) = level_rx.recv() {
+            let _ = app_for_level.emit(AUDIO_LEVEL_EVENT, AudioLevel { level });
+        }
+    });
 
     let stream_config: StreamConfig = supported.clone().into();
     let err_fn = |err| {
@@ -693,10 +772,15 @@ fn start_recorder(app: &AppHandle, settings: &AppSettings) -> Result<RecorderSes
     let stream = match supported.sample_format() {
         SampleFormat::I16 => {
             let writer = writer.clone();
+            let last_emit = last_level_emit.clone();
+            let level_tx = level_tx.clone();
             input_device
                 .build_input_stream(
                     &stream_config,
-                    move |data: &[i16], _| write_i16_samples(data, &writer),
+                    move |data: &[i16], _| {
+                        queue_audio_level(rms_i16(data), &last_emit, &level_tx);
+                        write_i16_samples(data, &writer);
+                    },
                     err_fn,
                     None,
                 )
@@ -704,10 +788,15 @@ fn start_recorder(app: &AppHandle, settings: &AppSettings) -> Result<RecorderSes
         }
         SampleFormat::U16 => {
             let writer = writer.clone();
+            let last_emit = last_level_emit.clone();
+            let level_tx = level_tx.clone();
             input_device
                 .build_input_stream(
                     &stream_config,
-                    move |data: &[u16], _| write_u16_samples(data, &writer),
+                    move |data: &[u16], _| {
+                        queue_audio_level(rms_u16(data), &last_emit, &level_tx);
+                        write_u16_samples(data, &writer);
+                    },
                     err_fn,
                     None,
                 )
@@ -715,10 +804,15 @@ fn start_recorder(app: &AppHandle, settings: &AppSettings) -> Result<RecorderSes
         }
         SampleFormat::F32 => {
             let writer = writer.clone();
+            let last_emit = last_level_emit;
+            let level_tx = level_tx;
             input_device
                 .build_input_stream(
                     &stream_config,
-                    move |data: &[f32], _| write_f32_samples(data, &writer),
+                    move |data: &[f32], _| {
+                        queue_audio_level(rms_f32(data), &last_emit, &level_tx);
+                        write_f32_samples(data, &writer);
+                    },
                     err_fn,
                     None,
                 )
@@ -1515,9 +1609,10 @@ fn ensure_overlay_window(app: &AppHandle) -> Result<(), String> {
         WebviewUrl::App("index.html?overlay=1".into()),
     )
     .title("Dictation Overlay")
-    .inner_size(280.0, 72.0)
+    .inner_size(240.0, 64.0)
     .resizable(false)
     .decorations(false)
+    .transparent(true)
     .always_on_top(true)
     .focusable(false)
     .skip_taskbar(true)
@@ -1569,6 +1664,10 @@ fn place_overlay_bottom_center(app: &AppHandle) {
     }
 }
 
+fn should_show_recording_overlay(phase: &DictationPhase) -> bool {
+    matches!(phase, DictationPhase::Listening)
+}
+
 fn emit_status(app: &AppHandle, phase: DictationPhase, message: Option<String>) {
     let payload = DictationStatus {
         phase: phase.clone(),
@@ -1580,29 +1679,26 @@ fn emit_status(app: &AppHandle, phase: DictationPhase, message: Option<String>) 
     if let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) {
         let _ = overlay.emit(DICTATION_EVENT, payload);
 
-        match phase {
-            DictationPhase::Idle => {
-                let _ = overlay.hide();
-            }
-            _ => {
-                // Map the native window first. Several Linux window managers apply
-                // their default centered placement when a hidden window is shown,
-                // which would otherwise overwrite our bottom-center coordinates.
-                let _ = overlay.show();
-                let _ = overlay.set_always_on_top(true);
-                place_overlay_bottom_center(app);
+        if should_show_recording_overlay(&phase) {
+            // Map the native window first. Several Linux window managers apply
+            // their default centered placement when a hidden window is shown,
+            // which would otherwise overwrite our bottom-center coordinates.
+            let _ = overlay.show();
+            let _ = overlay.set_always_on_top(true);
+            place_overlay_bottom_center(app);
 
-                // Reapply once after the compositor has finished mapping the
-                // window. This is especially important under KDE/XWayland.
-                let app_handle = app.clone();
-                thread::spawn(move || {
-                    thread::sleep(Duration::from_millis(60));
-                    if let Some(overlay) = app_handle.get_webview_window(OVERLAY_LABEL) {
-                        let _ = overlay.set_always_on_top(true);
-                        place_overlay_bottom_center(&app_handle);
-                    }
-                });
-            }
+            // Reapply once after the compositor has finished mapping the
+            // window. This is especially important under KDE/XWayland.
+            let app_handle = app.clone();
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(60));
+                if let Some(overlay) = app_handle.get_webview_window(OVERLAY_LABEL) {
+                    let _ = overlay.set_always_on_top(true);
+                    place_overlay_bottom_center(&app_handle);
+                }
+            });
+        } else {
+            let _ = overlay.hide();
         }
     }
 }
@@ -1743,7 +1839,7 @@ fn worker_stop(app: &AppHandle, state: &Arc<AppRuntime>, active: &mut Option<Rec
             app,
             DictationPhase::Error,
             Some(
-                "Recording was too short. Hold the shortcut while speaking, then release."
+                "Recording was too short. Press the shortcut, speak, then press it again to stop."
                     .to_string(),
             ),
         );
@@ -2040,7 +2136,16 @@ fn register_shortcut(
                 }
                 RecordingMode::Toggle => {
                     if event.state == ShortcutState::Pressed {
-                        let _ = toggle_dictation_internal(&state_for_handler);
+                        if !state_for_handler
+                            .shortcut_pressed
+                            .swap(true, Ordering::SeqCst)
+                        {
+                            let _ = toggle_dictation_internal(&state_for_handler);
+                        }
+                    } else if event.state == ShortcutState::Released {
+                        state_for_handler
+                            .shortcut_pressed
+                            .store(false, Ordering::SeqCst);
                     }
                 }
             }
@@ -2381,6 +2486,7 @@ pub fn run() {
                 setup_error: Mutex::new(None),
                 bootstrap_lock: Mutex::new(()),
                 registered_shortcut: Mutex::new(initial_settings.shortcut.clone()),
+                shortcut_pressed: AtomicBool::new(false),
                 asr_sidecar: Mutex::new(None),
                 worker_tx,
             });
@@ -2455,9 +2561,10 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        concise_asr_error, normalize_shortcut_text, read_app_auth, recording_sound_bytes,
-        runtime_status, validate_hugging_face_token, write_app_auth, AppAuth, AppSettings,
-        DictationPhase, PasteMethod, RecordingSound, RuntimePhase,
+        concise_asr_error, normalize_shortcut_text, normalized_audio_level, read_app_auth,
+        recording_sound_bytes, rms_f32, runtime_status, should_show_recording_overlay,
+        validate_hugging_face_token, write_app_auth, AppAuth, AppSettings, DictationPhase,
+        PasteMethod, RecordingMode, RecordingSound, RuntimePhase,
     };
     use rodio::Decoder;
     use std::{fs, io::Cursor};
@@ -2524,6 +2631,7 @@ mod tests {
         let settings: AppSettings = serde_json::from_str(r#"{"autoPaste":true}"#).unwrap();
 
         assert_eq!(settings.paste_method, PasteMethod::CtrlV);
+        assert_eq!(settings.recording_mode, RecordingMode::Toggle);
         assert!(settings.recording_sounds);
         assert_eq!(
             serde_json::to_string(&PasteMethod::CtrlShiftV).unwrap(),
@@ -2558,5 +2666,32 @@ mod tests {
             setup_required.message.as_deref(),
             Some("ASR environment setup required")
         );
+    }
+
+    #[test]
+    fn recording_overlay_only_appears_while_listening() {
+        assert!(should_show_recording_overlay(&DictationPhase::Listening));
+        for phase in [
+            DictationPhase::Idle,
+            DictationPhase::Bootstrapping,
+            DictationPhase::Transcribing,
+            DictationPhase::Error,
+        ] {
+            assert!(!should_show_recording_overlay(&phase));
+        }
+    }
+
+    #[test]
+    fn microphone_level_tracks_signal_strength() {
+        let silence = normalized_audio_level(rms_f32(&[0.0; 64]));
+        let room_noise = normalized_audio_level(rms_f32(&[0.01, -0.01, 0.008, -0.008]));
+        let speech = normalized_audio_level(rms_f32(&[0.1, -0.1, 0.08, -0.08]));
+        let loud = normalized_audio_level(rms_f32(&[0.8, -0.8, 0.7, -0.7]));
+
+        assert_eq!(silence, 0.0);
+        assert_eq!(room_noise, 0.0);
+        assert!(silence < speech);
+        assert!(speech < loud);
+        assert!((0.0..=1.0).contains(&loud));
     }
 }

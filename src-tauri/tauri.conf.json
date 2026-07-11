@@ -14,10 +14,12 @@
       {
         "label": "main",
         "title": "Delulu Talks",
-        "width": 1180,
-        "height": 780,
-        "minWidth": 880,
+        "width": 1360,
+        "height": 880,
+        "minWidth": 900,
         "minHeight": 640,
+        "resizable": true,
+        "maximizable": true,
         "center": true,
         "visible": true
       }
