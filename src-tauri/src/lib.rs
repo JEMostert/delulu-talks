@@ -86,7 +86,7 @@ impl ModelOption {
                 "transcribe-cpp==0.1.2",
                 "huggingface-hub>=1.0.0",
                 "soundfile",
-                "librosa",
+                "soxr",
             ];
         }
 
@@ -1125,7 +1125,7 @@ fn ensure_python_dependencies(app: &AppHandle, settings: &AppSettings) -> Result
 
 fn dependency_check_script(model: ModelOption) -> &'static str {
     match model {
-        ModelOption::ParakeetTdt06bV3 => "import transcribe_cpp, huggingface_hub, soundfile, librosa",
+        ModelOption::ParakeetTdt06bV3 => "import transcribe_cpp, huggingface_hub, soundfile, soxr",
         ModelOption::MossTranscribeDiarize => "import torch, transformers, soundfile, librosa, moss_transcribe_diarize",
         ModelOption::CohereTranscribe => "import torch, transformers, soundfile, librosa; assert hasattr(transformers, 'CohereAsrForConditionalGeneration')",
         ModelOption::Nemotron35Streaming => "import torch, transformers, soundfile, librosa",
@@ -1603,22 +1603,19 @@ fn ensure_overlay_window(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let _window = WebviewWindowBuilder::new(
-        app,
-        OVERLAY_LABEL,
-        WebviewUrl::App("index.html?overlay=1".into()),
-    )
-    .title("Dictation Overlay")
-    .inner_size(240.0, 64.0)
-    .resizable(false)
-    .decorations(false)
-    .transparent(true)
-    .always_on_top(true)
-    .focusable(false)
-    .skip_taskbar(true)
-    .visible(false)
-    .build()
-    .map_err(|err| format!("Failed to create overlay window: {err}"))?;
+    let _window =
+        WebviewWindowBuilder::new(app, OVERLAY_LABEL, WebviewUrl::App("overlay.html".into()))
+            .title("Dictation Overlay")
+            .inner_size(240.0, 64.0)
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .focusable(false)
+            .skip_taskbar(true)
+            .visible(false)
+            .build()
+            .map_err(|err| format!("Failed to create overlay window: {err}"))?;
 
     Ok(())
 }
@@ -1676,6 +1673,12 @@ fn emit_status(app: &AppHandle, phase: DictationPhase, message: Option<String>) 
 
     let _ = app.emit(DICTATION_EVENT, payload.clone());
 
+    if should_show_recording_overlay(&phase) {
+        if let Err(err) = ensure_overlay_window(app) {
+            eprintln!("Could not create recording overlay: {err}");
+        }
+    }
+
     if let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) {
         let _ = overlay.emit(DICTATION_EVENT, payload);
 
@@ -1699,6 +1702,7 @@ fn emit_status(app: &AppHandle, phase: DictationPhase, message: Option<String>) 
             });
         } else {
             let _ = overlay.hide();
+            let _ = overlay.close();
         }
     }
 }
@@ -2511,7 +2515,6 @@ pub fn run() {
                 run_worker_loop(app_handle_for_worker, runtime_for_worker, worker_rx)
             });
 
-            ensure_overlay_window(app.handle())?;
             install_tray(app.handle(), runtime.clone())?;
 
             if let Some(main_window) = app.get_webview_window("main") {

@@ -1,5 +1,5 @@
 import { BookOpenText, CircleHelp, Plus, Search, Sparkles, Trash2, Volume2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import type { CustomWord } from "../types";
 
 function newId() { return `word-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
@@ -7,7 +7,8 @@ function newId() { return `word-${Date.now()}-${Math.random().toString(16).slice
 export function VocabularyPage({ words, saving, onChange }: { words: CustomWord[]; saving: boolean; onChange: (words: CustomWord[]) => void }) {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState({ term: "", soundsLike: "", replacement: "" });
-  const filtered = useMemo(() => words.filter((word) => `${word.term} ${word.soundsLike} ${word.replacement}`.toLowerCase().includes(query.toLowerCase())), [query, words]);
+  const deferredQuery = useDeferredValue(query.trim().toLowerCase());
+  const filtered = useMemo(() => words.filter((word) => `${word.term} ${word.soundsLike} ${word.replacement}`.toLowerCase().includes(deferredQuery)), [deferredQuery, words]);
 
   function addWord() {
     const term = draft.term.trim();

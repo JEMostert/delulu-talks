@@ -1,18 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Check, LoaderCircle } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { AlertCircle, Check, LoaderCircle, Minus, Square, X } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { bridge } from "./bridge";
 import { DEFAULT_SETTINGS, PARAKEET_LANGUAGES } from "./data";
 import { Sidebar } from "./components/Sidebar";
-import { Overlay } from "./components/Overlay";
-import { HomePage } from "./pages/HomePage";
-import { ModelsPage } from "./pages/ModelsPage";
-import { VocabularyPage } from "./pages/VocabularyPage";
-import { HistoryPage } from "./pages/HistoryPage";
-import { SettingsPage } from "./pages/SettingsPage";
 import type { AppSettings, DictationStatus, Page, TranscriptRecord } from "./types";
 
+const HomePage = lazy(() => import("./pages/HomePage").then((module) => ({ default: module.HomePage })));
+const ModelsPage = lazy(() => import("./pages/ModelsPage").then((module) => ({ default: module.ModelsPage })));
+const VocabularyPage = lazy(() => import("./pages/VocabularyPage").then((module) => ({ default: module.VocabularyPage })));
+const HistoryPage = lazy(() => import("./pages/HistoryPage").then((module) => ({ default: module.HistoryPage })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })));
+const appWindow = getCurrentWindow();
+type ResizeDirection = "North" | "NorthEast" | "East" | "SouthEast" | "South" | "SouthWest" | "West" | "NorthWest";
+const resizeDirections: ResizeDirection[] = ["North", "NorthEast", "East", "SouthEast", "South", "SouthWest", "West", "NorthWest"];
+
 function App() {
-  const isOverlay = new URLSearchParams(window.location.search).has("overlay");
   const [page, setPage] = useState<Page>("home");
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [status, setStatus] = useState<DictationStatus>({ phase: "idle", message: "Loading your workspace" });
@@ -22,17 +25,6 @@ function App() {
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isOverlay) {
-      const statusListener = bridge.onStatus(setStatus);
-      void bridge.getStatus().then(setStatus).catch((error) => {
-        setStatus({ phase: "error", message: String(error) });
-      });
-
-      return () => {
-        void statusListener.then((unlisten) => unlisten());
-      };
-    }
-
     void Promise.allSettled([bridge.getSettings(), bridge.getStatus(), bridge.getHistory()])
       .then(([settingsResult, statusResult, historyResult]) => {
         if (settingsResult.status === "fulfilled") setSettings(settingsResult.value);
@@ -55,10 +47,10 @@ function App() {
       void statusListener.then((unlisten) => unlisten());
       void transcriptListener.then((unlisten) => unlisten());
     };
-  }, [isOverlay]);
+  }, []);
 
   useEffect(() => {
-    if (isOverlay || page !== "settings") return;
+    if (page !== "settings") return;
 
     let cancelled = false;
     void bridge.listInputDevices()
@@ -74,7 +66,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [isOverlay, page]);
+  }, [page]);
 
   useEffect(() => {
     if (!toast) return;
@@ -138,35 +130,50 @@ function App() {
     }
   }
 
-  if (isOverlay) {
-    return <Overlay status={status} />;
-  }
-
   return (
     <div className="app-shell">
       <Sidebar page={page} onNavigate={setPage} status={status} />
       <main className="main-panel">
-        <header className="topbar">
-          <div>
+        <header className="topbar" data-tauri-drag-region>
+          <div data-tauri-drag-region>
             <p className="eyebrow">DELULU TALKS</p>
             <h1>{pageTitle}</h1>
           </div>
-          <div className={`runtime-chip phase-${status.phase}`}>
-            {status.phase === "bootstrapping" || status.phase === "transcribing" ? <LoaderCircle className="spin" /> : status.phase === "error" ? <AlertCircle /> : <span className="live-dot" />}
-            <span>{status.phase === "idle" ? "Engine ready" : status.phase}</span>
+          <div className="window-right">
+            <div className={`runtime-chip phase-${status.phase}`}>
+              {status.phase === "bootstrapping" || status.phase === "transcribing" ? <LoaderCircle className="spin" /> : status.phase === "error" ? <AlertCircle /> : <span className="live-dot" />}
+              <span>{status.phase === "idle" ? "Engine ready" : status.phase}</span>
+            </div>
+            <div className="window-controls">
+              <button type="button" title="Minimize" aria-label="Minimize window" onClick={() => void appWindow.minimize()}><Minus /></button>
+              <button type="button" title="Maximize or restore" aria-label="Maximize or restore window" onClick={() => void appWindow.toggleMaximize()}><Square /></button>
+              <button type="button" className="window-close" title="Close" aria-label="Close window" onClick={() => void appWindow.close()}><X /></button>
+            </div>
           </div>
         </header>
 
         <div className="page-scroll">
-          {page === "home" && <HomePage settings={settings} status={status} history={history} onToggle={() => void bridge.toggleDictation()} onNavigate={setPage} onCopy={(text) => void bridge.copyText(text).then(() => setToast("Copied to clipboard"))} />}
-          {page === "models" && <ModelsPage selected={settings.model} saving={saving} settingUp={status.phase === "bootstrapping"} onSelect={(model) => void selectModel(model)} onSetup={() => void setupModelEnvironment()} />}
-          {page === "vocabulary" && <VocabularyPage words={settings.customWords} saving={saving} onChange={(customWords) => void saveSettings({ ...settings, customWords }, "Vocabulary updated")} />}
-          {page === "history" && <HistoryPage history={history} onCopy={(text) => void bridge.copyText(text).then(() => setToast("Copied to clipboard"))} onDelete={(id) => void bridge.deleteHistory(id).then(() => setHistory((items) => items.filter((item) => item.id !== id)))} onClear={() => void bridge.clearHistory().then(() => setHistory([]))} />}
-          {page === "settings" && <SettingsPage settings={settings} devices={devices} saving={saving} onSave={saveSettings} onSetup={() => void setupModelEnvironment()} onReset={() => void resetPythonEnvironment()} />}
+          <Suspense fallback={<div className="page-loading"><LoaderCircle className="spin" /><span>Loading view…</span></div>}>
+            {page === "home" && <HomePage settings={settings} status={status} history={history} onToggle={() => void bridge.toggleDictation()} onNavigate={setPage} onCopy={(text) => void bridge.copyText(text).then(() => setToast("Copied to clipboard"))} />}
+            {page === "models" && <ModelsPage selected={settings.model} saving={saving} settingUp={status.phase === "bootstrapping"} onSelect={(model) => void selectModel(model)} onSetup={() => void setupModelEnvironment()} />}
+            {page === "vocabulary" && <VocabularyPage words={settings.customWords} saving={saving} onChange={(customWords) => void saveSettings({ ...settings, customWords }, "Vocabulary updated")} />}
+            {page === "history" && <HistoryPage history={history} onCopy={(text) => void bridge.copyText(text).then(() => setToast("Copied to clipboard"))} onDelete={(id) => void bridge.deleteHistory(id).then(() => setHistory((items) => items.filter((item) => item.id !== id)))} onClear={() => void bridge.clearHistory().then(() => setHistory([]))} />}
+            {page === "settings" && <SettingsPage settings={settings} devices={devices} saving={saving} onSave={saveSettings} onSetup={() => void setupModelEnvironment()} onReset={() => void resetPythonEnvironment()} />}
+          </Suspense>
         </div>
       </main>
 
       {toast && <div className="toast"><Check />{toast}</div>}
+      {resizeDirections.map((direction) => (
+        <div
+          key={direction}
+          className={`resize-handle resize-${direction.toLowerCase()}`}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            void appWindow.startResizeDragging(direction);
+          }}
+        />
+      ))}
     </div>
   );
 }

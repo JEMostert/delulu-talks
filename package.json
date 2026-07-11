@@ -7,9 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 tauri",
-    "tauri:dev:wayland": "GDK_BACKEND=wayland WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri dev",
-    "tauri:dev:x11": "GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 tauri dev"
+    "tauri": "GDK_BACKEND=wayland tauri",
+    "tauri:dev:wayland": "GDK_BACKEND=wayland tauri dev",
+    "tauri:dev:x11": "GDK_BACKEND=x11 tauri dev"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

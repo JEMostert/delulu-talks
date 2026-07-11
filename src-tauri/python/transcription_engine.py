@@ -84,7 +84,7 @@ def normalize_recorded_wav(audio_path: str) -> tuple[str, str | None]:
         return audio_path, None
 
     try:
-        import librosa
+        import soxr
         import soundfile as sf
 
         samples, sample_rate = sf.read(audio_path, dtype="float32", always_2d=True)
@@ -118,7 +118,7 @@ def normalize_recorded_wav(audio_path: str) -> tuple[str, str | None]:
 
     mono = samples.mean(axis=1)
     if sample_rate != 16_000:
-        mono = librosa.resample(mono, orig_sr=sample_rate, target_sr=16_000)
+        mono = soxr.resample(mono, sample_rate, 16_000, quality="HQ")
 
     if sample_rate == 16_000 and samples.shape[1] == 1:
         return audio_path, None
@@ -382,15 +382,11 @@ def serve(args: argparse.Namespace) -> int:
         # recording. Microphones commonly capture at 48 kHz while Parakeet
         # expects 16 kHz; warming the exact conversion path keeps the first
         # dictation as responsive as every subsequent one.
-        import librosa
         import numpy as np
+        import soxr
         import soundfile  # noqa: F401
 
-        librosa.resample(
-            np.zeros(240_000, dtype=np.float32),
-            orig_sr=48_000,
-            target_sr=16_000,
-        )
+        soxr.resample(np.zeros(240_000, dtype=np.float32), 48_000, 16_000, quality="HQ")
         print(json.dumps({"ready": True}), flush=True)
     except Exception as exc:
         print(json.dumps({"error": f"Sidecar warmup failed: {exc}"}), flush=True)
