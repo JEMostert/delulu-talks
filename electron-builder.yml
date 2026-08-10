@@ -1,0 +1,45 @@
+appId: com.joran.delulu-talks
+productName: Delulu Talks
+asar: true
+directories:
+  output: release
+toolsets:
+  appimage: "1.0.3"
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: electron/python/transcription_engine.py
+    to: python/transcription_engine.py
+  - from: build/icon.png
+    to: icon.png
+linux:
+  category: AudioVideo
+  icon: build/icon.png
+  syncDesktopName: true
+  target:
+    - AppImage
+    - pacman
+    - tar.xz
+  desktop:
+    entry:
+      Name: Delulu Talks
+      Comment: Private local dictation with CrisperWhisper 2.0
+      Categories: AudioVideo;Utility;
+      Keywords: dictation;speech;transcription;whisper;voice;
+      StartupWMClass: delulu-talks
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.icns
+  target:
+    - dmg
+    - zip
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+    - zip
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}

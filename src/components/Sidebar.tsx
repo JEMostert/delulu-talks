@@ -1,36 +1,52 @@
-import { AudioLines, BookOpenText, Clock3, Home, Settings2, Sparkles } from "lucide-react";
+import { AudioLines, BookOpenText, Clock3, Cpu, FlaskConical, Mic2, Settings2 } from "lucide-react";
 import type { DictationStatus, Page } from "../types";
 
-const items: Array<{ id: Page; label: string; icon: typeof Home }> = [
-  { id: "home", label: "Home", icon: Home },
-  { id: "models", label: "Model studio", icon: Sparkles },
-  { id: "vocabulary", label: "My vocabulary", icon: BookOpenText },
-  { id: "history", label: "History", icon: Clock3 },
+const groups: Array<{ label: string; items: Array<{ id: Page; label: string; icon: typeof Mic2 }> }> = [
+  {
+    label: "Work",
+    items: [
+      { id: "home", label: "Dictation", icon: Mic2 },
+      { id: "lab", label: "Speech Lab", icon: FlaskConical },
+      { id: "history", label: "History", icon: Clock3 },
+    ],
+  },
+  {
+    label: "Configure",
+    items: [
+      { id: "vocabulary", label: "Wordbook", icon: BookOpenText },
+      { id: "models", label: "Models & runtime", icon: Cpu },
+    ],
+  },
 ];
 
 export function Sidebar({ page, onNavigate, status }: { page: Page; onNavigate: (page: Page) => void; status: DictationStatus }) {
   return (
     <aside className="sidebar">
-      <button className="brand" onClick={() => onNavigate("home")}>
+      <button className="brand" onClick={() => onNavigate("home")} aria-label="Open Dictation">
         <span className="brand-mark"><img src="/delulu-talks-icon.svg" alt="" /></span>
-        <span><strong>delulu</strong><small>talks</small></span>
+        <span><strong>Delulu Talks</strong><small>Local voice tools</small></span>
       </button>
 
-      <nav>
-        <p className="nav-label">Workspace</p>
-        {items.map(({ id, label, icon: Icon }) => (
-          <button key={id} className={page === id ? "active" : ""} onClick={() => onNavigate(id)}>
-            <Icon /><span>{label}</span>
-          </button>
+      <nav aria-label="Workspace">
+        {groups.map((group) => (
+          <section className="nav-group" key={group.label}>
+            <p className="nav-label">{group.label}</p>
+            {group.items.map(({ id, label, icon: Icon }) => (
+              <button key={id} className={page === id ? "active" : ""} aria-label={label} title={label} onClick={() => onNavigate(id)}>
+                <Icon /><span>{label}</span>
+              </button>
+            ))}
+          </section>
         ))}
       </nav>
 
       <div className="sidebar-bottom">
-        <button className={page === "settings" ? "active" : ""} onClick={() => onNavigate("settings")}><Settings2 /><span>Settings</span></button>
-        <div className="engine-card">
-          <div className="engine-orb"><AudioLines /></div>
-          <div><strong>{status.phase === "idle" ? "Ready to listen" : status.phase}</strong><small>{status.message || "Private. Local. Yours."}</small></div>
-        </div>
+        <button className={page === "settings" ? "active" : ""} aria-label="Settings" title="Settings" onClick={() => onNavigate("settings")}><Settings2 /><span>Settings</span></button>
+        <button className={`engine-summary phase-${status.phase}`} aria-label={`Speech engine: ${status.engine}`} onClick={() => onNavigate("models")} title={status.detail ?? status.message}>
+          <AudioLines />
+          <span><small>Speech engine</small><strong>{status.engine}</strong></span>
+          <i />
+        </button>
       </div>
     </aside>
   );

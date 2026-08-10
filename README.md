@@ -1,92 +1,87 @@
 # Delulu Talks
 
-A private, local-first desktop dictation studio built with Tauri, React, Rust, and current Hugging Face speech models.
+Private, local-first desktop dictation rebuilt on Electron and CrisperWhisper 2.0.
 
-## What changed
+Delulu Talks keeps one fast speech model ready behind a system-wide shortcut, creates a clean intended transcript and an exact verbatim transcript in one workflow, then copies or pastes the version you choose. It is designed for Linux/Wayland first while remaining packageable for macOS and Windows.
 
-This release is a ground-up product and interface rebuild. The old wall of model settings has been replaced by three specialist engines:
+## Highlights
 
-- **MOSS Transcribe Diarize 0.9B** — speaker-aware meetings, timestamps, acoustic events, and native hotwords.
-- **Cohere Transcribe 03-2026** — high-accuracy long-form transcription across 14 languages.
-- **NVIDIA Nemotron 3.5 ASR Streaming 0.6B** — lightweight, low-latency multilingual dictation.
+- Electron main process, sandboxed React renderer, narrow typed preload API, tray, overlay, and Wayland global-shortcut portal support
+- All four standard Nyra Labs CrisperWhisper 2.0 checkpoints: Small, Medium, Turbo, and Large
+- Medium is the balanced default; **Keep selected model loaded** is enabled by default and can be disabled in Settings
+- Intended, verbatim, and CT2 dual transcription with conditional long-form continuation and hallucination mitigation
+- Linux x64 CTranslate2 acceleration, Large + Turbo speculative decoding, and portable Transformers fallback
+- Speech Lab for audio/video import, Verbatimize, forced alignment, and word-level timelines
+- Private local history, speech-pattern insights, deterministic vocabulary replacements, and TXT/JSON/SRT/VTT export
+- Automatic paste where the desktop permits it, with an honest clipboard fallback when Wayland has no input tool
+- An app-managed Python environment; model packages and weights are downloaded only after explicit license acceptance
 
-The app now includes:
+The technical design is in [Architecture](docs/ARCHITECTURE.md). The competitor research and product direction are in [Product research](docs/PRODUCT_RESEARCH.md).
 
-- Global hold-to-talk or toggle shortcut
-- Custom word bank with hotwords, “sounds like” aliases, and text expansions
-- Smart output that preserves speaker labels only for multi-speaker audio
-- Searchable, private local transcript history
-- Reliable clipboard copy with optional automatic paste and a manual `Ctrl+V` fallback
-- Isolated local Python environment and guided per-model setup
-- One-click Python environment removal and clean model re-bootstrap
-- Responsive dashboard, model studio, history, settings, and a compact recording overlay
-- Browser-safe development bridge for UI work outside the Tauri shell
-
-## Development
+## Run locally
 
 Requirements:
 
-- Bun
-- Rust stable
-- Python 3.11 or 3.12
-- Platform audio development libraries required by CPAL
+- [Bun](https://bun.sh/)
+- Python 3.10–3.13 (3.11 or 3.12 recommended)
+- FFmpeg for compressed audio or video imports
+- On Linux/Wayland, `wtype`, `ydotool`, `dotool`, or `xdotool` for automatic paste; clipboard copy works without them
 
 ```bash
 bun install
-bun run tauri dev
-```
-
-The frontend alone can be previewed with demo data:
-
-```bash
 bun run dev
 ```
 
-## Local model setup
-
-Open **Model studio**, select an engine, then choose **Set up selected model**. Delulu Talks creates an isolated Python environment under its application data directory and downloads the selected weights from Hugging Face.
-
-MOSS setup installs the official `MOSS-Transcribe-Diarize` package. Cohere and Nemotron use Transformers 5.4 or newer. A CUDA GPU is recommended for MOSS and Cohere; Nemotron is the lightest option.
-
-If setup becomes damaged or a model dependency changes, open **Settings → Runtime & storage**, choose **Remove Python environment**, then return to Model studio and set up the selected model again. This removes only the app-managed environment; settings, vocabulary, history, and downloaded Hugging Face model caches are preserved.
-
-## Verification
+For a renderer-only preview with safe demo data:
 
 ```bash
+bun run dev:web
+```
+
+On CachyOS/Arch, the useful system packages are:
+
+```bash
+sudo pacman -S ffmpeg wtype
+```
+
+On first launch, open **Settings**, review and accept the Nyra model-weight license, then choose **Install / repair**. The app creates an isolated Python environment inside its application-data directory. On Linux x64, Auto selects Nyra's CTranslate2 backend; other platforms use Transformers.
+
+## Build and package
+
+```bash
+bun run typecheck
+bun test
 bun run build
-python3 -m py_compile src-tauri/python/transcription_engine.py
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo test --manifest-path src-tauri/Cargo.toml
+python3 -m py_compile electron/python/transcription_engine.py
+bun run dist:linux
 ```
 
-## Data and privacy
+Linux packaging produces AppImage, pacman, and `tar.xz` artifacts. The release workflow builds native Linux, macOS, and Windows packages on version tags.
 
-Recorded audio is written to a temporary WAV file, transcribed locally, and deleted immediately after processing. Settings and optional transcript history remain in the platform application-data folder. The network is only needed for dependency and model downloads.
+## Model and code licenses
 
-## Linux notes
+Delulu Talks is MIT-licensed. CrisperWhisper's inference code is also MIT, but its model weights are separate: the standard 2.0 weights use the Nyra Health Non-Commercial Research License, commercial use requires a license from Nyra, and Pro weights are commercial-only. Delulu Talks does not bundle weights and does not offer Pro downloads. See [Nyra's license explanation](https://github.com/nyrahealth/CrisperWhisper#license) and the [weight license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md).
 
-The default Tauri command uses XWayland so the recording overlay can remain above other applications and stay positioned just above the desktop application bar:
+## Privacy and storage
 
-```bash
-bun run tauri dev
-```
+Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted in a `finally` path after success or failure. Imported media is never modified; temporary FFmpeg conversions are also deleted. Settings, optional transcript history, the Python environment, and downloaded model cache stay under Electron's platform application-data directory. No telemetry or cloud transcription is implemented.
 
-Audio devices are enumerated lazily when Settings is opened. ALSA may print a JACK or OSS warning while probing system-configured compatibility devices that are not installed; this does not mean the default microphone failed. The single `libayatana-appindicator` deprecation warning comes from Tauri's current Linux tray dependency and does not affect dictation or tray behavior.
-
-Full sidecar diagnostics for the most recent transcription failure are stored as `last-asr-error.log` beside the app settings file. The overlay filters unrelated Hugging Face download warnings so the actionable error remains visible.
+The old Tauri data directory is detected on Linux so settings and history can migrate forward once. Removed model selections are mapped to CrisperWhisper Medium.
 
 ## Project layout
 
 ```text
+electron/
+  main.ts             lifecycle, windows, tray, shortcuts, validated IPC
+  preload.ts          isolated renderer API
+  services/           ASR lifecycle, dictation, storage, paste, export
+  python/             persistent CrisperWhisper worker
 src/
-  components/       app shell and recording overlay
-  pages/            focused product surfaces
-  bridge.ts         typed Tauri/browser boundary
-  data.ts           model and language catalog
-  types.ts          shared frontend domain types
-src-tauri/
-  python/           three-engine transcription adapter
-  src/lib.rs        audio capture, persistence, shortcuts, and commands
+  components/         Electron app shell and recording overlay
+  pages/              Dictation, Speech Lab, History, Wordbook, Models, Settings
+  bridge.ts           typed Electron/browser boundary
+  recorder.ts         renderer microphone capture and 16 kHz WAV encoder
+  data.ts             CrisperWhisper model and language catalog
 ```
 
 Licensed under the terms in [LICENSE](LICENSE).

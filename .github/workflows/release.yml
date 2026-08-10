@@ -1,29 +1,29 @@
-name: Build and Release Tauri App
+name: Build Electron release
 
 on:
   push:
-    branches:
-      - main
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  package:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-latest"
-            args: ""
-          - platform: "ubuntu-22.04"
-            args: ""
-          - platform: "windows-latest"
-            args: ""
-
-    runs-on: ${{ matrix.platform }}
-
+          - os: ubuntu-latest
+            name: linux-x64
+            args: --linux AppImage pacman tar.xz --x64
+          - os: macos-latest
+            name: mac-universal
+            args: --mac dmg zip --universal
+          - os: windows-latest
+            name: windows-x64
+            args: --win nsis zip --x64
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,33 +31,47 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libarchive-tools libopenjp2-tools
 
-      - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            libasound2-dev \
-            librsvg2-dev \
-            patchelf
-
-      - name: Install frontend dependencies
+      - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build and upload release assets
-        uses: tauri-apps/tauri-action@v0
+      - name: Build application
+        run: bun run build
+
+      - name: Build native packages
+        run: bunx electron-builder ${{ matrix.args }} --publish never
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
         with:
-          tauriScript: bun run tauri
-          tagName: build-${{ github.sha }}
-          releaseName: "Delulu Talks build ${{ github.sha }}"
-          releaseBody: "Automated cross-platform build for commit ${{ github.sha }}"
-          releaseDraft: false
-          prerelease: false
-          args: ${{ matrix.args }}
+          name: delulu-talks-${{ matrix.name }}
+          path: |
+            release/*.AppImage
+            release/*.pacman
+            release/*.tar.xz
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

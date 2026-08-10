@@ -1,31 +1,47 @@
 {
   "name": "delulu-talks",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
+  "description": "Private, local-first system-wide dictation powered by CrisperWhisper 2.0",
+  "author": {
+    "name": "JoranEMostert",
+    "email": "92588849+JoranEMostert@users.noreply.github.com"
+  },
+  "repository": "https://github.com/JEMostert/delulu-talks.git",
+  "desktopName": "delulu-talks.desktop",
+  "license": "MIT",
+  "main": "out/main/main.cjs",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "tauri": "GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 tauri",
-    "tauri:dev:wayland": "GDK_BACKEND=wayland WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri dev",
-    "tauri:dev:x11": "GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 tauri dev"
+    "dev": "electron-vite dev",
+    "dev:web": "vite",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p electron/tsconfig.json",
+    "build": "bun run typecheck && electron-vite build",
+    "preview": "electron-vite preview",
+    "preview:web": "vite preview",
+    "test": "bun test",
+    "dist": "bun run build && electron-builder",
+    "dist:linux": "bun run build && electron-builder --linux AppImage pacman tar.xz",
+    "dist:mac": "bun run build && electron-builder --mac dmg zip",
+    "dist:win": "bun run build && electron-builder --win nsis zip"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-opener": "^2.5.4"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.2",
-    "@tauri-apps/cli": "^2.11.4",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^26.2.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.3",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "43.3.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
     "tailwindcss": "^4.3.2",
     "typescript": "~6.0.3",
-    "vite": "^8.1.3"
+    "vite": "7.3.6"
   }
 }
