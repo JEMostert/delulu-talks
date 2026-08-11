@@ -33,5 +33,5 @@ There is no Home destination. Launching the application opens Dictation, the hig
 - Use dense rows, split views, tables, and toolbars where the content is operational. Avoid marketing heroes, oversized headings, dashboard cards, gradients, and ornamental statistics.
 - Keep model/runtime failure visible and actionable without competing with the Record command.
 - Save Dictation quick controls immediately and silently. Reserve confirmations for transcript capture, copy/export, destructive actions, and explicit Settings saves.
-- Preserve transcript truth: intended and verbatim remain parallel views. Wordbook changes are explicit exact-text rules, while delivery settings only choose which version leaves the app.
+- Preserve transcript truth: intended and verbatim remain parallel views. Manual corrections live beside the untouched model output, drive copy/TXT export, and always offer Restore original. Wordbook changes are explicit exact-text rules, while delivery settings only choose which version leaves the app.
 - Keep destructive actions visually distinct, require confirmation for environment/history removal, and provide text labels in addition to color and icons.

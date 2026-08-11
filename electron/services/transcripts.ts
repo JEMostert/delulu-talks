@@ -1,4 +1,5 @@
 import type { SpeechInsights, TranscriptRecord, WordTimestamp } from "../../src/types";
+import { transcriptText } from "../../src/transcriptText";
 
 const fillerPattern = /\[(?:um|uh|erm|hmm)\]|\b(?:um+|uh+|erm+|hmm+)\b/giu;
 const vocalPattern = /\[(?:laughter|laugh|cough|sigh|breath|noise|music|applause)\]/giu;
@@ -49,9 +50,13 @@ function captionGroups(words: WordTimestamp[]): WordTimestamp[][] {
 export function exportRecord(record: TranscriptRecord, format: "txt" | "json" | "srt" | "vtt"): string {
   if (format === "json") return `${JSON.stringify(record, null, 2)}\n`;
   if (format === "txt") {
-    const dual = record.verbatimText && record.verbatimText !== record.intendedText
-      ? `${record.intendedText}\n\n--- Verbatim ---\n\n${record.verbatimText}`
-      : record.text;
+    const intended = transcriptText(record, "intended");
+    const verbatim = transcriptText(record, "verbatim");
+    const hasIntended = Boolean(record.intendedText || record.editedIntendedText);
+    const hasVerbatim = Boolean(record.verbatimText || record.editedVerbatimText);
+    const dual = hasIntended && hasVerbatim && verbatim !== intended
+      ? `${intended}\n\n--- Verbatim ---\n\n${verbatim}`
+      : hasVerbatim && !hasIntended ? verbatim : intended || verbatim;
     return `${dual.trim()}\n`;
   }
 

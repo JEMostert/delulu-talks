@@ -3,6 +3,7 @@ import { AlertCircle, Check, LoaderCircle, Mic, Square } from "lucide-react";
 import { bridge } from "./bridge";
 import { DEFAULT_SETTINGS, modelById } from "./data";
 import { PcmRecorder, listMicrophones } from "./recorder";
+import { originalTranscriptText } from "./transcriptText";
 import { Sidebar } from "./components/Sidebar";
 import { Overlay } from "./components/Overlay";
 import { HomePage } from "./pages/HomePage";
@@ -11,7 +12,7 @@ import { ModelsPage } from "./pages/ModelsPage";
 import { VocabularyPage } from "./pages/VocabularyPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import type { AppSettings, DictationStatus, MicrophoneDevice, Page, PlatformCapabilities, TranscriptRecord } from "./types";
+import type { AppSettings, DictationStatus, MicrophoneDevice, Page, PlatformCapabilities, TranscriptRecord, TranscriptVersion } from "./types";
 
 const initialStatus: DictationStatus = { phase: "idle", engine: "unloaded", message: "Loading your workspace" };
 
@@ -99,6 +100,28 @@ function App() {
     }
   }
 
+  async function updateTranscript(id: string, version: TranscriptVersion, text: string | null) {
+    try {
+      if (!settings.keepHistory) {
+        setHistory((items) => items.map((item) => {
+          if (item.id !== id) return item;
+          const normalized = text?.trim() ?? null;
+          const correction = normalized === originalTranscriptText(item, version) ? null : normalized;
+          return version === "intended" ? { ...item, editedIntendedText: correction } : { ...item, editedVerbatimText: correction };
+        }));
+        setToast(text === null ? "Original transcript restored" : "Correction applied for this session");
+        return true;
+      }
+      const updated = await bridge.updateTranscript(id, version, text);
+      setHistory((items) => items.map((item) => item.id === id ? updated : item));
+      setToast(text === null ? "Original transcript restored" : "Correction saved locally");
+      return true;
+    } catch (error) {
+      setStatus({ ...status, phase: "error", message: error instanceof Error ? error.message : String(error) });
+      return false;
+    }
+  }
+
   if (isOverlay) return <Overlay status={status} />;
 
   const busy = ["preparing", "loading", "transcribing"].includes(status.phase);
@@ -125,11 +148,11 @@ function App() {
         </header>
 
         <div className="page-scroll">
-          {page === "home" && <HomePage settings={settings} status={status} history={history} saving={saving} onNavigate={setPage} onUpdateSettings={(patch) => void saveSettings({ ...settings, ...patch }, null)} onCopy={(text) => void action(() => bridge.copyText(text), "Copied to clipboard")} />}
+          {page === "home" && <HomePage settings={settings} status={status} history={history} saving={saving} onNavigate={setPage} onUpdateSettings={(patch) => void saveSettings({ ...settings, ...patch }, null)} onUpdateTranscript={updateTranscript} onCopy={(text) => void action(() => bridge.copyText(text), "Copied to clipboard")} />}
           {page === "lab" && <LabPage settings={settings} onResult={(record) => setHistory((items) => [record, ...items.filter((item) => item.id !== record.id)])} onToast={setToast} />}
           {page === "models" && <ModelsPage selected={settings.model} status={status} saving={saving} licenseAccepted={settings.modelLicenseAccepted} onSelect={(model) => void saveSettings({ ...settings, model }, "Model selection updated")} onSetup={() => void action(() => bridge.setupModel())} onLoad={() => void action(() => bridge.loadModel())} onUnload={() => void action(() => bridge.unloadModel(), "Model unloaded")} onOpenSettings={() => setPage("settings")} />}
           {page === "vocabulary" && <VocabularyPage words={settings.customWords} saving={saving} onChange={(customWords) => void saveSettings({ ...settings, customWords }, "Wordbook updated")} />}
-          {page === "history" && <HistoryPage history={history} onCopy={(text) => void action(() => bridge.copyText(text), "Copied to clipboard")} onDelete={(id) => void action(() => bridge.deleteHistory(id).then(() => setHistory((items) => items.filter((item) => item.id !== id))))} onClear={() => void action(() => bridge.clearHistory().then(() => setHistory([])), "Local history cleared")} onExport={(id, format) => void action(() => bridge.exportTranscript(id, format).then((path) => { if (path) setToast(`Exported to ${path}`); }))} />}
+          {page === "history" && <HistoryPage history={history} onUpdateTranscript={updateTranscript} onCopy={(text) => void action(() => bridge.copyText(text), "Copied to clipboard")} onDelete={(id) => void action(() => bridge.deleteHistory(id).then(() => setHistory((items) => items.filter((item) => item.id !== id))))} onClear={() => void action(() => bridge.clearHistory().then(() => setHistory([])), "Local history cleared")} onExport={(id, format) => void action(() => bridge.exportTranscript(id, format).then((path) => { if (path) setToast(`Exported to ${path}`); }))} />}
           {page === "settings" && <SettingsPage settings={settings} devices={devices} capabilities={capabilities} status={status} saving={saving} onSave={saveSettings} onSetup={() => void action(() => bridge.setupModel())} onLoad={() => void action(() => bridge.loadModel())} onUnload={() => void action(() => bridge.unloadModel(), "Model unloaded")} onReset={() => void action(() => bridge.resetPythonEnvironment(), "Python environment removed")} />}
         </div>
       </main>

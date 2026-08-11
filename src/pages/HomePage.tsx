@@ -1,7 +1,8 @@
-import { BookOpenText, Check, ChevronRight, Clock3, Copy, Cpu, Mic, Settings2 } from "lucide-react";
+import { BookOpenText, Check, ChevronRight, Clock3, Copy, Cpu, Mic, Pencil, RotateCcw, Save, Settings2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LANGUAGES, modelById } from "../data";
-import type { AppSettings, DictationStatus, Page, TranscriptRecord } from "../types";
+import { transcriptIsEdited, transcriptText } from "../transcriptText";
+import type { AppSettings, DictationStatus, Page, TranscriptRecord, TranscriptVersion } from "../types";
 
 function relativeTime(timestamp: number) {
   const minutes = Math.max(1, Math.round((Date.now() - timestamp) / 60_000));
@@ -14,22 +15,44 @@ function QuickSwitch({ checked, label, onChange }: { checked: boolean; label: st
   return <button className={`quick-switch ${checked ? "on" : ""}`} role="switch" aria-checked={checked} onClick={onChange}><i />{label}</button>;
 }
 
-export function HomePage({ settings, status, history, saving, onNavigate, onUpdateSettings, onCopy }: {
+export function HomePage({ settings, status, history, saving, onNavigate, onUpdateSettings, onUpdateTranscript, onCopy }: {
   settings: AppSettings;
   status: DictationStatus;
   history: TranscriptRecord[];
   saving: boolean;
   onNavigate: (page: Page) => void;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
+  onUpdateTranscript: (id: string, version: TranscriptVersion, text: string | null) => Promise<boolean>;
   onCopy: (text: string) => void;
 }) {
   const latest = history[0] ?? null;
   const model = modelById(settings.model);
-  const [version, setVersion] = useState<"intended" | "verbatim">("intended");
-  useEffect(() => setVersion(latest?.intendedText ? "intended" : "verbatim"), [latest?.id, latest?.intendedText]);
-  const visibleText = latest
-    ? version === "intended" ? latest.intendedText || latest.text : latest.verbatimText || latest.text
-    : "";
+  const [version, setVersion] = useState<TranscriptVersion>("intended");
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  useEffect(() => {
+    setVersion(latest?.intendedText ? "intended" : "verbatim");
+    setEditing(false);
+  }, [latest?.id, latest?.intendedText]);
+  useEffect(() => setEditing(false), [version]);
+  const visibleText = latest ? transcriptText(latest, version) : "";
+  const corrected = latest ? transcriptIsEdited(latest, version) : false;
+
+  function startEditing() {
+    setEditDraft(visibleText);
+    setEditing(true);
+  }
+
+  async function saveCorrection() {
+    if (!latest || !editDraft.trim() || editDraft.trim() === visibleText) return;
+    setSavingEdit(true);
+    try {
+      if (await onUpdateTranscript(latest.id, version, editDraft)) setEditing(false);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   return (
     <div className="dictation-view">
@@ -43,14 +66,26 @@ export function HomePage({ settings, status, history, saving, onNavigate, onUpda
       <div className="dictation-grid">
         <section className="transcript-workbench">
           <header className="panel-toolbar">
-            <div><strong>Latest transcript</strong>{latest && <span>{relativeTime(latest.createdAt)} · {Math.max(1, Math.round(latest.durationMs / 1000))}s</span>}</div>
-            {latest?.intendedText && latest.verbatimText && <div className="segmented compact" role="group" aria-label="Transcript version"><button className={version === "intended" ? "active" : ""} aria-pressed={version === "intended"} onClick={() => setVersion("intended")}>Intended</button><button className={version === "verbatim" ? "active" : ""} aria-pressed={version === "verbatim"} onClick={() => setVersion("verbatim")}>Verbatim</button></div>}
+            <div><strong>Latest transcript</strong>{latest && <span>{relativeTime(latest.createdAt)} · {Math.max(1, Math.round(latest.durationMs / 1000))}s · {corrected ? "corrected" : "original"}</span>}</div>
+            <div className="transcript-toolbar-actions">
+              {latest?.intendedText && latest.verbatimText && <div className="segmented compact" role="group" aria-label="Transcript version"><button className={version === "intended" ? "active" : ""} aria-pressed={version === "intended"} disabled={editing} onClick={() => setVersion("intended")}>Intended</button><button className={version === "verbatim" ? "active" : ""} aria-pressed={version === "verbatim"} disabled={editing} onClick={() => setVersion("verbatim")}>Verbatim</button></div>}
+              {latest && !editing && <button className="tool-button edit-command" onClick={startEditing}><Pencil /> Correct text</button>}
+            </div>
           </header>
           {latest ? <>
-            <div className="transcript-editor" role="region" aria-label={`${version} transcript`} tabIndex={0}>{visibleText}</div>
+            {editing
+              ? <textarea className="transcript-editor transcript-edit" aria-label={`Correct ${version} transcript`} value={editDraft} autoFocus onChange={(event) => setEditDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setEditing(false); if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) void saveCorrection(); }} />
+              : <div className="transcript-editor" role="region" aria-label={`${version} transcript`} tabIndex={0}>{visibleText}</div>}
             <footer className="panel-footer">
-              <div className="transcript-metrics"><span>{latest.insights.wordsPerMinute} WPM</span><span>{latest.insights.fillerCount} fillers</span><span>{latest.insights.repetitionCount} repetitions</span><span>{latest.words.length || latest.verbatimWords.length} timed words</span></div>
-              <div><button className="tool-button" onClick={() => onCopy(visibleText)}><Copy /> Copy</button><button className="tool-button" onClick={() => onNavigate("history")}><Clock3 /> Open in history</button></div>
+              <div className="transcript-metrics">{editing ? <span>Ctrl + Enter to save · Esc to cancel</span> : <><span>{latest.insights.wordsPerMinute} WPM</span><span>{latest.insights.fillerCount} fillers</span><span>{latest.insights.repetitionCount} repetitions</span><span>{latest.words.length || latest.verbatimWords.length} timed words</span></>}</div>
+              <div>{editing ? <>
+                <button className="tool-button" disabled={savingEdit} onClick={() => setEditing(false)}><X /> Cancel</button>
+                <button className="primary-button" disabled={savingEdit || !editDraft.trim() || editDraft.trim() === visibleText} onClick={() => void saveCorrection()}><Save /> {savingEdit ? "Saving" : "Save correction"}</button>
+              </> : <>
+                {corrected && <button className="tool-button" onClick={() => void onUpdateTranscript(latest.id, version, null)}><RotateCcw /> Restore original</button>}
+                <button className="tool-button" onClick={() => onCopy(visibleText)}><Copy /> Copy</button>
+                <button className="tool-button" onClick={() => onNavigate("history")}><Clock3 /> Open in history</button>
+              </>}</div>
             </footer>
           </> : <div className="workbench-empty"><Mic /><strong>No transcript yet</strong><p>Use Record in the toolbar or press {settings.shortcut.split("+").join(" + ")} from any application.</p></div>}
         </section>
@@ -80,7 +115,7 @@ export function HomePage({ settings, status, history, saving, onNavigate, onUpda
       <section className="recent-captures">
         <header className="panel-toolbar"><div><strong>Recent captures</strong><span>{history.length} stored locally</span></div><button className="tool-button" onClick={() => onNavigate("history")}>View all <ChevronRight /></button></header>
         <div className="recent-table">
-          {history.slice(0, 5).map((item) => <div className="recent-row" key={item.id}><span className="source-icon">{item.source === "dictation" ? <Mic /> : <Clock3 />}</span><p>{item.intendedText || item.text}</p><small>{relativeTime(item.createdAt)}</small><b>{item.mode}</b><button aria-label="Copy transcript" onClick={() => onCopy(item.text)}><Copy /></button></div>)}
+          {history.slice(0, 5).map((item) => { const itemVersion: TranscriptVersion = item.intendedText ? "intended" : "verbatim"; const itemText = transcriptText(item, itemVersion); return <div className="recent-row" key={item.id}><span className="source-icon">{item.source === "dictation" ? <Mic /> : <Clock3 />}</span><p>{itemText}</p><small>{relativeTime(item.createdAt)}</small><b>{transcriptIsEdited(item, itemVersion) ? "edited" : item.mode}</b><button aria-label="Copy transcript" onClick={() => onCopy(itemText)}><Copy /></button></div>; })}
           {!history.length && <div className="recent-empty"><Check /> Finished dictations will appear here.</div>}
         </div>
       </section>

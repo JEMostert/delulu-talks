@@ -49,6 +49,7 @@ The four standard aliases resolve to `nyralabs/CrisperWhisper2.0_small`, `_mediu
 - **Speech Lab:** native formats go directly to CrisperWhisper. Compressed media and video are normalized through the system FFmpeg binary to a temporary mono 16 kHz WAV.
 - **Verbatimize:** combines a trusted clean transcript with the audio to recover audible fillers, repairs, cut-offs, and vocal events; word timing is requested when enabled.
 - **Forced align:** assigns model-derived timing to a supplied exact transcript.
+- **Correction:** manual edits are stored beside the original intended/verbatim model output. Copy and text export use the correction, while Restore removes only the edit and JSON retains both layers.
 - **Delivery:** the chosen dual variant is copied first. Paste uses platform automation; Linux tries `wtype`, `ydotool`, `dotool`, then `xdotool`, and falls back to a clear clipboard-only result.
 
 ## Failure and privacy rules

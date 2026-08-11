@@ -2,6 +2,7 @@ export type Page = "home" | "lab" | "models" | "vocabulary" | "history" | "setti
 
 export type ModelId = "crisperSmall" | "crisperMedium" | "crisperTurbo" | "crisperLarge";
 export type TranscriptionMode = "intended" | "verbatim" | "dual";
+export type TranscriptVersion = "intended" | "verbatim";
 export type AsrBackend = "auto" | "ct2" | "transformers";
 export type ComputeType = "auto" | "float16" | "int8Float16" | "int8" | "float32";
 export type DictationPhase = "idle" | "preparing" | "loading" | "listening" | "transcribing" | "error";
@@ -73,6 +74,8 @@ export type TranscriptRecord = {
   text: string;
   intendedText: string;
   verbatimText: string;
+  editedIntendedText?: string | null;
+  editedVerbatimText?: string | null;
   mode: TranscriptionMode | "forcedAlign" | "verbatimize";
   model: ModelId;
   language: string;
@@ -150,6 +153,7 @@ export type DeluluApi = {
   unloadModel(): Promise<void>;
   resetPythonEnvironment(): Promise<void>;
   copyText(text: string): Promise<void>;
+  updateTranscript(id: string, version: TranscriptVersion, text: string | null): Promise<TranscriptRecord>;
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
   chooseAudioFile(): Promise<AudioFileSelection | null>;

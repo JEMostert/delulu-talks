@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS } from "./data";
+import { originalTranscriptText } from "./transcriptText";
 import type {
   AppSettings,
   AudioFileSelection,
@@ -10,9 +11,10 @@ import type {
   RecorderCommand,
   RecordingSubmission,
   TranscriptRecord,
+  TranscriptVersion,
 } from "./types";
 
-const demoHistory: TranscriptRecord[] = [
+let demoHistory: TranscriptRecord[] = [
   {
     id: "demo-1",
     createdAt: Date.now() - 1000 * 60 * 18,
@@ -51,6 +53,17 @@ const mockApi: DeluluApi = {
   async unloadModel() {},
   async resetPythonEnvironment() {},
   async copyText(text) { await navigator.clipboard?.writeText(text); },
+  async updateTranscript(id: string, version: TranscriptVersion, text: string | null) {
+    const record = demoHistory.find((item) => item.id === id);
+    if (!record) throw new Error("Transcript not found");
+    const normalized = text?.trim() ?? null;
+    const correction = normalized && normalized !== originalTranscriptText(record, version) ? normalized : null;
+    const updated = version === "intended"
+      ? { ...record, editedIntendedText: correction }
+      : { ...record, editedVerbatimText: correction };
+    demoHistory = demoHistory.map((item) => item.id === id ? updated : item);
+    return updated;
+  },
   async deleteHistory() {},
   async clearHistory() {},
   async chooseAudioFile(): Promise<AudioFileSelection | null> { return null; },

@@ -8,6 +8,7 @@ import type {
   RecorderCommand,
   RecordingSubmission,
   TranscriptRecord,
+  TranscriptVersion,
 } from "../src/types";
 
 function listener<T>(channel: string, callback: (value: T) => void): () => void {
@@ -31,6 +32,7 @@ const api: DeluluApi = {
   unloadModel: () => ipcRenderer.invoke("runtime:unload"),
   resetPythonEnvironment: () => ipcRenderer.invoke("runtime:reset"),
   copyText: (text: string) => ipcRenderer.invoke("clipboard:copy", text),
+  updateTranscript: (id: string, version: TranscriptVersion, text: string | null) => ipcRenderer.invoke("history:updateTranscript", id, version, text),
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),
   clearHistory: () => ipcRenderer.invoke("history:clear"),
   chooseAudioFile: () => ipcRenderer.invoke("lab:chooseAudio"),

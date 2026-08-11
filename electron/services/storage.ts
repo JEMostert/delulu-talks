@@ -2,7 +2,8 @@ import { app } from "electron";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DEFAULT_SETTINGS, LANGUAGES, MODELS } from "../../src/data";
-import type { AppSettings, CustomWord, ModelId, SpeechInsights, TranscriptRecord } from "../../src/types";
+import { originalTranscriptText } from "../../src/transcriptText";
+import type { AppSettings, CustomWord, ModelId, SpeechInsights, TranscriptRecord, TranscriptVersion } from "../../src/types";
 
 const SETTINGS_FILE = "settings.json";
 const HISTORY_FILE = "history.json";
@@ -27,6 +28,11 @@ function writeJson(path: string, value: unknown): void {
 
 function safeString(value: unknown, fallback: string, max = 512): string {
   return typeof value === "string" ? value.trim().slice(0, max) || fallback : fallback;
+}
+
+function optionalText(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  return value.trim().slice(0, max) || null;
 }
 
 function normalizeWords(value: unknown): CustomWord[] {
@@ -98,16 +104,19 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
   const text = safeString(source.text, "", 250_000);
   if (!text) return null;
   const model = validModels.has(source.model as ModelId) ? source.model as ModelId : DEFAULT_SETTINGS.model;
+  const mode = ["intended", "verbatim", "dual", "forcedAlign", "verbatimize"].includes(String(source.mode))
+    ? source.mode as TranscriptRecord["mode"]
+    : "intended";
   return {
     id: safeString(source.id, `legacy-${Date.now()}-${Math.random()}`, 128),
     createdAt: Number(source.createdAt) || Date.now(),
     durationMs: Math.max(0, Number(source.durationMs) || 0),
     text,
-    intendedText: safeString(source.intendedText, text, 250_000),
+    intendedText: safeString(source.intendedText, mode === "verbatim" ? "" : text, 250_000),
     verbatimText: safeString(source.verbatimText ?? source.rawText, "", 250_000),
-    mode: ["intended", "verbatim", "dual", "forcedAlign", "verbatimize"].includes(String(source.mode))
-      ? source.mode as TranscriptRecord["mode"]
-      : "intended",
+    editedIntendedText: optionalText(source.editedIntendedText, 500_000),
+    editedVerbatimText: optionalText(source.editedVerbatimText, 500_000),
+    mode,
     model,
     language: safeString(source.language, "en", 12),
     words: Array.isArray(source.words) ? source.words as TranscriptRecord["words"] : [],
@@ -119,6 +128,15 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     sourceName: typeof source.sourceName === "string" ? source.sourceName : null,
     processingTimeMs: Math.max(0, Number(source.processingTimeMs) || 0),
   };
+}
+
+export function applyTranscriptEdit(record: TranscriptRecord, version: TranscriptVersion, text: string | null): TranscriptRecord {
+  const normalized = text?.trim() ?? null;
+  if (text !== null && !normalized) throw new Error("A transcript correction cannot be empty");
+  const correction = normalized === originalTranscriptText(record, version) ? null : normalized;
+  return version === "intended"
+    ? { ...record, editedIntendedText: correction }
+    : { ...record, editedVerbatimText: correction };
 }
 
 export class StorageService {
@@ -179,6 +197,15 @@ export class StorageService {
 
   findHistory(id: string): TranscriptRecord | undefined {
     return this.history.find((item) => item.id === id);
+  }
+
+  updateTranscript(id: string, version: TranscriptVersion, text: string | null): TranscriptRecord {
+    const index = this.history.findIndex((item) => item.id === id);
+    if (index < 0) throw new Error("Transcript not found");
+    const updated = applyTranscriptEdit(this.history[index], version, text);
+    this.history = this.history.map((item, itemIndex) => itemIndex === index ? updated : item);
+    writeJson(join(this.dataDirectory, HISTORY_FILE), this.history);
+    return structuredClone(updated);
   }
 
   deleteHistory(id: string): void {

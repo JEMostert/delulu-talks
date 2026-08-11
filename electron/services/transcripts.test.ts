@@ -32,4 +32,19 @@ describe("speech metadata", () => {
     expect(exportRecord(record, "vtt")).toContain("00:00:00.100 --> 00:00:00.900");
     expect(exportRecord(record, "srt")).toContain("00:00:00,100 --> 00:00:00,900");
   });
+
+  test("uses corrections in text exports without replacing model output", () => {
+    const corrected = { ...record, editedIntendedText: "Corrected hello world." };
+    expect(exportRecord(corrected, "txt")).toStartWith("Corrected hello world.");
+    const json = JSON.parse(exportRecord(corrected, "json"));
+    expect(json.intendedText).toBe("Hello world.");
+    expect(json.editedIntendedText).toBe("Corrected hello world.");
+  });
+
+  test("exports a corrected verbatim-only record as a single transcript", () => {
+    const corrected = { ...record, mode: "verbatim" as const, intendedText: "", editedVerbatimText: "[UM] corrected world." };
+    const text = exportRecord(corrected, "txt");
+    expect(text).toBe("[UM] corrected world.\n");
+    expect(text).not.toContain("--- Verbatim ---");
+  });
 });

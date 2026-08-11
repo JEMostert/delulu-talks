@@ -10,6 +10,7 @@ Delulu Talks keeps one fast speech model ready behind a system-wide shortcut, cr
 - All four standard Nyra Labs CrisperWhisper 2.0 checkpoints: Small, Medium, Turbo, and Large
 - Medium is the balanced default; **Keep selected model loaded** is enabled by default and can be disabled in Settings
 - Intended, verbatim, and CT2 dual transcription with conditional long-form continuation and hallucination mitigation
+- Non-destructive transcript correction: edit either view for copy/TXT export and restore the untouched model output at any time
 - Linux x64 CTranslate2 acceleration, Large + Turbo speculative decoding, and portable Transformers fallback
 - Speech Lab for audio/video import, Verbatimize, forced alignment, and word-level timelines
 - Private local history, speech-pattern insights, deterministic vocabulary replacements, and TXT/JSON/SRT/VTT export
@@ -64,7 +65,7 @@ Delulu Talks is MIT-licensed. CrisperWhisper's inference code is also MIT, but i
 
 ## Privacy and storage
 
-Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted in a `finally` path after success or failure. Imported media is never modified; temporary FFmpeg conversions are also deleted. Settings, optional transcript history, the Python environment, and downloaded model cache stay under Electron's platform application-data directory. No telemetry or cloud transcription is implemented.
+Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted in a `finally` path after success or failure. Imported media is never modified; temporary FFmpeg conversions are also deleted. Settings, optional transcript history, non-destructive text corrections, the Python environment, and downloaded model cache stay under Electron's platform application-data directory. No telemetry or cloud transcription is implemented.
 
 The old Tauri data directory is detected on Linux so settings and history can migrate forward once. Removed model selections are mapped to CrisperWhisper Medium.
 

@@ -13,7 +13,7 @@ import {
 } from "electron";
 import { existsSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
-import type { AppSettings, ExportFormat, LabRequest, RecordingSubmission, TranscriptRecord } from "../src/types";
+import type { AppSettings, ExportFormat, LabRequest, RecordingSubmission, TranscriptRecord, TranscriptVersion } from "../src/types";
 import { modelById } from "../src/data";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
@@ -212,6 +212,11 @@ function registerIpc(): void {
   ipcMain.handle("recorder:submit", (_event, submission: RecordingSubmission) => dictation.submitRecording(submission));
   ipcMain.handle("clipboard:copy", (_event, text: unknown) => paste.copy(validateText(text, 500_000)));
   ipcMain.handle("history:get", () => storage.getHistory());
+  ipcMain.handle("history:updateTranscript", (_event, id: unknown, requestedVersion: unknown, text: unknown) => {
+    if (requestedVersion !== "intended" && requestedVersion !== "verbatim") throw new Error("Unknown transcript version");
+    const version: TranscriptVersion = requestedVersion;
+    return storage.updateTranscript(validateText(id, 128), version, text === null ? null : validateText(text, 500_000));
+  });
   ipcMain.handle("history:delete", (_event, id: unknown) => storage.deleteHistory(validateText(id, 128)));
   ipcMain.handle("history:clear", () => storage.clearHistory());
   ipcMain.handle("lab:chooseAudio", async () => {
