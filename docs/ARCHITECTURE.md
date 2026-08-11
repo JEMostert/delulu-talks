@@ -40,7 +40,7 @@ Electron main process ── validated IPC ── sandboxed React renderer
 4. Setup downloads/converts only the selected checkpoint. The selected model can then remain resident or load on first dictation.
 5. Changing model, backend, compute type, or speculative setting unloads the old runtime before a replacement is loaded.
 6. Removing the environment preserves settings, history, and the model cache. The user can repair it without losing personal data.
-7. Magic installs into the same isolated environment and offers the official `Qwen/Qwen3.5-0.8B`, `-2B`, and `-4B` checkpoints. Qwen 3.5 has no official 8B checkpoint; 4B is the largest release below the configured ceiling.
+7. Magic installs Transformers, PyTorch, the matching Torchvision processor dependency, and Qwen into the same isolated environment. It offers the official `Qwen/Qwen3.5-0.8B`, `-2B`, and `-4B` checkpoints. Qwen 3.5 has no official 8B checkpoint; 4B is the largest release below the configured ceiling.
 8. Each model has an independent keep-resident setting. A shared configurable delay unloads any unpinned model after its last operation; disabling Magic unloads it immediately.
 
 The four standard aliases resolve to `nyralabs/CrisperWhisper2.0_small`, `_medium`, `_turbo`, and `_large`. Large can instantiate Turbo as a CT2 speculative draft. Standard weights never receive Pro-only hotword prompts; custom vocabulary is applied as deterministic, case-insensitive post-processing instead.

@@ -10,7 +10,7 @@ import type { StorageService } from "./storage";
 
 const PROTOCOL_PREFIX = "@delulu:";
 const READY_CHECK = "import crisperwhisper; print(crisperwhisper.__version__)";
-const MAGIC_READY_CHECK = "from transformers import AutoModelForMultimodalLM; import transformers; assert int(transformers.__version__.split('.')[0]) >= 5";
+const MAGIC_READY_CHECK = "import torch, torchvision, transformers; from transformers import AutoModelForMultimodalLM, AutoProcessor; assert int(transformers.__version__.split('.')[0]) >= 5";
 
 type WorkerResponse = { id: string; ok: boolean; result?: unknown; error?: string };
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout };
@@ -239,7 +239,7 @@ export class AsrService {
       await this.runMagicProcess(python[0], [...python.slice(1), "-m", "venv", this.storage.venvDirectory], "Creating Python environment", 0.14);
     }
     await this.runMagicProcess(this.venvPython(), ["-m", "pip", "install", "--upgrade", "pip", "wheel", "setuptools"], "Updating the local package installer", 0.24);
-    await this.runMagicProcess(this.venvPython(), ["-m", "pip", "install", "--upgrade", "torch>=2.6", "transformers>=5.7,<6", "accelerate>=1.0", "safetensors>=0.4", "sentencepiece", "pillow"], "Installing the Qwen 3.5 runtime", 0.48);
+    await this.runMagicProcess(this.venvPython(), ["-m", "pip", "install", "--upgrade", "torch>=2.6", "torchvision>=0.21", "transformers>=5.7,<6", "accelerate>=1.0", "safetensors>=0.4", "sentencepiece", "pillow"], "Installing the Qwen 3.5 runtime", 0.48);
     const model = magicModelById(settings.magicModel);
     this.updateMagicStatus({ phase: "loading", engine: "loading", message: `Downloading and loading ${model.name}`, progress: 0.82 });
     await this.loadMagic(settings, true);
