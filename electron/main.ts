@@ -13,7 +13,7 @@ import {
 } from "electron";
 import { existsSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
-import type { AppSettings, ExportFormat, LabRequest, RecordingSubmission, TranscriptRecord, TranscriptVersion } from "../src/types";
+import type { AppSettings, ExportFormat, LabRequest, MagicRewriteRequest, RecordingSubmission, TranscriptRecord, TranscriptVersion } from "../src/types";
 import { modelById } from "../src/data";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
@@ -187,14 +187,12 @@ function registerIpc(): void {
     const next = normalizeSettings(value);
     if (next.shortcut !== previous.shortcut) registerShortcut(next.shortcut, previous.shortcut);
     const runtimeChanged = next.model !== previous.model || next.backend !== previous.backend || next.computeType !== previous.computeType || next.speculativeDecoding !== previous.speculativeDecoding;
+    const magicRuntimeChanged = next.magicModel !== previous.magicModel;
     const saved = storage.updateSettings(next);
     app.setLoginItemSettings({ openAtLogin: saved.launchAtLogin });
     if (runtimeChanged) await asr.unload();
-    if (saved.preloadModel && saved.modelLicenseAccepted && (runtimeChanged || !previous.preloadModel)) {
-      if (await asr.isEnvironmentReady()) void asr.loadModel(saved).catch((error) => asr.fail(error));
-    } else if (!saved.preloadModel && previous.preloadModel && asr.getStatus().phase === "idle") {
-      await asr.unload();
-    }
+    if (magicRuntimeChanged) await asr.unloadMagic();
+    asr.configureResidency(saved);
     return saved;
   });
   ipcMain.handle("runtime:status", () => asr.getStatus());
@@ -202,6 +200,23 @@ function registerIpc(): void {
   ipcMain.handle("runtime:load", () => asr.loadModel(storage.getSettings()));
   ipcMain.handle("runtime:unload", () => asr.unload());
   ipcMain.handle("runtime:reset", () => asr.reset());
+  ipcMain.handle("magic:status", () => asr.getMagicStatus());
+  ipcMain.handle("magic:setup", () => asr.setupMagic(storage.getSettings()));
+  ipcMain.handle("magic:load", () => asr.loadMagic(storage.getSettings()));
+  ipcMain.handle("magic:unload", () => asr.unloadMagic());
+  ipcMain.handle("magic:rewrite", (_event, value: unknown) => {
+    if (!value || typeof value !== "object") throw new Error("Expected a Magic rewrite request");
+    const source = value as Record<string, unknown>;
+    const preset = ["polish", "concise", "structured", "prompt"].includes(String(source.preset)) ? source.preset as MagicRewriteRequest["preset"] : "polish";
+    const request: MagicRewriteRequest = {
+      text: validateText(source.text, 50_000).trim(),
+      preset,
+      instructions: validateText(source.instructions ?? "", 4_000).trim(),
+      allowInferences: source.allowInferences === true,
+    };
+    if (!request.text) throw new Error("Add a transcript or draft before using Magic");
+    return asr.rewriteMagic(request, storage.getSettings());
+  });
   ipcMain.handle("platform:capabilities", () => paste.capabilities());
   ipcMain.handle("dictation:start", () => dictation.start());
   ipcMain.handle("dictation:stop", () => dictation.stop());
@@ -276,6 +291,7 @@ async function start(): Promise<void> {
     (record: TranscriptRecord) => broadcast("history:added", record),
   );
   asr.onStatus((status) => broadcast("runtime:statusChanged", status));
+  asr.onMagicStatus((status) => broadcast("magic:statusChanged", status));
   setupPermissions();
   registerIpc();
   registerShortcut(storage.getSettings().shortcut);

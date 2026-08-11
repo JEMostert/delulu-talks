@@ -1,7 +1,7 @@
-import { Check, Clipboard, Clock3, Cpu, Download, Gauge, HardDrive, Keyboard, Languages, Mic2, PlayCircle, Save, ShieldCheck, Sparkles, Terminal, Trash2, Upload, Waypoints } from "lucide-react";
+import { Check, Clipboard, Clock3, Cpu, Download, Gauge, HardDrive, Keyboard, Languages, Mic2, PlayCircle, Save, ShieldCheck, Sparkles, Terminal, Trash2, Upload, WandSparkles, Waypoints } from "lucide-react";
 import { useEffect, useState } from "react";
-import { LANGUAGES } from "../data";
-import type { AppSettings, DictationStatus, MicrophoneDevice, PlatformCapabilities } from "../types";
+import { LANGUAGES, MAGIC_MODELS } from "../data";
+import type { AppSettings, DictationStatus, MagicStatus, MicrophoneDevice, PlatformCapabilities } from "../types";
 
 function SettingRow({ icon: Icon, title, description, children }: { icon: typeof Keyboard; title: string; description: string; children: React.ReactNode }) {
   return <div className="setting-row"><span className="setting-icon"><Icon /></span><div className="setting-copy"><strong>{title}</strong><p>{description}</p></div><div className="setting-control">{children}</div></div>;
@@ -11,21 +11,25 @@ function Toggle({ value, onChange, label }: { value: boolean; onChange: () => vo
   return <button className={`toggle ${value ? "on" : ""}`} role="switch" aria-checked={value} aria-label={label} onClick={onChange}><i /></button>;
 }
 
-export function SettingsPage({ settings, devices, capabilities, status, saving, onSave, onSetup, onLoad, onUnload, onReset }: {
+export function SettingsPage({ settings, devices, capabilities, status, magicStatus, saving, onSave, onSetup, onLoad, onUnload, onSetupMagic, onLoadMagic, onUnloadMagic, onReset }: {
   settings: AppSettings;
   devices: MicrophoneDevice[];
   capabilities: PlatformCapabilities | null;
   status: DictationStatus;
+  magicStatus: MagicStatus;
   saving: boolean;
   onSave: (settings: AppSettings) => Promise<void>;
   onSetup: () => void;
   onLoad: () => void;
   onUnload: () => void;
+  onSetupMagic: () => void;
+  onLoadMagic: () => void;
+  onUnloadMagic: () => void;
   onReset: () => void;
 }) {
   const [draft, setDraft] = useState(settings);
   useEffect(() => setDraft(settings), [settings]);
-  const busy = ["preparing", "loading", "transcribing", "listening"].includes(status.phase);
+  const busy = ["preparing", "loading", "transcribing", "listening"].includes(status.phase) || ["preparing", "loading", "rewriting"].includes(magicStatus.phase);
 
   async function saveThen(action: () => void) {
     await onSave(draft);
@@ -50,7 +54,11 @@ export function SettingsPage({ settings, devices, capabilities, status, saving, 
       </section>
 
       <section className="settings-group"><div className="group-heading"><p className="eyebrow">C / MODEL LIFECYCLE</p><h3>Resident engine & acceleration</h3></div>
-        <SettingRow icon={PlayCircle} title="Keep selected model loaded" description="Recommended. Holds the model in RAM/VRAM so releasing the shortcut returns text immediately."><Toggle value={draft.preloadModel} label="Keep model loaded" onChange={() => setDraft({ ...draft, preloadModel: !draft.preloadModel })} /></SettingRow>
+        <SettingRow icon={PlayCircle} title="Keep speech model loaded" description="Recommended. Holds CrisperWhisper in memory so releasing the shortcut returns text immediately."><Toggle value={draft.preloadModel} label="Keep speech model loaded" onChange={() => setDraft({ ...draft, preloadModel: !draft.preloadModel })} /></SettingRow>
+        <SettingRow icon={WandSparkles} title="Enable Magic" description="Use a second, fully local Qwen 3.5 model to rewrite transcripts and rough drafts."><Toggle value={draft.magicEnabled} label="Enable Magic" onChange={() => setDraft({ ...draft, magicEnabled: !draft.magicEnabled })} /></SettingRow>
+        <SettingRow icon={Cpu} title="Magic model" description="Official Qwen 3.5 checkpoints below the 8B ceiling. Larger options improve prompt and coding-context rewrites."><select aria-label="Magic model" disabled={!draft.magicEnabled} value={draft.magicModel} onChange={(event) => setDraft({ ...draft, magicModel: event.target.value as AppSettings["magicModel"] })}>{MAGIC_MODELS.map((model) => <option key={model.id} value={model.id}>{model.name} — {model.role} · {model.memory}</option>)}</select></SettingRow>
+        <SettingRow icon={PlayCircle} title="Keep Magic model loaded" description="Keeps Qwen resident beside the speech model for instant rewrites. Disable this on memory-constrained systems."><Toggle value={draft.preloadMagicModel} label="Keep Magic model loaded" onChange={() => setDraft({ ...draft, preloadMagicModel: !draft.preloadMagicModel })} /></SettingRow>
+        <SettingRow icon={Clock3} title="Idle unload delay" description="Models that are not pinned stay warm for this long after their last transcription or rewrite."><select aria-label="Idle unload delay" value={draft.modelIdleMinutes} onChange={(event) => setDraft({ ...draft, modelIdleMinutes: Number(event.target.value) })}><option value={1}>1 minute</option><option value={5}>5 minutes</option><option value={15}>15 minutes (recommended)</option><option value={30}>30 minutes</option><option value={60}>1 hour</option></select></SettingRow>
         <SettingRow icon={Cpu} title="Inference backend" description="Auto prefers Nyra's fast CTranslate2 runtime on Linux x64 and portable Transformers elsewhere."><select aria-label="Inference backend" value={draft.backend} onChange={(event) => setDraft({ ...draft, backend: event.target.value as AppSettings["backend"] })}><option value="auto">Auto (recommended)</option><option value="ct2">CTranslate2</option><option value="transformers">Transformers / PyTorch</option></select></SettingRow>
         <SettingRow icon={Gauge} title="Compute type" description="Auto selects FP16 on supported GPUs and INT8 on CPU."><select aria-label="Compute type" value={draft.computeType} onChange={(event) => setDraft({ ...draft, computeType: event.target.value as AppSettings["computeType"] })}><option value="auto">Auto</option><option value="float16">FP16</option><option value="int8Float16">INT8 + FP16</option><option value="int8">INT8</option><option value="float32">FP32</option></select></SettingRow>
         <SettingRow icon={Gauge} title="Speculative decoding" description="For single-output Large + CTranslate2, use Turbo as a draft. Dual mode uses its faster batched path instead."><Toggle value={draft.speculativeDecoding} label="Speculative decoding" onChange={() => setDraft({ ...draft, speculativeDecoding: !draft.speculativeDecoding })} /></SettingRow>
@@ -63,7 +71,7 @@ export function SettingsPage({ settings, devices, capabilities, status, saving, 
         <SettingRow icon={HardDrive} title="Launch at login" description="Keep the global shortcut available after signing in."><Toggle value={draft.launchAtLogin} label="Launch at login" onChange={() => setDraft({ ...draft, launchAtLogin: !draft.launchAtLogin })} /></SettingRow>
       </section>
 
-      <section className="settings-group"><div className="group-heading"><p className="eyebrow">E / LICENSE & RUNTIME</p><h3>Nyra weights and Python environment</h3></div>
+      <section className="settings-group"><div className="group-heading"><p className="eyebrow">E / LICENSE & RUNTIME</p><h3>Model licenses & shared Python environment</h3></div>
         <div className="license-consent">
           <ShieldCheck />
           <label><input type="checkbox" checked={draft.modelLicenseAccepted} onChange={(event) => setDraft({ ...draft, modelLicenseAccepted: event.target.checked })} /><span><strong>I accept the Nyra Health model-weight license</strong><small>The app code is MIT. CrisperWhisper 2.0 standard weights are licensed for non-commercial research use; commercial use requires a license from Nyra. Pro weights are not downloaded by this app.</small><a href="https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md" target="_blank" rel="noreferrer">Read the model license</a></span></label>
@@ -73,6 +81,10 @@ export function SettingsPage({ settings, devices, capabilities, status, saving, 
           <button className="secondary-button" disabled={busy || !draft.modelLicenseAccepted} onClick={() => void saveThen(onSetup)}><Download /> Install / repair</button>
           {status.engine === "ready" ? <button className="secondary-button" disabled={busy} onClick={onUnload}>Unload</button> : status.engine === "unloaded" ? <button className="secondary-button" disabled={busy} onClick={() => void saveThen(onLoad)}>Load</button> : null}
           <button className="danger-button" disabled={busy} onClick={() => { if (window.confirm("Remove Delulu Talks' local Python environment? Settings, history, and model caches stay untouched.")) onReset(); }}><Trash2 /> Remove env</button>
+        </div></div>
+        <div className="runtime-setup magic-runtime-setup"><WandSparkles /><div><strong>{magicStatus.engine === "ready" ? "Magic model resident and ready" : magicStatus.engine === "missing" ? "Magic runtime not installed" : `Magic runtime: ${magicStatus.engine}`}</strong><p>{magicStatus.message}</p></div><div className="runtime-actions">
+          <button className="secondary-button" disabled={busy || !draft.magicEnabled} onClick={() => void saveThen(onSetupMagic)}><Download /> Install / repair Magic</button>
+          {magicStatus.engine === "ready" ? <button className="secondary-button" disabled={busy} onClick={onUnloadMagic}>Unload</button> : magicStatus.engine === "unloaded" ? <button className="secondary-button" disabled={busy || !draft.magicEnabled} onClick={() => void saveThen(onLoadMagic)}>Load</button> : null}
         </div></div>
       </section>
     </div>

@@ -1,11 +1,12 @@
-import { AudioLines, BookOpenText, Clock3, Cpu, FlaskConical, Mic2, Settings2 } from "lucide-react";
-import type { DictationStatus, Page } from "../types";
+import { AudioLines, BookOpenText, Clock3, Cpu, FlaskConical, Mic2, Settings2, WandSparkles } from "lucide-react";
+import type { DictationStatus, MagicStatus, Page } from "../types";
 
 const groups: Array<{ label: string; items: Array<{ id: Page; label: string; icon: typeof Mic2 }> }> = [
   {
     label: "Work",
     items: [
       { id: "home", label: "Dictation", icon: Mic2 },
+      { id: "magic", label: "Magic", icon: WandSparkles },
       { id: "lab", label: "Speech Lab", icon: FlaskConical },
       { id: "history", label: "History", icon: Clock3 },
     ],
@@ -19,7 +20,7 @@ const groups: Array<{ label: string; items: Array<{ id: Page; label: string; ico
   },
 ];
 
-export function Sidebar({ page, onNavigate, status }: { page: Page; onNavigate: (page: Page) => void; status: DictationStatus }) {
+export function Sidebar({ page, onNavigate, status, magicStatus }: { page: Page; onNavigate: (page: Page) => void; status: DictationStatus; magicStatus: MagicStatus }) {
   return (
     <aside className="sidebar">
       <button className="brand" onClick={() => onNavigate("home")} aria-label="Open Dictation">
@@ -42,6 +43,11 @@ export function Sidebar({ page, onNavigate, status }: { page: Page; onNavigate: 
 
       <div className="sidebar-bottom">
         <button className={page === "settings" ? "active" : ""} aria-label="Settings" aria-current={page === "settings" ? "page" : undefined} title="Settings" onClick={() => onNavigate("settings")}><Settings2 /><span>Settings</span></button>
+        <button className={`engine-summary phase-${magicStatus.phase}`} aria-label={`Magic engine: ${magicStatus.engine}`} onClick={() => onNavigate("magic")} title={magicStatus.detail ?? magicStatus.message}>
+          <WandSparkles />
+          <span><small>Magic engine</small><strong>{magicStatus.engine}</strong></span>
+          <i />
+        </button>
         <button className={`engine-summary phase-${status.phase}`} aria-label={`Speech engine: ${status.engine}`} onClick={() => onNavigate("models")} title={status.detail ?? status.message}>
           <AudioLines />
           <span><small>Speech engine</small><strong>{status.engine}</strong></span>

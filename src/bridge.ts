@@ -7,6 +7,8 @@ import type {
   DictationStatus,
   ExportFormat,
   LabRequest,
+  MagicRewriteRequest,
+  MagicStatus,
   PlatformCapabilities,
   RecorderCommand,
   RecordingSubmission,
@@ -42,6 +44,7 @@ const mockApi: DeluluApi = {
   async getSettings() { return mockSettings(); },
   async updateSettings(settings) { localStorage.setItem("delulu-demo-settings", JSON.stringify(settings)); return settings; },
   async getStatus() { return { phase: "idle", engine: "ready", message: "Browser preview", model: "crisperMedium", backend: "ct2" }; },
+  async getMagicStatus() { return { phase: "idle", engine: "ready", message: "Qwen 3.5 · 2B ready", model: "qwen35Medium", device: "cuda" }; },
   async getHistory() { return demoHistory; },
   async getCapabilities() { return { platform: "linux", desktop: "Browser preview", sessionType: "wayland", pasteMethod: "clipboard-only", wayland: true }; },
   async toggleDictation() {},
@@ -52,6 +55,19 @@ const mockApi: DeluluApi = {
   async loadModel() {},
   async unloadModel() {},
   async resetPythonEnvironment() {},
+  async setupMagic() {},
+  async loadMagic() {},
+  async unloadMagic() {},
+  async rewriteMagic(request: MagicRewriteRequest) {
+    const presets = {
+      polish: request.text.replace(/\s+/g, " ").trim(),
+      concise: "Move the design review to Thursday and include the onboarding notes.",
+      structured: "Design review\n\n- Move the session to Thursday.\n- Add the new onboarding notes to the agenda.",
+      prompt: "Update the project schedule and onboarding documentation.\n\nRequirements:\n- Move the design review to Thursday.\n- Add the new onboarding notes.\n- Confirm the updated agenda with participants.",
+    };
+    const text = presets[request.preset];
+    return { text, model: mockSettings().magicModel, processingTimeMs: 640, inputCharacters: request.text.length, outputCharacters: text.length, includedInferences: request.allowInferences };
+  },
   async copyText(text) { await navigator.clipboard?.writeText(text); },
   async updateTranscript(id: string, version: TranscriptVersion, text: string | null) {
     const record = demoHistory.find((item) => item.id === id);
@@ -73,6 +89,7 @@ const mockApi: DeluluApi = {
   async recordingFailed() {},
   async submitRecording(_recording: RecordingSubmission) {},
   onStatus(_callback: (status: DictationStatus) => void) { return () => undefined; },
+  onMagicStatus(_callback: (status: MagicStatus) => void) { return () => undefined; },
   onTranscript(_callback: (record: TranscriptRecord) => void) { return () => undefined; },
   onRecorderCommand(_callback: (command: RecorderCommand) => void) { return () => undefined; },
 };

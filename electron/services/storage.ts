@@ -1,14 +1,15 @@
 import { app } from "electron";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { DEFAULT_SETTINGS, LANGUAGES, MODELS } from "../../src/data";
+import { DEFAULT_SETTINGS, LANGUAGES, MAGIC_MODELS, MODELS } from "../../src/data";
 import { originalTranscriptText } from "../../src/transcriptText";
-import type { AppSettings, CustomWord, ModelId, SpeechInsights, TranscriptRecord, TranscriptVersion } from "../../src/types";
+import type { AppSettings, CustomWord, MagicModelId, ModelId, SpeechInsights, TranscriptRecord, TranscriptVersion } from "../../src/types";
 
 const SETTINGS_FILE = "settings.json";
 const HISTORY_FILE = "history.json";
 const MAX_HISTORY = 500;
 const validModels = new Set(MODELS.map((model) => model.id));
+const validMagicModels = new Set(MAGIC_MODELS.map((model) => model.id));
 const validLanguages = new Set<string>(LANGUAGES.map(([code]) => code));
 
 function readJson(path: string): unknown {
@@ -59,6 +60,7 @@ function boolean(value: unknown, fallback: boolean): boolean {
 export function normalizeSettings(value: unknown): AppSettings {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const model = validModels.has(source.model as ModelId) ? source.model as ModelId : DEFAULT_SETTINGS.model;
+  const magicModel = validMagicModels.has(source.magicModel as MagicModelId) ? source.magicModel as MagicModelId : DEFAULT_SETTINGS.magicModel;
   const backend = ["auto", "ct2", "transformers"].includes(String(source.backend))
     ? source.backend as AppSettings["backend"]
     : DEFAULT_SETTINGS.backend;
@@ -84,6 +86,10 @@ export function normalizeSettings(value: unknown): AppSettings {
     keepHistory: boolean(source.keepHistory, DEFAULT_SETTINGS.keepHistory),
     showOverlay: boolean(source.showOverlay, DEFAULT_SETTINGS.showOverlay),
     preloadModel: boolean(source.preloadModel, DEFAULT_SETTINGS.preloadModel),
+    magicEnabled: boolean(source.magicEnabled, DEFAULT_SETTINGS.magicEnabled),
+    magicModel,
+    preloadMagicModel: boolean(source.preloadMagicModel, DEFAULT_SETTINGS.preloadMagicModel),
+    modelIdleMinutes: [1, 5, 15, 30, 60].includes(Number(source.modelIdleMinutes)) ? Number(source.modelIdleMinutes) : DEFAULT_SETTINGS.modelIdleMinutes,
     backend,
     computeType,
     speculativeDecoding: boolean(source.speculativeDecoding, DEFAULT_SETTINGS.speculativeDecoding),

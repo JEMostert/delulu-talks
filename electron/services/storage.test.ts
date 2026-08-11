@@ -23,6 +23,15 @@ describe("settings migration", () => {
     const settings = normalizeSettings({ customWords: [{ id: "x", term: " Nyra ", soundsLike: "nira", enabled: true }, { term: "" }] });
     expect(settings.customWords).toEqual([{ id: "x", term: "Nyra", soundsLike: "nira", replacement: "", enabled: true }]);
   });
+
+  test("normalizes Magic model residency settings", () => {
+    const settings = normalizeSettings({ magicModel: "invented-8b", magicEnabled: false, preloadMagicModel: false, modelIdleMinutes: 999 });
+    expect(settings.magicModel).toBe("qwen35Medium");
+    expect(settings.magicEnabled).toBeFalse();
+    expect(settings.preloadMagicModel).toBeFalse();
+    expect(settings.modelIdleMinutes).toBe(15);
+    expect(normalizeSettings({ modelIdleMinutes: 30 }).modelIdleMinutes).toBe(30);
+  });
 });
 
 describe("non-destructive transcript correction", () => {

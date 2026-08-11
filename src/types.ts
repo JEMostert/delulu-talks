@@ -1,12 +1,15 @@
-export type Page = "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
+export type Page = "home" | "magic" | "lab" | "models" | "vocabulary" | "history" | "settings";
 
 export type ModelId = "crisperSmall" | "crisperMedium" | "crisperTurbo" | "crisperLarge";
+export type MagicModelId = "qwen35Small" | "qwen35Medium" | "qwen35Large";
+export type MagicPreset = "polish" | "concise" | "structured" | "prompt";
 export type TranscriptionMode = "intended" | "verbatim" | "dual";
 export type TranscriptVersion = "intended" | "verbatim";
 export type AsrBackend = "auto" | "ct2" | "transformers";
 export type ComputeType = "auto" | "float16" | "int8Float16" | "int8" | "float32";
 export type DictationPhase = "idle" | "preparing" | "loading" | "listening" | "transcribing" | "error";
 export type EnginePhase = "missing" | "unloaded" | "settingUp" | "loading" | "ready" | "error";
+export type MagicPhase = "idle" | "preparing" | "loading" | "rewriting" | "error";
 export type TranscriptSource = "dictation" | "file" | "verbatimize" | "forcedAlign";
 export type LabOperation = "transcribe" | "verbatimize" | "forcedAlign";
 export type ExportFormat = "txt" | "json" | "srt" | "vtt";
@@ -33,6 +36,10 @@ export type AppSettings = {
   keepHistory: boolean;
   showOverlay: boolean;
   preloadModel: boolean;
+  magicEnabled: boolean;
+  magicModel: MagicModelId;
+  preloadMagicModel: boolean;
+  modelIdleMinutes: number;
   backend: AsrBackend;
   computeType: ComputeType;
   speculativeDecoding: boolean;
@@ -40,6 +47,32 @@ export type AppSettings = {
   launchAtLogin: boolean;
   modelLicenseAccepted: boolean;
   customWords: CustomWord[];
+};
+
+export type MagicStatus = {
+  phase: MagicPhase;
+  engine: EnginePhase;
+  message: string;
+  detail?: string | null;
+  model?: MagicModelId | null;
+  device?: string | null;
+  progress?: number | null;
+};
+
+export type MagicRewriteRequest = {
+  text: string;
+  preset: MagicPreset;
+  instructions?: string;
+  allowInferences: boolean;
+};
+
+export type MagicRewriteResult = {
+  text: string;
+  model: MagicModelId;
+  processingTimeMs: number;
+  inputCharacters: number;
+  outputCharacters: number;
+  includedInferences: boolean;
 };
 
 export type DictationStatus = {
@@ -102,6 +135,18 @@ export type ModelInfo = {
   recommended?: boolean;
 };
 
+export type MagicModelInfo = {
+  id: MagicModelId;
+  hfId: string;
+  name: string;
+  role: string;
+  description: string;
+  parameters: string;
+  memory: string;
+  speed: string;
+  recommended?: boolean;
+};
+
 export type AudioFileSelection = {
   path: string;
   name: string;
@@ -142,6 +187,7 @@ export type DeluluApi = {
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<AppSettings>;
   getStatus(): Promise<DictationStatus>;
+  getMagicStatus(): Promise<MagicStatus>;
   getHistory(): Promise<TranscriptRecord[]>;
   getCapabilities(): Promise<PlatformCapabilities>;
   toggleDictation(): Promise<void>;
@@ -152,6 +198,10 @@ export type DeluluApi = {
   loadModel(): Promise<void>;
   unloadModel(): Promise<void>;
   resetPythonEnvironment(): Promise<void>;
+  setupMagic(): Promise<void>;
+  loadMagic(): Promise<void>;
+  unloadMagic(): Promise<void>;
+  rewriteMagic(request: MagicRewriteRequest): Promise<MagicRewriteResult>;
   copyText(text: string): Promise<void>;
   updateTranscript(id: string, version: TranscriptVersion, text: string | null): Promise<TranscriptRecord>;
   deleteHistory(id: string): Promise<void>;
@@ -163,6 +213,7 @@ export type DeluluApi = {
   recordingFailed(message: string): Promise<void>;
   submitRecording(recording: RecordingSubmission): Promise<void>;
   onStatus(callback: (status: DictationStatus) => void): () => void;
+  onMagicStatus(callback: (status: MagicStatus) => void): () => void;
   onTranscript(callback: (record: TranscriptRecord) => void): () => void;
   onRecorderCommand(callback: (command: RecorderCommand) => void): () => void;
 };

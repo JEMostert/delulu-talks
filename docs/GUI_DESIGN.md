@@ -15,6 +15,7 @@ Research snapshot: 11 August 2026. The redesign follows desktop guidance rather 
 ```text
 Work
   Dictation          immediate capture, output choice, latest result
+  Magic              rewrite a transcript/draft with a visible accuracy boundary
   Speech Lab         file transcription, Verbatimize, forced alignment
   History            find, compare, copy, and export results
 
@@ -34,4 +35,5 @@ There is no Home destination. Launching the application opens Dictation, the hig
 - Keep model/runtime failure visible and actionable without competing with the Record command.
 - Save Dictation quick controls immediately and silently. Reserve confirmations for transcript capture, copy/export, destructive actions, and explicit Settings saves.
 - Preserve transcript truth: intended and verbatim remain parallel views. Manual corrections live beside the untouched model output, drive copy/TXT export, and always offer Restore original. Wordbook changes are explicit exact-text rules, while delivery settings only choose which version leaves the app.
+- Keep generative expansion legible: Magic separates rewrite style from the factual boundary, defaults to preserving facts, and labels outputs that may contain inferred constraints or examples. The source remains visible beside the generated result for review.
 - Keep destructive actions visually distinct, require confirmation for environment/history removal, and provide text labels in addition to color and icons.
