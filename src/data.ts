@@ -16,6 +16,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   preloadModel: true,
   magicEnabled: true,
   magicModel: "qwen35Medium",
+  magicPreset: "polish",
+  magicAllowInferences: false,
   preloadMagicModel: true,
   modelIdleMinutes: 15,
   backend: "auto",

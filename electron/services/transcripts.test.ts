@@ -47,4 +47,12 @@ describe("speech metadata", () => {
     expect(text).toBe("[UM] corrected world.\n");
     expect(text).not.toContain("--- Verbatim ---");
   });
+
+  test("exports the delivered Magic result without losing the source transcript", () => {
+    const rewritten = { ...record, magicText: "A polished delivery.", magicModel: "qwen35Medium" as const, magicPreset: "polish" as const };
+    const text = exportRecord(rewritten, "txt");
+    expect(text).toStartWith("A polished delivery.");
+    expect(text).toContain("--- Source transcript ---");
+    expect(text).toContain("Hello world.");
+  });
 });

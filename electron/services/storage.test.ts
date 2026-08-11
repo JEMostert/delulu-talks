@@ -25,9 +25,11 @@ describe("settings migration", () => {
   });
 
   test("normalizes Magic model residency settings", () => {
-    const settings = normalizeSettings({ magicModel: "invented-8b", magicEnabled: false, preloadMagicModel: false, modelIdleMinutes: 999 });
+    const settings = normalizeSettings({ magicModel: "invented-8b", magicPreset: "invented", magicEnabled: false, magicAllowInferences: true, preloadMagicModel: false, modelIdleMinutes: 999 });
     expect(settings.magicModel).toBe("qwen35Medium");
     expect(settings.magicEnabled).toBeFalse();
+    expect(settings.magicPreset).toBe("polish");
+    expect(settings.magicAllowInferences).toBeTrue();
     expect(settings.preloadMagicModel).toBeFalse();
     expect(settings.modelIdleMinutes).toBe(15);
     expect(normalizeSettings({ modelIdleMinutes: 30 }).modelIdleMinutes).toBe(30);

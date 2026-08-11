@@ -38,6 +38,8 @@ export type AppSettings = {
   preloadModel: boolean;
   magicEnabled: boolean;
   magicModel: MagicModelId;
+  magicPreset: MagicPreset;
+  magicAllowInferences: boolean;
   preloadMagicModel: boolean;
   modelIdleMinutes: number;
   backend: AsrBackend;
@@ -109,6 +111,11 @@ export type TranscriptRecord = {
   verbatimText: string;
   editedIntendedText?: string | null;
   editedVerbatimText?: string | null;
+  magicText?: string | null;
+  magicModel?: MagicModelId | null;
+  magicPreset?: MagicPreset | null;
+  magicIncludedInferences?: boolean;
+  magicProcessingTimeMs?: number;
   mode: TranscriptionMode | "forcedAlign" | "verbatimize";
   model: ModelId;
   language: string;
@@ -183,11 +190,20 @@ export type PlatformCapabilities = {
   wayland: boolean;
 };
 
+export type ShortcutStatus = {
+  accelerator: string;
+  registered: boolean;
+  method: "portal" | "native";
+  message: string;
+  lastTriggeredAt?: number | null;
+};
+
 export type DeluluApi = {
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<AppSettings>;
   getStatus(): Promise<DictationStatus>;
   getMagicStatus(): Promise<MagicStatus>;
+  getShortcutStatus(): Promise<ShortcutStatus>;
   getHistory(): Promise<TranscriptRecord[]>;
   getCapabilities(): Promise<PlatformCapabilities>;
   toggleDictation(): Promise<void>;
@@ -214,6 +230,7 @@ export type DeluluApi = {
   submitRecording(recording: RecordingSubmission): Promise<void>;
   onStatus(callback: (status: DictationStatus) => void): () => void;
   onMagicStatus(callback: (status: MagicStatus) => void): () => void;
+  onShortcutStatus(callback: (status: ShortcutStatus) => void): () => void;
   onTranscript(callback: (record: TranscriptRecord) => void): () => void;
   onRecorderCommand(callback: (command: RecorderCommand) => void): () => void;
 };

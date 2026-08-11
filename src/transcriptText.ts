@@ -14,3 +14,7 @@ export function transcriptText(record: TranscriptRecord, version: TranscriptVers
 export function transcriptIsEdited(record: TranscriptRecord, version: TranscriptVersion): boolean {
   return (version === "intended" ? record.editedIntendedText : record.editedVerbatimText) != null;
 }
+
+export function deliveredText(record: TranscriptRecord): string {
+  return record.magicText?.trim() || transcriptText(record, record.intendedText ? "intended" : "verbatim");
+}

@@ -1,7 +1,7 @@
-import { ChevronDown, Clock3, Copy, Download, FileAudio, Fingerprint, Gauge, Mic, Pencil, RotateCcw, Save, Search, Trash2, X } from "lucide-react";
+import { ChevronDown, Clock3, Copy, Download, FileAudio, Fingerprint, Gauge, Mic, Pencil, RotateCcw, Save, Search, Trash2, WandSparkles, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { modelById } from "../data";
-import { transcriptIsEdited, transcriptText } from "../transcriptText";
+import { deliveredText, transcriptIsEdited, transcriptText } from "../transcriptText";
 import type { ExportFormat, TranscriptRecord, TranscriptVersion } from "../types";
 
 function dateLabel(timestamp: number) {
@@ -22,7 +22,7 @@ export function HistoryPage({ history, onUpdateTranscript, onCopy, onDelete, onC
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
-  const filtered = useMemo(() => history.filter((item) => `${item.text} ${item.intendedText} ${item.verbatimText} ${item.editedIntendedText ?? ""} ${item.editedVerbatimText ?? ""} ${item.sourceName ?? ""}`.toLowerCase().includes(query.toLowerCase())), [history, query]);
+  const filtered = useMemo(() => history.filter((item) => `${item.text} ${item.intendedText} ${item.verbatimText} ${item.editedIntendedText ?? ""} ${item.editedVerbatimText ?? ""} ${item.magicText ?? ""} ${item.sourceName ?? ""}`.toLowerCase().includes(query.toLowerCase())), [history, query]);
 
   async function saveCorrection(id: string, version: TranscriptVersion, currentText: string) {
     if (!editDraft.trim() || editDraft.trim() === currentText) return;
@@ -52,9 +52,10 @@ export function HistoryPage({ history, onUpdateTranscript, onCopy, onDelete, onC
               <div className="history-content">
                 <button className="history-summary" onClick={() => setExpanded(open ? null : item.id)} aria-expanded={open}>
                   <span className="history-meta"><span>{dateLabel(item.createdAt)}</span><i>·</i><span>{Math.max(1, Math.round(item.durationMs / 1000))} sec</span><i>·</i><span>{model.size}</span><b>{anyEdited ? "edited" : item.mode}</b></span>
-                  <p>{transcriptText(item, item.intendedText ? "intended" : "verbatim")}</p><ChevronDown className={open ? "rotated" : ""} />
+                  <p>{deliveredText(item)}</p><ChevronDown className={open ? "rotated" : ""} />
                 </button>
                 {open && <div className="history-detail">
+                  {item.magicText && <div className="magic-delivery-preview compact"><div><WandSparkles /><span><strong>Delivered with Magic</strong><small>{item.magicPreset ?? "polish"} · {item.magicIncludedInferences ? "review inferred details" : "facts preserved"}</small></span></div><p>{item.magicText}</p><button className="tool-button" onClick={() => onCopy(item.magicText!)}><Copy /> Copy delivered text</button></div>}
                   {item.intendedText && item.verbatimText && <div className="segmented result-tabs" role="group" aria-label="Transcript version"><button className={version === "intended" ? "active" : ""} aria-pressed={version === "intended"} disabled={editing} onClick={() => { setEditingId(null); setVersions({ ...versions, [item.id]: "intended" }); }}>Intended</button><button className={version === "verbatim" ? "active" : ""} aria-pressed={version === "verbatim"} disabled={editing} onClick={() => { setEditingId(null); setVersions({ ...versions, [item.id]: "verbatim" }); }}>Verbatim</button></div>}
                   {editing
                     ? <textarea className="history-transcript history-edit" aria-label={`Correct ${version} transcript`} value={editDraft} autoFocus onChange={(event) => setEditDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setEditingId(null); if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) void saveCorrection(item.id, version, visibleText); }} />
@@ -71,7 +72,7 @@ export function HistoryPage({ history, onUpdateTranscript, onCopy, onDelete, onC
                   <div className="export-row"><span>Export</span>{(["txt", "json"] as ExportFormat[]).map((format) => <button key={format} onClick={() => onExport(item.id, format)}><Download />{format.toUpperCase()}</button>)}{hasTiming && (["srt", "vtt"] as ExportFormat[]).map((format) => <button key={format} onClick={() => onExport(item.id, format)}><Download />{format.toUpperCase()}</button>)}</div>
                 </div>}
               </div>
-              <div className="history-actions"><button className="icon-button" onClick={() => onCopy(visibleText)} aria-label="Copy"><Copy /></button><button className="icon-button danger" onClick={() => onDelete(item.id)} aria-label="Delete"><Trash2 /></button></div>
+              <div className="history-actions"><button className="icon-button" onClick={() => onCopy(deliveredText(item))} aria-label="Copy delivered text"><Copy /></button><button className="icon-button danger" onClick={() => onDelete(item.id)} aria-label="Delete"><Trash2 /></button></div>
             </article>;
           })}
           {!filtered.length && <div className="empty-state"><Clock3 /><h3>{history.length ? "No results" : "A clean slate"}</h3><p>{history.length ? "Try searching with fewer words." : "Your finished dictations and Speech Lab runs will appear here."}</p></div>}

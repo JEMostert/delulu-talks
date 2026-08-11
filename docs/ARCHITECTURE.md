@@ -2,7 +2,7 @@
 
 ## Product contract
 
-The core loop is deliberately short: invoke the global shortcut, record in the already-running renderer, transcribe through one resident local model, deliver text to the clipboard/cursor, and retain only the transcript if local history is enabled. The optional Magic loop starts from that transcript or a pasted draft, applies an explicit rewrite preset and accuracy boundary, then returns editable local output.
+The core loop is deliberately short: invoke the global shortcut, record in the already-running renderer, transcribe through the resident speech model, optionally rewrite the chosen transcript through the resident Magic model, then deliver the final text to the clipboard/cursor. History keeps the Magic delivery beside the untouched intended and verbatim speech layers.
 
 The visible start view is the working Dictation surface, not a home or onboarding page. The sidebar separates daily work (Dictation, Magic, Speech Lab, History) from configuration (Wordbook, Models & runtime), while a compact command bar keeps record/stop and runtime state available in every view.
 
@@ -27,7 +27,7 @@ Electron main process ── validated IPC ── sandboxed React renderer
 
 - The renderer has no Node integration. `contextIsolation` and Chromium sandboxing are enabled.
 - The preload exposes only typed, named operations. File paths for Speech Lab must originate from the native file picker and are allowlisted in memory before IPC accepts them.
-- The main process owns global shortcuts, tray behavior, file reads/writes, clipboard delivery, and child processes.
+- The main process owns global shortcuts, tray behavior, file reads/writes, clipboard delivery, and child processes. Wayland uses a direct XDG GlobalShortcuts session with an explicit permission/binding response and visible registration state; other platforms use Electron's native shortcut API.
 - On Linux Wayland the Chromium UI compositor runs in software to avoid the native-Wayland/NVIDIA incompatibility seen on current Plasma stacks. This does not disable CUDA inference in the separate Python worker.
 - Python messages carry a protocol prefix and request ID, so progress output cannot be parsed as a response. One worker owns independent speech and Magic slots so both selected models can remain resident simultaneously.
 - Settings and history use atomic temporary-file replacement and permission mode `0600` where the platform supports it.
@@ -53,7 +53,7 @@ The four standard aliases resolve to `nyralabs/CrisperWhisper2.0_small`, `_mediu
 - **Verbatimize:** combines a trusted clean transcript with the audio to recover audible fillers, repairs, cut-offs, and vocal events; word timing is requested when enabled.
 - **Forced align:** assigns model-derived timing to a supplied exact transcript.
 - **Correction:** manual edits are stored beside the original intended/verbatim model output. Copy and text export use the correction, while Restore removes only the edit and JSON retains both layers.
-- **Delivery:** the chosen dual variant is copied first. Paste uses platform automation; Linux tries `wtype`, `ydotool`, `dotool`, then `xdotool`, and falls back to a clear clipboard-only result.
+- **Delivery:** the selected intended/verbatim layer is sent through the configured Magic preset when Magic is enabled. The Magic result is retained beside its source, copied, and then pasted through platform automation. If Magic is off—or unavailable—the original transcript remains deliverable. Linux tries `wtype`, `ydotool`, `dotool`, then `xdotool`, and falls back to a clear clipboard-only result.
 
 ## Magic workflow
 

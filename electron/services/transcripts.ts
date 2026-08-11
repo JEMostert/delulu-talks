@@ -57,7 +57,9 @@ export function exportRecord(record: TranscriptRecord, format: "txt" | "json" | 
     const dual = hasIntended && hasVerbatim && verbatim !== intended
       ? `${intended}\n\n--- Verbatim ---\n\n${verbatim}`
       : hasVerbatim && !hasIntended ? verbatim : intended || verbatim;
-    return `${dual.trim()}\n`;
+    return record.magicText
+      ? `${record.magicText.trim()}\n\n--- Source transcript ---\n\n${dual.trim()}\n`
+      : `${dual.trim()}\n`;
   }
 
   const groups = captionGroups(record.words.length ? record.words : record.verbatimWords);

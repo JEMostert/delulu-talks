@@ -30,9 +30,9 @@ There is no Home destination. Launching the application opens Dictation, the hig
 
 ## Interaction rules
 
-- Optimize for the repeated record → review → deliver loop; a capture does not require navigation.
+- Optimize for the repeated record → transcribe → optional Magic → copy/paste loop; a capture does not require navigation.
 - Use dense rows, split views, tables, and toolbars where the content is operational. Avoid marketing heroes, oversized headings, dashboard cards, gradients, and ornamental statistics.
-- Keep model/runtime failure visible and actionable without competing with the Record command.
+- Keep shortcut registration and model/runtime failure visible and actionable without competing with the Record command.
 - Save Dictation quick controls immediately and silently. Reserve confirmations for transcript capture, copy/export, destructive actions, and explicit Settings saves.
 - Preserve transcript truth: intended and verbatim remain parallel views. Manual corrections live beside the untouched model output, drive copy/TXT export, and always offer Restore original. Wordbook changes are explicit exact-text rules, while delivery settings only choose which version leaves the app.
 - Keep generative expansion legible: Magic separates rewrite style from the factual boundary, defaults to preserving facts, and labels outputs that may contain inferred constraints or examples. The source remains visible beside the generated result for review.

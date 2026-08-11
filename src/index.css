@@ -158,6 +158,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .phase-listening .live-dot { background: var(--signal); animation: blink .8s steps(2) infinite; }
 .phase-error .live-dot, .runtime-button.phase-error { color: #c43f2d; }
 .shortcut-hint { align-self: center; margin: 0 12px; padding: 7px 9px; color: #565850; background: transparent; border: 1px solid var(--line); font: 10px/1 ui-monospace, monospace; white-space: nowrap; }
+.shortcut-hint.ready { border-color: #6b8d65; }
+.shortcut-hint.unavailable { color: #a52f20; background: #f8e2dc; border-color: #bd3a28; }
 .record-command {
   width: 92px;
   display: flex;
@@ -284,6 +286,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dictation-grid { min-height: 390px; display: grid; grid-template-columns: minmax(0, 1fr) 255px; border: 1px solid var(--ink); }
 .transcript-workbench { min-width: 0; display: flex; flex-direction: column; background: var(--surface); }
 .transcript-workbench .panel-toolbar { padding: 0 14px; }
+.magic-delivery-preview { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px 14px; padding: 12px 14px; background: #efeadf; border-bottom: 1px solid var(--ink); }
+.magic-delivery-preview > div { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.magic-delivery-preview > div > svg { width: 16px; color: var(--violet); }
+.magic-delivery-preview strong, .magic-delivery-preview small { display: block; }
+.magic-delivery-preview strong { font-size: 11px; text-transform: uppercase; }
+.magic-delivery-preview small { margin-top: 4px; color: var(--muted); font: 10px/1 ui-monospace, monospace; }
+.magic-delivery-preview > p { grid-column: 1 / -1; margin: 0; font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
+.magic-delivery-preview > button { grid-column: 2; grid-row: 1; }
+.magic-delivery-preview.compact { margin-bottom: 11px; border: 1px solid var(--ink); }
 .transcript-toolbar-actions { display: flex; align-items: center; gap: 6px; }
 .edit-command { min-height: 34px; }
 .transcript-editor { flex: 1; min-height: 270px; padding: 20px; overflow: auto; font: 16px/1.72 Georgia, serif; white-space: pre-wrap; }
@@ -652,6 +663,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .setting-copy p { max-width: 600px; margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
 .setting-control { min-width: 0; display: flex; justify-content: flex-end; }
 .setting-control select { max-width: 300px; }
+.shortcut-setting { width: min(360px, 100%); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.shortcut-setting > span { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font: 9px/1 ui-monospace, monospace; text-transform: uppercase; white-space: nowrap; }
+.shortcut-setting > span i { width: 7px; height: 7px; background: #bd3a28; }
+.shortcut-setting > span.ready i { background: #3ca36b; }
+.shortcut-setting > span.error { color: #a52f20; }
 .license-consent { display: grid; grid-template-columns: 28px 1fr; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
 .license-consent > svg { width: 17px; color: var(--green); }
 .license-consent label { display: grid; grid-template-columns: 16px 1fr; gap: 8px; cursor: pointer; }

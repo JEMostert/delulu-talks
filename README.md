@@ -2,15 +2,16 @@
 
 Private, local-first desktop dictation rebuilt on Electron and CrisperWhisper 2.0.
 
-Delulu Talks keeps a fast speech model ready behind a system-wide shortcut, creates a clean intended transcript and an exact verbatim transcript in one workflow, then copies or pastes the version you choose. Its optional Magic workspace runs a second local Qwen model to turn rough speech into polished notes, concise messages, structured documents, or detailed prompts. It is designed for Linux/Wayland first while remaining packageable for macOS and Windows.
+Delulu Talks keeps a fast speech model ready behind a system-wide shortcut, creates a clean intended transcript and an exact verbatim transcript, optionally rewrites the chosen version through local Qwen Magic, then copies or pastes the finished result. Its Magic workspace also turns existing drafts into polished notes, concise messages, structured documents, or detailed prompts. It is designed for Linux/Wayland first while remaining packageable for macOS and Windows.
 
 ## Highlights
 
-- Electron main process, sandboxed React renderer, narrow typed preload API, tray, overlay, and Wayland global-shortcut portal support
+- Electron main process, sandboxed React renderer, narrow typed preload API, tray, overlay, and direct XDG GlobalShortcuts portal support on Wayland
 - All four standard Nyra Labs CrisperWhisper 2.0 checkpoints: Small, Medium, Turbo, and Large
 - Medium is the balanced default; **Keep selected model loaded** is enabled by default and can be disabled in Settings
 - Local Magic rewrites with official Apache-2.0 Qwen 3.5 checkpoints at 0.8B, 2B, and 4B; the 2B model is the balanced default
 - Explicit rewrite boundaries: preserve source facts or allow reviewable assumptions for richer prompts and technical briefs
+- Configurable shortcut delivery pipeline: speech → optional Magic preset → clipboard → automatic paste
 - Speech and Magic can stay resident together; unpinned models use a configurable 1–60 minute idle-unload delay
 - Intended, verbatim, and CT2 dual transcription with conditional long-form continuation and hallucination mitigation
 - Non-destructive transcript correction: edit either view for copy/TXT export and restore the untouched model output at any time

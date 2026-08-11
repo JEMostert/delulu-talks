@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { DEFAULT_SETTINGS, LANGUAGES, MAGIC_MODELS, MODELS } from "../../src/data";
 import { originalTranscriptText } from "../../src/transcriptText";
-import type { AppSettings, CustomWord, MagicModelId, ModelId, SpeechInsights, TranscriptRecord, TranscriptVersion } from "../../src/types";
+import type { AppSettings, CustomWord, MagicModelId, MagicPreset, ModelId, SpeechInsights, TranscriptRecord, TranscriptVersion } from "../../src/types";
 
 const SETTINGS_FILE = "settings.json";
 const HISTORY_FILE = "history.json";
@@ -61,6 +61,9 @@ export function normalizeSettings(value: unknown): AppSettings {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const model = validModels.has(source.model as ModelId) ? source.model as ModelId : DEFAULT_SETTINGS.model;
   const magicModel = validMagicModels.has(source.magicModel as MagicModelId) ? source.magicModel as MagicModelId : DEFAULT_SETTINGS.magicModel;
+  const magicPreset = ["polish", "concise", "structured", "prompt"].includes(String(source.magicPreset))
+    ? source.magicPreset as MagicPreset
+    : DEFAULT_SETTINGS.magicPreset;
   const backend = ["auto", "ct2", "transformers"].includes(String(source.backend))
     ? source.backend as AppSettings["backend"]
     : DEFAULT_SETTINGS.backend;
@@ -88,6 +91,8 @@ export function normalizeSettings(value: unknown): AppSettings {
     preloadModel: boolean(source.preloadModel, DEFAULT_SETTINGS.preloadModel),
     magicEnabled: boolean(source.magicEnabled, DEFAULT_SETTINGS.magicEnabled),
     magicModel,
+    magicPreset,
+    magicAllowInferences: boolean(source.magicAllowInferences, DEFAULT_SETTINGS.magicAllowInferences),
     preloadMagicModel: boolean(source.preloadMagicModel, DEFAULT_SETTINGS.preloadMagicModel),
     modelIdleMinutes: [1, 5, 15, 30, 60].includes(Number(source.modelIdleMinutes)) ? Number(source.modelIdleMinutes) : DEFAULT_SETTINGS.modelIdleMinutes,
     backend,
@@ -122,6 +127,11 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     verbatimText: safeString(source.verbatimText ?? source.rawText, "", 250_000),
     editedIntendedText: optionalText(source.editedIntendedText, 500_000),
     editedVerbatimText: optionalText(source.editedVerbatimText, 500_000),
+    magicText: optionalText(source.magicText, 500_000),
+    magicModel: validMagicModels.has(source.magicModel as MagicModelId) ? source.magicModel as MagicModelId : null,
+    magicPreset: ["polish", "concise", "structured", "prompt"].includes(String(source.magicPreset)) ? source.magicPreset as MagicPreset : null,
+    magicIncludedInferences: source.magicIncludedInferences === true,
+    magicProcessingTimeMs: Math.max(0, Number(source.magicProcessingTimeMs) || 0),
     mode,
     model,
     language: safeString(source.language, "en", 12),

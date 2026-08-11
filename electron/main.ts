@@ -2,7 +2,6 @@ import {
   app,
   BrowserWindow,
   dialog,
-  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
@@ -11,23 +10,25 @@ import {
   shell,
   Tray,
 } from "electron";
-import { existsSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import type { AppSettings, ExportFormat, LabRequest, MagicRewriteRequest, RecordingSubmission, TranscriptRecord, TranscriptVersion } from "../src/types";
 import { modelById } from "../src/data";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
 import { PasteService } from "./services/paste";
+import { ShortcutService } from "./services/shortcut";
 import { normalizeSettings, StorageService } from "./services/storage";
 import { exportRecord } from "./services/transcripts";
 
-app.commandLine.appendSwitch("enable-features", "GlobalShortcutsPortal");
+app.commandLine.appendSwitch("enable-features", "GlobalShortcutsPortal,GlobalShortcutsPortalPreferredTrigger");
 if (process.platform === "linux" && process.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland") {
   // Chromium's GPU compositor is still unreliable on some current
   // NVIDIA/Plasma Wayland stacks. ASR CUDA runs in Python and is unaffected.
   app.commandLine.appendSwitch("disable-gpu");
 }
 app.setName("Delulu Talks");
+if (process.platform === "linux") app.setDesktopName("delulu-talks.desktop");
 if (!app.isPackaged && process.env.DELULU_USER_DATA_DIR) app.setPath("userData", resolve(process.env.DELULU_USER_DATA_DIR));
 
 let mainWindow: BrowserWindow | null = null;
@@ -38,6 +39,7 @@ let storage: StorageService;
 let asr: AsrService;
 let paste: PasteService;
 let dictation: DictationService;
+let shortcut: ShortcutService;
 const selectedAudioFiles = new Set<string>();
 
 function preloadPath(): string {
@@ -158,12 +160,26 @@ function installTray(): void {
   tray.on("double-click", showMainWindow);
 }
 
-function registerShortcut(shortcut: string, fallback?: string): void {
-  globalShortcut.unregisterAll();
-  if (!globalShortcut.register(shortcut, () => dictation.toggle())) {
-    if (fallback) globalShortcut.register(fallback, () => dictation.toggle());
-    throw new Error(`Global shortcut '${shortcut}' is unavailable. Another application may already use it.`);
-  }
+function ensureDevelopmentDesktopEntry(): void {
+  if (process.platform !== "linux" || app.isPackaged) return;
+  const dataHome = process.env.XDG_DATA_HOME || join(app.getPath("home"), ".local", "share");
+  const applicationsDirectory = join(dataHome, "applications");
+  const desktopPath = join(applicationsDirectory, "delulu-talks.desktop");
+  const quote = (value: string) => `"${value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+  const entry = [
+    "[Desktop Entry]",
+    "Type=Application",
+    "Name=Delulu Talks",
+    `Exec=${quote(process.execPath)} ${quote(app.getAppPath())}`,
+    `Icon=${resolve(app.getAppPath(), "build", "icon.png")}`,
+    "Terminal=false",
+    "NoDisplay=true",
+    "Categories=AudioVideo;Utility;",
+    "StartupWMClass=delulu-talks",
+    "",
+  ].join("\n");
+  mkdirSync(applicationsDirectory, { recursive: true });
+  writeFileSync(desktopPath, entry, { encoding: "utf8", mode: 0o644 });
 }
 
 function setupPermissions(): void {
@@ -185,7 +201,14 @@ function registerIpc(): void {
   ipcMain.handle("settings:update", async (_event, value: unknown) => {
     const previous = storage.getSettings();
     const next = normalizeSettings(value);
-    if (next.shortcut !== previous.shortcut) registerShortcut(next.shortcut, previous.shortcut);
+    if (next.shortcut !== previous.shortcut) {
+      try {
+        await shortcut.register(next.shortcut);
+      } catch {
+        await shortcut.register(previous.shortcut).catch(() => undefined);
+        throw new Error(`Global shortcut '${next.shortcut}' is unavailable. ${previous.shortcut} remains active.`);
+      }
+    }
     const runtimeChanged = next.model !== previous.model || next.backend !== previous.backend || next.computeType !== previous.computeType || next.speculativeDecoding !== previous.speculativeDecoding;
     const magicRuntimeChanged = next.magicModel !== previous.magicModel;
     const saved = storage.updateSettings(next);
@@ -196,6 +219,7 @@ function registerIpc(): void {
     return saved;
   });
   ipcMain.handle("runtime:status", () => asr.getStatus());
+  ipcMain.handle("shortcut:status", () => shortcut.getStatus());
   ipcMain.handle("runtime:setup", () => asr.setup(storage.getSettings()));
   ipcMain.handle("runtime:load", () => asr.loadModel(storage.getSettings()));
   ipcMain.handle("runtime:unload", () => asr.unload());
@@ -278,6 +302,7 @@ function registerIpc(): void {
 }
 
 async function start(): Promise<void> {
+  ensureDevelopmentDesktopEntry();
   storage = new StorageService();
   paste = new PasteService();
   asr = new AsrService(storage);
@@ -290,11 +315,13 @@ async function start(): Promise<void> {
     { main: () => mainWindow, overlay: () => overlayWindow },
     (record: TranscriptRecord) => broadcast("history:added", record),
   );
+  shortcut = new ShortcutService(() => dictation.toggle());
   asr.onStatus((status) => broadcast("runtime:statusChanged", status));
   asr.onMagicStatus((status) => broadcast("magic:statusChanged", status));
+  shortcut.onStatus((status) => broadcast("shortcut:statusChanged", status));
   setupPermissions();
   registerIpc();
-  registerShortcut(storage.getSettings().shortcut);
+  void shortcut.register(storage.getSettings().shortcut).catch(() => undefined);
   installTray();
   app.setLoginItemSettings({ openAtLogin: storage.getSettings().launchAtLogin });
   await asr.initialize(storage.getSettings());
@@ -314,7 +341,7 @@ if (!hasLock) {
 app.on("activate", showMainWindow);
 app.on("before-quit", () => {
   quitting = true;
-  globalShortcut.unregisterAll();
+  void shortcut?.shutdown();
   void asr?.shutdown();
 });
 app.on("window-all-closed", () => {

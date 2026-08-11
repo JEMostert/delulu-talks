@@ -1,7 +1,7 @@
-import { BookOpenText, Check, ChevronRight, Clock3, Copy, Cpu, Mic, Pencil, RotateCcw, Save, Settings2, X } from "lucide-react";
+import { BookOpenText, Check, ChevronRight, Clock3, Copy, Cpu, Mic, Pencil, RotateCcw, Save, Settings2, WandSparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LANGUAGES, modelById } from "../data";
-import { transcriptIsEdited, transcriptText } from "../transcriptText";
+import { deliveredText, transcriptIsEdited, transcriptText } from "../transcriptText";
 import type { AppSettings, DictationStatus, Page, TranscriptRecord, TranscriptVersion } from "../types";
 
 function relativeTime(timestamp: number) {
@@ -60,7 +60,7 @@ export function HomePage({ settings, status, history, saving, onNavigate, onUpda
         <label><span>Transcript</span><div className="segmented compact triple" role="group" aria-label="Transcript mode">{(["intended", "dual", "verbatim"] as const).map((mode) => <button key={mode} className={settings.transcriptionMode === mode ? "active" : ""} aria-pressed={settings.transcriptionMode === mode} disabled={saving} onClick={() => onUpdateSettings({ transcriptionMode: mode })}>{mode === "dual" ? "Both" : mode}</button>)}</div></label>
         <label><span>Language</span><select value={settings.language} disabled={saving} onChange={(event) => onUpdateSettings({ language: event.target.value })}>{LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></label>
         {settings.transcriptionMode === "dual" && <label><span>Paste version</span><div className="segmented compact" role="group" aria-label="Version to paste"><button className={settings.pasteVersion === "intended" ? "active" : ""} aria-pressed={settings.pasteVersion === "intended"} onClick={() => onUpdateSettings({ pasteVersion: "intended" })}>Intended</button><button className={settings.pasteVersion === "verbatim" ? "active" : ""} aria-pressed={settings.pasteVersion === "verbatim"} onClick={() => onUpdateSettings({ pasteVersion: "verbatim" })}>Verbatim</button></div></label>}
-        <div className="quick-toggles"><QuickSwitch checked={settings.autoPaste} label="Auto-paste" onChange={() => onUpdateSettings({ autoPaste: !settings.autoPaste })} /><QuickSwitch checked={settings.copyToClipboard} label="Keep copy" onChange={() => onUpdateSettings({ copyToClipboard: !settings.copyToClipboard })} /></div>
+        <div className="quick-toggles"><QuickSwitch checked={settings.magicEnabled} label="Magic" onChange={() => onUpdateSettings({ magicEnabled: !settings.magicEnabled })} /><QuickSwitch checked={settings.autoPaste} label="Auto-paste" onChange={() => onUpdateSettings({ autoPaste: !settings.autoPaste })} /><QuickSwitch checked={settings.copyToClipboard} label="Keep copy" onChange={() => onUpdateSettings({ copyToClipboard: !settings.copyToClipboard })} /></div>
       </section>
 
       <div className="dictation-grid">
@@ -73,6 +73,7 @@ export function HomePage({ settings, status, history, saving, onNavigate, onUpda
             </div>
           </header>
           {latest ? <>
+            {latest.magicText && <div className="magic-delivery-preview"><div><WandSparkles /><span><strong>Delivered with Magic</strong><small>{latest.magicPreset ?? "polish"} · {latest.magicIncludedInferences ? "review inferred details" : "facts preserved"}</small></span></div><p>{latest.magicText}</p><button className="tool-button" onClick={() => onCopy(latest.magicText!)}><Copy /> Copy delivered text</button></div>}
             {editing
               ? <textarea className="transcript-editor transcript-edit" aria-label={`Correct ${version} transcript`} value={editDraft} autoFocus onChange={(event) => setEditDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setEditing(false); if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) void saveCorrection(); }} />
               : <div className="transcript-editor" role="region" aria-label={`${version} transcript`} tabIndex={0}>{visibleText}</div>}
@@ -102,7 +103,7 @@ export function HomePage({ settings, status, history, saving, onNavigate, onUpda
           </section>
           <section>
             <h3>Runtime</h3>
-            <dl><div><dt>Model</dt><dd>{model.size}</dd></div><div><dt>Lifecycle</dt><dd>{settings.preloadModel ? "Resident" : "On demand"}</dd></div><div><dt>Backend</dt><dd>{status.backend ?? settings.backend}</dd></div></dl>
+            <dl><div><dt>Speech</dt><dd>{model.size}</dd></div><div><dt>Magic</dt><dd>{settings.magicEnabled ? settings.magicPreset : "Off"}</dd></div><div><dt>Lifecycle</dt><dd>{settings.preloadModel ? "Resident" : "On demand"}</dd></div><div><dt>Backend</dt><dd>{status.backend ?? settings.backend}</dd></div></dl>
             <button className="inline-link" onClick={() => onNavigate("models")}><Cpu /> Configure model <ChevronRight /></button>
           </section>
           <section>
@@ -115,7 +116,7 @@ export function HomePage({ settings, status, history, saving, onNavigate, onUpda
       <section className="recent-captures">
         <header className="panel-toolbar"><div><strong>Recent captures</strong><span>{history.length} stored locally</span></div><button className="tool-button" onClick={() => onNavigate("history")}>View all <ChevronRight /></button></header>
         <div className="recent-table">
-          {history.slice(0, 5).map((item) => { const itemVersion: TranscriptVersion = item.intendedText ? "intended" : "verbatim"; const itemText = transcriptText(item, itemVersion); return <div className="recent-row" key={item.id}><span className="source-icon">{item.source === "dictation" ? <Mic /> : <Clock3 />}</span><p>{itemText}</p><small>{relativeTime(item.createdAt)}</small><b>{transcriptIsEdited(item, itemVersion) ? "edited" : item.mode}</b><button aria-label="Copy transcript" onClick={() => onCopy(itemText)}><Copy /></button></div>; })}
+          {history.slice(0, 5).map((item) => { const itemVersion: TranscriptVersion = item.intendedText ? "intended" : "verbatim"; const itemText = deliveredText(item); return <div className="recent-row" key={item.id}><span className="source-icon">{item.magicText ? <WandSparkles /> : item.source === "dictation" ? <Mic /> : <Clock3 />}</span><p>{itemText}</p><small>{relativeTime(item.createdAt)}</small><b>{item.magicText ? "magic" : transcriptIsEdited(item, itemVersion) ? "edited" : item.mode}</b><button aria-label="Copy delivered text" onClick={() => onCopy(itemText)}><Copy /></button></div>; })}
           {!history.length && <div className="recent-empty"><Check /> Finished dictations will appear here.</div>}
         </div>
       </section>

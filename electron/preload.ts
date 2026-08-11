@@ -9,6 +9,7 @@ import type {
   MagicStatus,
   RecorderCommand,
   RecordingSubmission,
+  ShortcutStatus,
   TranscriptRecord,
   TranscriptVersion,
 } from "../src/types";
@@ -24,6 +25,7 @@ const api: DeluluApi = {
   updateSettings: (settings: AppSettings) => ipcRenderer.invoke("settings:update", settings),
   getStatus: () => ipcRenderer.invoke("runtime:status"),
   getMagicStatus: () => ipcRenderer.invoke("magic:status"),
+  getShortcutStatus: () => ipcRenderer.invoke("shortcut:status"),
   getHistory: () => ipcRenderer.invoke("history:get"),
   getCapabilities: () => ipcRenderer.invoke("platform:capabilities"),
   toggleDictation: () => ipcRenderer.invoke("dictation:toggle"),
@@ -50,6 +52,7 @@ const api: DeluluApi = {
   submitRecording: (recording: RecordingSubmission) => ipcRenderer.invoke("recorder:submit", recording),
   onStatus: (callback: (status: DictationStatus) => void) => listener("runtime:statusChanged", callback),
   onMagicStatus: (callback: (status: MagicStatus) => void) => listener("magic:statusChanged", callback),
+  onShortcutStatus: (callback: (status: ShortcutStatus) => void) => listener("shortcut:statusChanged", callback),
   onTranscript: (callback: (record: TranscriptRecord) => void) => listener("history:added", callback),
   onRecorderCommand: (callback: (command: RecorderCommand) => void) => listener("recorder:command", callback),
 };

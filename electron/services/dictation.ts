@@ -132,23 +132,47 @@ export class DictationService {
     try {
       this.asr.setActivity("transcribing", settings.transcriptionMode === "dual" ? "Creating clean and verbatim transcripts" : "Transcribing locally");
       const result = await this.asr.transcribe({ audioPath }, settings);
-      const record = this.createRecord(result, "dictation", submission.durationMs, null, settings.transcriptionMode, settings);
+      let record = this.createRecord(result, "dictation", submission.durationMs, null, settings.transcriptionMode, settings);
+      let output = this.outputText(record, settings);
+      let magicFailure: string | null = null;
+      if (settings.magicEnabled) {
+        this.asr.setActivity("transcribing", "Magic is polishing the transcript");
+        try {
+          const magic = await this.asr.rewriteMagic({
+            text: output,
+            preset: settings.magicPreset,
+            allowInferences: settings.magicAllowInferences,
+          }, settings);
+          output = magic.text;
+          record = {
+            ...record,
+            magicText: magic.text,
+            magicModel: magic.model,
+            magicPreset: settings.magicPreset,
+            magicIncludedInferences: magic.includedInferences,
+            magicProcessingTimeMs: magic.processingTimeMs,
+          };
+        } catch (error) {
+          magicFailure = (error instanceof Error ? error.message : String(error)).split(/\r?\n/)[0].slice(0, 180);
+        }
+      }
       this.storage.addHistory(record);
       this.broadcastTranscript(record);
-      const output = this.outputText(record, settings);
-      let completion = "Transcript ready";
+      const outputName = record.magicText ? "Magic result" : "Transcript";
+      let completion = `${outputName} ready`;
       if (settings.copyToClipboard || settings.autoPaste) this.paste.copy(output);
       this.windows.overlay()?.hide();
       if (settings.autoPaste) {
         try {
           await this.paste.paste(output);
-          completion = "Transcript pasted";
+          completion = `${outputName} pasted`;
         } catch (error) {
           completion = `Copied — paste manually (${error instanceof Error ? error.message : String(error)})`;
         }
       } else if (settings.copyToClipboard) {
-        completion = "Transcript copied to clipboard";
+        completion = `${outputName} copied to clipboard`;
       }
+      if (magicFailure) completion = `${completion} · Magic unavailable: ${magicFailure}`;
       if (!settings.preloadModel) await this.asr.unload();
       this.asr.setActivity("idle", completion);
     } catch (error) {

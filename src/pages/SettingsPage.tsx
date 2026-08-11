@@ -1,7 +1,7 @@
 import { Check, Clipboard, Clock3, Cpu, Download, Gauge, HardDrive, Keyboard, Languages, Mic2, PlayCircle, Save, ShieldCheck, Sparkles, Terminal, Trash2, Upload, WandSparkles, Waypoints } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LANGUAGES, MAGIC_MODELS } from "../data";
-import type { AppSettings, DictationStatus, MagicStatus, MicrophoneDevice, PlatformCapabilities } from "../types";
+import type { AppSettings, DictationStatus, MagicStatus, MicrophoneDevice, PlatformCapabilities, ShortcutStatus } from "../types";
 
 function SettingRow({ icon: Icon, title, description, children }: { icon: typeof Keyboard; title: string; description: string; children: React.ReactNode }) {
   return <div className="setting-row"><span className="setting-icon"><Icon /></span><div className="setting-copy"><strong>{title}</strong><p>{description}</p></div><div className="setting-control">{children}</div></div>;
@@ -11,10 +11,11 @@ function Toggle({ value, onChange, label }: { value: boolean; onChange: () => vo
   return <button className={`toggle ${value ? "on" : ""}`} role="switch" aria-checked={value} aria-label={label} onClick={onChange}><i /></button>;
 }
 
-export function SettingsPage({ settings, devices, capabilities, status, magicStatus, saving, onSave, onSetup, onLoad, onUnload, onSetupMagic, onLoadMagic, onUnloadMagic, onReset }: {
+export function SettingsPage({ settings, devices, capabilities, shortcutStatus, status, magicStatus, saving, onSave, onSetup, onLoad, onUnload, onSetupMagic, onLoadMagic, onUnloadMagic, onReset }: {
   settings: AppSettings;
   devices: MicrophoneDevice[];
   capabilities: PlatformCapabilities | null;
+  shortcutStatus: ShortcutStatus;
   status: DictationStatus;
   magicStatus: MagicStatus;
   saving: boolean;
@@ -41,7 +42,7 @@ export function SettingsPage({ settings, devices, capabilities, status, magicSta
       <section className="view-toolbar settings-toolbar"><div><strong>Preferences</strong><span>Changes are staged until saved.</span></div><button className="primary-button" disabled={saving} onClick={() => onSave(draft)}>{saving ? <Check /> : <Save />}{saving ? "Saved" : "Save changes"}</button></section>
 
       <section className="settings-group"><div className="group-heading"><p className="eyebrow">A / CAPTURE</p><h3>Shortcut, microphone & overlay</h3></div>
-        <SettingRow icon={Keyboard} title="Global shortcut" description="Electron uses the desktop portal on Wayland, including KDE Plasma."><input className="compact-input" aria-label="Global shortcut" value={draft.shortcut} onChange={(event) => setDraft({ ...draft, shortcut: event.target.value })} /></SettingRow>
+        <SettingRow icon={Keyboard} title="Global shortcut" description={shortcutStatus.message}><div className="shortcut-setting"><input className="compact-input" aria-label="Global shortcut" value={draft.shortcut} onChange={(event) => setDraft({ ...draft, shortcut: event.target.value })} /><span className={shortcutStatus.registered ? "ready" : "error"}><i />{shortcutStatus.registered ? `${shortcutStatus.method} ready` : "not registered"}</span></div></SettingRow>
         <SettingRow icon={Mic2} title="Microphone" description="Captured through Chromium's PipeWire/PulseAudio path for stable Linux and Wayland support."><select aria-label="Microphone" value={draft.inputDeviceId} onChange={(event) => { const device = devices.find((item) => item.deviceId === event.target.value); setDraft({ ...draft, inputDeviceId: event.target.value, inputDeviceLabel: device?.label ?? "System default" }); }}>{devices.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}</select></SettingRow>
         <SettingRow icon={Waypoints} title="Recording overlay" description="Show a focus-free capsule while listening and transcribing."><Toggle value={draft.showOverlay} label="Recording overlay" onChange={() => setDraft({ ...draft, showOverlay: !draft.showOverlay })} /></SettingRow>
       </section>
@@ -55,8 +56,10 @@ export function SettingsPage({ settings, devices, capabilities, status, magicSta
 
       <section className="settings-group"><div className="group-heading"><p className="eyebrow">C / MODEL LIFECYCLE</p><h3>Resident engine & acceleration</h3></div>
         <SettingRow icon={PlayCircle} title="Keep speech model loaded" description="Recommended. Holds CrisperWhisper in memory so releasing the shortcut returns text immediately."><Toggle value={draft.preloadModel} label="Keep speech model loaded" onChange={() => setDraft({ ...draft, preloadModel: !draft.preloadModel })} /></SettingRow>
-        <SettingRow icon={WandSparkles} title="Enable Magic" description="Use a second, fully local Qwen 3.5 model to rewrite transcripts and rough drafts."><Toggle value={draft.magicEnabled} label="Enable Magic" onChange={() => setDraft({ ...draft, magicEnabled: !draft.magicEnabled })} /></SettingRow>
+        <SettingRow icon={WandSparkles} title="Magic after dictation" description="When enabled: speech → Magic rewrite → clipboard and automatic paste. Turn it off to deliver the speech transcript directly."><Toggle value={draft.magicEnabled} label="Magic after dictation" onChange={() => setDraft({ ...draft, magicEnabled: !draft.magicEnabled })} /></SettingRow>
         <SettingRow icon={Cpu} title="Magic model" description="Official Qwen 3.5 checkpoints below the 8B ceiling. Larger options improve prompt and coding-context rewrites."><select aria-label="Magic model" disabled={!draft.magicEnabled} value={draft.magicModel} onChange={(event) => setDraft({ ...draft, magicModel: event.target.value as AppSettings["magicModel"] })}>{MAGIC_MODELS.map((model) => <option key={model.id} value={model.id}>{model.name} — {model.role} · {model.memory}</option>)}</select></SettingRow>
+        <SettingRow icon={Sparkles} title="Dictation rewrite style" description="Applied automatically before shortcut results are copied or pasted."><select aria-label="Dictation Magic style" disabled={!draft.magicEnabled} value={draft.magicPreset} onChange={(event) => setDraft({ ...draft, magicPreset: event.target.value as AppSettings["magicPreset"] })}><option value="polish">Polish — natural cleanup</option><option value="concise">Concise — shorter and direct</option><option value="structured">Detailed — structured writing</option><option value="prompt">Prompt builder — actionable requirements</option></select></SettingRow>
+        <SettingRow icon={ShieldCheck} title="Allow inferred details" description="Off preserves facts. On lets Magic add useful constraints and examples; review the delivered result before relying on them."><Toggle value={draft.magicAllowInferences} label="Allow inferred Magic details" onChange={() => setDraft({ ...draft, magicAllowInferences: !draft.magicAllowInferences })} /></SettingRow>
         <SettingRow icon={PlayCircle} title="Keep Magic model loaded" description="Keeps Qwen resident beside the speech model for instant rewrites. Disable this on memory-constrained systems."><Toggle value={draft.preloadMagicModel} label="Keep Magic model loaded" onChange={() => setDraft({ ...draft, preloadMagicModel: !draft.preloadMagicModel })} /></SettingRow>
         <SettingRow icon={Clock3} title="Idle unload delay" description="Models that are not pinned stay warm for this long after their last transcription or rewrite."><select aria-label="Idle unload delay" value={draft.modelIdleMinutes} onChange={(event) => setDraft({ ...draft, modelIdleMinutes: Number(event.target.value) })}><option value={1}>1 minute</option><option value={5}>5 minutes</option><option value={15}>15 minutes (recommended)</option><option value={30}>30 minutes</option><option value={60}>1 hour</option></select></SettingRow>
         <SettingRow icon={Cpu} title="Inference backend" description="Auto prefers Nyra's fast CTranslate2 runtime on Linux x64 and portable Transformers elsewhere."><select aria-label="Inference backend" value={draft.backend} onChange={(event) => setDraft({ ...draft, backend: event.target.value as AppSettings["backend"] })}><option value="auto">Auto (recommended)</option><option value="ct2">CTranslate2</option><option value="transformers">Transformers / PyTorch</option></select></SettingRow>
