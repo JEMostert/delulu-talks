@@ -348,6 +348,61 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .license-banner strong, .license-banner small { display: block; }
 .license-banner strong { font-size: 11px; text-transform: uppercase; }
 .license-banner small { margin-top: 4px; font-size: 10px; }
+.modal-backdrop {
+  position: fixed;
+  z-index: 300;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(17 18 15 / 68%);
+  backdrop-filter: blur(3px);
+}
+.license-modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--ink);
+  box-shadow: 12px 12px 0 rgb(0 0 0 / 24%);
+}
+.license-modal > header {
+  min-height: 74px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ink);
+}
+.modal-icon { width: 42px; height: 42px; display: grid; place-items: center; color: #704417; background: #f3dda4; border: 1px solid var(--ink); }
+.modal-icon svg { width: 19px; }
+.license-modal h2 { margin: 4px 0 0; font-size: 19px; line-height: 1.15; letter-spacing: -.4px; }
+.license-modal .icon-button { justify-self: end; }
+.license-modal-body { padding: 20px; }
+.license-modal-body > p { margin: 0; color: #4f514a; font-size: 12px; line-height: 1.6; }
+.license-modal-body ul { margin: 16px 0; padding: 12px 12px 12px 31px; background: var(--canvas); border: 1px solid var(--line); }
+.license-modal-body li { padding: 3px 0; font-size: 11px; line-height: 1.5; }
+.license-modal-body > a { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; color: var(--blue); font-size: 11px; font-weight: 700; }
+.license-modal-body > a svg { width: 13px; }
+.license-checkbox {
+  min-height: 68px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 13px;
+  background: #f3dda4;
+  border: 1px solid var(--ink);
+  cursor: pointer;
+}
+.license-checkbox input { width: 17px; height: 17px; margin: 2px 0 0; accent-color: var(--ink); cursor: pointer; }
+.license-checkbox strong, .license-checkbox small { display: block; }
+.license-checkbox strong { font-size: 12px; line-height: 1.35; }
+.license-checkbox small { margin-top: 5px; color: #704417; font-size: 10px; line-height: 1.4; }
+.license-modal > footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 14px; background: var(--canvas); border-top: 1px solid var(--ink); }
 .model-list { border-bottom: 1px solid var(--ink); }
 .model-row {
   --model-accent: var(--signal);
