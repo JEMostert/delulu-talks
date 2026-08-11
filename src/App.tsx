@@ -107,17 +107,18 @@ function App() {
   const meta = PAGE_META[page];
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#page-content">Skip to content</a>
       <Sidebar page={page} onNavigate={setPage} status={status} />
-      <main className="main-panel">
+      <main className="main-panel" id="page-content" tabIndex={-1} aria-busy={busy}>
         <header className="commandbar">
           <div className="view-title"><h1>{meta.title}</h1><p>{meta.description}</p></div>
           <div className="global-actions">
-            <button className={`runtime-button phase-${status.phase}`} onClick={() => setPage("models")} title={status.detail ?? status.message}>
+            <button className={`runtime-button phase-${status.phase}`} onClick={() => setPage("models")} title={status.detail ?? status.message} aria-label={`Model runtime: ${model.size}, ${status.engine}. ${status.message}`}>
               {busy ? <LoaderCircle className="spin" /> : status.phase === "error" ? <AlertCircle /> : <span className="live-dot" />}
-              <span><strong>{model.size} · {status.engine}</strong><small>{status.message}</small></span>
+              <span><strong>{model.size} · {status.engine}</strong><small role={status.phase === "error" ? "alert" : "status"} aria-live={status.phase === "error" ? "assertive" : "polite"}>{status.message}</small></span>
             </button>
             <kbd className="shortcut-hint">{settings.shortcut.split("CommandOrControl").join("Ctrl").split("+").join(" + ")}</kbd>
-            <button className={`record-command ${recording ? "recording" : ""}`} disabled={busy} onClick={() => void bridge.toggleDictation()}>
+            <button className={`record-command ${recording ? "recording" : ""}`} disabled={busy} aria-pressed={recording} onClick={() => void bridge.toggleDictation()}>
               {recording ? <Square /> : <Mic />}<span>{recording ? "Stop" : "Record"}</span>
             </button>
           </div>
@@ -132,7 +133,7 @@ function App() {
           {page === "settings" && <SettingsPage settings={settings} devices={devices} capabilities={capabilities} status={status} saving={saving} onSave={saveSettings} onSetup={() => void action(() => bridge.setupModel())} onLoad={() => void action(() => bridge.loadModel())} onUnload={() => void action(() => bridge.unloadModel(), "Model unloaded")} onReset={() => void action(() => bridge.resetPythonEnvironment(), "Python environment removed")} />}
         </div>
       </main>
-      {toast && <div className="toast"><Check />{toast}</div>}
+      {toast && <div className="toast" role="status" aria-live="polite"><Check />{toast}</div>}
     </div>
   );
 }

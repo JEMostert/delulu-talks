@@ -39,7 +39,7 @@ export function VocabularyPage({ words, saving, onChange }: { words: CustomWord[
             <div className="word-row" key={word.id}>
               <span className="word-name"><i>{word.term.slice(0, 1).toUpperCase()}</i><strong>{word.term}</strong></span>
               <span>{word.soundsLike || <em>No aliases</em>}</span><span>{word.replacement || word.term}</span>
-              <button className={`toggle ${word.enabled ? "on" : ""}`} aria-label={`Toggle ${word.term}`} onClick={() => onChange(words.map((item) => item.id === word.id ? { ...item, enabled: !item.enabled } : item))}><i /></button>
+              <button className={`toggle ${word.enabled ? "on" : ""}`} role="switch" aria-checked={word.enabled} aria-label={`Enable ${word.term}`} onClick={() => onChange(words.map((item) => item.id === word.id ? { ...item, enabled: !item.enabled } : item))}><i /></button>
               <button className="icon-button danger" aria-label={`Delete ${word.term}`} onClick={() => onChange(words.filter((item) => item.id !== word.id))}><Trash2 /></button>
             </div>
           ))}

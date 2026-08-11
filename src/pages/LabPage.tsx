@@ -48,8 +48,8 @@ export function LabPage({ settings, onResult, onToast }: { settings: AppSettings
 
       <div className="lab-layout">
         <section className="lab-controls">
-          <div className="operation-grid">
-            {operations.map(({ id, icon: Icon, title, description }) => <button key={id} className={operation === id ? "active" : ""} onClick={() => { setOperation(id); setResult(null); }}><Icon /><span><strong>{title}</strong><small>{description}</small></span>{operation === id && <Check />}</button>)}
+          <div className="operation-grid" role="group" aria-label="Speech Lab operation">
+            {operations.map(({ id, icon: Icon, title, description }) => <button key={id} className={operation === id ? "active" : ""} aria-pressed={operation === id} onClick={() => { setOperation(id); setResult(null); }}><Icon /><span><strong>{title}</strong><small>{description}</small></span>{operation === id && <Check />}</button>)}
           </div>
 
           <button className={`file-drop ${file ? "has-file" : ""}`} onClick={() => void choose()}>
@@ -58,16 +58,16 @@ export function LabPage({ settings, onResult, onToast }: { settings: AppSettings
             <Upload />
           </button>
 
-          {operation === "transcribe" ? <div className="lab-field"><label>Transcript output</label><div className="segmented triple"><button className={mode === "intended" ? "active" : ""} onClick={() => setMode("intended")}>Intended</button><button className={mode === "verbatim" ? "active" : ""} onClick={() => setMode("verbatim")}>Verbatim</button><button className={mode === "dual" ? "active" : ""} onClick={() => setMode("dual")}>Both</button></div></div> : <div className="lab-field"><label>{operation === "verbatimize" ? "Trusted clean transcript" : "Exact transcript to align"}</label><textarea value={referenceText} onChange={(event) => setReferenceText(event.target.value)} placeholder={operation === "verbatimize" ? "Paste the clean transcript. CrisperWhisper will add only details that are audible…" : "Paste the exact words that should receive timestamps…"} /></div>}
+          {operation === "transcribe" ? <div className="lab-field"><label>Transcript output</label><div className="segmented triple" role="group" aria-label="Transcript output"><button className={mode === "intended" ? "active" : ""} aria-pressed={mode === "intended"} onClick={() => setMode("intended")}>Intended</button><button className={mode === "verbatim" ? "active" : ""} aria-pressed={mode === "verbatim"} onClick={() => setMode("verbatim")}>Verbatim</button><button className={mode === "dual" ? "active" : ""} aria-pressed={mode === "dual"} onClick={() => setMode("dual")}>Both</button></div></div> : <div className="lab-field"><label htmlFor="lab-reference">{operation === "verbatimize" ? "Trusted clean transcript" : "Exact transcript to align"}</label><textarea id="lab-reference" value={referenceText} onChange={(event) => setReferenceText(event.target.value)} placeholder={operation === "verbatimize" ? "Paste the clean transcript. CrisperWhisper will add only details that are audible…" : "Paste the exact words that should receive timestamps…"} /></div>}
 
           <button className="primary-button lab-run" disabled={!file || running || (needsReference && !referenceText.trim())} onClick={() => void run()}>{running ? <LoaderCircle className="spin" /> : <Sparkles />} {running ? "Working locally…" : operations.find((item) => item.id === operation)?.title}</button>
         </section>
 
         <section className="lab-result">
           {!result ? <div className="lab-empty"><Fingerprint /><h3>Millisecond truth lives here.</h3><p>Select a tool and an audio file. The original media remains where it is; Delulu only reads it for local inference.</p></div> : <>
-            <div className="result-heading"><div><p className="eyebrow">RESULT · {result.mode}</p><h3>{result.sourceName}</h3></div><button className="icon-button" onClick={() => void bridge.copyText(visibleText ?? "").then(() => onToast("Copied to clipboard"))}><Copy /></button></div>
-            {result.intendedText && result.verbatimText && <div className="segmented result-tabs"><button className={view === "intended" ? "active" : ""} onClick={() => setView("intended")}>Intended</button><button className={view === "verbatim" ? "active" : ""} onClick={() => setView("verbatim")}>Verbatim</button></div>}
-            <div className="result-copy">{visibleText}</div>
+            <div className="result-heading"><div><p className="eyebrow">RESULT · {result.mode}</p><h3>{result.sourceName}</h3></div><button className="icon-button" aria-label="Copy Speech Lab result" onClick={() => void bridge.copyText(visibleText ?? "").then(() => onToast("Copied to clipboard"))}><Copy /></button></div>
+            {result.intendedText && result.verbatimText && <div className="segmented result-tabs" role="group" aria-label="Result version"><button className={view === "intended" ? "active" : ""} aria-pressed={view === "intended"} onClick={() => setView("intended")}>Intended</button><button className={view === "verbatim" ? "active" : ""} aria-pressed={view === "verbatim"} onClick={() => setView("verbatim")}>Verbatim</button></div>}
+            <div className="result-copy" role="region" aria-label={`${view} result`}>{visibleText}</div>
             <div className="insight-strip"><span><Clock3 />{(result.durationMs / 1000).toFixed(1)}s audio</span><span><Fingerprint />{result.insights.fillerCount} fillers</span><span><ScanText />{result.words.length || result.verbatimWords.length} timed words</span></div>
             {(view === "verbatim" ? result.verbatimWords : result.words).length > 0 && <div className="word-timeline">{(view === "verbatim" ? result.verbatimWords : result.words).slice(0, 80).map((word, index) => <span key={`${word.start}-${index}`} title={`${word.start.toFixed(2)}–${word.end.toFixed(2)}s`}><b>{word.word}</b><small>{word.start.toFixed(2)}</small></span>)}</div>}
           </>}

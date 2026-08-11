@@ -30,15 +30,15 @@ export function HistoryPage({ history, onCopy, onDelete, onClear, onExport }: {
             const visibleText = version === "intended" ? item.intendedText || item.text : item.verbatimText || item.text;
             const hasTiming = item.words.length > 0 || item.verbatimWords.length > 0;
             return <article key={item.id} className={open ? "expanded" : ""}>
-              <button className={`history-model ${model.accent}`} onClick={() => setExpanded(open ? null : item.id)} aria-label="Expand transcript">{item.source === "dictation" ? <Mic /> : <FileAudio />}</button>
+              <button className={`history-model ${model.accent}`} onClick={() => setExpanded(open ? null : item.id)} aria-label={`${open ? "Collapse" : "Expand"} transcript`} aria-expanded={open}>{item.source === "dictation" ? <Mic /> : <FileAudio />}</button>
               <div className="history-content">
-                <button className="history-summary" onClick={() => setExpanded(open ? null : item.id)}>
+                <button className="history-summary" onClick={() => setExpanded(open ? null : item.id)} aria-expanded={open}>
                   <span className="history-meta"><span>{dateLabel(item.createdAt)}</span><i>·</i><span>{Math.max(1, Math.round(item.durationMs / 1000))} sec</span><i>·</i><span>{model.size}</span><b>{item.mode}</b></span>
                   <p>{item.intendedText || item.text}</p><ChevronDown className={open ? "rotated" : ""} />
                 </button>
                 {open && <div className="history-detail">
-                  {item.intendedText && item.verbatimText && <div className="segmented result-tabs"><button className={version === "intended" ? "active" : ""} onClick={() => setVersions({ ...versions, [item.id]: "intended" })}>Intended</button><button className={version === "verbatim" ? "active" : ""} onClick={() => setVersions({ ...versions, [item.id]: "verbatim" })}>Verbatim</button></div>}
-                  <div className="history-transcript">{visibleText}</div>
+                  {item.intendedText && item.verbatimText && <div className="segmented result-tabs" role="group" aria-label="Transcript version"><button className={version === "intended" ? "active" : ""} aria-pressed={version === "intended"} onClick={() => setVersions({ ...versions, [item.id]: "intended" })}>Intended</button><button className={version === "verbatim" ? "active" : ""} aria-pressed={version === "verbatim"} onClick={() => setVersions({ ...versions, [item.id]: "verbatim" })}>Verbatim</button></div>}
+                  <div className="history-transcript" role="region" aria-label={`${version} transcript`}>{visibleText}</div>
                   <div className="insight-strip"><span><Fingerprint />{item.insights.fillerCount} fillers</span><span><Gauge />{item.insights.wordsPerMinute} WPM</span><span><Clock3 />{item.insights.speakingSeconds}s voiced</span><span>{item.insights.repetitionCount} repetitions</span><span>{item.insights.vocalEventCount} vocal events</span></div>
                   <div className="export-row"><span>Export</span>{(["txt", "json"] as ExportFormat[]).map((format) => <button key={format} onClick={() => onExport(item.id, format)}><Download />{format.toUpperCase()}</button>)}{hasTiming && (["srt", "vtt"] as ExportFormat[]).map((format) => <button key={format} onClick={() => onExport(item.id, format)}><Download />{format.toUpperCase()}</button>)}</div>
                 </div>}

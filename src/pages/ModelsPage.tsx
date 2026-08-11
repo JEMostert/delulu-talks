@@ -31,7 +31,7 @@ export function ModelsPage({ selected, status, saving, licenseAccepted, onSelect
           const active = selected === model.id;
           const resident = active && status.engine === "ready";
           return (
-            <article key={model.id} className={`model-row ${model.accent} ${active ? "selected" : ""}`}>
+            <article key={model.id} className={`model-row ${model.accent} ${active ? "selected" : ""}`} aria-current={active ? "true" : undefined}>
               <div className="model-index"><span>0{index + 1}</span><i className={`model-glyph ${model.accent}`}><span /><span /><span /></i></div>
               <div className="model-identity"><p className="maker">NYRA LABS / CRISPER 2.0</p><h3>{model.name}</h3><strong className="model-role">{model.role}</strong></div>
               <p className="model-description">{model.description}</p>
