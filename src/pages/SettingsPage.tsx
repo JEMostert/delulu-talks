@@ -11,7 +11,7 @@ function Toggle({ value, onChange, label }: { value: boolean; onChange: () => vo
   return <button className={`toggle ${value ? "on" : ""}`} role="switch" aria-checked={value} aria-label={label} onClick={onChange}><i /></button>;
 }
 
-export function SettingsPage({ settings, devices, capabilities, shortcutStatus, status, magicStatus, saving, onSave, onSetup, onLoad, onUnload, onSetupMagic, onLoadMagic, onUnloadMagic, onReset }: {
+export function SettingsPage({ settings, devices, capabilities, shortcutStatus, status, magicStatus, saving, onSave, onConfigureShortcut, onSetup, onLoad, onUnload, onSetupMagic, onLoadMagic, onUnloadMagic, onReset }: {
   settings: AppSettings;
   devices: MicrophoneDevice[];
   capabilities: PlatformCapabilities | null;
@@ -20,6 +20,7 @@ export function SettingsPage({ settings, devices, capabilities, shortcutStatus, 
   magicStatus: MagicStatus;
   saving: boolean;
   onSave: (settings: AppSettings) => Promise<void>;
+  onConfigureShortcut: () => void;
   onSetup: () => void;
   onLoad: () => void;
   onUnload: () => void;
@@ -42,7 +43,8 @@ export function SettingsPage({ settings, devices, capabilities, shortcutStatus, 
       <section className="view-toolbar settings-toolbar"><div><strong>Preferences</strong><span>Changes are staged until saved.</span></div><button className="primary-button" disabled={saving} onClick={() => onSave(draft)}>{saving ? <Check /> : <Save />}{saving ? "Saved" : "Save changes"}</button></section>
 
       <section className="settings-group"><div className="group-heading"><p className="eyebrow">A / CAPTURE</p><h3>Shortcut, microphone & overlay</h3></div>
-        <SettingRow icon={Keyboard} title="Global shortcut" description={shortcutStatus.message}><div className="shortcut-setting"><input className="compact-input" aria-label="Global shortcut" value={draft.shortcut} onChange={(event) => setDraft({ ...draft, shortcut: event.target.value })} /><span className={shortcutStatus.registered ? "ready" : "error"}><i />{shortcutStatus.registered ? `${shortcutStatus.method} ready` : "not registered"}</span></div></SettingRow>
+        <SettingRow icon={Keyboard} title="Global shortcut" description={shortcutStatus.message}><div className="shortcut-setting">{shortcutStatus.method === "portal" ? <><kbd>{shortcutStatus.accelerator}</kbd><button className="secondary-button" disabled={!shortcutStatus.registered} onClick={onConfigureShortcut}>Change in system</button></> : <input className="compact-input" aria-label="Global shortcut" value={draft.shortcut} onChange={(event) => setDraft({ ...draft, shortcut: event.target.value })} />}<span className={shortcutStatus.registered ? "ready" : "error"}><i />{shortcutStatus.registered ? `${shortcutStatus.method} ready` : "not registered"}</span></div></SettingRow>
+        <SettingRow icon={PlayCircle} title="Shortcut behavior" description="Hold starts on key-down and stops on release. Toggle starts and stops on separate presses."><select aria-label="Shortcut behavior" value={draft.shortcutMode} onChange={(event) => setDraft({ ...draft, shortcutMode: event.target.value as AppSettings["shortcutMode"] })}><option value="hold">Hold to dictate (recommended)</option><option value="toggle">Press once to start, again to stop</option></select></SettingRow>
         <SettingRow icon={Mic2} title="Microphone" description="Captured through Chromium's PipeWire/PulseAudio path for stable Linux and Wayland support."><select aria-label="Microphone" value={draft.inputDeviceId} onChange={(event) => { const device = devices.find((item) => item.deviceId === event.target.value); setDraft({ ...draft, inputDeviceId: event.target.value, inputDeviceLabel: device?.label ?? "System default" }); }}>{devices.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}</select></SettingRow>
         <SettingRow icon={Waypoints} title="Recording overlay" description="Show a focus-free capsule while listening and transcribing."><Toggle value={draft.showOverlay} label="Recording overlay" onChange={() => setDraft({ ...draft, showOverlay: !draft.showOverlay })} /></SettingRow>
       </section>

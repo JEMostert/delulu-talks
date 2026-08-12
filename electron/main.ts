@@ -23,8 +23,7 @@ import { exportRecord } from "./services/transcripts";
 
 app.commandLine.appendSwitch("enable-features", "GlobalShortcutsPortal,GlobalShortcutsPortalPreferredTrigger");
 if (process.platform === "linux" && process.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland") {
-  // Chromium's GPU compositor is still unreliable on some current
-  // NVIDIA/Plasma Wayland stacks. ASR CUDA runs in Python and is unaffected.
+  // ASR CUDA runs in Python and is unaffected by Chromium's compositor.
   app.commandLine.appendSwitch("disable-gpu");
 }
 app.setName("Delulu Talks");
@@ -106,8 +105,8 @@ function placeOverlay(): void {
 
 function createOverlayWindow(): BrowserWindow {
   const window = new BrowserWindow({
-    width: 470,
-    height: 102,
+    width: 336,
+    height: 68,
     show: false,
     frame: false,
     transparent: true,
@@ -129,6 +128,7 @@ function createOverlayWindow(): BrowserWindow {
   });
   window.setAlwaysOnTop(true, "floating");
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  window.setIgnoreMouseEvents(true);
   window.on("show", placeOverlay);
   loadRenderer(window, { overlay: "1" });
   return window;
@@ -220,6 +220,7 @@ function registerIpc(): void {
   });
   ipcMain.handle("runtime:status", () => asr.getStatus());
   ipcMain.handle("shortcut:status", () => shortcut.getStatus());
+  ipcMain.handle("shortcut:configure", () => shortcut.configure());
   ipcMain.handle("runtime:setup", () => asr.setup(storage.getSettings()));
   ipcMain.handle("runtime:load", () => asr.loadModel(storage.getSettings()));
   ipcMain.handle("runtime:unload", () => asr.unload());
@@ -315,7 +316,16 @@ async function start(): Promise<void> {
     { main: () => mainWindow, overlay: () => overlayWindow },
     (record: TranscriptRecord) => broadcast("history:added", record),
   );
-  shortcut = new ShortcutService(() => dictation.toggle());
+  shortcut = new ShortcutService({
+    press: () => {
+      const settings = storage.getSettings();
+      if (shortcut.getStatus().method === "portal" && settings.shortcutMode === "hold") dictation.start();
+      else dictation.toggle();
+    },
+    release: () => {
+      if (storage.getSettings().shortcutMode === "hold") dictation.stop();
+    },
+  });
   asr.onStatus((status) => broadcast("runtime:statusChanged", status));
   asr.onMagicStatus((status) => broadcast("magic:statusChanged", status));
   shortcut.onStatus((status) => broadcast("shortcut:statusChanged", status));

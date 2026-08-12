@@ -26,6 +26,7 @@ const api: DeluluApi = {
   getStatus: () => ipcRenderer.invoke("runtime:status"),
   getMagicStatus: () => ipcRenderer.invoke("magic:status"),
   getShortcutStatus: () => ipcRenderer.invoke("shortcut:status"),
+  configureShortcut: () => ipcRenderer.invoke("shortcut:configure"),
   getHistory: () => ipcRenderer.invoke("history:get"),
   getCapabilities: () => ipcRenderer.invoke("platform:capabilities"),
   toggleDictation: () => ipcRenderer.invoke("dictation:toggle"),

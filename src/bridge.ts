@@ -52,6 +52,7 @@ const mockApi: DeluluApi = {
   async getStatus() { return { phase: "idle", engine: "ready", message: "Browser preview", model: "crisperMedium", backend: "ct2" }; },
   async getMagicStatus() { return { phase: "idle", engine: "ready", message: "Qwen 3.5 · 2B ready", model: "qwen35Medium", device: "cuda" }; },
   async getShortcutStatus() { return { accelerator: mockSettings().shortcut, registered: true, method: "portal", message: "Ready through the Wayland shortcut portal", lastTriggeredAt: null }; },
+  async configureShortcut() {},
   async getHistory() { return demoHistory; },
   async getCapabilities() { return { platform: "linux", desktop: "Browser preview", sessionType: "wayland", pasteMethod: "clipboard-only", wayland: true }; },
   async toggleDictation() {},

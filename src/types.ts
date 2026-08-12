@@ -24,6 +24,7 @@ export type CustomWord = {
 
 export type AppSettings = {
   shortcut: string;
+  shortcutMode: "hold" | "toggle";
   model: ModelId;
   language: string;
   pythonCommand: string;
@@ -204,6 +205,7 @@ export type DeluluApi = {
   getStatus(): Promise<DictationStatus>;
   getMagicStatus(): Promise<MagicStatus>;
   getShortcutStatus(): Promise<ShortcutStatus>;
+  configureShortcut(): Promise<void>;
   getHistory(): Promise<TranscriptRecord[]>;
   getCapabilities(): Promise<PlatformCapabilities>;
   toggleDictation(): Promise<void>;

@@ -43,7 +43,43 @@ function harness(settings: AppSettings) {
   return { service, copied, records, magicCalls: () => magicCalls, cleanup: () => rmSync(cacheDirectory, { recursive: true, force: true }) };
 }
 
+function captureHarness() {
+  const commands: unknown[] = [];
+  let status = { phase: "idle", engine: "ready", message: "Ready" };
+  const service = new DictationService(
+    { getSettings: () => ({ ...DEFAULT_SETTINGS, modelLicenseAccepted: true }) } as unknown as StorageService,
+    {
+      getStatus: () => status,
+      setActivity: (phase: typeof status.phase, message: string) => { status = { ...status, phase, message }; },
+    } as unknown as AsrService,
+    {} as PasteService,
+    { main: () => ({ isDestroyed: () => false, webContents: { send: (_channel: string, command: unknown) => commands.push(command) } }) as never, overlay: () => null },
+    () => undefined,
+  );
+  return { service, commands };
+}
+
 describe("dictation delivery pipeline", () => {
+  test("honors a hold release that arrives while the microphone is still opening", () => {
+    const testHarness = captureHarness();
+    testHarness.service.start();
+    testHarness.service.stop();
+    expect(testHarness.commands).toEqual([{ action: "start", inputDeviceId: "default" }]);
+    testHarness.service.recordingStarted();
+    expect(testHarness.commands).toEqual([
+      { action: "start", inputDeviceId: "default" },
+      { action: "stop", inputDeviceId: "default" },
+    ]);
+  });
+
+  test("a second toggle also stops a capture whose microphone is still opening", () => {
+    const testHarness = captureHarness();
+    testHarness.service.toggle();
+    testHarness.service.toggle();
+    testHarness.service.recordingStarted();
+    expect(testHarness.commands.at(-1)).toEqual({ action: "stop", inputDeviceId: "default" });
+  });
+
   test("rewrites with Magic before copying the delivered result", async () => {
     const testHarness = harness({ ...DEFAULT_SETTINGS, modelLicenseAccepted: true, magicEnabled: true, magicPreset: "polish", magicAllowInferences: false, autoPaste: false, copyToClipboard: true });
     try {

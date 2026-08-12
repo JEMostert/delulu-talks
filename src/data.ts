@@ -2,6 +2,7 @@ import type { AppSettings, MagicModelInfo, ModelInfo } from "./types";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   shortcut: "CommandOrControl+Shift+Space",
+  shortcutMode: "hold",
   model: "crisperMedium",
   language: "en",
   pythonCommand: "python3",

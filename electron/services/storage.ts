@@ -77,6 +77,7 @@ export function normalizeSettings(value: unknown): AppSettings {
 
   return {
     shortcut: safeString(source.shortcut, DEFAULT_SETTINGS.shortcut, 96),
+    shortcutMode: source.shortcutMode === "toggle" ? "toggle" : "hold",
     model,
     language: validLanguages.has(requestedLanguage) ? requestedLanguage : DEFAULT_SETTINGS.language,
     pythonCommand: safeString(source.pythonCommand, DEFAULT_SETTINGS.pythonCommand, 512),

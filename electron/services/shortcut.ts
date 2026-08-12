@@ -2,47 +2,40 @@ import { globalShortcut } from "electron";
 import { sessionBus, Variant, type ClientInterface, type MessageBus } from "dbus-next";
 import type { ShortcutStatus } from "../../src/types";
 import { portalTrigger } from "./shortcutFormat";
+import { portalRequest, PORTAL_NAME, PORTAL_PATH } from "./shortcutPortal";
 
-const PORTAL_NAME = "org.freedesktop.portal.Desktop";
-const PORTAL_PATH = "/org/freedesktop/portal/desktop";
+const APP_ID = "delulu-talks";
 const SHORTCUT_ID = "toggle-dictation";
-
 type PortalInterface = ClientInterface & Record<string, (...args: unknown[]) => Promise<unknown>>;
 
-function portalError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/^.*?:\s*/, "").split(/\r?\n/)[0].slice(0, 240);
+function concise(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).split(/\r?\n/)[0].slice(0, 240);
 }
 
-async function portalResponse(bus: MessageBus, requestPath: string): Promise<[number, Record<string, Variant>]> {
-  const requestObject = await bus.getProxyObject(PORTAL_NAME, requestPath);
-  const request = requestObject.getInterface("org.freedesktop.portal.Request");
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("The desktop shortcut portal did not respond")), 60_000);
-    request.once("Response", (code: number, results: Record<string, Variant>) => {
-      clearTimeout(timer);
-      resolve([code, results]);
-    });
-  });
+function shortcutDescription(shortcuts: unknown): string | undefined {
+  const entries = shortcuts instanceof Variant ? shortcuts.value : shortcuts;
+  if (!Array.isArray(entries)) return undefined;
+  const properties = entries.find((entry) => Array.isArray(entry) && entry[0] === SHORTCUT_ID)?.[1];
+  const description = properties?.trigger_description;
+  return description instanceof Variant ? String(description.value) : description ? String(description) : undefined;
 }
 
 export class ShortcutService {
-  private status: ShortcutStatus;
+  private readonly portal = process.platform === "linux" && process.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland";
+  private status: ShortcutStatus = {
+    accelerator: "CommandOrControl+Shift+Space",
+    registered: false,
+    method: this.portal ? "portal" : "native",
+    message: "Shortcut registration pending",
+    lastTriggeredAt: null,
+  };
   private listeners = new Set<(status: ShortcutStatus) => void>();
-  private portalBus: MessageBus | null = null;
-  private portalSession: string | null = null;
-  private portalInterface: PortalInterface | null = null;
+  private bus: MessageBus | null = null;
+  private session: string | null = null;
+  private shortcuts: PortalInterface | null = null;
+  private pressed = false;
 
-  constructor(private readonly onTrigger: () => void) {
-    const portal = process.platform === "linux" && process.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland";
-    this.status = {
-      accelerator: "CommandOrControl+Shift+Space",
-      registered: false,
-      method: portal ? "portal" : "native",
-      message: "Shortcut registration pending",
-      lastTriggeredAt: null,
-    };
-  }
+  constructor(private readonly actions: { press(): void; release(): void }) {}
 
   onStatus(listener: (status: ShortcutStatus) => void): () => void {
     this.listeners.add(listener);
@@ -58,19 +51,31 @@ export class ShortcutService {
     for (const listener of this.listeners) listener(this.getStatus());
   }
 
-  private trigger(): void {
-    this.update({ registered: true, message: "Shortcut triggered", lastTriggeredAt: Date.now() });
-    this.onTrigger();
+  private press(): void {
+    if (this.pressed) return;
+    this.pressed = true;
+    this.update({ registered: true, message: "Shortcut active", lastTriggeredAt: Date.now() });
+    this.actions.press();
+  }
+
+  private release(): void {
+    if (!this.pressed) return;
+    this.pressed = false;
+    this.update({ message: "Shortcut ready" });
+    this.actions.release();
   }
 
   async register(accelerator: string): Promise<void> {
-    if (this.status.method === "portal") await this.registerPortal(accelerator);
+    if (this.portal) await this.registerPortal(accelerator);
     else this.registerNative(accelerator);
   }
 
   private registerNative(accelerator: string): void {
     globalShortcut.unregisterAll();
-    if (!globalShortcut.register(accelerator, () => this.trigger())) {
+    if (!globalShortcut.register(accelerator, () => {
+      this.update({ registered: true, message: "Shortcut triggered", lastTriggeredAt: Date.now() });
+      this.actions.press();
+    })) {
       this.update({ accelerator, registered: false, message: "Shortcut unavailable — choose another combination" });
       throw new Error(`Global shortcut '${accelerator}' is unavailable`);
     }
@@ -79,69 +84,70 @@ export class ShortcutService {
 
   private async registerPortal(accelerator: string): Promise<void> {
     await this.closePortal();
-    this.update({ accelerator, registered: false, message: "Waiting for the Wayland shortcut portal" });
-    const bus = sessionBus();
-    this.portalBus = bus;
-    bus.on("error", (error) => this.update({ registered: false, message: `Shortcut portal error: ${portalError(error)}` }));
+    this.update({ accelerator, registered: false, message: "Registering with the desktop shortcut portal" });
+    const bus = sessionBus() as MessageBus & { name: string | null };
+    this.bus = bus;
+    bus.on("error", (error) => this.update({ registered: false, message: `Shortcut portal error: ${concise(error)}` }));
     try {
-      const portalObject = await bus.getProxyObject(PORTAL_NAME, PORTAL_PATH);
+      const object = await bus.getProxyObject(PORTAL_NAME, PORTAL_PATH);
       try {
-        const registry = portalObject.getInterface("org.freedesktop.host.portal.Registry") as PortalInterface;
-        await registry.Register("delulu-talks", {});
-      } catch {
-        // Sandboxed/package-managed apps already have a portal identity.
-      }
-
-      const shortcuts = portalObject.getInterface("org.freedesktop.portal.GlobalShortcuts") as PortalInterface;
-      this.portalInterface = shortcuts;
-      const token = `delulu_${process.pid}_${Date.now()}`;
-      const createPath = await shortcuts.CreateSession({
-        handle_token: new Variant("s", `${token}_create`),
-        session_handle_token: new Variant("s", `${token}_session`),
-      }) as string;
-      const [createCode, createResults] = await portalResponse(bus, createPath);
-      if (createCode !== 0) throw new Error(createCode === 1 ? "Shortcut permission was cancelled" : "The shortcut portal could not create a session");
-      const sessionHandle = createResults.session_handle?.value as string | undefined;
-      if (!sessionHandle) throw new Error("The shortcut portal returned no session");
-      this.portalSession = sessionHandle;
-
-      shortcuts.on("Activated", (session: string, id: string) => {
-        if (session === this.portalSession && id === SHORTCUT_ID) this.trigger();
+        await (object.getInterface("org.freedesktop.host.portal.Registry") as PortalInterface).Register(APP_ID, {});
+      } catch { /* Packaged apps already have a portal identity. */ }
+      const shortcuts = object.getInterface("org.freedesktop.portal.GlobalShortcuts") as PortalInterface;
+      this.shortcuts = shortcuts;
+      shortcuts.on("Activated", (session: string, id: string) => { if (session === this.session && id === SHORTCUT_ID) this.press(); });
+      shortcuts.on("Deactivated", (session: string, id: string) => { if (session === this.session && id === SHORTCUT_ID) this.release(); });
+      shortcuts.on("ShortcutsChanged", (session: string, entries: unknown) => {
+        if (session !== this.session) return;
+        const description = shortcutDescription(entries);
+        if (description) this.update({ accelerator: description, message: `Wayland shortcut ready · ${description}` });
       });
-      const bindPath = await shortcuts.BindShortcuts(
-        sessionHandle,
+
+      const token = `delulu_${process.pid}_${Date.now()}`;
+      const [createCode, createResults] = await portalRequest(bus, `${token}_create`, (handleToken) => shortcuts.CreateSession({
+        handle_token: new Variant("s", handleToken),
+        session_handle_token: new Variant("s", `${token}_session`),
+      }) as Promise<string>);
+      if (createCode !== 0) throw new Error(createCode === 1 ? "Shortcut permission was cancelled" : "The shortcut portal could not create a session");
+      this.session = String(createResults.session_handle?.value ?? "");
+      if (!this.session) throw new Error("The shortcut portal returned no session");
+
+      const [bindCode, bindResults] = await portalRequest(bus, `${token}_bind`, (handleToken) => shortcuts.BindShortcuts(
+        this.session,
         [[SHORTCUT_ID, {
-          description: new Variant("s", "Start or stop dictation"),
+          description: new Variant("s", "Dictation shortcut"),
           preferred_trigger: new Variant("s", portalTrigger(accelerator)),
         }]],
         "",
-        { handle_token: new Variant("s", `${token}_bind`) },
-      ) as string;
-      const [bindCode, bindResults] = await portalResponse(bus, bindPath);
+        { handle_token: new Variant("s", handleToken) },
+      ) as Promise<string>);
       if (bindCode !== 0) throw new Error(bindCode === 1 ? "Shortcut permission was cancelled" : "The shortcut portal rejected the binding");
-      const bound = bindResults.shortcuts?.value as Array<[string, Record<string, Variant>]> | undefined;
-      const triggerDescription = bound?.find(([id]) => id === SHORTCUT_ID)?.[1]?.trigger_description?.value as string | undefined;
-      this.update({ accelerator, registered: true, message: triggerDescription ? `Wayland portal ready · ${triggerDescription}` : "Ready through the Wayland shortcut portal" });
+      const description = shortcutDescription(bindResults.shortcuts) ?? accelerator;
+      this.update({ accelerator: description, registered: true, message: `Wayland shortcut ready · ${description}` });
     } catch (error) {
       await this.closePortal();
-      this.update({ accelerator, registered: false, message: `Shortcut unavailable: ${portalError(error)}` });
+      this.update({ accelerator, registered: false, message: `Shortcut unavailable: ${concise(error)}` });
       throw error;
     }
   }
 
+  async configure(): Promise<void> {
+    if (!this.portal || !this.shortcuts || !this.session) throw new Error("The system shortcut editor is unavailable");
+    await this.shortcuts.ConfigureShortcuts(this.session, "", {});
+  }
+
   private async closePortal(): Promise<void> {
-    const bus = this.portalBus;
-    const session = this.portalSession;
-    this.portalSession = null;
-    this.portalInterface = null;
-    this.portalBus = null;
+    const bus = this.bus;
+    const session = this.session;
+    this.bus = null;
+    this.session = null;
+    this.shortcuts = null;
+    this.pressed = false;
     if (bus && session) {
       try {
-        const sessionObject = await bus.getProxyObject(PORTAL_NAME, session);
-        await sessionObject.getInterface("org.freedesktop.portal.Session").Close();
-      } catch {
-        // Closing is best effort; disconnecting also destroys the portal session.
-      }
+        const object = await bus.getProxyObject(PORTAL_NAME, session);
+        await object.getInterface("org.freedesktop.portal.Session").Close();
+      } catch { /* Disconnecting also destroys the session. */ }
     }
     bus?.disconnect();
   }

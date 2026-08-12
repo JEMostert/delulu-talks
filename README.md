@@ -11,7 +11,8 @@ Delulu Talks keeps a fast speech model ready behind a system-wide shortcut, crea
 - Medium is the balanced default; **Keep selected model loaded** is enabled by default and can be disabled in Settings
 - Local Magic rewrites with official Apache-2.0 Qwen 3.5 checkpoints at 0.8B, 2B, and 4B; the 2B model is the balanced default
 - Explicit rewrite boundaries: preserve source facts or allow reviewable assumptions for richer prompts and technical briefs
-- Configurable shortcut delivery pipeline: speech → optional Magic preset → clipboard → automatic paste
+- Hold-to-dictate by default on Wayland, with optional press-to-toggle behavior and desktop-owned shortcut remapping
+- Configurable delivery pipeline: speech → optional Magic preset → clipboard → automatic paste
 - Speech and Magic can stay resident together; unpinned models use a configurable 1–60 minute idle-unload delay
 - Intended, verbatim, and CT2 dual transcription with conditional long-form continuation and hallucination mitigation
 - Non-destructive transcript correction: edit either view for copy/TXT export and restore the untouched model output at any time

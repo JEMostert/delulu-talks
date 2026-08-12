@@ -17,6 +17,8 @@ describe("settings migration", () => {
     expect(settings.transcriptionMode).toBe("dual");
     expect(settings.language).toBe("en");
     expect(settings.autoPaste).toBeFalse();
+    expect(settings.shortcutMode).toBe("hold");
+    expect(normalizeSettings({ shortcutMode: "toggle" }).shortcutMode).toBe("toggle");
   });
 
   test("sanitizes custom vocabulary at the IPC boundary", () => {

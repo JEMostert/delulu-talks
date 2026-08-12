@@ -43,6 +43,7 @@ function words(value: unknown): WordTimestamp[] {
 
 export class DictationService {
   private capturePending = false;
+  private stopRequested = false;
 
   constructor(
     private readonly storage: StorageService,
@@ -74,6 +75,7 @@ export class DictationService {
     }
     const settings = this.settings();
     this.capturePending = true;
+    this.stopRequested = false;
     this.asr.setActivity("idle", "Opening microphone");
     this.sendRecorder({ action: "start", inputDeviceId: settings.inputDeviceId });
   }
@@ -81,15 +83,21 @@ export class DictationService {
   stop(): void {
     const status = this.asr.getStatus();
     if (status.phase !== "listening" && !this.capturePending) return;
+    if (this.capturePending) {
+      this.stopRequested = true;
+      this.asr.setActivity("idle", "Shortcut released — closing the microphone");
+      return;
+    }
     this.sendRecorder({ action: "stop", inputDeviceId: this.settings().inputDeviceId });
   }
 
   toggle(): void {
-    this.asr.getStatus().phase === "listening" ? this.stop() : this.start();
+    this.asr.getStatus().phase === "listening" || this.capturePending ? this.stop() : this.start();
   }
 
   cancel(): void {
     this.capturePending = false;
+    this.stopRequested = false;
     this.sendRecorder({ action: "cancel", inputDeviceId: this.settings().inputDeviceId });
     this.windows.overlay()?.hide();
     this.asr.setActivity("idle", "Recording cancelled");
@@ -97,6 +105,12 @@ export class DictationService {
 
   recordingStarted(): void {
     this.capturePending = false;
+    if (this.stopRequested) {
+      this.stopRequested = false;
+      this.asr.setActivity("listening", "Finishing capture");
+      this.sendRecorder({ action: "stop", inputDeviceId: this.settings().inputDeviceId });
+      return;
+    }
     this.asr.setActivity("listening", "Speak naturally — press the shortcut again to finish");
     const settings = this.settings();
     if (settings.showOverlay) this.windows.overlay()?.showInactive();
@@ -104,6 +118,7 @@ export class DictationService {
 
   recordingFailed(message: string): void {
     this.capturePending = false;
+    this.stopRequested = false;
     this.windows.overlay()?.hide();
     this.asr.setActivity("error", message);
   }
@@ -111,7 +126,7 @@ export class DictationService {
   async submitRecording(submission: RecordingSubmission): Promise<void> {
     this.capturePending = false;
     const settings = this.settings();
-    this.windows.overlay()?.showInactive();
+    if (settings.showOverlay) this.windows.overlay()?.showInactive();
     if (!(submission.wav instanceof Uint8Array) || submission.wav.byteLength < 44) {
       this.recordingFailed("The microphone returned an empty recording");
       return;

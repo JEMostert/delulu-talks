@@ -27,7 +27,7 @@ Electron main process ── validated IPC ── sandboxed React renderer
 
 - The renderer has no Node integration. `contextIsolation` and Chromium sandboxing are enabled.
 - The preload exposes only typed, named operations. File paths for Speech Lab must originate from the native file picker and are allowlisted in memory before IPC accepts them.
-- The main process owns global shortcuts, tray behavior, file reads/writes, clipboard delivery, and child processes. Wayland uses a direct XDG GlobalShortcuts session with an explicit permission/binding response and visible registration state; other platforms use Electron's native shortcut API.
+- The main process owns global shortcuts, tray behavior, file reads/writes, clipboard delivery, and child processes. Wayland uses one XDG GlobalShortcuts session, subscribes to each Request response before invoking the portal method, and consumes both Activated and Deactivated for hold-to-dictate. The desktop owns remapping through its native shortcut editor. Other platforms use Electron's native press-only shortcut API.
 - On Linux Wayland the Chromium UI compositor runs in software to avoid the native-Wayland/NVIDIA incompatibility seen on current Plasma stacks. This does not disable CUDA inference in the separate Python worker.
 - Python messages carry a protocol prefix and request ID, so progress output cannot be parsed as a response. One worker owns independent speech and Magic slots so both selected models can remain resident simultaneously.
 - Settings and history use atomic temporary-file replacement and permission mode `0600` where the platform supports it.
