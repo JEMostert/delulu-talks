@@ -6,7 +6,7 @@ Delulu Talks keeps a fast speech model ready behind a system-wide shortcut, crea
 
 ## Highlights
 
-- Electron main process, sandboxed React renderer, narrow typed preload API, tray, overlay, and direct XDG GlobalShortcuts portal support on Wayland
+- Electron main process, sandboxed React renderer, narrow typed preload API, tray, native layer-shell recording pill, and direct XDG GlobalShortcuts portal support on Wayland
 - All four standard Nyra Labs CrisperWhisper 2.0 checkpoints: Small, Medium, Turbo, and Large
 - Medium is the balanced default; **Keep selected model loaded** is enabled by default and can be disabled in Settings
 - Local Magic rewrites with official Apache-2.0 Qwen 3.5 checkpoints at 0.8B, 2B, and 4B; the 2B model is the balanced default
@@ -32,6 +32,7 @@ Requirements:
 - Python 3.10–3.13 (3.11 or 3.12 recommended)
 - FFmpeg for compressed audio or video imports
 - On Linux/Wayland, `wtype`, `ydotool`, `dotool`, or `xdotool` for automatic paste; clipboard copy works without them
+- On Plasma and wlroots Wayland compositors, GTK4 Layer Shell and Python GObject bindings for the native click-through recording pill
 
 ```bash
 bun install
@@ -47,7 +48,7 @@ bun run dev:web
 On CachyOS/Arch, the useful system packages are:
 
 ```bash
-sudo pacman -S ffmpeg wtype
+sudo pacman -S ffmpeg wtype gtk4-layer-shell python-gobject python-cairo
 ```
 
 On first launch, open **Models & runtime** and choose **Install engine**. A focused modal summarizes the Nyra terms and continues installation after acceptance. The app creates an isolated Python environment inside its application-data directory. On Linux x64, Auto selects Nyra's CTranslate2 backend; other platforms use Transformers. Open **Magic** and choose **Install model** when you want the optional Qwen writing runtime.
@@ -80,10 +81,11 @@ The old Tauri data directory is detected on Linux so settings and history can mi
 electron/
   main.ts             lifecycle, windows, tray, shortcuts, validated IPC
   preload.ts          isolated renderer API
-  services/           ASR lifecycle, dictation, storage, paste, export
+  services/           ASR lifecycle, dictation, native pill, shortcuts, storage, paste, export
+  overlay/            GTK4 layer-shell recording pill helper
   python/             persistent two-model speech + Magic worker
 src/
-  components/         Electron app shell and recording overlay
+  components/         Electron app shell components
   pages/              Dictation, Magic, Speech Lab, History, Wordbook, Models, Settings
   bridge.ts           typed Electron/browser boundary
   recorder.ts         renderer microphone capture and 16 kHz WAV encoder

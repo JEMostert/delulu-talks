@@ -53,13 +53,15 @@ export class PasteService {
     return this.command.program;
   }
 
-  capabilities(): PlatformCapabilities {
+  capabilities(overlayMethod: PlatformCapabilities["overlayMethod"] = "unavailable", overlayDetail?: string): PlatformCapabilities {
     const sessionType = process.env.XDG_SESSION_TYPE?.toLowerCase() ?? "unknown";
     return {
       platform: process.platform as PlatformCapabilities["platform"],
       desktop: process.env.XDG_CURRENT_DESKTOP ?? process.env.DESKTOP_SESSION ?? "unknown",
       sessionType,
       pasteMethod: this.command?.program ?? "clipboard-only",
+      overlayMethod,
+      overlayDetail,
       wayland: sessionType === "wayland",
     };
   }

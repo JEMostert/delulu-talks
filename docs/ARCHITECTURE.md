@@ -18,6 +18,9 @@ Electron main process ── validated IPC ── sandboxed React renderer
       │                                      │
       │ lifecycle, files, clipboard          └─ Chromium microphone capture
       │
+      ├─ system Python / GTK4 layer-shell pill
+      │       └─ bottom-anchored, focus-free, empty input region
+      │
       ├─ persistent Python JSON-lines worker
       │       ├─ CrisperWhisper 2.0 / CT2 or Transformers
       │       └─ Qwen 3.5 / Transformers 5
@@ -28,6 +31,7 @@ Electron main process ── validated IPC ── sandboxed React renderer
 - The renderer has no Node integration. `contextIsolation` and Chromium sandboxing are enabled.
 - The preload exposes only typed, named operations. File paths for Speech Lab must originate from the native file picker and are allowlisted in memory before IPC accepts them.
 - The main process owns global shortcuts, tray behavior, file reads/writes, clipboard delivery, and child processes. Wayland uses one XDG GlobalShortcuts session, subscribes to each Request response before invoking the portal method, and consumes both Activated and Deactivated for hold-to-dictate. The desktop owns remapping through its native shortcut editor. Other platforms use Electron's native press-only shortcut API.
+- Plasma and wlroots Wayland sessions render recording state in a separate GTK4 layer-shell helper. Electron sends semantic JSON-line states only; the helper owns no recording or model logic. Its top-layer surface is bottom anchored with no reserved space, no keyboard interaction, and an empty input region so it cannot take focus, accept dragging, or block clicks. Unsupported desktops simply run without the pill.
 - On Linux Wayland the Chromium UI compositor runs in software to avoid the native-Wayland/NVIDIA incompatibility seen on current Plasma stacks. This does not disable CUDA inference in the separate Python worker.
 - Python messages carry a protocol prefix and request ID, so progress output cannot be parsed as a response. One worker owns independent speech and Magic slots so both selected models can remain resident simultaneously.
 - Settings and history use atomic temporary-file replacement and permission mode `0600` where the platform supports it.
@@ -53,7 +57,7 @@ The four standard aliases resolve to `nyralabs/CrisperWhisper2.0_small`, `_mediu
 - **Verbatimize:** combines a trusted clean transcript with the audio to recover audible fillers, repairs, cut-offs, and vocal events; word timing is requested when enabled.
 - **Forced align:** assigns model-derived timing to a supplied exact transcript.
 - **Correction:** manual edits are stored beside the original intended/verbatim model output. Copy and text export use the correction, while Restore removes only the edit and JSON retains both layers.
-- **Delivery:** the selected intended/verbatim layer is sent through the configured Magic preset when Magic is enabled. The Magic result is retained beside its source, copied, and then pasted through platform automation. If Magic is off—or unavailable—the original transcript remains deliverable. Linux tries `wtype`, `ydotool`, `dotool`, then `xdotool`, and falls back to a clear clipboard-only result.
+- **Delivery:** the selected intended/verbatim layer is sent through the configured Magic preset when Magic is enabled. The Magic result is retained beside its source, copied, and then pasted through platform automation. If Magic is off—or unavailable—the original transcript remains deliverable. Silence stops before history, Magic, clipboard, or paste. Linux tries `wtype`, `ydotool`, `dotool`, then `xdotool`, and falls back to a clear clipboard-only result.
 
 ## Magic workflow
 

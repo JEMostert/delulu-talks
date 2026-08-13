@@ -3,6 +3,63 @@ import { EventEmitter } from "node:events";
 import { Message, MessageType, Variant, type MessageBus } from "dbus-next";
 import { portalTrigger } from "./shortcutFormat";
 import { portalRequest, requestPath } from "./shortcutPortal";
+import { ShortcutGesture } from "./shortcutGesture";
+
+describe("shortcut command semantics", () => {
+  test("hold starts once on press and stops once on release", () => {
+    const commands: string[] = [];
+    const gesture = new ShortcutGesture(() => "hold", {
+      start: () => commands.push("start"),
+      stop: () => commands.push("stop"),
+      toggle: () => commands.push("toggle"),
+    });
+    gesture.press(true);
+    gesture.press(true);
+    gesture.release();
+    gesture.release();
+    expect(commands).toEqual(["start", "stop"]);
+  });
+
+  test("toggle changes state on each portal press and ignores releases", () => {
+    const commands: string[] = [];
+    const gesture = new ShortcutGesture(() => "toggle", {
+      start: () => commands.push("start"),
+      stop: () => commands.push("stop"),
+      toggle: () => commands.push("toggle"),
+    });
+    gesture.press(true);
+    gesture.release();
+    gesture.press(true);
+    gesture.release();
+    expect(commands).toEqual(["toggle", "toggle"]);
+  });
+
+  test("activation-only platforms safely use toggle behavior", () => {
+    const commands: string[] = [];
+    const gesture = new ShortcutGesture(() => "hold", {
+      start: () => commands.push("start"),
+      stop: () => commands.push("stop"),
+      toggle: () => commands.push("toggle"),
+    });
+    gesture.press(false);
+    gesture.press(false);
+    expect(commands).toEqual(["toggle", "toggle"]);
+  });
+
+  test("a held gesture still stops if the preference changes before release", () => {
+    const commands: string[] = [];
+    let mode: "hold" | "toggle" = "hold";
+    const gesture = new ShortcutGesture(() => mode, {
+      start: () => commands.push("start"),
+      stop: () => commands.push("stop"),
+      toggle: () => commands.push("toggle"),
+    });
+    gesture.press(true);
+    mode = "toggle";
+    gesture.release();
+    expect(commands).toEqual(["start", "stop"]);
+  });
+});
 
 describe("Wayland shortcut conversion", () => {
   test("converts Electron accelerators to the XDG trigger format", () => {

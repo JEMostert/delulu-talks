@@ -3,6 +3,7 @@ import { sessionBus, Variant, type ClientInterface, type MessageBus } from "dbus
 import type { ShortcutStatus } from "../../src/types";
 import { portalTrigger } from "./shortcutFormat";
 import { portalRequest, PORTAL_NAME, PORTAL_PATH } from "./shortcutPortal";
+import { ShortcutGesture, type ShortcutActions, type ShortcutMode } from "./shortcutGesture";
 
 const APP_ID = "delulu-talks";
 const SHORTCUT_ID = "toggle-dictation";
@@ -33,9 +34,11 @@ export class ShortcutService {
   private bus: MessageBus | null = null;
   private session: string | null = null;
   private shortcuts: PortalInterface | null = null;
-  private pressed = false;
+  private readonly gesture: ShortcutGesture;
 
-  constructor(private readonly actions: { press(): void; release(): void }) {}
+  constructor(mode: () => ShortcutMode, actions: ShortcutActions) {
+    this.gesture = new ShortcutGesture(mode, actions);
+  }
 
   onStatus(listener: (status: ShortcutStatus) => void): () => void {
     this.listeners.add(listener);
@@ -52,17 +55,13 @@ export class ShortcutService {
   }
 
   private press(): void {
-    if (this.pressed) return;
-    this.pressed = true;
     this.update({ registered: true, message: "Shortcut active", lastTriggeredAt: Date.now() });
-    this.actions.press();
+    this.gesture.press(true);
   }
 
   private release(): void {
-    if (!this.pressed) return;
-    this.pressed = false;
     this.update({ message: "Shortcut ready" });
-    this.actions.release();
+    this.gesture.release();
   }
 
   async register(accelerator: string): Promise<void> {
@@ -74,7 +73,7 @@ export class ShortcutService {
     globalShortcut.unregisterAll();
     if (!globalShortcut.register(accelerator, () => {
       this.update({ registered: true, message: "Shortcut triggered", lastTriggeredAt: Date.now() });
-      this.actions.press();
+      this.gesture.press(false);
     })) {
       this.update({ accelerator, registered: false, message: "Shortcut unavailable — choose another combination" });
       throw new Error(`Global shortcut '${accelerator}' is unavailable`);
@@ -142,7 +141,7 @@ export class ShortcutService {
     this.bus = null;
     this.session = null;
     this.shortcuts = null;
-    this.pressed = false;
+    this.gesture.reset();
     if (bus && session) {
       try {
         const object = await bus.getProxyObject(PORTAL_NAME, session);

@@ -7,9 +7,10 @@ import type { AppSettings, TranscriptRecord } from "../../src/types";
 import { DictationService } from "./dictation";
 import type { AsrService } from "./asr";
 import type { PasteService } from "./paste";
+import type { PillService } from "./pill";
 import type { StorageService } from "./storage";
 
-function harness(settings: AppSettings) {
+function harness(settings: AppSettings, transcription: Record<string, unknown> = { text: "um ship the release", intendedText: "Ship the release.", verbatimText: "um ship the release" }) {
   const cacheDirectory = mkdtempSync(join(tmpdir(), "delulu-dictation-test-"));
   const copied: string[] = [];
   const records: TranscriptRecord[] = [];
@@ -22,7 +23,7 @@ function harness(settings: AppSettings) {
   const asr = {
     getStatus: () => ({ phase: "idle", engine: "ready", message: "Ready" }),
     setActivity: () => undefined,
-    transcribe: async () => ({ text: "um ship the release", intendedText: "Ship the release.", verbatimText: "um ship the release" }),
+    transcribe: async () => transcription,
     rewriteMagic: async () => {
       magicCalls += 1;
       return { text: "Ship the release today.", model: settings.magicModel, processingTimeMs: 12, inputCharacters: 17, outputCharacters: 23, includedInferences: settings.magicAllowInferences };
@@ -37,7 +38,7 @@ function harness(settings: AppSettings) {
     storage,
     asr,
     paste,
-    { main: () => null, overlay: () => null },
+    { main: () => null, pill: { show: () => undefined, hide: () => undefined } as unknown as PillService },
     (record) => records.push(record),
   );
   return { service, copied, records, magicCalls: () => magicCalls, cleanup: () => rmSync(cacheDirectory, { recursive: true, force: true }) };
@@ -53,9 +54,10 @@ function captureHarness() {
       setActivity: (phase: typeof status.phase, message: string) => { status = { ...status, phase, message }; },
     } as unknown as AsrService,
     {} as PasteService,
-    { main: () => ({ isDestroyed: () => false, webContents: { send: (_channel: string, command: unknown) => commands.push(command) } }) as never, overlay: () => null },
+    { main: () => ({ isDestroyed: () => false, webContents: { send: (_channel: string, command: unknown) => commands.push(command) } }) as never, pill: { show: () => undefined, hide: () => undefined } as unknown as PillService },
     () => undefined,
   );
+  service.recorderAvailable();
   return { service, commands };
 }
 
@@ -100,6 +102,18 @@ describe("dictation delivery pipeline", () => {
       expect(testHarness.magicCalls()).toBe(0);
       expect(testHarness.copied).toEqual(["Ship the release."]);
       expect(testHarness.records[0].magicText).toBeUndefined();
+    } finally {
+      testHarness.cleanup();
+    }
+  });
+
+  test("does not save, rewrite, copy, or paste silence", async () => {
+    const testHarness = harness({ ...DEFAULT_SETTINGS, modelLicenseAccepted: true, magicEnabled: true, autoPaste: true, copyToClipboard: true }, { text: "", intendedText: "", verbatimText: "" });
+    try {
+      await testHarness.service.submitRecording({ wav: new Uint8Array(64), durationMs: 1_000 });
+      expect(testHarness.magicCalls()).toBe(0);
+      expect(testHarness.copied).toEqual([]);
+      expect(testHarness.records).toEqual([]);
     } finally {
       testHarness.cleanup();
     }

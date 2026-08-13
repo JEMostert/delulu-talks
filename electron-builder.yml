@@ -11,6 +11,8 @@ files:
 extraResources:
   - from: electron/python/transcription_engine.py
     to: python/transcription_engine.py
+  - from: electron/overlay/pill.py
+    to: overlay/pill.py
   - from: build/icon.png
     to: icon.png
 linux:
@@ -28,6 +30,25 @@ linux:
       Categories: AudioVideo;Utility;
       Keywords: dictation;speech;transcription;whisper;voice;
       StartupWMClass: delulu-talks
+pacman:
+  depends:
+    - c-ares
+    - ffmpeg
+    - gtk3
+    - http-parser
+    - libevent
+    - libvpx
+    - libxslt
+    - libxss
+    - minizip
+    - nss
+    - re2
+    - snappy
+    - libnotify
+    - libappindicator-gtk3
+    - gtk4-layer-shell
+    - python-gobject
+    - python-cairo
 mac:
   category: public.app-category.productivity
   icon: build/icon.icns

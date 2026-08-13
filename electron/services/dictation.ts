@@ -14,13 +14,16 @@ import type {
 } from "../../src/types";
 import type { AsrService } from "./asr";
 import type { PasteService } from "./paste";
+import type { PillService } from "./pill";
 import type { StorageService } from "./storage";
 import { deriveInsights } from "./transcripts";
 
 type WindowProvider = {
   main(): BrowserWindow | null;
-  overlay(): BrowserWindow | null;
+  pill: PillService;
 };
+
+type CaptureState = "idle" | "opening" | "listening" | "stopping" | "processing";
 
 function numeric(value: unknown, fallback = 0): number {
   const parsed = Number(value);
@@ -42,8 +45,8 @@ function words(value: unknown): WordTimestamp[] {
 }
 
 export class DictationService {
-  private capturePending = false;
-  private stopRequested = false;
+  private captureState: CaptureState = "idle";
+  private recorderReady = false;
 
   constructor(
     private readonly storage: StorageService,
@@ -59,74 +62,104 @@ export class DictationService {
 
   private sendRecorder(command: RecorderCommand): void {
     const window = this.windows.main();
-    if (!window || window.isDestroyed()) throw new Error("The recorder window is unavailable");
+    if (!window || window.isDestroyed() || !this.recorderReady) {
+      this.captureState = "idle";
+      this.asr.setActivity("error", "The microphone controller is still starting — try again in a moment");
+      this.showPill("error");
+      return;
+    }
     window.webContents.send("recorder:command", command);
+  }
+
+  private showPill(state: Parameters<PillService["show"]>[0], detail?: string, title?: string): void {
+    if (this.settings().showOverlay) this.windows.pill.show(state, detail, title);
+    else this.windows.pill.hide();
+  }
+
+  recorderAvailable(): void {
+    this.recorderReady = true;
+  }
+
+  recorderUnavailable(): void {
+    this.recorderReady = false;
+    if (this.captureState !== "idle") {
+      this.captureState = "idle";
+      this.windows.pill.hide();
+      this.asr.setActivity("error", "The app reloaded while recording; please start again");
+    }
   }
 
   start(): void {
     const status = this.asr.getStatus();
-    if (status.phase === "listening" || this.capturePending) return;
-    if (["transcribing", "preparing", "loading"].includes(status.phase)) return;
+    if (this.captureState !== "idle") return;
+    if (["transcribing", "preparing", "loading"].includes(status.phase)) {
+      this.showPill("transcribing", status.message, "Please wait");
+      return;
+    }
     if (status.engine === "missing" || status.engine === "error") {
       this.asr.setActivity("error", status.engine === "missing"
         ? "Set up a CrisperWhisper model before your first dictation"
         : "Repair or reload the speech engine before starting another dictation");
+      this.showPill("error", status.engine === "missing" ? "Install a speech model in Delulu Talks" : "Open Delulu Talks for details", status.engine === "missing" ? "Setup needed" : "Engine unavailable");
+      return;
+    }
+    if (!this.recorderReady) {
+      this.asr.setActivity("error", "The microphone controller is still starting — try again in a moment");
+      this.showPill("error");
       return;
     }
     const settings = this.settings();
-    this.capturePending = true;
-    this.stopRequested = false;
+    this.captureState = "opening";
     this.asr.setActivity("idle", "Opening microphone");
     this.sendRecorder({ action: "start", inputDeviceId: settings.inputDeviceId });
   }
 
   stop(): void {
-    const status = this.asr.getStatus();
-    if (status.phase !== "listening" && !this.capturePending) return;
-    if (this.capturePending) {
-      this.stopRequested = true;
+    if (this.captureState === "opening") {
+      this.captureState = "stopping";
       this.asr.setActivity("idle", "Shortcut released — closing the microphone");
       return;
     }
+    if (this.captureState !== "listening") return;
+    this.captureState = "stopping";
     this.sendRecorder({ action: "stop", inputDeviceId: this.settings().inputDeviceId });
   }
 
   toggle(): void {
-    this.asr.getStatus().phase === "listening" || this.capturePending ? this.stop() : this.start();
+    if (this.captureState === "opening" || this.captureState === "listening") this.stop();
+    else if (this.captureState === "idle") this.start();
   }
 
   cancel(): void {
-    this.capturePending = false;
-    this.stopRequested = false;
+    if (this.captureState === "idle" || this.captureState === "processing") return;
+    this.captureState = "idle";
     this.sendRecorder({ action: "cancel", inputDeviceId: this.settings().inputDeviceId });
-    this.windows.overlay()?.hide();
+    this.windows.pill.hide();
     this.asr.setActivity("idle", "Recording cancelled");
   }
 
   recordingStarted(): void {
-    this.capturePending = false;
-    if (this.stopRequested) {
-      this.stopRequested = false;
+    if (this.captureState === "stopping") {
       this.asr.setActivity("listening", "Finishing capture");
       this.sendRecorder({ action: "stop", inputDeviceId: this.settings().inputDeviceId });
       return;
     }
-    this.asr.setActivity("listening", "Speak naturally — press the shortcut again to finish");
-    const settings = this.settings();
-    if (settings.showOverlay) this.windows.overlay()?.showInactive();
+    if (this.captureState !== "opening") return;
+    this.captureState = "listening";
+    const hold = this.settings().shortcutMode === "hold";
+    this.asr.setActivity("listening", hold ? "Listening — release the shortcut to transcribe" : "Listening — press the shortcut again to finish");
+    this.showPill("listening", hold ? "Release to send" : "Press shortcut to send");
   }
 
   recordingFailed(message: string): void {
-    this.capturePending = false;
-    this.stopRequested = false;
-    this.windows.overlay()?.hide();
+    this.captureState = "idle";
+    this.showPill("error");
     this.asr.setActivity("error", message);
   }
 
   async submitRecording(submission: RecordingSubmission): Promise<void> {
-    this.capturePending = false;
+    this.captureState = "processing";
     const settings = this.settings();
-    if (settings.showOverlay) this.windows.overlay()?.showInactive();
     if (!(submission.wav instanceof Uint8Array) || submission.wav.byteLength < 44) {
       this.recordingFailed("The microphone returned an empty recording");
       return;
@@ -136,7 +169,8 @@ export class DictationService {
       return;
     }
     if (submission.durationMs < 180) {
-      this.windows.overlay()?.hide();
+      this.captureState = "idle";
+      this.windows.pill.hide();
       this.asr.setActivity("idle", "Recording was too short and was discarded");
       return;
     }
@@ -146,12 +180,20 @@ export class DictationService {
     writeFileSync(audioPath, submission.wav);
     try {
       this.asr.setActivity("transcribing", settings.transcriptionMode === "dual" ? "Creating clean and verbatim transcripts" : "Transcribing locally");
+      this.showPill("transcribing");
       const result = await this.asr.transcribe({ audioPath }, settings);
       let record = this.createRecord(result, "dictation", submission.durationMs, null, settings.transcriptionMode, settings);
       let output = this.outputText(record, settings);
+      if (!output.trim()) {
+        this.showPill("error", "Try again a little closer to the microphone", "Nothing heard");
+        if (!settings.preloadModel) await this.asr.unload();
+        this.asr.setActivity("idle", "No speech detected — nothing was copied or pasted");
+        return;
+      }
       let magicFailure: string | null = null;
       if (settings.magicEnabled) {
         this.asr.setActivity("transcribing", "Magic is polishing the transcript");
+        this.showPill("magic");
         try {
           const magic = await this.asr.rewriteMagic({
             text: output,
@@ -175,8 +217,8 @@ export class DictationService {
       this.broadcastTranscript(record);
       const outputName = record.magicText ? "Magic result" : "Transcript";
       let completion = `${outputName} ready`;
+      this.showPill("delivering");
       if (settings.copyToClipboard || settings.autoPaste) this.paste.copy(output);
-      this.windows.overlay()?.hide();
       if (settings.autoPaste) {
         try {
           await this.paste.paste(output);
@@ -189,11 +231,13 @@ export class DictationService {
       }
       if (magicFailure) completion = `${completion} · Magic unavailable: ${magicFailure}`;
       if (!settings.preloadModel) await this.asr.unload();
+      this.showPill("success", completion, settings.autoPaste ? "Pasted" : settings.copyToClipboard ? "Copied" : "Done");
       this.asr.setActivity("idle", completion);
     } catch (error) {
-      this.windows.overlay()?.hide();
+      this.showPill("error");
       this.asr.setActivity("error", error instanceof Error ? error.message : String(error));
     } finally {
+      this.captureState = "idle";
       rmSync(audioPath, { force: true });
     }
   }

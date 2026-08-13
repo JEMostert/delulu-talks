@@ -5,7 +5,6 @@ import { DEFAULT_SETTINGS, modelById } from "./data";
 import { PcmRecorder, listMicrophones } from "./recorder";
 import { originalTranscriptText } from "./transcriptText";
 import { Sidebar } from "./components/Sidebar";
-import { Overlay } from "./components/Overlay";
 import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
 import { MagicPage } from "./pages/MagicPage";
@@ -30,7 +29,6 @@ const PAGE_META: Record<Page, { title: string; description: string }> = {
 };
 
 function App() {
-  const isOverlay = new URLSearchParams(window.location.search).has("overlay");
   const [page, setPage] = useState<Page>("home");
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [status, setStatus] = useState<DictationStatus>(initialStatus);
@@ -45,14 +43,12 @@ function App() {
   useEffect(() => {
     const removeStatus = bridge.onStatus(setStatus);
     const removeMagicStatus = bridge.onMagicStatus(setMagicStatus);
+    const removeSettingsChanged = bridge.onSettingsChanged(setSettings);
+    const removeNavigation = bridge.onNavigate(setPage);
     const removeShortcutStatus = bridge.onShortcutStatus(setShortcutStatus);
-    if (isOverlay) {
-      void bridge.getStatus().then(setStatus).catch((error) => setStatus({ phase: "error", engine: "error", message: String(error) }));
-      return () => { removeStatus(); removeMagicStatus(); removeShortcutStatus(); };
-    }
-
     const recorder = new PcmRecorder();
     const removeRecorder = bridge.onRecorderCommand((command) => void recorder.handle(command));
+    void bridge.recorderReady();
     const removeTranscript = bridge.onTranscript((record) => {
       setHistory((items) => [record, ...items.filter((item) => item.id !== record.id)]);
       setToast(record.magicText ? "Magic result captured and ready" : "Transcript captured and ready");
@@ -71,18 +67,20 @@ function App() {
     return () => {
       removeStatus();
       removeMagicStatus();
+      removeSettingsChanged();
+      removeNavigation();
       removeShortcutStatus();
       removeRecorder();
       removeTranscript();
     };
-  }, [isOverlay]);
+  }, []);
 
   useEffect(() => {
-    if (isOverlay || page !== "settings") return;
+    if (page !== "settings") return;
     let cancelled = false;
     void listMicrophones(true).then((available) => { if (!cancelled) setDevices(available); }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [isOverlay, page]);
+  }, [page]);
 
   useEffect(() => {
     if (!toast) return;
@@ -157,8 +155,6 @@ function App() {
       setSaving(false);
     }
   }
-
-  if (isOverlay) return <Overlay status={status} />;
 
   const busy = ["preparing", "loading", "transcribing"].includes(status.phase);
   const recording = status.phase === "listening";

@@ -5,23 +5,24 @@ import {
   ipcMain,
   Menu,
   nativeImage,
-  screen,
   session,
   shell,
   Tray,
 } from "electron";
+import type { MenuItemConstructorOptions } from "electron";
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
-import type { AppSettings, ExportFormat, LabRequest, MagicRewriteRequest, RecordingSubmission, TranscriptRecord, TranscriptVersion } from "../src/types";
+import type { AppSettings, ExportFormat, LabRequest, MagicPreset, MagicRewriteRequest, Page, RecordingSubmission, TranscriptRecord, TranscriptVersion } from "../src/types";
 import { modelById } from "../src/data";
+import { deliveredText } from "../src/transcriptText";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
 import { PasteService } from "./services/paste";
+import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
 import { normalizeSettings, StorageService } from "./services/storage";
 import { exportRecord } from "./services/transcripts";
 
-app.commandLine.appendSwitch("enable-features", "GlobalShortcutsPortal,GlobalShortcutsPortalPreferredTrigger");
 if (process.platform === "linux" && process.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland") {
   // ASR CUDA runs in Python and is unaffected by Chromium's compositor.
   app.commandLine.appendSwitch("disable-gpu");
@@ -31,12 +32,12 @@ if (process.platform === "linux") app.setDesktopName("delulu-talks.desktop");
 if (!app.isPackaged && process.env.DELULU_USER_DATA_DIR) app.setPath("userData", resolve(process.env.DELULU_USER_DATA_DIR));
 
 let mainWindow: BrowserWindow | null = null;
-let overlayWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
 let storage: StorageService;
 let asr: AsrService;
 let paste: PasteService;
+let pill: PillService;
 let dictation: DictationService;
 let shortcut: ShortcutService;
 const selectedAudioFiles = new Set<string>();
@@ -56,9 +57,7 @@ function loadRenderer(window: BrowserWindow, query?: Record<string, string>): vo
 }
 
 function broadcast(channel: string, value: unknown): void {
-  for (const window of [mainWindow, overlayWindow]) {
-    if (window && !window.isDestroyed()) window.webContents.send(channel, value);
-  }
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, value);
 }
 
 function createMainWindow(): BrowserWindow {
@@ -94,70 +93,129 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 
-function placeOverlay(): void {
-  if (!overlayWindow || overlayWindow.isDestroyed()) return;
-  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const [width, height] = overlayWindow.getSize();
-  const x = Math.round(display.workArea.x + (display.workArea.width - width) / 2);
-  const y = Math.round(display.workArea.y + display.workArea.height - height - 34);
-  overlayWindow.setPosition(x, y, false);
-}
-
-function createOverlayWindow(): BrowserWindow {
-  const window = new BrowserWindow({
-    width: 336,
-    height: 68,
-    show: false,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
-    focusable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    hasShadow: false,
-    webPreferences: {
-      preload: preloadPath(),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      backgroundThrottling: false,
-    },
-  });
-  window.setAlwaysOnTop(true, "floating");
-  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  window.setIgnoreMouseEvents(true);
-  window.on("show", placeOverlay);
-  loadRenderer(window, { overlay: "1" });
-  return window;
-}
-
 function iconPath(): string {
   const packaged = join(process.resourcesPath, "icon.png");
   return app.isPackaged && existsSync(packaged) ? packaged : resolve(app.getAppPath(), "build", "icon.png");
 }
 
-function showMainWindow(): void {
+function showMainWindow(page?: Page): void {
   if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow();
   mainWindow.show();
   mainWindow.focus();
+  if (!page) return;
+  const navigate = () => broadcast("app:navigate", page);
+  if (mainWindow.webContents.isLoadingMainFrame()) mainWindow.webContents.once("did-finish-load", navigate);
+  else navigate();
+}
+
+function engineLabel(engine: ReturnType<AsrService["getStatus"]>["engine"]): string {
+  return ({ missing: "Setup needed", unloaded: "Sleeping", settingUp: "Installing…", loading: "Loading…", ready: "Ready", error: "Needs attention" })[engine];
+}
+
+function runTrayAction(action: () => unknown | Promise<unknown>, magic = false): void {
+  void Promise.resolve().then(action).catch((error) => magic ? asr.failMagic(error) : asr.fail(error));
+}
+
+function patchTraySettings(patch: Partial<AppSettings>): void {
+  runTrayAction(() => persistSettings({ ...storage.getSettings(), ...patch }), "magicEnabled" in patch || "magicPreset" in patch || "magicAllowInferences" in patch || "preloadMagicModel" in patch);
+}
+
+function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
+  const speech = asr.getStatus();
+  const magic = asr.getMagicStatus();
+  const speechBusy = ["preparing", "loading", "transcribing"].includes(speech.phase);
+  const magicBusy = ["preparing", "loading", "rewriting"].includes(magic.phase);
+  const speechAction: MenuItemConstructorOptions = speech.engine === "ready"
+    ? { label: "Unload speech model", enabled: !speechBusy, click: () => runTrayAction(() => asr.unload()) }
+    : speech.engine === "unloaded"
+      ? { label: "Load speech model now", enabled: !speechBusy, click: () => runTrayAction(() => asr.loadModel(storage.getSettings())) }
+      : { label: "Set up speech model…", enabled: !speechBusy, click: () => showMainWindow("models") };
+  const magicAction: MenuItemConstructorOptions = !settings.magicEnabled
+    ? { label: "Enable Magicfy to load its model", enabled: false }
+    : magic.engine === "ready"
+      ? { label: "Unload Magic model", enabled: !magicBusy, click: () => runTrayAction(() => asr.unloadMagic(), true) }
+      : magic.engine === "unloaded"
+        ? { label: "Load Magic model now", enabled: !magicBusy, click: () => runTrayAction(() => asr.loadMagic(storage.getSettings()), true) }
+        : { label: "Set up Magic model…", enabled: !magicBusy, click: () => showMainWindow("magic") };
+
+  return [
+    { label: `Speech · ${engineLabel(speech.engine)}`, sublabel: speech.message, enabled: false },
+    speechAction,
+    { type: "checkbox", label: "Keep speech model ready", checked: settings.preloadModel, click: () => patchTraySettings({ preloadModel: !settings.preloadModel }) },
+    { type: "separator" },
+    { label: `Magic · ${settings.magicEnabled ? engineLabel(magic.engine) : "Off"}`, sublabel: magic.message, enabled: false },
+    magicAction,
+    { type: "checkbox", label: "Keep Magic model ready", checked: settings.preloadMagicModel, enabled: settings.magicEnabled, click: () => patchTraySettings({ preloadMagicModel: !settings.preloadMagicModel }) },
+  ];
+}
+
+function rebuildTrayMenu(): void {
+  if (!tray) return;
+  const settings = storage.getSettings();
+  const status = asr.getStatus();
+  const magic = asr.getMagicStatus();
+  const latest = storage.getHistory()[0];
+  const listening = status.phase === "listening";
+  const dictationBusy = ["preparing", "loading", "transcribing"].includes(status.phase);
+  const speechUnavailable = status.engine === "missing" || status.engine === "error";
+  const presets: Array<[MagicPreset, string]> = [
+    ["polish", "Polish naturally"],
+    ["concise", "Make it concise"],
+    ["structured", "Structure the details"],
+    ["prompt", "Build an actionable prompt"],
+  ];
+  const template: MenuItemConstructorOptions[] = [
+    { label: "DELULU TALKS", enabled: false },
+    {
+      label: listening ? "■  Stop & transcribe" : dictationBusy ? `●  ${status.message}` : speechUnavailable ? "!  Speech setup needs attention…" : "●  Start dictation",
+      sublabel: speechUnavailable ? status.message : `Shortcut: ${settings.shortcut}`,
+      enabled: listening || !dictationBusy,
+      click: () => speechUnavailable ? showMainWindow("models") : dictation.toggle(),
+    },
+    { label: "Open Delulu Talks", click: () => showMainWindow("home") },
+    { label: "Copy latest result", sublabel: latest ? deliveredText(latest).replace(/\s+/g, " ").slice(0, 72) : "Your most recent dictation appears here", enabled: Boolean(latest), click: () => { if (latest) paste.copy(deliveredText(latest)); } },
+    { type: "separator" },
+    { type: "checkbox", label: "✦  Magicfy after dictation", checked: settings.magicEnabled, click: () => patchTraySettings({ magicEnabled: !settings.magicEnabled }) },
+    {
+      label: "Magicfy style",
+      enabled: settings.magicEnabled,
+      submenu: presets.map(([preset, label]) => ({ type: "radio", label, checked: settings.magicPreset === preset, click: () => patchTraySettings({ magicPreset: preset }) })),
+    },
+    { type: "checkbox", label: "Allow helpful assumptions", checked: settings.magicAllowInferences, enabled: settings.magicEnabled, click: () => patchTraySettings({ magicAllowInferences: !settings.magicAllowInferences }) },
+    { type: "separator" },
+    {
+      label: "Delivery & capture",
+      submenu: [
+        { type: "checkbox", label: "Paste automatically", checked: settings.autoPaste, click: () => patchTraySettings({ autoPaste: !settings.autoPaste }) },
+        { type: "checkbox", label: "Keep a clipboard copy", checked: settings.copyToClipboard, click: () => patchTraySettings({ copyToClipboard: !settings.copyToClipboard }) },
+        { type: "checkbox", label: "Show recording pill", checked: settings.showOverlay, click: () => patchTraySettings({ showOverlay: !settings.showOverlay }) },
+        { type: "checkbox", label: "Save local history", checked: settings.keepHistory, click: () => patchTraySettings({ keepHistory: !settings.keepHistory }) },
+      ],
+    },
+    { label: "Local engines", submenu: runtimeMenu(settings) },
+    {
+      label: "Open workspace",
+      submenu: [
+        { label: "Magic", click: () => showMainWindow("magic") },
+        { label: "History", click: () => showMainWindow("history") },
+        { label: "Models & runtime", click: () => showMainWindow("models") },
+        { label: "Settings", click: () => showMainWindow("settings") },
+      ],
+    },
+    { type: "separator" },
+    { type: "checkbox", label: "Launch at login", checked: settings.launchAtLogin, click: () => patchTraySettings({ launchAtLogin: !settings.launchAtLogin }) },
+    { label: "Quit Delulu Talks", click: () => { quitting = true; app.quit(); } },
+  ];
+  tray.setContextMenu(Menu.buildFromTemplate(template));
+  const state = listening ? "Listening" : status.phase === "transcribing" ? "Transcribing" : status.engine === "ready" ? "Ready" : engineLabel(status.engine);
+  tray.setToolTip(`Delulu Talks — ${state}${settings.magicEnabled ? ` · Magicfy ${engineLabel(magic.engine)}` : " · Magicfy off"}`);
 }
 
 function installTray(): void {
   const icon = nativeImage.createFromPath(iconPath()).resize({ width: 20, height: 20 });
   tray = new Tray(icon);
-  tray.setToolTip("Delulu Talks");
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "Open Delulu Talks", click: showMainWindow },
-    { type: "separator" },
-    { label: "Start / stop dictation", click: () => dictation.toggle() },
-    { label: "Load selected model", click: () => void asr.loadModel(storage.getSettings()).catch((error) => asr.fail(error)) },
-    { type: "separator" },
-    { label: "Quit", click: () => { quitting = true; app.quit(); } },
-  ]));
-  tray.on("double-click", showMainWindow);
+  rebuildTrayMenu();
+  tray.on("double-click", () => showMainWindow("home"));
 }
 
 function ensureDevelopmentDesktopEntry(): void {
@@ -196,28 +254,32 @@ function validateText(value: unknown, max: number): string {
   return value.slice(0, max);
 }
 
+async function persistSettings(value: unknown): Promise<AppSettings> {
+  const previous = storage.getSettings();
+  const next = normalizeSettings(value);
+  if (next.shortcut !== previous.shortcut) {
+    try {
+      await shortcut.register(next.shortcut);
+    } catch {
+      await shortcut.register(previous.shortcut).catch(() => undefined);
+      throw new Error(`Global shortcut '${next.shortcut}' is unavailable. ${previous.shortcut} remains active.`);
+    }
+  }
+  const runtimeChanged = next.model !== previous.model || next.backend !== previous.backend || next.computeType !== previous.computeType || next.speculativeDecoding !== previous.speculativeDecoding;
+  const magicRuntimeChanged = next.magicModel !== previous.magicModel;
+  const saved = storage.updateSettings(next);
+  app.setLoginItemSettings({ openAtLogin: saved.launchAtLogin });
+  if (runtimeChanged) await asr.unload();
+  if (magicRuntimeChanged) await asr.unloadMagic();
+  asr.configureResidency(saved);
+  broadcast("settings:changed", saved);
+  rebuildTrayMenu();
+  return saved;
+}
+
 function registerIpc(): void {
   ipcMain.handle("settings:get", () => storage.getSettings());
-  ipcMain.handle("settings:update", async (_event, value: unknown) => {
-    const previous = storage.getSettings();
-    const next = normalizeSettings(value);
-    if (next.shortcut !== previous.shortcut) {
-      try {
-        await shortcut.register(next.shortcut);
-      } catch {
-        await shortcut.register(previous.shortcut).catch(() => undefined);
-        throw new Error(`Global shortcut '${next.shortcut}' is unavailable. ${previous.shortcut} remains active.`);
-      }
-    }
-    const runtimeChanged = next.model !== previous.model || next.backend !== previous.backend || next.computeType !== previous.computeType || next.speculativeDecoding !== previous.speculativeDecoding;
-    const magicRuntimeChanged = next.magicModel !== previous.magicModel;
-    const saved = storage.updateSettings(next);
-    app.setLoginItemSettings({ openAtLogin: saved.launchAtLogin });
-    if (runtimeChanged) await asr.unload();
-    if (magicRuntimeChanged) await asr.unloadMagic();
-    asr.configureResidency(saved);
-    return saved;
-  });
+  ipcMain.handle("settings:update", (_event, value: unknown) => persistSettings(value));
   ipcMain.handle("runtime:status", () => asr.getStatus());
   ipcMain.handle("shortcut:status", () => shortcut.getStatus());
   ipcMain.handle("shortcut:configure", () => shortcut.configure());
@@ -242,12 +304,13 @@ function registerIpc(): void {
     if (!request.text) throw new Error("Add a transcript or draft before using Magic");
     return asr.rewriteMagic(request, storage.getSettings());
   });
-  ipcMain.handle("platform:capabilities", () => paste.capabilities());
+  ipcMain.handle("platform:capabilities", () => paste.capabilities(pill.method, pill.detail));
   ipcMain.handle("dictation:start", () => dictation.start());
   ipcMain.handle("dictation:stop", () => dictation.stop());
   ipcMain.handle("dictation:toggle", () => dictation.toggle());
   ipcMain.handle("dictation:cancel", () => dictation.cancel());
   ipcMain.handle("recorder:started", () => dictation.recordingStarted());
+  ipcMain.handle("recorder:ready", () => dictation.recorderAvailable());
   ipcMain.handle("recorder:failed", (_event, message: unknown) => dictation.recordingFailed(validateText(message, 1000)));
   ipcMain.handle("recorder:submit", (_event, submission: RecordingSubmission) => dictation.submitRecording(submission));
   ipcMain.handle("clipboard:copy", (_event, text: unknown) => paste.copy(validateText(text, 500_000)));
@@ -306,28 +369,32 @@ async function start(): Promise<void> {
   ensureDevelopmentDesktopEntry();
   storage = new StorageService();
   paste = new PasteService();
+  pill = new PillService();
   asr = new AsrService(storage);
   mainWindow = createMainWindow();
-  overlayWindow = createOverlayWindow();
   dictation = new DictationService(
     storage,
     asr,
     paste,
-    { main: () => mainWindow, overlay: () => overlayWindow },
-    (record: TranscriptRecord) => broadcast("history:added", record),
+    { main: () => mainWindow, pill },
+    (record: TranscriptRecord) => {
+      broadcast("history:added", record);
+      rebuildTrayMenu();
+    },
   );
-  shortcut = new ShortcutService({
-    press: () => {
-      const settings = storage.getSettings();
-      if (shortcut.getStatus().method === "portal" && settings.shortcutMode === "hold") dictation.start();
-      else dictation.toggle();
-    },
-    release: () => {
-      if (storage.getSettings().shortcutMode === "hold") dictation.stop();
-    },
+  mainWindow.webContents.on("did-start-loading", () => dictation.recorderUnavailable());
+  shortcut = new ShortcutService(
+    () => storage.getSettings().shortcutMode,
+    { start: () => dictation.start(), stop: () => dictation.stop(), toggle: () => dictation.toggle() },
+  );
+  asr.onStatus((status) => {
+    broadcast("runtime:statusChanged", status);
+    rebuildTrayMenu();
   });
-  asr.onStatus((status) => broadcast("runtime:statusChanged", status));
-  asr.onMagicStatus((status) => broadcast("magic:statusChanged", status));
+  asr.onMagicStatus((status) => {
+    broadcast("magic:statusChanged", status);
+    rebuildTrayMenu();
+  });
   shortcut.onStatus((status) => broadcast("shortcut:statusChanged", status));
   setupPermissions();
   registerIpc();
@@ -341,16 +408,17 @@ const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) {
   app.quit();
 } else {
-  app.on("second-instance", showMainWindow);
+  app.on("second-instance", () => showMainWindow());
   app.whenReady().then(start).catch((error) => {
     dialog.showErrorBox("Delulu Talks failed to start", error instanceof Error ? error.message : String(error));
     app.quit();
   });
 }
 
-app.on("activate", showMainWindow);
+app.on("activate", () => showMainWindow());
 app.on("before-quit", () => {
   quitting = true;
+  pill?.shutdown();
   void shortcut?.shutdown();
   void asr?.shutdown();
 });

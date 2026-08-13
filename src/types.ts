@@ -188,6 +188,8 @@ export type PlatformCapabilities = {
   desktop: string;
   sessionType: string;
   pasteMethod: string;
+  overlayMethod: "layer-shell" | "unavailable";
+  overlayDetail?: string;
   wayland: boolean;
 };
 
@@ -228,10 +230,13 @@ export type DeluluApi = {
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   recordingStarted(): Promise<void>;
+  recorderReady(): Promise<void>;
   recordingFailed(message: string): Promise<void>;
   submitRecording(recording: RecordingSubmission): Promise<void>;
   onStatus(callback: (status: DictationStatus) => void): () => void;
   onMagicStatus(callback: (status: MagicStatus) => void): () => void;
+  onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
+  onNavigate(callback: (page: Page) => void): () => void;
   onShortcutStatus(callback: (status: ShortcutStatus) => void): () => void;
   onTranscript(callback: (record: TranscriptRecord) => void): () => void;
   onRecorderCommand(callback: (command: RecorderCommand) => void): () => void;
