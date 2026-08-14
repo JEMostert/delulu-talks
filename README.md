@@ -1,15 +1,17 @@
 <div align="center">
   <img src="build/icon.png" width="150" alt="Delulu Talks logo" />
-
-  # Delulu Talks
-
-  **Hold. Speak. Release. Your words land polished wherever you are typing.**
-
-  [![Latest release](https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&label=release&color=ffe600&labelColor=171914)](https://github.com/JEMostert/delulu-talks/releases/latest)
-  ![Platforms](https://img.shields.io/badge/Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-Desktop-ffe600?style=for-the-badge&labelColor=171914)
-  ![Local first](https://img.shields.io/badge/AI-local--first-ffe600?style=for-the-badge&labelColor=171914)
-
-  [**Download the latest release**](https://github.com/JEMostert/delulu-talks/releases/latest) · [Architecture](docs/ARCHITECTURE.md) · [Product research](docs/PRODUCT_RESEARCH.md)
+  <h1>Delulu Talks</h1>
+  <p><strong>Hold. Speak. Release. Your words land polished wherever you are typing.</strong></p>
+  <p>
+    <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><img src="https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&amp;label=release&amp;color=ffe600&amp;labelColor=171914" alt="Latest release" /></a>
+    <img src="https://img.shields.io/badge/Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-Desktop-ffe600?style=for-the-badge&amp;labelColor=171914" alt="Linux, Windows, and macOS" />
+    <img src="https://img.shields.io/badge/AI-local--first-ffe600?style=for-the-badge&amp;labelColor=171914" alt="Local-first AI" />
+  </p>
+  <p>
+    <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><strong>Download the latest release</strong></a> ·
+    <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+    <a href="docs/PRODUCT_RESEARCH.md">Product research</a>
+  </p>
 </div>
 
 ---
