@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Delulu Talks
+Comment=Private, local-first voice dictation and Magic rewrites
+Exec=delulu-talks
+TryExec=delulu-talks
+Icon=delulu-talks
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=dictation;transcription;speech;voice;whisper;
+StartupWMClass=delulu-talks

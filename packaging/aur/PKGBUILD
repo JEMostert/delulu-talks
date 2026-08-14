@@ -1,0 +1,58 @@
+# Maintainer: Noctis <92588849+JoranEMostert at users dot noreply dot github dot com>
+
+pkgname=delulu-talks-bin
+pkgver=0.5.0
+pkgrel=1
+pkgdesc="Private, local-first system-wide dictation powered by CrisperWhisper 2.0"
+arch=('x86_64')
+url="https://github.com/JEMostert/delulu-talks"
+license=('MIT')
+depends=(
+  'c-ares'
+  'ffmpeg'
+  'gtk3'
+  'gtk4-layer-shell'
+  'libappindicator-gtk3'
+  'libevent'
+  'libnotify'
+  'libvpx'
+  'libxss'
+  'libxslt'
+  'minizip'
+  'nss'
+  'python'
+  'python-cairo'
+  'python-gobject'
+  're2'
+  'snappy'
+)
+provides=('delulu-talks')
+conflicts=('delulu-talks')
+options=('!strip')
+
+_archive="Delulu-Talks-${pkgver}-linux-x64.tar.xz"
+_distdir="Delulu-Talks-${pkgver}-linux-x64"
+source_x86_64=(
+  "${_archive}::${url}/releases/download/v${pkgver}/${_archive}"
+  "LICENSE-${pkgver}::https://raw.githubusercontent.com/JEMostert/delulu-talks/v${pkgver}/LICENSE"
+  'delulu-talks.desktop'
+)
+sha256sums_x86_64=('555c058ce29ec7c9d3f7a1650932a7ff551d8e6c80af8444b9c0d3182c448eca'
+                   '8c46053b4b662e3a8a60ce7ec1ed0aff9b78ca9a14c00f5ac6522462b98257eb'
+                   'd742e43dbb19f17c3abe466a58c60dd6f6569f6c55b1b9298ce06057f333ce84')
+
+package() {
+  install -d "${pkgdir}/opt/delulu-talks"
+  cp -a "${srcdir}/${_distdir}/." "${pkgdir}/opt/delulu-talks/"
+  chmod 0755 "${pkgdir}/opt/delulu-talks/chrome-sandbox"
+
+  install -d "${pkgdir}/usr/bin"
+  ln -s '/opt/delulu-talks/delulu-talks' "${pkgdir}/usr/bin/delulu-talks"
+
+  install -Dm644 "${srcdir}/delulu-talks.desktop" \
+    "${pkgdir}/usr/share/applications/delulu-talks.desktop"
+  install -Dm644 "${pkgdir}/opt/delulu-talks/resources/icon.png" \
+    "${pkgdir}/usr/share/icons/hicolor/512x512/apps/delulu-talks.png"
+  install -Dm644 "${srcdir}/LICENSE-${pkgver}" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
