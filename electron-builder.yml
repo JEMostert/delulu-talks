@@ -1,6 +1,7 @@
 appId: com.joran.delulu-talks
 productName: Delulu Talks
 asar: true
+npmRebuild: false
 directories:
   output: release
 electronUpdaterCompatibility: ">=2.16"
@@ -13,6 +14,7 @@ toolsets:
 files:
   - out/**
   - package.json
+  - "!node_modules/usocket/**"
 extraResources:
   - from: electron/python/transcription_engine.py
     to: python/transcription_engine.py
