@@ -6,6 +6,7 @@ type ProgressInfo = { percent: number; transferred: number; total: number; bytes
 export type UpdaterPort = {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
+  allowDowngrade: boolean;
   on(event: "checking-for-update", listener: () => void): unknown;
   on(event: "update-available" | "update-not-available" | "update-downloaded", listener: (info: UpdateInfo) => void): unknown;
   on(event: "download-progress", listener: (progress: ProgressInfo) => void): unknown;
@@ -43,6 +44,9 @@ export class UpdateService {
     this.started = true;
     this.updater.autoDownload = false;
     this.updater.autoInstallOnAppQuit = true;
+    // v0.5.0 resets the public version line after the premature v2.0.0 release.
+    // Permit that one transition without allowing arbitrary future downgrades.
+    this.updater.allowDowngrade = this.status.currentVersion === "2.0.0";
     this.updater.on("checking-for-update", () => this.update({ phase: "checking", message: "Checking GitHub Releases…" }));
     this.updater.on("update-available", (info) => this.update({ phase: "available", version: info.version, message: `Version ${info.version} is ready to download`, percent: 0 }));
     this.updater.on("update-not-available", () => this.update({ phase: "upToDate", version: undefined, message: `Delulu Talks ${this.status.currentVersion} is up to date`, percent: undefined }));

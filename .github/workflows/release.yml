@@ -83,3 +83,4 @@ jobs:
           files: artifacts/*
           generate_release_notes: true
           name: Delulu Talks ${{ github.ref_name }}
+          make_latest: true

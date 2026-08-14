@@ -6,6 +6,7 @@ import { UpdateService, type UpdaterPort } from "./updates";
 class FakeUpdater extends EventEmitter implements UpdaterPort {
   autoDownload = true;
   autoInstallOnAppQuit = false;
+  allowDowngrade = false;
   checks = 0;
   downloads = 0;
   installs = 0;
@@ -22,6 +23,7 @@ describe("application updates", () => {
     service.start();
     expect(updater.autoDownload).toBe(false);
     expect(updater.autoInstallOnAppQuit).toBe(true);
+    expect(updater.allowDowngrade).toBe(true);
 
     updater.emit("update-available", { version: "2.1.0" });
     await service.download();
@@ -37,5 +39,11 @@ describe("application updates", () => {
   test("keeps development builds away from the production feed", async () => {
     const service = new UpdateService(null, "2.0.0", () => undefined);
     expect((await service.check()).phase).toBe("unsupported");
+  });
+
+  test("does not allow downgrades after the version-line reset", () => {
+    const updater = new FakeUpdater();
+    new UpdateService(updater, "0.5.0", () => undefined).start();
+    expect(updater.allowDowngrade).toBe(false);
   });
 });
