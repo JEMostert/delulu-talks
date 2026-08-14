@@ -1,47 +1,96 @@
-# Delulu Talks
+<div align="center">
+  <img src="build/icon.png" width="150" alt="Delulu Talks logo" />
 
-[Download the latest release](https://github.com/JEMostert/delulu-talks/releases/latest) for a normal desktop installation. Linux users can run the AppImage directly; Delulu Talks checks GitHub Releases for updates and shows download progress before offering a safe restart.
+  # Delulu Talks
 
-On Linux, make the AppImage executable once, then open it normally:
+  **Hold. Speak. Release. Your words land polished wherever you are typing.**
+
+  [![Latest release](https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&label=release&color=ffe600&labelColor=171914)](https://github.com/JEMostert/delulu-talks/releases/latest)
+  ![Platforms](https://img.shields.io/badge/Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-Desktop-ffe600?style=for-the-badge&labelColor=171914)
+  ![Local first](https://img.shields.io/badge/AI-local--first-ffe600?style=for-the-badge&labelColor=171914)
+
+  [**Download the latest release**](https://github.com/JEMostert/delulu-talks/releases/latest) · [Architecture](docs/ARCHITECTURE.md) · [Product research](docs/PRODUCT_RESEARCH.md)
+</div>
+
+---
+
+Delulu Talks is private desktop dictation built around one system-wide shortcut. It keeps a fast speech model ready, understands both what you meant and exactly what you said, and can pass the result through a local Qwen model before delivering it to the app you were already using.
+
+## One shortcut. The complete pipeline.
+
+```text
+Hold Ctrl + Shift + Space
+          │
+          ▼
+     speak naturally
+          │
+          ▼
+  CrisperWhisper 2.0 ──► intended + verbatim transcripts
+          │
+          ├── Magic disabled ──────────────────────────┐
+          │                                            │
+          └── Magic enabled ──► local Qwen rewrite ───┤
+                                                       ▼
+                                              clipboard + paste
+```
+
+Release the shortcut and Delulu Talks finishes the job. The native recording pill stays above your apps without stealing pointer or keyboard input, and automatic paste falls back honestly to the clipboard when the desktop blocks synthetic input.
+
+## What it brings
+
+| Feature | What it does |
+| --- | --- |
+| **System dictation** | Hold-to-talk by default, optional press-to-toggle, tray controls, and desktop-owned shortcut remapping. |
+| **Two transcripts** | Produces a clean intended transcript alongside an exact verbatim view you can edit, restore, copy, or export. |
+| **Magic rewrites** | Turns rough speech or existing drafts into concise messages, polished notes, structured documents, and detailed prompts. |
+| **Native Wayland experience** | Uses XDG GlobalShortcuts, secure Remote Desktop paste, and a click-through layer-shell recording pill on supported desktops. |
+| **Speech Lab** | Imports audio or video for transcription, Verbatimize, forced alignment, word timelines, and SRT/VTT export. |
+| **Local by design** | Runs speech and writing models on your machine. There is no telemetry or cloud transcription. |
+
+## Pick the right-sized brain
+
+Speech and Magic can stay loaded together. Pin the models you use every day, or let Delulu Talks unload them after a configurable idle period.
+
+| Runtime | Available models | Good for |
+| --- | --- | --- |
+| **CrisperWhisper 2.0** | Small · Medium · Turbo · Large | Fast dictation through maximum transcription quality. Medium is the balanced default. |
+| **Qwen 3.5 Magic** | 0.8B · 2B · 4B | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default. |
+
+On Linux x64, Auto uses the accelerated CTranslate2 backend and supports Large + Turbo speculative decoding. Other platforms use the portable Transformers runtime.
+
+## Install
+
+Download the package for your platform from [GitHub Releases](https://github.com/JEMostert/delulu-talks/releases/latest).
+
+### Linux
+
+Run the AppImage directly:
 
 ```bash
 chmod +x Delulu-Talks-*-linux-x86_64.AppImage
 ./Delulu-Talks-*-linux-x86_64.AppImage
 ```
 
-Private, local-first desktop dictation rebuilt on Electron and CrisperWhisper 2.0.
+Arch and CachyOS users can install the pacman package instead. A portable `tar.xz` is also included. Linux/Wayland is the primary and most thoroughly exercised platform.
 
-Delulu Talks keeps a fast speech model ready behind a system-wide shortcut, creates a clean intended transcript and an exact verbatim transcript, optionally rewrites the chosen version through local Qwen Magic, then copies or pastes the finished result. Its Magic workspace also turns existing drafts into polished notes, concise messages, structured documents, or detailed prompts. It is designed for Linux/Wayland first while remaining packageable for macOS and Windows.
+### Windows and macOS
 
-## Highlights
+Use the Windows installer or the macOS DMG from the same release page. Current packages are not code-signed, so the operating system may ask you to confirm the first launch.
 
-- Electron main process, sandboxed React renderer, narrow typed preload API, tray, native layer-shell recording pill, and direct XDG GlobalShortcuts portal support on Wayland
-- All four standard Nyra Labs CrisperWhisper 2.0 checkpoints: Small, Medium, Turbo, and Large
-- Medium is the balanced default; **Keep selected model loaded** is enabled by default and can be disabled in Settings
-- Local Magic rewrites with official Apache-2.0 Qwen 3.5 checkpoints at 0.8B, 2B, and 4B; the 2B model is the balanced default
-- Explicit rewrite boundaries: preserve source facts or allow reviewable assumptions for richer prompts and technical briefs
-- Hold-to-dictate by default on Wayland, with optional press-to-toggle behavior and desktop-owned shortcut remapping
-- Configurable delivery pipeline: speech → optional Magic preset → clipboard → automatic paste
-- Speech and Magic can stay resident together; unpinned models use a configurable 1–60 minute idle-unload delay
-- Intended, verbatim, and CT2 dual transcription with conditional long-form continuation and hallucination mitigation
-- Non-destructive transcript correction: edit either view for copy/TXT export and restore the untouched model output at any time
-- Linux x64 CTranslate2 acceleration, Large + Turbo speculative decoding, and portable Transformers fallback
-- Speech Lab for audio/video import, Verbatimize, forced alignment, and word-level timelines
-- Private local history, speech-pattern insights, deterministic vocabulary replacements, and TXT/JSON/SRT/VTT export
-- Automatic paste where the desktop permits it, with an honest clipboard fallback when Wayland has no input tool
-- An app-managed Python environment; Nyra weights download only after explicit acceptance, while optional Apache-2.0 Qwen weights install on demand
+Delulu Talks checks GitHub Releases for updates, displays download progress, and offers a safe restart when the next version is ready.
 
-The technical design is in [Architecture](docs/ARCHITECTURE.md). The competitor research and product direction are in [Product research](docs/PRODUCT_RESEARCH.md).
+## Your first minute
 
-## Run locally
+1. Start Delulu Talks and work through the short setup intro.
+2. Choose **Install engine**. A focused modal explains the Nyra model license and records acceptance before downloading anything.
+3. Focus any text field, hold <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd>, speak, then release.
+4. Optionally open **Magic**, install a Qwen model, and choose the rewrite style that should run in your shortcut pipeline.
 
-Requirements:
+The app manages its own isolated Python environment and model cache inside the platform application-data directory.
 
-- [Bun](https://bun.sh/)
-- Python 3.10–3.13 (3.11 or 3.12 recommended)
-- FFmpeg for compressed audio or video imports
-- On Linux/Wayland, automatic paste uses the desktop's secure Remote Desktop portal. The desktop asks once for keyboard-control permission and can remember the choice; clipboard copy remains the fallback if permission is declined.
-- On Plasma and wlroots Wayland compositors, GTK4 Layer Shell and Python GObject bindings for the native click-through recording pill
+## Run from source
+
+You will need [Bun](https://bun.sh/), Python 3.10–3.13 (3.11 or 3.12 recommended), and FFmpeg for compressed audio or video imports.
 
 ```bash
 bun install
@@ -54,15 +103,29 @@ For a renderer-only preview with safe demo data:
 bun run dev:web
 ```
 
-On CachyOS/Arch, the useful system packages are:
+On Arch-based Wayland systems, install the native overlay dependencies with:
 
 ```bash
 sudo pacman -S ffmpeg gtk4-layer-shell python-gobject python-cairo
 ```
 
-On first launch, open **Models & runtime** and choose **Install engine**. A focused modal summarizes the Nyra terms and continues installation after acceptance. The app creates an isolated Python environment inside its application-data directory. On Linux x64, Auto selects Nyra's CTranslate2 backend; other platforms use Transformers. Open **Magic** and choose **Install model** when you want the optional Qwen writing runtime.
+## How it fits together
 
-## Build and package
+```text
+Electron main process
+├── lifecycle, tray, updater, global shortcuts, validated IPC
+├── native Wayland overlay + secure paste services
+├── persistent Python worker
+│   ├── CrisperWhisper speech runtime
+│   └── Qwen Magic runtime
+└── sandboxed React renderer
+    ├── Dictation + Magic
+    ├── Speech Lab + History + Wordbook
+    └── Models + Settings + onboarding
+```
+
+<details>
+<summary><strong>Build and package</strong></summary>
 
 ```bash
 bun run typecheck
@@ -74,31 +137,34 @@ bun run dist:linux
 
 Linux packaging produces AppImage, pacman, and `tar.xz` artifacts. The release workflow builds native Linux, macOS, and Windows packages on version tags.
 
-## Model and code licenses
+</details>
 
-Delulu Talks is MIT-licensed. CrisperWhisper's inference code is also MIT, but its model weights are separate: the standard 2.0 weights use the Nyra Health Non-Commercial Research License, commercial use requires a license from Nyra, and Pro weights are commercial-only. Delulu Talks does not bundle weights and does not offer Pro downloads. See [Nyra's license explanation](https://github.com/nyrahealth/CrisperWhisper#license) and the [weight license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md). The optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
-
-## Privacy and storage
-
-Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted in a `finally` path after success or failure. Imported media is never modified; temporary FFmpeg conversions are also deleted. Settings, optional transcript history, non-destructive text corrections, the Python environment, and downloaded model cache stay under Electron's platform application-data directory. No telemetry or cloud transcription is implemented.
-
-The old Tauri data directory is detected on Linux so settings and history can migrate forward once. Removed model selections are mapped to CrisperWhisper Medium.
-
-## Project layout
+<details>
+<summary><strong>Repository map</strong></summary>
 
 ```text
 electron/
   main.ts             lifecycle, windows, tray, shortcuts, validated IPC
   preload.ts          isolated renderer API
-  services/           ASR lifecycle, dictation, native pill, shortcuts, storage, paste, export
+  services/           ASR, dictation, overlay, shortcuts, storage, paste, export
   overlay/            GTK4 layer-shell recording pill helper
-  python/             persistent two-model speech + Magic worker
+  python/             persistent speech + Magic worker
 src/
   components/         Electron app shell components
-  pages/              Dictation, Magic, Speech Lab, History, Wordbook, Models, Settings
+  pages/              Dictation, Magic, Speech Lab, History, Models, Settings
   bridge.ts           typed Electron/browser boundary
-  recorder.ts         renderer microphone capture and 16 kHz WAV encoder
+  recorder.ts         microphone capture and 16 kHz WAV encoder
   data.ts             CrisperWhisper, Qwen, and language catalogs
 ```
 
-Licensed under the terms in [LICENSE](LICENSE).
+</details>
+
+## Privacy and licenses
+
+Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environment, and downloaded models stay under Electron's application-data directory.
+
+Delulu Talks is [MIT licensed](LICENSE). CrisperWhisper inference code is MIT, while its standard 2.0 weights use the Nyra Health Non-Commercial Research License; commercial use requires a separate Nyra license. Delulu Talks does not bundle weights or offer Pro downloads. Read [Nyra's license explanation](https://github.com/nyrahealth/CrisperWhisper#license) and the [weight license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md). Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
+
+<div align="center">
+  <strong>Your voice stays yours.</strong>
+</div>
