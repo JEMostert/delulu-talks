@@ -78,6 +78,8 @@ const mockApi: DeluluApi = {
     return { text, model: mockSettings().magicModel, processingTimeMs: 640, inputCharacters: request.text.length, outputCharacters: text.length, includedInferences: request.allowInferences };
   },
   async copyText(text) { await navigator.clipboard?.writeText(text); },
+  async authorizePaste() {},
+  async testPaste() {},
   async updateTranscript(id: string, version: TranscriptVersion, text: string | null) {
     const record = demoHistory.find((item) => item.id === id);
     if (!record) throw new Error("Transcript not found");
@@ -97,6 +99,7 @@ const mockApi: DeluluApi = {
   async recordingStarted() {},
   async recorderReady() {},
   async recordingFailed() {},
+  recordingLevel(_level: number) {},
   async submitRecording(_recording: RecordingSubmission) {},
   onStatus(_callback: (status: DictationStatus) => void) { return () => undefined; },
   onMagicStatus(_callback: (status: MagicStatus) => void) { return () => undefined; },

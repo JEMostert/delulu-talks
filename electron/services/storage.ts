@@ -87,6 +87,7 @@ export function normalizeSettings(value: unknown): AppSettings {
     pasteVersion: source.pasteVersion === "verbatim" ? "verbatim" : "intended",
     autoPaste: boolean(source.autoPaste, DEFAULT_SETTINGS.autoPaste),
     copyToClipboard: boolean(source.copyToClipboard, DEFAULT_SETTINGS.copyToClipboard),
+    pastePortalToken: safeString(source.pastePortalToken, DEFAULT_SETTINGS.pastePortalToken, 4096),
     keepHistory: boolean(source.keepHistory, DEFAULT_SETTINGS.keepHistory),
     showOverlay: boolean(source.showOverlay, DEFAULT_SETTINGS.showOverlay),
     preloadModel: boolean(source.preloadModel, DEFAULT_SETTINGS.preloadModel),

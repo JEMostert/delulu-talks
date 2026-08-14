@@ -11,7 +11,7 @@ function Toggle({ value, onChange, label, disabled = false }: { value: boolean; 
   return <button className={`toggle ${value ? "on" : ""}`} role="switch" aria-checked={value} aria-label={label} disabled={disabled} onClick={onChange}><i /></button>;
 }
 
-export function SettingsPage({ settings, devices, capabilities, shortcutStatus, status, magicStatus, saving, onSave, onConfigureShortcut, onSetup, onLoad, onUnload, onSetupMagic, onLoadMagic, onUnloadMagic, onReset }: {
+export function SettingsPage({ settings, devices, capabilities, shortcutStatus, status, magicStatus, saving, onSave, onConfigureShortcut, onAuthorizePaste, onTestPaste, onSetup, onLoad, onUnload, onSetupMagic, onLoadMagic, onUnloadMagic, onReset }: {
   settings: AppSettings;
   devices: MicrophoneDevice[];
   capabilities: PlatformCapabilities | null;
@@ -21,6 +21,8 @@ export function SettingsPage({ settings, devices, capabilities, shortcutStatus, 
   saving: boolean;
   onSave: (settings: AppSettings) => Promise<void>;
   onConfigureShortcut: () => void;
+  onAuthorizePaste: () => void;
+  onTestPaste: () => void;
   onSetup: () => void;
   onLoad: () => void;
   onUnload: () => void;
@@ -46,7 +48,7 @@ export function SettingsPage({ settings, devices, capabilities, shortcutStatus, 
         <SettingRow icon={Keyboard} title="Global shortcut" description={shortcutStatus.message}><div className="shortcut-setting">{shortcutStatus.method === "portal" ? <><kbd>{shortcutStatus.accelerator}</kbd><button className="secondary-button" disabled={!shortcutStatus.registered} onClick={onConfigureShortcut}>Change in system</button></> : <input className="compact-input" aria-label="Global shortcut" value={draft.shortcut} onChange={(event) => setDraft({ ...draft, shortcut: event.target.value })} />}<span className={shortcutStatus.registered ? "ready" : "error"}><i />{shortcutStatus.registered ? `${shortcutStatus.method} ready` : "not registered"}</span></div></SettingRow>
         <SettingRow icon={PlayCircle} title="Shortcut behavior" description="Hold starts on key-down and stops on release. Toggle starts and stops on separate presses."><select aria-label="Shortcut behavior" value={draft.shortcutMode} onChange={(event) => setDraft({ ...draft, shortcutMode: event.target.value as AppSettings["shortcutMode"] })}><option value="hold">Hold to dictate (recommended)</option><option value="toggle">Press once to start, again to stop</option></select></SettingRow>
         <SettingRow icon={Mic2} title="Microphone" description="Captured through Chromium's PipeWire/PulseAudio path for stable Linux and Wayland support."><select aria-label="Microphone" value={draft.inputDeviceId} onChange={(event) => { const device = devices.find((item) => item.deviceId === event.target.value); setDraft({ ...draft, inputDeviceId: event.target.value, inputDeviceLabel: device?.label ?? "System default" }); }}>{devices.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}</select></SettingRow>
-        <SettingRow icon={Waypoints} title="Recording pill" description={capabilities?.overlayMethod === "layer-shell" ? "Native Wayland layer-shell pill: bottom anchored, focus-free, and fully click-through." : capabilities?.overlayDetail ?? "Checking native overlay support…"}><Toggle value={draft.showOverlay} label="Recording pill" disabled={capabilities?.overlayMethod === "unavailable"} onChange={() => setDraft({ ...draft, showOverlay: !draft.showOverlay })} /></SettingRow>
+        <SettingRow icon={Waypoints} title="Recording pill" description={capabilities?.overlayMethod === "layer-shell" ? "Native Wayland overlay: bottom-anchored, focus-free, click-through, with a live listening meter." : capabilities?.overlayDetail ?? "Checking native overlay support…"}><Toggle value={draft.showOverlay} label="Recording pill" disabled={capabilities?.overlayMethod === "unavailable"} onChange={() => setDraft({ ...draft, showOverlay: !draft.showOverlay })} /></SettingRow>
       </section>
 
       <section className="settings-group"><div className="group-heading"><p className="eyebrow">B / TRANSCRIPTION</p><h3>What CrisperWhisper should preserve</h3></div>
@@ -70,7 +72,7 @@ export function SettingsPage({ settings, devices, capabilities, shortcutStatus, 
       </section>
 
       <section className="settings-group"><div className="group-heading"><p className="eyebrow">D / DELIVERY & PRIVACY</p><h3>Where finished words go</h3></div>
-        <SettingRow icon={Upload} title="Automatic paste" description={`Insert text at the previous cursor. Current method: ${capabilities?.pasteMethod ?? "detecting…"}.`}><Toggle value={draft.autoPaste} label="Automatic paste" onChange={() => setDraft({ ...draft, autoPaste: !draft.autoPaste })} /></SettingRow>
+        <SettingRow icon={Upload} title="Automatic paste" description={`Insert text at the previous cursor. Current method: ${capabilities?.pasteMethod ?? "detecting…"}.`}><div className="inline-control"><Toggle value={draft.autoPaste} label="Automatic paste" onChange={() => setDraft({ ...draft, autoPaste: !draft.autoPaste })} />{capabilities?.pasteMethod === "wayland-portal" && <><button className="secondary-button" onClick={onAuthorizePaste}>{settings.pastePortalToken ? "Refresh permission" : "Allow keyboard control"}</button><button className="secondary-button" disabled={!settings.pastePortalToken} title="After clicking, focus a text field within three seconds" onClick={onTestPaste}>Test paste</button></>}</div></SettingRow>
         <SettingRow icon={Clipboard} title="Copy every result" description="Leave the output on the clipboard even when automatic paste is disabled."><Toggle value={draft.copyToClipboard} label="Copy every result" onChange={() => setDraft({ ...draft, copyToClipboard: !draft.copyToClipboard })} /></SettingRow>
         <SettingRow icon={Clock3} title="Keep local history" description="Store transcript text and timing locally. Microphone WAV files are always deleted after inference."><Toggle value={draft.keepHistory} label="Keep local history" onChange={() => setDraft({ ...draft, keepHistory: !draft.keepHistory })} /></SettingRow>
         <SettingRow icon={HardDrive} title="Launch at login" description="Keep the global shortcut available after signing in."><Toggle value={draft.launchAtLogin} label="Launch at login" onChange={() => setDraft({ ...draft, launchAtLogin: !draft.launchAtLogin })} /></SettingRow>

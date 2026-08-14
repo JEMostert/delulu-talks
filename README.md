@@ -31,7 +31,7 @@ Requirements:
 - [Bun](https://bun.sh/)
 - Python 3.10–3.13 (3.11 or 3.12 recommended)
 - FFmpeg for compressed audio or video imports
-- On Linux/Wayland, `wtype`, `ydotool`, `dotool`, or `xdotool` for automatic paste; clipboard copy works without them
+- On Linux/Wayland, automatic paste uses the desktop's secure Remote Desktop portal. The desktop asks once for keyboard-control permission and can remember the choice; clipboard copy remains the fallback if permission is declined.
 - On Plasma and wlroots Wayland compositors, GTK4 Layer Shell and Python GObject bindings for the native click-through recording pill
 
 ```bash
@@ -48,7 +48,7 @@ bun run dev:web
 On CachyOS/Arch, the useful system packages are:
 
 ```bash
-sudo pacman -S ffmpeg wtype gtk4-layer-shell python-gobject python-cairo
+sudo pacman -S ffmpeg gtk4-layer-shell python-gobject python-cairo
 ```
 
 On first launch, open **Models & runtime** and choose **Install engine**. A focused modal summarizes the Nyra terms and continues installation after acceptance. The app creates an isolated Python environment inside its application-data directory. On Linux x64, Auto selects Nyra's CTranslate2 backend; other platforms use Transformers. Open **Magic** and choose **Install model** when you want the optional Qwen writing runtime.

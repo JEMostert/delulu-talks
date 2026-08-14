@@ -80,6 +80,9 @@ function createMainWindow(): BrowserWindow {
     },
   });
   window.once("ready-to-show", () => window.show());
+  window.webContents.on("render-process-gone", (_event, details) => {
+    console.error("Delulu Talks renderer stopped:", details.reason, details.exitCode);
+  });
   window.on("close", (event) => {
     if (quitting) return;
     event.preventDefault();
@@ -215,7 +218,7 @@ function installTray(): void {
   const icon = nativeImage.createFromPath(iconPath()).resize({ width: 20, height: 20 });
   tray = new Tray(icon);
   rebuildTrayMenu();
-  tray.on("double-click", () => showMainWindow("home"));
+  tray.on("click", () => showMainWindow("home"));
 }
 
 function ensureDevelopmentDesktopEntry(): void {
@@ -272,6 +275,10 @@ async function persistSettings(value: unknown): Promise<AppSettings> {
   if (runtimeChanged) await asr.unload();
   if (magicRuntimeChanged) await asr.unloadMagic();
   asr.configureResidency(saved);
+  if (saved.showOverlay !== previous.showOverlay) {
+    if (saved.showOverlay) pill.prepare();
+    dictation.syncOverlay();
+  }
   broadcast("settings:changed", saved);
   rebuildTrayMenu();
   return saved;
@@ -313,7 +320,16 @@ function registerIpc(): void {
   ipcMain.handle("recorder:ready", () => dictation.recorderAvailable());
   ipcMain.handle("recorder:failed", (_event, message: unknown) => dictation.recordingFailed(validateText(message, 1000)));
   ipcMain.handle("recorder:submit", (_event, submission: RecordingSubmission) => dictation.submitRecording(submission));
+  ipcMain.on("recorder:level", (_event, value: unknown) => {
+    const level = typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
+    dictation.recordingLevel(level);
+  });
   ipcMain.handle("clipboard:copy", (_event, text: unknown) => paste.copy(validateText(text, 500_000)));
+  ipcMain.handle("paste:authorize", () => paste.authorize());
+  ipcMain.handle("paste:test", async () => {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 3_000));
+    await paste.paste("Delulu Talks paste test");
+  });
   ipcMain.handle("history:get", () => storage.getHistory());
   ipcMain.handle("history:updateTranscript", (_event, id: unknown, requestedVersion: unknown, text: unknown) => {
     if (requestedVersion !== "intended" && requestedVersion !== "verbatim") throw new Error("Unknown transcript version");
@@ -368,8 +384,15 @@ function registerIpc(): void {
 async function start(): Promise<void> {
   ensureDevelopmentDesktopEntry();
   storage = new StorageService();
-  paste = new PasteService();
+  paste = new PasteService(
+    () => storage.getSettings().pastePortalToken || null,
+    (pastePortalToken) => {
+      const saved = storage.updateSettings({ ...storage.getSettings(), pastePortalToken });
+      broadcast("settings:changed", saved);
+    },
+  );
   pill = new PillService();
+  if (storage.getSettings().showOverlay) pill.prepare();
   asr = new AsrService(storage);
   mainWindow = createMainWindow();
   dictation = new DictationService(
@@ -406,11 +429,14 @@ async function start(): Promise<void> {
 
 const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) {
+  console.error("Delulu Talks is already running; forwarding this launch to the existing instance.");
   app.quit();
 } else {
   app.on("second-instance", () => showMainWindow());
   app.whenReady().then(start).catch((error) => {
-    dialog.showErrorBox("Delulu Talks failed to start", error instanceof Error ? error.message : String(error));
+    const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error("Delulu Talks failed to start:", detail);
+    dialog.showErrorBox("Delulu Talks failed to start", detail);
     app.quit();
   });
 }
@@ -419,6 +445,7 @@ app.on("activate", () => showMainWindow());
 app.on("before-quit", () => {
   quitting = true;
   pill?.shutdown();
+  paste?.shutdown();
   void shortcut?.shutdown();
   void asr?.shutdown();
 });

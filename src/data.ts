@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pasteVersion: "intended",
   autoPaste: true,
   copyToClipboard: true,
+  pastePortalToken: "",
   keepHistory: true,
   showOverlay: true,
   preloadModel: true,

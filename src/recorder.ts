@@ -1,6 +1,39 @@
 import { bridge } from "./bridge";
 import type { MicrophoneDevice, RecorderCommand } from "./types";
 
+const WORKLET_SOURCE = `
+class DeluluCaptureProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.chunks = [];
+    this.samples = 0;
+    this.sumSquares = 0;
+  }
+  process(inputs) {
+    const channel = inputs[0] && inputs[0][0];
+    if (channel) {
+      this.chunks.push(new Float32Array(channel));
+      this.samples += channel.length;
+      for (let index = 0; index < channel.length; index += 1) this.sumSquares += channel[index] * channel[index];
+      if (this.samples >= 2048) {
+        const merged = new Float32Array(this.samples);
+        let offset = 0;
+        for (const chunk of this.chunks) {
+          merged.set(chunk, offset);
+          offset += chunk.length;
+        }
+        this.port.postMessage({ samples: merged, rms: Math.sqrt(this.sumSquares / this.samples) }, [merged.buffer]);
+        this.chunks = [];
+        this.samples = 0;
+        this.sumSquares = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor("delulu-capture", DeluluCaptureProcessor);
+`;
+
 function merge(chunks: Float32Array[]): Float32Array {
   const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
   const output = new Float32Array(length);
@@ -53,15 +86,21 @@ function wav(samples: Float32Array, sampleRate = 16_000): Uint8Array {
   return new Uint8Array(buffer);
 }
 
+function audibleLevel(rms: number): number {
+  return Math.min(1, Math.max(0, rms * 4.2));
+}
+
 export class PcmRecorder {
   private context: AudioContext | null = null;
   private stream: MediaStream | null = null;
+  private worklet: AudioWorkletNode | null = null;
   private processor: ScriptProcessorNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private sink: GainNode | null = null;
   private chunks: Float32Array[] = [];
   private startedAt = 0;
   private stopping = false;
+  private lastLevelAt = 0;
 
   async handle(command: RecorderCommand): Promise<void> {
     if (command.action === "start") await this.start(command.inputDeviceId);
@@ -84,13 +123,18 @@ export class PcmRecorder {
       });
       this.context = new AudioContext({ latencyHint: "interactive" });
       this.source = this.context.createMediaStreamSource(this.stream);
-      this.processor = this.context.createScriptProcessor(4096, 1, 1);
       this.sink = this.context.createGain();
       this.sink.gain.value = 0;
       this.chunks = [];
-      this.processor.onaudioprocess = (event) => this.chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
-      this.source.connect(this.processor);
-      this.processor.connect(this.sink);
+      if (await this.connectWorklet()) {
+        this.source.connect(this.worklet!);
+        this.worklet!.connect(this.sink);
+      } else {
+        this.processor = this.context.createScriptProcessor(4096, 1, 1);
+        this.processor.onaudioprocess = (event) => this.ingest(event.inputBuffer.getChannelData(0));
+        this.source.connect(this.processor);
+        this.processor.connect(this.sink);
+      }
       this.sink.connect(this.context.destination);
       this.startedAt = performance.now();
       await bridge.recordingStarted();
@@ -98,6 +142,41 @@ export class PcmRecorder {
       await this.dispose();
       await bridge.recordingFailed(`Microphone unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  private async connectWorklet(): Promise<boolean> {
+    if (!this.context) return false;
+    try {
+      const blob = new Blob([WORKLET_SOURCE], { type: "application/javascript" });
+      const url = URL.createObjectURL(blob);
+      try {
+        await this.context.audioWorklet.addModule(url);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      this.worklet = new AudioWorkletNode(this.context, "delulu-capture");
+      this.worklet.port.onmessage = (event: MessageEvent<{ samples: Float32Array; rms: number }>) => {
+        if (event.data?.samples) this.ingest(event.data.samples, event.data.rms);
+      };
+      return true;
+    } catch {
+      this.worklet = null;
+      return false;
+    }
+  }
+
+  private ingest(samples: Float32Array, rms?: number): void {
+    this.chunks.push(new Float32Array(samples));
+    const now = performance.now();
+    if (now - this.lastLevelAt < 50) return;
+    this.lastLevelAt = now;
+    let level = rms;
+    if (level == null) {
+      let sum = 0;
+      for (const sample of samples) sum += sample * sample;
+      level = Math.sqrt(sum / Math.max(1, samples.length));
+    }
+    bridge.recordingLevel(audibleLevel(level));
   }
 
   private async stop(submit: boolean): Promise<void> {
@@ -112,18 +191,22 @@ export class PcmRecorder {
   }
 
   private async dispose(): Promise<void> {
+    if (this.worklet) this.worklet.port.onmessage = null;
     if (this.processor) this.processor.onaudioprocess = null;
     this.source?.disconnect();
+    this.worklet?.disconnect();
     this.processor?.disconnect();
     this.sink?.disconnect();
     this.stream?.getTracks().forEach((track) => track.stop());
     if (this.context && this.context.state !== "closed") await this.context.close();
     this.context = null;
     this.stream = null;
+    this.worklet = null;
     this.processor = null;
     this.source = null;
     this.sink = null;
     this.chunks = [];
+    this.lastLevelAt = 0;
   }
 }
 

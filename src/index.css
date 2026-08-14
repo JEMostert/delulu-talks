@@ -662,6 +662,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .setting-copy strong { font-size: 11px; text-transform: uppercase; }
 .setting-copy p { max-width: 600px; margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
 .setting-control { min-width: 0; display: flex; justify-content: flex-end; }
+.inline-control { display: flex; justify-content: flex-end; align-items: center; gap: 9px; flex-wrap: wrap; }
 .setting-control select { max-width: 300px; }
 .shortcut-setting { width: min(390px, 100%); display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; }
 .shortcut-setting > kbd { min-width: 110px; padding: 8px 9px; color: var(--ink); background: white; border: 1px solid var(--line); font: 10px/1 ui-monospace, monospace; text-align: center; }

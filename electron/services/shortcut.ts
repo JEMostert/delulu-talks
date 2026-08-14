@@ -4,6 +4,7 @@ import type { ShortcutStatus } from "../../src/types";
 import { portalTrigger } from "./shortcutFormat";
 import { portalRequest, PORTAL_NAME, PORTAL_PATH } from "./shortcutPortal";
 import { ShortcutGesture, type ShortcutActions, type ShortcutMode } from "./shortcutGesture";
+import { compatibleSessionBusAddress } from "../compat";
 
 const APP_ID = "delulu-talks";
 const SHORTCUT_ID = "toggle-dictation";
@@ -84,7 +85,8 @@ export class ShortcutService {
   private async registerPortal(accelerator: string): Promise<void> {
     await this.closePortal();
     this.update({ accelerator, registered: false, message: "Registering with the desktop shortcut portal" });
-    const bus = sessionBus() as MessageBus & { name: string | null };
+    const busAddress = compatibleSessionBusAddress(process.env);
+    const bus = sessionBus(busAddress ? { busAddress } : undefined) as MessageBus & { name: string | null };
     this.bus = bus;
     bus.on("error", (error) => this.update({ registered: false, message: `Shortcut portal error: ${concise(error)}` }));
     try {

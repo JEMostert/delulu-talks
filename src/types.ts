@@ -34,6 +34,7 @@ export type AppSettings = {
   pasteVersion: "intended" | "verbatim";
   autoPaste: boolean;
   copyToClipboard: boolean;
+  pastePortalToken: string;
   keepHistory: boolean;
   showOverlay: boolean;
   preloadModel: boolean;
@@ -223,6 +224,8 @@ export type DeluluApi = {
   unloadMagic(): Promise<void>;
   rewriteMagic(request: MagicRewriteRequest): Promise<MagicRewriteResult>;
   copyText(text: string): Promise<void>;
+  authorizePaste(): Promise<void>;
+  testPaste(): Promise<void>;
   updateTranscript(id: string, version: TranscriptVersion, text: string | null): Promise<TranscriptRecord>;
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
@@ -232,6 +235,7 @@ export type DeluluApi = {
   recordingStarted(): Promise<void>;
   recorderReady(): Promise<void>;
   recordingFailed(message: string): Promise<void>;
+  recordingLevel(level: number): void;
   submitRecording(recording: RecordingSubmission): Promise<void>;
   onStatus(callback: (status: DictationStatus) => void): () => void;
   onMagicStatus(callback: (status: MagicStatus) => void): () => void;
