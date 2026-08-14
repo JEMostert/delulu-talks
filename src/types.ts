@@ -23,6 +23,7 @@ export type CustomWord = {
 };
 
 export type AppSettings = {
+  onboardingComplete: boolean;
   shortcut: string;
   shortcutMode: "hold" | "toggle";
   model: ModelId;
@@ -202,6 +203,17 @@ export type ShortcutStatus = {
   lastTriggeredAt?: number | null;
 };
 
+export type UpdateStatus = {
+  phase: "unsupported" | "idle" | "checking" | "available" | "downloading" | "downloaded" | "upToDate" | "error";
+  currentVersion: string;
+  version?: string;
+  message: string;
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  bytesPerSecond?: number;
+};
+
 export type DeluluApi = {
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<AppSettings>;
@@ -211,6 +223,10 @@ export type DeluluApi = {
   configureShortcut(): Promise<void>;
   getHistory(): Promise<TranscriptRecord[]>;
   getCapabilities(): Promise<PlatformCapabilities>;
+  getUpdateStatus(): Promise<UpdateStatus>;
+  checkForUpdates(): Promise<UpdateStatus>;
+  downloadUpdate(): Promise<UpdateStatus>;
+  installUpdate(): Promise<void>;
   toggleDictation(): Promise<void>;
   startDictation(): Promise<void>;
   stopDictation(): Promise<void>;
@@ -244,4 +260,5 @@ export type DeluluApi = {
   onShortcutStatus(callback: (status: ShortcutStatus) => void): () => void;
   onTranscript(callback: (record: TranscriptRecord) => void): () => void;
   onRecorderCommand(callback: (command: RecorderCommand) => void): () => void;
+  onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
 };

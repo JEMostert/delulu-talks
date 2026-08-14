@@ -3,6 +3,11 @@ productName: Delulu Talks
 asar: true
 directories:
   output: release
+electronUpdaterCompatibility: ">=2.16"
+publish:
+  provider: github
+  owner: JEMostert
+  repo: delulu-talks
 toolsets:
   appimage: "1.0.3"
 files:
@@ -17,6 +22,7 @@ extraResources:
     to: icon.png
 linux:
   category: AudioVideo
+  executableName: delulu-talks
   icon: build/icon.png
   syncDesktopName: true
   target:
@@ -63,4 +69,4 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+artifactName: Delulu-Talks-${version}-${os}-${arch}.${ext}

@@ -41,6 +41,11 @@ jobs:
       - name: Build application
         run: bun run build
 
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: test "${GITHUB_REF_NAME}" = "v$(bun -p "require('./package.json').version")"
+
       - name: Build native packages
         run: bunx electron-builder ${{ matrix.args }} --publish never
         env:
@@ -57,6 +62,8 @@ jobs:
             release/*.dmg
             release/*.zip
             release/*.exe
+            release/*.yml
+            release/*.blockmap
           if-no-files-found: error
 
   release:
@@ -75,3 +82,4 @@ jobs:
         with:
           files: artifacts/*
           generate_release_notes: true
+          name: Delulu Talks ${{ github.ref_name }}

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, Check, LoaderCircle, Mic, Square } from "lucide-react";
+import { AlertCircle, Check, Download, LoaderCircle, Mic, RotateCw, Square } from "lucide-react";
 import { bridge } from "./bridge";
 import { DEFAULT_SETTINGS, modelById } from "./data";
 import { PcmRecorder, listMicrophones } from "./recorder";
 import { originalTranscriptText } from "./transcriptText";
 import { Sidebar } from "./components/Sidebar";
+import { Onboarding } from "./components/Onboarding";
 import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
 import { MagicPage } from "./pages/MagicPage";
@@ -12,11 +13,23 @@ import { ModelsPage } from "./pages/ModelsPage";
 import { VocabularyPage } from "./pages/VocabularyPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import type { AppSettings, DictationStatus, MagicStatus, MicrophoneDevice, Page, PlatformCapabilities, ShortcutStatus, TranscriptRecord, TranscriptVersion } from "./types";
+import type { AppSettings, DictationStatus, MagicStatus, MicrophoneDevice, Page, PlatformCapabilities, ShortcutStatus, TranscriptRecord, TranscriptVersion, UpdateStatus } from "./types";
 
 const initialStatus: DictationStatus = { phase: "idle", engine: "unloaded", message: "Loading your workspace" };
 const initialMagicStatus: MagicStatus = { phase: "idle", engine: "unloaded", message: "Loading Magic" };
 const initialShortcutStatus: ShortcutStatus = { accelerator: DEFAULT_SETTINGS.shortcut, registered: false, method: "native", message: "Checking shortcut", lastTriggeredAt: null };
+const initialUpdateStatus: UpdateStatus = { phase: "idle", currentVersion: "", message: "Checking application version" };
+
+function UpdateNotice({ status, onDownload, onInstall }: { status: UpdateStatus; onDownload: () => void; onInstall: () => void }) {
+  if (!["available", "downloading", "downloaded"].includes(status.phase)) return null;
+  const progress = Math.round(status.percent ?? 0);
+  return <aside className={`update-notice phase-${status.phase}`} aria-live="polite">
+    <span className="update-symbol">{status.phase === "downloaded" ? <Check /> : status.phase === "downloading" ? <LoaderCircle className="spin" /> : <Download />}</span>
+    <div><strong>{status.phase === "downloaded" ? "Update ready" : status.phase === "downloading" ? `Downloading update · ${progress}%` : `Delulu Talks ${status.version} is available`}</strong><p>{status.phase === "downloaded" ? "Restart now to finish. Your settings and local model files stay in place." : status.message}</p>{status.phase === "downloading" && <span className="update-progress"><i style={{ width: `${progress}%` }} /></span>}</div>
+    {status.phase === "available" && <button className="secondary-button" onClick={onDownload}><Download /> Download</button>}
+    {status.phase === "downloaded" && <button className="primary-button" onClick={onInstall}><RotateCw /> Restart & update</button>}
+  </aside>;
+}
 
 const PAGE_META: Record<Page, { title: string; description: string }> = {
   home: { title: "Dictation", description: "Record, review, and deliver speech without leaving this view." },
@@ -37,6 +50,7 @@ function App() {
   const [history, setHistory] = useState<TranscriptRecord[]>([]);
   const [devices, setDevices] = useState<MicrophoneDevice[]>([{ deviceId: "default", label: "System default" }]);
   const [capabilities, setCapabilities] = useState<PlatformCapabilities | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(initialUpdateStatus);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -46,6 +60,7 @@ function App() {
     const removeSettingsChanged = bridge.onSettingsChanged(setSettings);
     const removeNavigation = bridge.onNavigate(setPage);
     const removeShortcutStatus = bridge.onShortcutStatus(setShortcutStatus);
+    const removeUpdateStatus = bridge.onUpdateStatus(setUpdateStatus);
     const recorder = new PcmRecorder();
     const removeRecorder = bridge.onRecorderCommand((command) => void recorder.handle(command));
     void bridge.recorderReady();
@@ -53,14 +68,15 @@ function App() {
       setHistory((items) => [record, ...items.filter((item) => item.id !== record.id)]);
       setToast(record.magicText ? "Magic result captured and ready" : "Transcript captured and ready");
     });
-    void Promise.allSettled([bridge.getSettings(), bridge.getStatus(), bridge.getMagicStatus(), bridge.getShortcutStatus(), bridge.getHistory(), bridge.getCapabilities()])
-      .then(([settingsResult, statusResult, magicStatusResult, shortcutStatusResult, historyResult, capabilitiesResult]) => {
+    void Promise.allSettled([bridge.getSettings(), bridge.getStatus(), bridge.getMagicStatus(), bridge.getShortcutStatus(), bridge.getHistory(), bridge.getCapabilities(), bridge.getUpdateStatus()])
+      .then(([settingsResult, statusResult, magicStatusResult, shortcutStatusResult, historyResult, capabilitiesResult, updateResult]) => {
         if (settingsResult.status === "fulfilled") setSettings(settingsResult.value);
         if (statusResult.status === "fulfilled") setStatus(statusResult.value);
         if (magicStatusResult.status === "fulfilled") setMagicStatus(magicStatusResult.value);
         if (shortcutStatusResult.status === "fulfilled") setShortcutStatus(shortcutStatusResult.value);
         if (historyResult.status === "fulfilled") setHistory(historyResult.value);
         if (capabilitiesResult.status === "fulfilled") setCapabilities(capabilitiesResult.value);
+        if (updateResult.status === "fulfilled") setUpdateStatus(updateResult.value);
         const failure = [settingsResult, statusResult, historyResult].find((result) => result.status === "rejected");
         if (failure?.status === "rejected") setStatus({ phase: "error", engine: "error", message: String(failure.reason) });
       });
@@ -70,6 +86,7 @@ function App() {
       removeSettingsChanged();
       removeNavigation();
       removeShortcutStatus();
+      removeUpdateStatus();
       removeRecorder();
       removeTranscript();
     };
@@ -156,6 +173,20 @@ function App() {
     }
   }
 
+  async function finishOnboarding(openModels: boolean, acceptLicense: boolean) {
+    setSaving(true);
+    try {
+      const persisted = await bridge.updateSettings({ ...settings, onboardingComplete: true, modelLicenseAccepted: acceptLicense || settings.modelLicenseAccepted });
+      setSettings(persisted);
+      if (openModels) setPage("models");
+      setToast(openModels ? "Choose a model, then install the local engine" : "Setup intro completed");
+    } catch (error) {
+      setStatus({ ...status, phase: "error", message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const busy = ["preparing", "loading", "transcribing"].includes(status.phase);
   const recording = status.phase === "listening";
   const model = modelById(settings.model);
@@ -179,6 +210,8 @@ function App() {
           </div>
         </header>
 
+        <UpdateNotice status={updateStatus} onDownload={() => void bridge.downloadUpdate()} onInstall={() => void bridge.installUpdate()} />
+
         <div className="page-scroll" key={page}>
           {page === "home" && <HomePage settings={settings} status={status} history={history} saving={saving} onNavigate={setPage} onUpdateSettings={(patch) => void saveSettings({ ...settings, ...patch }, null)} onUpdateTranscript={updateTranscript} onCopy={(text) => void action(() => bridge.copyText(text), "Copied to clipboard")} />}
           {page === "magic" && <MagicPage settings={settings} status={magicStatus} history={history} saving={saving} onUpdateSettings={(patch) => void saveSettings({ ...settings, ...patch }, "Magic settings updated")} onSetup={() => void magicAction(() => bridge.setupMagic())} onLoad={() => void magicAction(() => bridge.loadMagic())} onUnload={() => void magicAction(() => bridge.unloadMagic(), "Magic model unloaded")} onRewrite={(request) => bridge.rewriteMagic(request)} onCopy={(text) => void action(() => bridge.copyText(text), "Magic output copied")} onToast={setToast} />}
@@ -186,10 +219,11 @@ function App() {
           {page === "models" && <ModelsPage selected={settings.model} status={status} saving={saving} licenseAccepted={settings.modelLicenseAccepted} onSelect={(model) => void saveSettings({ ...settings, model }, "Model selection updated")} onSetup={() => void action(() => bridge.setupModel())} onLoad={() => void action(() => bridge.loadModel())} onUnload={() => void action(() => bridge.unloadModel(), "Model unloaded")} onAcceptLicense={acceptModelLicense} />}
           {page === "vocabulary" && <VocabularyPage words={settings.customWords} saving={saving} onChange={(customWords) => void saveSettings({ ...settings, customWords }, "Wordbook updated")} />}
           {page === "history" && <HistoryPage history={history} onUpdateTranscript={updateTranscript} onCopy={(text) => void action(() => bridge.copyText(text), "Copied to clipboard")} onDelete={(id) => void action(() => bridge.deleteHistory(id).then(() => setHistory((items) => items.filter((item) => item.id !== id))))} onClear={() => void action(() => bridge.clearHistory().then(() => setHistory([])), "Local history cleared")} onExport={(id, format) => void action(() => bridge.exportTranscript(id, format).then((path) => { if (path) setToast(`Exported to ${path}`); }))} />}
-          {page === "settings" && <SettingsPage settings={settings} devices={devices} capabilities={capabilities} shortcutStatus={shortcutStatus} status={status} magicStatus={magicStatus} saving={saving} onSave={saveSettings} onConfigureShortcut={() => void action(() => bridge.configureShortcut())} onAuthorizePaste={() => void action(() => bridge.authorizePaste(), "Automatic paste permission saved")} onTestPaste={() => void action(() => bridge.testPaste(), "Test text pasted")} onSetup={() => void action(() => bridge.setupModel())} onLoad={() => void action(() => bridge.loadModel())} onUnload={() => void action(() => bridge.unloadModel(), "Model unloaded")} onSetupMagic={() => void magicAction(() => bridge.setupMagic())} onLoadMagic={() => void magicAction(() => bridge.loadMagic())} onUnloadMagic={() => void magicAction(() => bridge.unloadMagic(), "Magic model unloaded")} onReset={() => void action(() => bridge.resetPythonEnvironment(), "Python environment removed")} />}
+          {page === "settings" && <SettingsPage settings={settings} devices={devices} capabilities={capabilities} shortcutStatus={shortcutStatus} updateStatus={updateStatus} status={status} magicStatus={magicStatus} saving={saving} onSave={saveSettings} onConfigureShortcut={() => void action(() => bridge.configureShortcut())} onAuthorizePaste={() => void action(() => bridge.authorizePaste(), "Automatic paste permission saved")} onTestPaste={() => void action(() => bridge.testPaste(), "Test text pasted")} onCheckForUpdates={() => void bridge.checkForUpdates()} onDownloadUpdate={() => void bridge.downloadUpdate()} onInstallUpdate={() => void bridge.installUpdate()} onSetup={() => void action(() => bridge.setupModel())} onLoad={() => void action(() => bridge.loadModel())} onUnload={() => void action(() => bridge.unloadModel(), "Model unloaded")} onSetupMagic={() => void magicAction(() => bridge.setupMagic())} onLoadMagic={() => void magicAction(() => bridge.loadMagic())} onUnloadMagic={() => void magicAction(() => bridge.unloadMagic(), "Magic model unloaded")} onReset={() => void action(() => bridge.resetPythonEnvironment(), "Python environment removed")} />}
         </div>
       </main>
       {toast && <div className="toast" role="status" aria-live="polite"><Check />{toast}</div>}
+      {!settings.onboardingComplete && <Onboarding settings={settings} saving={saving} onFinish={finishOnboarding} />}
     </div>
   );
 }

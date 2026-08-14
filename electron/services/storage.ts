@@ -76,6 +76,7 @@ export function normalizeSettings(value: unknown): AppSettings {
   const requestedLanguage = safeString(source.language, DEFAULT_SETTINGS.language, 12).toLowerCase();
 
   return {
+    onboardingComplete: boolean(source.onboardingComplete, DEFAULT_SETTINGS.onboardingComplete),
     shortcut: safeString(source.shortcut, DEFAULT_SETTINGS.shortcut, 96),
     shortcutMode: source.shortcutMode === "toggle" ? "toggle" : "hold",
     model,

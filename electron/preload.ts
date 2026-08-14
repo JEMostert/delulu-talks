@@ -13,6 +13,7 @@ import type {
   ShortcutStatus,
   TranscriptRecord,
   TranscriptVersion,
+  UpdateStatus,
 } from "../src/types";
 
 function listener<T>(channel: string, callback: (value: T) => void): () => void {
@@ -30,6 +31,10 @@ const api: DeluluApi = {
   configureShortcut: () => ipcRenderer.invoke("shortcut:configure"),
   getHistory: () => ipcRenderer.invoke("history:get"),
   getCapabilities: () => ipcRenderer.invoke("platform:capabilities"),
+  getUpdateStatus: () => ipcRenderer.invoke("updates:get"),
+  checkForUpdates: () => ipcRenderer.invoke("updates:check"),
+  downloadUpdate: () => ipcRenderer.invoke("updates:download"),
+  installUpdate: () => ipcRenderer.invoke("updates:install"),
   toggleDictation: () => ipcRenderer.invoke("dictation:toggle"),
   startDictation: () => ipcRenderer.invoke("dictation:start"),
   stopDictation: () => ipcRenderer.invoke("dictation:stop"),
@@ -63,6 +68,7 @@ const api: DeluluApi = {
   onShortcutStatus: (callback: (status: ShortcutStatus) => void) => listener("shortcut:statusChanged", callback),
   onTranscript: (callback: (record: TranscriptRecord) => void) => listener("history:added", callback),
   onRecorderCommand: (callback: (command: RecorderCommand) => void) => listener("recorder:command", callback),
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => listener("updates:statusChanged", callback),
 };
 
 contextBridge.exposeInMainWorld("delulu", api);

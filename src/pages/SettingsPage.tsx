@@ -1,7 +1,7 @@
-import { Check, Clipboard, Clock3, Cpu, Download, Gauge, HardDrive, Keyboard, Languages, Mic2, PlayCircle, Save, ShieldCheck, Sparkles, Terminal, Trash2, Upload, WandSparkles, Waypoints } from "lucide-react";
+import { Check, Clipboard, Clock3, Cpu, Download, Gauge, HardDrive, Keyboard, Languages, Mic2, PlayCircle, RefreshCw, RotateCw, Save, ShieldCheck, Sparkles, Terminal, Trash2, Upload, WandSparkles, Waypoints } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LANGUAGES, MAGIC_MODELS } from "../data";
-import type { AppSettings, DictationStatus, MagicStatus, MicrophoneDevice, PlatformCapabilities, ShortcutStatus } from "../types";
+import type { AppSettings, DictationStatus, MagicStatus, MicrophoneDevice, PlatformCapabilities, ShortcutStatus, UpdateStatus } from "../types";
 
 function SettingRow({ icon: Icon, title, description, children }: { icon: typeof Keyboard; title: string; description: string; children: React.ReactNode }) {
   return <div className="setting-row"><span className="setting-icon"><Icon /></span><div className="setting-copy"><strong>{title}</strong><p>{description}</p></div><div className="setting-control">{children}</div></div>;
@@ -11,11 +11,12 @@ function Toggle({ value, onChange, label, disabled = false }: { value: boolean; 
   return <button className={`toggle ${value ? "on" : ""}`} role="switch" aria-checked={value} aria-label={label} disabled={disabled} onClick={onChange}><i /></button>;
 }
 
-export function SettingsPage({ settings, devices, capabilities, shortcutStatus, status, magicStatus, saving, onSave, onConfigureShortcut, onAuthorizePaste, onTestPaste, onSetup, onLoad, onUnload, onSetupMagic, onLoadMagic, onUnloadMagic, onReset }: {
+export function SettingsPage({ settings, devices, capabilities, shortcutStatus, updateStatus, status, magicStatus, saving, onSave, onConfigureShortcut, onAuthorizePaste, onTestPaste, onCheckForUpdates, onDownloadUpdate, onInstallUpdate, onSetup, onLoad, onUnload, onSetupMagic, onLoadMagic, onUnloadMagic, onReset }: {
   settings: AppSettings;
   devices: MicrophoneDevice[];
   capabilities: PlatformCapabilities | null;
   shortcutStatus: ShortcutStatus;
+  updateStatus: UpdateStatus;
   status: DictationStatus;
   magicStatus: MagicStatus;
   saving: boolean;
@@ -23,6 +24,9 @@ export function SettingsPage({ settings, devices, capabilities, shortcutStatus, 
   onConfigureShortcut: () => void;
   onAuthorizePaste: () => void;
   onTestPaste: () => void;
+  onCheckForUpdates: () => void;
+  onDownloadUpdate: () => void;
+  onInstallUpdate: () => void;
   onSetup: () => void;
   onLoad: () => void;
   onUnload: () => void;
@@ -93,6 +97,17 @@ export function SettingsPage({ settings, devices, capabilities, shortcutStatus, 
           <button className="secondary-button" disabled={busy || !draft.magicEnabled} onClick={() => void saveThen(onSetupMagic)}><Download /> Install / repair Magic</button>
           {magicStatus.engine === "ready" ? <button className="secondary-button" disabled={busy} onClick={onUnloadMagic}>Unload</button> : magicStatus.engine === "unloaded" ? <button className="secondary-button" disabled={busy || !draft.magicEnabled} onClick={() => void saveThen(onLoadMagic)}>Load</button> : null}
         </div></div>
+      </section>
+
+      <section className="settings-group"><div className="group-heading"><p className="eyebrow">F / APPLICATION</p><h3>Version & updates</h3></div>
+        <SettingRow icon={RefreshCw} title={`Delulu Talks ${updateStatus.currentVersion || "development"}`} description={updateStatus.message}>
+          <div className="inline-control update-controls">
+            {updateStatus.phase === "available" && <button className="primary-button" onClick={onDownloadUpdate}><Download /> Download {updateStatus.version}</button>}
+            {updateStatus.phase === "downloaded" && <button className="primary-button" onClick={onInstallUpdate}><RotateCw /> Restart & update</button>}
+            {updateStatus.phase === "downloading" && <span className="update-percent">{Math.round(updateStatus.percent ?? 0)}%</span>}
+            {!(["available", "downloaded", "downloading"] as UpdateStatus["phase"][]).includes(updateStatus.phase) && <button className="secondary-button" disabled={updateStatus.phase === "checking" || updateStatus.phase === "unsupported"} onClick={onCheckForUpdates}><RefreshCw className={updateStatus.phase === "checking" ? "spin" : ""} /> {updateStatus.phase === "checking" ? "Checking…" : "Check now"}</button>}
+          </div>
+        </SettingRow>
       </section>
     </div>
   );

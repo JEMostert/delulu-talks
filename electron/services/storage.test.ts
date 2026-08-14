@@ -11,6 +11,11 @@ beforeAll(async () => {
 });
 
 describe("settings migration", () => {
+  test("shows onboarding until a first-run choice is persisted", () => {
+    expect(normalizeSettings({}).onboardingComplete).toBe(false);
+    expect(normalizeSettings({ onboardingComplete: true }).onboardingComplete).toBe(true);
+  });
+
   test("migrates removed Tauri models to the balanced Crisper default", () => {
     const settings = normalizeSettings({ model: "mossTranscribeDiarize", language: "auto", autoPaste: false });
     expect(settings.model).toBe("crisperMedium");

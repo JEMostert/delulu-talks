@@ -16,6 +16,7 @@ import type {
   ShortcutStatus,
   TranscriptRecord,
   TranscriptVersion,
+  UpdateStatus,
 } from "./types";
 
 let demoHistory: TranscriptRecord[] = [
@@ -56,6 +57,10 @@ const mockApi: DeluluApi = {
   async configureShortcut() {},
   async getHistory() { return demoHistory; },
   async getCapabilities() { return { platform: "linux", desktop: "Browser preview", sessionType: "wayland", pasteMethod: "clipboard-only", overlayMethod: "layer-shell", overlayDetail: "Native click-through layer-shell pill", wayland: true }; },
+  async getUpdateStatus() { return { phase: "unsupported", currentVersion: "browser", message: "Updates are available in the installed app" }; },
+  async checkForUpdates() { return this.getUpdateStatus(); },
+  async downloadUpdate() { return this.getUpdateStatus(); },
+  async installUpdate() {},
   async toggleDictation() {},
   async startDictation() {},
   async stopDictation() {},
@@ -108,6 +113,7 @@ const mockApi: DeluluApi = {
   onShortcutStatus(_callback: (status: ShortcutStatus) => void) { return () => undefined; },
   onTranscript(_callback: (record: TranscriptRecord) => void) { return () => undefined; },
   onRecorderCommand(_callback: (command: RecorderCommand) => void) { return () => undefined; },
+  onUpdateStatus(_callback: (status: UpdateStatus) => void) { return () => undefined; },
 };
 
 export const bridge: DeluluApi = window.delulu ?? mockApi;

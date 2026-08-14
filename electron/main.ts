@@ -10,6 +10,7 @@ import {
   Tray,
 } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
+import electronUpdater from "electron-updater";
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import type { AppSettings, ExportFormat, LabRequest, MagicPreset, MagicRewriteRequest, Page, RecordingSubmission, TranscriptRecord, TranscriptVersion } from "../src/types";
@@ -22,6 +23,9 @@ import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
 import { normalizeSettings, StorageService } from "./services/storage";
 import { exportRecord } from "./services/transcripts";
+import { UpdateService } from "./services/updates";
+
+const { autoUpdater } = electronUpdater;
 
 if (process.platform === "linux" && process.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland") {
   // ASR CUDA runs in Python and is unaffected by Chromium's compositor.
@@ -40,6 +44,7 @@ let paste: PasteService;
 let pill: PillService;
 let dictation: DictationService;
 let shortcut: ShortcutService;
+let updates: UpdateService;
 const selectedAudioFiles = new Set<string>();
 
 function preloadPath(): string {
@@ -79,7 +84,14 @@ function createMainWindow(): BrowserWindow {
       backgroundThrottling: false,
     },
   });
-  window.once("ready-to-show", () => window.show());
+  const reveal = () => {
+    if (!window.isDestroyed() && !window.isVisible()) window.show();
+  };
+  window.once("ready-to-show", reveal);
+  // Some packaged Linux/Wayland builds never emit ready-to-show even though the
+  // renderer is ready. did-finish-load keeps first launch from becoming a
+  // tray-only app with no visible onboarding window.
+  window.webContents.once("did-finish-load", reveal);
   window.webContents.on("render-process-gone", (_event, details) => {
     console.error("Delulu Talks renderer stopped:", details.reason, details.exitCode);
   });
@@ -160,6 +172,7 @@ function rebuildTrayMenu(): void {
   const latest = storage.getHistory()[0];
   const listening = status.phase === "listening";
   const dictationBusy = ["preparing", "loading", "transcribing"].includes(status.phase);
+  const update = updates?.getStatus();
   const speechUnavailable = status.engine === "missing" || status.engine === "error";
   const presets: Array<[MagicPreset, string]> = [
     ["polish", "Polish naturally"],
@@ -207,6 +220,23 @@ function rebuildTrayMenu(): void {
     },
     { type: "separator" },
     { type: "checkbox", label: "Launch at login", checked: settings.launchAtLogin, click: () => patchTraySettings({ launchAtLogin: !settings.launchAtLogin }) },
+    update ? {
+      label: update.phase === "downloaded"
+        ? `Restart to install ${update.version}`
+        : update.phase === "available"
+          ? `Download update ${update.version}`
+          : update.phase === "downloading"
+            ? `Downloading update · ${Math.round(update.percent ?? 0)}%`
+            : update.phase === "checking"
+              ? "Checking for updates…"
+              : "Check for updates",
+      enabled: update.phase !== "checking" && update.phase !== "downloading" && update.phase !== "unsupported",
+      click: () => {
+        if (update.phase === "downloaded") updates.install();
+        else if (update.phase === "available") runTrayAction(() => updates.download());
+        else runTrayAction(() => updates.check());
+      },
+    } : { label: "Check for updates", enabled: false },
     { label: "Quit Delulu Talks", click: () => { quitting = true; app.quit(); } },
   ];
   tray.setContextMenu(Menu.buildFromTemplate(template));
@@ -312,6 +342,10 @@ function registerIpc(): void {
     return asr.rewriteMagic(request, storage.getSettings());
   });
   ipcMain.handle("platform:capabilities", () => paste.capabilities(pill.method, pill.detail));
+  ipcMain.handle("updates:get", () => updates.getStatus());
+  ipcMain.handle("updates:check", () => updates.check());
+  ipcMain.handle("updates:download", () => updates.download());
+  ipcMain.handle("updates:install", () => updates.install());
   ipcMain.handle("dictation:start", () => dictation.start());
   ipcMain.handle("dictation:stop", () => dictation.stop());
   ipcMain.handle("dictation:toggle", () => dictation.toggle());
@@ -394,6 +428,11 @@ async function start(): Promise<void> {
   pill = new PillService();
   if (storage.getSettings().showOverlay) pill.prepare();
   asr = new AsrService(storage);
+  updates = new UpdateService(app.isPackaged ? autoUpdater : null, app.getVersion(), (status) => {
+    broadcast("updates:statusChanged", status);
+    rebuildTrayMenu();
+  });
+  updates.start();
   mainWindow = createMainWindow();
   dictation = new DictationService(
     storage,
@@ -423,6 +462,8 @@ async function start(): Promise<void> {
   registerIpc();
   void shortcut.register(storage.getSettings().shortcut).catch(() => undefined);
   installTray();
+  const updateTimer = setTimeout(() => void updates.check(), 8_000);
+  updateTimer.unref();
   app.setLoginItemSettings({ openAtLogin: storage.getSettings().launchAtLogin });
   await asr.initialize(storage.getSettings());
 }
