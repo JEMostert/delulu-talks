@@ -1,8 +1,11 @@
 import type { AppSettings, MagicModelInfo, ModelInfo } from "./types";
 
+export const DEFAULT_SHORTCUT = "Super+Z";
+export const LEGACY_DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
+
 export const DEFAULT_SETTINGS: AppSettings = {
   onboardingComplete: false,
-  shortcut: "CommandOrControl+Shift+Space",
+  shortcut: DEFAULT_SHORTCUT,
   shortcutMode: "hold",
   model: "crisperMedium",
   language: "en",

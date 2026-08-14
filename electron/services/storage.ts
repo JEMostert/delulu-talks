@@ -1,7 +1,7 @@
 import { app } from "electron";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { DEFAULT_SETTINGS, LANGUAGES, MAGIC_MODELS, MODELS } from "../../src/data";
+import { DEFAULT_SETTINGS, LANGUAGES, LEGACY_DEFAULT_SHORTCUT, MAGIC_MODELS, MODELS } from "../../src/data";
 import { originalTranscriptText } from "../../src/transcriptText";
 import type { AppSettings, CustomWord, MagicModelId, MagicPreset, ModelId, SpeechInsights, TranscriptRecord, TranscriptVersion } from "../../src/types";
 
@@ -74,10 +74,11 @@ export function normalizeSettings(value: unknown): AppSettings {
     ? source.transcriptionMode as AppSettings["transcriptionMode"]
     : DEFAULT_SETTINGS.transcriptionMode;
   const requestedLanguage = safeString(source.language, DEFAULT_SETTINGS.language, 12).toLowerCase();
+  const requestedShortcut = safeString(source.shortcut, DEFAULT_SETTINGS.shortcut, 96);
 
   return {
     onboardingComplete: boolean(source.onboardingComplete, DEFAULT_SETTINGS.onboardingComplete),
-    shortcut: safeString(source.shortcut, DEFAULT_SETTINGS.shortcut, 96),
+    shortcut: requestedShortcut === LEGACY_DEFAULT_SHORTCUT ? DEFAULT_SETTINGS.shortcut : requestedShortcut,
     shortcutMode: source.shortcutMode === "toggle" ? "toggle" : "hold",
     model,
     language: validLanguages.has(requestedLanguage) ? requestedLanguage : DEFAULT_SETTINGS.language,

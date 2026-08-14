@@ -26,6 +26,11 @@ describe("settings migration", () => {
     expect(normalizeSettings({ shortcutMode: "toggle" }).shortcutMode).toBe("toggle");
   });
 
+  test("moves the previous default shortcut to Meta + Z without changing custom bindings", () => {
+    expect(normalizeSettings({ shortcut: "CommandOrControl+Shift+Space" }).shortcut).toBe("Super+Z");
+    expect(normalizeSettings({ shortcut: "Ctrl+Alt+M" }).shortcut).toBe("Ctrl+Alt+M");
+  });
+
   test("sanitizes custom vocabulary at the IPC boundary", () => {
     const settings = normalizeSettings({ customWords: [{ id: "x", term: " Nyra ", soundsLike: "nira", enabled: true }, { term: "" }] });
     expect(settings.customWords).toEqual([{ id: "x", term: "Nyra", soundsLike: "nira", replacement: "", enabled: true }]);

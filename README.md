@@ -21,7 +21,7 @@ Delulu Talks is private desktop dictation built around one system-wide shortcut.
 ## One shortcut. The complete pipeline.
 
 ```text
-Hold Ctrl + Shift + Space
+Hold Meta + Z
           │
           ▼
      speak naturally
@@ -85,7 +85,7 @@ Delulu Talks checks GitHub Releases for updates, displays download progress, and
 
 1. Start Delulu Talks and work through the short setup intro.
 2. Choose **Install engine**. A focused modal explains the Nyra model license and records acceptance before downloading anything.
-3. Focus any text field, hold <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd>, speak, then release.
+3. Focus any text field, hold the <kbd>Windows</kbd>/<kbd>Meta</kbd> key + <kbd>Z</kbd>, speak, then release.
 4. Optionally open **Magic**, install a Qwen model, and choose the rewrite style that should run in your shortcut pipeline.
 
 The app manages its own isolated Python environment and model cache inside the platform application-data directory.

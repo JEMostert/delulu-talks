@@ -1,5 +1,6 @@
 import { globalShortcut } from "electron";
 import { sessionBus, Variant, type ClientInterface, type MessageBus } from "dbus-next";
+import { DEFAULT_SHORTCUT } from "../../src/data";
 import type { ShortcutStatus } from "../../src/types";
 import { portalTrigger } from "./shortcutFormat";
 import { portalRequest, PORTAL_NAME, PORTAL_PATH } from "./shortcutPortal";
@@ -25,7 +26,7 @@ function shortcutDescription(shortcuts: unknown): string | undefined {
 export class ShortcutService {
   private readonly portal = process.platform === "linux" && process.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland";
   private status: ShortcutStatus = {
-    accelerator: "CommandOrControl+Shift+Space",
+    accelerator: DEFAULT_SHORTCUT,
     registered: false,
     method: this.portal ? "portal" : "native",
     message: "Shortcut registration pending",
