@@ -1,11 +1,10 @@
 <div align="center">
-  <img src="build/icon.png" width="150" alt="Delulu Talks logo" />
-  <h1>Delulu Talks</h1>
-  <p><strong>Hold. Speak. Release. Your words land polished wherever you are typing.</strong></p>
+  <img src="docs/assets/readme-header.svg" width="100%" alt="Delulu Talks — private desktop dictation, with the ocean-blue wave logo" />
+  <p><strong>Native clean dictation. Personal corrections. Optional local rewriting.</strong></p>
   <p>
-    <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><img src="https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&amp;label=release&amp;color=087fbe&amp;labelColor=171914" alt="Latest release" /></a>
-    <img src="https://img.shields.io/badge/Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-Desktop-087fbe?style=for-the-badge&amp;labelColor=171914" alt="Linux, Windows, and macOS" />
-    <img src="https://img.shields.io/badge/AI-local--first-087fbe?style=for-the-badge&amp;labelColor=171914" alt="Local-first AI" />
+    <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><img src="https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&amp;label=release&amp;color=16b3e8&amp;labelColor=0a2942" alt="Latest release" /></a>
+    <img src="https://img.shields.io/badge/Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-Desktop-16b3e8?style=for-the-badge&amp;labelColor=0a2942" alt="Linux, Windows, and macOS" />
+    <img src="https://img.shields.io/badge/AI-local--first-16b3e8?style=for-the-badge&amp;labelColor=0a2942" alt="Local-first AI" />
   </p>
   <p>
     <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><strong>Download the latest release</strong></a> ·
@@ -16,27 +15,25 @@
 
 ---
 
-Delulu Talks is private desktop dictation built around one system-wide shortcut. It keeps a fast speech model ready, understands both what you meant and exactly what you said, and can pass the result through a local Qwen model before delivering it to the app you were already using.
+Delulu Talks turns speech into text in the app you are using. CrisperWhisper produces clean dictation locally; Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
 
-## One shortcut. The complete pipeline.
+## Dictate, review, keep working
 
 ```text
-Hold Meta + Z
-          │
-          ▼
-     speak naturally
-          │
-          ▼
-  CrisperWhisper 2.0 ──► intended + verbatim transcripts
-          │
-          ├── Magic disabled ──────────────────────────┐
-          │                                            │
-          └── Magic enabled ──► local Qwen rewrite ───┤
-                                                       ▼
-                                              clipboard + paste
+Hold your shortcut → Speak → Release
+                              │
+                  CrisperWhisper: native clean text
+                              │
+                  Corrections + exact text shortcuts
+                              │
+                      Paste into your app
+                              │
+                  Review · edit · optionally rewrite
 ```
 
-Release the shortcut and Delulu Talks finishes the job. The native recording pill stays above your apps without stealing pointer or keyboard input, and automatic paste falls back honestly to the clipboard when the desktop blocks synthetic input.
+Clean transcription is the default. You can also keep a verbatim transcript, or both versions. Automatic rewriting is off; use **Rewrite** beside a result when you want to shorten or restructure it.
+
+On supported Wayland desktops, the recording pill stays above your apps without taking focus. Hold-to-talk uses the desktop shortcut portal; other desktops use toggle shortcuts. If automatic paste is blocked, the result stays available on the clipboard.
 
 ## What it brings
 
@@ -44,9 +41,9 @@ Release the shortcut and Delulu Talks finishes the job. The native recording pil
 | --- | --- |
 | **System dictation** | Hold-to-talk by default, optional press-to-toggle, tray controls, and desktop-owned shortcut remapping. |
 | **Two transcripts** | Native clean dictation by default. Optionally keep both clean and verbatim transcripts; originals remain available beside edits. |
-| **Magic rewrites** | Optional local transformations with preview, apply and undo beside each transcript. Automatic rewriting is off by default. |
+| **Optional rewriting** | Optional local transformations with preview, apply and undo beside each transcript. Automatic rewriting is off by default. |
 | **Native Wayland experience** | Uses XDG GlobalShortcuts, secure Remote Desktop paste, and a click-through layer-shell recording pill on supported desktops. |
-| **Speech Lab** | Imports audio or video for transcription, Verbatimize, forced alignment, word timelines, and SRT/VTT export. |
+| **Audio files** | Imports audio or video for transcription, Verbatimize, forced alignment, word timelines, and SRT/VTT export. |
 | **Local by design** | Runs speech and writing models on your machine. There is no telemetry or cloud transcription. |
 
 ### Corrections and text shortcuts
@@ -59,7 +56,15 @@ Upgrading from an older release turns automatic rewriting and writing-model prel
 
 ## Controls on launch
 
-Version 0.7 opens directly into the dictation controls. Microphone, language, shortcut, model, transcript mode, writing style and delivery switches are immediately accessible. A latest-output inspector provides Delivered/Clean/Verbatim views, correction and export beside the controls.
+The app opens directly into dictation controls. Microphone, language, shortcut, speech model, transcript mode, and delivery switches are immediately accessible. The latest result sits beside them, with editing, correction capture, optional rewriting, and export.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/controls-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/controls-light.png" />
+  <img src="docs/assets/controls-dark.png" width="100%" alt="Delulu Talks controls: capture, transcription, personalization, and delivery settings beside the latest transcript" />
+</picture>
+
+*Current interface captured from the browser preview with demo text. The image follows your light or dark theme.*
 
 The interface uses ocean-blue and navy panels with light/dark/system themes. Settings is at the top of navigation. Writing, file transcription, model management, history and personalization share the same compact visual system. The application icon is a new wave-shaped D.
 
@@ -68,14 +73,14 @@ The interface uses ocean-blue and navy panels with light/dark/system themes. Set
 - **Preserve originals:** corrections stay separate from clean/verbatim model output and optional rewrites.
 - **Manage locally:** Settings → Runtime covers memory and backend choices; Settings → Application covers appearance and app updates.
 
-## Pick the right-sized brain
+## Local speech and writing models
 
-Speech and Magic can stay loaded together. Pin the models you use every day, or let Delulu Talks unload them after a configurable idle period.
+Speech stays ready by default. The optional writing model loads on demand; you can keep either model loaded or let it unload after a configurable idle period.
 
 | Runtime | Available models | Good for |
 | --- | --- | --- |
 | **CrisperWhisper 2.0** | Small · Medium · Turbo · Large | Fast dictation through maximum transcription quality. Medium is the balanced default. |
-| **Qwen 3.5 Magic** | 0.8B · 2B · 4B | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default. |
+| **Qwen 3.5 writing** | 0.8B · 2B · 4B | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default. |
 
 On Linux x64, Auto uses the accelerated CTranslate2 backend and supports Large + Turbo speculative decoding. Other platforms use the portable Transformers runtime.
 
@@ -102,9 +107,9 @@ Supported installed packages check GitHub Releases for updates. Downloads are ex
 
 ## Your first minute
 
-1. Start Delulu Talks and work through the short setup intro.
+1. Open Delulu Talks. Controls are immediately available; the inline setup notice points you to model installation.
 2. Choose **Install engine**. A focused modal explains the Nyra model license and records acceptance before downloading anything.
-3. Focus any text field, hold the <kbd>Windows</kbd>/<kbd>Meta</kbd> key + <kbd>Z</kbd>, speak, then release.
+3. Focus a text field and use the shortcut shown in Controls. On supported Wayland desktops, hold <kbd>Meta</kbd> + <kbd>Z</kbd>, speak, then release; toggle mode uses a second press to finish.
 4. Dictate immediately with native clean output. Optionally open **Writing** to install Qwen, then use **Rewrite** beside any result. Automatic rewriting is a separate opt-in setting.
 
 The app manages its own isolated Python environment and model cache inside the platform application-data directory. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → Application offers repair and update controls.
@@ -138,9 +143,9 @@ Electron main process
 ├── native Wayland overlay + secure paste services
 ├── persistent Python worker
 │   ├── CrisperWhisper speech runtime
-│   └── Qwen Magic runtime
+│   └── Qwen writing runtime
 └── sandboxed React renderer
-    ├── Dictation + Magic
+    ├── Controls + Writing
     ├── Audio files + History + Personalization
     └── Models + Settings + onboarding
 ```
@@ -174,7 +179,7 @@ electron/
   python/             persistent speech + Magic worker
 src/
   components/         Electron app shell components
-  pages/              Dictation, Magic, Speech Lab, History, Models, Settings
+  pages/              Controls, Writing, Audio files, History, Models, Settings
   bridge.ts           typed Electron/browser boundary
   recorder.ts         microphone capture and 16 kHz WAV encoder
   data.ts             CrisperWhisper, Qwen, and language catalogs
@@ -187,10 +192,6 @@ src/
 Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Failed captures can remain in memory for Retry during the session; Discard releases them, and closing the app loses that recovery copy. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environment, and downloaded models stay under Electron's application-data directory.
 
 Delulu Talks is [MIT licensed](LICENSE). CrisperWhisper inference code is MIT, while its standard 2.0 weights use the Nyra Health Non-Commercial Research License; commercial use requires a separate Nyra license. Delulu Talks does not bundle weights or offer Pro downloads. Read [Nyra's license explanation](https://github.com/nyrahealth/CrisperWhisper#license) and the [weight license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md). Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
-
-<div align="center">
-  <strong>Your voice stays yours.</strong>
-</div>
 
 ## Development checks
 

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="280" viewBox="0 0 1280 280" role="img" aria-labelledby="banner-title banner-description">
+  <title id="banner-title">Delulu Talks — private desktop dictation</title>
+  <desc id="banner-description">The ocean-blue wave-shaped D logo beside Delulu Talks on a deep navy background.</desc>
+  <defs>
+    <linearGradient id="ocean" x1="0" y1="0" x2="1280" y2="280" gradientUnits="userSpaceOnUse"><stop stop-color="#10364f"/><stop offset="1" stop-color="#061625"/></linearGradient>
+    <linearGradient id="horizon"><stop stop-color="#68e4f5"/><stop offset="1" stop-color="#1372d0"/></linearGradient>
+  </defs>
+  <rect width="1280" height="280" rx="20" fill="url(#ocean)"/>
+  <path d="M800 233c120-130 173 65 304-43s153-75 215-79M804 263c120-130 173 65 304-43s153-75 215-79M804 293c120-130 173 65 304-43s153-75 215-79" fill="none" stroke="#19b5e5" stroke-width="2" opacity=".18"/>
+  <path d="M24 1h1232" stroke="url(#horizon)" stroke-width="2"/>
+<svg x="60" y="44" width="192" height="192" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Delulu Talks</title>
+  <desc id="desc">An ocean-blue D shaped by a flowing wave.</desc>
+  <defs>
+    <linearGradient id="depth" x1="40" y1="20" x2="206" y2="238" gradientUnits="userSpaceOnUse"><stop stop-color="#123d59"/><stop offset="1" stop-color="#061625"/></linearGradient>
+    <linearGradient id="current" x1="52" y1="49" x2="195" y2="213" gradientUnits="userSpaceOnUse"><stop stop-color="#68e4f5"/><stop offset=".48" stop-color="#19b5e5"/><stop offset="1" stop-color="#1372d0"/></linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="53" fill="url(#depth)"/>
+  <path d="M60 46h65c52 0 89 34 89 81 0 19-6 36-17 50l-27-15c9-9 14-21 14-35 0-30-24-51-60-51H90v32H60Zm0 112h30v23h34c13 0 25-3 34-8l28 17c-16 14-38 21-61 21H60Z" fill="url(#current)"/>
+  <path d="M36 135c27-22 47-24 69-5l26 24c22 20 42 20 69 2" fill="none" stroke="#061c2e" stroke-width="22" stroke-linecap="round"/>
+  <path d="M36 132c27-22 47-24 69-5l26 24c22 20 42 20 69 2" fill="none" stroke="url(#current)" stroke-width="12" stroke-linecap="round"/>
+</svg>
+
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="292" y="122" font-size="64" font-weight="700" letter-spacing="-2" fill="#e6f3fc">Delulu Talks</text>
+    <text x="295" y="166" font-size="26" fill="#a6c4d8">Private desktop dictation</text>
+    <text x="296" y="211" font-size="14" font-weight="600" letter-spacing="2.2" fill="#68d9f2">CRISPERWHISPER 2  /  LOCAL MODELS</text>
+  </g>
+</svg>
