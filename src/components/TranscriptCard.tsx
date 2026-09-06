@@ -1,3 +1,4 @@
+import { RewriteDialog } from "./RewriteDialog";
 import { useState } from "react";
 import {
   BookPlus,
@@ -19,6 +20,9 @@ import {
 } from "../transcriptText";
 import { ConfirmDialog, Modal } from "./ui";
 import type {
+  MagicRewriteRequest,
+  MagicRewriteResult,
+  MagicStatus,
   CustomWord,
   ExportFormat,
   TranscriptRecord,
@@ -26,6 +30,14 @@ import type {
 } from "../types";
 
 export type TranscriptActions = {
+  onRewrite?: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
+  onSetRewrite?: (
+    id: string,
+    result: MagicRewriteResult | null,
+    sourceText: string,
+  ) => Promise<boolean>;
+  onRewriteSetup?: () => void;
+  rewriteStatus?: MagicStatus;
   onCopy: (text: string) => void;
   onUpdateTranscript: (
     id: string,
@@ -45,6 +57,10 @@ export function TranscriptCard({
   onDelete,
   onExport,
   onRemember,
+  onRewrite,
+  onSetRewrite,
+  onRewriteSetup,
+  rewriteStatus,
 }: TranscriptActions & {
   record: TranscriptRecord;
   defaultOpen?: boolean;
@@ -52,16 +68,22 @@ export function TranscriptCard({
 }) {
   const [open, setOpen] = useState(defaultOpen || inspector);
   const [version, setVersion] = useState<TranscriptVersion | "delivered">(
-    inspector && record.magicText
+    record.magicText ||
+      (record.deliveredVersion !== "verbatim" &&
+        record.personalizedText &&
+        record.personalizedText !== record.intendedText)
       ? "delivered"
       : record.intendedText
         ? "intended"
         : "verbatim",
   );
+  const [rewriting, setRewriting] = useState(false);
+  const [correctionSuggested, setCorrectionSuggested] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [rememberError, setRememberError] = useState<string | null>(null);
   const [remember, setRemember] = useState(false);
   const [heard, setHeard] = useState("");
   const [correct, setCorrect] = useState("");
@@ -79,8 +101,42 @@ export function TranscriptCard({
   const save = async () => {
     setSaving(true);
     try {
-      if (await onUpdateTranscript(record.id, sourceVersion, draft))
+      if (await onUpdateTranscript(record.id, sourceVersion, draft)) {
         setEditing(false);
+        const before = text.trim().split(/\s+/),
+          after = draft.trim().split(/\s+/);
+        let start = 0,
+          tail = 0;
+        while (
+          start < Math.min(before.length, after.length) &&
+          before[start] === after[start]
+        )
+          start++;
+        while (
+          tail < Math.min(before.length, after.length) - start &&
+          before[before.length - 1 - tail] === after[after.length - 1 - tail]
+        )
+          tail++;
+        const from = before
+          .slice(start, before.length - tail)
+          .join(" ")
+          .replace(/[.,!?;:]+$/, "");
+        const to = after
+          .slice(start, after.length - tail)
+          .join(" ")
+          .replace(/[.,!?;:]+$/, "");
+        if (
+          from &&
+          to &&
+          from !== to &&
+          from.length <= 256 &&
+          to.length <= 256
+        ) {
+          setHeard(from);
+          setCorrect(to);
+          setCorrectionSuggested(true);
+        }
+      }
     } finally {
       setSaving(false);
     }
@@ -99,7 +155,7 @@ export function TranscriptCard({
             {date} · {Math.max(1, Math.round(record.durationMs / 1000))}s{" "}
             {record.magicText && (
               <>
-                · <WandSparkles /> Magic
+                · <WandSparkles /> Rewritten
               </>
             )}
           </span>
@@ -160,7 +216,10 @@ export function TranscriptCard({
             >
               {(
                 [
-                  ...(inspector && record.magicText
+                  ...(record.magicText ||
+                  (record.deliveredVersion !== "verbatim" &&
+                    record.personalizedText &&
+                    record.personalizedText !== record.intendedText)
                     ? ["delivered" as const]
                     : []),
                   "intended",
@@ -183,7 +242,7 @@ export function TranscriptCard({
                     onClick={() => setVersion(v)}
                   >
                     {v === "delivered"
-                      ? "Delivered"
+                      ? "Result"
                       : v === "intended"
                         ? "Clean"
                         : "Verbatim"}
@@ -192,7 +251,9 @@ export function TranscriptCard({
             </div>
             <span className="caption">
               {version === "delivered"
-                ? "Writing model output"
+                ? record.magicText
+                  ? "Optional rewrite"
+                  : "Corrections & shortcuts applied"
                 : edited
                   ? "Your correction"
                   : "Original speech"}
@@ -269,20 +330,89 @@ export function TranscriptCard({
                     <RotateCcw /> Restore
                   </button>
                 )}
+                {onRewrite && onSetRewrite && (
+                  <button
+                    className="tool-button"
+                    disabled={saving}
+                    onClick={() => setRewriting(true)}
+                  >
+                    <WandSparkles /> Rewrite
+                  </button>
+                )}
+                {record.magicText && onSetRewrite && (
+                  <button
+                    className="tool-button"
+                    disabled={saving}
+                    onClick={async () => {
+                      setSaving(true);
+                      try {
+                        if (
+                          await onSetRewrite(
+                            record.id,
+                            null,
+                            deliveredText(record),
+                          )
+                        )
+                          setVersion(
+                            record.personalizedText !== record.intendedText &&
+                              record.personalizedText
+                              ? "delivered"
+                              : record.intendedText
+                                ? "intended"
+                                : "verbatim",
+                          );
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                  >
+                    <RotateCcw /> Undo rewrite
+                  </button>
+                )}
                 {onRemember && (
                   <button
                     className="tool-button"
-                    onClick={() => setRemember(true)}
+                    onClick={() => {
+                      if (!correctionSuggested) {
+                        setHeard(
+                          window
+                            .getSelection()
+                            ?.toString()
+                            .trim()
+                            .slice(0, 256) ?? "",
+                        );
+                        setCorrect("");
+                      }
+                      setRemember(true);
+                    }}
                   >
-                    <BookPlus /> Remember a word
+                    <BookPlus /> Remember correction
                   </button>
                 )}
               </>
             )}
           </div>
+          {correctionSuggested && !remember && (
+            <div className="correction-suggestion">
+              <span>
+                Remember “{heard}” → “{correct}” for next time?
+              </span>
+              <button className="text-button" onClick={() => setRemember(true)}>
+                Review rule
+              </button>
+              <button
+                className="text-button"
+                onClick={() => setCorrectionSuggested(false)}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
           {onExport && (
             <div className="export-row">
-              <span>Export</span>
+              <span title="Subtitles use the original model words and timing, before corrections or rewriting.">
+                Export · original timing for subtitles
+              </span>
               {(
                 [
                   "txt",
@@ -305,6 +435,21 @@ export function TranscriptCard({
           )}
         </div>
       )}
+      {rewriting && onRewrite && onSetRewrite && (
+        <RewriteDialog
+          text={text}
+          baseline={deliveredText(record)}
+          status={rewriteStatus}
+          onClose={() => setRewriting(false)}
+          onSetup={onRewriteSetup ?? (() => {})}
+          onRewrite={onRewrite}
+          onApply={async (result, source) => {
+            const applied = await onSetRewrite(record.id, result, source);
+            if (applied) setVersion("delivered");
+            return applied;
+          }}
+        />
+      )}
       {deleting && (
         <ConfirmDialog
           title="Delete this transcript?"
@@ -319,7 +464,7 @@ export function TranscriptCard({
       )}
       {remember && (
         <Modal
-          title="Remember a word"
+          title="Remember correction"
           busy={saving}
           onClose={() => setRemember(false)}
           footer={
@@ -336,13 +481,15 @@ export function TranscriptCard({
                   saving ||
                   !heard.trim() ||
                   !correct.trim() ||
-                  heard.trim().toLowerCase() === correct.trim().toLowerCase()
+                  heard.trim() === correct.trim()
                 }
                 onClick={async () => {
                   setSaving(true);
+                  setRememberError(null);
                   try {
                     if (
                       await onRemember?.({
+                        kind: "correction",
                         id: crypto.randomUUID(),
                         term: correct.trim(),
                         soundsLike: heard.trim(),
@@ -351,22 +498,39 @@ export function TranscriptCard({
                       })
                     ) {
                       setRemember(false);
+                      setCorrectionSuggested(false);
                       setHeard("");
                       setCorrect("");
+                    } else {
+                      setRememberError(
+                        "The correction could not be saved. Please try again.",
+                      );
                     }
+                  } catch (reason) {
+                    setRememberError(
+                      reason instanceof Error ? reason.message : String(reason),
+                    );
                   } finally {
                     setSaving(false);
                   }
                 }}
               >
-                Save to Wordbook
+                Save correction rule
               </button>
             </>
           }
         >
-          <p>Teach Delulu a name or phrase to correct in future transcripts.</p>
+          {rememberError && (
+            <p className="field-error" role="alert">
+              {rememberError}
+            </p>
+          )}
+          <p>
+            Replace this recognized phrase in future clean results. This does
+            not train the speech model.
+          </p>
           <label className="field">
-            What it heard
+            Recognized text
             <input
               autoFocus
               maxLength={256}
@@ -376,7 +540,7 @@ export function TranscriptCard({
             />
           </label>
           <label className="field">
-            What you meant
+            Replace with
             <input
               maxLength={256}
               value={correct}

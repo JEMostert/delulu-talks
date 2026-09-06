@@ -1,3 +1,5 @@
+import { personalize } from "../../src/personalization";
+import { deliveredText } from "../../src/transcriptText";
 import type { BrowserWindow } from "electron";
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -566,6 +568,9 @@ export class DictationService {
       text,
       intendedText,
       verbatimText,
+      personalizedText: intendedText
+        ? personalize(intendedText, settings.customWords)
+        : null,
       deliveredVersion:
         settings.pasteVersion === "verbatim" && verbatimText
           ? "verbatim"
@@ -589,8 +594,6 @@ export class DictationService {
   }
 
   private outputText(record: TranscriptRecord, settings: AppSettings): string {
-    return settings.pasteVersion === "verbatim"
-      ? record.verbatimText || record.intendedText || record.text
-      : record.intendedText || record.verbatimText || record.text;
+    return deliveredText(record);
   }
 }

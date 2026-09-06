@@ -99,3 +99,17 @@ describe("speech metadata", () => {
     expect(text).toContain("Hello world.");
   });
 });
+
+test("personalized delivery exports beside original speech and does not change subtitle timing", () => {
+  const personalized = { ...record, personalizedText: "Hello Delulu." };
+  expect(deliveredText(personalized)).toBe("Hello Delulu.");
+  expect(exportRecord(personalized, "txt")).toStartWith("Hello Delulu.");
+  expect(exportRecord(personalized, "txt")).toContain("Hello world.");
+  expect(exportRecord(personalized, "srt")).toBe(exportRecord(record, "srt"));
+  expect(deliveredText({ ...personalized, deliveredVersion: "verbatim" })).toBe(
+    record.verbatimText,
+  );
+  expect(
+    deliveredText({ ...personalized, editedIntendedText: "My edit." }),
+  ).toBe("My edit.");
+});

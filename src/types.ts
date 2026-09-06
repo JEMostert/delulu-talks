@@ -22,6 +22,7 @@ export type LabOperation = "transcribe" | "verbatimize" | "forcedAlign";
 export type ExportFormat = "txt" | "json" | "srt" | "vtt";
 
 export type CustomWord = {
+  kind?: "correction" | "shortcut";
   id: string;
   term: string;
   soundsLike: string;
@@ -30,6 +31,7 @@ export type CustomWord = {
 };
 
 export type AppSettings = {
+  workflowVersion: 1;
   onboardingComplete: boolean;
   theme: "system" | "light" | "dark";
   shortcut: string;
@@ -80,6 +82,7 @@ export type MagicRewriteRequest = {
 };
 
 export type MagicRewriteResult = {
+  preset?: MagicPreset;
   text: string;
   model: MagicModelId;
   processingTimeMs: number;
@@ -121,6 +124,7 @@ export type TranscriptRecord = {
   text: string;
   intendedText: string;
   verbatimText: string;
+  personalizedText?: string | null;
   deliveredVersion?: TranscriptVersion;
   editedIntendedText?: string | null;
   editedVerbatimText?: string | null;
@@ -268,6 +272,11 @@ export type DeluluApi = {
     id: string,
     version: TranscriptVersion,
     text: string | null,
+  ): Promise<TranscriptRecord>;
+  setTranscriptRewrite(
+    id: string,
+    result: MagicRewriteResult | null,
+    sourceText: string,
   ): Promise<TranscriptRecord>;
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;

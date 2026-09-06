@@ -19,7 +19,10 @@ if (runtimeData) {
 let app;
 try {
   // Explicit empty files prevent legacy migration from reading real user data.
-  await writeFile(join(data, "settings.json"), "{}");
+  await writeFile(
+    join(data, "settings.json"),
+    JSON.stringify({ magicEnabled: true, preloadMagicModel: true }),
+  );
   await writeFile(join(data, "history.json"), "[]");
   if (runtimeData) {
     const existing = JSON.parse(
@@ -68,6 +71,13 @@ try {
     diagnostics: await window.delulu.getDiagnostics(),
     status: await window.delulu.getStatus(),
   }));
+  assert.equal(
+    state.settings.magicEnabled,
+    false,
+    "Older default-on rewriting must migrate to opt-in",
+  );
+  assert.equal(state.settings.preloadMagicModel, false);
+  assert.equal(state.settings.workflowVersion, 1);
   assert.equal(state.settings.theme, "dark");
   assert.equal(state.settings.onboardingComplete, true);
   assert.equal(state.status.engine, runtimeData ? "unloaded" : "missing");
@@ -136,6 +146,68 @@ try {
       "Session correction stays private.",
     );
     assert.equal(exported.intendedText, records[0].intendedText);
+    if (process.argv.includes("--writing")) {
+      const rewritten = await page.evaluate(async (id) => {
+        await window.delulu.updateSettings({
+          customWords: [
+            {
+              id: "signature",
+              kind: "shortcut",
+              term: "my signature",
+              soundsLike: "",
+              replacement: "Best,\nBoran",
+              enabled: true,
+            },
+          ],
+        });
+        for (const preset of ["concise", "structured", "prompt"]) {
+          const check = await window.delulu.rewriteMagic({
+            text: "Please move the review to Thursday. my signature",
+            preset,
+            allowInferences: false,
+          });
+          if (
+            !check.text.includes("Thursday") ||
+            !check.text.includes("Best,\nBoran")
+          )
+            throw new Error(`Rewrite ${preset} lost a fact or shortcut`);
+        }
+        const result = await window.delulu.rewriteMagic({
+          text: "Please move the review to Thursday. my signature",
+          preset: "polish",
+          allowInferences: false,
+        });
+        await window.delulu.setTranscriptRewrite(
+          id,
+          result,
+          "Session correction stays private.",
+        );
+        return result;
+      }, records[0].id);
+      assert.ok(
+        rewritten.text.includes("Thursday"),
+        "Rewrite must preserve the day",
+      );
+      assert.ok(
+        rewritten.text.includes("Best,\nBoran"),
+        "Text shortcut must be byte-exact",
+      );
+      await page.evaluate(
+        async ({ id, text }) => {
+          await window.delulu.setTranscriptRewrite(id, null, text);
+        },
+        { id: records[0].id, text: rewritten.text },
+      );
+      const settings = await page.evaluate(() => window.delulu.getSettings());
+      assert.equal(
+        settings.magicEnabled,
+        false,
+        "Manual writing must not enable automatic rewriting",
+      );
+      console.log(
+        "Manual writing passed with automatic rewriting off, exact shortcut preservation, apply, and undo.",
+      );
+    }
     await page.evaluate((id) => window.delulu.deleteHistory(id), records[0].id);
     assert.equal(
       (await page.evaluate(() => window.delulu.getHistory())).length,

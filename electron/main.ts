@@ -220,9 +220,8 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
             enabled: !speechBusy,
             click: () => showMainWindow("models"),
           };
-  const magicAction: MenuItemConstructorOptions = !settings.magicEnabled
-    ? { label: "Enable Magic to load its model", enabled: false }
-    : magic.engine === "ready"
+  const magicAction: MenuItemConstructorOptions =
+    magic.engine === "ready"
       ? {
           label: "Unload Magic model",
           enabled: !magicBusy,
@@ -256,16 +255,15 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
     },
     { type: "separator" },
     {
-      label: `Magic · ${settings.magicEnabled ? engineLabel(magic.engine) : "Off"}`,
+      label: `Writing · ${engineLabel(magic.engine)}`,
       sublabel: magic.message,
       enabled: false,
     },
     magicAction,
     {
       type: "checkbox",
-      label: "Keep Magic model ready",
+      label: "Keep writing model ready",
       checked: settings.preloadMagicModel,
-      enabled: settings.magicEnabled,
       click: () =>
         patchTraySettings({ preloadMagicModel: !settings.preloadMagicModel }),
     },
@@ -714,6 +712,58 @@ function registerIpc(): void {
           ? applyTranscriptEdit(sessionRecord, version, correction)
           : null;
       if (!updated) throw new Error("Transcript not found");
+      sessionTranscripts.set(key, updated);
+      if (lastTranscript?.id === key) lastTranscript = updated;
+      rebuildTrayMenu();
+      return updated;
+    },
+  );
+  handle(
+    "history:setRewrite",
+    (_event, id: unknown, value: unknown, expected: unknown) => {
+      const key = validateText(id, 128);
+      const record = storage.findHistory(key) ?? sessionTranscripts.get(key);
+      if (!record) throw new Error("Transcript not found");
+      if (deliveredText(record) !== validateText(expected, 500_000))
+        throw new Error(
+          "This transcript changed while rewriting. Review the current text and try again.",
+        );
+      let updated: TranscriptRecord;
+      if (value === null) {
+        updated = {
+          ...record,
+          magicText: null,
+          magicModel: null,
+          magicPreset: null,
+          magicIncludedInferences: false,
+          magicProcessingTimeMs: 0,
+        };
+      } else {
+        if (!value || typeof value !== "object")
+          throw new Error("Invalid rewrite");
+        const rewrite = value as Record<string, unknown>;
+        const text = validateText(rewrite.text, 500_000).trim();
+        if (!text) throw new Error("A rewrite cannot be empty");
+        updated = {
+          ...record,
+          magicText: text,
+          magicPreset: ["polish", "concise", "structured", "prompt"].includes(
+            String(rewrite.preset),
+          )
+            ? (rewrite.preset as MagicPreset)
+            : null,
+          magicModel: ["qwen35Small", "qwen35Medium", "qwen35Large"].includes(
+            String(rewrite.model),
+          )
+            ? (rewrite.model as TranscriptRecord["magicModel"])
+            : null,
+          magicIncludedInferences: rewrite.includedInferences === true,
+          magicProcessingTimeMs: Number.isFinite(rewrite.processingTimeMs)
+            ? Math.max(0, Number(rewrite.processingTimeMs))
+            : 0,
+        };
+      }
+      if (storage.findHistory(key)) storage.replaceHistory(updated);
       sessionTranscripts.set(key, updated);
       if (lastTranscript?.id === key) lastTranscript = updated;
       rebuildTrayMenu();

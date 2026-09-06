@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from "./data";
-import { originalTranscriptText } from "./transcriptText";
+import { deliveredText, originalTranscriptText } from "./transcriptText";
 import type {
   AppSettings,
   AudioFileSelection,
@@ -217,10 +217,25 @@ export const previewApi: DeluluApi = {
       normalized && normalized !== originalTranscriptText(record, version)
         ? normalized
         : null;
+    record.magicText = null;
     const updated =
       version === "intended"
         ? { ...record, editedIntendedText: correction }
         : { ...record, editedVerbatimText: correction };
+    demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
+    return updated;
+  },
+  async setTranscriptRewrite(id, result, sourceText) {
+    const record = demoHistory.find((item) => item.id === id);
+    if (!record) throw new Error("Transcript not found");
+    if (deliveredText(record) !== sourceText)
+      throw new Error("Transcript changed while rewriting");
+    const updated = {
+      ...record,
+      magicText: result?.text ?? null,
+      magicModel: result?.model ?? null,
+      magicIncludedInferences: result?.includedInferences ?? false,
+    };
     demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
     return updated;
   },

@@ -43,17 +43,25 @@ Release the shortcut and Delulu Talks finishes the job. The native recording pil
 | Feature | What it does |
 | --- | --- |
 | **System dictation** | Hold-to-talk by default, optional press-to-toggle, tray controls, and desktop-owned shortcut remapping. |
-| **Two transcripts** | Produces a clean intended transcript alongside an exact verbatim view you can edit, restore, copy, or export. |
-| **Magic rewrites** | Turns rough speech or existing drafts into concise messages, polished notes, structured documents, and detailed prompts. |
+| **Two transcripts** | Native clean dictation by default. Optionally keep both clean and verbatim transcripts; originals remain available beside edits. |
+| **Magic rewrites** | Optional local transformations with preview, apply and undo beside each transcript. Automatic rewriting is off by default. |
 | **Native Wayland experience** | Uses XDG GlobalShortcuts, secure Remote Desktop paste, and a click-through layer-shell recording pill on supported desktops. |
 | **Speech Lab** | Imports audio or video for transcription, Verbatimize, forced alignment, word timelines, and SRT/VTT export. |
 | **Local by design** | Runs speech and writing models on your machine. There is no telemetry or cloud transcription. |
+
+### Corrections and text shortcuts
+
+Open **Settings → Personalization** or the shortcut on Controls. Corrections replace specific recognized text; text shortcuts expand a spoken trigger into an exact saved block. Each rule has a live text preview and conflicting triggers are rejected. Editing a transcript can suggest a correction to remember, with explicit confirmation.
+
+Speech output and timing stay untouched. Personalization creates a separate result, and exact shortcut blocks stay outside the writing model; only the surrounding text is rewritten. Failed automatic rewriting delivers the preserved transcript instead. Subtitle exports use original speech timing.
+
+Upgrading from an older release turns automatic rewriting and writing-model preloading off once, because earlier defaults did not establish an explicit choice. You can enable either independently afterward. Existing history and rules are retained. Old spelling-only entries are marked as needing a recognized phrase; historical transcripts cannot recover speech text already replaced by an older version.
 
 ## Controls on launch
 
 Version 0.7 opens directly into the dictation controls. Microphone, language, shortcut, model, transcript mode, writing style and delivery switches are immediately accessible. A latest-output inspector provides Delivered/Clean/Verbatim views, correction and export beside the controls.
 
-The interface uses ocean-blue and navy panels with light/dark/system themes. Settings is at the top of navigation. Writing, file transcription, model management, history and Wordbook share the same compact visual system. The application icon is a new wave-shaped D.
+The interface uses ocean-blue and navy panels with light/dark/system themes. Settings is at the top of navigation. Writing, file transcription, model management, history and personalization share the same compact visual system. The application icon is a new wave-shaped D.
 
 - **Configure quickly:** priority controls fit above the fold in compact desktop windows.
 - **Recover results:** paste the latest transcript, retry failed audio from memory, or discard it explicitly.
@@ -97,7 +105,7 @@ Supported installed packages check GitHub Releases for updates. Downloads are ex
 1. Start Delulu Talks and work through the short setup intro.
 2. Choose **Install engine**. A focused modal explains the Nyra model license and records acceptance before downloading anything.
 3. Focus any text field, hold the <kbd>Windows</kbd>/<kbd>Meta</kbd> key + <kbd>Z</kbd>, speak, then release.
-4. Optionally open **Magic**, install a Qwen model, and choose the rewrite style that should run in your shortcut pipeline.
+4. Dictate immediately with native clean output. Optionally open **Writing** to install Qwen, then use **Rewrite** beside any result. Automatic rewriting is a separate opt-in setting.
 
 The app manages its own isolated Python environment and model cache inside the platform application-data directory. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → Application offers repair and update controls.
 
@@ -133,7 +141,7 @@ Electron main process
 │   └── Qwen Magic runtime
 └── sandboxed React renderer
     ├── Dictation + Magic
-    ├── Speech Lab + History + Wordbook
+    ├── Audio files + History + Personalization
     └── Models + Settings + onboarding
 ```
 

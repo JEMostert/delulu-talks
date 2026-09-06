@@ -53,51 +53,6 @@ def emit(payload: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def active_vocabulary(values: Any) -> list[dict[str, Any]]:
-    if not isinstance(values, list):
-        return []
-    output: list[dict[str, Any]] = []
-    for value in values[:500]:
-        if not isinstance(value, dict) or not value.get("enabled", True):
-            continue
-        term = str(value.get("term", "")).strip()
-        if not term:
-            continue
-        output.append({
-            "term": term[:256],
-            "soundsLike": str(value.get("soundsLike", ""))[:1024],
-            "replacement": str(value.get("replacement", ""))[:4096],
-            "enabled": True,
-        })
-    return output
-
-
-def replacement_rules(vocabulary: list[dict[str, Any]]) -> dict[str, str]:
-    rules: dict[str, str] = {}
-    for entry in vocabulary:
-        term = entry["term"].strip()
-        replacement = entry.get("replacement", "").strip() or term
-        aliases = [value.strip() for value in entry.get("soundsLike", "").split(",")]
-        for alias in aliases:
-            if alias:
-                rules[alias.casefold()] = replacement
-        if replacement != term:
-            rules[term.casefold()] = replacement
-    return rules
-
-
-def apply_vocabulary(text: str, vocabulary: list[dict[str, Any]]) -> str:
-    rules = replacement_rules(vocabulary)
-    if not rules:
-        return text.strip()
-    sources = sorted(rules, key=len, reverse=True)
-    pattern = re.compile(
-        rf"(?<!\w)(?:{'|'.join(re.escape(source) for source in sources)})(?!\w)",
-        re.IGNORECASE,
-    )
-    return pattern.sub(lambda match: rules[match.group(0).casefold()], text).strip()
-
-
 def word_payload(word: Any) -> dict[str, Any]:
     if is_dataclass(word):
         value = asdict(word)
@@ -116,10 +71,10 @@ def word_payload(word: Any) -> dict[str, Any]:
     }
 
 
-def result_payload(result: Any, vocabulary: list[dict[str, Any]]) -> dict[str, Any]:
+def result_payload(result: Any) -> dict[str, Any]:
     words = getattr(result, "words", None) or []
     return {
-        "text": apply_vocabulary(str(getattr(result, "text", "")), vocabulary),
+        "text": str(getattr(result, "text", "")).strip(),
         "language": str(getattr(result, "language", "en")),
         "duration": float(getattr(result, "duration", 0.0) or 0.0),
         "processingTime": float(getattr(result, "processing_time", 0.0) or 0.0),
@@ -350,10 +305,7 @@ class Worker:
             generated = self.magic_model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.8,
-                top_k=20,
+                do_sample=False,
                 repetition_penalty=1.05,
                 use_cache=True,
             )
@@ -392,7 +344,6 @@ class Worker:
         if not Path(audio).is_file():
             raise FileNotFoundError("The selected audio file no longer exists")
         mode = str(request.get("mode", "dual"))
-        vocabulary = active_vocabulary(request.get("customWords"))
         kwargs = self.transcription_kwargs(request)
         speculative = bool(request.get("speculativeDecoding")) and self.backend == "ct2" and self.model_name == "large"
 
@@ -403,20 +354,18 @@ class Worker:
         if mode == "dual":
             if self.backend == "ct2":
                 first, second = model.transcribe_dual(audio, modes=("verbatim", "intended"), **kwargs)
-                verbatim = result_payload(first, vocabulary)
-                intended = result_payload(second, vocabulary)
+                verbatim = result_payload(first)
+                intended = result_payload(second)
             else:
-                verbatim = result_payload(model.transcribe(audio, mode="verbatim", **kwargs), vocabulary)
-                intended = result_payload(model.transcribe(audio, mode="intended", **kwargs), vocabulary)
+                verbatim = result_payload(model.transcribe(audio, mode="verbatim", **kwargs))
+                intended = result_payload(model.transcribe(audio, mode="intended", **kwargs))
         elif mode == "verbatim":
             verbatim = result_payload(
                 model.transcribe(audio, mode="verbatim", speculative_decoding=speculative, **kwargs),
-                vocabulary,
             )
         elif mode == "intended":
             intended = result_payload(
                 model.transcribe(audio, mode="intended", speculative_decoding=speculative, **kwargs),
-                vocabulary,
             )
         else:
             raise ValueError(f"Unsupported transcription mode: {mode}")
@@ -471,7 +420,7 @@ class Worker:
             language=str(request.get("language", "en")),
             word_timestamps=bool(request.get("wordTimestamps", True)),
         )
-        payload = result_payload(result, active_vocabulary(request.get("customWords")))
+        payload = result_payload(result)
         return {
             "mode": "verbatimize",
             "text": payload["text"],

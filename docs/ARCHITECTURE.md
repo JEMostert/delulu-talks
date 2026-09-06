@@ -2,7 +2,7 @@
 
 ## Product contract
 
-A local desktop voice companion. A global shortcut records in the renderer; Electron owns transcription, optional Magic rewriting, and delivery to the previous app. The main window provides recent results, writing tools, Wordbook, file transcription, and maintenance. Linux/Wayland is the reference desktop.
+A local desktop voice companion. A global shortcut records in the renderer; Electron owns transcription, optional Magic rewriting, and delivery to the previous app. The main window provides recent results, writing tools, personalization, file transcription, and maintenance. Linux/Wayland is the reference desktop.
 
 ## Boundaries
 
@@ -32,13 +32,13 @@ The native GTK4 overlay keeps a dark ocean-blue palette for visibility over arbi
 
 Settings and persisted history use temporary-file replacement with restricted permissions. In-memory state is updated only after a successful write. Settings updates are partial patches, serialized in both the workspace and main process to prevent stale whole-object saves from undoing unrelated preferences.
 
-Original clean/verbatim speech is preserved beside user corrections and Magic output. Records remember the delivered transcript version. Controls, History, exports and paste-last share the text selection helpers.
+The Python worker returns unmodified clean/verbatim speech and timings. `src/personalization.ts` creates a separate `personalizedText` field in Electron; Unicode whole-phrase matching never cascades. Original clean/verbatim speech is preserved beside user corrections and Magic output. Records remember the delivered transcript version. Controls, History, exports and paste-last share the text selection helpers.
 
 When history saving is disabled, newly produced records remain in a bounded session map for review, corrections and exports; they are not written to history. Existing saved history remains until explicitly cleared. Deletion clears both saved and session records, including paste-last references.
 
 Temporary microphone and FFmpeg WAV files are deleted after success or failure. A failed microphone submission can remain in memory for retry during the current process. Retry reuses it; Discard releases it; a later successful transcription replaces it. It is not recoverable after closing or crashing the app. Imported source audio is never modified.
 
-Magic is optional in the dictation pipeline. Failed rewriting falls back to the speech transcript. A preserve-facts prompt is an instruction to the model, not a guarantee; users can inspect source and output. Silence produces no history entry, clipboard change or paste.
+Native intended-only transcription is the default. Manual writing is independent of the automatic-writing toggle and model residency. Manual rewrites preview before apply and validate the record has not changed in the meantime. Exact shortcut blocks remain outside the model; surrounding text fragments are rewritten in place and rejoined with the unchanged blocks. Editing source invalidates an old rewrite; undoing a rewrite reveals personalized or edited speech again. Magic is optional in the dictation pipeline. Failed rewriting falls back to the speech transcript. A preserve-facts prompt is an instruction to the model, not a guarantee; users can inspect source and output. Silence produces no history entry, clipboard change or paste.
 
 ## Updates
 
@@ -47,7 +47,7 @@ App updates are explicit downloads. The updater disables automatic installation 
 ## Verification
 
 - `bun test`: state, storage normalization, delivery/retry, export, portal, worker transport, update and queue regressions.
-- `bun run test:e2e`: browser navigation/layout checks in both themes, editable Wordbook persistence, transcript corrections, modal focus, draft retention and real browser PCM capture using a synthetic microphone.
+- `bun run test:e2e`: browser navigation/layout checks in both themes, editable personalization persistence, transcript corrections, modal focus, draft retention and real browser PCM capture using a synthetic microphone.
 - `bun run test:desktop`: builds and launches Electron with isolated temporary user data. Checks sandboxed preload, settings IPC, diagnostics and setup dialogs without registering global shortcuts or changing login/desktop integration.
 - `node scripts/desktop-smoke.mjs "/path/to/existing/user-data"`: opt-in real Electron inference using an already licensed runtime and cached models, with temporary settings/history and no clipboard/paste; checks correction/export/deletion with history saving disabled.
 - `scripts/runtime-smoke.py`: opt-in offline inference using the committed audio sample and already-downloaded models. Reports timings and output sizes without printing transcript contents.

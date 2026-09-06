@@ -1,9 +1,12 @@
+import {
+  TranscriptCard,
+  type TranscriptActions,
+} from "../components/TranscriptCard";
 import { useState } from "react";
 import {
   AlignLeft,
   Check,
   Clock3,
-  Copy,
   FileAudio,
   Fingerprint,
   LoaderCircle,
@@ -55,7 +58,10 @@ export function LabPage({
   busy,
   onResult,
   onToast,
-}: {
+  history,
+  ...actions
+}: TranscriptActions & {
+  history: TranscriptRecord[];
   settings: AppSettings;
   busy: boolean;
   onResult: (record: TranscriptRecord) => void;
@@ -69,7 +75,8 @@ export function LabPage({
   );
   const [referenceText, setReferenceText] = useState("");
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<TranscriptRecord | null>(null);
+  const [resultId, setResultId] = useState<string | null>(null);
+  const result = history.find((record) => record.id === resultId);
   const [view, setView] = useState<"intended" | "verbatim">("intended");
 
   async function choose() {
@@ -77,7 +84,7 @@ export function LabPage({
       const selected = await bridge.chooseAudioFile();
       if (selected) {
         setFile(selected);
-        setResult(null);
+        setResultId(null);
         setError(null);
       }
     } catch (reason) {
@@ -96,7 +103,7 @@ export function LabPage({
         referenceText,
         mode,
       });
-      setResult(record);
+      setResultId(record.id);
       setView(record.intendedText ? "intended" : "verbatim");
       onResult(record);
       onToast(
@@ -112,10 +119,6 @@ export function LabPage({
   }
 
   const needsReference = operation !== "transcribe";
-  const visibleText =
-    view === "intended"
-      ? result?.intendedText || result?.text
-      : result?.verbatimText || result?.text;
 
   return (
     <div className="content-stack lab-page">
@@ -145,7 +148,7 @@ export function LabPage({
                 aria-pressed={operation === id}
                 onClick={() => {
                   setOperation(id);
-                  setResult(null);
+                  setResultId(null);
                 }}
               >
                 <Icon />
@@ -197,7 +200,7 @@ export function LabPage({
                   aria-pressed={mode === "intended"}
                   onClick={() => setMode("intended")}
                 >
-                  Intended
+                  Clean
                 </button>
                 <button
                   className={mode === "verbatim" ? "active" : ""}
@@ -264,52 +267,29 @@ export function LabPage({
             </div>
           ) : (
             <>
-              <div className="result-heading">
-                <div>
-                  <p className="eyebrow">RESULT · {result.mode}</p>
-                  <h3>{result.sourceName}</h3>
-                </div>
-                <button
-                  className="icon-button"
-                  aria-label="Copy Speech Lab result"
-                  onClick={() =>
-                    void bridge
-                      .copyText(visibleText ?? "")
-                      .then(() => onToast("Copied to clipboard"))
-                      .catch((reason) => setError(String(reason)))
-                  }
-                >
-                  <Copy />
-                </button>
-              </div>
-              {result.intendedText && result.verbatimText && (
-                <div
-                  className="segmented result-tabs"
-                  role="group"
-                  aria-label="Result version"
-                >
-                  <button
-                    className={view === "intended" ? "active" : ""}
-                    aria-pressed={view === "intended"}
-                    onClick={() => setView("intended")}
-                  >
-                    Intended
-                  </button>
-                  <button
-                    className={view === "verbatim" ? "active" : ""}
-                    aria-pressed={view === "verbatim"}
-                    onClick={() => setView("verbatim")}
-                  >
-                    Verbatim
-                  </button>
-                </div>
-              )}
+              <TranscriptCard
+                key={result.id}
+                record={result}
+                inspector
+                {...actions}
+              />
               <div
-                className="result-copy"
-                role="region"
-                aria-label={`${view} result`}
+                className="segmented"
+                role="group"
+                aria-label="Timing source"
               >
-                {visibleText}
+                <button
+                  className={view === "intended" ? "active" : ""}
+                  onClick={() => setView("intended")}
+                >
+                  Clean timing
+                </button>
+                <button
+                  className={view === "verbatim" ? "active" : ""}
+                  onClick={() => setView("verbatim")}
+                >
+                  Verbatim timing
+                </button>
               </div>
               <div className="insight-strip">
                 <span>

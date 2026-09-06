@@ -21,7 +21,6 @@ test("all pages fit desktop and compact windows in both themes", async ({
         "Controls",
         "History",
         "Writing",
-        "Wordbook",
         "Audio files",
         "Models",
         "Settings",
@@ -58,30 +57,37 @@ test("Magic drafts survive navigation and can be cleared", async ({ page }) => {
   ).toBeEmpty();
 });
 
-test("Wordbook adds, edits, persists and removes a voice snippet", async ({
+test("text shortcuts can be previewed, edited, persisted and removed", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Wordbook", exact: true }).click();
-  await page.getByRole("button", { name: "Add a word" }).click();
-  await page.getByRole("textbox", { name: "Correct word" }).fill("signoff");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Personalization", exact: true }).click();
+  await page.getByRole("tab", { name: "Text shortcuts", exact: true }).click();
+  await page.getByRole("button", { name: "Add shortcut" }).click();
+  await page.getByRole("textbox", { name: "Trigger phrase" }).fill("signoff");
   await page
     .getByRole("textbox", { name: "Expanded output" })
     .fill("Thanks for your time!");
-  await page.getByRole("button", { name: "Save word", exact: true }).click();
-  await expect(
-    page.getByText("Thanks for your time!", { exact: true }),
-  ).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Test phrase" })
+    .fill("Here is my signoff");
+  await expect(page.getByLabel("Rule preview")).toHaveText(
+    "Here is my Thanks for your time!",
+  );
+  await page.getByRole("button", { name: "Save rule", exact: true }).click();
   await page.getByRole("button", { name: "Edit signoff" }).click();
   await page
     .getByRole("textbox", { name: "Expanded output" })
     .fill("See you soon!");
-  await page.getByRole("button", { name: "Save word", exact: true }).click();
+  await page.getByRole("button", { name: "Save rule", exact: true }).click();
   await page.reload();
-  await page.getByRole("button", { name: "Wordbook", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Personalization", exact: true }).click();
+  await page.getByRole("tab", { name: "Text shortcuts", exact: true }).click();
   await expect(page.getByText("See you soon!", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Delete signoff" }).click();
-  await page.getByRole("button", { name: "Delete word", exact: true }).click();
-  await expect(page.getByText("No saved words")).toBeVisible();
+  await page.getByRole("button", { name: "Delete rule", exact: true }).click();
+  await expect(page.getByText("No text shortcuts yet")).toBeVisible();
 });
 
 test("corrections preserve original speech and can be restored", async ({
@@ -105,8 +111,9 @@ test("corrections preserve original speech and can be restored", async ({
 test("modal contains focus and closes with Escape without saving", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Wordbook", exact: true }).click();
-  await page.getByRole("button", { name: "Add a word" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Personalization", exact: true }).click();
+  await page.getByRole("button", { name: "Add correction" }).click();
   for (let i = 0; i < 9; i++) await page.keyboard.press("Tab");
   expect(
     await page
@@ -115,7 +122,9 @@ test("modal contains focus and closes with Escape without saving", async ({
   ).toBe(true);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Add a word" })).toBeFocused();
+  await expect(
+    page.getByRole("button", { name: "Add correction" }),
+  ).toBeFocused();
 });
 
 test("preview explicitly reports unavailable native operations", async ({
@@ -226,8 +235,6 @@ test("startup exposes priority settings above the fold in compact and desktop wi
       ["combobox", "Speech model"],
       ["combobox", "Speech output"],
       ["combobox", "Version to deliver"],
-      ["combobox", "Dictation writing style"],
-      ["combobox", "Writing model"],
       ["switch", "Rewrite after dictation"],
       ["switch", "Paste automatically"],
       ["switch", "Copy to clipboard"],
@@ -252,9 +259,18 @@ test("startup exposes priority settings above the fold in compact and desktop wi
   await expect(page.locator(".record-command")).toHaveCount(1);
 });
 
-test("quick configuration persists and writing style stays independent of its enable switch", async ({
+test("native dictation defaults persist and delivery follows the selected output", async ({
   page,
 }) => {
+  await expect(
+    page.getByRole("switch", { name: "Rewrite after dictation", exact: true }),
+  ).toHaveAttribute("aria-checked", "false");
+  await expect(
+    page.getByRole("combobox", { name: "Speech output", exact: true }),
+  ).toHaveValue("intended");
+  await expect(
+    page.getByRole("combobox", { name: "Version to deliver", exact: true }),
+  ).toBeDisabled();
   await page
     .getByRole("combobox", { name: "Dictation language", exact: true })
     .selectOption("fr");
@@ -262,30 +278,11 @@ test("quick configuration persists and writing style stays independent of its en
     .getByRole("combobox", { name: "Speech model", exact: true })
     .selectOption("crisperTurbo");
   await page
-    .getByRole("combobox", { name: "Version to deliver", exact: true })
+    .getByRole("combobox", { name: "Speech output", exact: true })
     .selectOption("verbatim");
-  await page
-    .getByRole("combobox", { name: "Dictation writing style", exact: true })
-    .selectOption("concise");
-  await page
-    .getByRole("switch", { name: "Rewrite after dictation", exact: true })
-    .click();
   await expect(
-    page.getByRole("combobox", {
-      name: "Dictation writing style",
-      exact: true,
-    }),
-  ).toBeDisabled();
-  for (const name of [
-    "Paste automatically",
-    "Copy to clipboard",
-    "Save history",
-  ]) {
-    await page.getByRole("switch", { name, exact: true }).click();
-    await expect(
-      page.getByRole("switch", { name, exact: true }),
-    ).toHaveAttribute("aria-checked", "false");
-  }
+    page.getByRole("combobox", { name: "Version to deliver", exact: true }),
+  ).toHaveValue("verbatim");
   await page.reload();
   await expect(
     page.getByRole("combobox", { name: "Dictation language", exact: true }),
@@ -297,21 +294,148 @@ test("quick configuration persists and writing style stays independent of its en
     page.getByRole("combobox", { name: "Version to deliver", exact: true }),
   ).toHaveValue("verbatim");
   await expect(
-    page.getByRole("switch", { name: "Save history", exact: true }),
+    page.getByRole("switch", { name: "Rewrite after dictation", exact: true }),
   ).toHaveAttribute("aria-checked", "false");
+});
+
+test("a transcript edit suggests an explicit correction rule and rejects conflicting triggers", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Clean", exact: true }).click();
+  const original = await page.locator(".transcript-original").textContent();
+  const firstWord = original!.split(" ")[0];
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page
-    .getByRole("switch", { name: "Rewrite after dictation", exact: true })
+    .getByRole("textbox", { name: "Correct transcript" })
+    .fill(original!.replace(firstWord, "Delulu"));
+  await page
+    .getByRole("button", { name: "Save correction", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Review rule", exact: true }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Recognized text", exact: true }),
+  ).toHaveValue(firstWord);
+  await page
+    .getByRole("button", { name: "Save correction rule", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Personalization", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Delulu", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Add correction" }).click();
+  await page
+    .getByRole("textbox", { name: "Recognized text", exact: true })
+    .fill(firstWord);
+  await page
+    .getByRole("textbox", { name: "Replace with", exact: true })
+    .fill("Another");
+  await expect(page.getByRole("alert")).toContainText("already used");
+  await expect(
+    page.getByRole("button", { name: "Save rule", exact: true }),
+  ).toBeDisabled();
+});
+
+test("manual rewrite previews, applies and undoes while automatic rewriting stays off", async ({
+  page,
+}) => {
+  await page.evaluate(async () => {
+    const { bridge } = await import(/* @vite-ignore */ "/src/bridge.ts");
+    bridge.rewriteMagic = async (request: { text: string }) => ({
+      text: "A deliberately shorter draft.",
+      model: "qwen35Medium",
+      processingTimeMs: 10,
+      inputCharacters: request.text.length,
+      outputCharacters: 29,
+      includedInferences: false,
+    });
+  });
+  // Re-render actions with the test inference stub; production preview never pretends to infer.
+  await page.getByRole("button", { name: "Switch color theme" }).click();
+  await page.getByRole("button", { name: "Rewrite", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Generate preview", exact: true })
     .click();
   await expect(
-    page.getByRole("combobox", {
-      name: "Dictation writing style",
-      exact: true,
-    }),
-  ).toHaveValue("concise");
+    page.getByRole("textbox", { name: "Rewrite preview" }),
+  ).toHaveValue("A deliberately shorter draft.");
+  await page
+    .getByRole("button", { name: "Use this rewrite", exact: true })
+    .click();
+  await expect(page.locator(".transcript-original")).toHaveText(
+    "A deliberately shorter draft.",
+  );
+  await page.getByRole("button", { name: "Undo rewrite", exact: true }).click();
+  await expect(page.locator(".transcript-original")).not.toHaveText(
+    "A deliberately shorter draft.",
+  );
   await expect(
-    page.getByRole("combobox", {
-      name: "Dictation writing style",
-      exact: true,
-    }),
+    page.getByRole("switch", { name: "Rewrite after dictation", exact: true }),
+  ).toHaveAttribute("aria-checked", "false");
+});
+
+test("rewrite failure preserves source and exposes a retryable error", async ({
+  page,
+}) => {
+  await page.evaluate(async () => {
+    const { bridge } = await import(/* @vite-ignore */ "/src/bridge.ts");
+    bridge.rewriteMagic = async () => {
+      throw new Error("Writing model stopped unexpectedly.");
+    };
+  });
+  await page.getByRole("button", { name: "Switch color theme" }).click();
+  const original = await page.locator(".transcript-original").textContent();
+  await page.getByRole("button", { name: "Rewrite", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Generate preview", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Writing model stopped unexpectedly",
+  );
+  await expect(
+    page.getByRole("button", { name: "Generate preview", exact: true }),
   ).toBeEnabled();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.locator(".transcript-original")).toHaveText(original!);
+});
+
+test("imported recordings use the shared correction and rewrite review", async ({
+  page,
+}) => {
+  await page.evaluate(async () => {
+    const { bridge } = await import(/* @vite-ignore */ "/src/bridge.ts");
+    bridge.chooseAudioFile = async () => ({
+      path: "/fixture.wav",
+      name: "fixture.wav",
+      size: 1024,
+    });
+    bridge.runLab = async () => ({
+      ...(await bridge.getHistory())[0],
+      id: "imported-fixture",
+      source: "file",
+      sourceName: "fixture.wav",
+      magicText: null,
+    });
+  });
+  await page.getByRole("button", { name: "Audio files", exact: true }).click();
+  await page.getByRole("button", { name: /Choose audio or video/ }).click();
+  await page.locator(".lab-run").click();
+  await expect(
+    page.locator(".lab-result").getByText("fixture.wav", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".lab-result")
+      .getByRole("button", { name: "Edit", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".lab-result")
+      .getByRole("button", { name: "Rewrite", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".lab-result")
+      .getByRole("button", { name: "Remember correction", exact: true }),
+  ).toBeVisible();
 });

@@ -3,7 +3,7 @@ import type {
   TranscriptRecord,
   WordTimestamp,
 } from "../../src/types";
-import { transcriptText } from "../../src/transcriptText";
+import { deliveredText, transcriptText } from "../../src/transcriptText";
 
 const fillerPattern = /\[(?:um|uh|erm|hmm)\]|\b(?:um+|uh+|erm+|hmm+)\b/giu;
 const vocalPattern =
@@ -85,8 +85,9 @@ export function exportRecord(
         : hasVerbatim && !hasIntended
           ? verbatim
           : intended || verbatim;
-    return record.magicText
-      ? `${record.magicText.trim()}\n\n--- Source transcript ---\n\n${dual.trim()}\n`
+    const output = deliveredText(record);
+    return record.magicText || (record.personalizedText && output !== intended)
+      ? `${output.trim()}\n\n--- Source transcript ---\n\n${dual.trim()}\n`
       : `${dual.trim()}\n`;
   }
 

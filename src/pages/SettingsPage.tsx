@@ -1,3 +1,4 @@
+import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
 import {
   Clipboard,
@@ -84,6 +85,7 @@ export function SettingsPage(props: Props) {
       <div className="page-tabs" role="tablist" aria-label="Settings sections">
         {[
           ["general", "Capture & delivery"],
+          ["personalization", "Personalization"],
           ["writing", "Writing"],
           ["advanced", "Runtime"],
           ["maintenance", "Application"],
@@ -100,6 +102,13 @@ export function SettingsPage(props: Props) {
         ))}
         <span>{saving ? "Saving…" : "Changes save automatically"}</span>
       </div>
+      {tab === "personalization" && (
+        <VocabularyPage
+          words={s.customWords}
+          saving={saving}
+          onChange={(customWords) => onSave({ customWords })}
+        />
+      )}
       {tab === "general" && (
         <>
           <section className="settings-group">
@@ -136,6 +145,61 @@ export function SettingsPage(props: Props) {
                     {device.label}
                   </option>
                 ))}
+              </select>
+            </SettingRow>
+            <SettingRow title="Language">
+              <select
+                aria-label="Language"
+                value={s.language}
+                disabled={saving || busy}
+                onChange={(e) => save({ language: e.target.value })}
+              >
+                {LANGUAGES.map(([code, label]) => (
+                  <option key={code} value={code}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </SettingRow>
+            <SettingRow
+              title="Speech output"
+              description="Clean removes disfluencies. Verbatim keeps what you said. Both keeps the two layers."
+            >
+              <select
+                aria-label="Speech output"
+                value={s.transcriptionMode}
+                disabled={saving}
+                onChange={(e) =>
+                  save({
+                    transcriptionMode: e.target
+                      .value as AppSettings["transcriptionMode"],
+                    pasteVersion:
+                      e.target.value === "verbatim" ? "verbatim" : "intended",
+                  })
+                }
+              >
+                <option value="dual">Clean + verbatim</option>
+                <option value="intended">Clean only</option>
+                <option value="verbatim">Verbatim only</option>
+              </select>
+            </SettingRow>
+            <SettingRow title="Version to deliver">
+              <select
+                aria-label="Version to deliver"
+                value={
+                  s.transcriptionMode === "dual"
+                    ? s.pasteVersion
+                    : s.transcriptionMode
+                }
+                disabled={saving || s.transcriptionMode !== "dual"}
+                onChange={(e) =>
+                  save({
+                    pasteVersion: e.target.value as AppSettings["pasteVersion"],
+                  })
+                }
+              >
+                <option value="intended">Clean</option>
+                <option value="verbatim">Verbatim</option>
               </select>
             </SettingRow>
             <SettingRow
@@ -269,64 +333,18 @@ export function SettingsPage(props: Props) {
       {tab === "writing" && (
         <section className="settings-group">
           <div className="group-heading">
-            <h3>Transcription & writing</h3>
-            <p>Choose how your speech becomes writing.</p>
+            <h3>Optional automatic rewriting</h3>
+            <p>
+              Native clean dictation works without this. You can always rewrite
+              individual results on demand.
+            </p>
           </div>
-          <SettingRow title="Language">
-            <select
-              aria-label="Language"
-              value={s.language}
-              disabled={saving}
-              onChange={(e) => save({ language: e.target.value })}
-            >
-              {LANGUAGES.map(([code, label]) => (
-                <option key={code} value={code}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </SettingRow>
-          <SettingRow
-            title="Speech output"
-            description="Clean removes disfluencies. Verbatim keeps what you said. Both keeps the two layers."
-          >
-            <select
-              aria-label="Speech output"
-              value={s.transcriptionMode}
-              disabled={saving}
-              onChange={(e) =>
-                save({
-                  transcriptionMode: e.target
-                    .value as AppSettings["transcriptionMode"],
-                })
-              }
-            >
-              <option value="dual">Clean + verbatim</option>
-              <option value="intended">Clean only</option>
-              <option value="verbatim">Verbatim only</option>
-            </select>
-          </SettingRow>
-          <SettingRow title="Version to deliver">
-            <select
-              aria-label="Version to deliver"
-              value={s.pasteVersion}
-              disabled={saving}
-              onChange={(e) =>
-                save({
-                  pasteVersion: e.target.value as AppSettings["pasteVersion"],
-                })
-              }
-            >
-              <option value="intended">Clean</option>
-              <option value="verbatim">Verbatim</option>
-            </select>
-          </SettingRow>
           <SettingRow
             icon={Sparkles}
-            title="Magic for dictation"
+            title="Rewrite after dictation"
             description="Polish each result through a second local model before delivery."
           >
-            {toggle("magicEnabled", "Magic for dictation", busy)}
+            {toggle("magicEnabled", "Rewrite after dictation", busy)}
           </SettingRow>
           <SettingRow title="Writing style">
             <select
@@ -350,12 +368,6 @@ export function SettingsPage(props: Props) {
             description="Let Magic suggest additional detail. Review the result before sending it."
           >
             {toggle("magicAllowInferences", "Allow added assumptions")}
-          </SettingRow>
-          <SettingRow
-            title="Word timestamps"
-            description="Needed for timelines and subtitle exports."
-          >
-            {toggle("wordTimestamps", "Word timestamps")}
           </SettingRow>
         </section>
       )}
@@ -435,6 +447,12 @@ export function SettingsPage(props: Props) {
                 ))}
               </select>
             </SettingRow>
+            <SettingRow
+              title="Word timestamps"
+              description="Needed for timelines and subtitle exports."
+            >
+              {toggle("wordTimestamps", "Word timestamps")}
+            </SettingRow>{" "}
             <SettingRow
               title="Speculative decoding"
               description="Use Turbo as a draft for supported Large-model runs."
@@ -614,7 +632,7 @@ export function SettingsPage(props: Props) {
               <div className="inline-control">
                 <button
                   className="secondary-button"
-                  disabled={busy || !s.magicEnabled}
+                  disabled={busy}
                   onClick={props.onSetupMagic}
                 >
                   Install / repair
@@ -630,11 +648,7 @@ export function SettingsPage(props: Props) {
                 ) : (
                   <button
                     className="tool-button"
-                    disabled={
-                      busy ||
-                      !s.magicEnabled ||
-                      magicStatus.engine !== "unloaded"
-                    }
+                    disabled={busy || magicStatus.engine !== "unloaded"}
                     onClick={props.onLoadMagic}
                   >
                     Load

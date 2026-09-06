@@ -1640,3 +1640,79 @@
     grid-column: 1/-1;
   }
 }
+
+.personalization-summary {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+.personalization-summary p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+  line-height: 1.5;
+}
+.personalization-summary .secondary-button {
+  justify-content: space-between;
+  font-size: 12px;
+}
+.rewrite-options,
+.rewrite-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.rewrite-comparison textarea {
+  min-height: 200px;
+  resize: vertical;
+}
+.rewrite-setup,
+.rule-test,
+.correction-suggestion {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin-block: 12px;
+}
+.rule-test output {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.correction-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.correction-suggestion span {
+  flex: 1;
+  min-width: 160px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .rewrite-options,
+  .rewrite-comparison {
+    grid-template-columns: 1fr;
+  }
+}
+
+.modal:has(.rewrite-comparison) {
+  width: min(860px, calc(100vw - 40px));
+}
+
+.rewrite-options {
+  align-items: end;
+}
+.rewrite-comparison {
+  margin-block: 12px 16px;
+}
+.rule-test output {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 5px;
+  background: var(--surface-soft);
+}

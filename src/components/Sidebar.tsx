@@ -1,6 +1,5 @@
 import {
   AudioLines,
-  BookOpenText,
   Clock3,
   Cpu,
   Settings2,
@@ -22,7 +21,6 @@ const groups = [
     items: [
       { id: "magic", label: "Writing", icon: WandSparkles },
       { id: "history", label: "History", icon: Clock3 },
-      { id: "vocabulary", label: "Wordbook", icon: BookOpenText },
       { id: "lab", label: "Audio files", icon: AudioLines },
     ],
   },
@@ -67,8 +65,16 @@ export function Sidebar({
             {group.items.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
-                className={page === id ? "active" : ""}
-                aria-current={page === id ? "page" : undefined}
+                className={
+                  page === id || (page === "vocabulary" && id === "settings")
+                    ? "active"
+                    : ""
+                }
+                aria-current={
+                  page === id || (page === "vocabulary" && id === "settings")
+                    ? "page"
+                    : undefined
+                }
                 title={label}
                 onClick={() => onNavigate(id)}
               >

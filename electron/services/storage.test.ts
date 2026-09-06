@@ -25,7 +25,7 @@ describe("settings migration", () => {
       autoPaste: false,
     });
     expect(settings.model).toBe("crisperMedium");
-    expect(settings.transcriptionMode).toBe("dual");
+    expect(settings.transcriptionMode).toBe("intended");
     expect(settings.language).toBe("en");
     expect(settings.autoPaste).toBeFalse();
     expect(settings.shortcutMode).toBe("hold");
@@ -52,6 +52,7 @@ describe("settings migration", () => {
     });
     expect(settings.customWords).toEqual([
       {
+        kind: "correction",
         id: "x",
         term: "Nyra",
         soundsLike: "nira",

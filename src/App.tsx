@@ -1,3 +1,4 @@
+import { ruleConflict, ruleKind } from "./personalization";
 import { useEffect, useState } from "react";
 import {
   Check,
@@ -33,7 +34,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
   },
   magic: { title: "Writing", subtitle: "Rewrite text with your local model" },
   vocabulary: {
-    title: "Wordbook",
+    title: "Personalization",
     subtitle: "Corrections and voice shortcuts",
   },
   lab: {
@@ -72,12 +73,24 @@ function App() {
   const onRecord = run(() => bridge.toggleDictation());
   const remember = (word: CustomWord) => {
     if (w.settings.customWords.length >= 500) {
-      w.setError("Your Wordbook is full. Remove a word before adding another.");
-      return Promise.resolve(false);
+      return Promise.reject(
+        new Error(
+          "You have 500 saved rules. Remove one before adding another.",
+        ),
+      );
     }
     const existing = w.settings.customWords.find(
-      (item) => item.term.toLowerCase() === word.term.toLowerCase(),
+      (item) =>
+        ruleKind(item) === "correction" &&
+        item.term.toLowerCase() === word.term.toLowerCase(),
     );
+    const conflict = ruleConflict(
+      { ...word, id: existing?.id ?? word.id },
+      w.settings.customWords,
+    );
+    if (conflict) {
+      return Promise.reject(new Error(conflict));
+    }
     return w.saveSettings(
       {
         customWords: existing
@@ -100,11 +113,32 @@ function App() {
             )
           : [word, ...w.settings.customWords],
       },
-      "Word remembered",
+      "Correction remembered",
     );
   };
   const transcriptActions = {
     onCopy: w.copy,
+    onRewrite: bridge.rewriteMagic,
+    onRewriteSetup: () => w.setPage("magic"),
+    rewriteStatus: w.magicStatus,
+    onSetRewrite: async (
+      id: string,
+      result: import("./types").MagicRewriteResult | null,
+      sourceText: string,
+    ) =>
+      w.action(
+        async () => {
+          const record = await bridge.setTranscriptRewrite(
+            id,
+            result,
+            sourceText,
+          );
+          w.setHistory((items) =>
+            items.map((item) => (item.id === id ? record : item)),
+          );
+        },
+        result ? "Rewrite applied" : "Rewrite undone",
+      ),
     onUpdateTranscript: w.updateTranscript,
     onRemember: remember,
     onDelete: (id: string) => {
@@ -348,6 +382,8 @@ function App() {
               {(visited.has("lab") || w.page === "lab") && (
                 <div hidden={w.page !== "lab"}>
                   <LabPage
+                    {...transcriptActions}
+                    history={w.history}
                     settings={w.settings}
                     busy={busy}
                     onResult={w.receiveTranscript}
@@ -383,7 +419,7 @@ function App() {
                     words={w.settings.customWords}
                     saving={w.saving}
                     onChange={(customWords) =>
-                      w.saveSettings({ customWords }, "Wordbook saved")
+                      w.saveSettings({ customWords }, "Rules saved")
                     }
                   />
                 </div>

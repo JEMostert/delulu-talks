@@ -7,9 +7,8 @@ import {
   Keyboard,
   Mic,
   Settings2,
-  WandSparkles,
 } from "lucide-react";
-import { LANGUAGES, MODELS, MAGIC_MODELS } from "../data";
+import { LANGUAGES, MODELS } from "../data";
 import {
   TranscriptCard,
   type TranscriptActions,
@@ -45,7 +44,6 @@ function ControlField({
 export function HomePage({
   settings: s,
   status,
-  magicStatus,
   shortcutStatus,
   devices,
   history,
@@ -244,6 +242,8 @@ export function HomePage({
                     save({
                       transcriptionMode: e.target
                         .value as AppSettings["transcriptionMode"],
+                      pasteVersion:
+                        e.target.value === "verbatim" ? "verbatim" : "intended",
                     })
                   }
                 >
@@ -255,8 +255,12 @@ export function HomePage({
               <ControlField label="Deliver">
                 <select
                   aria-label="Version to deliver"
-                  value={s.pasteVersion}
-                  disabled={saving || busy}
+                  value={
+                    s.transcriptionMode === "dual"
+                      ? s.pasteVersion
+                      : s.transcriptionMode
+                  }
+                  disabled={saving || busy || s.transcriptionMode !== "dual"}
                   onChange={(e) =>
                     save({
                       pasteVersion: e.target
@@ -285,13 +289,31 @@ export function HomePage({
           </section>
           <section className="control-panel" aria-labelledby="writing-heading">
             <header>
-              <WandSparkles />
-              <h2 id="writing-heading">Writing</h2>
+              <Settings2 />
+              <h2 id="writing-heading">Personalization</h2>
               <span className="section-number">03</span>
             </header>
-            <div className="control-fields">
-              <div className="quick-toggle wide">
-                <span>Rewrite after dictation</span>
+            <div className="personalization-summary">
+              <p>Correct names and insert saved text in clean results.</p>
+              <button
+                className="secondary-button"
+                onClick={() => onNavigate("vocabulary")}
+              >
+                Corrections & text shortcuts <ArrowUpRight />
+              </button>
+              <span className="caption">
+                {s.customWords.filter((word) => word.enabled).length} enabled
+                rules
+              </span>
+              <div className="quick-toggle">
+                <span>
+                  Rewrite after dictation
+                  <small>
+                    {s.magicEnabled
+                      ? "Automatic rewriting enabled"
+                      : "Off · rewrite any result on demand"}
+                  </small>
+                </span>
                 <Toggle
                   label="Rewrite after dictation"
                   value={s.magicEnabled}
@@ -299,56 +321,14 @@ export function HomePage({
                   onChange={() => save({ magicEnabled: !s.magicEnabled })}
                 />
               </div>
-              <ControlField label="Style">
-                <select
-                  aria-label="Dictation writing style"
-                  value={s.magicPreset}
-                  disabled={saving || busy || !s.magicEnabled}
-                  onChange={(e) =>
-                    save({
-                      magicPreset: e.target.value as AppSettings["magicPreset"],
-                    })
-                  }
-                >
-                  <option value="polish">Polish</option>
-                  <option value="concise">Concise</option>
-                  <option value="structured">Structured</option>
-                  <option value="prompt">Prompt</option>
-                </select>
-              </ControlField>
-              <ControlField label="Writing model">
-                <select
-                  aria-label="Writing model"
-                  value={s.magicModel}
-                  disabled={saving || busy || !s.magicEnabled}
-                  onChange={(e) =>
-                    save({
-                      magicModel: e.target.value as AppSettings["magicModel"],
-                    })
-                  }
-                >
-                  {MAGIC_MODELS.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
-                  ))}
-                </select>
-              </ControlField>
-              <div className="engine-line wide">
-                <span
-                  className={`engine-state ${s.magicEnabled && magicStatus.engine === "ready" ? "ready" : ""}`}
-                >
-                  {s.magicEnabled
-                    ? engineText(magicStatus.engine)
-                    : "Rewriting off"}
-                </span>
+              {s.magicEnabled && (
                 <button
                   className="text-button"
-                  onClick={() => onNavigate("magic")}
+                  onClick={() => onNavigate("settings")}
                 >
-                  Open writing <ArrowUpRight />
+                  Configure automatic writing <ArrowUpRight />
                 </button>
-              </div>
+              )}
             </div>
           </section>
           <section className="control-panel" aria-labelledby="delivery-heading">

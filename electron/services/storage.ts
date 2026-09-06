@@ -71,6 +71,10 @@ function normalizeWords(value: unknown): CustomWord[] {
     if (!term) return [];
     return [
       {
+        kind:
+          source.kind === "shortcut" || (!source.kind && !!source.replacement)
+            ? "shortcut"
+            : "correction",
         id: safeString(source.id, `word-${Date.now()}-${index}`, 128),
         term,
         soundsLike: safeString(source.soundsLike, "", 1024),
@@ -132,6 +136,7 @@ export function normalizeSettings(value: unknown): AppSettings {
   );
 
   return {
+    workflowVersion: 1,
     theme: ["light", "dark"].includes(String(source.theme))
       ? (source.theme as AppSettings["theme"])
       : "system",
@@ -259,6 +264,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
       "",
       250_000,
     ),
+    personalizedText: optionalText(source.personalizedText, 500_000),
     deliveredVersion:
       source.deliveredVersion === "verbatim" ? "verbatim" : "intended",
     editedIntendedText: optionalText(source.editedIntendedText, 500_000),
@@ -306,6 +312,14 @@ export function applyTranscriptEdit(
   version: TranscriptVersion,
   text: string | null,
 ): TranscriptRecord {
+  record = {
+    ...record,
+    magicText: null,
+    magicModel: null,
+    magicPreset: null,
+    magicIncludedInferences: false,
+    magicProcessingTimeMs: 0,
+  };
   const normalized = text?.trim() ?? null;
   if (text !== null && !normalized)
     throw new Error("A transcript correction cannot be empty");
@@ -342,7 +356,17 @@ export class StorageService {
     const rawHistory =
       readJson(historyPath) ??
       (legacy ? readJson(join(legacy, HISTORY_FILE)) : undefined);
-    this.settings = normalizeSettings(rawSettings);
+    // Old releases enabled rewriting by default, so that setting did not record opt-in.
+    // Migrate once; subsequent explicit choices persist with the workflow version.
+    const prior =
+      rawSettings && typeof rawSettings === "object"
+        ? (rawSettings as Record<string, unknown>)
+        : {};
+    this.settings = normalizeSettings(
+      prior.workflowVersion === 1
+        ? prior
+        : { ...prior, magicEnabled: false, preloadMagicModel: false },
+    );
     this.history = Array.isArray(rawHistory)
       ? rawHistory
           .flatMap((item) => migrateRecord(item) ?? [])
@@ -412,6 +436,15 @@ export class StorageService {
     writeJson(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
     return structuredClone(updated);
+  }
+
+  replaceHistory(record: TranscriptRecord): void {
+    if (!this.findHistory(record.id)) throw new Error("Transcript not found");
+    const next = this.history.map((item) =>
+      item.id === record.id ? record : item,
+    );
+    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.history = next;
   }
 
   deleteHistory(id: string): void {

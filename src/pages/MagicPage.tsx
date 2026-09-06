@@ -120,7 +120,6 @@ export function MagicPage({
   const selectedModel = magicModelById(settings.magicModel);
   const busy = ["preparing", "loading", "rewriting"].includes(status.phase);
   const canRewrite =
-    settings.magicEnabled &&
     !busy &&
     !saving &&
     !["missing", "error"].includes(status.engine) &&
@@ -196,51 +195,31 @@ export function MagicPage({
         </div>
       </section>
 
-      {!settings.magicEnabled && (
+      {["missing", "error"].includes(status.engine) && (
         <section className="magic-disabled">
-          <WandSparkles />
+          <Cpu />
           <div>
-            <strong>Magic is turned off</strong>
+            <strong>
+              {status.engine === "error"
+                ? "Writing engine error"
+                : "Install the writing engine"}
+            </strong>
             <p>
-              Enable the local writing model to rewrite transcripts and drafts.
+              {status.engine === "error"
+                ? status.message
+                : "Install the local writing model to start rewriting. Speech dictation works independently."}
             </p>
           </div>
           <button
             className="primary-button"
-            disabled={saving}
-            onClick={() => onUpdateSettings({ magicEnabled: true })}
+            disabled={busy || saving}
+            onClick={onSetup}
           >
-            <WandSparkles /> Enable Magic
+            <ArrowDownToLine />
+            {status.engine === "error" ? "Repair Magic" : "Install Magic"}
           </button>
         </section>
       )}
-
-      {settings.magicEnabled &&
-        ["missing", "error"].includes(status.engine) && (
-          <section className="magic-disabled">
-            <Cpu />
-            <div>
-              <strong>
-                {status.engine === "error"
-                  ? "Writing engine error"
-                  : "Install the writing engine"}
-              </strong>
-              <p>
-                {status.engine === "error"
-                  ? status.message
-                  : "Install the local writing model to start rewriting. Speech dictation works independently."}
-              </p>
-            </div>
-            <button
-              className="primary-button"
-              disabled={busy || saving}
-              onClick={onSetup}
-            >
-              <ArrowDownToLine />
-              {status.engine === "error" ? "Repair Magic" : "Install Magic"}
-            </button>
-          </section>
-        )}
       <div className="magic-layout">
         <section className="magic-editor-panel">
           <section className="magic-source">
@@ -447,7 +426,7 @@ export function MagicPage({
               {status.engine === "missing" || status.engine === "error" ? (
                 <button
                   className="secondary-button"
-                  disabled={busy || saving || !settings.magicEnabled}
+                  disabled={busy || saving}
                   onClick={onSetup}
                 >
                   <ArrowDownToLine /> Install model

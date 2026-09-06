@@ -1,3 +1,4 @@
+import { splitForRewrite } from "../../src/personalization";
 import { app } from "electron";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
@@ -195,14 +196,14 @@ export class AsrService {
             engine: "unloaded",
             message: settings.magicEnabled
               ? "Magic installed — model loads on demand"
-              : "Magic is disabled",
+              : "Writing available on demand",
           }
         : { phase: "idle", engine: "missing", message: "Magic setup required" },
     );
     if (ready && settings.preloadModel && settings.modelLicenseAccepted) {
       void this.loadModel(settings).catch((error) => this.fail(error));
     }
-    if (magicReady && settings.magicEnabled && settings.preloadMagicModel) {
+    if (magicReady && settings.preloadMagicModel) {
       void this.loadMagic(settings).catch((error) => this.failMagic(error));
     }
   }
@@ -235,9 +236,7 @@ export class AsrService {
 
   private async performSetup(settings: AppSettings): Promise<void> {
     const reloadMagic =
-      settings.magicEnabled &&
-      settings.preloadMagicModel &&
-      (await this.isMagicEnvironmentReady());
+      settings.preloadMagicModel && (await this.isMagicEnvironmentReady());
     if (this.worker.running) {
       await this.shutdown();
       this.updateMagicStatus({
@@ -269,10 +268,6 @@ export class AsrService {
   }
 
   async setupMagic(settings: AppSettings): Promise<void> {
-    if (!settings.magicEnabled)
-      throw new Error(
-        "Magic is turned off. Enable it before installing a model",
-      );
     if (this.magicSetupPromise) return this.magicSetupPromise;
     this.magicSetupPromise = this.maintenance
       .run(() => this.performMagicSetup(settings))
@@ -418,7 +413,6 @@ export class AsrService {
         mode: payload.mode ?? settings.transcriptionMode,
         wordTimestamps: settings.wordTimestamps,
         speculativeDecoding: settings.speculativeDecoding,
-        customWords: settings.customWords,
       });
     } finally {
       this.scheduleSpeechIdle(settings);
@@ -438,7 +432,6 @@ export class AsrService {
         ...payload,
         language: settings.language,
         wordTimestamps: settings.wordTimestamps,
-        customWords: settings.customWords,
       });
     } finally {
       this.scheduleSpeechIdle(settings);
@@ -467,8 +460,6 @@ export class AsrService {
   async loadMagic(settings: AppSettings, fromSetup = false): Promise<void> {
     if (!fromSetup && this.maintenance.busy)
       throw new Error("Wait for runtime setup to finish");
-    if (!settings.magicEnabled)
-      throw new Error("Magic is turned off. Enable it before loading a model");
     if (this.magicLoadPromise) return this.magicLoadPromise;
     this.magicLoadPromise = (async () => {
       if (!fromSetup && !(await this.isMagicEnvironmentReady()))
@@ -518,6 +509,11 @@ export class AsrService {
     request: MagicRewriteRequest,
     settings: AppSettings,
   ): Promise<MagicRewriteResult> {
+    const parts = splitForRewrite(request.text, settings.customWords);
+    if (parts.filter((part) => !part.protected && part.text.trim()).length > 16)
+      throw new Error(
+        "This text contains too many separate shortcut blocks to rewrite at once. Rewrite a shorter selection.",
+      );
     this.clearMagicIdle();
     await this.ensureMagicLoaded(settings);
     this.clearMagicIdle();
@@ -529,17 +525,41 @@ export class AsrService {
       progress: null,
     });
     try {
-      const result = await this.request<MagicRewriteResult>(
-        "magicRewrite",
-        request as unknown as Record<string, unknown>,
-      );
+      const output: string[] = [];
+      let processingTimeMs = 0;
+      for (const part of parts) {
+        if (part.protected || !part.text.trim()) {
+          output.push(part.text);
+          continue;
+        }
+        const result = await this.request<MagicRewriteResult>("magicRewrite", {
+          ...request,
+          text: part.text.trim(),
+        } as unknown as Record<string, unknown>);
+        processingTimeMs += result.processingTimeMs;
+        // Preserve separators around immutable blocks; they never enter the model.
+        output.push(
+          (part.text.match(/^\s*/)?.[0] ?? "") +
+            result.text.trim() +
+            (part.text.match(/\s*$/)?.[0] ?? ""),
+        );
+      }
+      const text = output.join("");
       this.updateMagicStatus({
         phase: "idle",
         engine: "ready",
         message: `${model.name} ready`,
         progress: 1,
       });
-      return result;
+      return {
+        model: settings.magicModel,
+        processingTimeMs,
+        inputCharacters: request.text.length,
+        includedInferences: request.allowInferences,
+        preset: request.preset,
+        text,
+        outputCharacters: text.length,
+      };
     } catch (error) {
       this.failMagic(error);
       throw error;
@@ -578,9 +598,7 @@ export class AsrService {
     } else {
       this.scheduleSpeechIdle(settings);
     }
-    if (!settings.magicEnabled) {
-      void this.unloadMagic();
-    } else if (settings.preloadMagicModel) {
+    if (settings.preloadMagicModel) {
       this.clearMagicIdle();
       void this.isMagicEnvironmentReady().then((ready) => {
         if (ready)
@@ -614,11 +632,7 @@ export class AsrService {
 
   private scheduleMagicIdle(settings: AppSettings): void {
     this.clearMagicIdle();
-    if (
-      settings.preloadMagicModel ||
-      !settings.magicEnabled ||
-      this.magicStatus.engine !== "ready"
-    )
+    if (settings.preloadMagicModel || this.magicStatus.engine !== "ready")
       return;
     this.magicIdleTimer = setTimeout(
       () => void this.unloadMagic(),

@@ -4,6 +4,7 @@ export const DEFAULT_SHORTCUT = "Super+Z";
 export const LEGACY_DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  workflowVersion: 1,
   onboardingComplete: false,
   theme: "system",
   shortcut: DEFAULT_SHORTCUT,
@@ -13,7 +14,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pythonCommand: "python3",
   inputDeviceId: "default",
   inputDeviceLabel: "System default",
-  transcriptionMode: "dual",
+  transcriptionMode: "intended",
   pasteVersion: "intended",
   autoPaste: true,
   copyToClipboard: true,
@@ -21,11 +22,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   keepHistory: true,
   showOverlay: true,
   preloadModel: true,
-  magicEnabled: true,
+  magicEnabled: false,
   magicModel: "qwen35Medium",
   magicPreset: "polish",
   magicAllowInferences: false,
-  preloadMagicModel: true,
+  preloadMagicModel: false,
   modelIdleMinutes: 15,
   backend: "auto",
   computeType: "auto",

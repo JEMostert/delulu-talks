@@ -37,6 +37,7 @@ function harness(
   const records: TranscriptRecord[] = [];
   let magicCalls = 0;
   let failOnce = false;
+  let rewriteFailure = false;
   const recovery: boolean[] = [];
   const storage = {
     cacheDirectory,
@@ -56,6 +57,7 @@ function harness(
     setRecovery: (available: boolean) => recovery.push(available),
     rewriteMagic: async () => {
       magicCalls += 1;
+      if (rewriteFailure) throw new Error("Writing model unavailable");
       return {
         text: "Ship the release today.",
         model: settings.magicModel,
@@ -89,6 +91,9 @@ function harness(
     records,
     hud: pill.commands,
     magicCalls: () => magicCalls,
+    failRewrite: () => {
+      rewriteFailure = true;
+    },
     failNext: () => {
       failOnce = true;
     },
@@ -353,6 +358,73 @@ test("failed inference can retry from memory while temporary audio is deleted", 
     expect(h.pasted).toHaveLength(1);
     expect(readdirSync(h.cacheDirectory)).toEqual([]);
     await expect(h.service.retry()).rejects.toThrow("No failed recording");
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("personalization changes delivery without corrupting source speech or timing", async () => {
+  const h = harness(
+    {
+      ...DEFAULT_SETTINGS,
+      autoPaste: false,
+      customWords: [
+        {
+          id: "name",
+          term: "Delulu",
+          soundsLike: "the lulu",
+          replacement: "",
+          enabled: true,
+        },
+      ],
+    },
+    {
+      text: "Open the lulu.",
+      intendedText: "Open the lulu.",
+      verbatimText: "[um] open the lulu",
+      words: [{ word: "lulu", start: 1, end: 2 }],
+    },
+  );
+  try {
+    await h.service.submitRecording({
+      wav: new Uint8Array(128),
+      durationMs: 1000,
+    });
+    expect(h.copied).toEqual(["Open Delulu."]);
+    expect(h.records[0].intendedText).toBe("Open the lulu.");
+    expect(h.records[0].verbatimText).toBe("[um] open the lulu");
+    expect(h.records[0].words[0].word).toBe("lulu");
+    expect(h.magicCalls()).toBe(0);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("failed automatic writing delivers the personalized transcript once", async () => {
+  const h = harness({
+    ...DEFAULT_SETTINGS,
+    magicEnabled: true,
+    autoPaste: true,
+    customWords: [
+      {
+        id: "s",
+        kind: "shortcut",
+        term: "the release",
+        soundsLike: "",
+        replacement: "version 0.8.0",
+        enabled: true,
+      },
+    ],
+  });
+  h.failRewrite();
+  try {
+    await h.service.submitRecording({
+      wav: new Uint8Array(128),
+      durationMs: 1000,
+    });
+    expect(h.pasted).toEqual(["Ship version 0.8.0."]);
+    expect(h.records[0].intendedText).toBe("Ship the release.");
+    expect(h.records[0].magicText).toBeUndefined();
   } finally {
     h.cleanup();
   }

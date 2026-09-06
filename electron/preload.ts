@@ -65,6 +65,8 @@ const api: DeluluApi = {
     version: TranscriptVersion,
     text: string | null,
   ) => ipcRenderer.invoke("history:updateTranscript", id, version, text),
+  setTranscriptRewrite: (id, result, sourceText) =>
+    ipcRenderer.invoke("history:setRewrite", id, result, sourceText),
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),
   clearHistory: () => ipcRenderer.invoke("history:clear"),
   chooseAudioFile: () => ipcRenderer.invoke("lab:chooseAudio"),

@@ -1,6 +1,12 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { BookOpenText, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { ConfirmDialog, EmptyState, Modal, Toggle } from "../components/ui";
+import {
+  personalize,
+  ruleConflict,
+  ruleKind,
+  ruleTriggers,
+} from "../personalization";
 import type { CustomWord } from "../types";
 
 export function VocabularyPage({
@@ -12,76 +18,113 @@ export function VocabularyPage({
   saving: boolean;
   onChange: (words: CustomWord[]) => Promise<boolean>;
 }) {
+  const [kind, setKind] = useState<"correction" | "shortcut">("correction");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<CustomWord | null>(null);
   const [remove, setRemove] = useState<CustomWord | null>(null);
-  const filtered = useMemo(
-    () =>
-      words.filter((word) =>
-        `${word.term} ${word.soundsLike} ${word.replacement}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-      ),
-    [query, words],
+  const [sample, setSample] = useState("");
+  const filtered = words.filter(
+    (word) =>
+      ruleKind(word) === kind &&
+      `${word.term} ${word.soundsLike} ${word.replacement}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
   );
-  const duplicate =
-    draft &&
-    words.some(
-      (word) =>
-        word.id !== draft.id &&
-        word.term.toLowerCase() === draft.term.trim().toLowerCase(),
-    );
+  const conflict = draft ? ruleConflict(draft, words) : null;
+  const shortcut = draft && ruleKind(draft) === "shortcut";
+  const invalid =
+    !draft?.term.trim() ||
+    (shortcut
+      ? !draft.replacement.trim()
+      : !draft.soundsLike.trim() ||
+        draft.soundsLike.trim() === draft.term.trim());
   return (
     <div className="content-stack">
+      <div
+        className="page-tabs"
+        role="tablist"
+        aria-label="Personalization rules"
+      >
+        <button
+          role="tab"
+          aria-selected={kind === "correction"}
+          className={kind === "correction" ? "active" : ""}
+          onClick={() => setKind("correction")}
+        >
+          Corrections
+        </button>
+        <button
+          role="tab"
+          aria-selected={kind === "shortcut"}
+          className={kind === "shortcut" ? "active" : ""}
+          onClick={() => setKind("shortcut")}
+        >
+          Text shortcuts
+        </button>
+      </div>
       <section className="wordbook-intro">
         <div>
-          <h2>Corrections & snippets</h2>
+          <h2>
+            {kind === "correction"
+              ? "Fix recurring recognition mistakes"
+              : "Insert saved text by voice"}
+          </h2>
           <p>
-            Replace recognition mistakes and expand spoken phrases into saved
-            text.
+            {kind === "correction"
+              ? "Replace recognized phrases in clean results. You can also remember a correction directly from a transcript."
+              : "Say a trigger phrase to insert an exact address, signature, or reusable block of text."}
           </p>
         </div>
         <button
           className="primary-button"
           disabled={saving || words.length >= 500}
-          onClick={() =>
+          onClick={() => {
+            setSample("");
             setDraft({
               id: crypto.randomUUID(),
+              kind,
               term: "",
               soundsLike: "",
               replacement: "",
               enabled: true,
-            })
-          }
+            });
+          }}
         >
-          <Plus /> Add a word
+          <Plus />
+          {kind === "correction" ? "Add correction" : "Add shortcut"}
         </button>
       </section>
       <div className="history-toolbar">
         <label className="search-box">
           <Search />
           <input
-            aria-label="Search Wordbook"
+            aria-label="Search rules"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search your words and snippets…"
+            placeholder="Search phrases and replacements…"
           />
         </label>
-        <span className="caption">{words.length} / 500 words</span>
+        <span className="caption">{words.length} / 500 rules</span>
       </div>
       <section className="word-list">
         {filtered.map((word) => (
           <article className="word-item" key={word.id}>
-            <span className="word-avatar">{word.term[0].toUpperCase()}</span>
+            <span className="word-avatar">
+              {ruleKind(word) === "shortcut" ? "↳" : "Aa"}
+            </span>
             <div>
               <h3>
                 {word.term}
-                {word.replacement && <span className="badge">Snippet</span>}
+                {!ruleTriggers(word).length && (
+                  <span className="badge">Needs a correction phrase</span>
+                )}
               </h3>
               <p>
-                {word.soundsLike
-                  ? `When you say “${word.soundsLike}”`
-                  : "Uses this exact spelling"}
+                {ruleKind(word) === "shortcut"
+                  ? `Say “${word.term}”`
+                  : word.soundsLike
+                    ? `Replace “${word.soundsLike}”`
+                    : "Add the text the recognizer gets wrong to activate this rule."}
               </p>
               {word.replacement && <blockquote>{word.replacement}</blockquote>}
             </div>
@@ -89,7 +132,7 @@ export function VocabularyPage({
               <Toggle
                 value={word.enabled}
                 label={`Enable ${word.term}`}
-                disabled={saving}
+                disabled={saving || !ruleTriggers(word).length}
                 onChange={() =>
                   void onChange(
                     words.map((item) =>
@@ -104,7 +147,10 @@ export function VocabularyPage({
                 className="icon-button"
                 aria-label={`Edit ${word.term}`}
                 disabled={saving}
-                onClick={() => setDraft({ ...word })}
+                onClick={() => {
+                  setDraft({ ...word, kind: ruleKind(word) });
+                  setSample("");
+                }}
               >
                 <Pencil />
               </button>
@@ -122,24 +168,34 @@ export function VocabularyPage({
         {!filtered.length && (
           <EmptyState
             icon={BookOpenText}
-            title={words.length ? "No matching words" : "No saved words"}
+            title={
+              query
+                ? "No matching rules"
+                : kind === "correction"
+                  ? "No corrections yet"
+                  : "No text shortcuts yet"
+            }
           >
-            {words.length
+            {query
               ? "Try a different search."
-              : "Add a name the model misses, or a phrase you say often."}
+              : kind === "correction"
+                ? "Correct a transcript and remember the change, or add a rule here."
+                : "Add a trigger such as “my signature” and the exact text to insert."}
           </EmptyState>
         )}
       </section>
       <p className="privacy-footnote">
-        Words apply as whole-phrase corrections after transcription. Use “Expand
-        to” for reusable voice snippets.
+        Rules apply to clean output. Original speech and word timings stay
+        untouched. These rules do not train the speech model.
       </p>
       {draft && (
         <Modal
           title={
             words.some((word) => word.id === draft.id)
-              ? "Edit word"
-              : "A new word to remember"
+              ? "Edit rule"
+              : shortcut
+                ? "New text shortcut"
+                : "New correction"
           }
           onClose={() => setDraft(null)}
           busy={saving}
@@ -154,7 +210,7 @@ export function VocabularyPage({
               </button>
               <button
                 className="primary-button"
-                disabled={saving || !draft.term.trim() || !!duplicate}
+                disabled={saving || !!invalid || !!conflict}
                 onClick={async () => {
                   const normalized = {
                     ...draft,
@@ -174,67 +230,106 @@ export function VocabularyPage({
                     setDraft(null);
                 }}
               >
-                Save word
+                Save rule
               </button>
             </>
           }
         >
+          {!shortcut && (
+            <label className="field">
+              Recognized text{" "}
+              <small>Separate alternative mistakes with commas</small>
+              <input
+                autoFocus
+                aria-label="Recognized text"
+                maxLength={1024}
+                value={draft.soundsLike}
+                onChange={(e) =>
+                  setDraft({ ...draft, soundsLike: e.target.value })
+                }
+                placeholder="the lulu, de loo loo"
+              />
+            </label>
+          )}
           <label className="field">
-            Correct spelling
+            {shortcut ? "Trigger phrase" : "Replace with"}
             <input
-              autoFocus
-              aria-label="Correct word"
+              autoFocus={!!shortcut}
+              aria-label={shortcut ? "Trigger phrase" : "Replace with"}
               maxLength={256}
               value={draft.term}
               onChange={(e) => setDraft({ ...draft, term: e.target.value })}
-              placeholder="Delulu"
+              placeholder={shortcut ? "my signature" : "Delulu"}
             />
           </label>
-          {duplicate && (
+          {shortcut && (
+            <>
+              <label className="field">
+                Exact text to insert
+                <textarea
+                  aria-label="Expanded output"
+                  maxLength={4096}
+                  value={draft.replacement}
+                  onChange={(e) =>
+                    setDraft({ ...draft, replacement: e.target.value })
+                  }
+                  placeholder="Your reusable text…"
+                />
+              </label>
+              <label className="field">
+                Alternative triggers <small>Optional · comma-separated</small>
+                <input
+                  aria-label="Alternative triggers"
+                  value={draft.soundsLike}
+                  maxLength={1024}
+                  onChange={(e) =>
+                    setDraft({ ...draft, soundsLike: e.target.value })
+                  }
+                />
+              </label>
+            </>
+          )}
+          {conflict && (
             <p className="field-error" role="alert">
-              That word already exists. Edit the existing entry instead.
+              {conflict}
             </p>
           )}
-          <label className="field">
-            What it sounds like{" "}
-            <small>Optional · separate aliases with commas</small>
-            <input
-              aria-label="Spoken aliases"
-              maxLength={1024}
-              value={draft.soundsLike}
-              onChange={(e) =>
-                setDraft({ ...draft, soundsLike: e.target.value })
-              }
-              placeholder="the lulu, de loo loo"
-            />
-          </label>
-          <label className="field">
-            Expand to{" "}
-            <small>
-              Optional · insert a longer phrase when you say this word
-            </small>
-            <textarea
-              aria-label="Expanded output"
-              maxLength={4096}
-              value={draft.replacement}
-              onChange={(e) =>
-                setDraft({ ...draft, replacement: e.target.value })
-              }
-              placeholder="Your reusable text goes here…"
-            />
-          </label>
+          <div className="rule-test">
+            <label className="field">
+              Try this rule
+              <input
+                aria-label="Test phrase"
+                value={sample}
+                onChange={(e) => setSample(e.target.value)}
+                placeholder={
+                  shortcut
+                    ? `Please insert ${draft.term || "my signature"}`
+                    : draft.soundsLike.split(",")[0] ||
+                      "Type a recognized phrase"
+                }
+              />
+            </label>
+            <output aria-label="Rule preview">
+              {sample
+                ? personalize(sample, [{ ...draft, enabled: true }])
+                : "Enter a phrase to preview the exact replacement."}
+            </output>
+          </div>
         </Modal>
       )}
       {remove && (
         <ConfirmDialog
-          title={`Forget “${remove.term}”?`}
-          confirmLabel="Delete word"
+          title={`Delete “${remove.term}”?`}
+          confirmLabel="Delete rule"
           onClose={() => setRemove(null)}
           onConfirm={() =>
             void onChange(words.filter((word) => word.id !== remove.id))
           }
         >
-          <p>Future transcripts will no longer use this rule.</p>
+          <p>
+            Future clean results will no longer use this rule. Saved transcripts
+            stay unchanged.
+          </p>
         </ConfirmDialog>
       )}
     </div>

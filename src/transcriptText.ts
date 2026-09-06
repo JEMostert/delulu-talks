@@ -34,6 +34,9 @@ export function transcriptIsEdited(
 export function deliveredText(record: TranscriptRecord): string {
   return (
     record.magicText?.trim() ||
+    (record.deliveredVersion !== "verbatim" && record.editedIntendedText == null
+      ? record.personalizedText
+      : null) ||
     transcriptText(
       record,
       record.deliveredVersion ??

@@ -10,10 +10,10 @@ The working reference is [Tidal Console](design-concepts/01-tidal-console.png), 
 
 ## Layout and task hierarchy
 
-- Navigation begins with Controls, Settings and Models; Writing, History, Wordbook and Audio files follow. Labels stay visible at normal compact desktop sizes.
+- Navigation begins with Controls, Settings and Models; Writing, History and Audio files follow. Labels stay visible at normal compact desktop sizes.
 - The persistent header contains one labeled Record/Stop action, current operation status, and theme switching. Missing engines route to setup.
 - Four numbered configuration panels occupy the startup control deck. A latest-output inspector sits alongside them on larger windows and below them on compact windows. It exposes Delivered/Clean/Verbatim views as available, correction, copy and export without a full-width transcript feed.
-- Settings starts with capture/delivery, followed by Writing, Runtime and Application. Appearance is an application preference, not the first task on launch.
+- Settings starts with capture/delivery, followed by Personalization, Writing, Runtime and Application. Appearance is an application preference, not the first task on launch.
 - Model selection uses compact comparison rows. Writing shows Source and Output side by side at desktop width, with rewrite controls adjacent; smaller windows stack the editors. Audio files keeps operation, file and transcript controls next to its result.
 - First-run setup is a dismissible inline notice, not a blocking introduction. License acceptance still uses an explicit modal before installing speech models.
 
@@ -27,4 +27,6 @@ No promotional heroes, slogans, static waveforms, fabricated metrics or lifestyl
 
 Shared controls retain visible focus, labels and native dialog behavior. Settings save through serialized patches. Writing style and writing enablement are independent. Microphones are enumerated on both Controls and Settings. Existing transcript originals remain intact beside corrections and delivered rewrites.
 
-Browser regression checks cover priority controls above the fold, quick-setting persistence, both themes, compact layouts, Wordbook editing, source preservation, modal focus and real browser microphone capture. Desktop smoke verifies the sandboxed preload, real settings IPC, diagnostics and setup dialogs. Runtime installation and inference remain separate from visual styling.
+Browser regression checks cover priority controls above the fold, quick-setting persistence, both themes, compact layouts, correction and shortcut editing, source preservation, modal focus and real browser microphone capture. Desktop smoke verifies the sandboxed preload, real settings IPC, diagnostics and setup dialogs. Runtime installation and inference remain separate from visual styling.
+
+Personalization lives in Settings and is reachable directly from Controls. Corrections and Text shortcuts have separate tabs and forms. Result review is shared across Controls, History, and imported audio, including rewrite preview/apply/undo, correction capture, copying, and export. Native speech options live with capture/delivery; optional rewriting settings have their own section.
