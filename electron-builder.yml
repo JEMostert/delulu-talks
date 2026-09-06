@@ -16,6 +16,8 @@ files:
   - package.json
   - "!node_modules/usocket/**"
 extraResources:
+  - from: electron/python/constraints-linux-x64.txt
+    to: python/constraints-linux-x64.txt
   - from: electron/python/transcription_engine.py
     to: python/transcription_engine.py
   - from: electron/overlay/pill.py

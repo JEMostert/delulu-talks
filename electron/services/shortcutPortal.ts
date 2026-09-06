@@ -20,8 +20,14 @@ function matchCall(member: "AddMatch" | "RemoveMatch", rule: string): Message {
 async function connected(bus: ConnectedBus): Promise<void> {
   if (bus.name) return;
   await new Promise<void>((resolve, reject) => {
-    const ready = () => { cleanup(); resolve(); };
-    const failed = (error: Error) => { cleanup(); reject(error); };
+    const ready = () => {
+      cleanup();
+      resolve();
+    };
+    const failed = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
     const cleanup = () => {
       bus.off("connect", ready);
       bus.off("error", failed);
@@ -51,16 +57,28 @@ export async function portalRequest(
   let receive!: (message: Message) => void;
   const response = new Promise<PortalResult>((resolve, reject) => {
     receive = (message) => {
-      if (message.type !== MessageType.SIGNAL || message.path !== expectedPath || message.interface !== "org.freedesktop.portal.Request" || message.member !== "Response") return;
+      if (
+        message.type !== MessageType.SIGNAL ||
+        message.path !== expectedPath ||
+        message.interface !== "org.freedesktop.portal.Request" ||
+        message.member !== "Response"
+      )
+        return;
       resolve(message.body as PortalResult);
     };
     bus.on("message", receive);
-    timer = setTimeout(() => reject(new Error("The desktop shortcut portal did not respond")), timeoutMs);
+    timer = setTimeout(
+      () => reject(new Error("The desktop shortcut portal did not respond")),
+      timeoutMs,
+    );
   });
 
   try {
     const returnedPath = await invoke(token);
-    if (returnedPath !== expectedPath) throw new Error(`Unsupported shortcut portal request path: ${returnedPath}`);
+    if (returnedPath !== expectedPath)
+      throw new Error(
+        `Unsupported shortcut portal request path: ${returnedPath}`,
+      );
     return await response;
   } finally {
     if (timer) clearTimeout(timer);

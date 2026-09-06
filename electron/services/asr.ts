@@ -1,39 +1,55 @@
 import { app } from "electron";
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
-import { createInterface } from "node:readline";
 import { magicModelById, modelById } from "../../src/data";
-import type { AppSettings, DictationStatus, MagicRewriteRequest, MagicRewriteResult, MagicStatus } from "../../src/types";
+import type {
+  AppSettings,
+  DictationStatus,
+  MagicRewriteRequest,
+  MagicRewriteResult,
+  MagicStatus,
+} from "../../src/types";
 import type { StorageService } from "./storage";
 
-const PROTOCOL_PREFIX = "@delulu:";
-const READY_CHECK = "import crisperwhisper; print(crisperwhisper.__version__)";
-const MAGIC_READY_CHECK = "import torch, torchvision, transformers; from transformers import AutoModelForMultimodalLM, AutoProcessor; assert int(transformers.__version__.split('.')[0]) >= 5";
-
-type WorkerResponse = { id: string; ok: boolean; result?: unknown; error?: string };
-type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout };
-
-function splitCommand(command: string): string[] {
-  const parts = command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
-  return parts.map((part) => part.replace(/^(["'])(.*)\1$/, "$2"));
-}
+import { WorkerClient } from "../runtime/workerClient";
+import { SerialQueue } from "../runtime/serialQueue";
+import { RuntimeInstaller } from "../runtime/installer";
 
 function conciseError(value: string): string {
-  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const useful = lines.filter((line) =>
-    !line.includes("unauthenticated requests")
-    && !line.includes("Loading weights")
-    && !/^\d+%\|/.test(line),
+  const lines = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const useful = lines.filter(
+    (line) =>
+      !line.includes("unauthenticated requests") &&
+      !line.includes("Loading weights") &&
+      !/^\d+%\|/.test(line),
   );
-  return (useful.at(-1) ?? lines.at(-1) ?? "The speech engine stopped unexpectedly").slice(0, 800);
+  return (
+    useful.at(-1) ??
+    lines.at(-1) ??
+    "The speech engine stopped unexpectedly"
+  ).slice(0, 800);
 }
 
 export class AsrService {
-  private worker: ChildProcessWithoutNullStreams | null = null;
-  private pending = new Map<string, Pending>();
-  private stderr = "";
+  private readonly worker: WorkerClient;
+  private readonly installer: RuntimeInstaller;
+  private readonly maintenance = new SerialQueue();
+  private initializing = false;
+  get isBusy(): boolean {
+    return (
+      this.initializing ||
+      this.maintenance.busy ||
+      this.worker.busy ||
+      !!this.loadPromise ||
+      !!this.magicLoadPromise
+    );
+  }
+  private get stderr(): string {
+    return this.worker.stderr;
+  }
   private status: DictationStatus = {
     phase: "idle",
     engine: "missing",
@@ -55,7 +71,29 @@ export class AsrService {
   private speechIdleTimer: NodeJS.Timeout | null = null;
   private magicIdleTimer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly storage: StorageService) {}
+  constructor(private readonly storage: StorageService) {
+    this.installer = new RuntimeInstaller(
+      storage,
+      app.isPackaged
+        ? join(process.resourcesPath, "python/constraints-linux-x64.txt")
+        : resolve(
+            app.getAppPath(),
+            "electron/python/constraints-linux-x64.txt",
+          ),
+      () => this.workerEnvironment(),
+    );
+    this.worker = new WorkerClient(
+      () => ({
+        python: this.venvPython(),
+        script: this.scriptPath(),
+        env: this.workerEnvironment(),
+      }),
+      (error) => {
+        this.fail(error);
+        this.failMagic(error);
+      },
+    );
+  }
 
   onStatus(listener: (status: DictationStatus) => void): () => void {
     this.statusListeners.add(listener);
@@ -75,7 +113,15 @@ export class AsrService {
     return structuredClone(this.magicStatus);
   }
 
-  setActivity(phase: DictationStatus["phase"], message: string, detail?: string): void {
+  setRecovery(available: boolean): void {
+    this.updateStatus({ retryAvailable: available });
+  }
+
+  setActivity(
+    phase: DictationStatus["phase"],
+    message: string,
+    detail?: string,
+  ): void {
     this.updateStatus({ phase, message, detail: detail ?? null });
   }
 
@@ -86,58 +132,73 @@ export class AsrService {
 
   private updateMagicStatus(patch: Partial<MagicStatus>): void {
     this.magicStatus = { ...this.magicStatus, ...patch };
-    for (const listener of this.magicStatusListeners) listener(this.getMagicStatus());
+    for (const listener of this.magicStatusListeners)
+      listener(this.getMagicStatus());
   }
 
   private scriptPath(): string {
-    const packaged = join(process.resourcesPath, "python", "transcription_engine.py");
+    const packaged = join(
+      process.resourcesPath,
+      "python",
+      "transcription_engine.py",
+    );
     if (app.isPackaged && existsSync(packaged)) return packaged;
-    return resolve(app.getAppPath(), "electron", "python", "transcription_engine.py");
+    return resolve(
+      app.getAppPath(),
+      "electron",
+      "python",
+      "transcription_engine.py",
+    );
   }
 
   private venvPython(): string {
-    return process.platform === "win32"
-      ? join(this.storage.venvDirectory, "Scripts", "python.exe")
-      : join(this.storage.venvDirectory, "bin", "python");
-  }
-
-  private pythonCandidates(settings: AppSettings): string[][] {
-    const configured = splitCommand(settings.pythonCommand);
-    const generic = ["python", "python3"].includes(configured[0] ?? "");
-    const fallbacks = process.platform === "win32"
-      ? [["py", "-3.12"], ["py", "-3.11"], ["python3.12"], ["python3.11"]]
-      : [["python3.13"], ["python3.12"], ["python3.11"], ["python3.10"]];
-    return generic ? [...fallbacks, configured] : [configured];
-  }
-
-  private resolveBasePython(settings: AppSettings): string[] {
-    const errors: string[] = [];
-    for (const candidate of this.pythonCandidates(settings)) {
-      if (!candidate.length) continue;
-      const check = spawnSync(candidate[0], [...candidate.slice(1), "-c", "import sys; print('.'.join(map(str, sys.version_info[:3])))"], {
-        encoding: "utf8",
-        windowsHide: true,
-        timeout: 10_000,
-      });
-      if (check.status === 0) {
-        const [major, minor] = check.stdout.trim().split(".").map(Number);
-        if (major === 3 && minor >= 10 && minor <= 13) return candidate;
-        errors.push(`${candidate.join(" ")} is Python ${check.stdout.trim()}; supported releases are 3.10–3.13`);
-      } else {
-        errors.push(`${candidate.join(" ")} unavailable`);
-      }
-    }
-    throw new Error(`No compatible Python found. Install Python 3.11 or 3.12, or set its full path. ${errors.join("; ")}`);
+    return this.installer.python;
   }
 
   async initialize(settings: AppSettings): Promise<void> {
-    const [ready, magicReady] = await Promise.all([this.isEnvironmentReady(), this.isMagicEnvironmentReady()]);
-    this.updateStatus(ready
-      ? { phase: "idle", engine: "unloaded", message: settings.preloadModel ? "Preparing selected model" : "Engine installed — model loads on demand" }
-      : { phase: "idle", engine: "missing", message: "Local engine setup required" });
-    this.updateMagicStatus(magicReady
-      ? { phase: "idle", engine: "unloaded", message: settings.magicEnabled ? "Magic installed — model loads on demand" : "Magic is disabled" }
-      : { phase: "idle", engine: "missing", message: "Magic setup required" });
+    this.initializing = true;
+    this.updateStatus({
+      phase: "loading",
+      engine: "unloaded",
+      message: "Checking your local speech engine…",
+    });
+    this.updateMagicStatus({
+      phase: "loading",
+      engine: "unloaded",
+      message: "Checking your local writing engine…",
+    });
+    const [ready, magicReady] = await Promise.all([
+      this.isEnvironmentReady(),
+      this.isMagicEnvironmentReady(),
+    ]);
+    this.initializing = false;
+    if (this.maintenance.busy) return;
+    this.updateStatus(
+      ready
+        ? {
+            phase: "idle",
+            engine: "unloaded",
+            message: settings.preloadModel
+              ? "Preparing selected model"
+              : "Engine installed — model loads on demand",
+          }
+        : {
+            phase: "idle",
+            engine: "missing",
+            message: "Local engine setup required",
+          },
+    );
+    this.updateMagicStatus(
+      magicReady
+        ? {
+            phase: "idle",
+            engine: "unloaded",
+            message: settings.magicEnabled
+              ? "Magic installed — model loads on demand"
+              : "Magic is disabled",
+          }
+        : { phase: "idle", engine: "missing", message: "Magic setup required" },
+    );
     if (ready && settings.preloadModel && settings.modelLicenseAccepted) {
       void this.loadModel(settings).catch((error) => this.fail(error));
     }
@@ -147,143 +208,123 @@ export class AsrService {
   }
 
   async isEnvironmentReady(): Promise<boolean> {
-    const python = this.venvPython();
-    if (!existsSync(python)) return false;
-    return new Promise((resolveReady) => {
-      const child = spawn(python, ["-c", READY_CHECK], { windowsHide: true, stdio: "ignore" });
-      const timer = setTimeout(() => child.kill(), 15_000);
-      child.once("exit", (code) => {
-        clearTimeout(timer);
-        resolveReady(code === 0);
-      });
-      child.once("error", () => {
-        clearTimeout(timer);
-        resolveReady(false);
-      });
-    });
+    return this.installer.ready("speech");
   }
-
   async isMagicEnvironmentReady(): Promise<boolean> {
-    const python = this.venvPython();
-    if (!existsSync(python)) return false;
-    return new Promise((resolveReady) => {
-      const child = spawn(python, ["-c", MAGIC_READY_CHECK], { windowsHide: true, stdio: "ignore" });
-      const timer = setTimeout(() => child.kill(), 15_000);
-      child.once("exit", (code) => {
-        clearTimeout(timer);
-        resolveReady(code === 0);
-      });
-      child.once("error", () => {
-        clearTimeout(timer);
-        resolveReady(false);
-      });
-    });
+    return this.installer.ready("magic");
   }
 
   async setup(settings: AppSettings): Promise<void> {
     if (!settings.modelLicenseAccepted) {
-      throw new Error("Accept the Nyra model-weight license before downloading a model");
+      throw new Error(
+        "Accept the Nyra model-weight license before downloading a model",
+      );
     }
     if (this.setupPromise) return this.setupPromise;
-    this.setupPromise = this.performSetup(settings).finally(() => { this.setupPromise = null; });
+    this.setupPromise = this.maintenance
+      .run(() => this.performSetup(settings))
+      .catch((error) => {
+        this.fail(error);
+        throw error;
+      })
+      .finally(() => {
+        this.setupPromise = null;
+      });
     return this.setupPromise;
   }
 
   private async performSetup(settings: AppSettings): Promise<void> {
-    const reloadMagic = settings.magicEnabled && settings.preloadMagicModel && await this.isMagicEnvironmentReady();
-    if (this.worker) {
+    const reloadMagic =
+      settings.magicEnabled &&
+      settings.preloadMagicModel &&
+      (await this.isMagicEnvironmentReady());
+    if (this.worker.running) {
       await this.shutdown();
-      this.updateMagicStatus({ phase: "idle", engine: "unloaded", message: "Magic model will reload after speech setup", model: null, device: null, progress: null });
+      this.updateMagicStatus({
+        phase: "idle",
+        engine: "unloaded",
+        message: "Magic model will reload after speech setup",
+        model: null,
+        device: null,
+        progress: null,
+      });
     }
-    this.updateStatus({ phase: "preparing", engine: "settingUp", message: "Creating isolated Python environment", progress: 0.05 });
-    mkdirSync(this.storage.dataDirectory, { recursive: true });
-    if (!existsSync(this.venvPython())) {
-      const python = this.resolveBasePython(settings);
-      await this.runProcess(python[0], [...python.slice(1), "-m", "venv", this.storage.venvDirectory], "Creating Python environment", 0.12);
-    }
-    await this.runProcess(this.venvPython(), ["-m", "pip", "install", "--upgrade", "pip", "wheel", "setuptools"], "Updating the local package installer", 0.22);
-
-    const wantsCt2 = settings.backend === "ct2" || (settings.backend === "auto" && process.platform === "linux" && process.arch === "x64");
-    if (wantsCt2 && !(process.platform === "linux" && process.arch === "x64")) {
-      throw new Error("The CrisperWhisper CTranslate2 runtime currently provides wheels for Linux x64; choose Transformers on this platform");
-    }
-    const packageName = wantsCt2 ? "crisperwhisper[ct2,convert]" : "crisperwhisper[transformers]";
-    await this.runProcess(this.venvPython(), ["-m", "pip", "install", "--upgrade", packageName], `Installing ${wantsCt2 ? "CTranslate2 + conversion" : "Transformers"} runtime`, 0.45);
-    this.updateStatus({ phase: "loading", engine: "loading", message: "Downloading and loading the selected model", progress: 0.82 });
+    await this.installer.install("speech", settings, (progress) =>
+      this.updateStatus({
+        phase: "preparing",
+        engine: "settingUp",
+        ...progress,
+      }),
+    );
+    this.updateStatus({
+      phase: "loading",
+      engine: "loading",
+      message: "Downloading and loading the selected model",
+      progress: 0.82,
+    });
     await this.loadModel(settings, true);
     if (reloadMagic) {
-      void this.loadMagic(settings).catch((error) => this.failMagic(error));
+      await this.loadMagic(settings, true);
     }
   }
 
   async setupMagic(settings: AppSettings): Promise<void> {
-    if (!settings.magicEnabled) throw new Error("Magic is turned off. Enable it before installing a model");
+    if (!settings.magicEnabled)
+      throw new Error(
+        "Magic is turned off. Enable it before installing a model",
+      );
     if (this.magicSetupPromise) return this.magicSetupPromise;
-    this.magicSetupPromise = this.performMagicSetup(settings).catch((error) => {
-      this.failMagic(error);
-      throw error;
-    }).finally(() => { this.magicSetupPromise = null; });
+    this.magicSetupPromise = this.maintenance
+      .run(() => this.performMagicSetup(settings))
+      .catch((error) => {
+        this.failMagic(error);
+        throw error;
+      })
+      .finally(() => {
+        this.magicSetupPromise = null;
+      });
     return this.magicSetupPromise;
   }
 
   private async performMagicSetup(settings: AppSettings): Promise<void> {
-    const reloadSpeech = settings.preloadModel && settings.modelLicenseAccepted && await this.isEnvironmentReady();
-    if (this.worker) {
+    const reloadSpeech =
+      settings.preloadModel &&
+      settings.modelLicenseAccepted &&
+      (await this.isEnvironmentReady());
+    if (this.worker.running) {
       await this.shutdown();
-      this.updateStatus({ phase: "idle", engine: "unloaded", message: "Speech model will reload after Magic setup", model: null, backend: null, progress: null });
+      this.updateStatus({
+        phase: "idle",
+        engine: "unloaded",
+        message: "Speech model will reload after Magic setup",
+        model: null,
+        backend: null,
+        progress: null,
+      });
     }
-    this.updateMagicStatus({ phase: "preparing", engine: "settingUp", message: "Preparing the shared Python environment", progress: 0.08 });
-    mkdirSync(this.storage.dataDirectory, { recursive: true });
-    if (!existsSync(this.venvPython())) {
-      const python = this.resolveBasePython(settings);
-      await this.runMagicProcess(python[0], [...python.slice(1), "-m", "venv", this.storage.venvDirectory], "Creating Python environment", 0.14);
-    }
-    await this.runMagicProcess(this.venvPython(), ["-m", "pip", "install", "--upgrade", "pip", "wheel", "setuptools"], "Updating the local package installer", 0.24);
-    await this.runMagicProcess(this.venvPython(), ["-m", "pip", "install", "--upgrade", "torch>=2.6", "torchvision>=0.21", "transformers>=5.7,<6", "accelerate>=1.0", "safetensors>=0.4", "sentencepiece", "pillow"], "Installing the Qwen 3.5 runtime", 0.48);
+    await this.installer.install("magic", settings, (progress) =>
+      this.updateMagicStatus({
+        phase: "preparing",
+        engine: "settingUp",
+        ...progress,
+      }),
+    );
     const model = magicModelById(settings.magicModel);
-    this.updateMagicStatus({ phase: "loading", engine: "loading", message: `Downloading and loading ${model.name}`, progress: 0.82 });
+    this.updateMagicStatus({
+      phase: "loading",
+      engine: "loading",
+      message: `Downloading and loading ${model.name}`,
+      progress: 0.82,
+    });
     await this.loadMagic(settings, true);
-    if (reloadSpeech) void this.loadModel(settings).catch((error) => this.fail(error));
-  }
-
-  private runProcess(program: string, args: string[], label: string, progress: number): Promise<void> {
-    this.updateStatus({ phase: "preparing", engine: "settingUp", message: label, progress });
-    return new Promise((resolveProcess, reject) => {
-      const child = spawn(program, args, { windowsHide: true, env: this.workerEnvironment() });
-      let errorOutput = "";
-      const handleOutput = (chunk: Buffer) => {
-        const text = chunk.toString();
-        errorOutput = `${errorOutput}${text}`.slice(-40_000);
-        const finalLine = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1);
-        if (finalLine && !/^\d+%\|/.test(finalLine)) this.updateStatus({ message: `${label}: ${finalLine.slice(0, 180)}` });
-      };
-      child.stdout.on("data", handleOutput);
-      child.stderr.on("data", handleOutput);
-      child.once("error", reject);
-      child.once("exit", (code) => code === 0 ? resolveProcess() : reject(new Error(`${label} failed: ${conciseError(errorOutput)}`)));
-    });
-  }
-
-  private runMagicProcess(program: string, args: string[], label: string, progress: number): Promise<void> {
-    this.updateMagicStatus({ phase: "preparing", engine: "settingUp", message: label, progress });
-    return new Promise((resolveProcess, reject) => {
-      const child = spawn(program, args, { windowsHide: true, env: this.workerEnvironment() });
-      let errorOutput = "";
-      const handleOutput = (chunk: Buffer) => {
-        const output = chunk.toString();
-        errorOutput = `${errorOutput}${output}`.slice(-40_000);
-        const finalLine = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1);
-        if (finalLine && !/^\d+%\|/.test(finalLine)) this.updateMagicStatus({ message: `${label}: ${finalLine.slice(0, 180)}` });
-      };
-      child.stdout.on("data", handleOutput);
-      child.stderr.on("data", handleOutput);
-      child.once("error", reject);
-      child.once("exit", (code) => code === 0 ? resolveProcess() : reject(new Error(`${label} failed: ${conciseError(errorOutput)}`)));
-    });
+    if (reloadSpeech) await this.loadModel(settings, true);
   }
 
   private workerEnvironment(): NodeJS.ProcessEnv {
-    const bin = process.platform === "win32" ? join(this.storage.venvDirectory, "Scripts") : join(this.storage.venvDirectory, "bin");
+    const bin =
+      process.platform === "win32"
+        ? join(this.storage.venvDirectory, "Scripts")
+        : join(this.storage.venvDirectory, "bin");
     const modelCache = this.storage.modelCacheDirectory;
     return {
       ...process.env,
@@ -298,104 +339,78 @@ export class AsrService {
     };
   }
 
-  private ensureWorker(): ChildProcessWithoutNullStreams {
-    if (this.worker && !this.worker.killed) return this.worker;
-    const python = this.venvPython();
-    if (!existsSync(python)) throw new Error("The local Python environment is not installed yet");
-    this.stderr = "";
-    const child = spawn(python, ["-u", this.scriptPath()], {
-      windowsHide: true,
-      env: this.workerEnvironment(),
-    });
-    this.worker = child;
-
-    const lines = createInterface({ input: child.stdout });
-    lines.on("line", (line) => {
-      if (!line.startsWith(PROTOCOL_PREFIX)) return;
-      try {
-        const response = JSON.parse(line.slice(PROTOCOL_PREFIX.length)) as WorkerResponse;
-        const pending = this.pending.get(response.id);
-        if (!pending) return;
-        clearTimeout(pending.timeout);
-        this.pending.delete(response.id);
-        response.ok ? pending.resolve(response.result) : pending.reject(new Error(response.error || "Speech worker request failed"));
-      } catch (error) {
-        this.fail(error);
-      }
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      this.stderr = `${this.stderr}${chunk.toString()}`.slice(-80_000);
-    });
-    child.once("exit", (code) => {
-      if (this.worker !== child) return;
-      this.worker = null;
-      const error = new Error(code === 0 ? "Speech worker closed" : conciseError(this.stderr));
-      for (const pending of this.pending.values()) {
-        clearTimeout(pending.timeout);
-        pending.reject(error);
-      }
-      this.pending.clear();
-      if (code !== 0) {
-        this.fail(error);
-        this.failMagic(error);
-      }
-    });
-    child.once("error", (error) => {
-      this.fail(error);
-      this.failMagic(error);
-    });
-    return child;
-  }
-
-  private request<T>(command: string, payload: Record<string, unknown> = {}, timeoutMs = 30 * 60_000): Promise<T> {
-    const child = this.ensureWorker();
-    const id = randomUUID();
-    return new Promise<T>((resolveRequest, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Local model worker timed out while running ${command}`));
-      }, timeoutMs);
-      this.pending.set(id, { resolve: (value) => resolveRequest(value as T), reject, timeout });
-      child.stdin.write(`${JSON.stringify({ id, command, ...payload })}\n`, (error) => {
-        if (!error) return;
-        clearTimeout(timeout);
-        this.pending.delete(id);
-        reject(error);
-      });
-    });
+  private request<T>(
+    command: string,
+    payload: Record<string, unknown> = {},
+    timeoutMs?: number,
+  ): Promise<T> {
+    return this.worker.request<T>(command, payload, timeoutMs);
   }
 
   async loadModel(settings: AppSettings, fromSetup = false): Promise<void> {
-    if (!settings.modelLicenseAccepted) throw new Error("Accept the Nyra model-weight license before loading a model");
+    if (!fromSetup && this.maintenance.busy)
+      throw new Error("Wait for runtime setup to finish");
+    if (!settings.modelLicenseAccepted)
+      throw new Error(
+        "Accept the Nyra model-weight license before loading a model",
+      );
     if (this.loadPromise) return this.loadPromise;
     this.loadPromise = (async () => {
-      if (!fromSetup && !(await this.isEnvironmentReady())) throw new Error("Local engine setup is required before loading a model");
+      if (!fromSetup && !(await this.isEnvironmentReady()))
+        throw new Error(
+          "Local engine setup is required before loading a model",
+        );
       const model = modelById(settings.model);
-      this.updateStatus({ phase: "loading", engine: "loading", message: `Loading ${model.name}`, model: settings.model, progress: 0.85 });
-      const runtime = await this.request<{ backend: "ct2" | "transformers" }>("load", {
-        model: model.shorthand,
-        backend: settings.backend,
-        computeType: settings.computeType,
-        speculativeDecoding: settings.speculativeDecoding,
-        cacheDir: this.storage.modelCacheDirectory,
+      this.updateStatus({
+        phase: "loading",
+        engine: "loading",
+        message: `Loading ${model.name}`,
+        model: settings.model,
+        progress: 0.85,
       });
-      this.updateStatus({ phase: "idle", engine: "ready", message: `${model.name} ready`, model: settings.model, backend: runtime.backend, progress: 1 });
+      const runtime = await this.request<{ backend: "ct2" | "transformers" }>(
+        "load",
+        {
+          model: model.shorthand,
+          backend: settings.backend,
+          computeType: settings.computeType,
+          speculativeDecoding: settings.speculativeDecoding,
+          cacheDir: this.storage.modelCacheDirectory,
+        },
+      );
+      this.updateStatus({
+        phase: "idle",
+        engine: "ready",
+        message: `${model.name} ready`,
+        model: settings.model,
+        backend: runtime.backend,
+        progress: 1,
+      });
       this.scheduleSpeechIdle(settings);
-    })().catch((error) => {
-      this.fail(error);
-      throw error;
-    }).finally(() => { this.loadPromise = null; });
+    })()
+      .catch((error) => {
+        this.fail(error);
+        throw error;
+      })
+      .finally(() => {
+        this.loadPromise = null;
+      });
     return this.loadPromise;
   }
 
   async ensureLoaded(settings: AppSettings): Promise<void> {
-    if (this.status.engine === "ready" && this.status.model === settings.model) return;
+    if (this.status.engine === "ready" && this.status.model === settings.model)
+      return;
     await this.loadModel(settings);
   }
 
-  async transcribe(payload: Record<string, unknown>, settings: AppSettings): Promise<Record<string, unknown>> {
+  async transcribe(
+    payload: Record<string, unknown>,
+    settings: AppSettings,
+  ): Promise<Record<string, unknown>> {
     this.clearSpeechIdle();
     await this.ensureLoaded(settings);
+    this.clearSpeechIdle();
     try {
       return await this.request<Record<string, unknown>>("transcribe", {
         ...payload,
@@ -410,9 +425,14 @@ export class AsrService {
     }
   }
 
-  async runTool(command: "verbatimize" | "forcedAlign", payload: Record<string, unknown>, settings: AppSettings): Promise<Record<string, unknown>> {
+  async runTool(
+    command: "verbatimize" | "forcedAlign",
+    payload: Record<string, unknown>,
+    settings: AppSettings,
+  ): Promise<Record<string, unknown>> {
     this.clearSpeechIdle();
     await this.ensureLoaded(settings);
+    this.clearSpeechIdle();
     try {
       return await this.request<Record<string, unknown>>(command, {
         ...payload,
@@ -427,45 +447,98 @@ export class AsrService {
 
   async unload(): Promise<void> {
     this.clearSpeechIdle();
-    if (this.worker) {
-      try { await this.request("unload", {}, 60_000); } catch { /* worker may already be gone */ }
+    if (this.worker.running) {
+      try {
+        await this.request("unload", {}, 60_000);
+      } catch {
+        /* worker may already be gone */
+      }
     }
-    this.updateStatus({ phase: "idle", engine: existsSync(this.venvPython()) ? "unloaded" : "missing", message: "Model unloaded", model: null, backend: null, progress: null });
+    this.updateStatus({
+      phase: "idle",
+      engine: existsSync(this.venvPython()) ? "unloaded" : "missing",
+      message: "Model unloaded",
+      model: null,
+      backend: null,
+      progress: null,
+    });
   }
 
   async loadMagic(settings: AppSettings, fromSetup = false): Promise<void> {
-    if (!settings.magicEnabled) throw new Error("Magic is turned off. Enable it before loading a model");
+    if (!fromSetup && this.maintenance.busy)
+      throw new Error("Wait for runtime setup to finish");
+    if (!settings.magicEnabled)
+      throw new Error("Magic is turned off. Enable it before loading a model");
     if (this.magicLoadPromise) return this.magicLoadPromise;
     this.magicLoadPromise = (async () => {
-      if (!fromSetup && !(await this.isMagicEnvironmentReady())) throw new Error("Install the Magic runtime before loading a model");
+      if (!fromSetup && !(await this.isMagicEnvironmentReady()))
+        throw new Error("Install the Magic runtime before loading a model");
       const model = magicModelById(settings.magicModel);
-      this.updateMagicStatus({ phase: "loading", engine: "loading", message: `Loading ${model.name}`, model: settings.magicModel, progress: 0.86 });
+      this.updateMagicStatus({
+        phase: "loading",
+        engine: "loading",
+        message: `Loading ${model.name}`,
+        model: settings.magicModel,
+        progress: 0.86,
+      });
       const runtime = await this.request<{ device: string }>("magicLoad", {
         model: settings.magicModel,
         cacheDir: this.storage.modelCacheDirectory,
       });
-      this.updateMagicStatus({ phase: "idle", engine: "ready", message: `${model.name} ready`, model: settings.magicModel, device: runtime.device, progress: 1 });
+      this.updateMagicStatus({
+        phase: "idle",
+        engine: "ready",
+        message: `${model.name} ready`,
+        model: settings.magicModel,
+        device: runtime.device,
+        progress: 1,
+      });
       this.scheduleMagicIdle(settings);
-    })().catch((error) => {
-      this.failMagic(error);
-      throw error;
-    }).finally(() => { this.magicLoadPromise = null; });
+    })()
+      .catch((error) => {
+        this.failMagic(error);
+        throw error;
+      })
+      .finally(() => {
+        this.magicLoadPromise = null;
+      });
     return this.magicLoadPromise;
   }
 
   async ensureMagicLoaded(settings: AppSettings): Promise<void> {
-    if (this.magicStatus.engine === "ready" && this.magicStatus.model === settings.magicModel) return;
+    if (
+      this.magicStatus.engine === "ready" &&
+      this.magicStatus.model === settings.magicModel
+    )
+      return;
     await this.loadMagic(settings);
   }
 
-  async rewriteMagic(request: MagicRewriteRequest, settings: AppSettings): Promise<MagicRewriteResult> {
+  async rewriteMagic(
+    request: MagicRewriteRequest,
+    settings: AppSettings,
+  ): Promise<MagicRewriteResult> {
     this.clearMagicIdle();
     await this.ensureMagicLoaded(settings);
+    this.clearMagicIdle();
     const model = magicModelById(settings.magicModel);
-    this.updateMagicStatus({ phase: "rewriting", engine: "ready", message: `${model.name} is rewriting`, progress: null });
+    this.updateMagicStatus({
+      phase: "rewriting",
+      engine: "ready",
+      message: `${model.name} is rewriting`,
+      progress: null,
+    });
     try {
-      const result = await this.request<MagicRewriteResult>("magicRewrite", request as unknown as Record<string, unknown>);
-      this.updateMagicStatus({ phase: "idle", engine: "ready", message: `${model.name} ready`, progress: 1 });
+      const result = await this.request<MagicRewriteResult>(
+        "magicRewrite",
+        request as unknown as Record<string, unknown>,
+      );
+      this.updateMagicStatus({
+        phase: "idle",
+        engine: "ready",
+        message: `${model.name} ready`,
+        progress: 1,
+      });
       return result;
     } catch (error) {
       this.failMagic(error);
@@ -477,16 +550,31 @@ export class AsrService {
 
   async unloadMagic(): Promise<void> {
     this.clearMagicIdle();
-    if (this.worker) {
-      try { await this.request("magicUnload", {}, 60_000); } catch { /* worker may already be gone */ }
+    if (this.worker.running) {
+      try {
+        await this.request("magicUnload", {}, 60_000);
+      } catch {
+        /* worker may already be gone */
+      }
     }
-    this.updateMagicStatus({ phase: "idle", engine: existsSync(this.venvPython()) ? "unloaded" : "missing", message: "Magic model unloaded", model: null, device: null, progress: null });
+    this.updateMagicStatus({
+      phase: "idle",
+      engine: existsSync(this.venvPython()) ? "unloaded" : "missing",
+      message: "Magic model unloaded",
+      model: null,
+      device: null,
+      progress: null,
+    });
   }
 
   configureResidency(settings: AppSettings): void {
+    if (this.isBusy) return;
     if (settings.preloadModel && settings.modelLicenseAccepted) {
       this.clearSpeechIdle();
-      void this.isEnvironmentReady().then((ready) => { if (ready) void this.loadModel(settings).catch((error) => this.fail(error)); });
+      void this.isEnvironmentReady().then((ready) => {
+        if (ready)
+          void this.ensureLoaded(settings).catch((error) => this.fail(error));
+      });
     } else {
       this.scheduleSpeechIdle(settings);
     }
@@ -494,7 +582,12 @@ export class AsrService {
       void this.unloadMagic();
     } else if (settings.preloadMagicModel) {
       this.clearMagicIdle();
-      void this.isMagicEnvironmentReady().then((ready) => { if (ready) void this.loadMagic(settings).catch((error) => this.failMagic(error)); });
+      void this.isMagicEnvironmentReady().then((ready) => {
+        if (ready)
+          void this.ensureMagicLoaded(settings).catch((error) =>
+            this.failMagic(error),
+          );
+      });
     } else {
       this.scheduleMagicIdle(settings);
     }
@@ -513,41 +606,92 @@ export class AsrService {
   private scheduleSpeechIdle(settings: AppSettings): void {
     this.clearSpeechIdle();
     if (settings.preloadModel || this.status.engine !== "ready") return;
-    this.speechIdleTimer = setTimeout(() => void this.unload(), settings.modelIdleMinutes * 60_000);
+    this.speechIdleTimer = setTimeout(
+      () => void this.unload(),
+      settings.modelIdleMinutes * 60_000,
+    );
   }
 
   private scheduleMagicIdle(settings: AppSettings): void {
     this.clearMagicIdle();
-    if (settings.preloadMagicModel || !settings.magicEnabled || this.magicStatus.engine !== "ready") return;
-    this.magicIdleTimer = setTimeout(() => void this.unloadMagic(), settings.modelIdleMinutes * 60_000);
+    if (
+      settings.preloadMagicModel ||
+      !settings.magicEnabled ||
+      this.magicStatus.engine !== "ready"
+    )
+      return;
+    this.magicIdleTimer = setTimeout(
+      () => void this.unloadMagic(),
+      settings.modelIdleMinutes * 60_000,
+    );
   }
 
   async reset(): Promise<void> {
     await this.shutdown();
-    if (existsSync(this.storage.venvDirectory)) rmSync(this.storage.venvDirectory, { recursive: true, force: true });
-    this.updateStatus({ phase: "idle", engine: "missing", message: "Local Python environment removed", model: null, backend: null, progress: null });
-    this.updateMagicStatus({ phase: "idle", engine: "missing", message: "Magic setup required", model: null, device: null, progress: null });
+    if (existsSync(this.storage.venvDirectory))
+      rmSync(this.storage.venvDirectory, { recursive: true, force: true });
+    this.updateStatus({
+      phase: "idle",
+      engine: "missing",
+      message: "Local Python environment removed",
+      model: null,
+      backend: null,
+      progress: null,
+    });
+    this.updateMagicStatus({
+      phase: "idle",
+      engine: "missing",
+      message: "Magic setup required",
+      model: null,
+      device: null,
+      progress: null,
+    });
   }
 
   async shutdown(): Promise<void> {
+    this.installer.stop();
     this.clearSpeechIdle();
     this.clearMagicIdle();
-    const child = this.worker;
-    if (!child) return;
-    try { await this.request("shutdown", {}, 10_000); } catch { /* force close below */ }
-    child.kill();
-    this.worker = null;
+    this.worker.stop();
   }
 
   fail(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
-    try { writeFileSync(join(this.storage.dataDirectory, "last-asr-error.log"), `${this.stderr}\n${message}\n`, "utf8"); } catch { /* diagnostics are best-effort */ }
-    this.updateStatus({ phase: "error", engine: "error", message: conciseError(message), detail: message, progress: null });
+    try {
+      writeFileSync(
+        join(this.storage.dataDirectory, "last-asr-error.log"),
+        `${this.stderr}\n${message}\n`,
+        "utf8",
+      );
+    } catch {
+      /* diagnostics are best-effort */
+    }
+    this.updateStatus({
+      phase: "error",
+      engine: "error",
+      message: conciseError(message),
+      detail: message,
+      progress: null,
+    });
   }
 
   failMagic(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
-    try { writeFileSync(join(this.storage.dataDirectory, "last-magic-error.log"), `${this.stderr}\n${message}\n`, "utf8"); } catch { /* diagnostics are best-effort */ }
-    this.updateMagicStatus({ phase: "error", engine: "error", message: conciseError(message), detail: message, progress: null });
+    try {
+      writeFileSync(
+        join(this.storage.dataDirectory, "last-magic-error.log"),
+        `${this.stderr}\n${message}\n`,
+        "utf8",
+      );
+    } catch {
+      /* diagnostics are best-effort */
+    }
+    this.updateMagicStatus({
+      phase: "error",
+      engine: "error",
+      message: conciseError(message),
+      detail: message,
+      progress: null,
+    });
   }
 }

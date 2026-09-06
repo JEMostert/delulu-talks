@@ -8,6 +8,17 @@ class DeluluCaptureProcessor extends AudioWorkletProcessor {
     this.chunks = [];
     this.samples = 0;
     this.sumSquares = 0;
+    this.port.onmessage = (event) => {
+      if (event.data === "flush") { this.flush(); this.port.postMessage({ flushed: true }); }
+    };
+  }
+  flush() {
+    if (!this.samples) return;
+    const merged = new Float32Array(this.samples);
+    let offset = 0;
+    for (const chunk of this.chunks) { merged.set(chunk, offset); offset += chunk.length; }
+    this.port.postMessage({ samples: merged, rms: Math.sqrt(this.sumSquares / this.samples) }, [merged.buffer]);
+    this.chunks = []; this.samples = 0; this.sumSquares = 0;
   }
   process(inputs) {
     const channel = inputs[0] && inputs[0][0];
@@ -15,18 +26,7 @@ class DeluluCaptureProcessor extends AudioWorkletProcessor {
       this.chunks.push(new Float32Array(channel));
       this.samples += channel.length;
       for (let index = 0; index < channel.length; index += 1) this.sumSquares += channel[index] * channel[index];
-      if (this.samples >= 2048) {
-        const merged = new Float32Array(this.samples);
-        let offset = 0;
-        for (const chunk of this.chunks) {
-          merged.set(chunk, offset);
-          offset += chunk.length;
-        }
-        this.port.postMessage({ samples: merged, rms: Math.sqrt(this.sumSquares / this.samples) }, [merged.buffer]);
-        this.chunks = [];
-        this.samples = 0;
-        this.sumSquares = 0;
-      }
+      if (this.samples >= 2048) this.flush();
     }
     return true;
   }
@@ -45,8 +45,12 @@ function merge(chunks: Float32Array[]): Float32Array {
   return output;
 }
 
-function resample(input: Float32Array, sourceRate: number, targetRate = 16_000): Float32Array {
-  if (sourceRate === targetRate) return input;
+function resample(
+  input: Float32Array,
+  sourceRate: number,
+  targetRate = 16_000,
+): Float32Array {
+  if (!input.length || sourceRate === targetRate) return input;
   const ratio = sourceRate / targetRate;
   const length = Math.max(1, Math.round(input.length / ratio));
   const output = new Float32Array(length);
@@ -64,7 +68,8 @@ function wav(samples: Float32Array, sampleRate = 16_000): Uint8Array {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
   const write = (offset: number, value: string) => {
-    for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index));
+    for (let index = 0; index < value.length; index += 1)
+      view.setUint8(offset + index, value.charCodeAt(index));
   };
   write(0, "RIFF");
   view.setUint32(4, 36 + samples.length * 2, true);
@@ -81,7 +86,11 @@ function wav(samples: Float32Array, sampleRate = 16_000): Uint8Array {
   view.setUint32(40, samples.length * 2, true);
   for (let index = 0; index < samples.length; index += 1) {
     const sample = Math.max(-1, Math.min(1, samples[index]));
-    view.setInt16(44 + index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    view.setInt16(
+      44 + index * 2,
+      sample < 0 ? sample * 0x8000 : sample * 0x7fff,
+      true,
+    );
   }
   return new Uint8Array(buffer);
 }
@@ -101,18 +110,32 @@ export class PcmRecorder {
   private startedAt = 0;
   private stopping = false;
   private lastLevelAt = 0;
+  private generation = 0;
+  private commands: Promise<void> = Promise.resolve();
 
-  async handle(command: RecorderCommand): Promise<void> {
-    if (command.action === "start") await this.start(command.inputDeviceId);
-    if (command.action === "stop") await this.stop(true);
-    if (command.action === "cancel") await this.stop(false);
+  async cancel(): Promise<void> {
+    await this.handle({ action: "cancel", inputDeviceId: "default" });
   }
 
-  private async start(deviceId: string): Promise<void> {
-    if (this.stream || this.stopping) return;
+  handle(command: RecorderCommand): Promise<void> {
+    if (command.action === "cancel") this.generation += 1;
+    const generation = this.generation;
+    const operation = this.commands.then(async () => {
+      if (command.action === "start")
+        await this.start(command.inputDeviceId, generation);
+      if (command.action === "stop") await this.stop(true);
+      if (command.action === "cancel") await this.stop(false);
+    });
+    this.commands = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private async start(deviceId: string, generation: number): Promise<void> {
+    if (this.stream || this.stopping || generation !== this.generation) return;
     try {
-      const exactDevice = deviceId && deviceId !== "default" ? { exact: deviceId } : undefined;
-      this.stream = await navigator.mediaDevices.getUserMedia({
+      const exactDevice =
+        deviceId && deviceId !== "default" ? { exact: deviceId } : undefined;
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           deviceId: exactDevice,
           channelCount: 1,
@@ -121,6 +144,11 @@ export class PcmRecorder {
           autoGainControl: false,
         },
       });
+      if (generation !== this.generation) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      this.stream = stream;
       this.context = new AudioContext({ latencyHint: "interactive" });
       this.source = this.context.createMediaStreamSource(this.stream);
       this.sink = this.context.createGain();
@@ -131,23 +159,33 @@ export class PcmRecorder {
         this.worklet!.connect(this.sink);
       } else {
         this.processor = this.context.createScriptProcessor(4096, 1, 1);
-        this.processor.onaudioprocess = (event) => this.ingest(event.inputBuffer.getChannelData(0));
+        this.processor.onaudioprocess = (event) =>
+          this.ingest(event.inputBuffer.getChannelData(0));
         this.source.connect(this.processor);
         this.processor.connect(this.sink);
+      }
+      if (generation !== this.generation) {
+        await this.dispose();
+        return;
       }
       this.sink.connect(this.context.destination);
       this.startedAt = performance.now();
       await bridge.recordingStarted();
     } catch (error) {
       await this.dispose();
-      await bridge.recordingFailed(`Microphone unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      if (generation !== this.generation) return;
+      await bridge.recordingFailed(
+        `Microphone unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
   private async connectWorklet(): Promise<boolean> {
     if (!this.context) return false;
     try {
-      const blob = new Blob([WORKLET_SOURCE], { type: "application/javascript" });
+      const blob = new Blob([WORKLET_SOURCE], {
+        type: "application/javascript",
+      });
       const url = URL.createObjectURL(blob);
       try {
         await this.context.audioWorklet.addModule(url);
@@ -155,8 +193,11 @@ export class PcmRecorder {
         URL.revokeObjectURL(url);
       }
       this.worklet = new AudioWorkletNode(this.context, "delulu-capture");
-      this.worklet.port.onmessage = (event: MessageEvent<{ samples: Float32Array; rms: number }>) => {
-        if (event.data?.samples) this.ingest(event.data.samples, event.data.rms);
+      this.worklet.port.onmessage = (
+        event: MessageEvent<{ samples: Float32Array; rms: number }>,
+      ) => {
+        if (event.data?.samples)
+          this.ingest(event.data.samples, event.data.rms);
       };
       return true;
     } catch {
@@ -184,10 +225,39 @@ export class PcmRecorder {
     this.stopping = true;
     const durationMs = Math.round(performance.now() - this.startedAt);
     const sampleRate = this.context.sampleRate;
+    this.source?.disconnect();
+    if (this.worklet && submit) {
+      const port = this.worklet.port;
+      const receive = port.onmessage;
+      await new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timer);
+          port.onmessage = receive;
+          resolve();
+        };
+        const timer = setTimeout(finish, 300);
+        port.onmessage = (event) => {
+          if (event.data?.flushed) finish();
+          else receive?.call(port, event);
+        };
+        port.postMessage("flush");
+      });
+    }
     const captured = merge(this.chunks);
     await this.dispose();
     this.stopping = false;
-    if (submit) await bridge.submitRecording({ wav: wav(resample(captured, sampleRate)), durationMs });
+    if (submit) {
+      if (!captured.length) {
+        await bridge.recordingFailed(
+          "The microphone did not produce audio. Try another input.",
+        );
+        return;
+      }
+      await bridge.submitRecording({
+        wav: wav(resample(captured, sampleRate)),
+        durationMs,
+      });
+    }
   }
 
   private async dispose(): Promise<void> {
@@ -198,7 +268,8 @@ export class PcmRecorder {
     this.processor?.disconnect();
     this.sink?.disconnect();
     this.stream?.getTracks().forEach((track) => track.stop());
-    if (this.context && this.context.state !== "closed") await this.context.close();
+    if (this.context && this.context.state !== "closed")
+      await this.context.close();
     this.context = null;
     this.stream = null;
     this.worklet = null;
@@ -210,19 +281,31 @@ export class PcmRecorder {
   }
 }
 
-export async function listMicrophones(requestPermission = false): Promise<MicrophoneDevice[]> {
+export async function listMicrophones(
+  requestPermission = false,
+): Promise<MicrophoneDevice[]> {
   let temporary: MediaStream | null = null;
   if (requestPermission) {
-    try { temporary = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { /* labels may remain private */ }
+    try {
+      temporary = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      /* labels may remain private */
+    }
   }
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  temporary?.getTracks().forEach((track) => track.stop());
+  let devices: MediaDeviceInfo[];
+  try {
+    devices = await navigator.mediaDevices.enumerateDevices();
+  } finally {
+    temporary?.getTracks().forEach((track) => track.stop());
+  }
   const microphones = devices.filter((device) => device.kind === "audioinput");
   return [
     { deviceId: "default", label: "System default" },
-    ...microphones.filter((device) => device.deviceId !== "default").map((device, index) => ({
-      deviceId: device.deviceId,
-      label: device.label || `Microphone ${index + 1}`,
-    })),
+    ...microphones
+      .filter((device) => device.deviceId !== "default")
+      .map((device, index) => ({
+        deviceId: device.deviceId,
+        label: device.label || `Microphone ${index + 1}`,
+      })),
   ];
 }

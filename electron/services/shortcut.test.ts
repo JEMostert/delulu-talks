@@ -63,7 +63,9 @@ describe("shortcut command semantics", () => {
 
 describe("Wayland shortcut conversion", () => {
   test("converts Electron accelerators to the XDG trigger format", () => {
-    expect(portalTrigger("CommandOrControl+Shift+Space")).toBe("CTRL+SHIFT+space");
+    expect(portalTrigger("CommandOrControl+Shift+Space")).toBe(
+      "CTRL+SHIFT+space",
+    );
     expect(portalTrigger("Ctrl+Alt+M")).toBe("CTRL+ALT+m");
     expect(portalTrigger("Super+Z")).toBe("LOGO+z");
     expect(portalTrigger("Super+Enter")).toBe("LOGO+Return");
@@ -75,20 +77,31 @@ describe("Wayland portal request lifecycle", () => {
     const calls: string[] = [];
     const bus = Object.assign(new EventEmitter(), {
       name: ":1.42",
-      call: async (message: Message) => { calls.push(message.member); return null; },
+      call: async (message: Message) => {
+        calls.push(message.member);
+        return null;
+      },
     }) as unknown as MessageBus & { name: string };
     const token = "delulu_create";
     const expected = requestPath(bus.name, token);
-    const result = await portalRequest(bus, token, async () => {
-      bus.emit("message", new Message({
-        type: MessageType.SIGNAL,
-        path: expected,
-        interface: "org.freedesktop.portal.Request",
-        member: "Response",
-        body: [0, { session_handle: new Variant("s", "/session/one") }],
-      }));
-      return expected;
-    }, 100);
+    const result = await portalRequest(
+      bus,
+      token,
+      async () => {
+        bus.emit(
+          "message",
+          new Message({
+            type: MessageType.SIGNAL,
+            path: expected,
+            interface: "org.freedesktop.portal.Request",
+            member: "Response",
+            body: [0, { session_handle: new Variant("s", "/session/one") }],
+          }),
+        );
+        return expected;
+      },
+      100,
+    );
 
     expect(result[0]).toBe(0);
     expect(result[1].session_handle.value).toBe("/session/one");

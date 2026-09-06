@@ -1,6 +1,7 @@
 name: Verify Electron app
 
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [main, master]
@@ -20,9 +21,18 @@ jobs:
 
       - name: Typecheck, test, and build
         run: |
-          bun run typecheck
+          bun run format:check
           bun test
           bun run build
 
       - name: Validate Python worker
         run: python3 -m py_compile electron/python/transcription_engine.py
+
+      - name: Install browser test runtime
+        run: bunx playwright install --with-deps chromium
+
+      - name: Verify browser workflows
+        run: bun run test:e2e
+
+      - name: Verify isolated Electron desktop
+        run: xvfb-run --auto-servernum node scripts/desktop-smoke.mjs

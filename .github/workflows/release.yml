@@ -9,7 +9,11 @@ permissions:
   contents: write
 
 jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
   package:
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -38,8 +42,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build application
-        run: bun run build
+      - name: Verify and build application
+        run: |
+          bun test
+          bun run build
 
       - name: Verify tag matches package version
         if: startsWith(github.ref, 'refs/tags/')

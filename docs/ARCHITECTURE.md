@@ -1,80 +1,53 @@
-# Delulu Talks 2.0 architecture
+# Delulu Talks architecture
 
 ## Product contract
 
-The core loop is deliberately short: invoke the global shortcut, record in the already-running renderer, transcribe through the resident speech model, optionally rewrite the chosen transcript through the resident Magic model, then deliver the final text to the clipboard/cursor. History keeps the Magic delivery beside the untouched intended and verbatim speech layers.
+A local desktop voice companion. A global shortcut records in the renderer; Electron owns transcription, optional Magic rewriting, and delivery to the previous app. The main window provides recent results, writing tools, Wordbook, file transcription, and maintenance. Linux/Wayland is the reference desktop.
 
-The visible start view is the working Dictation surface, not a home or onboarding page. The sidebar separates daily work (Dictation, Magic, Speech Lab, History) from configuration (Wordbook, Models & runtime), while a compact command bar keeps record/stop and runtime state available in every view.
+## Boundaries
 
-The default is CrisperWhisper 2 Medium in dual mode with the model preloaded. This gives a clean intended transcript for everyday paste and a verbatim record for review and speech insights. Users can trade startup memory for first-use latency with **Settings → Keep selected model loaded**.
+- `src/App.tsx` assembles the shell and pages. `hooks/useWorkspace.ts` owns subscriptions, serialized settings patches, transcript actions and feedback. `hooks/useTheme.ts` applies system/light/dark appearance.
+- `src/components/ui` supplies shared switches, setting rows, alerts, empty states and native modal dialogs. `TranscriptCard` owns review/edit/restore/remember-word interactions for both Home and History.
+- `src/styles/tokens.css` defines semantic light/dark colors. `components.css` defines reusable controls. `workspace.css` handles the shell and page layouts. All pages remain usable in compact desktop windows.
+- Visited pages remain mounted for the current workspace so drafts and long-running file operations survive navigation. Magic additionally keeps its draft in session storage. No cloud draft storage is used.
+- `src/bridge.ts` is the typed Electron boundary. `src/preview.ts` contains explicitly labeled browser sample data. Native actions in preview explain that the desktop app is required; preview does not pretend to run inference.
+- `electron/main.ts` owns lifecycle, tray, shortcuts, IPC registration and settings side effects. IPC accepts only the main window's top frame; the renderer has context isolation, sandboxing and no Node integration. Native file selections are allowlisted for Speech Lab.
+- `electron/services/dictation.ts` owns capture and delivery state. The microphone controller serializes commands, handles cancellation during pending permissions, and flushes AudioWorklet samples before producing mono 16 kHz PCM WAV.
+- `electron/services/asr.ts` owns speech and Magic model lifecycle. `electron/runtime/workerClient.ts` owns the persistent Python JSON-lines transport, request IDs, bounded logs, timeouts and crash cleanup. A timed-out worker is terminated and all queued requests are rejected.
+- `electron/runtime/installer.ts` owns asynchronous Python discovery, environment creation, package installation, compatibility checking and installed-version recording. `manifest.ts` contains direct dependency pins; Linux x64 transitive constraints are bundled beside the Python worker. `SerialQueue` serializes shared-environment setup. No shell string is used to execute user-provided Python paths.
+- `electron/runtime/diagnostics.ts` reports memory, Python, FFmpeg, package versions and local data paths on demand. It does not send diagnostics anywhere.
 
-## Process boundaries
+## Runtime lifecycle
 
-```text
-global shortcut / tray / UI
-              │
-              ▼
-Electron main process ── validated IPC ── sandboxed React renderer
-      │                                      │
-      │ lifecycle, files, clipboard          └─ Chromium microphone capture
-      │
-      ├─ system Python / GTK4 layer-shell pill
-      │       └─ bottom-anchored, focus-free, empty input region
-      │
-      ├─ persistent Python JSON-lines worker
-      │       ├─ CrisperWhisper 2.0 / CT2 or Transformers
-      │       └─ Qwen 3.5 / Transformers 5
-      │
-      └─ atomic settings + optional transcript history
-```
+Speech and Magic use independent model slots in one Python process. Setup is serialized across both runtimes. A setup request is deduplicated; conflicting desktop operations are rejected with a useful message. Installed package versions are recorded in `runtime-installed.txt` after `pip check` succeeds.
 
-- The renderer has no Node integration. `contextIsolation` and Chromium sandboxing are enabled.
-- The preload exposes only typed, named operations. File paths for Speech Lab must originate from the native file picker and are allowlisted in memory before IPC accepts them.
-- The main process owns global shortcuts, tray behavior, file reads/writes, clipboard delivery, and child processes. Wayland uses one XDG GlobalShortcuts session, subscribes to each Request response before invoking the portal method, and consumes both Activated and Deactivated for hold-to-dictate. The desktop owns remapping through its native shortcut editor. Other platforms use Electron's native press-only shortcut API.
-- Plasma and wlroots Wayland sessions render recording state in a separate GTK4 layer-shell helper. Electron sends semantic JSON-line states only; the helper owns no recording or model logic. Its overlay-layer surface is bottom anchored with no reserved space, no keyboard interaction, and an empty input region so it cannot take focus, accept dragging, or block clicks. Unsupported desktops simply run without the pill.
-- On Linux Wayland the Chromium UI compositor runs in software to avoid the native-Wayland/NVIDIA incompatibility seen on current Plasma stacks. This does not disable CUDA inference in the separate Python worker.
-- Python messages carry a protocol prefix and request ID, so progress output cannot be parsed as a response. One worker owns independent speech and Magic slots so both selected models can remain resident simultaneously.
-- Settings and history use atomic temporary-file replacement and permission mode `0600` where the platform supports it.
+Direct dependency versions and Linux constraints were taken from the reference machine and verified with its installed engines. Portable platforms share direct version pins but resolve their own platform-specific transitive wheels; model execution still needs native validation on those platforms. The manifest is not a cross-platform hash lock. New environment creation requires Python 3.11–3.13.
 
-## Model lifecycle
+Pinned models stay loaded. Unpinned models stay warm until the idle delay expires; the dictation service no longer immediately unloads them after each result. Reset removes only the virtual environment. Model caches, transcript history and settings remain.
 
-1. No weights are bundled. Starting speech setup opens an in-context license dialog when the separate Nyra terms have not yet been accepted.
-2. The app selects a compatible Python 3.10–3.13 interpreter and creates an isolated virtual environment under Electron's user-data directory.
-3. Linux x64 Auto installs the CT2 and conversion extras. Other systems install the portable Transformers backend.
-4. Setup downloads/converts only the selected checkpoint. The selected model can then remain resident or load on first dictation.
-5. Changing model, backend, compute type, or speculative setting unloads the old runtime before a replacement is loaded.
-6. Removing the environment preserves settings, history, and the model cache. The user can repair it without losing personal data.
-7. Magic installs Transformers, PyTorch, the matching Torchvision processor dependency, and Qwen into the same isolated environment. It offers the official `Qwen/Qwen3.5-0.8B`, `-2B`, and `-4B` checkpoints. Qwen 3.5 has no official 8B checkpoint; 4B is the largest release below the configured ceiling.
-8. Each model has an independent keep-resident setting. A shared configurable delay unloads any unpinned model after its last operation; disabling Magic unloads it immediately.
+The native GTK4 overlay keeps a dark, warm-green palette for visibility over arbitrary apps. It is click-through and does not own recording or inference logic. Unsupported desktops use the main window and tray without the overlay.
 
-The four standard aliases resolve to `nyralabs/CrisperWhisper2.0_small`, `_medium`, `_turbo`, and `_large`. Large can instantiate Turbo as a CT2 speculative draft. Standard weights never receive Pro-only hotword prompts; custom vocabulary is applied as deterministic, case-insensitive post-processing instead.
+## Data and recovery
 
-## Transcription workflows
+Settings and persisted history use temporary-file replacement with restricted permissions. In-memory state is updated only after a successful write. Settings updates are partial patches, serialized in both the workspace and main process to prevent stale whole-object saves from undoing unrelated preferences.
 
-- **Dictation:** browser audio is mixed to mono, resampled to 16 kHz, encoded as PCM WAV, and sent to the worker after recording stops.
-- **Dual:** CT2 calls `transcribe_dual` so intended and verbatim prompts share encoder/decoder work. Transformers performs the two supported passes sequentially.
-- **Speech Lab:** native formats go directly to CrisperWhisper. Compressed media and video are normalized through the system FFmpeg binary to a temporary mono 16 kHz WAV.
-- **Verbatimize:** combines a trusted clean transcript with the audio to recover audible fillers, repairs, cut-offs, and vocal events; word timing is requested when enabled.
-- **Forced align:** assigns model-derived timing to a supplied exact transcript.
-- **Correction:** manual edits are stored beside the original intended/verbatim model output. Copy and text export use the correction, while Restore removes only the edit and JSON retains both layers.
-- **Delivery:** the selected intended/verbatim layer is sent through the configured Magic preset when Magic is enabled. The Magic result is retained beside its source, copied, and then pasted through platform automation. If Magic is off—or unavailable—the original transcript remains deliverable. Silence stops before history, Magic, clipboard, or paste. Linux tries `wtype`, `ydotool`, `dotool`, then `xdotool`, and falls back to a clear clipboard-only result.
+Original clean/verbatim speech is preserved beside user corrections and Magic output. Records remember the delivered transcript version. Home, History, exports and paste-last share the text selection helpers.
 
-## Magic workflow
+When history saving is disabled, newly produced records remain in a bounded session map for review, corrections and exports; they are not written to history. Existing saved history remains until explicitly cleared. Deletion clears both saved and session records, including paste-last references.
 
-- **Source:** the workspace starts from the latest corrected intended transcript but accepts any local draft up to 50,000 characters.
-- **Preset:** Polish, Concise, Detailed, and Prompt builder translate user intent into a controlled system instruction. Qwen runs in non-thinking mode for lower-latency direct output.
-- **Accuracy boundary:** Preserve facts forbids new claims and requirements. Allow assumptions permits useful examples, constraints, and implementation details, while forbidding invented names, dates, measurements, credentials, or completed work and telling the model to expose uncertainty.
-- **Prompt isolation:** transcript text is wrapped as untrusted source content; instructions contained inside it are rewritten rather than executed.
-- **Review:** assumption-enabled results are visibly labeled before copy. The draft and result survive page navigation only for the current app session.
+Temporary microphone and FFmpeg WAV files are deleted after success or failure. A failed microphone submission can remain in memory for retry during the current process. Retry reuses it; Discard releases it; a later successful transcription replaces it. It is not recoverable after closing or crashing the app. Imported source audio is never modified.
 
-## Failure and privacy rules
+Magic is optional in the dictation pipeline. Failed rewriting falls back to the speech transcript. A preserve-facts prompt is an instruction to the model, not a guarantee; users can inspect source and output. Silence produces no history entry, clipboard change or paste.
 
-- Microphone and converted-media temporary files are deleted after both successful and failed inference.
-- A crashed worker rejects all outstanding requests and surfaces a concise last diagnostic rather than silently hanging.
-- Model setup and load are serialized so repeated UI actions cannot create parallel environments or duplicate model loads.
-- No audio retention, analytics, cloud API, account system, or network transcription exists. Network access is needed only for installing the runtime and downloading weights.
-- The app never treats standard vocabulary as native hotword prompting because Nyra documents that feature as Pro-only.
+## Updates
 
-## Packaging strategy
+App updates are explicit downloads. The updater disables automatic installation on quit, retains a ready download when asked to check again, and blocks restart while capture, inference or setup is active. Linux automatic updates apply to AppImage installs; other Linux packages and source builds link to manual releases. Platform packages remain unsigned until signing is configured.
 
-Electron Vite emits separate main, preload, and renderer bundles. Electron Builder packages AppImage, pacman, and `tar.xz` on Linux, a universal DMG/ZIP on macOS, and NSIS/ZIP on Windows. GitHub Actions builds on each native OS; it no longer installs Rust or WebKitGTK.
+## Verification
+
+- `bun test`: state, storage normalization, delivery/retry, export, portal, worker transport, update and queue regressions.
+- `bun run test:e2e`: browser navigation/layout checks in both themes, editable Wordbook persistence, transcript corrections, modal focus, draft retention and real browser PCM capture using a synthetic microphone.
+- `bun run test:desktop`: builds and launches Electron with isolated temporary user data. Checks sandboxed preload, settings IPC, diagnostics and setup dialogs without registering global shortcuts or changing login/desktop integration.
+- `node scripts/desktop-smoke.mjs "/path/to/existing/user-data"`: opt-in real Electron inference using an already licensed runtime and cached models, with temporary settings/history and no clipboard/paste; checks correction/export/deletion with history saving disabled.
+- `scripts/runtime-smoke.py`: opt-in offline inference using the committed audio sample and already-downloaded models. Reports timings and output sizes without printing transcript contents.
+- `bun run format:check`, `bun run typecheck`, `bun run build`, Python syntax validation, and Linux packaging complete the local checks.

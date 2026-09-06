@@ -2,18 +2,26 @@ import { EventEmitter } from "node:events";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 
-mock.module("electron", () => ({ app: { isPackaged: false, getAppPath: () => "/tmp/delulu" } }));
+mock.module("electron", () => ({
+  app: { isPackaged: false, getAppPath: () => "/tmp/delulu" },
+}));
 
-let PillService: typeof import("./pill")["PillService"];
-let layerShellCandidates: typeof import("./pill")["layerShellCandidates"];
-let resolveSystemPython: typeof import("./pill")["resolveSystemPython"];
+let PillService: (typeof import("./pill"))["PillService"];
+let layerShellCandidates: (typeof import("./pill"))["layerShellCandidates"];
+let resolveSystemPython: (typeof import("./pill"))["resolveSystemPython"];
 type PillIo = import("./pill").PillIo;
 
 beforeAll(async () => {
-  ({ PillService, layerShellCandidates, resolveSystemPython } = await import("./pill"));
+  ({ PillService, layerShellCandidates, resolveSystemPython } =
+    await import("./pill"));
 });
 
 class FakeChild extends EventEmitter {
+  killed = false;
+  kill = () => {
+    this.killed = true;
+    return true;
+  };
   readonly stdin = {
     writable: true,
     writes: [] as string[],
@@ -29,13 +37,30 @@ class FakeChild extends EventEmitter {
 
 function readyChild(): FakeChild {
   const child = new FakeChild();
-  queueMicrotask(() => child.stdout.emit("data", Buffer.from(`${JSON.stringify({ type: "ready" })}\n`)));
+  queueMicrotask(() =>
+    child.stdout.emit(
+      "data",
+      Buffer.from(`${JSON.stringify({ type: "ready" })}\n`),
+    ),
+  );
   return child;
 }
 
-function io(overrides: Partial<{ children: FakeChild[]; exists: Set<string>; now: number }> = {}): { io: PillIo; children: FakeChild[] } {
+function io(
+  overrides: Partial<{
+    children: FakeChild[];
+    exists: Set<string>;
+    now: number;
+  }> = {},
+): { io: PillIo; children: FakeChild[] } {
   const children = overrides.children ?? [];
-  const exists = overrides.exists ?? new Set(["/tmp/pill.py", "/usr/lib/libgtk4-layer-shell.so", "/usr/bin/python3"]);
+  const exists =
+    overrides.exists ??
+    new Set([
+      "/tmp/pill.py",
+      "/usr/lib/libgtk4-layer-shell.so",
+      "/usr/bin/python3",
+    ]);
   const now = overrides.now ?? 1_000;
   return {
     children,
@@ -46,14 +71,16 @@ function io(overrides: Partial<{ children: FakeChild[]; exists: Set<string>; now
       now: () => now,
       existsSync: (path) => exists.has(String(path)),
       spawnSync: ((command: string) => {
-        if (command === "which") return { status: 0, stdout: "/usr/bin/python3\n" };
-        if (command === "pkg-config") return { status: 0, stdout: "/usr/lib\n" };
+        if (command === "which")
+          return { status: 0, stdout: "/usr/bin/python3\n" };
+        if (command === "pkg-config")
+          return { status: 0, stdout: "/usr/lib\n" };
         return { status: 1, stdout: "" };
       }) as NonNullable<PillIo["spawnSync"]>,
-      spawn: ((() => {
+      spawn: (() => {
         const child = children.shift() ?? readyChild();
         return child as unknown as ChildProcessWithoutNullStreams;
-      }) as unknown) as NonNullable<PillIo["spawn"]>,
+      }) as unknown as NonNullable<PillIo["spawn"]>,
     },
   };
 }
@@ -62,25 +89,58 @@ describe("pill helper resolution", () => {
   test("prefers python3 from PATH when the file exists", () => {
     const python = resolveSystemPython(
       {},
-      ((command: string) => command === "which" ? { status: 0, stdout: "/opt/bin/python3\n" } : { status: 1, stdout: "" }) as typeof import("node:child_process").spawnSync,
+      ((command: string) =>
+        command === "which"
+          ? { status: 0, stdout: "/opt/bin/python3\n" }
+          : {
+              status: 1,
+              stdout: "",
+            }) as typeof import("node:child_process").spawnSync,
       (path) => path === "/opt/bin/python3",
     );
     expect(python).toBe("/opt/bin/python3");
   });
 
   test("includes the pkg-config libdir before distro fallbacks", () => {
-    expect(layerShellCandidates("/usr/lib/x86_64-linux-gnu")[0]).toBe("/usr/lib/x86_64-linux-gnu/libgtk4-layer-shell.so");
+    expect(layerShellCandidates("/usr/lib/x86_64-linux-gnu")[0]).toBe(
+      "/usr/lib/x86_64-linux-gnu/libgtk4-layer-shell.so",
+    );
   });
 });
 
 describe("pill process protocol", () => {
+  test("hiding a disabled overlay does not start its helper", () => {
+    const child = new FakeChild();
+    const testIo = io({ children: [child] });
+    const pill = new PillService(testIo.io);
+    pill.hide();
+    expect(testIo.children).toHaveLength(1);
+  });
+
+  test("shutdown terminates the helper immediately and a late hide cannot restart it", () => {
+    const first = new FakeChild();
+    const spare = new FakeChild();
+    const testIo = io({ children: [first, spare] });
+    const pill = new PillService(testIo.io);
+    pill.prepare();
+    pill.shutdown();
+    first.emit("exit", 1);
+    pill.hide();
+    expect(first.killed).toBe(true);
+    expect(testIo.children).toHaveLength(1);
+  });
   test("replays the desired state after the helper becomes ready", async () => {
     const child = new FakeChild();
     const testIo = io({ children: [child] });
     const pill = new PillService(testIo.io);
     pill.show({ state: "listening", detail: "Release to send" });
-    child.stdout.emit("data", Buffer.from(`${JSON.stringify({ type: "ready" })}\n`));
-    expect(child.stdin.writes).toEqual([`${JSON.stringify({ state: "listening", detail: "Release to send" })}\n`]);
+    child.stdout.emit(
+      "data",
+      Buffer.from(`${JSON.stringify({ type: "ready" })}\n`),
+    );
+    expect(child.stdin.writes).toEqual([
+      `${JSON.stringify({ state: "listening", detail: "Release to send" })}\n`,
+    ]);
   });
 
   test("retries once with LD_PRELOAD if the first helper start fails", () => {
@@ -90,9 +150,14 @@ describe("pill process protocol", () => {
     const pill = new PillService(testIo.io);
     pill.prepare();
     first.emit("exit", 1);
-    second.stdout.emit("data", Buffer.from(`${JSON.stringify({ type: "ready" })}\n`));
+    second.stdout.emit(
+      "data",
+      Buffer.from(`${JSON.stringify({ type: "ready" })}\n`),
+    );
     expect(pill.method).toBe("layer-shell");
-    expect(second.stdin.writes).toEqual([`${JSON.stringify({ state: "hidden" })}\n`]);
+    expect(second.stdin.writes).toEqual([
+      `${JSON.stringify({ state: "hidden" })}\n`,
+    ]);
   });
 
   test("retries with LD_PRELOAD when the helper exits before becoming ready", () => {
@@ -102,8 +167,13 @@ describe("pill process protocol", () => {
     const pill = new PillService(testIo.io);
     pill.show({ state: "listening" });
     first.emit("exit", 0);
-    second.stdout.emit("data", Buffer.from(`${JSON.stringify({ type: "ready" })}\n`));
-    expect(second.stdin.writes).toEqual([`${JSON.stringify({ state: "listening" })}\n`]);
+    second.stdout.emit(
+      "data",
+      Buffer.from(`${JSON.stringify({ type: "ready" })}\n`),
+    );
+    expect(second.stdin.writes).toEqual([
+      `${JSON.stringify({ state: "listening" })}\n`,
+    ]);
   });
 
   test("recovers when the helper cannot be spawned", () => {
@@ -113,8 +183,13 @@ describe("pill process protocol", () => {
     const pill = new PillService(testIo.io);
     pill.show({ state: "listening" });
     first.emit("error", new Error("spawn python3 ENOENT"));
-    second.stdout.emit("data", Buffer.from(`${JSON.stringify({ type: "ready" })}\n`));
-    expect(second.stdin.writes).toEqual([`${JSON.stringify({ state: "listening" })}\n`]);
+    second.stdout.emit(
+      "data",
+      Buffer.from(`${JSON.stringify({ type: "ready" })}\n`),
+    );
+    expect(second.stdin.writes).toEqual([
+      `${JSON.stringify({ state: "listening" })}\n`,
+    ]);
     expect(pill.method).toBe("layer-shell");
   });
 
@@ -123,7 +198,10 @@ describe("pill process protocol", () => {
     const testIo = io({ children: [child] });
     const pill = new PillService(testIo.io);
     pill.show({ state: "listening" });
-    child.stdout.emit("data", Buffer.from(`${JSON.stringify({ type: "ready" })}\n`));
+    child.stdout.emit(
+      "data",
+      Buffer.from(`${JSON.stringify({ type: "ready" })}\n`),
+    );
     pill.level(0.4);
     pill.show({ state: "transcribing" });
     pill.level(0.9);
@@ -141,10 +219,10 @@ describe("pill process protocol", () => {
       env: { XDG_SESSION_TYPE: "wayland" },
       scriptPath: () => "/missing/pill.py",
       existsSync: () => false,
-      spawn: ((() => {
+      spawn: (() => {
         spawned.push("spawn");
         return readyChild() as unknown as ChildProcessWithoutNullStreams;
-      }) as unknown) as NonNullable<PillIo["spawn"]>,
+      }) as unknown as NonNullable<PillIo["spawn"]>,
     });
     missing.show({ state: "listening" });
     const x11 = new PillService({
@@ -152,10 +230,10 @@ describe("pill process protocol", () => {
       env: { XDG_SESSION_TYPE: "x11" },
       scriptPath: () => "/tmp/pill.py",
       existsSync: () => true,
-      spawn: ((() => {
+      spawn: (() => {
         spawned.push("spawn");
         return readyChild() as unknown as ChildProcessWithoutNullStreams;
-      }) as unknown) as NonNullable<PillIo["spawn"]>,
+      }) as unknown as NonNullable<PillIo["spawn"]>,
     });
     x11.show({ state: "listening" });
     expect(spawned).toEqual([]);

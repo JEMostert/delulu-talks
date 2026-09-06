@@ -3,8 +3,8 @@ import type { TranscriptRecord } from "../../src/types";
 
 mock.module("electron", () => ({ app: {} }));
 
-let normalizeSettings: typeof import("./storage")["normalizeSettings"];
-let applyTranscriptEdit: typeof import("./storage")["applyTranscriptEdit"];
+let normalizeSettings: (typeof import("./storage"))["normalizeSettings"];
+let applyTranscriptEdit: (typeof import("./storage"))["applyTranscriptEdit"];
 
 beforeAll(async () => {
   ({ normalizeSettings, applyTranscriptEdit } = await import("./storage"));
@@ -13,38 +13,72 @@ beforeAll(async () => {
 describe("settings migration", () => {
   test("shows onboarding until a first-run choice is persisted", () => {
     expect(normalizeSettings({}).onboardingComplete).toBe(false);
-    expect(normalizeSettings({ onboardingComplete: true }).onboardingComplete).toBe(true);
+    expect(
+      normalizeSettings({ onboardingComplete: true }).onboardingComplete,
+    ).toBe(true);
   });
 
   test("migrates removed Tauri models to the balanced Crisper default", () => {
-    const settings = normalizeSettings({ model: "mossTranscribeDiarize", language: "auto", autoPaste: false });
+    const settings = normalizeSettings({
+      model: "mossTranscribeDiarize",
+      language: "auto",
+      autoPaste: false,
+    });
     expect(settings.model).toBe("crisperMedium");
     expect(settings.transcriptionMode).toBe("dual");
     expect(settings.language).toBe("en");
     expect(settings.autoPaste).toBeFalse();
     expect(settings.shortcutMode).toBe("hold");
-    expect(normalizeSettings({ shortcutMode: "toggle" }).shortcutMode).toBe("toggle");
+    expect(normalizeSettings({ shortcutMode: "toggle" }).shortcutMode).toBe(
+      "toggle",
+    );
   });
 
   test("moves the previous default shortcut to Meta + Z without changing custom bindings", () => {
-    expect(normalizeSettings({ shortcut: "CommandOrControl+Shift+Space" }).shortcut).toBe("Super+Z");
-    expect(normalizeSettings({ shortcut: "Ctrl+Alt+M" }).shortcut).toBe("Ctrl+Alt+M");
+    expect(
+      normalizeSettings({ shortcut: "CommandOrControl+Shift+Space" }).shortcut,
+    ).toBe("Super+Z");
+    expect(normalizeSettings({ shortcut: "Ctrl+Alt+M" }).shortcut).toBe(
+      "Ctrl+Alt+M",
+    );
   });
 
   test("sanitizes custom vocabulary at the IPC boundary", () => {
-    const settings = normalizeSettings({ customWords: [{ id: "x", term: " Nyra ", soundsLike: "nira", enabled: true }, { term: "" }] });
-    expect(settings.customWords).toEqual([{ id: "x", term: "Nyra", soundsLike: "nira", replacement: "", enabled: true }]);
+    const settings = normalizeSettings({
+      customWords: [
+        { id: "x", term: " Nyra ", soundsLike: "nira", enabled: true },
+        { term: "" },
+      ],
+    });
+    expect(settings.customWords).toEqual([
+      {
+        id: "x",
+        term: "Nyra",
+        soundsLike: "nira",
+        replacement: "",
+        enabled: true,
+      },
+    ]);
   });
 
   test("normalizes Magic model residency settings", () => {
-    const settings = normalizeSettings({ magicModel: "invented-8b", magicPreset: "invented", magicEnabled: false, magicAllowInferences: true, preloadMagicModel: false, modelIdleMinutes: 999 });
+    const settings = normalizeSettings({
+      magicModel: "invented-8b",
+      magicPreset: "invented",
+      magicEnabled: false,
+      magicAllowInferences: true,
+      preloadMagicModel: false,
+      modelIdleMinutes: 999,
+    });
     expect(settings.magicModel).toBe("qwen35Medium");
     expect(settings.magicEnabled).toBeFalse();
     expect(settings.magicPreset).toBe("polish");
     expect(settings.magicAllowInferences).toBeTrue();
     expect(settings.preloadMagicModel).toBeFalse();
     expect(settings.modelIdleMinutes).toBe(15);
-    expect(normalizeSettings({ modelIdleMinutes: 30 }).modelIdleMinutes).toBe(30);
+    expect(normalizeSettings({ modelIdleMinutes: 30 }).modelIdleMinutes).toBe(
+      30,
+    );
   });
 });
 
@@ -61,20 +95,37 @@ describe("non-destructive transcript correction", () => {
     language: "en",
     words: [],
     verbatimWords: [],
-    insights: { fillerCount: 1, repetitionCount: 0, cutOffCount: 0, vocalEventCount: 0, wordsPerMinute: 90, speakingSeconds: 1 },
+    insights: {
+      fillerCount: 1,
+      repetitionCount: 0,
+      cutOffCount: 0,
+      vocalEventCount: 0,
+      wordsPerMinute: 90,
+      speakingSeconds: 1,
+    },
     source: "dictation",
     processingTimeMs: 200,
   };
 
   test("stores a correction beside the untouched model output", () => {
-    const updated = applyTranscriptEdit(record, "intended", "  Corrected clean text.  ");
+    const updated = applyTranscriptEdit(
+      record,
+      "intended",
+      "  Corrected clean text.  ",
+    );
     expect(updated.intendedText).toBe("Original clean text.");
     expect(updated.editedIntendedText).toBe("Corrected clean text.");
   });
 
   test("restores the original and rejects an empty correction", () => {
-    const updated = applyTranscriptEdit({ ...record, editedIntendedText: "Corrected." }, "intended", null);
+    const updated = applyTranscriptEdit(
+      { ...record, editedIntendedText: "Corrected." },
+      "intended",
+      null,
+    );
     expect(updated.editedIntendedText).toBeNull();
-    expect(() => applyTranscriptEdit(record, "intended", "   ")).toThrow("cannot be empty");
+    expect(() => applyTranscriptEdit(record, "intended", "   ")).toThrow(
+      "cannot be empty",
+    );
   });
 });

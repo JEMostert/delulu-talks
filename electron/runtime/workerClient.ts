@@ -1,0 +1,131 @@
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createInterface } from "node:readline";
+import { randomUUID } from "node:crypto";
+
+type Pending = {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+};
+const PREFIX = "@delulu:";
+
+/** One JSON-lines transport, with bounded diagnostics and deterministic failure cleanup. */
+export class WorkerClient {
+  private child: ChildProcessWithoutNullStreams | null = null;
+  private pending = new Map<string, Pending>();
+  private diagnostics = "";
+  constructor(
+    private readonly config: () => {
+      python: string;
+      script: string;
+      env: NodeJS.ProcessEnv;
+    },
+    private readonly onFailure: (error: Error) => void,
+  ) {}
+  get running(): boolean {
+    return this.child !== null;
+  }
+  get stderr(): string {
+    return this.diagnostics;
+  }
+  get busy(): boolean {
+    return this.pending.size > 0;
+  }
+
+  private start(): ChildProcessWithoutNullStreams {
+    if (this.child) return this.child;
+    const { python, script, env } = this.config();
+    const child = spawn(python, ["-u", script], { windowsHide: true, env });
+    this.child = child;
+    this.diagnostics = "";
+    const lines = createInterface({ input: child.stdout });
+    lines.on("line", (line) => {
+      if (!line.startsWith(PREFIX)) return;
+      try {
+        const response = JSON.parse(line.slice(PREFIX.length));
+        if (typeof response.id !== "string" || typeof response.ok !== "boolean")
+          throw new Error("Invalid model worker response");
+        const request = this.pending.get(response.id);
+        if (!request) return;
+        clearTimeout(request.timer);
+        this.pending.delete(response.id);
+        if (response.ok) request.resolve(response.result);
+        else
+          request.reject(
+            new Error(
+              typeof response.error === "string"
+                ? response.error
+                : "Model operation failed",
+            ),
+          );
+      } catch (reason) {
+        this.fail(reason instanceof Error ? reason : new Error(String(reason)));
+      }
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      this.diagnostics = `${this.diagnostics}${chunk}`.slice(-80_000);
+    });
+    child.once("error", (error) => {
+      if (this.child === child) this.fail(error);
+    });
+    child.once("exit", (code) => {
+      lines.close();
+      if (this.child !== child) return;
+      this.fail(
+        new Error(
+          code === 0
+            ? "Model worker closed"
+            : this.diagnostics.trim().split("\n").at(-1) ||
+                `Model worker exited (${code})`,
+        ),
+      );
+    });
+    return child;
+  }
+
+  request<T>(
+    command: string,
+    payload: Record<string, unknown> = {},
+    timeoutMs = 30 * 60_000,
+  ): Promise<T> {
+    const child = this.start();
+    const id = randomUUID();
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(
+        () =>
+          this.fail(
+            new Error(
+              `Model operation ${command} timed out. Load the model to try again.`,
+            ),
+          ),
+        timeoutMs,
+      );
+      this.pending.set(id, {
+        resolve: (value) => resolve(value as T),
+        reject,
+        timer,
+      });
+      child.stdin.write(
+        `${JSON.stringify({ ...payload, id, command })}\n`,
+        (error) => {
+          if (error && this.child === child) this.fail(error);
+        },
+      );
+    });
+  }
+
+  private fail(error: Error): void {
+    this.stop(error);
+    this.onFailure(error);
+  }
+  stop(error = new Error("Model worker stopped")): void {
+    const child = this.child;
+    this.child = null;
+    for (const request of this.pending.values()) {
+      clearTimeout(request.timer);
+      request.reject(error);
+    }
+    this.pending.clear();
+    child?.kill();
+  }
+}

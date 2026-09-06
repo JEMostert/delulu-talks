@@ -3,9 +3,9 @@
   <h1>Delulu Talks</h1>
   <p><strong>Hold. Speak. Release. Your words land polished wherever you are typing.</strong></p>
   <p>
-    <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><img src="https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&amp;label=release&amp;color=ffe600&amp;labelColor=171914" alt="Latest release" /></a>
-    <img src="https://img.shields.io/badge/Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-Desktop-ffe600?style=for-the-badge&amp;labelColor=171914" alt="Linux, Windows, and macOS" />
-    <img src="https://img.shields.io/badge/AI-local--first-ffe600?style=for-the-badge&amp;labelColor=171914" alt="Local-first AI" />
+    <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><img src="https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&amp;label=release&amp;color=42684c&amp;labelColor=171914" alt="Latest release" /></a>
+    <img src="https://img.shields.io/badge/Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-Desktop-42684c?style=for-the-badge&amp;labelColor=171914" alt="Linux, Windows, and macOS" />
+    <img src="https://img.shields.io/badge/AI-local--first-42684c?style=for-the-badge&amp;labelColor=171914" alt="Local-first AI" />
   </p>
   <p>
     <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><strong>Download the latest release</strong></a> ·
@@ -49,6 +49,15 @@ Release the shortcut and Delulu Talks finishes the job. The native recording pil
 | **Speech Lab** | Imports audio or video for transcription, Verbatimize, forced alignment, word timelines, and SRT/VTT export. |
 | **Local by design** | Runs speech and writing models on your machine. There is no telemetry or cloud transcription. |
 
+## A quieter workspace
+
+Version 0.6 brings a consistent warm interface with light, dark, and system themes. Home puts recording and recent results first. History shares the same review tools, Wordbook supports editable voice snippets, and Magic keeps drafts while you move between pages.
+
+- **Recover quickly:** paste the latest result, retry a failed recording from memory, or discard it explicitly.
+- **Keep your originals:** edit clean or verbatim text without overwriting the model output; remember a recurring correction in Wordbook.
+- **Stay in control:** review/export session transcripts even with history saving off. Use Settings → Advanced for memory and backend preferences.
+- **Maintain locally:** inspect device diagnostics, repair pinned runtimes, and update the app independently of your model downloads.
+
 ## Pick the right-sized brain
 
 Speech and Magic can stay loaded together. Pin the models you use every day, or let Delulu Talks unload them after a configurable idle period.
@@ -79,7 +88,7 @@ Arch and CachyOS users can install the pacman package instead. A portable `tar.x
 
 Use the Windows installer or the macOS DMG from the same release page. Current packages are not code-signed, so the operating system may ask you to confirm the first launch.
 
-Delulu Talks checks GitHub Releases for updates, displays download progress, and offers a safe restart when the next version is ready.
+Supported installed packages check GitHub Releases for updates. Downloads are explicit, progress is visible, and restart waits until recording, inference, and setup are idle. Linux automatic updates use AppImage; pacman and portable packages link to manual downloads.
 
 ## Your first minute
 
@@ -88,11 +97,11 @@ Delulu Talks checks GitHub Releases for updates, displays download progress, and
 3. Focus any text field, hold the <kbd>Windows</kbd>/<kbd>Meta</kbd> key + <kbd>Z</kbd>, speak, then release.
 4. Optionally open **Magic**, install a Qwen model, and choose the rewrite style that should run in your shortcut pipeline.
 
-The app manages its own isolated Python environment and model cache inside the platform application-data directory.
+The app manages its own isolated Python environment and model cache inside the platform application-data directory. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → App & updates offers repair and update controls.
 
 ## Run from source
 
-You will need [Bun](https://bun.sh/), Python 3.10–3.13 (3.11 or 3.12 recommended), and FFmpeg for compressed audio or video imports.
+You will need [Bun](https://bun.sh/), Python 3.11–3.13 (3.11 or 3.12 recommended), and FFmpeg for compressed audio or video imports.
 
 ```bash
 bun install
@@ -132,12 +141,14 @@ Electron main process
 ```bash
 bun run typecheck
 bun test
+bun run test:e2e
+bun run test:desktop
 bun run build
 python3 -m py_compile electron/python/transcription_engine.py
 bun run dist:linux
 ```
 
-Linux packaging produces AppImage, pacman, and `tar.xz` artifacts. The release workflow builds native Linux, macOS, and Windows packages on version tags.
+Linux packaging produces AppImage, pacman, and `tar.xz` artifacts. The release workflow verifies browser and isolated desktop workflows, then builds native Linux, macOS, and Windows packages on version tags. A tag must match the package version before it can publish.
 
 </details>
 
@@ -163,10 +174,36 @@ src/
 
 ## Privacy and licenses
 
-Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environment, and downloaded models stay under Electron's application-data directory.
+Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Failed captures can remain in memory for Retry during the session; Discard releases them, and closing the app loses that recovery copy. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environment, and downloaded models stay under Electron's application-data directory.
 
 Delulu Talks is [MIT licensed](LICENSE). CrisperWhisper inference code is MIT, while its standard 2.0 weights use the Nyra Health Non-Commercial Research License; commercial use requires a separate Nyra license. Delulu Talks does not bundle weights or offer Pro downloads. Read [Nyra's license explanation](https://github.com/nyrahealth/CrisperWhisper#license) and the [weight license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md). Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
 
 <div align="center">
   <strong>Your voice stays yours.</strong>
 </div>
+
+## Development checks
+
+```bash
+bun run format:check
+bun run typecheck
+bun test
+bunx playwright install chromium
+bun run test:e2e
+bun run test:desktop
+```
+
+The desktop smoke check uses temporary user data and skips global desktop integration. For opt-in real model verification with an existing runtime and cached models:
+
+```bash
+/path/to/asr-venv/bin/python scripts/runtime-smoke.py --cache /path/to/models --magic
+```
+
+To exercise the full Electron transcription, correction and export path with the same existing runtime:
+
+```bash
+bun run build
+node scripts/desktop-smoke.mjs "/path/to/Delulu Talks user data"
+```
+
+This uses temporary settings/history, requires the existing model-license acceptance, disables clipboard/paste, and runs offline against cached models. The Python command above also runs offline against the included short audio sample. It is a smoke check, not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).

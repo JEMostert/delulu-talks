@@ -1,53 +1,243 @@
-import { CircleHelp, Plus, Search, Sparkles, Trash2, Volume2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { BookOpenText, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ConfirmDialog, EmptyState, Modal, Toggle } from "../components/ui";
 import type { CustomWord } from "../types";
 
-function newId() { return `word-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
-
-export function VocabularyPage({ words, saving, onChange }: { words: CustomWord[]; saving: boolean; onChange: (words: CustomWord[]) => void }) {
+export function VocabularyPage({
+  words,
+  saving,
+  onChange,
+}: {
+  words: CustomWord[];
+  saving: boolean;
+  onChange: (words: CustomWord[]) => Promise<boolean>;
+}) {
   const [query, setQuery] = useState("");
-  const [draft, setDraft] = useState({ term: "", soundsLike: "", replacement: "" });
-  const filtered = useMemo(() => words.filter((word) => `${word.term} ${word.soundsLike} ${word.replacement}`.toLowerCase().includes(query.toLowerCase())), [query, words]);
-
-  function addWord() {
-    const term = draft.term.trim();
-    if (!term) return;
-    onChange([{ id: newId(), term, soundsLike: draft.soundsLike.trim(), replacement: draft.replacement.trim(), enabled: true }, ...words]);
-    setDraft({ term: "", soundsLike: "", replacement: "" });
-  }
-
+  const [draft, setDraft] = useState<CustomWord | null>(null);
+  const [remove, setRemove] = useState<CustomWord | null>(null);
+  const filtered = useMemo(
+    () =>
+      words.filter((word) =>
+        `${word.term} ${word.soundsLike} ${word.replacement}`
+          .toLowerCase()
+          .includes(query.toLowerCase()),
+      ),
+    [query, words],
+  );
+  const duplicate =
+    draft &&
+    words.some(
+      (word) =>
+        word.id !== draft.id &&
+        word.term.toLowerCase() === draft.term.trim().toLowerCase(),
+    );
   return (
-    <div className="content-stack vocabulary-page">
-      <section className="view-toolbar"><div><strong>Persistent correction rules</strong><span>Apply exact spelling, spoken aliases, and reusable text across every recording and restart.</span></div></section>
-
-      <section className="word-composer">
-        <div className="composer-heading"><span>NEW RULE</span><div><h3>Add a custom word</h3><p>Give us the right spelling and optionally what the model tends to hear.</p></div></div>
-        <div className="composer-grid">
-          <label><span>Correct word <b>Required</b></span><input aria-label="Correct word" value={draft.term} onChange={(event) => setDraft({ ...draft, term: event.target.value })} placeholder="e.g. Delulu" /></label>
-          <label><span>Sounds like <small>comma separated</small></span><input aria-label="Spoken aliases" value={draft.soundsLike} onChange={(event) => setDraft({ ...draft, soundsLike: event.target.value })} placeholder="de loo loo, the lulu" /></label>
-          <label><span>Expand to <small>optional</small></span><input aria-label="Expanded output" value={draft.replacement} onChange={(event) => setDraft({ ...draft, replacement: event.target.value })} placeholder="e.g. Delulu Talks™" /></label>
-          <button className="primary-button" disabled={!draft.term.trim() || saving} onClick={addWord}><Plus /> Add word</button>
+    <div className="content-stack">
+      <section className="wordbook-intro">
+        <div>
+          <span className="eyebrow">YOUR PERSONAL DICTIONARY</span>
+          <h2>Some words are just yours.</h2>
+          <p>
+            Names, unusual spellings, and little shortcuts. Teach Delulu once,
+            use them in every transcript.
+          </p>
         </div>
-        <div className="composer-tip"><Sparkles /> Say “de loo loo” and the final transcript will contain “Delulu”. Use “expand to” for voice snippets and boilerplate.</div>
+        <button
+          className="primary-button"
+          disabled={saving || words.length >= 500}
+          onClick={() =>
+            setDraft({
+              id: crypto.randomUUID(),
+              term: "",
+              soundsLike: "",
+              replacement: "",
+              enabled: true,
+            })
+          }
+        >
+          <Plus /> Add a word
+        </button>
       </section>
-
+      <div className="history-toolbar">
+        <label className="search-box">
+          <Search />
+          <input
+            aria-label="Search Wordbook"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search your words and snippets…"
+          />
+        </label>
+        <span className="caption">{words.length} / 500 words</span>
+      </div>
       <section className="word-list">
-        <div className="section-heading"><div><p className="eyebrow">WORD BANK</p><h3>{words.length} custom {words.length === 1 ? "word" : "words"}</h3></div><label className="search-box"><Search /><input aria-label="Search Wordbook" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search words" /></label></div>
-        <div className="word-table">
-          <div className="word-row table-head"><span>Word</span><span>Recognition hint</span><span>Final output</span><span>Status</span><span /></div>
-          {filtered.map((word) => (
-            <div className="word-row" key={word.id}>
-              <span className="word-name"><i>{word.term.slice(0, 1).toUpperCase()}</i><strong>{word.term}</strong></span>
-              <span>{word.soundsLike || <em>No aliases</em>}</span><span>{word.replacement || word.term}</span>
-              <button className={`toggle ${word.enabled ? "on" : ""}`} role="switch" aria-checked={word.enabled} aria-label={`Enable ${word.term}`} onClick={() => onChange(words.map((item) => item.id === word.id ? { ...item, enabled: !item.enabled } : item))}><i /></button>
-              <button className="icon-button danger" aria-label={`Delete ${word.term}`} onClick={() => onChange(words.filter((item) => item.id !== word.id))}><Trash2 /></button>
+        {filtered.map((word) => (
+          <article className="word-item" key={word.id}>
+            <span className="word-avatar">{word.term[0].toUpperCase()}</span>
+            <div>
+              <h3>
+                {word.term}
+                {word.replacement && <span className="badge">Snippet</span>}
+              </h3>
+              <p>
+                {word.soundsLike
+                  ? `When you say “${word.soundsLike}”`
+                  : "Uses this exact spelling"}
+              </p>
+              {word.replacement && <blockquote>{word.replacement}</blockquote>}
             </div>
-          ))}
-          {!filtered.length && <div className="empty-state"><Volume2 /><h3>{words.length ? "No matching words" : "No custom words yet"}</h3><p>{words.length ? "Try a different search." : "Add the names and phrases you never want a speech model to butcher again."}</p></div>}
-        </div>
+            <div className="panel-actions">
+              <Toggle
+                value={word.enabled}
+                label={`Enable ${word.term}`}
+                disabled={saving}
+                onChange={() =>
+                  void onChange(
+                    words.map((item) =>
+                      item.id === word.id
+                        ? { ...item, enabled: !item.enabled }
+                        : item,
+                    ),
+                  )
+                }
+              />
+              <button
+                className="icon-button"
+                aria-label={`Edit ${word.term}`}
+                disabled={saving}
+                onClick={() => setDraft({ ...word })}
+              >
+                <Pencil />
+              </button>
+              <button
+                className="icon-button"
+                aria-label={`Delete ${word.term}`}
+                disabled={saving}
+                onClick={() => setRemove(word)}
+              >
+                <Trash2 />
+              </button>
+            </div>
+          </article>
+        ))}
+        {!filtered.length && (
+          <EmptyState
+            icon={BookOpenText}
+            title={words.length ? "No matching words" : "Let’s get familiar"}
+          >
+            {words.length
+              ? "Try a different search."
+              : "Add a name the model misses, or a phrase you say often."}
+          </EmptyState>
+        )}
       </section>
-
-      <div className="info-banner"><CircleHelp /><div><strong>Model context is not persistent memory</strong><p>CrisperWhisper remembers recent words only while continuing one long recording. Native hotword boosting is exclusive to commercially licensed Pro weights, so the standard-model Wordbook uses exact whole-phrase rules that remain predictable across sessions.</p></div></div>
+      <p className="privacy-footnote">
+        Words apply as whole-phrase corrections after transcription. Use “Expand
+        to” for reusable voice snippets.
+      </p>
+      {draft && (
+        <Modal
+          title={
+            words.some((word) => word.id === draft.id)
+              ? "Edit your word"
+              : "A new word to remember"
+          }
+          onClose={() => setDraft(null)}
+          busy={saving}
+          footer={
+            <>
+              <button
+                className="secondary-button"
+                disabled={saving}
+                onClick={() => setDraft(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary-button"
+                disabled={saving || !draft.term.trim() || !!duplicate}
+                onClick={async () => {
+                  const normalized = {
+                    ...draft,
+                    term: draft.term.trim(),
+                    soundsLike: draft.soundsLike.trim(),
+                    replacement: draft.replacement.trim(),
+                  };
+                  if (
+                    await onChange(
+                      words.some((word) => word.id === draft.id)
+                        ? words.map((word) =>
+                            word.id === draft.id ? normalized : word,
+                          )
+                        : [normalized, ...words],
+                    )
+                  )
+                    setDraft(null);
+                }}
+              >
+                Save word
+              </button>
+            </>
+          }
+        >
+          <label className="field">
+            Correct spelling
+            <input
+              autoFocus
+              aria-label="Correct word"
+              maxLength={256}
+              value={draft.term}
+              onChange={(e) => setDraft({ ...draft, term: e.target.value })}
+              placeholder="Delulu"
+            />
+          </label>
+          {duplicate && (
+            <p className="field-error" role="alert">
+              That word already exists. Edit the existing entry instead.
+            </p>
+          )}
+          <label className="field">
+            What it sounds like{" "}
+            <small>Optional · separate aliases with commas</small>
+            <input
+              aria-label="Spoken aliases"
+              maxLength={1024}
+              value={draft.soundsLike}
+              onChange={(e) =>
+                setDraft({ ...draft, soundsLike: e.target.value })
+              }
+              placeholder="the lulu, de loo loo"
+            />
+          </label>
+          <label className="field">
+            Expand to{" "}
+            <small>
+              Optional · insert a longer phrase when you say this word
+            </small>
+            <textarea
+              aria-label="Expanded output"
+              maxLength={4096}
+              value={draft.replacement}
+              onChange={(e) =>
+                setDraft({ ...draft, replacement: e.target.value })
+              }
+              placeholder="Your reusable text goes here…"
+            />
+          </label>
+        </Modal>
+      )}
+      {remove && (
+        <ConfirmDialog
+          title={`Forget “${remove.term}”?`}
+          confirmLabel="Delete word"
+          onClose={() => setRemove(null)}
+          onConfirm={() =>
+            void onChange(words.filter((word) => word.id !== remove.id))
+          }
+        >
+          <p>Future transcripts will no longer use this rule.</p>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { deriveInsights, exportRecord } from "./transcripts";
+import { deliveredText } from "../../src/transcriptText";
 import type { TranscriptRecord } from "../../src/types";
 
 const record: TranscriptRecord = {
@@ -12,14 +13,37 @@ const record: TranscriptRecord = {
   mode: "dual",
   model: "crisperMedium",
   language: "en",
-  words: [{ word: "Hello", start: 0.1, end: 0.4 }, { word: "world.", start: 0.5, end: 0.9 }],
+  words: [
+    { word: "Hello", start: 0.1, end: 0.4 },
+    { word: "world.", start: 0.5, end: 0.9 },
+  ],
   verbatimWords: [],
-  insights: { fillerCount: 1, repetitionCount: 1, cutOffCount: 0, vocalEventCount: 0, wordsPerMinute: 90, speakingSeconds: 1 },
+  insights: {
+    fillerCount: 1,
+    repetitionCount: 1,
+    cutOffCount: 0,
+    vocalEventCount: 0,
+    wordsPerMinute: 90,
+    speakingSeconds: 1,
+  },
   source: "dictation",
   processingTimeMs: 200,
 };
 
 describe("speech metadata", () => {
+  test("copy and paste retain the delivered verbatim choice and its correction", () => {
+    const delivered = { ...record, deliveredVersion: "verbatim" as const };
+    expect(deliveredText(delivered)).toBe(record.verbatimText);
+    expect(
+      deliveredText({
+        ...delivered,
+        editedVerbatimText: "Corrected verbatim.",
+      }),
+    ).toBe("Corrected verbatim.");
+    expect(
+      deliveredText({ ...delivered, magicText: "Rewritten delivery." }),
+    ).toBe("Rewritten delivery.");
+  });
   test("counts disfluencies and repeated words", () => {
     const insights = deriveInsights("[UM] we we th- [laughter]", [], 3_000);
     expect(insights.fillerCount).toBe(1);
@@ -29,27 +53,46 @@ describe("speech metadata", () => {
 
   test("exports dual text and timed captions", () => {
     expect(exportRecord(record, "txt")).toContain("--- Verbatim ---");
-    expect(exportRecord(record, "vtt")).toContain("00:00:00.100 --> 00:00:00.900");
-    expect(exportRecord(record, "srt")).toContain("00:00:00,100 --> 00:00:00,900");
+    expect(exportRecord(record, "vtt")).toContain(
+      "00:00:00.100 --> 00:00:00.900",
+    );
+    expect(exportRecord(record, "srt")).toContain(
+      "00:00:00,100 --> 00:00:00,900",
+    );
   });
 
   test("uses corrections in text exports without replacing model output", () => {
-    const corrected = { ...record, editedIntendedText: "Corrected hello world." };
-    expect(exportRecord(corrected, "txt")).toStartWith("Corrected hello world.");
+    const corrected = {
+      ...record,
+      editedIntendedText: "Corrected hello world.",
+    };
+    expect(exportRecord(corrected, "txt")).toStartWith(
+      "Corrected hello world.",
+    );
     const json = JSON.parse(exportRecord(corrected, "json"));
     expect(json.intendedText).toBe("Hello world.");
     expect(json.editedIntendedText).toBe("Corrected hello world.");
   });
 
   test("exports a corrected verbatim-only record as a single transcript", () => {
-    const corrected = { ...record, mode: "verbatim" as const, intendedText: "", editedVerbatimText: "[UM] corrected world." };
+    const corrected = {
+      ...record,
+      mode: "verbatim" as const,
+      intendedText: "",
+      editedVerbatimText: "[UM] corrected world.",
+    };
     const text = exportRecord(corrected, "txt");
     expect(text).toBe("[UM] corrected world.\n");
     expect(text).not.toContain("--- Verbatim ---");
   });
 
   test("exports the delivered Magic result without losing the source transcript", () => {
-    const rewritten = { ...record, magicText: "A polished delivery.", magicModel: "qwen35Medium" as const, magicPreset: "polish" as const };
+    const rewritten = {
+      ...record,
+      magicText: "A polished delivery.",
+      magicModel: "qwen35Medium" as const,
+      magicPreset: "polish" as const,
+    };
     const text = exportRecord(rewritten, "txt");
     expect(text).toStartWith("A polished delivery.");
     expect(text).toContain("--- Source transcript ---");

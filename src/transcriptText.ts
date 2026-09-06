@@ -1,20 +1,43 @@
 import type { TranscriptRecord, TranscriptVersion } from "./types";
 
-export function originalTranscriptText(record: TranscriptRecord, version: TranscriptVersion): string {
+export function originalTranscriptText(
+  record: TranscriptRecord,
+  version: TranscriptVersion,
+): string {
   return version === "intended"
     ? record.intendedText || record.text
     : record.verbatimText || record.text;
 }
 
-export function transcriptText(record: TranscriptRecord, version: TranscriptVersion): string {
-  const edited = version === "intended" ? record.editedIntendedText : record.editedVerbatimText;
+export function transcriptText(
+  record: TranscriptRecord,
+  version: TranscriptVersion,
+): string {
+  const edited =
+    version === "intended"
+      ? record.editedIntendedText
+      : record.editedVerbatimText;
   return edited ?? originalTranscriptText(record, version);
 }
 
-export function transcriptIsEdited(record: TranscriptRecord, version: TranscriptVersion): boolean {
-  return (version === "intended" ? record.editedIntendedText : record.editedVerbatimText) != null;
+export function transcriptIsEdited(
+  record: TranscriptRecord,
+  version: TranscriptVersion,
+): boolean {
+  return (
+    (version === "intended"
+      ? record.editedIntendedText
+      : record.editedVerbatimText) != null
+  );
 }
 
 export function deliveredText(record: TranscriptRecord): string {
-  return record.magicText?.trim() || transcriptText(record, record.intendedText ? "intended" : "verbatim");
+  return (
+    record.magicText?.trim() ||
+    transcriptText(
+      record,
+      record.deliveredVersion ??
+        (record.intendedText ? "intended" : "verbatim"),
+    )
+  );
 }

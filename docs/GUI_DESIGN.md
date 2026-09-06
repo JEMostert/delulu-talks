@@ -1,40 +1,28 @@
-# Desktop GUI design rationale
+# Interface design
 
-Research snapshot: 11 August 2026. The redesign follows desktop guidance rather than a landing-page pattern.
+Delulu should feel like a quiet personal utility. The visual direction is warm and minimal: neutral green-tinted surfaces, a restrained green accent, readable text, soft borders and consistent rounded controls.
 
-## Principles used
+## Design system
 
-- [KDE's layout and navigation guidance](https://develop.kde.org/hig/layout_and_nav/) treats navigation as a chore to minimize and recommends a desktop structure built from a main content view, navigation sidebar, and contextual toolbar.
-- [KDE's application-design guidance](https://develop.kde.org/hig/kde_app_design/) asks that the common path stay obvious while advanced capability remains available when needed.
-- [KDE's status guidance](https://develop.kde.org/hig/status_changes/) favors quiet, actionable state changes over unnecessary success messages and decorative status color.
-- [Microsoft's command-bar guidance](https://learn.microsoft.com/en-us/windows/apps/design/controls/command-bar) places the most common commands where they are always easy to reach and orders them by importance.
-- [GNOME's header-bar guidance](https://developer.gnome.org/hig/patterns/containers/header-bars.html) keeps only a small number of context-relevant primary controls in the compact top region.
+- Colors are semantic CSS variables in `src/styles/tokens.css`, with system, light and dark appearance. The same components work in both themes.
+- Body text uses the system sans-serif stack; transcript text is larger with generous line height. Uppercase labels are reserved for small section cues.
+- Reusable primitives live in `src/components/ui`. Native `dialog` provides focus containment, Escape handling and focus restoration.
+- All actionable controls have explicit focus indicators. Reduced-motion preferences disable decorative motion. Compact windows keep labels through accessible names/tooltips and reduce the sidebar to icons.
+- Success notifications, persistent errors, busy buttons and setup progress are visually distinct. Setup-stage progress is explicitly described as stages rather than download bytes.
 
 ## Information architecture
 
-```text
-Work
-  Dictation          immediate capture, output choice, latest result
-  Magic              rewrite a transcript/draft with a visible accuracy boundary
-  Speech Lab         file transcription, Verbatimize, forced alignment
-  History            find, compare, copy, and export results
+Home, History and Magic are the daily workspace. Wordbook, Speech Lab and Models provide personalization and advanced tools. Settings sits at the bottom of the sidebar with General, Writing, Advanced and App & updates sections.
 
-Configure
-  Wordbook           persistent spelling and expansion rules
-  Models & runtime   model choice, setup, residency, acceleration
+Home leads with recording and the active shortcut. Language and writing style are nearby; recent transcripts provide copy, review and paste-last recovery. Technical model/backend choices live outside the daily recording path.
 
-Settings             lower-frequency global preferences
-```
+Home and History share `TranscriptCard`. Corrections preserve the original. Remember a word is explicit and opens a short Wordbook form. A voice snippet is a Wordbook term with expansion text.
 
-There is no Home destination. Launching the application opens Dictation, the highest-frequency task. Record/stop, the shortcut, and runtime status live in the global command bar instead of being repeated as page cards. The sidebar contains destinations only; contextual actions belong in each view's toolbar.
+Magic keeps the rewrite button at the top of its controls. Source and result are separate, drafts survive navigation, and model settings are secondary. Model inference promises are phrased as user-controlled instructions rather than certainty.
 
-## Interaction rules
+Models uses selectable cards, an actionable setup banner and device diagnostics. Settings separates application updates from local model installation and repair. The recording overlay and desktop icon use the same warm palette.
 
-- Optimize for the repeated record → transcribe → optional Magic → copy/paste loop; a capture does not require navigation.
-- Use dense rows, split views, tables, and toolbars where the content is operational. Avoid marketing heroes, oversized headings, dashboard cards, gradients, and ornamental statistics.
-- Keep shortcut registration and model/runtime failure visible and actionable without competing with the Record command.
-- On Wayland, display the binding reported by the desktop and open its shortcut editor instead of presenting a second editable value that can drift from the system binding.
-- Save Dictation quick controls immediately and silently. Reserve confirmations for transcript capture, copy/export, destructive actions, and explicit Settings saves.
-- Preserve transcript truth: intended and verbatim remain parallel views. Manual corrections live beside the untouched model output, drive copy/TXT export, and always offer Restore original. Wordbook changes are explicit exact-text rules, while delivery settings only choose which version leaves the app.
-- Keep generative expansion legible: Magic separates rewrite style from the factual boundary, defaults to preserving facts, and labels outputs that may contain inferred constraints or examples. The source remains visible beside the generated result for review.
-- Keep destructive actions visually distinct, require confirmation for environment/history removal, and provide text labels in addition to color and icons.
+
+## Identity
+
+The SVG at `public/delulu-talks-icon.svg` is the source for application branding and desktop icon assets. It preserves the original orbital microphone concept: cyan voice, midnight-blue rounded hexagon, two clean orbital arcs. The icon's blue/cyan colors are identity colors; interactive controls continue to use the restrained green theme accent. Avoid glow filters and fine decorative marks so the microphone remains legible at small sizes.

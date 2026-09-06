@@ -1,49 +1,40 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
   <title id="title">Delulu Talks</title>
-  <desc id="desc">An orbital cyan microphone inside a futuristic blue speech core.</desc>
+  <desc id="desc">A luminous cyan microphone in a midnight-blue hexagonal core, circled by two orbital arcs.</desc>
   <defs>
-    <linearGradient id="core" x1="42" y1="32" x2="211" y2="226" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#102E56"/>
-      <stop offset=".52" stop-color="#07172D"/>
-      <stop offset="1" stop-color="#020A16"/>
+    <linearGradient id="core" x1="63" y1="42" x2="191" y2="215" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#183C55"/>
+      <stop offset=".55" stop-color="#102739"/>
+      <stop offset="1" stop-color="#091724"/>
     </linearGradient>
-    <linearGradient id="energy" x1="38" y1="38" x2="218" y2="218" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#6CF6FF"/>
-      <stop offset=".48" stop-color="#00C8FF"/>
-      <stop offset="1" stop-color="#3971FF"/>
+    <linearGradient id="edge" x1="62" y1="44" x2="202" y2="210" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#619AA9"/>
+      <stop offset=".5" stop-color="#294A62"/>
+      <stop offset="1" stop-color="#326985"/>
     </linearGradient>
-    <radialGradient id="glow">
-      <stop stop-color="#00D8FF" stop-opacity=".42"/>
-      <stop offset="1" stop-color="#00D8FF" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="5" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
+    <linearGradient id="orbit" x1="34" y1="38" x2="226" y2="218" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8CEDE8"/>
+      <stop offset=".5" stop-color="#40C9E2"/>
+      <stop offset="1" stop-color="#548DDD"/>
+    </linearGradient>
+    <linearGradient id="voice" x1="104" y1="69" x2="152" y2="188" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D7FCF3"/>
+      <stop offset=".52" stop-color="#87E5E8"/>
+      <stop offset="1" stop-color="#51B9D8"/>
+    </linearGradient>
   </defs>
-
-  <circle cx="128" cy="126" r="112" fill="url(#glow)"/>
-  <path d="M128 14 214 62v99l-86 49-86-49V62z" fill="url(#core)" stroke="#163C68" stroke-width="5"/>
-  <path d="M128 25 204 68v86l-76 43-76-43V68z" fill="none" stroke="url(#energy)" stroke-width="2" stroke-dasharray="4 7" opacity=".72"/>
-
-  <g fill="none" stroke="url(#energy)" stroke-linecap="round">
-    <path d="M30 119a99 99 0 0 1 19-56" stroke-width="5"/>
-    <path d="M207 62a99 99 0 0 1 20 58" stroke-width="5"/>
-    <path d="M219 162a100 100 0 0 1-40 46" stroke-width="5"/>
-    <path d="M77 210a100 100 0 0 1-40-45" stroke-width="5"/>
+  <g fill="none" stroke="url(#orbit)" stroke-width="7" stroke-linecap="round">
+    <path d="M43 61a108 108 0 0 1 181 17"/>
+    <path d="M233 153a108 108 0 0 1-193 39"/>
   </g>
-
-  <g filter="url(#softGlow)" stroke="url(#energy)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="103" y="69" width="50" height="72" rx="25" stroke-width="10"/>
-    <path d="M84 119v3a44 44 0 0 0 88 0v-3" stroke-width="9"/>
-    <path d="M128 166v22M105 188h46" stroke-width="9"/>
+  <path d="M119 32a18 18 0 0 1 18 0l69 40a18 18 0 0 1 9 15v82a18 18 0 0 1-9 15l-69 40a18 18 0 0 1-18 0l-69-40a18 18 0 0 1-9-15V87a18 18 0 0 1 9-15Z" fill="url(#core)" stroke="url(#edge)" stroke-width="3"/>
+  <path d="m61 92 67-39 67 39" fill="none" stroke="#8CEDE8" stroke-opacity=".16" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="106" y="71" width="44" height="72" rx="22" fill="url(#voice)"/>
+  <path d="M120 89h16m-16 12h16" fill="none" stroke="#15384C" stroke-width="4" stroke-linecap="round" opacity=".65"/>
+  <g fill="none" stroke="url(#voice)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M88 124a40 40 0 0 0 80 0"/>
+    <path d="M128 165v22m-20 0h40"/>
   </g>
-
-  <g fill="#7AF7FF" filter="url(#softGlow)">
-    <circle cx="41" cy="62" r="5"/>
-    <circle cx="216" cy="62" r="5"/>
-    <circle cx="227" cy="132" r="4"/>
-    <circle cx="29" cy="132" r="4"/>
-  </g>
-  <path d="M90 224h76l-15 18h-46z" fill="url(#energy)" opacity=".9"/>
+  <circle cx="224" cy="78" r="8" fill="#72DAE7"/>
+  <circle cx="40" cy="192" r="7" fill="#66A9DE"/>
 </svg>
