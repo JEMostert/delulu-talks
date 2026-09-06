@@ -48,8 +48,9 @@ try {
   }
   app = await electron.launch({ args: ["."], env });
   const page = await app.firstWindow();
-  await page.getByRole("button", { name: "Explore first" }).click();
+  await page.getByRole("button", { name: "Dismiss setup" }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Application", exact: true }).click();
   await page.getByRole("button", { name: "dark", exact: true }).click();
   await page.waitForFunction(
     () => document.documentElement.dataset.theme === "dark",

@@ -1,40 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
   <title id="title">Delulu Talks</title>
-  <desc id="desc">A luminous cyan microphone in a midnight-blue hexagonal core, circled by two orbital arcs.</desc>
+  <desc id="desc">An ocean-blue D shaped by a flowing wave.</desc>
   <defs>
-    <linearGradient id="core" x1="63" y1="42" x2="191" y2="215" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#183C55"/>
-      <stop offset=".55" stop-color="#102739"/>
-      <stop offset="1" stop-color="#091724"/>
-    </linearGradient>
-    <linearGradient id="edge" x1="62" y1="44" x2="202" y2="210" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#619AA9"/>
-      <stop offset=".5" stop-color="#294A62"/>
-      <stop offset="1" stop-color="#326985"/>
-    </linearGradient>
-    <linearGradient id="orbit" x1="34" y1="38" x2="226" y2="218" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#8CEDE8"/>
-      <stop offset=".5" stop-color="#40C9E2"/>
-      <stop offset="1" stop-color="#548DDD"/>
-    </linearGradient>
-    <linearGradient id="voice" x1="104" y1="69" x2="152" y2="188" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#D7FCF3"/>
-      <stop offset=".52" stop-color="#87E5E8"/>
-      <stop offset="1" stop-color="#51B9D8"/>
-    </linearGradient>
+    <linearGradient id="depth" x1="40" y1="20" x2="206" y2="238" gradientUnits="userSpaceOnUse"><stop stop-color="#123d59"/><stop offset="1" stop-color="#061625"/></linearGradient>
+    <linearGradient id="current" x1="52" y1="49" x2="195" y2="213" gradientUnits="userSpaceOnUse"><stop stop-color="#68e4f5"/><stop offset=".48" stop-color="#19b5e5"/><stop offset="1" stop-color="#1372d0"/></linearGradient>
   </defs>
-  <g fill="none" stroke="url(#orbit)" stroke-width="7" stroke-linecap="round">
-    <path d="M43 61a108 108 0 0 1 181 17"/>
-    <path d="M233 153a108 108 0 0 1-193 39"/>
-  </g>
-  <path d="M119 32a18 18 0 0 1 18 0l69 40a18 18 0 0 1 9 15v82a18 18 0 0 1-9 15l-69 40a18 18 0 0 1-18 0l-69-40a18 18 0 0 1-9-15V87a18 18 0 0 1 9-15Z" fill="url(#core)" stroke="url(#edge)" stroke-width="3"/>
-  <path d="m61 92 67-39 67 39" fill="none" stroke="#8CEDE8" stroke-opacity=".16" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="106" y="71" width="44" height="72" rx="22" fill="url(#voice)"/>
-  <path d="M120 89h16m-16 12h16" fill="none" stroke="#15384C" stroke-width="4" stroke-linecap="round" opacity=".65"/>
-  <g fill="none" stroke="url(#voice)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M88 124a40 40 0 0 0 80 0"/>
-    <path d="M128 165v22m-20 0h40"/>
-  </g>
-  <circle cx="224" cy="78" r="8" fill="#72DAE7"/>
-  <circle cx="40" cy="192" r="7" fill="#66A9DE"/>
+  <rect x="8" y="8" width="240" height="240" rx="53" fill="url(#depth)"/>
+  <path d="M60 46h65c52 0 89 34 89 81 0 19-6 36-17 50l-27-15c9-9 14-21 14-35 0-30-24-51-60-51H90v32H60Zm0 112h30v23h34c13 0 25-3 34-8l28 17c-16 14-38 21-61 21H60Z" fill="url(#current)"/>
+  <path d="M36 135c27-22 47-24 69-5l26 24c22 20 42 20 69 2" fill="none" stroke="#061c2e" stroke-width="22" stroke-linecap="round"/>
+  <path d="M36 132c27-22 47-24 69-5l26 24c22 20 42 20 69 2" fill="none" stroke="url(#current)" stroke-width="12" stroke-linecap="round"/>
 </svg>

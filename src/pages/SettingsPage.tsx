@@ -83,10 +83,10 @@ export function SettingsPage(props: Props) {
     <div className="content-stack settings-page">
       <div className="page-tabs" role="tablist" aria-label="Settings sections">
         {[
-          ["general", "General"],
+          ["general", "Capture & delivery"],
           ["writing", "Writing"],
-          ["advanced", "Advanced"],
-          ["maintenance", "App & updates"],
+          ["advanced", "Runtime"],
+          ["maintenance", "Application"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -104,28 +104,10 @@ export function SettingsPage(props: Props) {
         <>
           <section className="settings-group">
             <div className="group-heading">
-              <h3>Make yourself at home</h3>
-              <p>The little things that make Delulu yours.</p>
+              <h3>Capture configuration</h3>
+              <p>Input, shortcut and recording behavior.</p>
             </div>
-            <SettingRow
-              icon={Monitor}
-              title="Appearance"
-              description="Follow your desktop, or choose your own mood."
-            >
-              <div className="segmented" role="group" aria-label="Appearance">
-                {(["system", "light", "dark"] as const).map((theme) => (
-                  <button
-                    key={theme}
-                    aria-pressed={s.theme === theme}
-                    className={s.theme === theme ? "active" : ""}
-                    disabled={saving}
-                    onClick={() => save({ theme })}
-                  >
-                    {theme}
-                  </button>
-                ))}
-              </div>
-            </SettingRow>
+
             <SettingRow
               icon={Mic}
               title="Microphone"
@@ -287,7 +269,7 @@ export function SettingsPage(props: Props) {
       {tab === "writing" && (
         <section className="settings-group">
           <div className="group-heading">
-            <h3>Words that sound like you</h3>
+            <h3>Transcription & writing</h3>
             <p>Choose how your speech becomes writing.</p>
           </div>
           <SettingRow title="Language">
@@ -509,7 +491,31 @@ export function SettingsPage(props: Props) {
         <>
           <section className="settings-group">
             <div className="group-heading">
-              <h3>Always feeling fresh</h3>
+              <h3>Appearance</h3>
+            </div>
+            <SettingRow
+              icon={Monitor}
+              title="Appearance"
+              description="Use the desktop theme or select light / dark."
+            >
+              <div className="segmented" role="group" aria-label="Appearance">
+                {(["system", "light", "dark"] as const).map((theme) => (
+                  <button
+                    key={theme}
+                    aria-pressed={s.theme === theme}
+                    className={s.theme === theme ? "active" : ""}
+                    disabled={saving}
+                    onClick={() => save({ theme })}
+                  >
+                    {theme}
+                  </button>
+                ))}
+              </div>
+            </SettingRow>
+          </section>
+          <section className="settings-group">
+            <div className="group-heading">
+              <h3>Application updates</h3>
               <p>App updates are separate from your downloaded models.</p>
             </div>
             <SettingRow

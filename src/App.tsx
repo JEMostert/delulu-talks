@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { Check, LoaderCircle, Mic, RotateCcw, Square, X } from "lucide-react";
+import {
+  Check,
+  LoaderCircle,
+  Mic,
+  Moon,
+  RotateCcw,
+  Square,
+  Sun,
+  X,
+} from "lucide-react";
 import { bridge } from "./bridge";
 import { useWorkspace } from "./hooks/useWorkspace";
 import { useTheme } from "./hooks/useTheme";
@@ -17,25 +26,25 @@ import { SettingsPage } from "./pages/SettingsPage";
 import type { CustomWord, ExportFormat, Page } from "./types";
 
 const pages: Record<Page, { title: string; subtitle: string }> = {
-  home: {
-    title: "Your space",
-    subtitle: "A good place to let your thoughts out.",
-  },
+  home: { title: "Controls", subtitle: "Capture · transcribe · deliver" },
   history: {
     title: "History",
-    subtitle: "Pick up a thought, right where you left it.",
+    subtitle: "Search, review and export transcripts",
   },
-  magic: {
-    title: "A little Magic",
-    subtitle: "Your thoughts. A little more put together.",
-  },
+  magic: { title: "Writing", subtitle: "Rewrite text with your local model" },
   vocabulary: {
     title: "Wordbook",
-    subtitle: "The names and phrases that make you, you.",
+    subtitle: "Corrections and voice shortcuts",
   },
-  lab: { title: "Speech Lab", subtitle: "Give your audio a written home." },
-  models: { title: "Models", subtitle: "The local engines behind your words." },
-  settings: { title: "Settings", subtitle: "Make yourself comfortable." },
+  lab: {
+    title: "Audio files",
+    subtitle: "Transcription, alignment and subtitle export",
+  },
+  models: { title: "Models", subtitle: "Speech engine and device resources" },
+  settings: {
+    title: "Settings",
+    subtitle: "Capture, output, runtime and application",
+  },
 };
 function App() {
   const w = useWorkspace();
@@ -48,6 +57,8 @@ function App() {
       ?.scrollTo({ top: 0, behavior: "instant" });
   }, [w.page]);
   const recording = w.status.phase === "listening";
+  const needsSetup =
+    !recording && ["missing", "error"].includes(w.status.engine);
   const speechBusy = ["preparing", "loading", "transcribing"].includes(
     w.status.phase,
   );
@@ -136,6 +147,24 @@ function App() {
           </div>
           <div className="global-actions">
             <button
+              className="icon-button theme-command"
+              aria-label="Switch color theme"
+              title="Switch light / dark theme"
+              onClick={() =>
+                void w.saveSettings(
+                  {
+                    theme:
+                      document.documentElement.dataset.theme === "dark"
+                        ? "light"
+                        : "dark",
+                  },
+                  null,
+                )
+              }
+            >
+              {w.settings.theme === "light" ? <Moon /> : <Sun />}
+            </button>
+            <button
               className={`status-chip ${w.status.phase === "error" ? "has-error" : ""}`}
               onClick={() => w.setPage("models")}
               title={w.status.message}
@@ -149,9 +178,11 @@ function App() {
                 {recording
                   ? "Listening"
                   : speechBusy
-                    ? "Working locally"
+                    ? w.status.phase === "transcribing"
+                      ? "Transcribing…"
+                      : "Loading engine…"
                     : w.status.engine === "ready"
-                      ? "Ready to listen"
+                      ? "Ready"
                       : w.status.engine === "missing"
                         ? "Setup needed"
                         : w.status.engine === "error"
@@ -171,10 +202,19 @@ function App() {
             <button
               className={`record-command ${recording ? "recording" : ""}`}
               disabled={!w.ready || speechBusy || (!recording && busy)}
-              onClick={onRecord}
-              aria-label={recording ? "Stop recording" : "Start recording"}
+              onClick={needsSetup ? () => w.setPage("models") : onRecord}
+              aria-label={
+                needsSetup
+                  ? "Set up dictation"
+                  : recording
+                    ? "Stop recording"
+                    : "Start recording"
+              }
             >
               {recording ? <Square /> : <Mic />}
+              <span>
+                {needsSetup ? "Set up" : recording ? "Stop" : "Record"}
+              </span>
             </button>
           </div>
         </header>
@@ -183,6 +223,13 @@ function App() {
             Browser preview · sample transcript · recording and model
             installation require the desktop app
           </div>
+        )}
+        {w.ready && !w.settings.onboardingComplete && (
+          <Onboarding
+            settings={w.settings}
+            saving={w.saving}
+            onFinish={w.finishOnboarding}
+          />
         )}
         <UpdateNotice
           status={w.updateStatus}
@@ -250,6 +297,10 @@ function App() {
                 <HomePage
                   settings={w.settings}
                   status={w.status}
+                  magicStatus={w.magicStatus}
+                  devices={w.devices}
+                  busy={busy}
+                  onConfigureShortcut={run(() => bridge.configureShortcut())}
                   shortcutStatus={w.shortcutStatus}
                   history={w.history}
                   saving={w.saving}
@@ -257,7 +308,6 @@ function App() {
                   onUpdateSettings={(patch) => {
                     void w.saveSettings(patch, null);
                   }}
-                  onRecord={onRecord}
                   onPasteLast={w.pasteLast}
                   {...transcriptActions}
                 />
@@ -392,13 +442,6 @@ function App() {
             <X />
           </button>
         </div>
-      )}
-      {w.ready && !w.settings.onboardingComplete && (
-        <Onboarding
-          settings={w.settings}
-          saving={w.saving}
-          onFinish={w.finishOnboarding}
-        />
       )}
     </div>
   );

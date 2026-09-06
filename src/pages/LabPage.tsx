@@ -256,7 +256,7 @@ export function LabPage({
           {!result ? (
             <div className="lab-empty">
               <Fingerprint />
-              <h3>A place for every word.</h3>
+              <h3>No file processed</h3>
               <p>
                 Choose a recording to transcribe, or match a transcript to its
                 audio. Everything is processed locally.

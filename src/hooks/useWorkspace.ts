@@ -109,7 +109,7 @@ export function useWorkspace() {
   }, []);
 
   useEffect(() => {
-    if (page !== "settings") return;
+    if (page !== "settings" && page !== "home") return;
     let alive = true;
     const refresh = () => {
       void listMicrophones(false)

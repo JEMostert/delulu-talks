@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Explore first" }).click();
+  await page.getByRole("button", { name: "Dismiss setup" }).click();
 });
 
 test("all pages fit desktop and compact windows in both themes", async ({
@@ -12,20 +12,24 @@ test("all pages fit desktop and compact windows in both themes", async ({
   page.on("pageerror", (error) => errors.push(error.message));
   for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("tab", { name: "Application", exact: true }).click();
     await page.getByRole("button", { name: theme, exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     for (const width of [1280, 860]) {
       await page.setViewportSize({ width, height: 900 });
       for (const name of [
-        "Home",
+        "Controls",
         "History",
-        "Magic",
+        "Writing",
         "Wordbook",
-        "Speech Lab",
+        "Audio files",
         "Models",
         "Settings",
       ]) {
-        await page.getByRole("button", { name, exact: true }).click();
+        await page
+          .getByRole("navigation")
+          .getByRole("button", { name, exact: true })
+          .click();
         await expect(page.locator("main h1")).toBeVisible();
         expect(
           await page
@@ -39,12 +43,12 @@ test("all pages fit desktop and compact windows in both themes", async ({
 });
 
 test("Magic drafts survive navigation and can be cleared", async ({ page }) => {
-  await page.getByRole("button", { name: "Magic", exact: true }).click();
+  await page.getByRole("button", { name: "Writing", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Text to rewrite" })
     .fill("Please keep my draft while I check settings.");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("button", { name: "Magic", exact: true }).click();
+  await page.getByRole("button", { name: "Writing", exact: true }).click();
   await expect(
     page.getByRole("textbox", { name: "Text to rewrite" }),
   ).toHaveValue("Please keep my draft while I check settings.");
@@ -77,13 +81,13 @@ test("Wordbook adds, edits, persists and removes a voice snippet", async ({
   await expect(page.getByText("See you soon!", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Delete signoff" }).click();
   await page.getByRole("button", { name: "Delete word", exact: true }).click();
-  await expect(page.getByText("Let’s get familiar")).toBeVisible();
+  await expect(page.getByText("No saved words")).toBeVisible();
 });
 
 test("corrections preserve original speech and can be restored", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Review transcript" }).click();
+  await page.getByRole("button", { name: "Clean", exact: true }).click();
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Correct transcript" })
@@ -118,7 +122,7 @@ test("preview explicitly reports unavailable native operations", async ({
   page,
 }) => {
   await page
-    .getByRole("button", { name: "Start talking", exact: true })
+    .getByRole("button", { name: "Start recording", exact: true })
     .click();
   await expect(page.getByRole("alert")).toContainText("installed desktop app");
   await page.getByRole("button", { name: "Dismiss message" }).click();
@@ -208,4 +212,106 @@ test("cancelling while microphone permission is pending releases the eventual st
     };
   });
   expect(result).toEqual({ started: 0, ended: true });
+});
+
+test("startup exposes priority settings above the fold in compact and desktop windows", async ({
+  page,
+}) => {
+  for (const width of [1280, 860]) {
+    await page.setViewportSize({ width, height: 650 });
+    for (const [role, name] of [
+      ["combobox", "Microphone"],
+      ["combobox", "Dictation language"],
+      ["combobox", "Recording gesture"],
+      ["combobox", "Speech model"],
+      ["combobox", "Speech output"],
+      ["combobox", "Version to deliver"],
+      ["combobox", "Dictation writing style"],
+      ["combobox", "Writing model"],
+      ["switch", "Rewrite after dictation"],
+      ["switch", "Paste automatically"],
+      ["switch", "Copy to clipboard"],
+      ["switch", "Save history"],
+      ["button", "Start recording"],
+      ["button", "Settings"],
+    ] as const) {
+      const control = page.getByRole(role, { name, exact: true });
+      await expect(control).toBeVisible();
+      const box = await control.boundingBox();
+      expect(box, `${name} has a layout box`).not.toBeNull();
+      expect(box!.y, `${name} starts in the viewport`).toBeGreaterThanOrEqual(
+        0,
+      );
+      expect(
+        box!.y + box!.height,
+        `${name} fits at ${width} × 650`,
+      ).toBeLessThanOrEqual(650);
+    }
+  }
+  await expect(page.getByText("Less typing.", { exact: false })).toHaveCount(0);
+  await expect(page.locator(".record-command")).toHaveCount(1);
+});
+
+test("quick configuration persists and writing style stays independent of its enable switch", async ({
+  page,
+}) => {
+  await page
+    .getByRole("combobox", { name: "Dictation language", exact: true })
+    .selectOption("fr");
+  await page
+    .getByRole("combobox", { name: "Speech model", exact: true })
+    .selectOption("crisperTurbo");
+  await page
+    .getByRole("combobox", { name: "Version to deliver", exact: true })
+    .selectOption("verbatim");
+  await page
+    .getByRole("combobox", { name: "Dictation writing style", exact: true })
+    .selectOption("concise");
+  await page
+    .getByRole("switch", { name: "Rewrite after dictation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("combobox", {
+      name: "Dictation writing style",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  for (const name of [
+    "Paste automatically",
+    "Copy to clipboard",
+    "Save history",
+  ]) {
+    await page.getByRole("switch", { name, exact: true }).click();
+    await expect(
+      page.getByRole("switch", { name, exact: true }),
+    ).toHaveAttribute("aria-checked", "false");
+  }
+  await page.reload();
+  await expect(
+    page.getByRole("combobox", { name: "Dictation language", exact: true }),
+  ).toHaveValue("fr");
+  await expect(
+    page.getByRole("combobox", { name: "Speech model", exact: true }),
+  ).toHaveValue("crisperTurbo");
+  await expect(
+    page.getByRole("combobox", { name: "Version to deliver", exact: true }),
+  ).toHaveValue("verbatim");
+  await expect(
+    page.getByRole("switch", { name: "Save history", exact: true }),
+  ).toHaveAttribute("aria-checked", "false");
+  await page
+    .getByRole("switch", { name: "Rewrite after dictation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("combobox", {
+      name: "Dictation writing style",
+      exact: true,
+    }),
+  ).toHaveValue("concise");
+  await expect(
+    page.getByRole("combobox", {
+      name: "Dictation writing style",
+      exact: true,
+    }),
+  ).toBeEnabled();
 });

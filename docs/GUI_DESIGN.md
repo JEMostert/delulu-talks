@@ -1,28 +1,30 @@
-# Interface design
+# Ocean console design
 
-Delulu should feel like a quiet personal utility. The visual direction is warm and minimal: neutral green-tinted surfaces, a restrained green accent, readable text, soft borders and consistent rounded controls.
+The application opens into its controls. The startup screen exposes microphone, language, shortcut and gesture, speech model, clean/verbatim generation and delivery choice, writing enable/style/model, automatic paste, clipboard and history. These controls fit above the fold at both 1280×650 and 860×650 after first-run help is dismissed.
 
-## Design system
+## Visual system
 
-- Colors are semantic CSS variables in `src/styles/tokens.css`, with system, light and dark appearance. The same components work in both themes.
-- Body text uses the system sans-serif stack; transcript text is larger with generous line height. Uppercase labels are reserved for small section cues.
-- Reusable primitives live in `src/components/ui`. Native `dialog` provides focus containment, Escape handling and focus restoration.
-- All actionable controls have explicit focus indicators. Reduced-motion preferences disable decorative motion. Compact windows keep labels through accessible names/tooltips and reduce the sidebar to icons.
-- Success notifications, persistent errors, busy buttons and setup progress are visually distinct. Setup-stage progress is explicitly described as stages rather than download bytes.
+Deep navy surfaces, ocean-blue selection, cyan accents, cool readable text, thin panel borders and compact 5–8 px corners establish the identity. The sidebar remains navy in both themes. Light mode uses arctic blue/white working surfaces. Semantic tokens in `src/styles/tokens.css` define surfaces, inputs, headers, text and feedback; colors are not embedded in page components.
 
-## Information architecture
+The working reference is [Tidal Console](design-concepts/01-tidal-console.png), with the light theme informed by [Current Workbench](design-concepts/02-current-workbench.png). [Abyss Studio](design-concepts/03-abyss-studio.png) is the third exploration. The generated images are visual references, not feature specifications; unsupported or duplicated controls were excluded. Prompts and generation method are recorded [alongside them](design-concepts/prompts.md).
 
-Home, History and Magic are the daily workspace. Wordbook, Speech Lab and Models provide personalization and advanced tools. Settings sits at the bottom of the sidebar with General, Writing, Advanced and App & updates sections.
+## Layout and task hierarchy
 
-Home leads with recording and the active shortcut. Language and writing style are nearby; recent transcripts provide copy, review and paste-last recovery. Technical model/backend choices live outside the daily recording path.
+- Navigation begins with Controls, Settings and Models; Writing, History, Wordbook and Audio files follow. Labels stay visible at normal compact desktop sizes.
+- The persistent header contains one labeled Record/Stop action, current operation status, and theme switching. Missing engines route to setup.
+- Four numbered configuration panels occupy the startup control deck. A latest-output inspector sits alongside them on larger windows and below them on compact windows. It exposes Delivered/Clean/Verbatim views as available, correction, copy and export without a full-width transcript feed.
+- Settings starts with capture/delivery, followed by Writing, Runtime and Application. Appearance is an application preference, not the first task on launch.
+- Model selection uses compact comparison rows. Writing shows Source and Output side by side at desktop width, with rewrite controls adjacent; smaller windows stack the editors. Audio files keeps operation, file and transcript controls next to its result.
+- First-run setup is a dismissible inline notice, not a blocking introduction. License acceptance still uses an explicit modal before installing speech models.
 
-Home and History share `TranscriptCard`. Corrections preserve the original. Remember a word is explicit and opens a short Wordbook form. A voice snippet is a Wordbook term with expansion text.
-
-Magic keeps the rewrite button at the top of its controls. Source and result are separate, drafts survive navigation, and model settings are secondary. Model inference promises are phrased as user-controlled instructions rather than certainty.
-
-Models uses selectable cards, an actionable setup banner and device diagnostics. Settings separates application updates from local model installation and repair. The recording overlay and desktop icon use the same warm palette.
-
+No promotional heroes, slogans, static waveforms, fabricated metrics or lifestyle copy belong in the working interface. Blank space is reserved for text editing and output, not illustration.
 
 ## Identity
 
-The SVG at `public/delulu-talks-icon.svg` is the source for application branding and desktop icon assets. It preserves the original orbital microphone concept: cyan voice, midnight-blue rounded hexagon, two clean orbital arcs. The icon's blue/cyan colors are identity colors; interactive controls continue to use the restrained green theme accent. Avoid glow filters and fine decorative marks so the microphone remains legible at small sizes.
+`public/delulu-talks-icon.svg` is the source mark: an ocean-blue D shaped by a flowing wave on a navy tile. It replaces the orbital microphone badge. PNG, ICO and ICNS application assets derive from this vector. The native overlay shares the ocean palette; live recording has a distinct coral state.
+
+## Interaction checks
+
+Shared controls retain visible focus, labels and native dialog behavior. Settings save through serialized patches. Writing style and writing enablement are independent. Microphones are enumerated on both Controls and Settings. Existing transcript originals remain intact beside corrections and delivered rewrites.
+
+Browser regression checks cover priority controls above the fold, quick-setting persistence, both themes, compact layouts, Wordbook editing, source preservation, modal focus and real browser microphone capture. Desktop smoke verifies the sandboxed preload, real settings IPC, diagnostics and setup dialogs. Runtime installation and inference remain separate from visual styling.

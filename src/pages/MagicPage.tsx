@@ -179,7 +179,7 @@ export function MagicPage({
     <div className="content-stack magic-page">
       <section className="view-toolbar magic-toolbar">
         <div>
-          <strong>From rough speech to finished writing</strong>
+          <strong>Local text rewriting</strong>
           <span>
             Everything runs locally · your source and output never leave this
             device
@@ -222,8 +222,8 @@ export function MagicPage({
             <div>
               <strong>
                 {status.engine === "error"
-                  ? "Magic needs a little attention"
-                  : "One more engine, a little more polish"}
+                  ? "Writing engine error"
+                  : "Install the writing engine"}
               </strong>
               <p>
                 {status.engine === "error"
@@ -243,47 +243,49 @@ export function MagicPage({
         )}
       <div className="magic-layout">
         <section className="magic-editor-panel">
-          <header className="panel-toolbar">
-            <div>
-              <strong>Source</strong>
-              <span>
-                {sourceWords} words · {source.length.toLocaleString()}{" "}
-                characters
-              </span>
-            </div>
-            <div className="panel-actions">
-              <button
-                className="tool-button"
-                disabled={!latestText}
-                onClick={useLatest}
-              >
-                <ArrowDownToLine /> Latest transcript
-              </button>
-              <button
-                className="icon-button"
-                aria-label="Clear source"
-                title="Clear source"
-                disabled={!source}
-                onClick={() => {
-                  setSource("");
-                  setResult(null);
-                }}
-              >
-                <RotateCcw />
-              </button>
-            </div>
-          </header>
-          <textarea
-            aria-label="Text to rewrite"
-            value={source}
-            maxLength={50_000}
-            onChange={(event) => setSource(event.target.value)}
-            placeholder="Paste a rough draft here, or record something and load your latest transcript…"
-          />
+          <section className="magic-source">
+            <header className="panel-toolbar">
+              <div>
+                <strong>Source</strong>
+                <span>
+                  {sourceWords} words · {source.length.toLocaleString()}{" "}
+                  characters
+                </span>
+              </div>
+              <div className="panel-actions">
+                <button
+                  className="tool-button"
+                  disabled={!latestText}
+                  onClick={useLatest}
+                >
+                  <ArrowDownToLine /> Latest transcript
+                </button>
+                <button
+                  className="icon-button"
+                  aria-label="Clear source"
+                  title="Clear source"
+                  disabled={!source}
+                  onClick={() => {
+                    setSource("");
+                    setResult(null);
+                  }}
+                >
+                  <RotateCcw />
+                </button>
+              </div>
+            </header>
+            <textarea
+              aria-label="Text to rewrite"
+              value={source}
+              maxLength={50_000}
+              onChange={(event) => setSource(event.target.value)}
+              placeholder="Paste a rough draft here, or record something and load your latest transcript…"
+            />
+          </section>
           <section className="magic-output">
             <header className="panel-toolbar">
               <div>
-                <strong>Magic output</strong>
+                <strong>Output</strong>
                 <span>
                   {result
                     ? `${result.outputCharacters.toLocaleString()} characters · ${(result.processingTimeMs / 1000).toFixed(1)}s`
@@ -326,8 +328,8 @@ export function MagicPage({
               <div className="magic-output-empty">
                 <Sparkles />
                 <p>
-                  Choose a rewrite style, set the accuracy boundary, then run
-                  Magic.
+                  Choose a style and select Rewrite. The original stays in
+                  Source.
                 </p>
               </div>
             )}
@@ -345,7 +347,7 @@ export function MagicPage({
               ? "Rewriting…"
               : status.phase === "loading" || status.phase === "preparing"
                 ? status.message
-                : "Rewrite with Magic"}
+                : "Rewrite"}
           </button>
           {error && (
             <p className="magic-error" role="alert">

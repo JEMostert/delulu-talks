@@ -56,14 +56,14 @@ export function ModelsPage({
           <span className="eyebrow">LOCAL SPEECH ENGINE</span>
           <h2>
             {status.engine === "ready"
-              ? "Ready when you are."
+              ? "Speech model loaded"
               : status.engine === "missing"
-                ? "A home for your voice."
+                ? "Install the speech engine"
                 : status.engine === "error"
-                  ? "Let’s get you talking again."
+                  ? "Speech engine error"
                   : busy
-                    ? "Getting things ready…"
-                    : "Resting until you need it."}
+                    ? "Preparing speech engine…"
+                    : "Speech model unloaded"}
           </h2>
           <p>
             {status.engine === "missing"
@@ -139,41 +139,37 @@ export function ModelsPage({
       )}
       <div className="section-heading">
         <div>
-          <span className="eyebrow">FIND YOUR FIT</span>
-          <h3>A model for your machine</h3>
+          <span className="eyebrow">MODEL SELECTION</span>
+          <h3>Available speech models</h3>
         </div>
         <span className="caption">Selected: {model.size}</span>
       </div>
-      <div className="model-grid">
+      <div
+        className="model-comparison"
+        role="list"
+        aria-label="Speech model comparison"
+      >
         {MODELS.map((item) => (
           <article
             key={item.id}
-            className={`model-card ${item.id === selected ? "selected" : ""}`}
+            role="listitem"
+            className={`model-option ${item.id === selected ? "selected" : ""}`}
           >
-            <header>
-              <span className="model-icon">
-                <Cpu />
-              </span>
-              {item.recommended && (
-                <span className="badge">Good starting point</span>
-              )}
-              {item.id === selected && <Check className="selected-check" />}
-            </header>
-            <h3>{item.size}</h3>
-            <strong>{item.role}</strong>
+            <div className="model-name">
+              <h3>{item.size}</h3>
+              <span>{item.role}</span>
+              {item.recommended && <small>Recommended</small>}
+            </div>
             <p>{item.description}</p>
-            <div className="model-facts">
+            <div className="model-resource">
+              <HardDrive />
               <span>
-                <HardDrive /> {item.memory} memory use
+                {item.memory}
+                <small>Memory use</small>
               </span>
-              <span>{item.latency}</span>
             </div>
             <button
-              className={
-                item.id === selected
-                  ? "secondary-button selected"
-                  : "secondary-button"
-              }
+              className="secondary-button"
               disabled={busy || item.id === selected}
               onClick={() => onSelect(item.id)}
             >

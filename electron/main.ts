@@ -104,7 +104,7 @@ function createMainWindow(): BrowserWindow {
     minHeight: 650,
     center: true,
     show: false,
-    backgroundColor: "#f7f8f5",
+    backgroundColor: "#091c2d",
     autoHideMenuBar: true,
     webPreferences: {
       preload: preloadPath(),

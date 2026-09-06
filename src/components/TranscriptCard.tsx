@@ -39,15 +39,24 @@ export type TranscriptActions = {
 export function TranscriptCard({
   record,
   defaultOpen = false,
+  inspector = false,
   onCopy,
   onUpdateTranscript,
   onDelete,
   onExport,
   onRemember,
-}: TranscriptActions & { record: TranscriptRecord; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const [version, setVersion] = useState<TranscriptVersion>(
-    record.intendedText ? "intended" : "verbatim",
+}: TranscriptActions & {
+  record: TranscriptRecord;
+  defaultOpen?: boolean;
+  inspector?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen || inspector);
+  const [version, setVersion] = useState<TranscriptVersion | "delivered">(
+    inspector && record.magicText
+      ? "delivered"
+      : record.intendedText
+        ? "intended"
+        : "verbatim",
   );
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -56,8 +65,13 @@ export function TranscriptCard({
   const [remember, setRemember] = useState(false);
   const [heard, setHeard] = useState("");
   const [correct, setCorrect] = useState("");
-  const text = transcriptText(record, version);
-  const edited = transcriptIsEdited(record, version);
+  const sourceVersion =
+    version === "delivered" ? (record.deliveredVersion ?? "intended") : version;
+  const text =
+    version === "delivered"
+      ? deliveredText(record)
+      : transcriptText(record, version);
+  const edited = version !== "delivered" && transcriptIsEdited(record, version);
   const date = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -65,14 +79,16 @@ export function TranscriptCard({
   const save = async () => {
     setSaving(true);
     try {
-      if (await onUpdateTranscript(record.id, version, draft))
+      if (await onUpdateTranscript(record.id, sourceVersion, draft))
         setEditing(false);
     } finally {
       setSaving(false);
     }
   };
   return (
-    <article className={`transcript-card ${open ? "expanded" : ""}`}>
+    <article
+      className={`transcript-card ${open ? "expanded" : ""} ${inspector ? "inspector-card" : ""}`}
+    >
       <header>
         <span className="transcript-icon">
           {record.source === "dictation" ? <Mic /> : <FileAudio />}
@@ -109,25 +125,31 @@ export function TranscriptCard({
           )}
         </div>
       </header>
-      <p className={`transcript-preview ${open ? "full" : ""}`}>
-        {deliveredText(record)}
-      </p>
-      <footer>
-        <span className="caption">
-          {deliveredText(record).trim().split(/\s+/).filter(Boolean).length}{" "}
-          words
-          {record.magicIncludedInferences ? " · Review added assumptions" : ""}
-          {edited ? " · Corrected" : ""}
-        </span>
-        <button
-          className="text-button"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
-          {open ? "Close details" : "Review transcript"}
-          <ChevronDown className={open ? "rotated" : ""} />
-        </button>
-      </footer>
+      {!inspector && (
+        <p className={`transcript-preview ${open ? "full" : ""}`}>
+          {deliveredText(record)}
+        </p>
+      )}
+      {!inspector && (
+        <footer>
+          <span className="caption">
+            {deliveredText(record).trim().split(/\s+/).filter(Boolean).length}{" "}
+            words
+            {record.magicIncludedInferences
+              ? " · Review added assumptions"
+              : ""}
+            {edited ? " · Corrected" : ""}
+          </span>
+          <button
+            className="text-button"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? "Close details" : "Review transcript"}
+            <ChevronDown className={open ? "rotated" : ""} />
+          </button>
+        </footer>
+      )}
       {open && (
         <div className="transcript-detail">
           <div className="panel-toolbar">
@@ -136,11 +158,21 @@ export function TranscriptCard({
               role="group"
               aria-label="Transcript version"
             >
-              {(["intended", "verbatim"] as const)
+              {(
+                [
+                  ...(inspector && record.magicText
+                    ? ["delivered" as const]
+                    : []),
+                  "intended",
+                  "verbatim",
+                ] as const
+              )
                 .filter((v) =>
-                  v === "intended"
-                    ? record.intendedText || !record.verbatimText
-                    : record.verbatimText,
+                  v === "delivered"
+                    ? true
+                    : v === "intended"
+                      ? record.intendedText || !record.verbatimText
+                      : record.verbatimText,
                 )
                 .map((v) => (
                   <button
@@ -150,12 +182,20 @@ export function TranscriptCard({
                     disabled={editing}
                     onClick={() => setVersion(v)}
                   >
-                    {v === "intended" ? "Clean" : "Verbatim"}
+                    {v === "delivered"
+                      ? "Delivered"
+                      : v === "intended"
+                        ? "Clean"
+                        : "Verbatim"}
                   </button>
                 ))}
             </div>
             <span className="caption">
-              {edited ? "Your correction" : "Original speech"}
+              {version === "delivered"
+                ? "Writing model output"
+                : edited
+                  ? "Your correction"
+                  : "Original speech"}
             </span>
           </div>
           {editing ? (
@@ -200,23 +240,30 @@ export function TranscriptCard({
               </>
             ) : (
               <>
-                <button
-                  className="tool-button"
-                  onClick={() => {
-                    setDraft(text);
-                    setEditing(true);
-                  }}
-                >
-                  <Pencil /> Edit
-                </button>
+                {version !== "delivered" && (
+                  <button
+                    className="tool-button"
+                    onClick={() => {
+                      setDraft(text);
+                      setEditing(true);
+                    }}
+                  >
+                    <Pencil /> Edit
+                  </button>
+                )}
                 <button className="tool-button" onClick={() => onCopy(text)}>
-                  <Copy /> Copy {version === "intended" ? "clean" : "verbatim"}
+                  <Copy /> Copy{" "}
+                  {version === "delivered"
+                    ? "result"
+                    : version === "intended"
+                      ? "clean"
+                      : "verbatim"}
                 </button>
                 {edited && (
                   <button
                     className="tool-button"
                     onClick={() =>
-                      void onUpdateTranscript(record.id, version, null)
+                      void onUpdateTranscript(record.id, sourceVersion, null)
                     }
                   >
                     <RotateCcw /> Restore

@@ -35,11 +35,10 @@ export function VocabularyPage({
     <div className="content-stack">
       <section className="wordbook-intro">
         <div>
-          <span className="eyebrow">YOUR PERSONAL DICTIONARY</span>
-          <h2>Some words are just yours.</h2>
+          <h2>Corrections & snippets</h2>
           <p>
-            Names, unusual spellings, and little shortcuts. Teach Delulu once,
-            use them in every transcript.
+            Replace recognition mistakes and expand spoken phrases into saved
+            text.
           </p>
         </div>
         <button
@@ -123,7 +122,7 @@ export function VocabularyPage({
         {!filtered.length && (
           <EmptyState
             icon={BookOpenText}
-            title={words.length ? "No matching words" : "Let’s get familiar"}
+            title={words.length ? "No matching words" : "No saved words"}
           >
             {words.length
               ? "Try a different search."
@@ -139,7 +138,7 @@ export function VocabularyPage({
         <Modal
           title={
             words.some((word) => word.id === draft.id)
-              ? "Edit your word"
+              ? "Edit word"
               : "A new word to remember"
           }
           onClose={() => setDraft(null)}

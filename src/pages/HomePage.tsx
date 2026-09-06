@@ -1,212 +1,438 @@
+import { useEffect, useState, type ReactNode } from "react";
 import {
-  ArrowRight,
-  AudioLines,
+  ArrowUpRight,
+  Check,
   ClipboardPaste,
   Cpu,
+  Keyboard,
   Mic,
-  ShieldCheck,
-  Sparkles,
-  Square,
+  Settings2,
+  WandSparkles,
 } from "lucide-react";
-import { LANGUAGES } from "../data";
+import { LANGUAGES, MODELS, MAGIC_MODELS } from "../data";
 import {
   TranscriptCard,
   type TranscriptActions,
 } from "../components/TranscriptCard";
+import { Toggle } from "../components/ui";
 import type {
   AppSettings,
   DictationStatus,
+  MagicStatus,
+  MicrophoneDevice,
   Page,
   ShortcutStatus,
   TranscriptRecord,
 } from "../types";
 
+function ControlField({
+  label,
+  children,
+  wide = false,
+}: {
+  label: string;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <label className={`control-field ${wide ? "wide" : ""}`}>
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
 export function HomePage({
-  settings,
+  settings: s,
   status,
+  magicStatus,
   shortcutStatus,
+  devices,
   history,
   saving,
+  busy,
   onNavigate,
-  onUpdateSettings,
-  onRecord,
+  onUpdateSettings: save,
+  onConfigureShortcut,
   onPasteLast,
   ...actions
 }: TranscriptActions & {
   settings: AppSettings;
   status: DictationStatus;
+  magicStatus: MagicStatus;
   shortcutStatus: ShortcutStatus;
+  devices: MicrophoneDevice[];
   history: TranscriptRecord[];
   saving: boolean;
+  busy: boolean;
   onNavigate: (page: Page) => void;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
-  onRecord: () => void;
+  onConfigureShortcut: () => void;
   onPasteLast: () => void;
 }) {
-  const recording = status.phase === "listening";
-  const busy = ["preparing", "loading", "transcribing"].includes(status.phase);
-  const missing = status.engine === "missing" || status.engine === "error";
-  const hold =
-    settings.shortcutMode === "hold" && shortcutStatus.method === "portal";
+  const [shortcut, setShortcut] = useState(s.shortcut);
+  useEffect(() => setShortcut(s.shortcut), [s.shortcut]);
+  const portal = shortcutStatus.method === "portal";
+  const latest = history[0];
+  const engineText = (engine: DictationStatus["engine"]) =>
+    ({
+      ready: "Loaded",
+      unloaded: "Loads on demand",
+      missing: "Installation required",
+      error: "Needs repair",
+      loading: "Loading",
+      settingUp: "Installing",
+    })[engine];
   return (
-    <div className="home-view content-stack">
-      <section className={`dictation-hero ${recording ? "is-recording" : ""}`}>
-        <div className="hero-copy">
-          <span className="eyebrow">
-            <span className="status-dot" /> YOUR VOICE, YOUR SPACE
-          </span>
-          <h2>
-            {recording
-              ? "Go on. I’m listening."
-              : busy
-                ? "A little moment for your words."
-                : "Less typing.\nMore you."}
-          </h2>
-          <p>
-            {missing
-              ? "Let’s get your local speech engine ready. Then your voice can go wherever you type."
-              : recording
-                ? "Speak naturally. Stop when you’re ready and your words will be transcribed on this device."
-                : "A thought, a message, a beautifully messy idea.\nJust say it. We’ll take care of the words."}
-          </p>
-          <div className="hero-actions">
-            <button
-              className="primary-button large"
-              disabled={busy}
-              onClick={missing ? () => onNavigate("models") : onRecord}
-            >
-              {missing ? <Cpu /> : recording ? <Square /> : <Mic />}
-              {missing
-                ? "Set up dictation"
-                : recording
-                  ? "Finish recording"
-                  : "Start talking"}
-            </button>
-            {!missing && (
-              <span className="shortcut-instruction">
-                or {hold ? "hold" : "press"}{" "}
-                <kbd>
-                  {settings.shortcut
-                    .replace("Super", "Meta")
-                    .replace("CommandOrControl", "Ctrl")
-                    .split("+")
-                    .join(" + ")}
-                </kbd>
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="voice-art" aria-hidden="true">
-          <div className="voice-orbit">
-            <AudioLines />
-          </div>
-          <div className="voice-wave">
-            {[18, 30, 52, 38, 72, 92, 62, 42, 68, 32, 18].map((height, i) => (
-              <i key={i} style={{ height, animationDelay: `${i * 70}ms` }} />
-            ))}
-          </div>
-          <span>Made for your train of thought.</span>
-        </div>
-      </section>
-      <div className="preference-strip">
-        <label>
-          <span>Speaking in</span>
-          <select
-            aria-label="Dictation language"
-            disabled={saving}
-            value={settings.language}
-            onChange={(e) => onUpdateSettings({ language: e.target.value })}
-          >
-            {LANGUAGES.map(([code, label]) => (
-              <option key={code} value={code}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <Sparkles />
-          <span>Writing style</span>
-          <select
-            aria-label="Dictation writing style"
-            disabled={saving}
-            value={settings.magicEnabled ? settings.magicPreset : "plain"}
-            onChange={(e) =>
-              onUpdateSettings(
-                e.target.value === "plain"
-                  ? { magicEnabled: false }
-                  : {
-                      magicEnabled: true,
-                      magicPreset: e.target.value as AppSettings["magicPreset"],
-                    },
-              )
-            }
-          >
-            <option value="plain">Plain transcript</option>
-            <option value="polish">Polished</option>
-            <option value="concise">Concise</option>
-            <option value="structured">Structured</option>
-            <option value="prompt">Prompt builder</option>
-          </select>
-        </label>
-        <span className="local-label">
-          <ShieldCheck /> Processed on your device
+    <div className="control-workspace">
+      <div className="workspace-toolbar">
+        <span className="save-indicator">
+          <Check />{" "}
+          {saving ? "Saving settings…" : "Settings saved automatically"}
         </span>
+        <button className="tool-button" onClick={() => onNavigate("settings")}>
+          <Settings2 /> All settings <ArrowUpRight />
+        </button>
       </div>
-      <section className="content-stack">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">YOUR WORDS, WITHIN REACH</span>
-            <h3>Recent activity</h3>
-          </div>
-          <div className="panel-actions">
-            {history.length > 0 && (
-              <button className="tool-button" onClick={onPasteLast}>
-                <ClipboardPaste /> Paste last
-              </button>
+      <div className="workspace-grid">
+        <div className="control-deck">
+          <section className="control-panel" aria-labelledby="capture-heading">
+            <header>
+              <Mic />
+              <h2 id="capture-heading">Capture</h2>
+              <span className="section-number">01</span>
+            </header>
+            <div className="control-fields">
+              <ControlField label="Microphone" wide>
+                <select
+                  aria-label="Microphone"
+                  value={s.inputDeviceId}
+                  disabled={saving || busy}
+                  onChange={(e) =>
+                    save({
+                      inputDeviceId: e.target.value,
+                      inputDeviceLabel:
+                        devices.find((d) => d.deviceId === e.target.value)
+                          ?.label ?? "Microphone",
+                    })
+                  }
+                >
+                  {!devices.some((d) => d.deviceId === s.inputDeviceId) && (
+                    <option value={s.inputDeviceId}>
+                      {s.inputDeviceLabel} (disconnected)
+                    </option>
+                  )}
+                  {devices.map((device) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label}
+                    </option>
+                  ))}
+                </select>
+              </ControlField>
+              <ControlField label="Language">
+                <select
+                  aria-label="Dictation language"
+                  value={s.language}
+                  disabled={saving || busy}
+                  onChange={(e) => save({ language: e.target.value })}
+                >
+                  {LANGUAGES.map(([code, label]) => (
+                    <option key={code} value={code}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </ControlField>
+              <ControlField label="Record mode">
+                <select
+                  aria-label="Recording gesture"
+                  title={
+                    portal
+                      ? "Hold while speaking or press to toggle"
+                      : "This desktop supports toggle shortcuts"
+                  }
+                  value={portal ? s.shortcutMode : "toggle"}
+                  disabled={saving || busy || !portal}
+                  onChange={(e) =>
+                    save({
+                      shortcutMode: e.target
+                        .value as AppSettings["shortcutMode"],
+                    })
+                  }
+                >
+                  <option value="hold">Hold to talk</option>
+                  <option value="toggle">Toggle</option>
+                </select>
+              </ControlField>
+              <div className="shortcut-control wide">
+                <span>
+                  <Keyboard /> Shortcut
+                </span>
+                {portal ? (
+                  <>
+                    <kbd>
+                      {shortcutStatus.accelerator
+                        .replace("Super", "Meta")
+                        .split("+")
+                        .join(" + ")}
+                    </kbd>
+                    <button
+                      className="tool-button"
+                      disabled={busy}
+                      onClick={onConfigureShortcut}
+                    >
+                      Change
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      aria-label="Dictation shortcut"
+                      value={shortcut}
+                      disabled={saving || busy}
+                      onChange={(e) => setShortcut(e.target.value)}
+                    />
+                    <button
+                      className="tool-button"
+                      disabled={
+                        saving ||
+                        busy ||
+                        shortcut === s.shortcut ||
+                        !shortcut.trim()
+                      }
+                      onClick={() => save({ shortcut })}
+                    >
+                      Save
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            {!shortcutStatus.registered && (
+              <p className="control-warning">{shortcutStatus.message}</p>
             )}
+          </section>
+          <section className="control-panel" aria-labelledby="speech-heading">
+            <header>
+              <Cpu />
+              <h2 id="speech-heading">Transcription</h2>
+              <span className="section-number">02</span>
+            </header>
+            <div className="control-fields">
+              <ControlField label="Speech model" wide>
+                <select
+                  aria-label="Speech model"
+                  value={s.model}
+                  disabled={saving || busy}
+                  onChange={(e) =>
+                    save({ model: e.target.value as AppSettings["model"] })
+                  }
+                >
+                  {MODELS.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      CrisperWhisper · {model.size}
+                    </option>
+                  ))}
+                </select>
+              </ControlField>
+              <ControlField label="Transcripts">
+                <select
+                  aria-label="Speech output"
+                  value={s.transcriptionMode}
+                  disabled={saving || busy}
+                  onChange={(e) =>
+                    save({
+                      transcriptionMode: e.target
+                        .value as AppSettings["transcriptionMode"],
+                    })
+                  }
+                >
+                  <option value="dual">Clean + verbatim</option>
+                  <option value="intended">Clean only</option>
+                  <option value="verbatim">Verbatim only</option>
+                </select>
+              </ControlField>
+              <ControlField label="Deliver">
+                <select
+                  aria-label="Version to deliver"
+                  value={s.pasteVersion}
+                  disabled={saving || busy}
+                  onChange={(e) =>
+                    save({
+                      pasteVersion: e.target
+                        .value as AppSettings["pasteVersion"],
+                    })
+                  }
+                >
+                  <option value="intended">Clean</option>
+                  <option value="verbatim">Verbatim</option>
+                </select>
+              </ControlField>
+              <div className="engine-line wide">
+                <span
+                  className={`engine-state ${status.engine === "ready" ? "ready" : ""}`}
+                >
+                  {engineText(status.engine)}
+                </span>
+                <button
+                  className="text-button"
+                  onClick={() => onNavigate("models")}
+                >
+                  Manage <ArrowUpRight />
+                </button>
+              </div>
+            </div>
+          </section>
+          <section className="control-panel" aria-labelledby="writing-heading">
+            <header>
+              <WandSparkles />
+              <h2 id="writing-heading">Writing</h2>
+              <span className="section-number">03</span>
+            </header>
+            <div className="control-fields">
+              <div className="quick-toggle wide">
+                <span>Rewrite after dictation</span>
+                <Toggle
+                  label="Rewrite after dictation"
+                  value={s.magicEnabled}
+                  disabled={saving || busy}
+                  onChange={() => save({ magicEnabled: !s.magicEnabled })}
+                />
+              </div>
+              <ControlField label="Style">
+                <select
+                  aria-label="Dictation writing style"
+                  value={s.magicPreset}
+                  disabled={saving || busy || !s.magicEnabled}
+                  onChange={(e) =>
+                    save({
+                      magicPreset: e.target.value as AppSettings["magicPreset"],
+                    })
+                  }
+                >
+                  <option value="polish">Polish</option>
+                  <option value="concise">Concise</option>
+                  <option value="structured">Structured</option>
+                  <option value="prompt">Prompt</option>
+                </select>
+              </ControlField>
+              <ControlField label="Writing model">
+                <select
+                  aria-label="Writing model"
+                  value={s.magicModel}
+                  disabled={saving || busy || !s.magicEnabled}
+                  onChange={(e) =>
+                    save({
+                      magicModel: e.target.value as AppSettings["magicModel"],
+                    })
+                  }
+                >
+                  {MAGIC_MODELS.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                    </option>
+                  ))}
+                </select>
+              </ControlField>
+              <div className="engine-line wide">
+                <span
+                  className={`engine-state ${s.magicEnabled && magicStatus.engine === "ready" ? "ready" : ""}`}
+                >
+                  {s.magicEnabled
+                    ? engineText(magicStatus.engine)
+                    : "Rewriting off"}
+                </span>
+                <button
+                  className="text-button"
+                  onClick={() => onNavigate("magic")}
+                >
+                  Open writing <ArrowUpRight />
+                </button>
+              </div>
+            </div>
+          </section>
+          <section className="control-panel" aria-labelledby="delivery-heading">
+            <header>
+              <ClipboardPaste />
+              <h2 id="delivery-heading">Delivery</h2>
+              <span className="section-number">04</span>
+            </header>
+            <div className="delivery-controls">
+              {(
+                [
+                  [
+                    "autoPaste",
+                    "Paste automatically",
+                    "Into the active text field",
+                  ],
+                  [
+                    "copyToClipboard",
+                    "Copy to clipboard",
+                    "Keep the result ready to paste",
+                  ],
+                  [
+                    "keepHistory",
+                    "Save history",
+                    "Store new transcripts on this device",
+                  ],
+                ] as const
+              ).map(([key, label, detail]) => (
+                <div className="quick-toggle" key={key}>
+                  <span>
+                    {label}
+                    <small>{detail}</small>
+                  </span>
+                  <Toggle
+                    label={label}
+                    value={s[key]}
+                    disabled={saving || busy}
+                    onChange={() => save({ [key]: !s[key] })}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+        <section className="output-inspector" aria-label="Latest output">
+          <header className="inspector-heading">
+            <h2>Latest output</h2>
             <button
               className="text-button"
               onClick={() => onNavigate("history")}
             >
-              View history <ArrowRight />
+              History <ArrowUpRight />
             </button>
-          </div>
-        </div>
-        {history.length ? (
-          history
-            .slice(0, 3)
-            .map((record) => (
-              <TranscriptCard key={record.id} record={record} {...actions} />
-            ))
-        ) : (
-          <div className="first-recording">
-            <span className="empty-icon">
-              <Mic />
-            </span>
-            <div>
-              <h3>Your next thought belongs here</h3>
+          </header>
+          {latest ? (
+            <>
+              <TranscriptCard
+                key={latest.id}
+                record={latest}
+                inspector
+                {...actions}
+              />
+              <div className="inspector-footer">
+                <span className="caption">
+                  {s.keepHistory
+                    ? "History saving on"
+                    : "New results stay in this session"}
+                </span>
+                <button className="secondary-button" onClick={onPasteLast}>
+                  <ClipboardPaste /> Paste last
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="output-empty">
+              <ClipboardPaste />
+              <h3>No transcript yet</h3>
               <p>
-                Try a short recording. You can review, edit, and copy every
-                result.
+                Record with the button above or use your shortcut. The result
+                appears here for review, editing and copying.
               </p>
             </div>
-          </div>
-        )}
-      </section>
-      <div className="home-links">
-        <button onClick={() => onNavigate("vocabulary")}>
-          <span>Names it should know</span>
-          <strong>
-            Make your words feel familiar <ArrowRight />
-          </strong>
-        </button>
-        <button onClick={() => onNavigate("magic")}>
-          <span>Something already on your mind?</span>
-          <strong>
-            Give a rough draft a little polish <ArrowRight />
-          </strong>
-        </button>
+          )}
+        </section>
       </div>
     </div>
   );

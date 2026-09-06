@@ -229,7 +229,7 @@ kbd {
 .content-stack {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 16px;
 }
 .section-heading,
 .panel-toolbar {
@@ -298,7 +298,7 @@ kbd {
   background: var(--danger-soft);
   color: var(--danger);
   border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
-  border-radius: 12px;
+  border-radius: 7px;
   padding: 14px 16px;
   font-size: 13px;
 }

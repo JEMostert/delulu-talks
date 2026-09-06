@@ -23,23 +23,23 @@ window { background: transparent; }
 
 .hud {
   min-width: 312px;
-  border: 1px solid #354138;
+  border: 1px solid #23445e;
   border-radius: 16px;
-  background: alpha(#212923, .95);
+  background: alpha(#0b2033, .95);
   box-shadow: 0 16px 36px alpha(#000000, .46), inset 0 1px 0 alpha(#ffffff, .05);
 }
 
 .rail {
   min-width: 3px;
   min-height: 52px;
-  background: #aaca9b;
+  background: #52cafa;
   border-top-left-radius: 15px;
   border-bottom-left-radius: 15px;
 }
-.listening .rail { background: #dfb384; }
-.transcribing .rail, .magic .rail, .delivering .rail { background: #aaca9b; }
-.success .rail { background: #aaca9b; }
-.error .rail { background: #f1a49a; }
+.listening .rail { background: #ff8898; }
+.transcribing .rail, .magic .rail, .delivering .rail { background: #52cafa; }
+.success .rail { background: #52cafa; }
+.error .rail { background: #ff8898; }
 
 .body { padding: 9px 13px 9px 11px; }
 
@@ -56,47 +56,47 @@ window { background: transparent; }
   min-width: 8px;
   min-height: 8px;
   border-radius: 4px;
-  background: #aaca9b;
+  background: #52cafa;
 }
 .listening .dot {
-  background: #dfb384;
-  box-shadow: 0 0 0 0 alpha(#dfb384, .5);
+  background: #ff8898;
+  box-shadow: 0 0 0 0 alpha(#ff8898, .5);
   animation: ping 1.15s ease-out infinite;
 }
-.success .dot { background: #aaca9b; }
-.error .dot { background: #f1a49a; }
+.success .dot { background: #52cafa; }
+.error .dot { background: #ff8898; }
 
 .glyph {
-  color: #aaca9b;
+  color: #52cafa;
   font-size: 11px;
   font-weight: 600;
 }
-.success .glyph { color: #aaca9b; }
-.error .glyph { color: #f1a49a; }
+.success .glyph { color: #52cafa; }
+.error .glyph { color: #ff8898; }
 
 .title {
-  color: #e6ece3;
+  color: #e3f1fc;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: .2px;
 }
-.detail { color: #aab8ac; font-size: 10px; font-weight: 500; }
+.detail { color: #9ebacf; font-size: 10px; font-weight: 500; }
 .clock {
-  color: #aaca9b;
+  color: #52cafa;
   font-size: 10px;
   font-weight: 700;
   font-family: "IBM Plex Mono", "ui-monospace", monospace;
   letter-spacing: .4px;
 }
-.listening .clock { color: #dfb384; }
+.listening .clock { color: #ff8898; }
 
 .wave { min-height: 16px; margin-left: 10px; }
 .bar {
   min-width: 2px;
-  background: #aaca9b;
+  background: #52cafa;
   border-radius: 1px;
 }
-.listening .bar { background: #dfb384; }
+.listening .bar { background: #ff8898; }
 .listening .wave.idle .bar { animation: meter .62s ease-in-out infinite alternate; }
 .listening .wave.idle .b0 { animation-delay: 0s; }
 .listening .wave.idle .b1 { animation-delay: .05s; }
@@ -110,12 +110,12 @@ window { background: transparent; }
 .listening .wave.idle .b9 { animation-delay: .12s; }
 .listening .wave.idle .b10 { animation-delay: .2s; }
 
-spinner { min-width: 12px; min-height: 12px; color: #aaca9b; }
+spinner { min-width: 12px; min-height: 12px; color: #52cafa; }
 
 @keyframes ping {
-  0% { box-shadow: 0 0 0 0 alpha(#dfb384, .45); }
-  75% { box-shadow: 0 0 0 7px alpha(#dfb384, 0); }
-  100% { box-shadow: 0 0 0 0 alpha(#dfb384, 0); }
+  0% { box-shadow: 0 0 0 0 alpha(#ff8898, .45); }
+  75% { box-shadow: 0 0 0 7px alpha(#ff8898, 0); }
+  100% { box-shadow: 0 0 0 0 alpha(#ff8898, 0); }
 }
 @keyframes meter {
   from { min-height: 3px; }

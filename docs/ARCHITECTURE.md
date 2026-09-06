@@ -6,8 +6,9 @@ A local desktop voice companion. A global shortcut records in the renderer; Elec
 
 ## Boundaries
 
+- `src/pages/HomePage.tsx` is the settings-first Controls workspace. It exposes capture, transcription, writing and delivery settings alongside a latest-output inspector. Microphone enumeration runs here and on Settings.
 - `src/App.tsx` assembles the shell and pages. `hooks/useWorkspace.ts` owns subscriptions, serialized settings patches, transcript actions and feedback. `hooks/useTheme.ts` applies system/light/dark appearance.
-- `src/components/ui` supplies shared switches, setting rows, alerts, empty states and native modal dialogs. `TranscriptCard` owns review/edit/restore/remember-word interactions for both Home and History.
+- `src/components/ui` supplies shared switches, setting rows, alerts, empty states and native modal dialogs. `TranscriptCard` owns review/edit/restore/remember-word interactions for both Controls and History.
 - `src/styles/tokens.css` defines semantic light/dark colors. `components.css` defines reusable controls. `workspace.css` handles the shell and page layouts. All pages remain usable in compact desktop windows.
 - Visited pages remain mounted for the current workspace so drafts and long-running file operations survive navigation. Magic additionally keeps its draft in session storage. No cloud draft storage is used.
 - `src/bridge.ts` is the typed Electron boundary. `src/preview.ts` contains explicitly labeled browser sample data. Native actions in preview explain that the desktop app is required; preview does not pretend to run inference.
@@ -25,13 +26,13 @@ Direct dependency versions and Linux constraints were taken from the reference m
 
 Pinned models stay loaded. Unpinned models stay warm until the idle delay expires; the dictation service no longer immediately unloads them after each result. Reset removes only the virtual environment. Model caches, transcript history and settings remain.
 
-The native GTK4 overlay keeps a dark, warm-green palette for visibility over arbitrary apps. It is click-through and does not own recording or inference logic. Unsupported desktops use the main window and tray without the overlay.
+The native GTK4 overlay keeps a dark ocean-blue palette for visibility over arbitrary apps. It is click-through and does not own recording or inference logic. Unsupported desktops use the main window and tray without the overlay.
 
 ## Data and recovery
 
 Settings and persisted history use temporary-file replacement with restricted permissions. In-memory state is updated only after a successful write. Settings updates are partial patches, serialized in both the workspace and main process to prevent stale whole-object saves from undoing unrelated preferences.
 
-Original clean/verbatim speech is preserved beside user corrections and Magic output. Records remember the delivered transcript version. Home, History, exports and paste-last share the text selection helpers.
+Original clean/verbatim speech is preserved beside user corrections and Magic output. Records remember the delivered transcript version. Controls, History, exports and paste-last share the text selection helpers.
 
 When history saving is disabled, newly produced records remain in a bounded session map for review, corrections and exports; they are not written to history. Existing saved history remains until explicitly cleared. Deletion clears both saved and session records, including paste-last references.
 

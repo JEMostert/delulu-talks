@@ -1,59 +1,63 @@
 import {
+  AudioLines,
   BookOpenText,
   Clock3,
   Cpu,
-  FlaskConical,
-  House,
   Settings2,
-  ShieldCheck,
+  SlidersHorizontal,
   WandSparkles,
 } from "lucide-react";
 import type { DictationStatus, MagicStatus, Page } from "../types";
-
 const groups = [
   {
-    label: "Workspace",
+    label: "Configure",
     items: [
-      { id: "home", label: "Home", icon: House },
-      { id: "history", label: "History", icon: Clock3 },
-      { id: "magic", label: "Magic", icon: WandSparkles },
-    ],
-  },
-  {
-    label: "Make it yours",
-    items: [
-      { id: "vocabulary", label: "Wordbook", icon: BookOpenText },
-      { id: "lab", label: "Speech Lab", icon: FlaskConical },
+      { id: "home", label: "Controls", icon: SlidersHorizontal },
+      { id: "settings", label: "Settings", icon: Settings2 },
       { id: "models", label: "Models", icon: Cpu },
     ],
   },
+  {
+    label: "Tools",
+    items: [
+      { id: "magic", label: "Writing", icon: WandSparkles },
+      { id: "history", label: "History", icon: Clock3 },
+      { id: "vocabulary", label: "Wordbook", icon: BookOpenText },
+      { id: "lab", label: "Audio files", icon: AudioLines },
+    ],
+  },
 ] as const;
-
 export function Sidebar({
   page,
   onNavigate,
   status,
+  magicStatus,
 }: {
   page: Page;
   onNavigate: (page: Page) => void;
   status: DictationStatus;
   magicStatus: MagicStatus;
 }) {
+  const label = (engine: DictationStatus["engine"]) =>
+    ({
+      ready: "Loaded",
+      unloaded: "On demand",
+      missing: "Not installed",
+      error: "Error",
+      loading: "Loading",
+      settingUp: "Installing",
+    })[engine];
   return (
     <aside className="sidebar">
       <button
         className="brand"
         onClick={() => onNavigate("home")}
-        aria-label="Delulu Talks home"
+        aria-label="Delulu Talks controls"
       >
-        <span className="brand-mark">
-          <img src="./delulu-talks-icon.svg" alt="" />
-        </span>
+        <img src="./delulu-talks-icon.svg" alt="" />
         <span>
-          <strong>
-            delulu talks<span className="brand-dot">.</span>
-          </strong>
-          <small>A little more you.</small>
+          <strong>DELULU</strong>
+          <small>TALKS</small>
         </span>
       </button>
       <nav aria-label="Workspace">
@@ -76,26 +80,32 @@ export function Sidebar({
         ))}
       </nav>
       <div className="sidebar-bottom">
+        <p className="nav-label">Local engines</p>
         <button
-          className={page === "settings" ? "active" : ""}
-          aria-current={page === "settings" ? "page" : undefined}
-          title="Settings"
-          onClick={() => onNavigate("settings")}
+          className="engine-nav"
+          onClick={() => onNavigate("models")}
+          title={status.message}
         >
-          <Settings2 />
-          <span>Settings</span>
-        </button>
-        <div className="privacy-note">
-          <ShieldCheck />
+          <span
+            className={`engine-indicator ${status.engine === "ready" ? "ready" : ""}`}
+          />
           <span>
-            Just you and your device.
-            <small>
-              {status.engine === "ready"
-                ? "Local engine ready"
-                : "Private by design"}
-            </small>
+            Speech<small>{label(status.engine)}</small>
           </span>
-        </div>
+        </button>
+        <button
+          className="engine-nav"
+          onClick={() => onNavigate("magic")}
+          title={magicStatus.message}
+        >
+          <span
+            className={`engine-indicator ${magicStatus.engine === "ready" ? "ready" : ""}`}
+          />
+          <span>
+            Writing<small>{label(magicStatus.engine)}</small>
+          </span>
+        </button>
+        <span className="local-footnote">Processing on this device</span>
       </div>
     </aside>
   );

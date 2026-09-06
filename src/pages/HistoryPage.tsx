@@ -104,9 +104,7 @@ export function HistoryPage({
         <EmptyState
           icon={Clock3}
           title={
-            history.length
-              ? "No matching thoughts"
-              : "A little space for your words"
+            history.length ? "No matching transcripts" : "No transcripts yet"
           }
         >
           {history.length

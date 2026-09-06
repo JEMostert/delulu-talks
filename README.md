@@ -3,9 +3,9 @@
   <h1>Delulu Talks</h1>
   <p><strong>Hold. Speak. Release. Your words land polished wherever you are typing.</strong></p>
   <p>
-    <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><img src="https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&amp;label=release&amp;color=42684c&amp;labelColor=171914" alt="Latest release" /></a>
-    <img src="https://img.shields.io/badge/Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-Desktop-42684c?style=for-the-badge&amp;labelColor=171914" alt="Linux, Windows, and macOS" />
-    <img src="https://img.shields.io/badge/AI-local--first-42684c?style=for-the-badge&amp;labelColor=171914" alt="Local-first AI" />
+    <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><img src="https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&amp;label=release&amp;color=087fbe&amp;labelColor=171914" alt="Latest release" /></a>
+    <img src="https://img.shields.io/badge/Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-Desktop-087fbe?style=for-the-badge&amp;labelColor=171914" alt="Linux, Windows, and macOS" />
+    <img src="https://img.shields.io/badge/AI-local--first-087fbe?style=for-the-badge&amp;labelColor=171914" alt="Local-first AI" />
   </p>
   <p>
     <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><strong>Download the latest release</strong></a> ·
@@ -49,14 +49,16 @@ Release the shortcut and Delulu Talks finishes the job. The native recording pil
 | **Speech Lab** | Imports audio or video for transcription, Verbatimize, forced alignment, word timelines, and SRT/VTT export. |
 | **Local by design** | Runs speech and writing models on your machine. There is no telemetry or cloud transcription. |
 
-## A quieter workspace
+## Controls on launch
 
-Version 0.6 brings a consistent warm interface with light, dark, and system themes. Home puts recording and recent results first. History shares the same review tools, Wordbook supports editable voice snippets, and Magic keeps drafts while you move between pages.
+Version 0.7 opens directly into the dictation controls. Microphone, language, shortcut, model, transcript mode, writing style and delivery switches are immediately accessible. A latest-output inspector provides Delivered/Clean/Verbatim views, correction and export beside the controls.
 
-- **Recover quickly:** paste the latest result, retry a failed recording from memory, or discard it explicitly.
-- **Keep your originals:** edit clean or verbatim text without overwriting the model output; remember a recurring correction in Wordbook.
-- **Stay in control:** review/export session transcripts even with history saving off. Use Settings → Advanced for memory and backend preferences.
-- **Maintain locally:** inspect device diagnostics, repair pinned runtimes, and update the app independently of your model downloads.
+The interface uses ocean-blue and navy panels with light/dark/system themes. Settings is at the top of navigation. Writing, file transcription, model management, history and Wordbook share the same compact visual system. The application icon is a new wave-shaped D.
+
+- **Configure quickly:** priority controls fit above the fold in compact desktop windows.
+- **Recover results:** paste the latest transcript, retry failed audio from memory, or discard it explicitly.
+- **Preserve originals:** corrections stay separate from clean/verbatim model output and optional rewrites.
+- **Manage locally:** Settings → Runtime covers memory and backend choices; Settings → Application covers appearance and app updates.
 
 ## Pick the right-sized brain
 
@@ -97,7 +99,7 @@ Supported installed packages check GitHub Releases for updates. Downloads are ex
 3. Focus any text field, hold the <kbd>Windows</kbd>/<kbd>Meta</kbd> key + <kbd>Z</kbd>, speak, then release.
 4. Optionally open **Magic**, install a Qwen model, and choose the rewrite style that should run in your shortcut pipeline.
 
-The app manages its own isolated Python environment and model cache inside the platform application-data directory. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → App & updates offers repair and update controls.
+The app manages its own isolated Python environment and model cache inside the platform application-data directory. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → Application offers repair and update controls.
 
 ## Run from source
 
