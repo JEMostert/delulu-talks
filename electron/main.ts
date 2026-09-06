@@ -98,6 +98,7 @@ function broadcast(channel: string, value: unknown): void {
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
     title: "Delulu Talks",
+    icon: iconPath(),
     width: 1280,
     height: 780,
     minWidth: 820,
