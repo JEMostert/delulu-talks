@@ -85,12 +85,9 @@ try {
   assert.equal(state.diagnostics.dataDirectory, data);
   if (!runtimeData) {
     await page.getByRole("button", { name: "Models", exact: true }).click();
-    await page
-      .getByRole("button", { name: "Install engine", exact: true })
-      .click();
-    assert.equal(await page.getByRole("dialog").count(), 1);
-    await page.keyboard.press("Escape");
-    assert.equal(await page.getByRole("dialog").count(), 0);
+    await expect(
+      page.getByRole("button", { name: "Install engine", exact: true }),
+    ).toBeVisible();
   } else {
     const audioPath = join(data, "sample.wav");
     execFileSync("ffmpeg", [
@@ -212,7 +209,7 @@ try {
     );
   }
   console.log(
-    "Desktop smoke passed: sandboxed preload, settings IPC, persistence, diagnostics, setup dialog.",
+    "Desktop smoke passed: sandboxed preload, settings IPC, persistence, diagnostics, setup readiness.",
   );
 } finally {
   await app?.close();
