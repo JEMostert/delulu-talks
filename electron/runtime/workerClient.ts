@@ -124,6 +124,39 @@ export class WorkerClient {
     this.stop(error);
     this.onFailure(error);
   }
+  async stopAndWait(): Promise<void> {
+    const child = this.child;
+    if (!child?.pid) return;
+    const pid = child.pid;
+    const exited = new Promise<void>((resolve) =>
+      child.once("exit", () => resolve()),
+    );
+    this.stop();
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      exited,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, 5000);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (process.platform !== "win32") {
+      // Descendants may outlive their parent while releasing CUDA resources.
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try {
+          process.kill(-pid, 0);
+        } catch {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        /* Already exited. */
+      }
+    }
+  }
   stop(error = new Error("Model worker stopped")): void {
     const child = this.child;
     this.child = null;

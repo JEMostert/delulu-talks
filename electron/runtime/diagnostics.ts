@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { freemem, totalmem } from "node:os";
-import { join } from "node:path";
 import type { RuntimeDiagnostics } from "../../src/types";
 import type { StorageService } from "../services/storage";
+import { runtimePython } from "./location";
 
 function probe(program: string, args: string[]): Promise<string> {
   return new Promise((resolve) =>
@@ -18,10 +18,7 @@ function probe(program: string, args: string[]): Promise<string> {
 export async function runtimeDiagnostics(
   storage: StorageService,
 ): Promise<RuntimeDiagnostics> {
-  const pythonPath = join(
-    storage.venvDirectory,
-    process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
-  );
+  const pythonPath = runtimePython(storage.venvDirectory);
   const installed = existsSync(pythonPath);
   const [python, ffmpeg, metadata] = await Promise.all([
     probe(

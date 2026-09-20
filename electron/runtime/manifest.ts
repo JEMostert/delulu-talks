@@ -9,7 +9,7 @@ export const INSTALLER_PACKAGES = [
   "setuptools==84.0.0",
 ];
 export const SPEECH_PACKAGES = [
-  "git+https://github.com/netease-youdao/Confucius4-R2T2.git",
+  "git+https://github.com/netease-youdao/Confucius4-R2T2.git@80c22e6140bcb9166fb9906798894fc8b18c8309",
 ];
 export const MAGIC_PACKAGES = [
   "torch==2.13.0",

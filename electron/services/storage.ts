@@ -262,7 +262,7 @@ export class StorageService {
 
   constructor() {
     this.dataDirectory = app.getPath("userData");
-    this.cacheDirectory = join(app.getPath("temp"), "delulu-talks");
+    this.cacheDirectory = join(this.dataDirectory, "audio-cache");
     this.venvDirectory = join(this.dataDirectory, "speech-venv");
     const dedicatedMagicVenv = join(this.dataDirectory, "magic-venv");
     this.legacyVenvDirectory = join(this.dataDirectory, "asr-venv");
@@ -309,6 +309,7 @@ export class StorageService {
   }
 
   private findLegacyDirectory(): string | null {
+    if (!app.isPackaged) return null;
     const home = app.getPath("home");
     const candidates =
       process.platform === "linux"

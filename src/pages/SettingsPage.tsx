@@ -348,7 +348,7 @@ export function SettingsPage(props: Props) {
             <SettingRow
               icon={Clock3}
               title="Keep speech ready"
-              description="Use more memory to avoid loading the model for your next recording."
+              description="Load speech at startup and keep it in GPU memory. Uses more VRAM, but avoids cold starts between recordings."
             >
               {toggle("preloadModel", "Keep speech ready", busy)}
             </SettingRow>

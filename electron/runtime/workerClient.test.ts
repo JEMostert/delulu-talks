@@ -23,6 +23,29 @@ function harness(script: string) {
   };
 }
 
+test("independent speech/writing clients survive repeated stop and restart cycles", async () => {
+  const script = `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu:'+json.dumps({'id':r['id'],'ok':True,'result':r['command']}),flush=True)\n`;
+  const speech = harness(script);
+  const writing = harness(script);
+  try {
+    for (let cycle = 0; cycle < 3; cycle++) {
+      expect(await speech.client.request<string>("transcribe")).toBe(
+        "transcribe",
+      );
+      await speech.client.stopAndWait();
+      expect(speech.client.running).toBe(false);
+      expect(await writing.client.request<string>("rewrite")).toBe("rewrite");
+      await writing.client.stopAndWait();
+      expect(writing.client.running).toBe(false);
+    }
+    expect(speech.failures).toHaveLength(0);
+    expect(writing.failures).toHaveLength(0);
+  } finally {
+    speech.cleanup();
+    writing.cleanup();
+  }
+});
+
 test("worker separates logging from protocol responses", async () => {
   const h = harness(
     `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('ordinary log',flush=True)\n print('@delulu:'+json.dumps({'id':r['id'],'ok':True,'result':r['command']}),flush=True)\n`,

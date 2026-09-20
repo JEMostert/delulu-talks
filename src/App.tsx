@@ -232,7 +232,9 @@ function App() {
                   : speechBusy
                     ? w.status.phase === "transcribing"
                       ? "Transcribing…"
-                      : "Loading engine…"
+                      : w.status.phase === "preparing"
+                        ? "Updating setup…"
+                        : "Loading model into GPU…"
                     : w.status.engine === "ready"
                       ? "Ready"
                       : w.status.engine === "missing"
@@ -299,6 +301,16 @@ function App() {
           onDownload={download}
           onInstall={install}
         />
+        {w.status.phase === "loading" && (
+          <div
+            role="status"
+            className="px-6 pt-3 text-sm text-muted max-[900px]:px-4"
+          >
+            Loading the speech model into GPU memory. This startup step takes
+            longer than transcription. Keep speech ready in Settings → Runtime
+            to avoid loading it again between recordings.
+          </div>
+        )}
         {w.error && (
           <div className="px-6 pt-3 max-[900px]:px-4">
             <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>

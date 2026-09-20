@@ -49,10 +49,18 @@ if (
   // ASR CUDA runs in Python and is unaffected by Chromium's compositor.
   app.commandLine.appendSwitch("disable-gpu");
 }
-app.setName("Delulu Talks");
-if (process.platform === "linux") app.setDesktopName("delulu-talks.desktop");
-if (!app.isPackaged && process.env.DELULU_USER_DATA_DIR)
-  app.setPath("userData", resolve(process.env.DELULU_USER_DATA_DIR));
+app.setName(app.isPackaged ? "Delulu Talks" : "Delulu Talks Dev");
+if (process.platform === "linux")
+  app.setDesktopName(
+    app.isPackaged ? "delulu-talks.desktop" : "delulu-talks-dev.desktop",
+  );
+if (!app.isPackaged)
+  app.setPath(
+    "userData",
+    process.env.DELULU_USER_DATA_DIR
+      ? resolve(process.env.DELULU_USER_DATA_DIR)
+      : join(app.getPath("appData"), "Delulu Talks Dev"),
+  );
 
 const smokeTest = !app.isPackaged && process.env.DELULU_SMOKE_TEST === "1";
 
@@ -469,14 +477,14 @@ function ensureDevelopmentDesktopEntry(): void {
   const dataHome =
     process.env.XDG_DATA_HOME || join(app.getPath("home"), ".local", "share");
   const applicationsDirectory = join(dataHome, "applications");
-  const desktopPath = join(applicationsDirectory, "delulu-talks.desktop");
+  const desktopPath = join(applicationsDirectory, "delulu-talks-dev.desktop");
   const quote = (value: string) =>
     `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
   const entry = [
     "[Desktop Entry]",
     "Type=Application",
-    "Name=Delulu Talks",
-    `Exec=${quote(process.execPath)} ${quote(app.getAppPath())}`,
+    "Name=Delulu Talks Dev",
+    `Exec=env -u ELECTRON_RUN_AS_NODE ${quote(process.execPath)} ${quote(app.getAppPath())}`,
     `Icon=${resolve(app.getAppPath(), "build", "icon.png")}`,
     "Terminal=false",
     "NoDisplay=true",
@@ -541,7 +549,11 @@ async function applySettings(value: unknown): Promise<AppSettings> {
       "Finish the current recording or model operation before changing engines",
     );
   const saved = storage.updateSettings(next);
-  if (!smokeTest && saved.launchAtLogin !== previous.launchAtLogin)
+  if (
+    !smokeTest &&
+    app.isPackaged &&
+    saved.launchAtLogin !== previous.launchAtLogin
+  )
     app.setLoginItemSettings({ openAtLogin: saved.launchAtLogin });
   if (runtimeChanged) await asr.unload();
   if (magicRuntimeChanged) await asr.unloadMagic();
@@ -911,14 +923,15 @@ async function start(): Promise<void> {
   setupPermissions();
   registerIpc();
   if (!smokeTest) {
-    void shortcut
-      .register(storage.getSettings().shortcut)
-      .catch(() => undefined);
+    if (app.isPackaged)
+      void shortcut
+        .register(storage.getSettings().shortcut)
+        .catch(() => undefined);
     installTray();
   }
   const updateTimer = setTimeout(() => void updates.check(), 8_000);
   updateTimer.unref();
-  if (!smokeTest)
+  if (!smokeTest && app.isPackaged)
     app.setLoginItemSettings({
       openAtLogin: storage.getSettings().launchAtLogin,
     });

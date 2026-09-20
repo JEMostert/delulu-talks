@@ -51,6 +51,10 @@ try {
     );
   }
   app = await electron.launch({ args: ["."], env });
+  assert.equal(
+    await app.evaluate(({ app }) => app.getName()),
+    "Delulu Talks Dev",
+  );
   const page = await app.firstWindow();
   await page.getByRole("button", { name: "Dismiss setup" }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -111,6 +115,25 @@ try {
       });
     }, audio);
     const records = await page.evaluate(() => window.delulu.getHistory());
+    if (process.argv.includes("--lifecycle")) {
+      for (let cycle = 0; cycle < 3; cycle++) {
+        await page.evaluate(async (wav) => {
+          await window.delulu.unloadModel();
+          if ((await window.delulu.getStatus()).engine !== "unloaded")
+            throw new Error("Speech did not unload");
+          await window.delulu.loadModel();
+          await window.delulu.submitRecording({
+            wav: new Uint8Array(wav),
+            durationMs: 4573,
+          });
+        }, audio);
+      }
+      const cycles = await page.evaluate(() => window.delulu.getHistory());
+      assert.equal(cycles.length, 4);
+      for (const record of cycles.slice(0, -1))
+        await page.evaluate((id) => window.delulu.deleteHistory(id), record.id);
+      console.log("Three real speech unload/reload/transcribe cycles passed.");
+    }
     assert.equal(
       records.length,
       1,
@@ -138,6 +161,7 @@ try {
     assert.equal(exported.editedText, "Session correction stays private.");
     assert.equal(exported.text, records[0].text);
     if (process.argv.includes("--writing")) {
+      await page.evaluate(() => window.delulu.unloadModel());
       const rewritten = await page.evaluate(async (id) => {
         await window.delulu.updateSettings({
           customWords: [
@@ -198,6 +222,11 @@ try {
       console.log(
         "Manual writing passed with automatic rewriting off, exact shortcut preservation, apply, and undo.",
       );
+      await page.evaluate(async () => {
+        await window.delulu.unloadMagic();
+        await window.delulu.loadModel();
+        await window.delulu.unloadModel();
+      });
     }
     await page.evaluate((id) => window.delulu.deleteHistory(id), records[0].id);
     assert.equal(
