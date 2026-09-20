@@ -93,7 +93,7 @@ test("text shortcuts can be previewed, edited, persisted and removed", async ({
 test("corrections preserve original speech and can be restored", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Clean", exact: true }).click();
+  await page.getByRole("button", { name: "Speech", exact: true }).click();
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Correct transcript" })
@@ -232,9 +232,6 @@ test("startup exposes priority settings above the fold in compact and desktop wi
       ["combobox", "Microphone"],
       ["combobox", "Dictation language"],
       ["combobox", "Recording gesture"],
-      ["combobox", "Speech model"],
-      ["combobox", "Speech output"],
-      ["combobox", "Version to deliver"],
       ["switch", "Rewrite after dictation"],
       ["switch", "Paste automatically"],
       ["switch", "Copy to clipboard"],
@@ -259,40 +256,17 @@ test("startup exposes priority settings above the fold in compact and desktop wi
   await expect(page.locator(".record-command")).toHaveCount(1);
 });
 
-test("native dictation defaults persist and delivery follows the selected output", async ({
-  page,
-}) => {
+test("native dictation defaults persist across reloads", async ({ page }) => {
   await expect(
     page.getByRole("switch", { name: "Rewrite after dictation", exact: true }),
   ).toHaveAttribute("aria-checked", "false");
-  await expect(
-    page.getByRole("combobox", { name: "Speech output", exact: true }),
-  ).toHaveValue("intended");
-  await expect(
-    page.getByRole("combobox", { name: "Version to deliver", exact: true }),
-  ).toBeDisabled();
   await page
     .getByRole("combobox", { name: "Dictation language", exact: true })
     .selectOption("fr");
-  await page
-    .getByRole("combobox", { name: "Speech model", exact: true })
-    .selectOption("crisperTurbo");
-  await page
-    .getByRole("combobox", { name: "Speech output", exact: true })
-    .selectOption("verbatim");
-  await expect(
-    page.getByRole("combobox", { name: "Version to deliver", exact: true }),
-  ).toHaveValue("verbatim");
   await page.reload();
   await expect(
     page.getByRole("combobox", { name: "Dictation language", exact: true }),
   ).toHaveValue("fr");
-  await expect(
-    page.getByRole("combobox", { name: "Speech model", exact: true }),
-  ).toHaveValue("crisperTurbo");
-  await expect(
-    page.getByRole("combobox", { name: "Version to deliver", exact: true }),
-  ).toHaveValue("verbatim");
   await expect(
     page.getByRole("switch", { name: "Rewrite after dictation", exact: true }),
   ).toHaveAttribute("aria-checked", "false");
@@ -301,7 +275,7 @@ test("native dictation defaults persist and delivery follows the selected output
 test("a transcript edit suggests an explicit correction rule and rejects conflicting triggers", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Clean", exact: true }).click();
+  await page.getByRole("button", { name: "Speech", exact: true }).click();
   const original = await page.locator(".transcript-original").textContent();
   const firstWord = original!.split(" ")[0];
   await page.getByRole("button", { name: "Edit", exact: true }).click();

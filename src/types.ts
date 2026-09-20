@@ -1,25 +1,17 @@
 export type Page =
   "home" | "magic" | "lab" | "models" | "vocabulary" | "history" | "settings";
 
-export type ModelId =
-  "crisperSmall" | "crisperMedium" | "crisperTurbo" | "crisperLarge";
+export type ModelId = "r2t2";
 export type MagicModelId = "qwen35Small" | "qwen35Medium" | "qwen35Large";
 export type MagicPreset = "polish" | "concise" | "structured" | "prompt";
-export type TranscriptionMode = "intended" | "verbatim" | "dual";
-export type TranscriptVersion = "intended" | "verbatim";
-export type AsrBackend = "auto" | "ct2" | "transformers";
-export type ComputeType =
-  "auto" | "float16" | "int8Float16" | "int8" | "float32";
 export type DictationPhase =
   "idle" | "preparing" | "loading" | "listening" | "transcribing" | "error";
 export type EnginePhase =
   "missing" | "unloaded" | "settingUp" | "loading" | "ready" | "error";
 export type MagicPhase =
   "idle" | "preparing" | "loading" | "rewriting" | "error";
-export type TranscriptSource =
-  "dictation" | "file" | "verbatimize" | "forcedAlign";
-export type LabOperation = "transcribe" | "verbatimize" | "forcedAlign";
-export type ExportFormat = "txt" | "json" | "srt" | "vtt";
+export type TranscriptSource = "dictation" | "file";
+export type ExportFormat = "txt" | "json";
 
 export type CustomWord = {
   kind?: "correction" | "shortcut";
@@ -41,8 +33,6 @@ export type AppSettings = {
   pythonCommand: string;
   inputDeviceId: string;
   inputDeviceLabel: string;
-  transcriptionMode: TranscriptionMode;
-  pasteVersion: "intended" | "verbatim";
   autoPaste: boolean;
   copyToClipboard: boolean;
   pastePortalToken: string;
@@ -55,12 +45,7 @@ export type AppSettings = {
   magicAllowInferences: boolean;
   preloadMagicModel: boolean;
   modelIdleMinutes: number;
-  backend: AsrBackend;
-  computeType: ComputeType;
-  speculativeDecoding: boolean;
-  wordTimestamps: boolean;
   launchAtLogin: boolean;
-  modelLicenseAccepted: boolean;
   customWords: CustomWord[];
 };
 
@@ -93,28 +78,13 @@ export type MagicRewriteResult = {
 
 export type DictationStatus = {
   retryAvailable?: boolean;
+  migrationRequired?: boolean;
   phase: DictationPhase;
   engine: EnginePhase;
   message: string;
   detail?: string | null;
   model?: ModelId | null;
-  backend?: Exclude<AsrBackend, "auto"> | null;
   progress?: number | null;
-};
-
-export type WordTimestamp = {
-  word: string;
-  start: number;
-  end: number;
-};
-
-export type SpeechInsights = {
-  fillerCount: number;
-  repetitionCount: number;
-  cutOffCount: number;
-  vocalEventCount: number;
-  wordsPerMinute: number;
-  speakingSeconds: number;
 };
 
 export type TranscriptRecord = {
@@ -122,23 +92,15 @@ export type TranscriptRecord = {
   createdAt: number;
   durationMs: number;
   text: string;
-  intendedText: string;
-  verbatimText: string;
   personalizedText?: string | null;
-  deliveredVersion?: TranscriptVersion;
-  editedIntendedText?: string | null;
-  editedVerbatimText?: string | null;
+  editedText?: string | null;
   magicText?: string | null;
   magicModel?: MagicModelId | null;
   magicPreset?: MagicPreset | null;
   magicIncludedInferences?: boolean;
   magicProcessingTimeMs?: number;
-  mode: TranscriptionMode | "forcedAlign" | "verbatimize";
   model: ModelId;
   language: string;
-  words: WordTimestamp[];
-  verbatimWords: WordTimestamp[];
-  insights: SpeechInsights;
   source: TranscriptSource;
   sourceName?: string | null;
   processingTimeMs: number;
@@ -146,16 +108,9 @@ export type TranscriptRecord = {
 
 export type ModelInfo = {
   id: ModelId;
-  shorthand: "small" | "medium" | "turbo" | "large";
   hfId: string;
   name: string;
-  role: string;
   description: string;
-  size: string;
-  memory: string;
-  latency: string;
-  accent: "coral" | "blue" | "violet" | "yellow";
-  badges: string[];
   recommended?: boolean;
 };
 
@@ -178,10 +133,7 @@ export type AudioFileSelection = {
 };
 
 export type LabRequest = {
-  operation: LabOperation;
   path: string;
-  referenceText?: string;
-  mode?: TranscriptionMode;
 };
 
 export type RecorderCommand = {
@@ -268,11 +220,7 @@ export type DeluluApi = {
   copyText(text: string): Promise<void>;
   authorizePaste(): Promise<void>;
   testPaste(): Promise<void>;
-  updateTranscript(
-    id: string,
-    version: TranscriptVersion,
-    text: string | null,
-  ): Promise<TranscriptRecord>;
+  updateTranscript(id: string, text: string | null): Promise<TranscriptRecord>;
   setTranscriptRewrite(
     id: string,
     result: MagicRewriteResult | null,

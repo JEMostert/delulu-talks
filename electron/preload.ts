@@ -12,7 +12,6 @@ import type {
   RecordingSubmission,
   ShortcutStatus,
   TranscriptRecord,
-  TranscriptVersion,
   UpdateStatus,
 } from "../src/types";
 
@@ -60,11 +59,8 @@ const api: DeluluApi = {
   copyText: (text: string) => ipcRenderer.invoke("clipboard:copy", text),
   authorizePaste: () => ipcRenderer.invoke("paste:authorize"),
   testPaste: () => ipcRenderer.invoke("paste:test"),
-  updateTranscript: (
-    id: string,
-    version: TranscriptVersion,
-    text: string | null,
-  ) => ipcRenderer.invoke("history:updateTranscript", id, version, text),
+  updateTranscript: (id: string, text: string | null) =>
+    ipcRenderer.invoke("history:updateTranscript", id, text),
   setTranscriptRewrite: (id, result, sourceText) =>
     ipcRenderer.invoke("history:setRewrite", id, result, sourceText),
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),

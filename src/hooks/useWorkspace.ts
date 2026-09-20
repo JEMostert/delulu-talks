@@ -11,7 +11,6 @@ import type {
   PlatformCapabilities,
   ShortcutStatus,
   TranscriptRecord,
-  TranscriptVersion,
   UpdateStatus,
 } from "../types";
 
@@ -138,6 +137,7 @@ export function useWorkspace() {
   ): Promise<boolean> {
     try {
       await run();
+      setError(null);
       if (success) setToast(success);
       return true;
     } catch (reason) {
@@ -155,6 +155,7 @@ export function useWorkspace() {
     const run = saveQueue.current.then(async () => {
       try {
         receiveSettings(await bridge.updateSettings(patch));
+        setError(null);
         if (message) setToast(message);
         return true;
       } catch (reason) {
@@ -171,14 +172,13 @@ export function useWorkspace() {
 
   async function updateTranscript(
     id: string,
-    version: TranscriptVersion,
     text: string | null,
   ): Promise<boolean> {
     return action(
       async () => {
         if (text !== null && !text.trim())
           throw new Error("A correction cannot be empty");
-        const updated = await bridge.updateTranscript(id, version, text);
+        const updated = await bridge.updateTranscript(id, text);
         setHistory((items) =>
           items.map((item) => (item.id === id ? updated : item)),
         );
@@ -187,20 +187,8 @@ export function useWorkspace() {
     );
   }
 
-  const finishOnboarding = async (
-    openModels: boolean,
-    acceptLicense: boolean,
-  ) => {
-    if (
-      await saveSettings(
-        {
-          onboardingComplete: true,
-          modelLicenseAccepted:
-            acceptLicense || settingsRef.current.modelLicenseAccepted,
-        },
-        null,
-      )
-    ) {
+  const finishOnboarding = async (openModels: boolean) => {
+    if (await saveSettings({ onboardingComplete: true }, null)) {
       if (openModels) setPage("models");
     }
   };

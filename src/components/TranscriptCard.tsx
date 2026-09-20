@@ -26,7 +26,6 @@ import type {
   CustomWord,
   ExportFormat,
   TranscriptRecord,
-  TranscriptVersion,
 } from "../types";
 
 export type TranscriptActions = {
@@ -39,11 +38,7 @@ export type TranscriptActions = {
   onRewriteSetup?: () => void;
   rewriteStatus?: MagicStatus;
   onCopy: (text: string) => void;
-  onUpdateTranscript: (
-    id: string,
-    version: TranscriptVersion,
-    text: string | null,
-  ) => Promise<boolean>;
+  onUpdateTranscript: (id: string, text: string | null) => Promise<boolean>;
   onDelete?: (id: string) => void;
   onExport?: (id: string, format: ExportFormat) => void;
   onRemember?: (word: CustomWord) => Promise<boolean>;
@@ -67,16 +62,7 @@ export function TranscriptCard({
   inspector?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen || inspector);
-  const [version, setVersion] = useState<TranscriptVersion | "delivered">(
-    record.magicText ||
-      (record.deliveredVersion !== "verbatim" &&
-        record.personalizedText &&
-        record.personalizedText !== record.intendedText)
-      ? "delivered"
-      : record.intendedText
-        ? "intended"
-        : "verbatim",
-  );
+  const [showSource, setShowSource] = useState(false);
   const [rewriting, setRewriting] = useState(false);
   const [correctionSuggested, setCorrectionSuggested] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -87,13 +73,9 @@ export function TranscriptCard({
   const [remember, setRemember] = useState(false);
   const [heard, setHeard] = useState("");
   const [correct, setCorrect] = useState("");
-  const sourceVersion =
-    version === "delivered" ? (record.deliveredVersion ?? "intended") : version;
-  const text =
-    version === "delivered"
-      ? deliveredText(record)
-      : transcriptText(record, version);
-  const edited = version !== "delivered" && transcriptIsEdited(record, version);
+  const delivered = deliveredText(record);
+  const edited = transcriptIsEdited(record);
+  const text = showSource ? transcriptText(record) : delivered;
   const date = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -101,7 +83,7 @@ export function TranscriptCard({
   const save = async () => {
     setSaving(true);
     try {
-      if (await onUpdateTranscript(record.id, sourceVersion, draft)) {
+      if (await onUpdateTranscript(record.id, draft)) {
         setEditing(false);
         const before = text.trim().split(/\s+/),
           after = draft.trim().split(/\s+/);
@@ -143,19 +125,25 @@ export function TranscriptCard({
   };
   return (
     <article
-      className={`transcript-card ${open ? "expanded" : ""} ${inspector ? "inspector-card" : ""}`}
+      className={`transcript-card ${open ? "expanded" : ""} ${
+        inspector
+          ? "inspector-card rounded-none border-0 p-[14px] shadow-none"
+          : "rounded-panel border border-line bg-surface shadow-panel backdrop-blur-xl p-[15px_18px]"
+      }`}
     >
-      <header>
-        <span className="transcript-icon">
+      <header className="flex items-center gap-2.5">
+        <span className="transcript-icon grid size-8 place-items-center rounded-md bg-soft text-muted [&_svg]:size-[15px]">
           {record.source === "dictation" ? <Mic /> : <FileAudio />}
         </span>
-        <div className="transcript-meta">
-          <strong>{record.sourceName ?? "Dictation"}</strong>
-          <span>
+        <div className="transcript-meta flex-1">
+          <strong className="block text-[12px]">
+            {record.sourceName ?? "Dictation"}
+          </strong>
+          <span className="mt-[3px] flex items-center gap-1 text-[10px] text-muted">
             {date} · {Math.max(1, Math.round(record.durationMs / 1000))}s{" "}
             {record.magicText && (
               <>
-                · <WandSparkles /> Rewritten
+                · <WandSparkles className="size-[11px]" /> Rewritten
               </>
             )}
           </span>
@@ -182,13 +170,17 @@ export function TranscriptCard({
         </div>
       </header>
       {!inspector && (
-        <p className={`transcript-preview ${open ? "full" : ""}`}>
+        <p
+          className={`transcript-preview mt-4 text-[15px] leading-[1.85] text-ink whitespace-pre-wrap wrap-anywhere ${
+            open ? "block line-clamp-none" : "line-clamp-3"
+          }`}
+        >
           {deliveredText(record)}
         </p>
       )}
       {!inspector && (
-        <footer>
-          <span className="caption">
+        <footer className="mt-4 flex items-center justify-between gap-3">
+          <span className="caption text-[10px]">
             {deliveredText(record).trim().split(/\s+/).filter(Boolean).length}{" "}
             words
             {record.magicIncludedInferences
@@ -197,72 +189,68 @@ export function TranscriptCard({
             {edited ? " · Corrected" : ""}
           </span>
           <button
-            className="text-button"
+            className="text-button min-h-[26px] py-0 text-[11px]"
             aria-expanded={open}
             onClick={() => setOpen(!open)}
           >
             {open ? "Close details" : "Review transcript"}
-            <ChevronDown className={open ? "rotated" : ""} />
+            <ChevronDown className={`size-[13px] ${open ? "rotated" : ""}`} />
           </button>
         </footer>
       )}
       {open && (
-        <div className="transcript-detail">
-          <div className="panel-toolbar">
+        <div
+          className={`transcript-detail ${
+            inspector ? "mt-1 border-0" : "mt-4 border-t border-line"
+          }`}
+        >
+          <div
+            className={`panel-toolbar ${
+              inspector
+                ? "flex-wrap pt-2.5"
+                : "border-b-0 px-0 pb-2.5 pt-[18px]"
+            }`}
+          >
             <div
               className="segmented"
               role="group"
-              aria-label="Transcript version"
+              aria-label="Transcript view"
             >
-              {(
-                [
-                  ...(record.magicText ||
-                  (record.deliveredVersion !== "verbatim" &&
-                    record.personalizedText &&
-                    record.personalizedText !== record.intendedText)
-                    ? ["delivered" as const]
-                    : []),
-                  "intended",
-                  "verbatim",
-                ] as const
-              )
-                .filter((v) =>
-                  v === "delivered"
-                    ? true
-                    : v === "intended"
-                      ? record.intendedText || !record.verbatimText
-                      : record.verbatimText,
-                )
-                .map((v) => (
-                  <button
-                    key={v}
-                    className={version === v ? "active" : ""}
-                    aria-pressed={version === v}
-                    disabled={editing}
-                    onClick={() => setVersion(v)}
-                  >
-                    {v === "delivered"
-                      ? "Result"
-                      : v === "intended"
-                        ? "Clean"
-                        : "Verbatim"}
-                  </button>
-                ))}
+              <button
+                className={!showSource ? "active" : ""}
+                aria-pressed={!showSource}
+                disabled={editing}
+                onClick={() => setShowSource(false)}
+              >
+                Result
+              </button>
+              <button
+                className={showSource ? "active" : ""}
+                aria-pressed={showSource}
+                disabled={editing}
+                onClick={() => setShowSource(true)}
+              >
+                Speech
+              </button>
             </div>
             <span className="caption">
-              {version === "delivered"
-                ? record.magicText
-                  ? "Optional rewrite"
-                  : "Corrections & shortcuts applied"
-                : edited
+              {showSource
+                ? edited
                   ? "Your correction"
-                  : "Original speech"}
+                  : "Original speech"
+                : record.magicText
+                  ? "Optional rewrite"
+                  : "Corrections & shortcuts applied"}
             </span>
           </div>
           {editing ? (
             <textarea
               aria-label="Correct transcript"
-              className="transcript-editor"
+              className={`transcript-editor w-full whitespace-pre-wrap wrap-anywhere text-[14px] leading-[1.8] ${
+                inspector
+                  ? "min-h-[260px] max-h-[460px] overflow-y-auto rounded-[5px] border border-line bg-input p-4 max-[1150px]:min-h-[120px]"
+                  : "min-h-[150px] rounded-md bg-soft p-4"
+              }`}
               maxLength={500_000}
               value={draft}
               autoFocus
@@ -278,9 +266,23 @@ export function TranscriptCard({
               }}
             />
           ) : (
-            <div className="transcript-original">{text}</div>
+            <div
+              className={`transcript-original w-full whitespace-pre-wrap wrap-anywhere text-[14px] leading-[1.8] ${
+                inspector
+                  ? "min-h-[260px] max-h-[460px] overflow-y-auto rounded-[5px] border border-line bg-input p-4 max-[1150px]:min-h-[120px]"
+                  : "rounded-md bg-soft p-4"
+              }`}
+            >
+              {text}
+            </div>
           )}
-          <div className="detail-actions">
+          <div
+            className={`detail-actions mt-3 ${
+              inspector
+                ? "gap-[3px] [&_.tool-button]:min-h-[30px] [&_.tool-button]:p-1.5 [&_.tool-button]:text-[10px] [&_svg]:size-[13px]"
+                : ""
+            }`}
+          >
             {editing ? (
               <>
                 <button
@@ -301,31 +303,23 @@ export function TranscriptCard({
               </>
             ) : (
               <>
-                {version !== "delivered" && (
-                  <button
-                    className="tool-button"
-                    onClick={() => {
-                      setDraft(text);
-                      setEditing(true);
-                    }}
-                  >
-                    <Pencil /> Edit
-                  </button>
-                )}
+                <button
+                  className="tool-button"
+                  onClick={() => {
+                    setShowSource(true);
+                    setDraft(transcriptText(record));
+                    setEditing(true);
+                  }}
+                >
+                  <Pencil /> Edit
+                </button>
                 <button className="tool-button" onClick={() => onCopy(text)}>
-                  <Copy /> Copy{" "}
-                  {version === "delivered"
-                    ? "result"
-                    : version === "intended"
-                      ? "clean"
-                      : "verbatim"}
+                  <Copy /> Copy {showSource ? "speech" : "result"}
                 </button>
                 {edited && (
                   <button
                     className="tool-button"
-                    onClick={() =>
-                      void onUpdateTranscript(record.id, sourceVersion, null)
-                    }
+                    onClick={() => void onUpdateTranscript(record.id, null)}
                   >
                     <RotateCcw /> Restore
                   </button>
@@ -353,14 +347,7 @@ export function TranscriptCard({
                             deliveredText(record),
                           )
                         )
-                          setVersion(
-                            record.personalizedText !== record.intendedText &&
-                              record.personalizedText
-                              ? "delivered"
-                              : record.intendedText
-                                ? "intended"
-                                : "verbatim",
-                          );
+                          setShowSource(false);
                       } finally {
                         setSaving(false);
                       }
@@ -409,19 +396,9 @@ export function TranscriptCard({
             </div>
           )}
           {onExport && (
-            <div className="export-row">
-              <span title="Subtitles use the original model words and timing, before corrections or rewriting.">
-                Export · original timing for subtitles
-              </span>
-              {(
-                [
-                  "txt",
-                  "json",
-                  ...(record.words.length || record.verbatimWords.length
-                    ? ["srt", "vtt"]
-                    : []),
-                ] as ExportFormat[]
-              ).map((format) => (
+            <div className="export-row mt-3.5 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted [&_.tool-button]:min-h-[28px] [&_.tool-button]:px-2 [&_.tool-button]:py-[5px] [&_svg]:size-3">
+              <span>Export</span>
+              {(["txt", "json"] as ExportFormat[]).map((format) => (
                 <button
                   className="tool-button"
                   key={format}
@@ -445,7 +422,7 @@ export function TranscriptCard({
           onRewrite={onRewrite}
           onApply={async (result, source) => {
             const applied = await onSetRewrite(record.id, result, source);
-            if (applied) setVersion("delivered");
+            if (applied) setShowSource(false);
             return applied;
           }}
         />

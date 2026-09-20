@@ -14,16 +14,13 @@ import {
   MAGIC_MODELS,
   MODELS,
 } from "../../src/data";
-import { originalTranscriptText } from "../../src/transcriptText";
 import type {
   AppSettings,
   CustomWord,
   MagicModelId,
   MagicPreset,
   ModelId,
-  SpeechInsights,
   TranscriptRecord,
-  TranscriptVersion,
 } from "../../src/types";
 
 const SETTINGS_FILE = "settings.json";
@@ -105,25 +102,6 @@ export function normalizeSettings(value: unknown): AppSettings {
   )
     ? (source.magicPreset as MagicPreset)
     : DEFAULT_SETTINGS.magicPreset;
-  const backend = ["auto", "ct2", "transformers"].includes(
-    String(source.backend),
-  )
-    ? (source.backend as AppSettings["backend"])
-    : DEFAULT_SETTINGS.backend;
-  const computeType = [
-    "auto",
-    "float16",
-    "int8Float16",
-    "int8",
-    "float32",
-  ].includes(String(source.computeType))
-    ? (source.computeType as AppSettings["computeType"])
-    : DEFAULT_SETTINGS.computeType;
-  const transcriptionMode = ["intended", "verbatim", "dual"].includes(
-    String(source.transcriptionMode),
-  )
-    ? (source.transcriptionMode as AppSettings["transcriptionMode"])
-    : DEFAULT_SETTINGS.transcriptionMode;
   const requestedLanguage = safeString(
     source.language,
     DEFAULT_SETTINGS.language,
@@ -168,8 +146,6 @@ export function normalizeSettings(value: unknown): AppSettings {
       DEFAULT_SETTINGS.inputDeviceLabel,
       512,
     ),
-    transcriptionMode,
-    pasteVersion: source.pasteVersion === "verbatim" ? "verbatim" : "intended",
     autoPaste: boolean(source.autoPaste, DEFAULT_SETTINGS.autoPaste),
     copyToClipboard: boolean(
       source.copyToClipboard,
@@ -199,76 +175,36 @@ export function normalizeSettings(value: unknown): AppSettings {
     )
       ? Number(source.modelIdleMinutes)
       : DEFAULT_SETTINGS.modelIdleMinutes,
-    backend,
-    computeType,
-    speculativeDecoding: boolean(
-      source.speculativeDecoding,
-      DEFAULT_SETTINGS.speculativeDecoding,
-    ),
-    wordTimestamps: boolean(
-      source.wordTimestamps,
-      DEFAULT_SETTINGS.wordTimestamps,
-    ),
     launchAtLogin: boolean(
       source.launchAtLogin,
       DEFAULT_SETTINGS.launchAtLogin,
     ),
-    modelLicenseAccepted: boolean(
-      source.modelLicenseAccepted,
-      DEFAULT_SETTINGS.modelLicenseAccepted,
-    ),
     customWords: normalizeWords(source.customWords),
-  };
-}
-
-function emptyInsights(): SpeechInsights {
-  return {
-    fillerCount: 0,
-    repetitionCount: 0,
-    cutOffCount: 0,
-    vocalEventCount: 0,
-    wordsPerMinute: 0,
-    speakingSeconds: 0,
   };
 }
 
 function migrateRecord(value: unknown): TranscriptRecord | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
-  const text = safeString(source.text, "", 250_000);
+  const text = safeString(
+    source.text ?? source.intendedText ?? source.verbatimText,
+    "",
+    250_000,
+  );
   if (!text) return null;
   const model = validModels.has(source.model as ModelId)
     ? (source.model as ModelId)
     : DEFAULT_SETTINGS.model;
-  const mode = [
-    "intended",
-    "verbatim",
-    "dual",
-    "forcedAlign",
-    "verbatimize",
-  ].includes(String(source.mode))
-    ? (source.mode as TranscriptRecord["mode"])
-    : "intended";
   return {
     id: safeString(source.id, `legacy-${Date.now()}-${Math.random()}`, 128),
     createdAt: Number(source.createdAt) || Date.now(),
     durationMs: Math.max(0, Number(source.durationMs) || 0),
     text,
-    intendedText: safeString(
-      source.intendedText,
-      mode === "verbatim" ? "" : text,
-      250_000,
-    ),
-    verbatimText: safeString(
-      source.verbatimText ?? source.rawText,
-      "",
-      250_000,
-    ),
     personalizedText: optionalText(source.personalizedText, 500_000),
-    deliveredVersion:
-      source.deliveredVersion === "verbatim" ? "verbatim" : "intended",
-    editedIntendedText: optionalText(source.editedIntendedText, 500_000),
-    editedVerbatimText: optionalText(source.editedVerbatimText, 500_000),
+    editedText: optionalText(
+      source.editedText ?? source.editedIntendedText,
+      500_000,
+    ),
     magicText: optionalText(source.magicText, 500_000),
     magicModel: validMagicModels.has(source.magicModel as MagicModelId)
       ? (source.magicModel as MagicModelId)
@@ -283,22 +219,9 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
       0,
       Number(source.magicProcessingTimeMs) || 0,
     ),
-    mode,
     model,
     language: safeString(source.language, "en", 12),
-    words: Array.isArray(source.words)
-      ? (source.words as TranscriptRecord["words"])
-      : [],
-    verbatimWords: Array.isArray(source.verbatimWords)
-      ? (source.verbatimWords as TranscriptRecord["verbatimWords"])
-      : [],
-    insights:
-      source.insights && typeof source.insights === "object"
-        ? (source.insights as SpeechInsights)
-        : emptyInsights(),
-    source: ["dictation", "file", "verbatimize", "forcedAlign"].includes(
-      String(source.source),
-    )
+    source: ["dictation", "file"].includes(String(source.source))
       ? (source.source as TranscriptRecord["source"])
       : "dictation",
     sourceName:
@@ -309,7 +232,6 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
 
 export function applyTranscriptEdit(
   record: TranscriptRecord,
-  version: TranscriptVersion,
   text: string | null,
 ): TranscriptRecord {
   record = {
@@ -323,17 +245,17 @@ export function applyTranscriptEdit(
   const normalized = text?.trim() ?? null;
   if (text !== null && !normalized)
     throw new Error("A transcript correction cannot be empty");
-  const correction =
-    normalized === originalTranscriptText(record, version) ? null : normalized;
-  return version === "intended"
-    ? { ...record, editedIntendedText: correction }
-    : { ...record, editedVerbatimText: correction };
+  const correction = normalized === record.text ? null : normalized;
+  return { ...record, editedText: correction };
 }
 
 export class StorageService {
   readonly dataDirectory: string;
   readonly cacheDirectory: string;
+  /** Dedicated speech environment. Kept as venvDirectory for API compatibility. */
   readonly venvDirectory: string;
+  readonly magicVenvDirectory: string;
+  readonly legacyVenvDirectory: string;
   readonly modelCacheDirectory: string;
   private settings: AppSettings;
   private history: TranscriptRecord[];
@@ -341,7 +263,16 @@ export class StorageService {
   constructor() {
     this.dataDirectory = app.getPath("userData");
     this.cacheDirectory = join(app.getPath("temp"), "delulu-talks");
-    this.venvDirectory = join(this.dataDirectory, "asr-venv");
+    this.venvDirectory = join(this.dataDirectory, "speech-venv");
+    const dedicatedMagicVenv = join(this.dataDirectory, "magic-venv");
+    this.legacyVenvDirectory = join(this.dataDirectory, "asr-venv");
+    // Releases before split runtimes installed Magic into asr-venv. Preserve a
+    // working 6+ GB environment instead of forcing an unnecessary reinstall.
+    this.magicVenvDirectory = existsSync(dedicatedMagicVenv)
+      ? dedicatedMagicVenv
+      : existsSync(this.legacyVenvDirectory)
+        ? this.legacyVenvDirectory
+        : dedicatedMagicVenv;
     this.modelCacheDirectory = join(this.dataDirectory, "models");
     mkdirSync(this.dataDirectory, { recursive: true });
     mkdirSync(this.cacheDirectory, { recursive: true });
@@ -422,14 +353,10 @@ export class StorageService {
     return this.history.find((item) => item.id === id);
   }
 
-  updateTranscript(
-    id: string,
-    version: TranscriptVersion,
-    text: string | null,
-  ): TranscriptRecord {
+  updateTranscript(id: string, text: string | null): TranscriptRecord {
     const index = this.history.findIndex((item) => item.id === id);
     if (index < 0) throw new Error("Transcript not found");
-    const updated = applyTranscriptEdit(this.history[index], version, text);
+    const updated = applyTranscriptEdit(this.history[index], text);
     const next = this.history.map((item, itemIndex) =>
       itemIndex === index ? updated : item,
     );

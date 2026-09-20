@@ -26,9 +26,8 @@ function fakePill() {
 function harness(
   settings: AppSettings,
   transcription: Record<string, unknown> = {
-    text: "um ship the release",
-    intendedText: "Ship the release.",
-    verbatimText: "um ship the release",
+    text: "Ship the release.",
+    language: "en",
   },
 ) {
   const cacheDirectory = mkdtempSync(join(tmpdir(), "delulu-dictation-test-"));
@@ -103,9 +102,7 @@ function harness(
   };
 }
 
-function captureHarness(
-  settings: AppSettings = { ...DEFAULT_SETTINGS, modelLicenseAccepted: true },
-) {
+function captureHarness(settings: AppSettings = { ...DEFAULT_SETTINGS }) {
   const commands: unknown[] = [];
   let current = settings;
   let status = { phase: "idle", engine: "ready", message: "Ready" };
@@ -172,7 +169,6 @@ describe("dictation delivery pipeline", () => {
   test("rewrites with Magic before copying the delivered result", async () => {
     const testHarness = harness({
       ...DEFAULT_SETTINGS,
-      modelLicenseAccepted: true,
       magicEnabled: true,
       magicPreset: "polish",
       magicAllowInferences: false,
@@ -187,7 +183,7 @@ describe("dictation delivery pipeline", () => {
       expect(testHarness.magicCalls()).toBe(1);
       expect(testHarness.copied).toEqual(["Ship the release today."]);
       expect(testHarness.records[0].magicText).toBe("Ship the release today.");
-      expect(testHarness.records[0].intendedText).toBe("Ship the release.");
+      expect(testHarness.records[0].text).toBe("Ship the release.");
     } finally {
       testHarness.cleanup();
     }
@@ -196,7 +192,6 @@ describe("dictation delivery pipeline", () => {
   test("delivers the speech transcript directly when Magic is off", async () => {
     const testHarness = harness({
       ...DEFAULT_SETTINGS,
-      modelLicenseAccepted: true,
       magicEnabled: false,
       autoPaste: false,
       copyToClipboard: true,
@@ -217,7 +212,6 @@ describe("dictation delivery pipeline", () => {
   test("automatic paste publishes the result exactly once", async () => {
     const testHarness = harness({
       ...DEFAULT_SETTINGS,
-      modelLicenseAccepted: true,
       magicEnabled: false,
       autoPaste: true,
       copyToClipboard: true,
@@ -243,12 +237,11 @@ describe("dictation delivery pipeline", () => {
     const testHarness = harness(
       {
         ...DEFAULT_SETTINGS,
-        modelLicenseAccepted: true,
         magicEnabled: true,
         autoPaste: true,
         copyToClipboard: true,
       },
-      { text: "", intendedText: "", verbatimText: "" },
+      { text: "", language: "en" },
     );
     try {
       await testHarness.service.submitRecording({
@@ -271,7 +264,6 @@ describe("dictation delivery pipeline", () => {
   test("shows a short copied success state after delivery", async () => {
     const testHarness = harness({
       ...DEFAULT_SETTINGS,
-      modelLicenseAccepted: true,
       magicEnabled: false,
       autoPaste: false,
       copyToClipboard: true,
@@ -295,7 +287,6 @@ describe("dictation delivery pipeline", () => {
   test("discards a tap as too short instead of hiding silently", async () => {
     const testHarness = harness({
       ...DEFAULT_SETTINGS,
-      modelLicenseAccepted: true,
     });
     try {
       await testHarness.service.submitRecording({
@@ -323,14 +314,12 @@ describe("dictation delivery pipeline", () => {
     });
     testHarness.setSettings({
       ...DEFAULT_SETTINGS,
-      modelLicenseAccepted: true,
       showOverlay: false,
     });
     testHarness.service.syncOverlay();
     expect(testHarness.hud.at(-1)).toEqual({ state: "hidden" });
     testHarness.setSettings({
       ...DEFAULT_SETTINGS,
-      modelLicenseAccepted: true,
       showOverlay: true,
     });
     testHarness.service.syncOverlay();
@@ -380,9 +369,7 @@ test("personalization changes delivery without corrupting source speech or timin
     },
     {
       text: "Open the lulu.",
-      intendedText: "Open the lulu.",
-      verbatimText: "[um] open the lulu",
-      words: [{ word: "lulu", start: 1, end: 2 }],
+      language: "en",
     },
   );
   try {
@@ -391,9 +378,8 @@ test("personalization changes delivery without corrupting source speech or timin
       durationMs: 1000,
     });
     expect(h.copied).toEqual(["Open Delulu."]);
-    expect(h.records[0].intendedText).toBe("Open the lulu.");
-    expect(h.records[0].verbatimText).toBe("[um] open the lulu");
-    expect(h.records[0].words[0].word).toBe("lulu");
+    expect(h.records[0].text).toBe("Open the lulu.");
+    expect(h.records[0].personalizedText).toBe("Open Delulu.");
     expect(h.magicCalls()).toBe(0);
   } finally {
     h.cleanup();
@@ -423,7 +409,7 @@ test("failed automatic writing delivers the personalized transcript once", async
       durationMs: 1000,
     });
     expect(h.pasted).toEqual(["Ship version 0.8.0."]);
-    expect(h.records[0].intendedText).toBe("Ship the release.");
+    expect(h.records[0].text).toBe("Ship the release.");
     expect(h.records[0].magicText).toBeUndefined();
   } finally {
     h.cleanup();

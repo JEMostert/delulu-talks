@@ -22,7 +22,6 @@ import type {
   Page,
   RecordingSubmission,
   TranscriptRecord,
-  TranscriptVersion,
 } from "../src/types";
 import { modelById } from "../src/data";
 import { deliveredText } from "../src/transcriptText";
@@ -162,9 +161,12 @@ function showMainWindow(page?: Page): void {
   else navigate();
 }
 
-function engineLabel(
-  engine: ReturnType<AsrService["getStatus"]>["engine"],
-): string {
+function engineLabel(status: {
+  engine: ReturnType<AsrService["getStatus"]>["engine"];
+  migrationRequired?: boolean;
+}): string {
+  if (status.engine === "missing" && status.migrationRequired)
+    return "Update setup";
   return {
     missing: "Setup needed",
     unloaded: "Sleeping",
@@ -172,7 +174,7 @@ function engineLabel(
     loading: "Loading…",
     ready: "Ready",
     error: "Needs attention",
-  }[engine];
+  }[status.engine];
 }
 
 function runTrayAction(
@@ -216,7 +218,9 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
               runTrayAction(() => asr.loadModel(storage.getSettings())),
           }
         : {
-            label: "Set up speech model…",
+            label: speech.migrationRequired
+              ? "Update speech setup…"
+              : "Set up speech model…",
             enabled: !speechBusy,
             click: () => showMainWindow("models"),
           };
@@ -242,7 +246,7 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
 
   return [
     {
-      label: `Speech · ${engineLabel(speech.engine)}`,
+      label: `Speech · ${engineLabel(speech)}`,
       sublabel: speech.message,
       enabled: false,
     },
@@ -255,7 +259,7 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
     },
     { type: "separator" },
     {
-      label: `Writing · ${engineLabel(magic.engine)}`,
+      label: `Writing · ${engineLabel(magic)}`,
       sublabel: magic.message,
       enabled: false,
     },
@@ -445,9 +449,9 @@ function rebuildTrayMenu(): void {
       ? "Transcribing"
       : status.engine === "ready"
         ? "Ready"
-        : engineLabel(status.engine);
+        : engineLabel(status);
   tray.setToolTip(
-    `Delulu Talks — ${state}${settings.magicEnabled ? ` · Magic ${engineLabel(magic.engine)}` : " · Magic off"}`,
+    `Delulu Talks — ${state}${settings.magicEnabled ? ` · Magic ${engineLabel(magic)}` : " · Magic off"}`,
   );
 }
 
@@ -525,11 +529,7 @@ async function applySettings(value: unknown): Promise<AppSettings> {
       );
     }
   }
-  const runtimeChanged =
-    next.model !== previous.model ||
-    next.backend !== previous.backend ||
-    next.computeType !== previous.computeType ||
-    next.speculativeDecoding !== previous.speculativeDecoding;
+  const runtimeChanged = next.model !== previous.model;
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
   if (
     (runtimeChanged ||
@@ -697,27 +697,21 @@ function registerIpc(): void {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 500);
   });
-  handle(
-    "history:updateTranscript",
-    (_event, id: unknown, requestedVersion: unknown, text: unknown) => {
-      if (requestedVersion !== "intended" && requestedVersion !== "verbatim")
-        throw new Error("Unknown transcript version");
-      const version: TranscriptVersion = requestedVersion;
-      const key = validateText(id, 128);
-      const correction = text === null ? null : validateText(text, 500_000);
-      const sessionRecord = sessionTranscripts.get(key);
-      const updated = storage.findHistory(key)
-        ? storage.updateTranscript(key, version, correction)
-        : sessionRecord
-          ? applyTranscriptEdit(sessionRecord, version, correction)
-          : null;
-      if (!updated) throw new Error("Transcript not found");
-      sessionTranscripts.set(key, updated);
-      if (lastTranscript?.id === key) lastTranscript = updated;
-      rebuildTrayMenu();
-      return updated;
-    },
-  );
+  handle("history:updateTranscript", (_event, id: unknown, text: unknown) => {
+    const key = validateText(id, 128);
+    const correction = text === null ? null : validateText(text, 500_000);
+    const sessionRecord = sessionTranscripts.get(key);
+    const updated = storage.findHistory(key)
+      ? storage.updateTranscript(key, correction)
+      : sessionRecord
+        ? applyTranscriptEdit(sessionRecord, correction)
+        : null;
+    if (!updated) throw new Error("Transcript not found");
+    sessionTranscripts.set(key, updated);
+    if (lastTranscript?.id === key) lastTranscript = updated;
+    rebuildTrayMenu();
+    return updated;
+  });
   handle(
     "history:setRewrite",
     (_event, id: unknown, value: unknown, expected: unknown) => {
@@ -821,22 +815,8 @@ function registerIpc(): void {
   handle("lab:run", async (_event, request: LabRequest) => {
     const path = resolve(validateText(request.path, 4096));
     if (!selectedAudioFiles.has(path) || !existsSync(path))
-      throw new Error("Choose the source file through Speech Lab first");
-    const operation = ["transcribe", "verbatimize", "forcedAlign"].includes(
-      request.operation,
-    )
-      ? request.operation
-      : "transcribe";
-    return dictation.runLab({
-      operation,
-      path,
-      mode: ["intended", "verbatim", "dual"].includes(String(request.mode))
-        ? request.mode
-        : undefined,
-      referenceText: request.referenceText
-        ? validateText(request.referenceText, 500_000)
-        : undefined,
-    });
+      throw new Error("Choose the source file through Audio files first");
+    return dictation.runLab({ path });
   });
   handle(
     "history:export",
@@ -844,17 +824,9 @@ function registerIpc(): void {
       const key = validateText(id, 128);
       const record = sessionTranscripts.get(key) ?? storage.findHistory(key);
       if (!record) throw new Error("Transcript not found");
-      const format = ["txt", "json", "srt", "vtt"].includes(requestedFormat)
+      const format = ["txt", "json"].includes(requestedFormat)
         ? requestedFormat
         : "txt";
-      if (
-        (format === "srt" || format === "vtt") &&
-        !record.words.length &&
-        !record.verbatimWords.length
-      )
-        throw new Error(
-          "This transcript has no word timing to export as captions",
-        );
       const defaultName = `${(record.sourceName ?? `delulu-${record.createdAt}`).replace(/\.[^.]+$/, "")}.${format}`;
       const options: Electron.SaveDialogOptions = {
         title: `Export ${format.toUpperCase()}`,

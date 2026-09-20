@@ -39,7 +39,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
   },
   lab: {
     title: "Audio files",
-    subtitle: "Transcription, alignment and subtitle export",
+    subtitle: "Transcribe imported recordings",
   },
   models: { title: "Models", subtitle: "Speech engine and device resources" },
   settings: {
@@ -163,8 +163,20 @@ function App() {
   const loadMagic = run(() => bridge.loadMagic());
   const unloadMagic = run(() => bridge.unloadMagic());
   return (
-    <div className="app-shell">
-      <a className="skip-link" href="#page-content">
+    <div className="relative grid h-[100dvh] grid-cols-[184px_minmax(0,1fr)] overflow-hidden border-t-2 border-accent max-[900px]:grid-cols-[154px_minmax(0,1fr)] max-[700px]:grid-cols-[64px_minmax(0,1fr)]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(120%_90%_at_15%_0%,#1b6fd6_0%,transparent_55%),radial-gradient(90%_70%_at_85%_10%,#38d0f0_0%,transparent_50%),radial-gradient(110%_100%_at_50%_110%,#123a7a_0%,transparent_60%)] opacity-70 dark:opacity-45" />
+        <div className="absolute -top-24 -left-16 size-[420px] rounded-full bg-[#6fd6ff]/35 blur-[110px] dark:bg-[#2aa6e8]/25" />
+        <div className="absolute top-1/3 -right-20 size-[460px] rounded-full bg-[#2a7de8]/30 blur-[120px] dark:bg-[#1558b8]/30" />
+        <div className="absolute -bottom-32 left-1/3 size-[520px] rounded-full bg-[#7c5cff]/25 blur-[130px] dark:bg-[#3b2a8c]/30" />
+      </div>
+      <a
+        className="fixed top-2 left-2 z-[100] -translate-y-[150%] rounded-md bg-surface p-3 backdrop-blur-md focus:translate-y-0"
+        href="#page-content"
+      >
         Skip to content
       </a>
       <Sidebar
@@ -173,15 +185,19 @@ function App() {
         status={w.status}
         magicStatus={w.magicStatus}
       />
-      <main className="main-panel">
-        <header className="commandbar">
-          <div className="view-title">
-            <h1>{pages[w.page].title}</h1>
-            <p>{pages[w.page].subtitle}</p>
+      <main className="flex min-w-0 flex-col h-[calc(100dvh-2px)]">
+        <header className="flex min-h-[76px] items-center justify-between gap-4 border-b border-line bg-header px-6 py-[15px] backdrop-blur-2xl max-[900px]:min-h-[70px] max-[900px]:px-4 max-[900px]:py-3">
+          <div>
+            <h1 className="text-[22px] tracking-[-0.6px]">
+              {pages[w.page].title}
+            </h1>
+            <p className="mt-[3px] text-[11px] text-muted max-[700px]:hidden">
+              {pages[w.page].subtitle}
+            </p>
           </div>
-          <div className="global-actions">
+          <div className="flex items-center gap-3.5 max-[900px]:gap-[9px]">
             <button
-              className="icon-button theme-command"
+              className="icon-button theme-command max-[700px]:hidden"
               aria-label="Switch color theme"
               title="Switch light / dark theme"
               onClick={() =>
@@ -199,14 +215,16 @@ function App() {
               {w.settings.theme === "light" ? <Moon /> : <Sun />}
             </button>
             <button
-              className={`status-chip ${w.status.phase === "error" ? "has-error" : ""}`}
+              className={`status-chip flex items-center gap-[7px] border-0 bg-transparent py-1.5 text-[11px] ${w.status.phase === "error" ? "has-error text-danger" : "text-muted"} max-[700px]:hidden`}
               onClick={() => w.setPage("models")}
               title={w.status.message}
             >
               {speechBusy ? (
-                <LoaderCircle className="spin" />
+                <LoaderCircle className="spin h-[13px] w-[13px]" />
               ) : (
-                <span className="status-dot" />
+                <span
+                  className={`h-[6px] w-[6px] inline-block rounded-full ${w.status.phase === "error" ? "bg-danger" : "bg-success"}`}
+                />
               )}
               <span>
                 {recording
@@ -218,7 +236,9 @@ function App() {
                     : w.status.engine === "ready"
                       ? "Ready"
                       : w.status.engine === "missing"
-                        ? "Setup needed"
+                        ? w.status.migrationRequired
+                          ? "Update setup"
+                          : "Setup needed"
                         : w.status.engine === "error"
                           ? "Needs attention"
                           : "Loads on demand"}
@@ -239,7 +259,9 @@ function App() {
               onClick={needsSetup ? () => w.setPage("models") : onRecord}
               aria-label={
                 needsSetup
-                  ? "Set up dictation"
+                  ? w.status.migrationRequired
+                    ? "Update dictation setup"
+                    : "Set up dictation"
                   : recording
                     ? "Stop recording"
                     : "Start recording"
@@ -247,20 +269,26 @@ function App() {
             >
               {recording ? <Square /> : <Mic />}
               <span>
-                {needsSetup ? "Set up" : recording ? "Stop" : "Record"}
+                {needsSetup
+                  ? w.status.migrationRequired
+                    ? "Update"
+                    : "Set up"
+                  : recording
+                    ? "Stop"
+                    : "Record"}
               </span>
             </button>
           </div>
         </header>
         {!window.delulu && (
-          <div className="preview-notice">
+          <div className="mx-auto mt-2.5 w-fit rounded-[99px] border border-line bg-soft px-[14px] py-[5px] text-[10px] text-muted max-[900px]:px-4">
             Browser preview · sample transcript · recording and model
             installation require the desktop app
           </div>
         )}
         {w.ready && !w.settings.onboardingComplete && (
           <Onboarding
-            settings={w.settings}
+            engine={w.status.engine}
             saving={w.saving}
             onFinish={w.finishOnboarding}
           />
@@ -272,12 +300,12 @@ function App() {
           onInstall={install}
         />
         {w.error && (
-          <div className="global-alert">
+          <div className="px-6 pt-3 max-[900px]:px-4">
             <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>
           </div>
         )}
         {(w.status.phase === "error" || w.status.retryAvailable) && (
-          <div className="global-alert">
+          <div className="px-6 pt-3 max-[900px]:px-4">
             <Alert
               action={
                 w.status.retryAvailable ? (
@@ -319,15 +347,22 @@ function App() {
             </Alert>
           </div>
         )}
-        <div className="page-scroll" id="page-content" tabIndex={-1}>
+        <div
+          className="page-scroll min-h-0 flex-1 overflow-y-auto px-6 pt-[18px] pb-7 max-[900px]:px-4 max-[900px]:pt-3.5 max-[900px]:pb-6"
+          id="page-content"
+          tabIndex={-1}
+        >
           {!w.ready ? (
-            <div className="empty-state">
+            <div className="empty-state mx-auto max-w-[1440px]">
               <LoaderCircle className="spin" />
               <p>Opening your workspace…</p>
             </div>
           ) : (
             <>
-              <div hidden={w.page !== "home"}>
+              <div
+                hidden={w.page !== "home"}
+                className="mx-auto max-w-[1440px]"
+              >
                 <HomePage
                   settings={w.settings}
                   status={w.status}
@@ -343,11 +378,15 @@ function App() {
                     void w.saveSettings(patch, null);
                   }}
                   onPasteLast={w.pasteLast}
+                  onToggleRecord={onRecord}
                   {...transcriptActions}
                 />
               </div>
               {(visited.has("history") || w.page === "history") && (
-                <div hidden={w.page !== "history"}>
+                <div
+                  hidden={w.page !== "history"}
+                  className="mx-auto max-w-[1440px]"
+                >
                   <HistoryPage
                     history={w.history}
                     {...transcriptActions}
@@ -359,7 +398,10 @@ function App() {
                 </div>
               )}
               {(visited.has("magic") || w.page === "magic") && (
-                <div hidden={w.page !== "magic"}>
+                <div
+                  hidden={w.page !== "magic"}
+                  className="mx-auto max-w-[1440px]"
+                >
                   <MagicPage
                     settings={w.settings}
                     status={w.magicStatus}
@@ -380,7 +422,10 @@ function App() {
                 </div>
               )}
               {(visited.has("lab") || w.page === "lab") && (
-                <div hidden={w.page !== "lab"}>
+                <div
+                  hidden={w.page !== "lab"}
+                  className="mx-auto max-w-[1440px]"
+                >
                   <LabPage
                     {...transcriptActions}
                     history={w.history}
@@ -392,29 +437,23 @@ function App() {
                 </div>
               )}
               {(visited.has("models") || w.page === "models") && (
-                <div hidden={w.page !== "models"}>
+                <div
+                  hidden={w.page !== "models"}
+                  className="mx-auto max-w-[1440px]"
+                >
                   <ModelsPage
-                    selected={w.settings.model}
                     status={w.status}
-                    saving={w.saving || busy}
-                    licenseAccepted={w.settings.modelLicenseAccepted}
-                    onSelect={(model) => {
-                      void w.saveSettings({ model });
-                    }}
                     onSetup={setup}
                     onLoad={load}
                     onUnload={unload}
-                    onAcceptLicense={() =>
-                      w.saveSettings(
-                        { modelLicenseAccepted: true },
-                        "License accepted",
-                      )
-                    }
                   />
                 </div>
               )}
               {(visited.has("vocabulary") || w.page === "vocabulary") && (
-                <div hidden={w.page !== "vocabulary"}>
+                <div
+                  hidden={w.page !== "vocabulary"}
+                  className="mx-auto max-w-[1440px]"
+                >
                   <VocabularyPage
                     words={w.settings.customWords}
                     saving={w.saving}
@@ -425,7 +464,10 @@ function App() {
                 </div>
               )}
               {(visited.has("settings") || w.page === "settings") && (
-                <div hidden={w.page !== "settings"}>
+                <div
+                  hidden={w.page !== "settings"}
+                  className="mx-auto max-w-[1440px]"
+                >
                   <SettingsPage
                     settings={w.settings}
                     devices={w.devices}
@@ -468,10 +510,14 @@ function App() {
         </div>
       </main>
       {w.toast && (
-        <div className="toast" role="status">
-          <Check />
+        <div
+          className="toast fixed bottom-[22px] left-[calc(50%+92px)] z-[90] flex max-w-[calc(100vw-40px)] -translate-x-1/2 items-center gap-3 rounded-[14px] border border-line-strong bg-surface px-4 py-3 text-[13px] shadow-pop backdrop-blur-xl max-[900px]:left-[calc(50%+77px)] max-[700px]:left-[calc(50%+32px)] max-[700px]:w-[calc(100vw-90px)]"
+          role="status"
+        >
+          <Check className="text-accent" />
           <span>{w.toast}</span>
           <button
+            className="flex border-0 bg-transparent p-0 text-muted"
             aria-label="Dismiss notification"
             onClick={() => w.setToast(null)}
           >

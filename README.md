@@ -15,14 +15,14 @@
 
 ---
 
-Delulu Talks turns speech into text in the app you are using. CrisperWhisper produces clean dictation locally; Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
+Delulu Talks turns speech into text in the app you are using. R2T2 produces dictation locally on your CUDA GPU; Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
 
 ## Dictate, review, keep working
 
 ```text
 Hold your shortcut → Speak → Release
                               │
-                  CrisperWhisper: native clean text
+                  R2T2: local transcription
                               │
                   Corrections + exact text shortcuts
                               │
@@ -31,7 +31,7 @@ Hold your shortcut → Speak → Release
                   Review · edit · optionally rewrite
 ```
 
-Clean transcription is the default. You can also keep a verbatim transcript, or both versions. Automatic rewriting is off; use **Rewrite** beside a result when you want to shorten or restructure it.
+Automatic rewriting is off; use **Rewrite** beside a result when you want to shorten or restructure it.
 
 On supported Wayland desktops, the recording pill stays above your apps without taking focus. Hold-to-talk uses the desktop shortcut portal; other desktops use toggle shortcuts. If automatic paste is blocked, the result stays available on the clipboard.
 
@@ -40,23 +40,22 @@ On supported Wayland desktops, the recording pill stays above your apps without 
 | Feature | What it does |
 | --- | --- |
 | **System dictation** | Hold-to-talk by default, optional press-to-toggle, tray controls, and desktop-owned shortcut remapping. |
-| **Two transcripts** | Native clean dictation by default. Optionally keep both clean and verbatim transcripts; originals remain available beside edits. |
 | **Optional rewriting** | Optional local transformations with preview, apply and undo beside each transcript. Automatic rewriting is off by default. |
 | **Native Wayland experience** | Uses XDG GlobalShortcuts, secure Remote Desktop paste, and a click-through layer-shell recording pill on supported desktops. |
-| **Audio files** | Imports audio or video for transcription, Verbatimize, forced alignment, word timelines, and SRT/VTT export. |
+| **Audio files** | Imports audio or video for local transcription. |
 | **Local by design** | Runs speech and writing models on your machine. There is no telemetry or cloud transcription. |
 
 ### Corrections and text shortcuts
 
 Open **Settings → Personalization** or the shortcut on Controls. Corrections replace specific recognized text; text shortcuts expand a spoken trigger into an exact saved block. Each rule has a live text preview and conflicting triggers are rejected. Editing a transcript can suggest a correction to remember, with explicit confirmation.
 
-Speech output and timing stay untouched. Personalization creates a separate result, and exact shortcut blocks stay outside the writing model; only the surrounding text is rewritten. Failed automatic rewriting delivers the preserved transcript instead. Subtitle exports use original speech timing.
+Speech output stays untouched. Personalization creates a separate result, and exact shortcut blocks stay outside the writing model; only the surrounding text is rewritten. Failed automatic rewriting delivers the preserved transcript instead.
 
 Upgrading from an older release turns automatic rewriting and writing-model preloading off once, because earlier defaults did not establish an explicit choice. You can enable either independently afterward. Existing history and rules are retained. Old spelling-only entries are marked as needing a recognized phrase; historical transcripts cannot recover speech text already replaced by an older version.
 
 ## Controls on launch
 
-The app opens directly into dictation controls. Microphone, language, shortcut, speech model, transcript mode, and delivery switches are immediately accessible. The latest result sits beside them, with editing, correction capture, optional rewriting, and export.
+The app opens directly into dictation controls. Microphone, language, shortcut, and delivery switches are immediately accessible. The latest result sits beside them, with editing, correction capture, optional rewriting, and export.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/controls-dark.png" />
@@ -70,8 +69,8 @@ The interface uses ocean-blue and navy panels with light/dark/system themes. Set
 
 - **Configure quickly:** priority controls fit above the fold in compact desktop windows.
 - **Recover results:** paste the latest transcript, retry failed audio from memory, or discard it explicitly.
-- **Preserve originals:** corrections stay separate from clean/verbatim model output and optional rewrites.
-- **Manage locally:** Settings → Runtime covers memory and backend choices; Settings → Application covers appearance and app updates.
+- **Preserve originals:** corrections stay separate from model output and optional rewrites.
+- **Manage locally:** Settings → Runtime covers memory choices; Settings → Application covers appearance and app updates.
 
 ## Local speech and writing models
 
@@ -79,10 +78,10 @@ Speech stays ready by default. The optional writing model loads on demand; you c
 
 | Runtime | Available models | Good for |
 | --- | --- | --- |
-| **CrisperWhisper 2.0** | Small · Medium · Turbo · Large | Fast dictation through maximum transcription quality. Medium is the balanced default. |
+| **R2T2** (Confucius4-R2T2) | 2B streaming ASR | Low-latency, high-accuracy dictation through vLLM on your CUDA GPU. |
 | **Qwen 3.5 writing** | 0.8B · 2B · 4B | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default. |
 
-On Linux x64, Auto uses the accelerated CTranslate2 backend and supports Large + Turbo speculative decoding. Other platforms use the portable Transformers runtime.
+R2T2 runs through the vLLM backend and requires a CUDA GPU.
 
 ## Install
 
@@ -108,11 +107,11 @@ Supported installed packages check GitHub Releases for updates. Downloads are ex
 ## Your first minute
 
 1. Open Delulu Talks. Controls are immediately available; the inline setup notice points you to model installation.
-2. Choose **Install engine**. A focused modal explains the Nyra model license and records acceptance before downloading anything.
+2. Choose **Install engine**. The app installs the local runtime and downloads the model weights.
 3. Focus a text field and use the shortcut shown in Controls. On supported Wayland desktops, hold <kbd>Meta</kbd> + <kbd>Z</kbd>, speak, then release; toggle mode uses a second press to finish.
 4. Dictate immediately with native clean output. Optionally open **Writing** to install Qwen, then use **Rewrite** beside any result. Automatic rewriting is a separate opt-in setting.
 
-The app manages its own isolated Python environment and model cache inside the platform application-data directory. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → Application offers repair and update controls.
+The app manages separate isolated Python environments for R2T2 speech and Magic rewriting, plus a shared model cache, inside the platform application-data directory. Existing shared runtimes are detected as an “Update setup” migration instead of failing with a package conflict. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → Application offers repair and update controls.
 
 ## Run from source
 
@@ -142,7 +141,7 @@ Electron main process
 ├── lifecycle, tray, updater, global shortcuts, validated IPC
 ├── native Wayland overlay + secure paste services
 ├── persistent Python worker
-│   ├── CrisperWhisper speech runtime
+│   ├── R2T2 speech runtime
 │   └── Qwen writing runtime
 └── sandboxed React renderer
     ├── Controls + Writing
@@ -182,7 +181,7 @@ src/
   pages/              Controls, Writing, Audio files, History, Models, Settings
   bridge.ts           typed Electron/browser boundary
   recorder.ts         microphone capture and 16 kHz WAV encoder
-  data.ts             CrisperWhisper, Qwen, and language catalogs
+  data.ts             R2T2, Qwen, and language catalogs
 ```
 
 </details>
@@ -191,7 +190,7 @@ src/
 
 Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Failed captures can remain in memory for Retry during the session; Discard releases them, and closing the app loses that recovery copy. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environment, and downloaded models stay under Electron's application-data directory.
 
-Delulu Talks is [MIT licensed](LICENSE). CrisperWhisper inference code is MIT, while its standard 2.0 weights use the Nyra Health Non-Commercial Research License; commercial use requires a separate Nyra license. Delulu Talks does not bundle weights or offer Pro downloads. Read [Nyra's license explanation](https://github.com/nyrahealth/CrisperWhisper#license) and the [weight license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md). Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
+Delulu Talks is [MIT licensed](LICENSE). R2T2 inference code is Apache-2.0; the [model weights](https://huggingface.co/netease-youdao/Confucius4-R2T2) use the [NetEase Model Use License](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE) and require a CUDA GPU. Delulu Talks does not bundle weights. Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
 
 ## Development checks
 
@@ -217,4 +216,4 @@ bun run build
 node scripts/desktop-smoke.mjs "/path/to/Delulu Talks user data"
 ```
 
-This uses temporary settings/history, requires the existing model-license acceptance, disables clipboard/paste, and runs offline against cached models. The Python command above also runs offline against the included short audio sample. It is a smoke check, not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
+This uses temporary settings/history, disables clipboard/paste, and runs offline against cached models. The Python command above also runs offline against the included short audio sample. It is a smoke check, not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).

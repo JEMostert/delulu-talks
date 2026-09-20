@@ -36,7 +36,7 @@ linux:
   desktop:
     entry:
       Name: Delulu Talks
-      Comment: Private local dictation with CrisperWhisper 2.0
+      Comment: Private local dictation with R2T2
       Categories: AudioVideo;Utility;
       Keywords: dictation;speech;transcription;whisper;voice;
       StartupWMClass: delulu-talks

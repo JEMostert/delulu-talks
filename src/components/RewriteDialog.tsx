@@ -75,7 +75,7 @@ export function RewriteDialog({
         text shortcuts stay exactly as saved.
       </p>
       {missing ? (
-        <div className="rewrite-setup">
+        <div className="rewrite-setup my-3 rounded-panel border border-line p-3">
           <p>
             {status?.engine === "error"
               ? status.message
@@ -92,7 +92,7 @@ export function RewriteDialog({
           </button>
         </div>
       ) : null}
-      <div className="rewrite-options">
+      <div className="rewrite-options grid grid-cols-2 items-end gap-4">
         <label className="field">
           Style
           <select
@@ -125,15 +125,21 @@ export function RewriteDialog({
           />
         </label>
       </div>
-      <div className="rewrite-comparison">
+      <div className="rewrite-comparison mb-4 mt-3 grid grid-cols-2 gap-4">
         <label className="field">
           Current text
-          <textarea readOnly value={source} aria-label="Rewrite source" />
+          <textarea
+            readOnly
+            className="min-h-[200px] w-full"
+            value={source}
+            aria-label="Rewrite source"
+          />
         </label>
         <label className="field">
           Preview
           <textarea
             aria-label="Rewrite preview"
+            className="min-h-[200px] w-full"
             value={result?.text ?? ""}
             disabled={!result || busy}
             placeholder="Generate a preview to compare it here"

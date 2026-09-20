@@ -41,7 +41,7 @@ export function VocabularyPage({
   return (
     <div className="content-stack">
       <div
-        className="page-tabs"
+        className="page-tabs max-[900px]:gap-[15px] max-[900px]:flex-wrap"
         role="tablist"
         aria-label="Personalization rules"
       >
@@ -62,14 +62,14 @@ export function VocabularyPage({
           Text shortcuts
         </button>
       </div>
-      <section className="wordbook-intro">
+      <section className="flex items-center justify-between gap-[30px] py-[18px] max-[700px]:flex-col max-[700px]:items-start max-[700px]:gap-3.5">
         <div>
           <h2>
             {kind === "correction"
               ? "Fix recurring recognition mistakes"
               : "Insert saved text by voice"}
           </h2>
-          <p>
+          <p className="text-muted max-w-[480px] text-[13px] mt-3">
             {kind === "correction"
               ? "Replace recognized phrases in clean results. You can also remember a correction directly from a transcript."
               : "Say a trigger phrase to insert an exact address, signature, or reusable block of text."}
@@ -94,8 +94,8 @@ export function VocabularyPage({
           {kind === "correction" ? "Add correction" : "Add shortcut"}
         </button>
       </section>
-      <div className="history-toolbar">
-        <label className="search-box">
+      <div className="flex items-center gap-3.5 max-[700px]:flex-wrap">
+        <label className="search-box max-[700px]:basis-full">
           <Search />
           <input
             aria-label="Search rules"
@@ -106,29 +106,36 @@ export function VocabularyPage({
         </label>
         <span className="caption">{words.length} / 500 rules</span>
       </div>
-      <section className="word-list">
+      <section className="border border-line rounded-panel bg-surface shadow-panel backdrop-blur-xl overflow-hidden">
         {filtered.map((word) => (
-          <article className="word-item" key={word.id}>
-            <span className="word-avatar">
+          <article
+            className="flex items-center px-[18px] py-4 gap-4 border-b border-line last:border-0 max-[700px]:flex-wrap max-[700px]:p-3.5"
+            key={word.id}
+          >
+            <span className="size-[38px] rounded-xl bg-accent-soft text-accent-ink grid place-items-center shrink-0 text-[16px]">
               {ruleKind(word) === "shortcut" ? "↳" : "Aa"}
             </span>
-            <div>
-              <h3>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-[15px] flex gap-2 items-center break-words">
                 {word.term}
                 {!ruleTriggers(word).length && (
                   <span className="badge">Needs a correction phrase</span>
                 )}
               </h3>
-              <p>
+              <p className="text-[12px] text-muted mt-[5px] break-words">
                 {ruleKind(word) === "shortcut"
                   ? `Say “${word.term}”`
                   : word.soundsLike
                     ? `Replace “${word.soundsLike}”`
                     : "Add the text the recognizer gets wrong to activate this rule."}
               </p>
-              {word.replacement && <blockquote>{word.replacement}</blockquote>}
+              {word.replacement && (
+                <blockquote className="text-[12px] text-muted break-words my-3 mx-0 px-3.5 py-2.5 border-l-2 border-line-strong whitespace-pre-wrap">
+                  {word.replacement}
+                </blockquote>
+              )}
             </div>
-            <div className="panel-actions">
+            <div className="panel-actions max-[700px]:ml-auto">
               <Toggle
                 value={word.enabled}
                 label={`Enable ${word.term}`}
@@ -184,7 +191,7 @@ export function VocabularyPage({
           </EmptyState>
         )}
       </section>
-      <p className="privacy-footnote">
+      <p className="flex items-center justify-center gap-[7px] text-[11px] text-muted">
         Rules apply to clean output. Original speech and word timings stay
         untouched. These rules do not train the speech model.
       </p>
@@ -294,7 +301,7 @@ export function VocabularyPage({
               {conflict}
             </p>
           )}
-          <div className="rule-test">
+          <div className="border border-line rounded-lg p-3 my-3">
             <label className="field">
               Try this rule
               <input
@@ -309,7 +316,10 @@ export function VocabularyPage({
                 }
               />
             </label>
-            <output aria-label="Rule preview">
+            <output
+              className="block whitespace-pre-wrap break-words text-[14px] leading-[1.6] mt-3 p-2.5 rounded-[5px] bg-soft"
+              aria-label="Rule preview"
+            >
               {sample
                 ? personalize(sample, [{ ...draft, enabled: true }])
                 : "Enter a phrase to preview the exact replacement."}

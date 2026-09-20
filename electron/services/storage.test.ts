@@ -18,14 +18,16 @@ describe("settings migration", () => {
     ).toBe(true);
   });
 
-  test("migrates removed Tauri models to the balanced Crisper default", () => {
+  test("migrates removed models to the R2T2 default", () => {
     const settings = normalizeSettings({
       model: "mossTranscribeDiarize",
       language: "auto",
       autoPaste: false,
+      transcriptionMode: "dual",
+      wordTimestamps: true,
+      modelLicenseAccepted: true,
     });
-    expect(settings.model).toBe("crisperMedium");
-    expect(settings.transcriptionMode).toBe("intended");
+    expect(settings.model).toBe("r2t2");
     expect(settings.language).toBe("en");
     expect(settings.autoPaste).toBeFalse();
     expect(settings.shortcutMode).toBe("hold");
@@ -88,45 +90,25 @@ describe("non-destructive transcript correction", () => {
     id: "one",
     createdAt: 1,
     durationMs: 2_000,
-    text: "Original clean text.",
-    intendedText: "Original clean text.",
-    verbatimText: "[UM] original clean text.",
-    mode: "dual",
-    model: "crisperMedium",
+    text: "Original text.",
+    model: "r2t2",
     language: "en",
-    words: [],
-    verbatimWords: [],
-    insights: {
-      fillerCount: 1,
-      repetitionCount: 0,
-      cutOffCount: 0,
-      vocalEventCount: 0,
-      wordsPerMinute: 90,
-      speakingSeconds: 1,
-    },
     source: "dictation",
     processingTimeMs: 200,
   };
 
   test("stores a correction beside the untouched model output", () => {
-    const updated = applyTranscriptEdit(
-      record,
-      "intended",
-      "  Corrected clean text.  ",
-    );
-    expect(updated.intendedText).toBe("Original clean text.");
-    expect(updated.editedIntendedText).toBe("Corrected clean text.");
+    const updated = applyTranscriptEdit(record, "  Corrected text.  ");
+    expect(updated.text).toBe("Original text.");
+    expect(updated.editedText).toBe("Corrected text.");
   });
 
   test("restores the original and rejects an empty correction", () => {
     const updated = applyTranscriptEdit(
-      { ...record, editedIntendedText: "Corrected." },
-      "intended",
+      { ...record, editedText: "Corrected." },
       null,
     );
-    expect(updated.editedIntendedText).toBeNull();
-    expect(() => applyTranscriptEdit(record, "intended", "   ")).toThrow(
-      "cannot be empty",
-    );
+    expect(updated.editedText).toBeNull();
+    expect(() => applyTranscriptEdit(record, "   ")).toThrow("cannot be empty");
   });
 });

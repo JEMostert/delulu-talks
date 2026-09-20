@@ -39,15 +39,7 @@ export function HistoryPage({
             (filter === "dictation"
               ? item.source === "dictation"
               : item.source !== "dictation")) &&
-          [
-            item.text,
-            item.intendedText,
-            item.verbatimText,
-            item.editedIntendedText,
-            item.editedVerbatimText,
-            item.magicText,
-            item.sourceName,
-          ]
+          [item.text, item.editedText, item.magicText, item.sourceName]
             .join(" ")
             .toLowerCase()
             .includes(query.trim().toLowerCase()),
@@ -60,8 +52,8 @@ export function HistoryPage({
   }, [history, query, filter]);
   return (
     <div className="content-stack">
-      <div className="history-toolbar">
-        <label className="search-box">
+      <div className="flex items-center gap-3.5 max-[700px]:flex-wrap">
+        <label className="search-box max-[700px]:basis-full">
           <Search />
           <input
             aria-label="Search transcript history"
@@ -88,8 +80,8 @@ export function HistoryPage({
         </button>
       </div>
       {groups.map(([day, records]) => (
-        <section className="content-stack history-group" key={day}>
-          <div className="section-heading">
+        <section className="content-stack gap-3.5" key={day}>
+          <div className="section-heading px-0.5 py-1.5">
             <h3>{day}</h3>
             <span className="caption">
               {records.length} {records.length === 1 ? "capture" : "captures"}

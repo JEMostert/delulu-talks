@@ -25,20 +25,21 @@ try {
   );
   await writeFile(join(data, "history.json"), "[]");
   if (runtimeData) {
-    const existing = JSON.parse(
-      await readFile(join(runtimeData, "settings.json"), "utf8"),
+    await symlink(
+      join(runtimeData, "speech-venv"),
+      join(data, "speech-venv"),
+      "dir",
     );
-    assert.equal(
-      existing.modelLicenseAccepted,
-      true,
-      "The existing runtime must already have license acceptance",
-    );
-    await symlink(join(runtimeData, "asr-venv"), join(data, "asr-venv"), "dir");
+    if (process.argv.includes("--writing"))
+      await symlink(
+        join(runtimeData, "asr-venv"),
+        join(data, "asr-venv"),
+        "dir",
+      );
     await symlink(join(runtimeData, "models"), join(data, "models"), "dir");
     await writeFile(
       join(data, "settings.json"),
       JSON.stringify({
-        modelLicenseAccepted: true,
         preloadModel: false,
         preloadMagicModel: false,
         magicEnabled: false,
@@ -118,18 +119,14 @@ try {
       1,
       "Session history should include the actual inference result",
     );
-    assert.ok(records[0].intendedText.trim());
+    assert.ok(records[0].text.trim());
     assert.deepEqual(
       JSON.parse(await readFile(join(data, "history.json"), "utf8")),
       [],
     );
     await page.evaluate(
       (id) =>
-        window.delulu.updateTranscript(
-          id,
-          "intended",
-          "Session correction stays private.",
-        ),
+        window.delulu.updateTranscript(id, "Session correction stays private."),
       records[0].id,
     );
     const exportPath = join(data, "session-export.json");
@@ -141,11 +138,8 @@ try {
       records[0].id,
     );
     const exported = JSON.parse(await readFile(exportPath, "utf8"));
-    assert.equal(
-      exported.editedIntendedText,
-      "Session correction stays private.",
-    );
-    assert.equal(exported.intendedText, records[0].intendedText);
+    assert.equal(exported.editedText, "Session correction stays private.");
+    assert.equal(exported.text, records[0].text);
     if (process.argv.includes("--writing")) {
       const rewritten = await page.evaluate(async (id) => {
         await window.delulu.updateSettings({

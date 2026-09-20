@@ -14,7 +14,6 @@ import type {
   RecordingSubmission,
   ShortcutStatus,
   TranscriptRecord,
-  TranscriptVersion,
   UpdateStatus,
 } from "./types";
 
@@ -24,29 +23,14 @@ let demoHistory: TranscriptRecord[] = [
     createdAt: Date.now() - 1000 * 60 * 18,
     durationMs: 24_000,
     text: "Move the design review to Thursday and add the new onboarding notes.",
-    intendedText:
-      "Move the design review to Thursday and add the new onboarding notes.",
-    verbatimText:
-      "[UM] move the design review to, to Thursday and add the new onboarding notes.",
     magicText:
       "Move the design review to Thursday and include the new onboarding notes.",
     magicModel: "qwen35Medium",
     magicPreset: "polish",
     magicIncludedInferences: false,
     magicProcessingTimeMs: 640,
-    mode: "dual",
-    model: "crisperMedium",
+    model: "r2t2",
     language: "en",
-    words: [],
-    verbatimWords: [],
-    insights: {
-      fillerCount: 1,
-      repetitionCount: 1,
-      cutOffCount: 0,
-      vocalEventCount: 0,
-      wordsPerMinute: 118,
-      speakingSeconds: 9.4,
-    },
     source: "dictation",
     processingTimeMs: 1800,
   },
@@ -105,8 +89,7 @@ export const previewApi: DeluluApi = {
       phase: "idle",
       engine: "ready",
       message: "Browser preview",
-      model: "crisperMedium",
-      backend: "ct2",
+      model: "r2t2" as const,
     };
   },
   async getMagicStatus() {
@@ -205,23 +188,16 @@ export const previewApi: DeluluApi = {
   async testPaste() {
     desktopOnly();
   },
-  async updateTranscript(
-    id: string,
-    version: TranscriptVersion,
-    text: string | null,
-  ) {
+  async updateTranscript(id: string, text: string | null) {
     const record = demoHistory.find((item) => item.id === id);
     if (!record) throw new Error("Transcript not found");
     const normalized = text?.trim() ?? null;
     const correction =
-      normalized && normalized !== originalTranscriptText(record, version)
+      normalized && normalized !== originalTranscriptText(record)
         ? normalized
         : null;
     record.magicText = null;
-    const updated =
-      version === "intended"
-        ? { ...record, editedIntendedText: correction }
-        : { ...record, editedVerbatimText: correction };
+    const updated = { ...record, editedText: correction };
     demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
     return updated;
   },
@@ -249,7 +225,7 @@ export const previewApi: DeluluApi = {
     return desktopOnly();
   },
   async runLab(_request: LabRequest) {
-    throw new Error("Speech Lab requires Electron");
+    throw new Error("Audio file transcription requires Electron");
   },
   async exportTranscript(_id: string, _format: ExportFormat) {
     return desktopOnly();

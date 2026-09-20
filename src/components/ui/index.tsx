@@ -45,7 +45,9 @@ export function SettingRow({
         <strong>{title}</strong>
         {description && <p>{description}</p>}
       </div>
-      <div className="setting-control">{children}</div>
+      <div className="setting-control max-[900px]:max-w-[47%] max-[700px]:max-w-full">
+        {children}
+      </div>
     </div>
   );
 }

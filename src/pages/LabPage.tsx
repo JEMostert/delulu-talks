@@ -4,11 +4,7 @@ import {
 } from "../components/TranscriptCard";
 import { useState } from "react";
 import {
-  AlignLeft,
-  Check,
-  Clock3,
   FileAudio,
-  Fingerprint,
   LoaderCircle,
   ScanText,
   Sparkles,
@@ -19,39 +15,8 @@ import { bridge } from "../bridge";
 import type {
   AppSettings,
   AudioFileSelection,
-  LabOperation,
   TranscriptRecord,
-  TranscriptionMode,
 } from "../types";
-
-const operations: Array<{
-  id: LabOperation;
-  icon: typeof FileAudio;
-  title: string;
-  description: string;
-}> = [
-  {
-    id: "transcribe",
-    icon: ScanText,
-    title: "Transcribe",
-    description:
-      "Create intended, verbatim, or paired transcripts with word timing.",
-  },
-  {
-    id: "verbatimize",
-    icon: Fingerprint,
-    title: "Verbatimize",
-    description:
-      "Use audio to restore fillers, repairs, and vocal events to a trusted clean transcript.",
-  },
-  {
-    id: "forcedAlign",
-    icon: AlignLeft,
-    title: "Forced align",
-    description:
-      "Attach precise word timestamps to an exact transcript you already trust.",
-  },
-];
 
 export function LabPage({
   settings,
@@ -69,15 +34,9 @@ export function LabPage({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<AudioFileSelection | null>(null);
-  const [operation, setOperation] = useState<LabOperation>("transcribe");
-  const [mode, setMode] = useState<TranscriptionMode>(
-    settings.transcriptionMode,
-  );
-  const [referenceText, setReferenceText] = useState("");
   const [running, setRunning] = useState(false);
   const [resultId, setResultId] = useState<string | null>(null);
   const result = history.find((record) => record.id === resultId);
-  const [view, setView] = useState<"intended" | "verbatim">("intended");
 
   async function choose() {
     try {
@@ -97,14 +56,8 @@ export function LabPage({
     setError(null);
     setRunning(true);
     try {
-      const record = await bridge.runLab({
-        operation,
-        path: file.path,
-        referenceText,
-        mode,
-      });
+      const record = await bridge.runLab({ path: file.path });
       setResultId(record.id);
-      setView(record.intendedText ? "intended" : "verbatim");
       onResult(record);
       onToast(
         settings.keepHistory
@@ -118,14 +71,12 @@ export function LabPage({
     }
   }
 
-  const needsReference = operation !== "transcribe";
-
   return (
-    <div className="content-stack lab-page">
+    <div className="content-stack">
       {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
       <section className="view-toolbar">
         <div>
-          <strong>File operation</strong>
+          <strong>File transcription</strong>
           <span>
             The original media stays in place; processing and temporary
             conversion remain local.
@@ -133,196 +84,67 @@ export function LabPage({
         </div>
       </section>
 
-      <div className="lab-layout">
-        <section className="lab-controls">
-          <div
-            className="operation-grid"
-            role="group"
-            aria-label="Speech Lab operation"
-          >
-            {operations.map(({ id, icon: Icon, title, description }) => (
-              <button
-                disabled={running}
-                key={id}
-                className={operation === id ? "active" : ""}
-                aria-pressed={operation === id}
-                onClick={() => {
-                  setOperation(id);
-                  setResultId(null);
-                }}
-              >
-                <Icon />
-                <span>
-                  <strong>{title}</strong>
-                  <small>{description}</small>
-                </span>
-                {operation === id && <Check />}
-              </button>
-            ))}
-          </div>
-
+      <div className="grid grid-cols-[330px_minmax(0,1fr)] gap-4 max-[1150px]:grid-cols-[260px_minmax(0,1fr)] max-[700px]:grid-cols-1">
+        <section className="border border-line bg-surface rounded-panel shadow-panel backdrop-blur-xl overflow-hidden min-w-0 p-5 flex flex-col gap-4">
           <button
             disabled={running}
-            className={`file-drop ${file ? "has-file" : ""}`}
+            className="file-drop w-full flex items-center gap-2.5 px-3.5 py-5 bg-surface border border-dashed border-line-strong rounded-xl backdrop-blur-md text-left"
             onClick={() => void choose()}
           >
             <span>
               <FileAudio />
             </span>
-            <div>
+            <div className="min-w-0 flex-1">
               {file ? (
                 <>
-                  <strong>{file.name}</strong>
-                  <small>
+                  <strong className="block text-[12px] break-words">
+                    {file.name}
+                  </strong>
+                  <small className="block text-[10px] mt-1">
                     {(file.size / 1024 / 1024).toFixed(1)} MB · click to replace
                   </small>
                 </>
               ) : (
                 <>
-                  <strong>Choose audio or video</strong>
-                  <small>WAV, MP3, M4A, FLAC, WebM, MP4, MOV, or MKV</small>
+                  <strong className="block text-[12px] break-words">
+                    Choose audio or video
+                  </strong>
+                  <small className="block text-[10px] mt-1">
+                    WAV, MP3, M4A, FLAC, WebM, MP4, MOV, or MKV
+                  </small>
                 </>
               )}
             </div>
-            <Upload />
+            <Upload className="w-[15px] h-[15px] text-muted" />
           </button>
-
-          {operation === "transcribe" ? (
-            <div className="lab-field">
-              <label>Transcript output</label>
-              <div
-                className="segmented triple"
-                role="group"
-                aria-label="Transcript output"
-              >
-                <button
-                  className={mode === "intended" ? "active" : ""}
-                  aria-pressed={mode === "intended"}
-                  onClick={() => setMode("intended")}
-                >
-                  Clean
-                </button>
-                <button
-                  className={mode === "verbatim" ? "active" : ""}
-                  aria-pressed={mode === "verbatim"}
-                  onClick={() => setMode("verbatim")}
-                >
-                  Verbatim
-                </button>
-                <button
-                  className={mode === "dual" ? "active" : ""}
-                  aria-pressed={mode === "dual"}
-                  onClick={() => setMode("dual")}
-                >
-                  Both
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="lab-field">
-              <label htmlFor="lab-reference">
-                {operation === "verbatimize"
-                  ? "Trusted clean transcript"
-                  : "Exact transcript to align"}
-              </label>
-              <textarea
-                id="lab-reference"
-                value={referenceText}
-                onChange={(event) => setReferenceText(event.target.value)}
-                placeholder={
-                  operation === "verbatimize"
-                    ? "Paste the clean transcript. CrisperWhisper will add only details that are audible…"
-                    : "Paste the exact words that should receive timestamps…"
-                }
-              />
-            </div>
-          )}
 
           <button
             className="primary-button lab-run"
-            disabled={
-              !file ||
-              busy ||
-              running ||
-              (needsReference && !referenceText.trim())
-            }
+            disabled={!file || busy || running}
             onClick={() => void run()}
           >
             {running ? <LoaderCircle className="spin" /> : <Sparkles />}{" "}
-            {running
-              ? "Working locally…"
-              : operations.find((item) => item.id === operation)?.title}
+            {running ? "Working locally…" : "Transcribe"}
           </button>
         </section>
 
-        <section className="lab-result">
+        <section className="lab-result border border-line bg-surface rounded-panel shadow-panel backdrop-blur-xl overflow-hidden min-w-0 px-[18px] py-4">
           {!result ? (
-            <div className="lab-empty">
-              <Fingerprint />
+            <div className="min-h-[380px] flex flex-col items-center justify-center text-center">
+              <ScanText className="w-[38px] h-[38px] text-accent [stroke-width:1] mb-[22px]" />
               <h3>No file processed</h3>
-              <p>
-                Choose a recording to transcribe, or match a transcript to its
-                audio. Everything is processed locally.
+              <p className="max-w-[290px] text-[12px] text-muted mt-3">
+                Choose a recording to transcribe. Everything is processed
+                locally.
               </p>
             </div>
           ) : (
-            <>
-              <TranscriptCard
-                key={result.id}
-                record={result}
-                inspector
-                {...actions}
-              />
-              <div
-                className="segmented"
-                role="group"
-                aria-label="Timing source"
-              >
-                <button
-                  className={view === "intended" ? "active" : ""}
-                  onClick={() => setView("intended")}
-                >
-                  Clean timing
-                </button>
-                <button
-                  className={view === "verbatim" ? "active" : ""}
-                  onClick={() => setView("verbatim")}
-                >
-                  Verbatim timing
-                </button>
-              </div>
-              <div className="insight-strip">
-                <span>
-                  <Clock3 />
-                  {(result.durationMs / 1000).toFixed(1)}s audio
-                </span>
-                <span>
-                  <Fingerprint />
-                  {result.insights.fillerCount} fillers
-                </span>
-                <span>
-                  <ScanText />
-                  {result.words.length || result.verbatimWords.length} timed
-                  words
-                </span>
-              </div>
-              {(view === "verbatim" ? result.verbatimWords : result.words)
-                .length > 0 && (
-                <div className="word-timeline">
-                  {(view === "verbatim" ? result.verbatimWords : result.words)
-                    .slice(0, 80)
-                    .map((word, index) => (
-                      <span
-                        key={`${word.start}-${index}`}
-                        title={`${word.start.toFixed(2)}–${word.end.toFixed(2)}s`}
-                      >
-                        <b>{word.word}</b>
-                        <small>{word.start.toFixed(2)}</small>
-                      </span>
-                    ))}
-                </div>
-              )}
-            </>
+            <TranscriptCard
+              key={result.id}
+              record={result}
+              inspector
+              {...actions}
+            />
           )}
         </section>
       </div>

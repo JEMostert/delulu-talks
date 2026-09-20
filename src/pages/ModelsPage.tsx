@@ -1,6 +1,4 @@
-import { useState } from "react";
 import {
-  Check,
   Cpu,
   Download,
   HardDrive,
@@ -8,70 +6,56 @@ import {
   Play,
   ShieldCheck,
 } from "lucide-react";
-import { MODELS, modelById } from "../data";
+import { MODELS } from "../data";
 import { Diagnostics } from "../components/Diagnostics";
-import { Alert, Modal } from "../components/ui";
-import type { DictationStatus, ModelId } from "../types";
+import { Alert } from "../components/ui";
+import type { DictationStatus } from "../types";
 
 export function ModelsPage({
-  selected,
   status,
-  saving,
-  licenseAccepted,
-  onSelect,
   onSetup,
   onLoad,
   onUnload,
-  onAcceptLicense,
 }: {
-  selected: ModelId;
   status: DictationStatus;
-  saving: boolean;
-  licenseAccepted: boolean;
-  onSelect: (id: ModelId) => void;
   onSetup: () => void;
   onLoad: () => void;
   onUnload: () => void;
-  onAcceptLicense: () => Promise<boolean>;
 }) {
-  const [license, setLicense] = useState(false);
-  const [accepted, setAccepted] = useState(false);
-  const [accepting, setAccepting] = useState(false);
   const busy =
     ["preparing", "loading", "listening", "transcribing"].includes(
       status.phase,
-    ) || saving;
-  const model = modelById(selected);
-  const setup = () => {
-    if (licenseAccepted) onSetup();
-    else setLicense(true);
-  };
+    ) || false;
   return (
     <div className="content-stack">
-      <section className="runtime-banner">
-        <div className="runtime-symbol">
-          <Cpu />
+      <section className="flex items-center gap-5 bg-hero rounded-panel p-7 shadow-panel backdrop-blur-xl max-[1150px]:flex-wrap">
+        <div className="grid place-items-center size-[58px] rounded-[18px] bg-accent-soft text-accent-ink backdrop-blur-md shrink-0">
+          <Cpu className="w-[26px] h-[26px]" />
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <span className="eyebrow">LOCAL SPEECH ENGINE</span>
-          <h2>
+          <h2 className="text-[20px]">
             {status.engine === "ready"
               ? "Speech model loaded"
               : status.engine === "missing"
-                ? "Install the speech engine"
+                ? status.migrationRequired
+                  ? "Update the speech setup"
+                  : "Install the speech engine"
                 : status.engine === "error"
                   ? "Speech engine error"
                   : busy
                     ? "Preparing speech engine…"
                     : "Speech model unloaded"}
           </h2>
-          <p>
+          <p className="text-[12px] text-muted mt-2 [overflow-wrap:anywhere]">
             {status.engine === "missing"
-              ? "Choose a model below. We’ll set up the engine and download its files to your device."
+              ? status.migrationRequired
+                ? "This app version separates speech and rewriting so their model dependencies cannot conflict. Update once to build the new R2T2 environment."
+                : "Install the R2T2 engine and download its weights to your device. A CUDA GPU is required."
               : status.message}
           </p>
         </div>
-        <div className="runtime-actions">
+        <div className="runtime-actions justify-end">
           {status.engine === "ready" ? (
             <button
               className="secondary-button"
@@ -91,9 +75,13 @@ export function ModelsPage({
               </button>
             )
           )}
-          <button className="primary-button" disabled={busy} onClick={setup}>
+          <button className="primary-button" disabled={busy} onClick={onSetup}>
             {busy ? <LoaderCircle className="spin" /> : <Download />}
-            {status.engine === "missing" ? "Install engine" : "Repair engine"}
+            {status.engine === "missing"
+              ? status.migrationRequired
+                ? "Update setup"
+                : "Install engine"
+              : "Repair engine"}
           </button>
         </div>
       </section>
@@ -128,7 +116,7 @@ export function ModelsPage({
             <button
               className="secondary-button"
               disabled={busy}
-              onClick={setup}
+              onClick={onSetup}
             >
               Repair
             </button>
@@ -139,117 +127,40 @@ export function ModelsPage({
       )}
       <div className="section-heading">
         <div>
-          <span className="eyebrow">MODEL SELECTION</span>
-          <h3>Available speech models</h3>
+          <span className="eyebrow">SPEECH MODEL</span>
+          <h3>Installed model</h3>
         </div>
-        <span className="caption">Selected: {model.size}</span>
       </div>
-      <div
-        className="model-comparison"
-        role="list"
-        aria-label="Speech model comparison"
-      >
+      <div className="border border-line rounded-lg overflow-hidden">
         {MODELS.map((item) => (
           <article
             key={item.id}
-            role="listitem"
-            className={`model-option ${item.id === selected ? "selected" : ""}`}
+            className="model-option selected grid grid-cols-[150px_minmax(0,1fr)_130px] gap-5 items-center px-[18px] py-4 bg-accent-soft shadow-[inset_3px_0_var(--accent)] max-[1150px]:grid-cols-[120px_minmax(0,1fr)_106px] max-[1150px]:gap-3 max-[700px]:grid-cols-[1fr_auto]"
           >
-            <div className="model-name">
-              <h3>{item.size}</h3>
-              <span>{item.role}</span>
-              {item.recommended && <small>Recommended</small>}
-            </div>
-            <p>{item.description}</p>
-            <div className="model-resource">
-              <HardDrive />
-              <span>
-                {item.memory}
-                <small>Memory use</small>
+            <div>
+              <h3 className="text-[16px]">{item.name}</h3>
+              <span className="block text-[11px] text-muted mt-1">
+                Streaming ASR · vLLM · CUDA
               </span>
             </div>
-            <button
-              className="secondary-button"
-              disabled={busy || item.id === selected}
-              onClick={() => onSelect(item.id)}
-            >
-              {item.id === selected ? (
-                <>
-                  <Check /> Selected
-                </>
-              ) : (
-                `Choose ${item.size}`
-              )}
-            </button>
+            <p className="text-[11px] text-muted leading-[1.6] max-[700px]:row-start-2 max-[700px]:col-span-full">
+              {item.description}
+            </p>
+            <div className="flex items-center gap-2 text-[11px] max-[1150px]:hidden">
+              <HardDrive className="w-[15px] h-[15px] text-muted" />
+              <span>
+                ~4 GB
+                <small className="block text-[9px]">Model download</small>
+              </span>
+            </div>
           </article>
         ))}
       </div>
-      <p className="privacy-footnote">
-        <ShieldCheck /> Models stay on your device. Switching models may require
-        another download.
+      <p className="flex items-center justify-center gap-[7px] text-[11px] text-muted">
+        <ShieldCheck className="w-3.5 h-3.5" /> Models stay on your device.
+        Dictation runs fully locally.
       </p>
       <Diagnostics />
-      {license && (
-        <Modal
-          title="Before your first download"
-          onClose={() => setLicense(false)}
-          busy={accepting}
-          footer={
-            <>
-              <button
-                className="secondary-button"
-                disabled={accepting}
-                onClick={() => setLicense(false)}
-              >
-                Not now
-              </button>
-              <button
-                className="primary-button"
-                disabled={!accepted || accepting}
-                onClick={async () => {
-                  setAccepting(true);
-                  try {
-                    if (await onAcceptLicense()) {
-                      setLicense(false);
-                      onSetup();
-                    }
-                  } finally {
-                    setAccepting(false);
-                  }
-                }}
-              >
-                <Download />
-                {accepting ? "Saving…" : "Accept & install"}
-              </button>
-            </>
-          }
-        >
-          <p>
-            Delulu Talks is MIT licensed. The speech model weights have their
-            own Nyra Health license. Review the terms before downloading{" "}
-            {model.name}.
-          </p>
-          <a
-            href="https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Read the complete model license ↗
-          </a>
-          <label className="checkbox-field">
-            <input
-              type="checkbox"
-              checked={accepted}
-              onChange={(e) => setAccepted(e.target.checked)}
-            />
-            <span>I accept the Nyra Health model-weight license.</span>
-          </label>
-          <p className="caption">
-            Models can be large. Setup uses your internet connection to install
-            the engine and download the selected weights.
-          </p>
-        </Modal>
-      )}
     </div>
   );
 }

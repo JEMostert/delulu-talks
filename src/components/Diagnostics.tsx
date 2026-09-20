@@ -24,7 +24,7 @@ export function Diagnostics() {
     void refresh();
   }, []);
   return (
-    <section className="card diagnostics">
+    <section className="card">
       <div className="section-heading">
         <div>
           <span className="eyebrow">YOUR DEVICE</span>
@@ -42,27 +42,30 @@ export function Diagnostics() {
       {error && <Alert>{error}</Alert>}
       {data && (
         <>
-          <div className="diagnostic-grid">
-            <div>
+          <div className="mt-[22px] mb-[18px] grid grid-cols-3 gap-[15px] max-[1150px]:grid-cols-1">
+            <div className="flex gap-2.5 rounded-xl bg-soft p-[15px] text-muted">
               <HardDrive />
-              <span>
+              <span className="text-[10px]">
                 Memory
-                <strong>
+                <strong className="mt-[5px] block text-xs text-ink">
                   {data.memoryGB} GB total · {data.freeMemoryGB} GB free
                 </strong>
               </span>
             </div>
-            <div>
+            <div className="flex gap-2.5 rounded-xl bg-soft p-[15px] text-muted">
               <Terminal />
-              <span>
-                Python<strong>{data.python}</strong>
+              <span className="text-[10px]">
+                Python
+                <strong className="mt-[5px] block text-xs text-ink">
+                  {data.python}
+                </strong>
               </span>
             </div>
-            <div>
+            <div className="flex gap-2.5 rounded-xl bg-soft p-[15px] text-muted">
               <Check />
-              <span>
+              <span className="text-[10px]">
                 Media imports
-                <strong>
+                <strong className="mt-[5px] block text-xs text-ink">
                   {data.ffmpeg === "Not available"
                     ? "FFmpeg needs installing"
                     : "FFmpeg available"}
@@ -72,8 +75,8 @@ export function Diagnostics() {
           </div>
           <p className="caption">
             {data.memoryGB < 16
-              ? "Start with Small speech and 0.8B Magic. Keep one model loaded at a time if memory is tight."
-              : "Medium speech is a good starting point. Larger models use more memory; try them after your first recording."}
+              ? "Speech uses the CUDA GPU when present. Keep one model loaded at a time if memory is tight."
+              : "R2T2 loads on your CUDA GPU. Magic rewrites are optional and use more memory while loaded."}
           </p>
           <details>
             <summary>Technical details</summary>
@@ -86,7 +89,7 @@ export function Diagnostics() {
               <dd>{data.dataDirectory}</dd>
               <dt>Runtime</dt>
               <dd>{data.runtimeInstalled ? "Installed" : "Not installed"}</dd>
-              {["crisperwhisper", "torch", "transformers"].map((name) => (
+              {["qwen_asr", "torch", "transformers"].map((name) => (
                 <div key={name}>
                   <dt>{name}</dt>
                   <dd>{data.packages[name] ?? "Not installed"}</dd>

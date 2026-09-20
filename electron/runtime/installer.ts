@@ -6,7 +6,7 @@ import {
   INSTALLER_PACKAGES,
   MAGIC_PACKAGES,
   RUNTIME_REVISION,
-  speechPackage,
+  SPEECH_PACKAGES,
 } from "./manifest";
 
 export type InstallProgress = {
@@ -16,7 +16,7 @@ export type InstallProgress = {
 };
 type Paths = { dataDirectory: string; venvDirectory: string };
 const READINESS = {
-  speech: "import crisperwhisper; print(crisperwhisper.__version__)",
+  speech: "from qwen_asr import Qwen3ASRModel",
   magic:
     "import torch, torchvision, transformers; from transformers import AutoModelForMultimodalLM, AutoProcessor; assert int(transformers.__version__.split('.')[0]) >= 5",
 };
@@ -26,7 +26,7 @@ export class RuntimeInstaller {
   private processes = new Set<ReturnType<typeof spawn>>();
   constructor(
     private readonly paths: Paths,
-    private readonly constraintsPath: string,
+    private readonly constraintsPath: string | null,
     private readonly environment: () => NodeJS.ProcessEnv,
   ) {}
   get python(): string {
@@ -139,17 +139,6 @@ export class RuntimeInstaller {
     settings: AppSettings,
     publish: (progress: InstallProgress) => void,
   ): Promise<void> {
-    const ct2 =
-      settings.backend === "ct2" ||
-      (settings.backend === "auto" &&
-        process.platform === "linux" &&
-        process.arch === "x64");
-    if (
-      kind === "speech" &&
-      ct2 &&
-      !(process.platform === "linux" && process.arch === "x64")
-    )
-      throw new Error("Choose the Transformers backend on this platform");
     const stage = async (
       program: string,
       args: string[],
@@ -186,7 +175,9 @@ export class RuntimeInstaller {
       0.22,
     );
     const constraints =
-      process.platform === "linux" && process.arch === "x64"
+      this.constraintsPath &&
+      process.platform === "linux" &&
+      process.arch === "x64"
         ? ["--constraint", this.constraintsPath]
         : [];
     await stage(
@@ -197,7 +188,7 @@ export class RuntimeInstaller {
         "install",
         "--disable-pip-version-check",
         ...constraints,
-        ...(kind === "speech" ? [speechPackage(ct2)] : MAGIC_PACKAGES),
+        ...(kind === "speech" ? SPEECH_PACKAGES : MAGIC_PACKAGES),
       ],
       kind === "speech"
         ? "Installing the speech runtime"
@@ -217,7 +208,7 @@ export class RuntimeInstaller {
       15_000,
     );
     writeFileSync(
-      join(this.paths.dataDirectory, "runtime-installed.txt"),
+      join(this.paths.dataDirectory, `runtime-${kind}-installed.txt`),
       `# Delulu runtime ${RUNTIME_REVISION}\n${versions}\n`,
       { mode: 0o600 },
     );

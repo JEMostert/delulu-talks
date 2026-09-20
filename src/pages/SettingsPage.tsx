@@ -81,8 +81,12 @@ export function SettingsPage(props: Props) {
     />
   );
   return (
-    <div className="content-stack settings-page">
-      <div className="page-tabs" role="tablist" aria-label="Settings sections">
+    <div className="content-stack">
+      <div
+        className="page-tabs max-[900px]:gap-[15px] max-[900px]:flex-wrap"
+        role="tablist"
+        aria-label="Settings sections"
+      >
         {[
           ["general", "Capture & delivery"],
           ["personalization", "Personalization"],
@@ -100,7 +104,9 @@ export function SettingsPage(props: Props) {
             {label}
           </button>
         ))}
-        <span>{saving ? "Saving…" : "Changes save automatically"}</span>
+        <span className="max-[900px]:hidden">
+          {saving ? "Saving…" : "Changes save automatically"}
+        </span>
       </div>
       {tab === "personalization" && (
         <VocabularyPage
@@ -159,47 +165,6 @@ export function SettingsPage(props: Props) {
                     {label}
                   </option>
                 ))}
-              </select>
-            </SettingRow>
-            <SettingRow
-              title="Speech output"
-              description="Clean removes disfluencies. Verbatim keeps what you said. Both keeps the two layers."
-            >
-              <select
-                aria-label="Speech output"
-                value={s.transcriptionMode}
-                disabled={saving}
-                onChange={(e) =>
-                  save({
-                    transcriptionMode: e.target
-                      .value as AppSettings["transcriptionMode"],
-                    pasteVersion:
-                      e.target.value === "verbatim" ? "verbatim" : "intended",
-                  })
-                }
-              >
-                <option value="dual">Clean + verbatim</option>
-                <option value="intended">Clean only</option>
-                <option value="verbatim">Verbatim only</option>
-              </select>
-            </SettingRow>
-            <SettingRow title="Version to deliver">
-              <select
-                aria-label="Version to deliver"
-                value={
-                  s.transcriptionMode === "dual"
-                    ? s.pasteVersion
-                    : s.transcriptionMode
-                }
-                disabled={saving || s.transcriptionMode !== "dual"}
-                onChange={(e) =>
-                  save({
-                    pasteVersion: e.target.value as AppSettings["pasteVersion"],
-                  })
-                }
-              >
-                <option value="intended">Clean</option>
-                <option value="verbatim">Verbatim</option>
               </select>
             </SettingRow>
             <SettingRow
@@ -409,56 +374,6 @@ export function SettingsPage(props: Props) {
                 ))}
               </select>
             </SettingRow>
-            <SettingRow title="Speech backend">
-              <select
-                aria-label="Inference backend"
-                value={s.backend}
-                disabled={saving || busy}
-                onChange={(e) =>
-                  save({ backend: e.target.value as AppSettings["backend"] })
-                }
-              >
-                <option value="auto">Auto (recommended)</option>
-                <option value="ct2">CTranslate2 · Linux x64</option>
-                <option value="transformers">Transformers</option>
-              </select>
-            </SettingRow>
-            <SettingRow title="Compute precision">
-              <select
-                aria-label="Compute type"
-                value={s.computeType}
-                disabled={saving || busy}
-                onChange={(e) =>
-                  save({
-                    computeType: e.target.value as AppSettings["computeType"],
-                  })
-                }
-              >
-                {[
-                  ["auto", "Auto"],
-                  ["float16", "FP16"],
-                  ["int8Float16", "INT8 + FP16"],
-                  ["int8", "INT8"],
-                  ["float32", "FP32"],
-                ].map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </SettingRow>
-            <SettingRow
-              title="Word timestamps"
-              description="Needed for timelines and subtitle exports."
-            >
-              {toggle("wordTimestamps", "Word timestamps")}
-            </SettingRow>{" "}
-            <SettingRow
-              title="Speculative decoding"
-              description="Use Turbo as a draft for supported Large-model runs."
-            >
-              {toggle("speculativeDecoding", "Speculative decoding", busy)}
-            </SettingRow>
             <SettingRow title="Magic model">
               <select
                 aria-label="Magic model"
@@ -585,7 +500,7 @@ export function SettingsPage(props: Props) {
                 <p>{Math.round(update.percent ?? 0)}% downloaded</p>
               </div>
             )}
-            <div className="section-footnote">
+            <div className="px-6 py-4 text-[12px]">
               <a
                 href="https://github.com/JEMostert/delulu-talks/releases"
                 target="_blank"
@@ -604,7 +519,7 @@ export function SettingsPage(props: Props) {
               <div className="inline-control">
                 <button
                   className="secondary-button"
-                  disabled={busy || !s.modelLicenseAccepted}
+                  disabled={busy}
                   onClick={props.onSetup}
                 >
                   Install / repair

@@ -14,15 +14,18 @@ export function UpdateNotice({
   if (!["available", "downloading", "downloaded"].includes(status.phase))
     return null;
   return (
-    <aside className="update-notice" aria-live="polite">
+    <aside
+      className="update-notice mx-6 mt-3 flex items-center gap-3.5 rounded-[14px] border border-line-strong bg-accent-soft px-4 py-3 backdrop-blur-md max-[700px]:flex-wrap"
+      aria-live="polite"
+    >
       <Download />
-      <div>
-        <strong>
+      <div className="flex-1">
+        <strong className="text-[13px]">
           {status.phase === "downloaded"
             ? "A fresh version is ready"
             : `Delulu Talks ${status.version ?? "update"}`}
         </strong>
-        <p>
+        <p className="text-xs text-muted">
           {status.phase === "downloaded"
             ? busy
               ? "Finish your current task before restarting."

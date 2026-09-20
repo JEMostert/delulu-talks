@@ -4,8 +4,6 @@ anyio==4.14.2
 certifi==2026.7.22
 cffi==2.1.1
 click==8.4.2
-crisperwhisper==2.0.2
-ctranslate2-crisperwhisper==4.7.1.post3
 cuda-bindings==13.3.1
 cuda-pathfinder==1.6.0
 cuda-toolkit==13.0.3.0

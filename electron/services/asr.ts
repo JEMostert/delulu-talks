@@ -35,21 +35,21 @@ function conciseError(value: string): string {
 }
 
 export class AsrService {
-  private readonly worker: WorkerClient;
-  private readonly installer: RuntimeInstaller;
+  private readonly speechWorker: WorkerClient;
+  private readonly magicWorker: WorkerClient;
+  private readonly speechInstaller: RuntimeInstaller;
+  private readonly magicInstaller: RuntimeInstaller;
   private readonly maintenance = new SerialQueue();
   private initializing = false;
   get isBusy(): boolean {
     return (
       this.initializing ||
       this.maintenance.busy ||
-      this.worker.busy ||
+      this.speechWorker.busy ||
+      this.magicWorker.busy ||
       !!this.loadPromise ||
       !!this.magicLoadPromise
     );
-  }
-  private get stderr(): string {
-    return this.worker.stderr;
   }
   private status: DictationStatus = {
     phase: "idle",
@@ -73,26 +73,40 @@ export class AsrService {
   private magicIdleTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly storage: StorageService) {
-    this.installer = new RuntimeInstaller(
-      storage,
-      app.isPackaged
-        ? join(process.resourcesPath, "python/constraints-linux-x64.txt")
-        : resolve(
-            app.getAppPath(),
-            "electron/python/constraints-linux-x64.txt",
-          ),
-      () => this.workerEnvironment(),
-    );
-    this.worker = new WorkerClient(
-      () => ({
-        python: this.venvPython(),
-        script: this.scriptPath(),
-        env: this.workerEnvironment(),
-      }),
-      (error) => {
-        this.fail(error);
-        this.failMagic(error);
+    const magicConstraints = app.isPackaged
+      ? join(process.resourcesPath, "python/constraints-linux-x64.txt")
+      : resolve(app.getAppPath(), "electron/python/constraints-linux-x64.txt");
+    this.speechInstaller = new RuntimeInstaller(
+      {
+        dataDirectory: storage.dataDirectory,
+        venvDirectory: storage.venvDirectory,
       },
+      null,
+      () => this.workerEnvironment("speech"),
+    );
+    this.magicInstaller = new RuntimeInstaller(
+      {
+        dataDirectory: storage.dataDirectory,
+        venvDirectory: storage.magicVenvDirectory,
+      },
+      magicConstraints,
+      () => this.workerEnvironment("magic"),
+    );
+    this.speechWorker = new WorkerClient(
+      () => ({
+        python: this.speechInstaller.python,
+        script: this.scriptPath(),
+        env: this.workerEnvironment("speech"),
+      }),
+      (error) => this.fail(error),
+    );
+    this.magicWorker = new WorkerClient(
+      () => ({
+        python: this.magicInstaller.python,
+        script: this.scriptPath(),
+        env: this.workerEnvironment("magic"),
+      }),
+      (error) => this.failMagic(error),
     );
   }
 
@@ -153,7 +167,7 @@ export class AsrService {
   }
 
   private venvPython(): string {
-    return this.installer.python;
+    return this.speechInstaller.python;
   }
 
   async initialize(settings: AppSettings): Promise<void> {
@@ -172,6 +186,8 @@ export class AsrService {
       this.isEnvironmentReady(),
       this.isMagicEnvironmentReady(),
     ]);
+    const migrationRequired =
+      !ready && existsSync(this.storage.legacyVenvDirectory);
     this.initializing = false;
     if (this.maintenance.busy) return;
     this.updateStatus(
@@ -182,11 +198,15 @@ export class AsrService {
             message: settings.preloadModel
               ? "Preparing selected model"
               : "Engine installed — model loads on demand",
+            migrationRequired: false,
           }
         : {
             phase: "idle",
             engine: "missing",
-            message: "Local engine setup required",
+            message: migrationRequired
+              ? "Speech runtime update required"
+              : "Local engine setup required",
+            migrationRequired,
           },
     );
     this.updateMagicStatus(
@@ -200,7 +220,7 @@ export class AsrService {
           }
         : { phase: "idle", engine: "missing", message: "Magic setup required" },
     );
-    if (ready && settings.preloadModel && settings.modelLicenseAccepted) {
+    if (ready && settings.preloadModel) {
       void this.loadModel(settings).catch((error) => this.fail(error));
     }
     if (magicReady && settings.preloadMagicModel) {
@@ -209,18 +229,13 @@ export class AsrService {
   }
 
   async isEnvironmentReady(): Promise<boolean> {
-    return this.installer.ready("speech");
+    return this.speechInstaller.ready("speech");
   }
   async isMagicEnvironmentReady(): Promise<boolean> {
-    return this.installer.ready("magic");
+    return this.magicInstaller.ready("magic");
   }
 
   async setup(settings: AppSettings): Promise<void> {
-    if (!settings.modelLicenseAccepted) {
-      throw new Error(
-        "Accept the Nyra model-weight license before downloading a model",
-      );
-    }
     if (this.setupPromise) return this.setupPromise;
     this.setupPromise = this.maintenance
       .run(() => this.performSetup(settings))
@@ -237,18 +252,8 @@ export class AsrService {
   private async performSetup(settings: AppSettings): Promise<void> {
     const reloadMagic =
       settings.preloadMagicModel && (await this.isMagicEnvironmentReady());
-    if (this.worker.running) {
-      await this.shutdown();
-      this.updateMagicStatus({
-        phase: "idle",
-        engine: "unloaded",
-        message: "Magic model will reload after speech setup",
-        model: null,
-        device: null,
-        progress: null,
-      });
-    }
-    await this.installer.install("speech", settings, (progress) =>
+    if (this.speechWorker.running) this.speechWorker.stop();
+    await this.speechInstaller.install("speech", settings, (progress) =>
       this.updateStatus({
         phase: "preparing",
         engine: "settingUp",
@@ -262,7 +267,7 @@ export class AsrService {
       progress: 0.82,
     });
     await this.loadModel(settings, true);
-    if (reloadMagic) {
+    if (reloadMagic && this.magicStatus.engine !== "ready") {
       await this.loadMagic(settings, true);
     }
   }
@@ -283,21 +288,9 @@ export class AsrService {
 
   private async performMagicSetup(settings: AppSettings): Promise<void> {
     const reloadSpeech =
-      settings.preloadModel &&
-      settings.modelLicenseAccepted &&
-      (await this.isEnvironmentReady());
-    if (this.worker.running) {
-      await this.shutdown();
-      this.updateStatus({
-        phase: "idle",
-        engine: "unloaded",
-        message: "Speech model will reload after Magic setup",
-        model: null,
-        backend: null,
-        progress: null,
-      });
-    }
-    await this.installer.install("magic", settings, (progress) =>
+      settings.preloadModel && (await this.isEnvironmentReady());
+    if (this.magicWorker.running) this.magicWorker.stop();
+    await this.magicInstaller.install("magic", settings, (progress) =>
       this.updateMagicStatus({
         phase: "preparing",
         engine: "settingUp",
@@ -312,43 +305,44 @@ export class AsrService {
       progress: 0.82,
     });
     await this.loadMagic(settings, true);
-    if (reloadSpeech) await this.loadModel(settings, true);
+    if (reloadSpeech && this.status.engine !== "ready")
+      await this.loadModel(settings, true);
   }
 
-  private workerEnvironment(): NodeJS.ProcessEnv {
+  private workerEnvironment(kind: "speech" | "magic"): NodeJS.ProcessEnv {
+    const venvDirectory =
+      kind === "speech"
+        ? this.storage.venvDirectory
+        : this.storage.magicVenvDirectory;
     const bin =
       process.platform === "win32"
-        ? join(this.storage.venvDirectory, "Scripts")
-        : join(this.storage.venvDirectory, "bin");
+        ? join(venvDirectory, "Scripts")
+        : join(venvDirectory, "bin");
     const modelCache = this.storage.modelCacheDirectory;
     return {
       ...process.env,
       PYTHONUNBUFFERED: "1",
       PYTHONIOENCODING: "utf-8",
-      CRISPERWHISPER_CACHE: modelCache,
       HF_HOME: modelCache,
       HF_HUB_CACHE: join(modelCache, "hub"),
       HUGGINGFACE_HUB_CACHE: join(modelCache, "hub"),
-      TRANSFORMERS_CACHE: join(modelCache, "transformers"),
       PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
     };
   }
 
   private request<T>(
+    kind: "speech" | "magic",
     command: string,
     payload: Record<string, unknown> = {},
     timeoutMs?: number,
   ): Promise<T> {
-    return this.worker.request<T>(command, payload, timeoutMs);
+    const worker = kind === "speech" ? this.speechWorker : this.magicWorker;
+    return worker.request<T>(command, payload, timeoutMs);
   }
 
   async loadModel(settings: AppSettings, fromSetup = false): Promise<void> {
     if (!fromSetup && this.maintenance.busy)
       throw new Error("Wait for runtime setup to finish");
-    if (!settings.modelLicenseAccepted)
-      throw new Error(
-        "Accept the Nyra model-weight license before loading a model",
-      );
     if (this.loadPromise) return this.loadPromise;
     this.loadPromise = (async () => {
       if (!fromSetup && !(await this.isEnvironmentReady()))
@@ -363,23 +357,16 @@ export class AsrService {
         model: settings.model,
         progress: 0.85,
       });
-      const runtime = await this.request<{ backend: "ct2" | "transformers" }>(
-        "load",
-        {
-          model: model.shorthand,
-          backend: settings.backend,
-          computeType: settings.computeType,
-          speculativeDecoding: settings.speculativeDecoding,
-          cacheDir: this.storage.modelCacheDirectory,
-        },
-      );
+      await this.request("speech", "load", {
+        cacheDir: this.storage.modelCacheDirectory,
+      });
       this.updateStatus({
         phase: "idle",
         engine: "ready",
         message: `${model.name} ready`,
         model: settings.model,
-        backend: runtime.backend,
         progress: 1,
+        migrationRequired: false,
       });
       this.scheduleSpeechIdle(settings);
     })()
@@ -407,32 +394,14 @@ export class AsrService {
     await this.ensureLoaded(settings);
     this.clearSpeechIdle();
     try {
-      return await this.request<Record<string, unknown>>("transcribe", {
-        ...payload,
-        language: settings.language,
-        mode: payload.mode ?? settings.transcriptionMode,
-        wordTimestamps: settings.wordTimestamps,
-        speculativeDecoding: settings.speculativeDecoding,
-      });
-    } finally {
-      this.scheduleSpeechIdle(settings);
-    }
-  }
-
-  async runTool(
-    command: "verbatimize" | "forcedAlign",
-    payload: Record<string, unknown>,
-    settings: AppSettings,
-  ): Promise<Record<string, unknown>> {
-    this.clearSpeechIdle();
-    await this.ensureLoaded(settings);
-    this.clearSpeechIdle();
-    try {
-      return await this.request<Record<string, unknown>>(command, {
-        ...payload,
-        language: settings.language,
-        wordTimestamps: settings.wordTimestamps,
-      });
+      return await this.request<Record<string, unknown>>(
+        "speech",
+        "transcribe",
+        {
+          ...payload,
+          language: settings.language,
+        },
+      );
     } finally {
       this.scheduleSpeechIdle(settings);
     }
@@ -440,9 +409,9 @@ export class AsrService {
 
   async unload(): Promise<void> {
     this.clearSpeechIdle();
-    if (this.worker.running) {
+    if (this.speechWorker.running) {
       try {
-        await this.request("unload", {}, 60_000);
+        await this.request("speech", "unload", {}, 60_000);
       } catch {
         /* worker may already be gone */
       }
@@ -452,7 +421,6 @@ export class AsrService {
       engine: existsSync(this.venvPython()) ? "unloaded" : "missing",
       message: "Model unloaded",
       model: null,
-      backend: null,
       progress: null,
     });
   }
@@ -472,10 +440,14 @@ export class AsrService {
         model: settings.magicModel,
         progress: 0.86,
       });
-      const runtime = await this.request<{ device: string }>("magicLoad", {
-        model: settings.magicModel,
-        cacheDir: this.storage.modelCacheDirectory,
-      });
+      const runtime = await this.request<{ device: string }>(
+        "magic",
+        "magicLoad",
+        {
+          model: settings.magicModel,
+          cacheDir: this.storage.modelCacheDirectory,
+        },
+      );
       this.updateMagicStatus({
         phase: "idle",
         engine: "ready",
@@ -532,10 +504,14 @@ export class AsrService {
           output.push(part.text);
           continue;
         }
-        const result = await this.request<MagicRewriteResult>("magicRewrite", {
-          ...request,
-          text: part.text.trim(),
-        } as unknown as Record<string, unknown>);
+        const result = await this.request<MagicRewriteResult>(
+          "magic",
+          "magicRewrite",
+          {
+            ...request,
+            text: part.text.trim(),
+          } as unknown as Record<string, unknown>,
+        );
         processingTimeMs += result.processingTimeMs;
         // Preserve separators around immutable blocks; they never enter the model.
         output.push(
@@ -570,16 +546,16 @@ export class AsrService {
 
   async unloadMagic(): Promise<void> {
     this.clearMagicIdle();
-    if (this.worker.running) {
+    if (this.magicWorker.running) {
       try {
-        await this.request("magicUnload", {}, 60_000);
+        await this.request("magic", "magicUnload", {}, 60_000);
       } catch {
         /* worker may already be gone */
       }
     }
     this.updateMagicStatus({
       phase: "idle",
-      engine: existsSync(this.venvPython()) ? "unloaded" : "missing",
+      engine: existsSync(this.magicInstaller.python) ? "unloaded" : "missing",
       message: "Magic model unloaded",
       model: null,
       device: null,
@@ -589,7 +565,7 @@ export class AsrService {
 
   configureResidency(settings: AppSettings): void {
     if (this.isBusy) return;
-    if (settings.preloadModel && settings.modelLicenseAccepted) {
+    if (settings.preloadModel) {
       this.clearSpeechIdle();
       void this.isEnvironmentReady().then((ready) => {
         if (ready)
@@ -644,13 +620,15 @@ export class AsrService {
     await this.shutdown();
     if (existsSync(this.storage.venvDirectory))
       rmSync(this.storage.venvDirectory, { recursive: true, force: true });
+    if (existsSync(this.storage.magicVenvDirectory))
+      rmSync(this.storage.magicVenvDirectory, { recursive: true, force: true });
     this.updateStatus({
       phase: "idle",
       engine: "missing",
       message: "Local Python environment removed",
       model: null,
-      backend: null,
       progress: null,
+      migrationRequired: false,
     });
     this.updateMagicStatus({
       phase: "idle",
@@ -663,10 +641,12 @@ export class AsrService {
   }
 
   async shutdown(): Promise<void> {
-    this.installer.stop();
+    this.speechInstaller.stop();
+    this.magicInstaller.stop();
     this.clearSpeechIdle();
     this.clearMagicIdle();
-    this.worker.stop();
+    this.speechWorker.stop();
+    this.magicWorker.stop();
   }
 
   fail(error: unknown): void {
@@ -674,7 +654,7 @@ export class AsrService {
     try {
       writeFileSync(
         join(this.storage.dataDirectory, "last-asr-error.log"),
-        `${this.stderr}\n${message}\n`,
+        `${this.speechWorker.stderr}\n${message}\n`,
         "utf8",
       );
     } catch {
@@ -694,7 +674,7 @@ export class AsrService {
     try {
       writeFileSync(
         join(this.storage.dataDirectory, "last-magic-error.log"),
-        `${this.stderr}\n${message}\n`,
+        `${this.magicWorker.stderr}\n${message}\n`,
         "utf8",
       );
     } catch {

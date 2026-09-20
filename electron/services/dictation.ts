@@ -11,14 +11,11 @@ import type {
   RecorderCommand,
   RecordingSubmission,
   TranscriptRecord,
-  TranscriptionMode,
-  WordTimestamp,
 } from "../../src/types";
 import type { AsrService } from "./asr";
 import type { PasteService } from "./paste";
 import type { PillService } from "./pill";
 import type { StorageService } from "./storage";
-import { deriveInsights } from "./transcripts";
 
 type WindowProvider = {
   main(): BrowserWindow | null;
@@ -31,22 +28,6 @@ type CaptureState =
 function numeric(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function words(value: unknown): WordTimestamp[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (!item || typeof item !== "object") return [];
-    const word = String((item as Record<string, unknown>).word ?? "").trim();
-    if (!word) return [];
-    return [
-      {
-        word,
-        start: Math.max(0, numeric((item as Record<string, unknown>).start)),
-        end: Math.max(0, numeric((item as Record<string, unknown>).end)),
-      },
-    ];
-  });
 }
 
 export class DictationService {
@@ -160,7 +141,7 @@ export class DictationService {
       this.asr.setActivity(
         "error",
         status.engine === "missing"
-          ? "Set up a CrisperWhisper model before your first dictation"
+          ? "Set up R2T2 before your first dictation"
           : "Repair or reload the speech engine before starting another dictation",
       );
       this.setHud(
@@ -310,12 +291,7 @@ export class DictationService {
     try {
       mkdirSync(this.storage.cacheDirectory, { recursive: true });
       writeFileSync(audioPath, submission.wav, { mode: 0o600 });
-      this.asr.setActivity(
-        "transcribing",
-        settings.transcriptionMode === "dual"
-          ? "Creating clean and verbatim transcripts"
-          : "Transcribing locally",
-      );
+      this.asr.setActivity("transcribing", "Transcribing locally");
       this.setHud({ state: "transcribing" });
       const result = await this.asr.transcribe({ audioPath }, settings);
       this.failedRecording = null;
@@ -325,7 +301,6 @@ export class DictationService {
         "dictation",
         submission.durationMs,
         null,
-        settings.transcriptionMode,
         settings,
       );
       let output = this.outputText(record, settings);
@@ -422,44 +397,19 @@ export class DictationService {
       throw new Error("Finish the current recording or model operation first");
     this.captureState = "processing";
     const settings = this.settings();
-    this.asr.setActivity(
-      "transcribing",
-      request.operation === "forcedAlign"
-        ? "Aligning every word"
-        : request.operation === "verbatimize"
-          ? "Recovering spoken detail"
-          : "Transcribing imported audio",
-    );
+    this.asr.setActivity("transcribing", "Transcribing imported audio");
     let preparedAudio: { path: string; temporary: boolean } | null = null;
     try {
       preparedAudio = await this.prepareAudio(request.path);
-      const payload =
-        request.operation === "transcribe"
-          ? await this.asr.transcribe(
-              {
-                audioPath: preparedAudio.path,
-                mode: request.mode ?? settings.transcriptionMode,
-              },
-              settings,
-            )
-          : await this.asr.runTool(
-              request.operation,
-              {
-                audioPath: preparedAudio.path,
-                referenceText: request.referenceText,
-              },
-              settings,
-            );
-      const mode =
-        request.operation === "transcribe"
-          ? (request.mode ?? settings.transcriptionMode)
-          : request.operation;
+      const payload = await this.asr.transcribe(
+        { audioPath: preparedAudio.path },
+        settings,
+      );
       const record = this.createRecord(
         payload,
-        request.operation === "transcribe" ? "file" : request.operation,
+        "file",
         undefined,
         basename(request.path),
-        mode,
         settings,
       );
       this.storage.addHistory(record);
@@ -548,45 +498,19 @@ export class DictationService {
     source: TranscriptRecord["source"],
     durationOverride: number | undefined,
     sourceName: string | null,
-    mode: TranscriptionMode | "forcedAlign" | "verbatimize",
     settings: AppSettings,
   ): TranscriptRecord {
-    const intendedText = String(result.intendedText ?? "").trim();
-    const verbatimText = String(result.verbatimText ?? "").trim();
-    const primary = String(
-      result.text ?? (intendedText || verbatimText),
-    ).trim();
-    const timedWords = words(result.words);
-    const verbatimWords = words(result.verbatimWords);
+    const text = String(result.text ?? "").trim();
     const durationMs =
       durationOverride ?? Math.round(numeric(result.duration) * 1000);
-    const text = intendedText || primary || verbatimText;
     return {
       id: randomUUID(),
       createdAt: Date.now(),
       durationMs,
       text,
-      intendedText,
-      verbatimText,
-      personalizedText: intendedText
-        ? personalize(intendedText, settings.customWords)
-        : null,
-      deliveredVersion:
-        settings.pasteVersion === "verbatim" && verbatimText
-          ? "verbatim"
-          : intendedText
-            ? "intended"
-            : "verbatim",
-      mode,
+      personalizedText: personalize(text, settings.customWords),
       model: settings.model,
       language: String(result.language ?? settings.language),
-      words: timedWords,
-      verbatimWords,
-      insights: deriveInsights(
-        verbatimText || text,
-        verbatimWords.length ? verbatimWords : timedWords,
-        durationMs,
-      ),
       source,
       sourceName,
       processingTimeMs: Math.round(numeric(result.processingTime) * 1000),

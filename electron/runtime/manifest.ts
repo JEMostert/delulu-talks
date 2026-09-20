@@ -2,11 +2,14 @@
  * Linux transitive constraints live beside the Python worker. Portable platforms
  * share direct pins; their platform-specific wheels are resolved by pip.
  */
-export const RUNTIME_REVISION = "2026-09-06.1";
+export const RUNTIME_REVISION = "2026-09-20.1";
 export const INSTALLER_PACKAGES = [
   "pip==26.2.1",
   "wheel==0.47.0",
   "setuptools==84.0.0",
+];
+export const SPEECH_PACKAGES = [
+  "git+https://github.com/netease-youdao/Confucius4-R2T2.git",
 ];
 export const MAGIC_PACKAGES = [
   "torch==2.13.0",
@@ -17,6 +20,3 @@ export const MAGIC_PACKAGES = [
   "sentencepiece==0.2.2",
   "pillow==12.3.0",
 ];
-export function speechPackage(ct2: boolean): string {
-  return `crisperwhisper[${ct2 ? "ct2,convert" : "transformers"}]==2.0.2`;
-}
