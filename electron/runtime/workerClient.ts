@@ -35,7 +35,13 @@ export class WorkerClient {
   private start(): ChildProcessWithoutNullStreams {
     if (this.child) return this.child;
     const { python, script, env } = this.config();
-    const child = spawn(python, ["-u", script], { windowsHide: true, env });
+    const child = spawn(python, ["-u", script], {
+      windowsHide: true,
+      env,
+      // vLLM starts GPU-owning subprocesses. Give each runtime its own group
+      // so stopping it also releases those descendants on Linux/macOS.
+      detached: process.platform !== "win32",
+    });
     this.child = child;
     this.diagnostics = "";
     const lines = createInterface({ input: child.stdout });
@@ -126,6 +132,23 @@ export class WorkerClient {
       request.reject(error);
     }
     this.pending.clear();
-    child?.kill();
+    if (!child?.pid) return;
+    if (process.platform === "win32") {
+      const killer = spawn(
+        "taskkill",
+        ["/pid", String(child.pid), "/T", "/F"],
+        {
+          windowsHide: true,
+          stdio: "ignore",
+        },
+      );
+      killer.once("error", () => child.kill());
+    } else {
+      try {
+        process.kill(-child.pid, "SIGTERM");
+      } catch (reason) {
+        if ((reason as NodeJS.ErrnoException).code !== "ESRCH") child.kill();
+      }
+    }
   }
 }

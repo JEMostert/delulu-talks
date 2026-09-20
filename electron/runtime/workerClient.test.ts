@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkerClient } from "./workerClient";
@@ -64,3 +64,26 @@ test("spawn failures reject immediately rather than waiting for timeout", async 
     client.stop();
   }
 });
+
+test.skipIf(process.platform === "win32")(
+  "stop terminates runtime descendants",
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "delulu-descendant-"));
+    const stopped = join(dir, "stopped");
+    const descendant = `import signal,time,pathlib\ndef stop(*args):\n pathlib.Path(${JSON.stringify(stopped)}).touch()\n raise SystemExit(0)\nsignal.signal(signal.SIGTERM,stop)\nprint('ready',flush=True)\ntime.sleep(60)\n`;
+    const h = harness(
+      `import subprocess,sys,json\np=subprocess.Popen([sys.executable,'-u','-c',${JSON.stringify(descendant)}],stdout=subprocess.PIPE,text=True)\np.stdout.readline()\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu:'+json.dumps({'id':r['id'],'ok':True,'result':p.pid}),flush=True)\n`,
+    );
+    try {
+      await h.client.request("ping", {}, 3000);
+      h.client.stop();
+      for (let attempt = 0; attempt < 100 && !existsSync(stopped); attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(existsSync(stopped)).toBe(true);
+    } finally {
+      h.cleanup();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
