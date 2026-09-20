@@ -27,6 +27,7 @@ const READINESS = {
 export class RuntimeInstaller {
   private processes = new Set<ReturnType<typeof spawn>>();
   private cancelled = false;
+  private validatedPython: string | null = null;
   constructor(
     private readonly paths: Paths,
     private readonly constraintsPath: string | null,
@@ -36,6 +37,7 @@ export class RuntimeInstaller {
     return runtimePython(this.paths.venvDirectory);
   }
   rollback(): void {
+    this.validatedPython = null;
     rollbackRuntime(this.paths.venvDirectory);
   }
 
@@ -102,7 +104,9 @@ export class RuntimeInstaller {
   async ready(kind: "speech" | "magic"): Promise<boolean> {
     try {
       if (!existsSync(this.python)) return false;
+      if (this.validatedPython === `${kind}:${this.python}`) return true;
       await this.run(this.python, ["-c", READINESS[kind]], undefined, 15_000);
+      this.validatedPython = `${kind}:${this.python}`;
       return true;
     } catch {
       return false;
@@ -150,6 +154,7 @@ export class RuntimeInstaller {
     publish: (progress: InstallProgress) => void,
   ): Promise<void> {
     this.cancelled = false;
+    this.validatedPython = null;
     const stage = async (
       program: string,
       args: string[],

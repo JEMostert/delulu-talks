@@ -145,6 +145,25 @@ class Worker:
             max_model_len=32768,
             max_new_tokens=4096,
         )
+        # Exercise preprocessing and GPU decoding before the UI reports Ready.
+        # Keep this synthetic, private, and bounded; never publish its transcript.
+        import copy
+        import numpy as np
+        original_sampling = self.model.sampling_params
+        warmup_sampling = copy.copy(original_sampling)
+        warmup_sampling.max_tokens = 8
+        self.model.sampling_params = warmup_sampling
+        try:
+            self.model.transcribe(
+                audio=[(np.zeros(16000, dtype=np.float32), 16000)],
+                language=["English"], return_time_stamps=False,
+            )
+        except Exception:
+            self.unload()
+            raise
+        finally:
+            if self.model is not None:
+                self.model.sampling_params = original_sampling
         self.model_name = SPEECH_MODEL
         self.device = "cuda"
         return self.status()
@@ -278,27 +297,41 @@ class Worker:
         }
 
     def transcribe(self, request: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
         if self.model is None:
             raise RuntimeError("No model is loaded")
         audio = Path(str(request["audioPath"])).resolve()
         if not audio.is_file():
             raise FileNotFoundError("The selected audio file no longer exists")
-        import librosa
-
-        wav, _sample_rate = librosa.load(str(audio), sr=16000, mono=True)
+        # Dictation and imported media already arrive as 16 kHz mono WAV.
+        # Avoid librosa's lazy initialization on this latency-sensitive path.
+        import soundfile as sf
+        try:
+            wav, sample_rate = sf.read(str(audio), dtype="float32", always_2d=False)
+        except RuntimeError:
+            # Preserve the flexible decoder for unusual imported formats.
+            import librosa
+            wav, sample_rate = librosa.load(str(audio), sr=16000, mono=True)
+        if wav.ndim > 1:
+            wav = wav.mean(axis=1)
+        if sample_rate != 16000:
+            import soxr
+            wav = soxr.resample(wav, sample_rate, 16000)
         language_code = str(request.get("language", "en")).lower()
         language = LANGUAGE_NAMES.get(language_code)
-        started = time.perf_counter()
+        inference_started = time.perf_counter()
         results = self.model.transcribe(
             audio=[(wav, 16000)],
             language=[language],
             return_time_stamps=False,
         )
+        finished = time.perf_counter()
         return {
             "text": str(results[0].text).strip(),
             "language": language_code,
             "duration": len(wav) / 16000.0,
-            "processingTime": time.perf_counter() - started,
+            "processingTime": finished - started,
+            "inferenceTime": finished - inference_started,
         }
 
     def dispatch(self, request: dict[str, Any]) -> Any:

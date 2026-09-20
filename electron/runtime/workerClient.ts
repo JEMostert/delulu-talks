@@ -9,6 +9,19 @@ type Pending = {
 };
 const PREFIX = "@delulu:";
 
+export function operationTimeout(command: string): number {
+  if (command === "load" || command === "magicLoad") return 30 * 60_000;
+  if (command === "transcribe") return 120_000;
+  if (command === "magicRewrite") return 180_000;
+  return 30_000;
+}
+
+export function transcriptionTimeout(durationMs: unknown): number {
+  return typeof durationMs === "number" && Number.isFinite(durationMs)
+    ? Math.min(15 * 60_000, Math.max(120_000, durationMs * 3))
+    : 15 * 60_000;
+}
+
 /** One JSON-lines transport, with bounded diagnostics and deterministic failure cleanup. */
 export class WorkerClient {
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -92,7 +105,7 @@ export class WorkerClient {
   request<T>(
     command: string,
     payload: Record<string, unknown> = {},
-    timeoutMs = 30 * 60_000,
+    timeoutMs = operationTimeout(command),
   ): Promise<T> {
     const child = this.start();
     const id = randomUUID();

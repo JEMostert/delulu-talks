@@ -2,7 +2,23 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WorkerClient } from "./workerClient";
+import {
+  WorkerClient,
+  operationTimeout,
+  transcriptionTimeout,
+} from "./workerClient";
+
+test("interactive operations do not inherit download deadlines", () => {
+  expect(operationTimeout("transcribe")).toBe(120_000);
+  expect(operationTimeout("magicRewrite")).toBe(180_000);
+  expect(operationTimeout("load")).toBe(30 * 60_000);
+  expect(operationTimeout("ping")).toBe(30_000);
+  expect(transcriptionTimeout(5000)).toBe(120_000);
+  expect(transcriptionTimeout(100_000)).toBe(300_000);
+  expect(transcriptionTimeout(Infinity)).toBe(900_000);
+  expect(transcriptionTimeout(undefined)).toBe(900_000);
+  expect(transcriptionTimeout(1_000_000)).toBe(900_000);
+});
 
 function harness(script: string) {
   const dir = mkdtempSync(join(tmpdir(), "delulu-worker-"));

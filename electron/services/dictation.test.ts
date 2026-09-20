@@ -134,6 +134,9 @@ function captureHarness(settings: AppSettings = { ...DEFAULT_SETTINGS }) {
     service,
     commands,
     hud: pill.commands,
+    setPhase: (phase: string) => {
+      status = { ...status, phase };
+    },
     setSettings: (next: AppSettings) => {
       current = next;
     },
@@ -141,6 +144,38 @@ function captureHarness(settings: AppSettings = { ...DEFAULT_SETTINGS }) {
 }
 
 describe("dictation delivery pipeline", () => {
+  for (const action of ["stop", "cancel", "ready"] as const) {
+    test(`busy notice clears on ${action} without starting a recording`, () => {
+      const h = captureHarness();
+      h.setPhase("loading");
+      h.service.start();
+      expect(h.commands).toHaveLength(0);
+      expect(h.service.isActive).toBe(false);
+      if (action === "ready") {
+        h.setPhase("idle");
+        h.service.runtimeChanged();
+      } else h.service[action]();
+      expect(h.hud.at(-1)).toEqual({ state: "hidden" });
+    });
+  }
+  test("busy notice expires even without a later runtime event", async () => {
+    const h = captureHarness();
+    h.setPhase("loading");
+    h.service.start();
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+    expect(h.hud.at(-1)).toEqual({ state: "hidden" });
+  });
+  test("old busy notice cannot hide a subsequent recording", async () => {
+    const h = captureHarness();
+    h.setPhase("loading");
+    h.service.start();
+    h.setPhase("idle");
+    h.service.start();
+    h.service.recordingStarted();
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+    expect((h.hud.at(-1) as { state: string }).state).toBe("listening");
+    h.service.cancel();
+  });
   test("honors a hold release that arrives while the microphone is still opening", () => {
     const testHarness = captureHarness();
     testHarness.service.start();

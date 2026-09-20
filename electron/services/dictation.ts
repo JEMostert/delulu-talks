@@ -49,6 +49,8 @@ export class DictationService {
 
   private captureState: CaptureState = "idle";
   private recorderReady = false;
+  private busyNoticeTimer: NodeJS.Timeout | null = null;
+  private busyNotice = false;
   private hud: Parameters<PillService["show"]>[0] | { state: "hidden" } = {
     state: "hidden",
   };
@@ -95,8 +97,35 @@ export class DictationService {
   private setHud(
     command: Parameters<PillService["show"]>[0] | { state: "hidden" },
   ): void {
+    if (this.busyNoticeTimer) clearTimeout(this.busyNoticeTimer);
+    this.busyNoticeTimer = null;
+    this.busyNotice = false;
     this.hud = command;
     this.applyHud();
+  }
+
+  runtimeChanged(): void {
+    if (
+      this.busyNotice &&
+      !["loading", "preparing", "transcribing"].includes(
+        this.asr.getStatus().phase,
+      )
+    )
+      this.setHud({ state: "hidden" });
+  }
+
+  private showBusyNotice(): void {
+    this.setHud({
+      state: "transcribing",
+      title: "Please wait",
+      detail: "Engine is busy — try again shortly",
+    });
+    this.busyNotice = true;
+    this.busyNoticeTimer = setTimeout(
+      () => this.setHud({ state: "hidden" }),
+      2000,
+    );
+    this.busyNoticeTimer.unref();
   }
 
   private applyHud(): void {
@@ -130,11 +159,7 @@ export class DictationService {
       this.asr.isBusy ||
       ["transcribing", "preparing", "loading"].includes(status.phase)
     ) {
-      this.setHud({
-        state: "transcribing",
-        title: "Please wait",
-        detail: "Engine is busy",
-      });
+      this.showBusyNotice();
       return;
     }
     if (status.engine === "missing" || status.engine === "error") {
@@ -181,6 +206,7 @@ export class DictationService {
   }
 
   stop(): void {
+    if (this.busyNotice) this.setHud({ state: "hidden" });
     if (this.captureState === "opening") {
       this.captureState = "stopping";
       this.asr.setActivity(
@@ -204,6 +230,7 @@ export class DictationService {
   }
 
   cancel(): void {
+    if (this.busyNotice) this.setHud({ state: "hidden" });
     if (this.captureState === "idle" || this.captureState === "processing")
       return;
     this.captureState = "idle";
@@ -293,7 +320,10 @@ export class DictationService {
       writeFileSync(audioPath, submission.wav, { mode: 0o600 });
       this.asr.setActivity("transcribing", "Transcribing locally");
       this.setHud({ state: "transcribing" });
-      const result = await this.asr.transcribe({ audioPath }, settings);
+      const result = await this.asr.transcribe(
+        { audioPath, durationMs: submission.durationMs },
+        settings,
+      );
       this.failedRecording = null;
       this.asr.setRecovery?.(false);
       let record = this.createRecord(

@@ -912,10 +912,12 @@ async function start(): Promise<void> {
     toggle: () => dictation.toggle(),
   });
   asr.onStatus((status) => {
+    dictation.runtimeChanged();
     broadcast("runtime:statusChanged", status);
     rebuildTrayMenu();
   });
   asr.onMagicStatus((status) => {
+    dictation.runtimeChanged();
     broadcast("magic:statusChanged", status);
     rebuildTrayMenu();
   });

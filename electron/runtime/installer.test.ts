@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { RuntimeInstaller } from "./installer";
-import { runtimePython } from "./location";
+import { runtimePython, activateRuntime } from "./location";
 import { DEFAULT_SETTINGS } from "../../src/data";
 
 for (const failure of [
@@ -82,6 +82,38 @@ test("activation rejects paths outside the runtime generations", () => {
       JSON.stringify({ generation: "../../other" }),
     );
     expect(() => runtimePython(root)).toThrow("Invalid runtime activation");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readiness is reused for a validated interpreter but not a different generation", async () => {
+  const root = mkdtempSync(join(tmpdir(), "delulu-readiness-"));
+  const installer = new RuntimeInstaller(
+    { dataDirectory: root, venvDirectory: root },
+    null,
+    () => process.env,
+  );
+  let calls = 0;
+  Object.defineProperty(installer, "run", {
+    value: async () => {
+      calls++;
+      return "";
+    },
+  });
+  const makePython = () => {
+    mkdirSync(dirname(installer.python), { recursive: true });
+    writeFileSync(installer.python, "");
+  };
+  try {
+    makePython();
+    expect(await installer.ready("speech")).toBe(true);
+    expect(await installer.ready("speech")).toBe(true);
+    expect(calls).toBe(1);
+    activateRuntime(root, "12345678-1234-1234-1234-123456789abc");
+    makePython();
+    expect(await installer.ready("speech")).toBe(true);
+    expect(calls).toBe(2);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

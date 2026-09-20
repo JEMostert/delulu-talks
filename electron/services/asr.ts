@@ -12,7 +12,7 @@ import type {
 } from "../../src/types";
 import type { StorageService } from "./storage";
 
-import { WorkerClient } from "../runtime/workerClient";
+import { WorkerClient, transcriptionTimeout } from "../runtime/workerClient";
 import { SerialQueue } from "../runtime/serialQueue";
 import { RuntimeInstaller } from "../runtime/installer";
 
@@ -388,7 +388,7 @@ export class AsrService {
       this.updateStatus({
         phase: "loading",
         engine: "loading",
-        message: `Loading ${model.name} into GPU memory. Startup takes longer; recordings are faster once ready.`,
+        message: `Loading and warming up ${model.name}. Ready means speech inference has been exercised, not just the weights loaded.`,
         model: settings.model,
         progress: 0.85,
       });
@@ -425,18 +425,24 @@ export class AsrService {
     payload: Record<string, unknown>,
     settings: AppSettings,
   ): Promise<Record<string, unknown>> {
+    const started = performance.now();
     this.clearSpeechIdle();
     await this.ensureLoaded(settings);
     this.clearSpeechIdle();
     try {
-      return await this.request<Record<string, unknown>>(
+      const result = await this.request<Record<string, unknown>>(
         "speech",
         "transcribe",
         {
           ...payload,
           language: settings.language,
         },
+        transcriptionTimeout(payload.durationMs),
       );
+      return {
+        ...result,
+        processingTime: (performance.now() - started) / 1000,
+      };
     } finally {
       this.scheduleSpeechIdle(settings);
     }

@@ -32,6 +32,7 @@ export function HistoryPage({
   const [confirm, setConfirm] = useState(false);
   const groups = useMemo(() => {
     const result = new Map<string, TranscriptRecord[]>();
+    const needle = query.trim().toLowerCase();
     history
       .filter(
         (item) =>
@@ -42,11 +43,13 @@ export function HistoryPage({
           [item.text, item.editedText, item.magicText, item.sourceName]
             .join(" ")
             .toLowerCase()
-            .includes(query.trim().toLowerCase()),
+            .includes(needle),
       )
       .forEach((item) => {
         const day = dayLabel(item.createdAt);
-        result.set(day, [...(result.get(day) ?? []), item]);
+        const bucket = result.get(day);
+        if (bucket) bucket.push(item);
+        else result.set(day, [item]);
       });
     return [...result];
   }, [history, query, filter]);

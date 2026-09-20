@@ -234,7 +234,7 @@ function App() {
                       ? "Transcribing…"
                       : w.status.phase === "preparing"
                         ? "Updating setup…"
-                        : "Loading model into GPU…"
+                        : "Loading & warming up…"
                     : w.status.engine === "ready"
                       ? "Ready"
                       : w.status.engine === "missing"
@@ -306,9 +306,9 @@ function App() {
             role="status"
             className="px-6 pt-3 text-sm text-muted max-[900px]:px-4"
           >
-            Loading the speech model into GPU memory. This startup step takes
-            longer than transcription. Keep speech ready in Settings → Runtime
-            to avoid loading it again between recordings.
+            Loading and warming up the speech model. This prepares the first
+            transcription before showing Ready. Keep speech ready in Settings →
+            Runtime to avoid loading it again between recordings.
           </div>
         )}
         {w.error && (

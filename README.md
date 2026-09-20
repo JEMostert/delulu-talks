@@ -224,4 +224,14 @@ node scripts/desktop-smoke.mjs "/path/to/Delulu Talks user data"
 
 Add `--lifecycle --writing` to test three real speech unload/reload/transcribe cycles, Writing, and a return to speech. Close the everyday app first so the test has enough GPU memory. The test uses temporary settings/history and the existing cached models; it does not install or repair the linked runtimes.
 
+For cold-start and first-response latency, close the everyday app and run:
+
+```bash
+bun scripts/benchmark-speech.mjs "/path/to/Delulu Talks user data"
+```
+
+This reports startup including synthetic inference warm-up, then first, changed-input, and repeated-input transcription timings. It uses cached models, temporary audio, and no user history or clipboard. In a local RTX 4090 test with the included 4.59-second sample, 0.9.3 reduced the first post-ready worker round trip from 1.82 seconds to 54 ms; the changed-input check took 85 ms. Startup remained about 25 seconds. These are single-machine sample measurements, not general latency guarantees; repeated inputs may benefit from caching.
+
+Ready now follows a bounded synthetic transcription warm-up. Recording timings include worker communication and any on-demand model load, rather than just GPU inference; they do not include microphone capture, optional Writing, or paste delivery. Short dictations time out after two minutes, longer captures scale up to fifteen minutes, and imported files allow fifteen minutes. Model installation/loading retains a separate download-sized deadline. Busy shortcut notices dismiss on release, cancellation, readiness, or after two seconds, without queuing an unexpected recording.
+
 This uses temporary settings/history, disables clipboard/paste, and runs offline against cached models. The Python command above also runs offline against the included short audio sample. It is a smoke check, not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
