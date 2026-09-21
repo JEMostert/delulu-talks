@@ -34,6 +34,7 @@ export class WorkerClient {
       env: NodeJS.ProcessEnv;
     },
     private readonly onFailure: (error: Error) => void,
+    private readonly onProgress?: (detail: string) => void,
   ) {}
   get running(): boolean {
     return this.child !== null;
@@ -59,6 +60,10 @@ export class WorkerClient {
     this.diagnostics = "";
     const lines = createInterface({ input: child.stdout });
     lines.on("line", (line) => {
+      if (line.startsWith("@delulu-progress:")) {
+        this.onProgress?.(line.slice("@delulu-progress:".length).slice(-350));
+        return;
+      }
       if (!line.startsWith(PREFIX)) return;
       try {
         const response = JSON.parse(line.slice(PREFIX.length));

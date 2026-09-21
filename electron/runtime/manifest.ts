@@ -11,6 +11,11 @@ export const INSTALLER_PACKAGES = [
 export const SPEECH_PACKAGES = [
   "git+https://github.com/netease-youdao/Confucius4-R2T2.git@80c22e6140bcb9166fb9906798894fc8b18c8309",
 ];
+// Matched stable core/plugin wheels, following upstream's release installer.
+export const METAL_PACKAGES = [
+  "https://github.com/vllm-project/vllm/releases/download/v0.29.0/vllm-0.29.0%2Bcpu-cp312-cp312-macosx_11_0_arm64.whl",
+  "vllm-metal[stt] @ https://github.com/vllm-project/vllm-metal/releases/download/v0.29.0/vllm_metal-0.29.0-cp312-cp312-macosx_15_0_arm64.whl",
+];
 export const MAGIC_PACKAGES = [
   "torch==2.13.0",
   "torchvision==0.28.0",

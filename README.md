@@ -15,7 +15,7 @@
 
 ---
 
-Delulu Talks turns speech into text in the app you are using. R2T2 produces dictation locally on your CUDA GPU; Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
+Delulu Talks turns speech into text in the app you are using. Qwen3-ASR produces dictation locally through MLX on Apple Silicon; R2T2 handles CUDA systems; Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
 
 ## Dictate, review, keep working
 
@@ -78,10 +78,13 @@ Speech stays ready by default. The optional writing model loads on demand; you c
 
 | Runtime | Available models | Good for |
 | --- | --- | --- |
+| **Qwen3-ASR** (Apple Silicon) | 0.6B ASR | Local MLX transcription with automatic language detection. |
 | **R2T2** (Confucius4-R2T2) | 2B streaming ASR | Low-latency, high-accuracy dictation through vLLM on your CUDA GPU. |
 | **Qwen 3.5 writing** | 0.8B · 2B · 4B | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default. |
 
-R2T2 runs through the vLLM backend and requires a CUDA GPU.
+On Apple Silicon with macOS 15+, Delulu automatically selects **Qwen/Qwen3-ASR-0.6B**, served by vLLM Metal through MLX. It detects Dutch, English, and other supported languages automatically. The model download is approximately 1.9 GB, plus runtime packages. The pinned vLLM endpoint returns text without a language tag; history records `und` (unknown) rather than inventing one. Timing comes from the recorded WAV and elapsed inference time.
+
+On other supported systems, R2T2 runs through the vLLM backend and requires a CUDA GPU. Intel Macs and Rosetta Python are unsupported.
 
 ## Install
 
@@ -100,7 +103,7 @@ Arch and CachyOS users can install the pacman package instead. A portable `tar.x
 
 ### Windows and macOS
 
-Use the Windows installer or the macOS DMG from the same release page. Current packages are not code-signed, so the operating system may ask you to confirm the first launch.
+Use the Windows installer or the macOS DMG from the same release page. Mac packages target Apple Silicon and are not Developer ID signed or notarized. If macOS blocks launch, use System Settings → Privacy & Security → Open Anyway for the app you downloaded from this repository. Automatic installation of Mac updates is disabled for these unsigned builds: download the new DMG, quit Delulu, replace the app in Applications, and reopen it. Settings, history, and models stay in the application-data directory.
 
 Supported installed packages check GitHub Releases for updates. Downloads are explicit, progress is visible, and restart waits until recording, inference, and setup are idle. Linux automatic updates use AppImage; pacman and portable packages link to manual downloads.
 
@@ -111,11 +114,11 @@ Supported installed packages check GitHub Releases for updates. Downloads are ex
 3. Focus a text field and use the shortcut shown in Controls. On supported Wayland desktops, hold <kbd>Meta</kbd> + <kbd>Z</kbd>, speak, then release; toggle mode uses a second press to finish.
 4. Dictate immediately with native clean output. Optionally open **Writing** to install Qwen, then use **Rewrite** beside any result. Automatic rewriting is a separate opt-in setting.
 
-The app manages separate isolated Python environments for R2T2 speech and Magic rewriting, plus a shared model cache, inside the platform application-data directory. Existing shared runtimes are detected as an “Update setup” migration instead of failing with a package conflict. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → Application offers repair and update controls.
+The app manages separate isolated Python environments for platform-selected speech and Magic rewriting, plus a shared model cache, inside the platform application-data directory. Existing shared runtimes are detected as an “Update setup” migration instead of failing with a package conflict. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → Application offers repair and update controls.
 
 ## Run from source
 
-You will need [Bun](https://bun.sh/), Python 3.11–3.13 (3.11 or 3.12 recommended), and FFmpeg for compressed audio or video imports.
+You will need [Bun](https://bun.sh/), native **arm64 Python 3.12 on Apple Silicon** (Python 3.11–3.13 for CUDA), and FFmpeg for compressed audio or video imports. On Mac, install Python using `brew install python@3.12` or `uv python install 3.12`; set its full path under Settings → Advanced if necessary. The app installs matched vLLM core and `vllm-metal[stt]` wheels into its own environment.
 
 ```bash
 bun install

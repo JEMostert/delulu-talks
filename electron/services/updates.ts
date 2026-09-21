@@ -45,6 +45,7 @@ export class UpdateService {
     currentVersion: string,
     private readonly publish: (status: UpdateStatus) => void,
     private readonly canInstall: () => boolean = () => true,
+    unsupportedMessage = "Use GitHub Releases to update this installation",
   ) {
     this.status = updater
       ? {
@@ -55,7 +56,7 @@ export class UpdateService {
       : {
           phase: "unsupported",
           currentVersion,
-          message: "Use GitHub Releases to update this installation",
+          message: unsupportedMessage,
         };
   }
 

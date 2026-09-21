@@ -6,7 +6,7 @@ import {
   Play,
   ShieldCheck,
 } from "lucide-react";
-import { MODELS } from "../data";
+import { modelById } from "../data";
 import { Diagnostics } from "../components/Diagnostics";
 import { Alert } from "../components/ui";
 import type { DictationStatus } from "../types";
@@ -22,6 +22,7 @@ export function ModelsPage({
   onLoad: () => void;
   onUnload: () => void;
 }) {
+  const model = modelById(status.speechModel ?? status.model ?? "r2t2");
   const busy =
     ["preparing", "loading", "listening", "transcribing"].includes(
       status.phase,
@@ -50,8 +51,8 @@ export function ModelsPage({
           <p className="text-[12px] text-muted mt-2 [overflow-wrap:anywhere]">
             {status.engine === "missing"
               ? status.migrationRequired
-                ? "This app version separates speech and rewriting so their model dependencies cannot conflict. Update once to build the new R2T2 environment."
-                : "Install the R2T2 engine and download its weights to your device. A CUDA GPU is required."
+                ? `Update the dedicated ${model.name} speech environment.`
+                : `Install ${model.name} and download its weights. ${model.description}`
               : status.message}
           </p>
         </div>
@@ -104,6 +105,11 @@ export function ModelsPage({
             max={1}
             value={status.progress ?? undefined}
           />
+          {status.detail && (
+            <p className="caption" role="status">
+              {status.detail}
+            </p>
+          )}
           <p className="caption">
             Downloads can take a while. This indicates setup stages, not bytes
             downloaded. Keep the app open.
@@ -132,7 +138,7 @@ export function ModelsPage({
         </div>
       </div>
       <div className="border border-line rounded-lg overflow-hidden">
-        {MODELS.map((item) => (
+        {[model].map((item) => (
           <article
             key={item.id}
             className="model-option selected grid grid-cols-[150px_minmax(0,1fr)_130px] gap-5 items-center px-[18px] py-4 bg-accent-soft shadow-[inset_3px_0_var(--accent)] max-[1150px]:grid-cols-[120px_minmax(0,1fr)_106px] max-[1150px]:gap-3 max-[700px]:grid-cols-[1fr_auto]"
@@ -140,7 +146,7 @@ export function ModelsPage({
             <div>
               <h3 className="text-[16px]">{item.name}</h3>
               <span className="block text-[11px] text-muted mt-1">
-                Streaming ASR · vLLM · CUDA
+                {item.runtime}
               </span>
             </div>
             <p className="text-[11px] text-muted leading-[1.6] max-[700px]:row-start-2 max-[700px]:col-span-full">
@@ -149,7 +155,7 @@ export function ModelsPage({
             <div className="flex items-center gap-2 text-[11px] max-[1150px]:hidden">
               <HardDrive className="w-[15px] h-[15px] text-muted" />
               <span>
-                ~4 GB
+                {item.downloadSize}
                 <small className="block text-[9px]">Model download</small>
               </span>
             </div>

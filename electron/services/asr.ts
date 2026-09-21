@@ -15,6 +15,7 @@ import type { StorageService } from "./storage";
 import { WorkerClient, transcriptionTimeout } from "../runtime/workerClient";
 import { SerialQueue } from "../runtime/serialQueue";
 import { RuntimeInstaller } from "../runtime/installer";
+import { speechModelForPlatform } from "../runtime/platform";
 
 function conciseError(value: string): string {
   const lines = value
@@ -52,6 +53,7 @@ export class AsrService {
     );
   }
   private status: DictationStatus = {
+    speechModel: speechModelForPlatform(),
     phase: "idle",
     engine: "missing",
     message: "Local engine setup required",
@@ -99,6 +101,7 @@ export class AsrService {
         env: this.workerEnvironment("speech"),
       }),
       (error) => this.fail(error),
+      (detail) => this.updateStatus({ detail }),
     );
     this.magicWorker = new WorkerClient(
       () => ({
@@ -399,13 +402,15 @@ export class AsrService {
         phase: "idle",
         engine: "ready",
         message: `${model.name} ready`,
+        detail: null,
         model: settings.model,
         progress: 1,
         migrationRequired: false,
       });
       this.scheduleSpeechIdle(settings);
     })()
-      .catch((error) => {
+      .catch(async (error) => {
+        await this.speechWorker.stopAndWait();
         this.fail(error);
         throw error;
       })

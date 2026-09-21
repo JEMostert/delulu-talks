@@ -13,12 +13,16 @@ import contextlib
 import gc
 import json
 import os
+import platform
 import re
 import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from speech_engine import SpeechEngine
 
 
 PROTOCOL_PREFIX = "@delulu:"
@@ -81,6 +85,10 @@ def emit(payload: dict[str, Any]) -> None:
 
 class Worker:
     def __init__(self) -> None:
+        self.speech: SpeechEngine | None = None
+        if sys.platform == "darwin" and platform.machine() == "arm64":
+            from metal_speech import MetalSpeech
+            self.speech = MetalSpeech()
         self.model: Any | None = None
         self.model_name: str | None = None
         self.device: str | None = None
@@ -90,6 +98,8 @@ class Worker:
         self.magic_device: str | None = None
 
     def unload(self) -> dict[str, Any]:
+        if self.speech is not None:
+            return self.speech.unload()
         self.model = None
         self.model_name = None
         self.device = None
@@ -119,6 +129,8 @@ class Worker:
         return {"loaded": False}
 
     def load(self, request: dict[str, Any]) -> dict[str, Any]:
+        if self.speech is not None:
+            return self.speech.load(request)
         if self.model is not None:
             return self.status()
         try:
@@ -169,6 +181,8 @@ class Worker:
         return self.status()
 
     def status(self) -> dict[str, Any]:
+        if self.speech is not None:
+            return self.speech.status()
         return {
             "loaded": self.model is not None,
             "model": self.model_name,
@@ -297,6 +311,8 @@ class Worker:
         }
 
     def transcribe(self, request: dict[str, Any]) -> dict[str, Any]:
+        if self.speech is not None:
+            return self.speech.transcribe(request)
         started = time.perf_counter()
         if self.model is None:
             raise RuntimeError("No model is loaded")

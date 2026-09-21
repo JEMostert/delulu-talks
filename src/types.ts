@@ -1,7 +1,7 @@
 export type Page =
   "home" | "magic" | "lab" | "models" | "vocabulary" | "history" | "settings";
 
-export type ModelId = "r2t2";
+export type ModelId = "r2t2" | "qwen3Asr";
 export type MagicModelId = "qwen35Small" | "qwen35Medium" | "qwen35Large";
 export type MagicPreset = "polish" | "concise" | "structured" | "prompt";
 export type DictationPhase =
@@ -77,6 +77,7 @@ export type MagicRewriteResult = {
 };
 
 export type DictationStatus = {
+  speechModel?: ModelId;
   retryAvailable?: boolean;
   migrationRequired?: boolean;
   phase: DictationPhase;
@@ -107,6 +108,8 @@ export type TranscriptRecord = {
 };
 
 export type ModelInfo = {
+  runtime: string;
+  downloadSize: string;
   id: ModelId;
   hfId: string;
   name: string;

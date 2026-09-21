@@ -2,7 +2,7 @@ import { _electron as electron, expect } from "@playwright/test";
 import { mkdtemp, rm, readFile, writeFile, symlink } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
 
 const data = await mkdtemp(join(tmpdir(), "delulu-desktop-smoke-"));
@@ -12,7 +12,7 @@ const env = {
   DELULU_SMOKE_TEST: "1",
 };
 delete env.ELECTRON_RUN_AS_NODE;
-const runtimeData = process.argv[2];
+const runtimeData = process.argv[2] ? resolve(process.argv[2]) : undefined;
 if (runtimeData) {
   env.HF_HUB_OFFLINE = "1";
 }
@@ -50,10 +50,16 @@ try {
       }),
     );
   }
-  app = await electron.launch({ args: ["."], env });
+  const packagedExecutable = process.env.DELULU_TEST_EXECUTABLE;
+  app = await electron.launch({
+    args: packagedExecutable ? [] : ["."],
+    ...(packagedExecutable ? { executablePath: packagedExecutable } : {}),
+    env,
+    timeout: 60_000,
+  });
   assert.equal(
     await app.evaluate(({ app }) => app.getName()),
-    "Delulu Talks Dev",
+    packagedExecutable ? "Delulu Talks" : "Delulu Talks Dev",
   );
   const page = await app.firstWindow();
   await page.getByRole("button", { name: "Dismiss setup" }).click();
@@ -87,6 +93,16 @@ try {
   assert.equal(state.settings.onboardingComplete, true);
   assert.equal(state.status.engine, runtimeData ? "unloaded" : "missing");
   assert.equal(state.diagnostics.dataDirectory, data);
+  const metal =
+    state.diagnostics.platform === "darwin" &&
+    state.diagnostics.arch === "arm64";
+  assert.equal(state.settings.model, metal ? "qwen3Asr" : "r2t2");
+  assert.equal(state.status.speechModel, state.settings.model);
+  if (metal) {
+    const update = await page.evaluate(() => window.delulu.getUpdateStatus());
+    assert.equal(update.phase, "unsupported");
+    assert.match(update.message, /unsigned Mac build uses manual updates/);
+  }
   if (!runtimeData) {
     await page.getByRole("button", { name: "Models", exact: true }).click();
     await expect(
@@ -94,18 +110,31 @@ try {
     ).toBeVisible();
   } else {
     const audioPath = join(data, "sample.wav");
-    execFileSync("ffmpeg", [
-      "-nostdin",
-      "-loglevel",
-      "error",
-      "-i",
-      "test-audio.m4a",
-      "-ac",
-      "1",
-      "-ar",
-      "16000",
-      audioPath,
-    ]);
+    if (process.platform === "darwin") {
+      execFileSync("afconvert", [
+        "test-audio.m4a",
+        audioPath,
+        "-f",
+        "WAVE",
+        "-d",
+        "LEI16@16000",
+        "-c",
+        "1",
+      ]);
+    } else {
+      execFileSync("ffmpeg", [
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-i",
+        "test-audio.m4a",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        audioPath,
+      ]);
+    }
     const audio = Array.from(await readFile(audioPath));
     await page.evaluate(async (wav) => {
       await window.delulu.loadModel();

@@ -126,3 +126,29 @@ test.skipIf(process.platform === "win32")(
     }
   },
 );
+
+test("download progress does not consume the pending model response", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "delulu-progress-"));
+  const path = join(dir, "worker.py");
+  writeFileSync(
+    path,
+    `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu-progress:Downloading weights 50%',flush=True)\n print('@delulu:'+json.dumps({'id':r['id'],'ok':True,'result':{'loaded':True}}),flush=True)\n`,
+  );
+  const progress: string[] = [];
+  const failures: Error[] = [];
+  const client = new WorkerClient(
+    () => ({ python: "python3", script: path, env: process.env }),
+    (e) => failures.push(e),
+    (d) => progress.push(d),
+  );
+  try {
+    expect(await client.request<{ loaded: boolean }>("load")).toEqual({
+      loaded: true,
+    });
+    expect(progress).toEqual(["Downloading weights 50%"]);
+    expect(failures).toHaveLength(0);
+  } finally {
+    await client.stopAndWait();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

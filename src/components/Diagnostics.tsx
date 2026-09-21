@@ -74,9 +74,11 @@ export function Diagnostics() {
             </div>
           </div>
           <p className="caption">
-            {data.memoryGB < 16
-              ? "Speech uses the CUDA GPU when present. Keep one model loaded at a time if memory is tight."
-              : "R2T2 loads on your CUDA GPU. Magic rewrites are optional and use more memory while loaded."}
+            {data.platform === "darwin" && data.arch === "arm64"
+              ? "Qwen3-ASR runs locally through MLX on Apple Silicon. Language is detected automatically."
+              : data.memoryGB < 16
+                ? "Speech uses the CUDA GPU when present. Keep one model loaded at a time if memory is tight."
+                : "R2T2 loads on your CUDA GPU. Magic rewrites are optional and use more memory while loaded."}
           </p>
           <details>
             <summary>Technical details</summary>

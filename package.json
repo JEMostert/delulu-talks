@@ -1,9 +1,9 @@
 {
   "name": "delulu-talks",
   "private": true,
-  "version": "0.9.3",
+  "version": "0.9.4",
   "type": "module",
-  "description": "Private, local-first system-wide dictation powered by R2T2",
+  "description": "Private, local-first system-wide dictation powered by Qwen3-ASR on Apple Silicon and R2T2 on CUDA",
   "author": {
     "name": "JoranEMostert",
     "email": "92588849+JoranEMostert@users.noreply.github.com"

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test";
+import { speechModelForPlatform } from "../runtime/platform";
 import type { TranscriptRecord } from "../../src/types";
 
 mock.module("electron", () => ({ app: {} }));
@@ -27,7 +28,7 @@ describe("settings migration", () => {
       wordTimestamps: true,
       modelLicenseAccepted: true,
     });
-    expect(settings.model).toBe("r2t2");
+    expect(settings.model).toBe(speechModelForPlatform());
     expect(settings.language).toBe("en");
     expect(settings.autoPaste).toBeFalse();
     expect(settings.shortcutMode).toBe("hold");

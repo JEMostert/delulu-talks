@@ -29,6 +29,7 @@ for (const failure of [
       { dataDirectory: data, venvDirectory: root },
       null,
       () => process.env,
+      false,
     );
     const commands: string[] = [];
     Object.defineProperty(installer, "run", {
@@ -57,6 +58,7 @@ for (const failure of [
             { dataDirectory: data, venvDirectory: root },
             null,
             () => process.env,
+            false,
           ).python,
         ).toBe(runtimePython(root));
         expect(commands.some((c) => c.includes("pip check"))).toBe(true);
@@ -114,6 +116,85 @@ test("readiness is reused for a validated interpreter but not a different genera
     makePython();
     expect(await installer.ready("speech")).toBe(true);
     expect(calls).toBe(2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+for (const failDownload of [false, true]) {
+  test(`Metal wheel installation and download recovery: ${failDownload}`, async () => {
+    const root = mkdtempSync(join(tmpdir(), "delulu-metal-"));
+    const oldPython = runtimePython(root);
+    mkdirSync(dirname(oldPython), { recursive: true });
+    writeFileSync(oldPython, "previous runtime");
+    const installer = new RuntimeInstaller(
+      { dataDirectory: root, venvDirectory: root },
+      null,
+      () => process.env,
+      true,
+    );
+    let fail = failDownload;
+    const commands: string[] = [];
+    Object.defineProperty(installer, "run", {
+      value: async (_program: string, args: string[]) => {
+        const command = args.join(" ");
+        commands.push(command);
+        if (command.includes("print('.'.join")) return "3.12";
+        if (command.includes("vllm-metal[stt]") && fail)
+          throw new Error("Download interrupted");
+        return "";
+      },
+    });
+    try {
+      if (fail) {
+        await expect(
+          installer.install("speech", DEFAULT_SETTINGS, () => {}),
+        ).rejects.toThrow("Download interrupted");
+        expect(runtimePython(root)).toBe(oldPython);
+        fail = false;
+      }
+      await installer.install("speech", DEFAULT_SETTINGS, () => {});
+      expect(runtimePython(root)).not.toBe(oldPython);
+      expect(
+        commands.some((c) => c.includes("platform.machine() == 'arm64'")),
+      ).toBe(true);
+      expect(commands.some((c) => c.includes("vllm-metal[stt]"))).toBe(true);
+      expect(commands.some((c) => c.includes("macosx_11_0_arm64.whl"))).toBe(
+        true,
+      );
+      expect(
+        commands.some((c) =>
+          c.includes("import vllm, vllm_metal, mlx.core, librosa"),
+        ),
+      ).toBe(true);
+      installer.rollback();
+      expect(runtimePython(root)).toBe(oldPython);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
+
+test("Metal refuses Python other than native 3.12 before downloading packages", async () => {
+  const root = mkdtempSync(join(tmpdir(), "delulu-python-"));
+  const installer = new RuntimeInstaller(
+    { dataDirectory: root, venvDirectory: root },
+    null,
+    () => process.env,
+    true,
+  );
+  const commands: string[] = [];
+  Object.defineProperty(installer, "run", {
+    value: async (_: string, args: string[]) => {
+      commands.push(args.join(" "));
+      return "3.13";
+    },
+  });
+  try {
+    await expect(
+      installer.install("speech", DEFAULT_SETTINGS, () => {}),
+    ).rejects.toThrow("native arm64 Python 3.12");
+    expect(commands.every((c) => !c.includes("pip install"))).toBe(true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

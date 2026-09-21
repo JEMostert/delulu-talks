@@ -54,7 +54,7 @@ if (process.platform === "linux")
   app.setDesktopName(
     app.isPackaged ? "delulu-talks.desktop" : "delulu-talks-dev.desktop",
   );
-if (!app.isPackaged)
+if (!app.isPackaged || process.env.DELULU_USER_DATA_DIR)
   app.setPath(
     "userData",
     process.env.DELULU_USER_DATA_DIR
@@ -62,7 +62,9 @@ if (!app.isPackaged)
       : join(app.getPath("appData"), "Delulu Talks Dev"),
   );
 
-const smokeTest = !app.isPackaged && process.env.DELULU_SMOKE_TEST === "1";
+const smokeTest =
+  process.env.DELULU_SMOKE_TEST === "1" &&
+  (!app.isPackaged || !!process.env.DELULU_USER_DATA_DIR);
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -877,7 +879,9 @@ async function start(): Promise<void> {
   if (!smokeTest && storage.getSettings().showOverlay) pill.prepare();
   asr = new AsrService(storage);
   updates = new UpdateService(
-    app.isPackaged && (process.platform !== "linux" || !!process.env.APPIMAGE)
+    app.isPackaged &&
+      process.platform !== "darwin" &&
+      (process.platform !== "linux" || !!process.env.APPIMAGE)
       ? autoUpdater
       : null,
     app.getVersion(),
@@ -886,6 +890,9 @@ async function start(): Promise<void> {
       rebuildTrayMenu();
     },
     () => !dictation?.isActive && !asr.isBusy,
+    process.platform === "darwin"
+      ? "This unsigned Mac build uses manual updates. Download the new DMG from Releases, quit Delulu, replace the app, and reopen it. Your settings and models are preserved."
+      : undefined,
   );
   updates.start();
   mainWindow = createMainWindow();

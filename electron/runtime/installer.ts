@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { homedir, release } from "node:os";
+import { usesMetal } from "./platform";
 import { activateRuntime, runtimePython, rollbackRuntime } from "./location";
 import type { AppSettings } from "../../src/types";
 import {
@@ -9,6 +11,7 @@ import {
   MAGIC_PACKAGES,
   RUNTIME_REVISION,
   SPEECH_PACKAGES,
+  METAL_PACKAGES,
 } from "./manifest";
 
 export type InstallProgress = {
@@ -22,6 +25,8 @@ const READINESS = {
   magic:
     "import torch, torchvision, transformers; from transformers import AutoModelForMultimodalLM, AutoProcessor; assert int(transformers.__version__.split('.')[0]) >= 5",
 };
+const METAL_READINESS =
+  "import sys, platform; assert sys.version_info[:2] == (3,12) and platform.machine() == 'arm64'; import vllm, vllm_metal, mlx.core, librosa";
 
 /** Owns interpreter discovery and package installation; model loading is separate. */
 export class RuntimeInstaller {
@@ -32,7 +37,11 @@ export class RuntimeInstaller {
     private readonly paths: Paths,
     private readonly constraintsPath: string | null,
     private readonly environment: () => NodeJS.ProcessEnv,
+    private readonly metal = usesMetal(),
   ) {}
+  private readiness(kind: "speech" | "magic"): string {
+    return kind === "speech" && this.metal ? METAL_READINESS : READINESS[kind];
+  }
   get python(): string {
     return runtimePython(this.paths.venvDirectory);
   }
@@ -105,7 +114,12 @@ export class RuntimeInstaller {
     try {
       if (!existsSync(this.python)) return false;
       if (this.validatedPython === `${kind}:${this.python}`) return true;
-      await this.run(this.python, ["-c", READINESS[kind]], undefined, 15_000);
+      await this.run(
+        this.python,
+        ["-c", this.readiness(kind)],
+        undefined,
+        60_000,
+      );
       this.validatedPython = `${kind}:${this.python}`;
       return true;
     } catch {
@@ -113,12 +127,17 @@ export class RuntimeInstaller {
     }
   }
 
-  private async basePython(command: string): Promise<string[]> {
+  private async basePython(command: string, metal: boolean): Promise<string[]> {
     const configured = (
       command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? []
     ).map((part) => part.replace(/^(["'])(.*)\1$/, "$2"));
-    const fallbacks =
-      process.platform === "win32"
+    const fallbacks = metal
+      ? [
+          ["python3.12"],
+          ["/opt/homebrew/bin/python3.12"],
+          [join(homedir(), ".local/bin/python3.12")],
+        ]
+      : process.platform === "win32"
         ? [["py", "-3.12"], ["py", "-3.11"], ["python3.12"], ["python3.11"]]
         : [["python3.13"], ["python3.12"], ["python3.11"]];
     const candidates = ["python", "python3"].includes(configured[0] ?? "")
@@ -132,19 +151,24 @@ export class RuntimeInstaller {
           [
             ...candidate.slice(1),
             "-c",
-            "import sys; print('.'.join(map(str, sys.version_info[:2])))",
+            metal
+              ? "import sys, platform; assert platform.machine() == 'arm64'; print('.'.join(map(str, sys.version_info[:2])))"
+              : "import sys; print('.'.join(map(str, sys.version_info[:2])))",
           ],
           undefined,
           5000,
         );
         const [major, minor] = version.split(".").map(Number);
-        if (major === 3 && minor >= 11 && minor <= 13) return candidate;
+        if (major === 3 && (metal ? minor === 12 : minor >= 11 && minor <= 13))
+          return candidate;
       } catch {
         /* Try the next supported interpreter. */
       }
     }
     throw new Error(
-      "Install Python 3.11–3.13, then try again. You can set its full path in Settings → Advanced.",
+      metal
+        ? "Install native arm64 Python 3.12, then set its full path in Settings → Advanced. Rosetta Python is not supported."
+        : "Install Python 3.11–3.13, then try again. You can set its full path in Settings → Advanced.",
     );
   }
 
@@ -155,6 +179,13 @@ export class RuntimeInstaller {
   ): Promise<void> {
     this.cancelled = false;
     this.validatedPython = null;
+    const metal = kind === "speech" && this.metal;
+    if (
+      metal &&
+      process.platform === "darwin" &&
+      Number(release().split(".")[0]) < 24
+    )
+      throw new Error("Qwen3-ASR requires macOS 15 or later.");
     const stage = async (
       program: string,
       args: string[],
@@ -179,7 +210,7 @@ export class RuntimeInstaller {
     // Never modify the active environment. Interrupted candidates are ignored,
     // and the previous generation stays on disk for recovery.
     {
-      const python = await this.basePython(settings.pythonCommand);
+      const python = await this.basePython(settings.pythonCommand, metal);
       await stage(
         python[0],
         [...python.slice(1), "-m", "venv", candidate],
@@ -213,7 +244,11 @@ export class RuntimeInstaller {
         "install",
         "--disable-pip-version-check",
         ...constraints,
-        ...(kind === "speech" ? SPEECH_PACKAGES : MAGIC_PACKAGES),
+        ...(kind === "speech"
+          ? metal
+            ? METAL_PACKAGES
+            : SPEECH_PACKAGES
+          : MAGIC_PACKAGES),
       ],
       kind === "speech"
         ? "Installing the speech runtime"
@@ -228,7 +263,7 @@ export class RuntimeInstaller {
     );
     await stage(
       candidatePython,
-      ["-c", READINESS[kind]],
+      ["-c", this.readiness(kind)],
       "Validating the new runtime before switching",
       0.76,
     );

@@ -156,10 +156,13 @@ export function SettingsPage(props: Props) {
             <SettingRow title="Language">
               <select
                 aria-label="Language"
-                value={s.language}
-                disabled={saving || busy}
+                value={s.model === "qwen3Asr" ? "auto" : s.language}
+                disabled={saving || busy || s.model === "qwen3Asr"}
                 onChange={(e) => save({ language: e.target.value })}
               >
+                {s.model === "qwen3Asr" && (
+                  <option value="auto">Automatic (including Dutch)</option>
+                )}
                 {LANGUAGES.map(([code, label]) => (
                   <option key={code} value={code}>
                     {label}

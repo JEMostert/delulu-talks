@@ -1,4 +1,5 @@
 import { app } from "electron";
+import { speechModelForPlatform } from "../runtime/platform";
 import {
   existsSync,
   mkdirSync,
@@ -91,9 +92,6 @@ export function normalizeSettings(value: unknown): AppSettings {
     value && typeof value === "object"
       ? (value as Record<string, unknown>)
       : {};
-  const model = validModels.has(source.model as ModelId)
-    ? (source.model as ModelId)
-    : DEFAULT_SETTINGS.model;
   const magicModel = validMagicModels.has(source.magicModel as MagicModelId)
     ? (source.magicModel as MagicModelId)
     : DEFAULT_SETTINGS.magicModel;
@@ -127,7 +125,7 @@ export function normalizeSettings(value: unknown): AppSettings {
         ? DEFAULT_SETTINGS.shortcut
         : requestedShortcut,
     shortcutMode: source.shortcutMode === "toggle" ? "toggle" : "hold",
-    model,
+    model: speechModelForPlatform(),
     language: validLanguages.has(requestedLanguage)
       ? requestedLanguage
       : DEFAULT_SETTINGS.language,

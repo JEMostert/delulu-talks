@@ -33,10 +33,22 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export const MODELS: ModelInfo[] = [
   {
     id: "r2t2",
+    runtime: "Streaming ASR · vLLM · CUDA",
+    downloadSize: "~4 GB",
     hfId: "netease-youdao/Confucius4-R2T2",
     name: "R2T2",
     description:
       "Low-latency streaming ASR built on Qwen3-ASR, running through vLLM on your CUDA GPU.",
+    recommended: true,
+  },
+  {
+    id: "qwen3Asr",
+    hfId: "Qwen/Qwen3-ASR-0.6B",
+    name: "Qwen3-ASR",
+    runtime: "vLLM Metal · MLX · Apple Silicon",
+    downloadSize: "~1.9 GB",
+    description:
+      "Local speech recognition on Apple Silicon. Automatically detects Dutch, English, and other supported languages. Requires macOS 15+ and native Python 3.12. Runtime packages require additional disk space.",
     recommended: true,
   },
 ];

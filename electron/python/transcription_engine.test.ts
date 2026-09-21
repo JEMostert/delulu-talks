@@ -24,6 +24,7 @@ model.transcribe=transcribe
 sys.modules['torch']=types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda:True,empty_cache=lambda:None))
 sys.modules['numpy']=types.SimpleNamespace(zeros=lambda *a,**k:'synthetic',float32='float32')
 sys.modules['qwen_asr']=types.SimpleNamespace(Qwen3ASRModel=types.SimpleNamespace(LLM=lambda **kw:model))
+m.sys.platform="linux"
 w=m.Worker(); result=w.load({})
 assert calls==[8] and result['loaded'] and model.sampling_params is sampling
 w.load({}); assert calls==[8], 'Already-loaded model must not warm up again'
@@ -49,6 +50,7 @@ class Audio:
     def __len__(self):return 16000
 sys.modules['soundfile']=types.SimpleNamespace(read=lambda *a,**kw:(Audio(),16000))
 sys.modules['librosa']=None
+m.sys.platform="linux"
 w=m.Worker();w.model=types.SimpleNamespace(transcribe=lambda **kw:[types.SimpleNamespace(text='hello')])
 result=w.transcribe({'audioPath':sys.argv[1],'language':'en'})
 assert result['text']=='hello' and result['duration']==1
@@ -87,6 +89,7 @@ sys.modules['librosa']=None
 def transcribe(**kw):
     assert isinstance(kw['audio'][0][0],Mono) and kw['audio'][0][1]==16000
     return [types.SimpleNamespace(text='hello')]
+m.sys.platform="linux"
 w=m.Worker();w.model=types.SimpleNamespace(transcribe=transcribe)
 assert w.transcribe({'audioPath':sys.argv[1]})['duration']==1
 `,

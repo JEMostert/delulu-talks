@@ -16,6 +16,10 @@ files:
   - package.json
   - "!node_modules/usocket/**"
 extraResources:
+  - from: electron/python/speech_engine.py
+    to: python/speech_engine.py
+  - from: electron/python/metal_speech.py
+    to: python/metal_speech.py
   - from: electron/python/constraints-linux-x64.txt
     to: python/constraints-linux-x64.txt
   - from: electron/python/transcription_engine.py
@@ -61,10 +65,19 @@ pacman:
     - python-cairo
 mac:
   category: public.app-category.productivity
+  minimumSystemVersion: "15.0"
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: Delulu Talks records your voice for private, local dictation.
+    NSAppleEventsUsageDescription: Delulu Talks pastes your transcript into the application you are using.
   icon: build/icon.icns
   target:
-    - dmg
-    - zip
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
 win:
   icon: build/icon.ico
   target:
