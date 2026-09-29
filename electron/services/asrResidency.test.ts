@@ -10,7 +10,7 @@ const dataUrl = new URL("../../src/data.ts", import.meta.url).href;
 const harness = `
   import { mock } from "bun:test";
   import assert from "node:assert/strict";
-  import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+  import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
   import { tmpdir } from "node:os";
   import { join } from "node:path";
   const root = mkdtempSync(join(tmpdir(), "delulu-asr-residency-"));
@@ -373,3 +373,240 @@ for (const kind of ["speech", "magic"]) {
       assert.equal(deadlines().length, 0);
     `));
 }
+
+for (const kind of ["speech", "magic"]) {
+  const preload = kind === "speech" ? "preloadModel" : "preloadMagicModel";
+  const readiness =
+    kind === "speech" ? "isEnvironmentReady" : "isMagicEnvironmentReady";
+  const prime = kind === "speech" ? "primeSpeech" : "primeMagic";
+  const fail = kind === "speech" ? "fail" : "failMagic";
+  const status = kind === "speech" ? "getStatus" : "getMagicStatus";
+  const load = kind === "speech" ? "load" : "magicLoad";
+  const diagnostic =
+    kind === "speech" ? "last-asr-error.log" : "last-magic-error.log";
+
+  for (const result of ["false", "rejected"]) {
+    test(`${kind} stale automatic ${result} readiness preserves the newer failure and diagnostic`, () =>
+      verify(`
+        await service.initialize(settings);
+        settings = { ...settings, ${preload}: true };
+        const loadReady = deferred();
+        let probes = 0;
+        service.${readiness} = () => ++probes === 1 ? Promise.resolve(true) : loadReady.promise;
+        service.configureResidency(settings);
+        await ticks();
+        assert.equal(probes, 2, "automatic load must be waiting on its second readiness probe");
+        ${kind}.stderr = "NEWER worker diagnostic";
+        service.${fail}(new Error("NEWER readiness failure cause"));
+        const newest = service.${status}();
+        const logPath = join(root, ${JSON.stringify(diagnostic)});
+        const logBytes = readFileSync(logPath);
+        ${kind}.stderr = "OLDER readiness diagnostic";
+        ${result === "false" ? "loadReady.resolve(false);" : 'loadReady.reject(new Error("OLDER readiness rejection"));'}
+        await ticks();
+        assert.equal(service.${status}().engine, "error");
+        assert.equal(service.${status}().detail, newest.detail);
+        assert.equal(service.${status}().message, newest.message);
+        assert.deepEqual(readFileSync(logPath), logBytes, "stale readiness must preserve diagnostic bytes");
+        assert.deepEqual(${kind}.requests, [], "stale readiness must not dispatch automatic recovery");
+        assert.equal(${kind}.stops, 0, "stale readiness must not stop a newer worker");
+        assert.equal(service.isBusy, false);
+        assert.equal(deadlines().length, 0);
+        service.${readiness} = async () => true;
+        await ${prime}();
+        assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}]);
+        assert.equal(service.${status}().engine, "ready");
+      `));
+  }
+
+  test(`${kind} stale automatic load rejection preserves the newer failure and diagnostic`, () =>
+    verify(`
+      await service.initialize(settings);
+      settings = { ...settings, ${preload}: true };
+      ${kind}.gate = deferred();
+      service.configureResidency(settings);
+      await ticks();
+      assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}]);
+      ${kind}.stderr = "NEWER worker diagnostic";
+      service.${fail}(new Error("NEWER pending load failure cause"));
+      const newest = service.${status}();
+      const logPath = join(root, ${JSON.stringify(diagnostic)});
+      const logBytes = readFileSync(logPath);
+      ${kind}.stderr = "OLDER pending load diagnostic";
+      ${kind}.gate.reject(new Error("OLDER pending load rejected"));
+      await ticks();
+      assert.equal(service.${status}().engine, "error");
+      assert.equal(service.${status}().detail, newest.detail);
+      assert.equal(service.${status}().message, newest.message);
+      assert.deepEqual(readFileSync(logPath), logBytes, "stale load rejection must preserve diagnostic bytes");
+      assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}], "stale rejection must not start another automatic recovery");
+      assert.equal(${kind}.stops, 0, "stale rejection must not stop a newer worker");
+      assert.equal(service.isBusy, false);
+      assert.equal(deadlines().length, 0);
+      ${kind}.gate = null;
+      await ${prime}();
+      assert.deepEqual(${kind}.requests, ${JSON.stringify([load, load])});
+      assert.equal(service.${status}().engine, "ready");
+    `));
+
+  test(`${kind} current automatic load rejection still reports its cause and allows explicit recovery`, () =>
+    verify(`
+      await service.initialize(settings);
+      settings = { ...settings, ${preload}: true };
+      ${kind}.gate = deferred();
+      service.configureResidency(settings);
+      await ticks();
+      ${kind}.stderr = "Current worker diagnostic";
+      ${kind}.gate.reject(new Error("Current automatic load failure"));
+      await ticks();
+      assert.equal(service.${status}().engine, "error");
+      assert.equal(service.${status}().detail, "Current automatic load failure");
+      assert.equal(readFileSync(join(root, ${JSON.stringify(diagnostic)}), "utf8"), "Current worker diagnostic\\nCurrent automatic load failure\\n");
+      assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}]);
+      assert.equal(service.isBusy, false);
+      assert.equal(deadlines().length, 0);
+      ${kind}.gate = null;
+      await ${prime}();
+      assert.deepEqual(${kind}.requests, ${JSON.stringify([load, load])});
+      assert.equal(service.${status}().engine, "ready");
+    `));
+
+  test(`${kind} automatic preload cannot recover a failure after its policy callback`, () =>
+    verify(`
+      settings = { ...settings, ${preload}: true };
+      await ${prime}();
+      ${kind}.requests.length = 0;
+      const ready = deferred();
+      service.${readiness} = () => ready.promise;
+      service.configureResidency(settings);
+      ready.resolve(true);
+      // The policy callback enters ensureLoaded before its unload await resumes.
+      await Promise.resolve();
+      service.${fail}(new Error("Fixture callback boundary failure"));
+      await ticks();
+      assert.deepEqual(${kind}.requests, [], "automatic recovery must recheck failure after the callback's awaits");
+      assert.equal(service.${status}().engine, "error");
+      assert.equal(service.isBusy, false);
+      assert.equal(deadlines().length, 0);
+      await ${prime}();
+      assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}], "explicit loading must still recover the failed engine");
+      assert.equal(service.${status}().engine, "ready");
+    `));
+
+  test(`${kind} automatic preload cannot dispatch after failure during load readiness`, () =>
+    verify(`
+      await service.initialize(settings);
+      settings = { ...settings, ${preload}: true };
+      const loadReady = deferred();
+      let probes = 0;
+      service.${readiness} = () => ++probes === 1 ? Promise.resolve(true) : loadReady.promise;
+      service.configureResidency(settings);
+      await ticks();
+      assert.equal(probes, 2, "the initial policy probe must have entered the load readiness check");
+      assert.deepEqual(${kind}.requests, []);
+      service.${fail}(new Error("Fixture load readiness failure"));
+      loadReady.resolve(true);
+      await ticks();
+      assert.deepEqual(${kind}.requests, [], "late load readiness must not dispatch automatic recovery");
+      assert.equal(service.${status}().engine, "error");
+      assert.equal(service.isBusy, false);
+      assert.equal(deadlines().length, 0);
+      await ${prime}();
+      assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}]);
+      assert.equal(service.${status}().engine, "ready");
+    `));
+
+  test(`${kind} automatic load completion cannot overwrite a newer failure with Ready`, () =>
+    verify(`
+      await service.initialize(settings);
+      settings = { ...settings, ${preload}: true };
+      ${kind}.gate = deferred();
+      service.configureResidency(settings);
+      await ticks();
+      assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}]);
+      assert.equal(service.${status}().engine, "loading");
+      service.${fail}(new Error("Fixture pending load failure"));
+      ${kind}.gate.resolve();
+      await ticks();
+      assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}], "load completion must not start another automatic recovery");
+      assert.equal(service.${status}().engine, "error", "a late load result must preserve the newer failure");
+      assert.equal(service.isBusy, false);
+      assert.equal(deadlines().length, 0);
+      ${kind}.gate = null;
+      await ${prime}();
+      assert.deepEqual(${kind}.requests, ${JSON.stringify([load, load])});
+      assert.equal(service.${status}().engine, "ready");
+    `));
+
+  for (const deferredPolicy of [false, true]) {
+    test(`${kind} pinned worker failure requires deliberate recovery${deferredPolicy ? " even with deferred residency changes" : ""}`, () =>
+      verify(`
+        settings = { ...settings, ${kind === "speech" ? "preloadModel" : "preloadMagicModel"}: true };
+        await ${kind === "speech" ? "primeSpeech" : "primeMagic"}();
+        ${kind}.requests.length = 0;
+        ${kind}.gate = deferred();
+        const operation = ${kind === "speech" ? "service.transcribe({ durationMs: 1000 }, { ...settings })" : "service.rewriteMagic(rewriteRequest, { ...settings })"};
+        const rejected = assert.rejects(() => operation, /Fixture worker failure/);
+        await ticks();
+        assert.equal(${kind}.busy, true);
+        ${
+          deferredPolicy
+            ? `settings = { ...settings, modelIdleMinutes: 7 }; service.configureResidency(settings);`
+            : ""
+        }
+        const failure = new Error("Fixture worker failure");
+        service.${kind === "speech" ? "fail" : "failMagic"}(failure);
+        ${kind}.gate.reject(failure);
+        await rejected;
+        await ticks();
+        assert.deepEqual(${kind}.requests, [${JSON.stringify(kind === "speech" ? "transcribe" : "magicRewrite")}], "completion must not silently reload a failed pinned engine");
+        assert.equal(service.${kind === "speech" ? "getStatus" : "getMagicStatus"}().engine, "error");
+        assert.equal(service.isBusy, false);
+        assert.equal(deadlines().length, 0);
+        ${kind}.gate = null;
+        await ${kind === "speech" ? "primeSpeech" : "primeMagic"}();
+        await ${kind === "speech" ? "service.transcribe({ durationMs: 1000 }, settings)" : "service.rewriteMagic(rewriteRequest, settings)"};
+        await ticks();
+        assert.deepEqual(${kind}.requests, ${JSON.stringify(kind === "speech" ? ["transcribe", "load", "transcribe"] : ["magicRewrite", "magicLoad", "magicRewrite"])});
+        assert.equal(service.${kind === "speech" ? "getStatus" : "getMagicStatus"}().engine, "ready");
+        assert.equal(service.isBusy, false);
+        assert.equal(deadlines().length, 0);
+      `));
+  }
+}
+
+test("speech automatic rejection cleanup preserves a failure arriving during stopAndWait", () =>
+  verify(`
+    await service.initialize(settings);
+    settings = { ...settings, preloadModel: true };
+    speech.gate = deferred();
+    speech.stopGate = deferred();
+    service.configureResidency(settings);
+    await ticks();
+    assert.deepEqual(speech.requests, ["load"]);
+    speech.gate.reject(new Error("OLDER rejection before cleanup"));
+    await ticks();
+    assert.equal(speech.stops, 1, "current rejection must have entered asynchronous cleanup");
+    assert.equal(service.isBusy, true);
+    speech.stderr = "NEWER cleanup diagnostic";
+    service.fail(new Error("NEWER failure during cleanup"));
+    const newest = service.getStatus();
+    const logPath = join(root, "last-asr-error.log");
+    const logBytes = readFileSync(logPath);
+    speech.stderr = "OLDER completed cleanup diagnostic";
+    speech.stopGate.resolve();
+    await ticks();
+    assert.equal(service.getStatus().engine, "error");
+    assert.equal(service.getStatus().detail, newest.detail);
+    assert.equal(service.getStatus().message, newest.message);
+    assert.deepEqual(readFileSync(logPath), logBytes, "late cleanup must preserve the newest diagnostic bytes");
+    assert.deepEqual(speech.requests, ["load"]);
+    assert.equal(speech.stops, 1, "late rejection must not repeat cleanup");
+    assert.equal(service.isBusy, false);
+    assert.equal(deadlines().length, 0);
+    speech.gate = null;
+    speech.stopGate = null;
+    await primeSpeech();
+    assert.deepEqual(speech.requests, ["load", "load"]);
+    assert.equal(service.getStatus().engine, "ready");
+  `));

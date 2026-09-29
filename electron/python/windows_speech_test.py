@@ -12,6 +12,13 @@ from windows_checkpoint import clean_config, convert_state_dict, STATE_DICT_MAPP
 from windows_speech import WindowsSpeech, MODEL, MODEL_REVISION, CONVERSION_VERSION
 
 
+def fake_cuda_preflight(torch):
+    # These fixtures exercise model contracts, not a native CUDA probe.
+    if not torch.cuda.is_available():
+        raise RuntimeError("Synthetic CUDA unavailable")
+    return {"probe": "synthetic-no-hardware"}
+
+
 class WindowsContract(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -58,6 +65,8 @@ class WindowsContract(unittest.TestCase):
 
         modules = {
             "accelerate": types.SimpleNamespace(init_empty_weights=lambda **kw: contextlib.nullcontext()),
+            "cuda_preflight": types.SimpleNamespace(
+                ensure_cuda_compatible=fake_cuda_preflight),
             "torch": types.SimpleNamespace(device=lambda _: contextlib.nullcontext(),
                 bfloat16="bf16", float16="fp16",
                 cuda=types.SimpleNamespace(is_available=lambda: self.available,

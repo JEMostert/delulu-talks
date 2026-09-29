@@ -10,11 +10,14 @@ import { modelById } from "../../data";
 import type { AppSettings, DictationStatus } from "../../types";
 import { ModelSetupStatus } from "./ModelSetupStatus";
 import { ModelProvenance } from "./ModelProvenance";
+import { ModelLifecycle } from "./ModelLifecycle";
+import { BackendCapabilities } from "./BackendCapabilities";
 
 export type SpeechSetupProps = {
   status: DictationStatus;
   settings: AppSettings;
   busy: boolean;
+  setupPending?: boolean;
   onSetup: () => void;
   onLoad: () => void;
   onUnload: () => void;
@@ -23,6 +26,7 @@ export function SpeechSetup({
   status,
   settings,
   busy,
+  setupPending = false,
   onSetup,
   onLoad,
   onUnload,
@@ -38,25 +42,25 @@ export function SpeechSetup({
           <Cpu className="w-[26px] h-[26px]" />
         </div>
         <div className="min-w-0 flex-1">
-          <span className="eyebrow">LOCAL SPEECH ENGINE</span>
+          <span className="eyebrow">LOCAL SPEECH MODEL</span>
           <h2 className="text-[20px]">
             {status.engine === "ready"
               ? "Speech model loaded"
               : status.engine === "missing"
                 ? status.migrationRequired
                   ? "Update the speech setup"
-                  : "Install the speech engine"
+                  : "Install the speech runtime"
                 : status.engine === "error"
-                  ? "Speech engine error"
+                  ? "Speech setup error"
                   : speechBusy
-                    ? "Preparing speech engine…"
+                    ? "Preparing speech model…"
                     : "Speech model unloaded"}
           </h2>
           <p className="text-[12px] text-muted mt-2 [overflow-wrap:anywhere]">
             {status.engine === "missing"
               ? status.migrationRequired
-                ? `Update the dedicated ${model.name} speech environment.`
-                : `Install ${model.name} and download its weights. ${model.description}`
+                ? `Update the dedicated speech runtime for ${model.name}.`
+                : `Install the speech runtime and download the ${model.name} weights. ${model.description}`
               : status.message}
           </p>
         </div>
@@ -67,33 +71,35 @@ export function SpeechSetup({
               disabled={busy}
               onClick={onUnload}
             >
-              Unload
+              Unload model
             </button>
           ) : (
             status.engine === "unloaded" && (
               <button
                 className="secondary-button"
-                disabled={busy}
+                disabled={busy || setupPending}
                 onClick={onLoad}
               >
                 <Play /> Load model
               </button>
             )
           )}
-          <button className="primary-button" disabled={busy} onClick={onSetup}>
+          <button className="primary-button" disabled={busy || setupPending} onClick={onSetup}>
             {speechBusy ? <LoaderCircle className="spin" /> : <Download />}
             {status.engine === "missing"
               ? status.migrationRequired
                 ? "Update setup"
-                : "Install engine"
-              : "Repair engine"}
+                : "Install runtime"
+              : "Repair runtime"}
           </button>
         </div>
       </section>
+      <ModelLifecycle status={status} />
+      <BackendCapabilities capabilities={status.capabilities} />
       <ModelSetupStatus
         status={status}
         kind="speech"
-        busy={busy}
+        busy={busy || setupPending}
         onRepair={onSetup}
       />
       <div className="section-heading">
@@ -111,7 +117,7 @@ export function SpeechSetup({
             <div>
               <h3 className="text-[16px]">{item.name}</h3>
               <span className="block text-[11px] text-muted mt-1">
-                {item.runtime}
+                Backend: {item.runtime}
               </span>
             </div>
             <p className="text-[11px] text-muted leading-[1.6] max-[700px]:row-start-2 max-[700px]:col-span-full">
