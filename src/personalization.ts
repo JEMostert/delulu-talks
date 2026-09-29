@@ -16,23 +16,39 @@ export const ruleTriggers = (rule: CustomWord): string[] => [
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const wordCharacter = "[\\p{L}\\p{M}\\p{N}_]";
+const phrasesPerCapture = 256;
 
-function phrasePattern(phrases: string[]): RegExp {
+function phrasePattern(groups: string[][]): RegExp {
   // Apostrophes inside a word are not quotation marks or phrase boundaries.
   return new RegExp(
-    `(?<!${wordCharacter})(?<!${wordCharacter}['’])(?:${phrases.map((phrase) => `(${escape(phrase)})`).join("|")})(?!${wordCharacter})(?!['’]${wordCharacter})`,
+    `(?<!${wordCharacter})(?<!${wordCharacter}['’])(?:${groups.map((phrases) => `(${phrases.map(escape).join("|")})`).join("|")})(?!${wordCharacter})(?!['’]${wordCharacter})`,
     "giu",
   );
 }
 
 function* phraseMatches(text: string, rules: Map<string, string>) {
   const phrases = [...rules.keys()].sort((a, b) => b.length - a.length);
-  const pattern = phrasePattern(phrases);
-  // Captures identify the selected rule even when Unicode case folding differs
-  // from toLowerCase (long s, final sigma, or capital dotted I, for example).
+  const groups: string[][] = [];
+  for (let index = 0; index < phrases.length; index += phrasesPerCapture)
+    groups.push(phrases.slice(index, index + phrasesPerCapture));
+  // A capture per trigger exceeds V8's limit for valid large vocabularies.
+  // Group sorted alternatives, then resolve within at most 256 phrases using
+  // the same Unicode folding; cache repeated matches for long transcripts.
+  const pattern = phrasePattern(groups);
+  const outputs = new Map<string, string>();
   for (const match of text.matchAll(pattern)) {
-    const selected = match.slice(1).findIndex((phrase) => phrase !== undefined);
-    const output = rules.get(phrases[selected])!;
+    let output = outputs.get(match[0]);
+    if (output === undefined) {
+      const selected = match
+        .slice(1)
+        .findIndex((phrase) => phrase !== undefined);
+      const phrase = groups[selected].find((phrase) =>
+        samePhrase(phrase, match[0]),
+      );
+      if (phrase === undefined) continue;
+      output = rules.get(phrase)!;
+      outputs.set(match[0], output);
+    }
     yield { index: match.index, length: match[0].length, output };
   }
 }

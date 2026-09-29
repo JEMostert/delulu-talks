@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import {
   personalize,
   splitForRewrite,
@@ -263,6 +265,19 @@ describe("vocabulary edge cases", () => {
     }
   });
 
+  test("preserves folded-rule priority across matcher groups", () => {
+    const padding = Array.from({ length: 255 }, (_, index) =>
+      makeCorrection(`p${String(index).padStart(3, "0")}`, "PADDING"),
+    );
+    expect(
+      personalize("ſign sign ſign", [
+        ...padding,
+        makeCorrection("sign", "FIRST"),
+        makeCorrection("ſign", "SECOND"),
+      ]),
+    ).toBe("FIRST FIRST FIRST");
+  });
+
   test("inserts replacement syntax literally and preserves source/rule values", () => {
     const source = "say dollar then dollar";
     const rules = [makeShortcut("dollar", "$& $1 $$ $(literal)\n\\path")];
@@ -280,5 +295,54 @@ describe("vocabulary edge cases", () => {
     expect(splitForRewrite("ordinary prose", [empty])).toEqual([
       { text: "ordinary prose", protected: false },
     ]);
+  });
+
+  test("V8 supports 500 stored rules with 100,000 aliases without exceeding its capture limit", () => {
+    // Run the real source in Node/V8: Bun's regex engine has a different limit.
+    const source = readFileSync(
+      new URL("../../src/personalization.ts", import.meta.url),
+      "utf8",
+    );
+    const code = new Bun.Transpiler({
+      loader: "ts",
+      target: "node",
+    }).transformSync(source);
+    const checks = String.raw`
+      import assert from 'node:assert/strict';
+      const words = Array.from({ length: 500 }, (_, rule) => ({
+        id: String(rule), kind: 'correction', term: 'fixed',
+        replacement: '', enabled: true,
+        soundsLike: Array.from({ length: 200 }, (_, alias) =>
+          (rule * 200 + alias).toString(36).padStart(4, '0')
+        ).join(','),
+      }));
+      assert.ok(words.every(word => word.soundsLike.length <= 1024));
+      const last = (500 * 200 - 1).toString(36).padStart(4, '0');
+      const input = '0000 ' + last + ' 0000';
+      assert.equal(personalize(input, words), 'fixed fixed fixed');
+      const shortcuts = words.map((word, index) => ({
+        ...word, kind: 'shortcut', term: 'block-' + index,
+        replacement: 'EXACT-' + index,
+      }));
+      assert.deepEqual(splitForRewrite(input, shortcuts), [
+        { text: 'EXACT-0', protected: true },
+        { text: ' ', protected: false },
+        { text: 'EXACT-499', protected: true },
+        { text: ' ', protected: false },
+        { text: 'EXACT-0', protected: true },
+      ]);
+      assert.equal(personalize('İ i i\u0307', [{ ...words[0], soundsLike: 'İ' }]), 'fixed i i\u0307');
+      console.log('V8 vocabulary limits passed');
+    `;
+    expect(
+      execFileSync(
+        "node",
+        ["--input-type=module", "-e", `${code}\n${checks}`],
+        {
+          encoding: "utf8",
+          timeout: 15000,
+        },
+      ).trim(),
+    ).toBe("V8 vocabulary limits passed");
   });
 });
