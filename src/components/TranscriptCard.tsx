@@ -45,6 +45,7 @@ import type {
 } from "../types";
 
 export type TranscriptActions = {
+  onOpenRewrite?: (record: TranscriptRecord) => void;
   onRewrite?: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
   onSetRewrite?: (
     id: string,
@@ -79,6 +80,7 @@ export function TranscriptCard({
   onRemember,
   ruleExamples,
   onRewrite,
+  onOpenRewrite,
   onSetRewrite,
   onRewriteSetup,
   rewriteStatus,
@@ -437,7 +439,7 @@ export function TranscriptCard({
                   <button
                     className="tool-button"
                     disabled={saving}
-                    onClick={() => setRewriting(true)}
+                    onClick={() => onOpenRewrite ? onOpenRewrite(record) : setRewriting(true)}
                   >
                     <WandSparkles /> Rewrite
                   </button>

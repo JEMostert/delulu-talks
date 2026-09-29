@@ -22,12 +22,20 @@ export function RewriteDialog({
   onSetup,
   onRewrite,
   onApply,
+  visible = true,
+  onBackground,
+  onOperationState,
+  contextLabel,
 }: {
   text: string;
   baseline: string;
   sourceRevision?: number;
   sourceLanguage?: string;
   status?: MagicStatus;
+  visible?: boolean;
+  contextLabel?: string;
+  onBackground?: () => void;
+  onOperationState?: (phase: "draft" | "working" | "ready" | "error") => void;
   onClose: () => void;
   onSetup: () => void;
   onRewrite: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
@@ -48,6 +56,9 @@ export function RewriteDialog({
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    onOperationState?.(busy ? "working" : error ? "error" : result ? "ready" : "draft");
+  }, [busy, error, result, onOperationState]);
   const closeDialog = () => {
     requestGeneration.current += 1;
     setBusy(false);
@@ -62,10 +73,12 @@ export function RewriteDialog({
   return (
     <Modal
       title="Rewrite transcript"
+      visible={visible}
       busy={busy}
       onClose={closeDialog}
       footer={
         <>
+          {onBackground && <button className="secondary-button" onClick={onBackground}>Continue in background</button>}
           <button
             className="secondary-button"
             disabled={busy}
@@ -104,6 +117,7 @@ export function RewriteDialog({
         Preview a change before using it. Original speech stays available and
         text shortcuts stay exactly as saved.
       </p>
+      {contextLabel && <p className="caption">Rewriting: {contextLabel}. This session stays attached to this transcript when you navigate or open another card.</p>}
       {stale && (
         <div className="rewrite-setup my-3 rounded-panel border border-line p-3" role="alert">
           <p>The transcript changed after this preview opened. This preview cannot be applied. Refresh to use the current text and generate a new preview.</p>
@@ -126,7 +140,8 @@ export function RewriteDialog({
           <button
             className="secondary-button"
             onClick={() => {
-              closeDialog();
+              if (onBackground) onBackground();
+              else closeDialog();
               onSetup();
             }}
           >

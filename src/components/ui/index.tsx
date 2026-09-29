@@ -109,24 +109,27 @@ export function Modal({
   onClose,
   footer,
   busy = false,
+  visible = true,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   footer?: ReactNode;
   busy?: boolean;
+  visible?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
   useEffect(() => {
     const dialog = ref.current;
     const previous = document.activeElement as HTMLElement | null;
-    dialog?.showModal();
+    if (visible) dialog?.showModal();
+    else dialog?.close();
     return () => {
       dialog?.close();
       previous?.focus();
     };
-  }, []);
+  }, [visible]);
   return (
     <dialog
       ref={ref}
