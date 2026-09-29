@@ -16,6 +16,7 @@ import { MAGIC_MODELS } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
 import { Diagnostics } from "../components/Diagnostics";
+import { HistoryRetention } from "../components/HistoryRetention";
 import type {
   AppSettings,
   DictationStatus,
@@ -421,6 +422,7 @@ export function SettingsPage(props: Props) {
               </div>
             </SettingRow>
           </section>
+          <HistoryRetention policy={s.historyRetention} saving={saving} onSave={onSave} />
           <Diagnostics />
         </>
       )}
@@ -589,6 +591,7 @@ export function SettingsPage(props: Props) {
               </button>
             </SettingRow>
           </section>
+          <HistoryRetention policy={s.historyRetention} saving={saving} onSave={onSave} />
           <Diagnostics />
         </>
       )}

@@ -4,6 +4,7 @@ import type {
   DeluluApi,
   DictationStatus,
   ExportFormat,
+  HistoryRetentionPolicy,
   LabRequest,
   MagicRewriteRequest,
   MagicStatus,
@@ -69,6 +70,10 @@ const api: DeluluApi = {
     ipcRenderer.invoke("history:setRewrite", id, result, sourceText),
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),
   clearHistory: () => ipcRenderer.invoke("history:clear"),
+  previewHistoryRetention: (policy: HistoryRetentionPolicy) => ipcRenderer.invoke("history:retentionPreview", policy),
+  applyHistoryRetention: (token: string) => ipcRenderer.invoke("history:retentionApply", token),
+  onHistoryRetentionApplied: (callback: (removedIds: string[]) => void) =>
+    listener("history:retentionApplied", callback),
   chooseAudioFile: () => ipcRenderer.invoke("lab:chooseAudio"),
   runLab: (request: LabRequest) => ipcRenderer.invoke("lab:run", request),
   exportTranscript: (id: string, format: ExportFormat) =>

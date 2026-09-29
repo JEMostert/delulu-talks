@@ -225,6 +225,9 @@ export const previewApi: DeluluApi = {
   async deleteHistory(id) {
     demoHistory = demoHistory.filter((item) => item.id !== id);
   },
+  async previewHistoryRetention(_policy) { return desktopOnly(); },
+  async applyHistoryRetention(_token) { return desktopOnly(); },
+  onHistoryRetentionApplied(_callback) { return () => undefined; },
   async clearHistory() {
     demoHistory = [];
   },

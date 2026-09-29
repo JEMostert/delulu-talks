@@ -92,6 +92,11 @@ export function useWorkspace() {
         void recorder.handle(command).catch(report);
       }),
       bridge.onTranscript(receiveTranscript),
+      bridge.onHistoryRetentionApplied((removedIds) => {
+        if (!alive) return;
+        const removed = new Set(removedIds);
+        setHistory((items) => items.filter((record) => !removed.has(record.id)));
+      }),
     ];
     void bridge.recorderReady().catch(report);
     void Promise.allSettled([

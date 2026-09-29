@@ -1,5 +1,6 @@
 import { app } from "electron";
 import { speechModelForPlatform } from "../runtime/platform";
+import { historyFingerprint, savedRetentionPolicy } from "./historyRetention";
 import {
   existsSync,
   mkdirSync,
@@ -200,6 +201,7 @@ export function normalizeSettings(value: unknown): AppSettings {
       4096,
     ),
     keepHistory: boolean(source.keepHistory, DEFAULT_SETTINGS.keepHistory),
+    historyRetention: savedRetentionPolicy(source.historyRetention),
     showOverlay: boolean(source.showOverlay, DEFAULT_SETTINGS.showOverlay),
     preloadModel: boolean(source.preloadModel, DEFAULT_SETTINGS.preloadModel),
     magicEnabled: boolean(source.magicEnabled, DEFAULT_SETTINGS.magicEnabled),
@@ -455,6 +457,16 @@ export class StorageService {
 
   deleteHistory(id: string): void {
     const next = this.history.filter((item) => item.id !== id);
+    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.history = next;
+  }
+
+  applyHistoryRetention(expectedFingerprint: string, ids: readonly string[]): void {
+    if (historyFingerprint(this.history) !== expectedFingerprint)
+      throw new Error("History changed. Preview the affected records again before applying retention.");
+    const removed = new Set(ids);
+    const next = this.history.filter((record) => !removed.has(record.id));
+    // Publish the complete filtered snapshot before changing memory; retained records are untouched.
     writeJson(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
   }

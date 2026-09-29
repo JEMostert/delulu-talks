@@ -44,6 +44,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   copyToClipboard: true,
   pastePortalToken: "",
   keepHistory: true,
+  historyRetention: { maxAgeDays: null, maxCount: null },
   showOverlay: true,
   preloadModel: true,
   magicEnabled: false,

@@ -39,6 +39,7 @@ export type AppSettings = {
   copyToClipboard: boolean;
   pastePortalToken: string;
   keepHistory: boolean;
+  historyRetention?: HistoryRetentionPolicy;
   showOverlay: boolean;
   preloadModel: boolean;
   magicEnabled: boolean;
@@ -88,6 +89,20 @@ export type DictationStatus = {
   detail?: string | null;
   model?: SpeechModelId | null;
   progress?: number | null;
+};
+
+export type HistoryRetentionPolicy = {
+  maxAgeDays: number | null;
+  maxCount: number | null;
+};
+
+export type HistoryRetentionPreview = {
+  token: string;
+  policy: HistoryRetentionPolicy;
+  previewedAt: number;
+  totalSaved: number;
+  retainedCount: number;
+  affected: { record: TranscriptRecord; reason: "age" | "count" | "ageAndCount" }[];
 };
 
 export type TranscriptRecord = {
@@ -249,6 +264,9 @@ export type DeluluApi = {
   ): Promise<TranscriptRecord>;
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
+  previewHistoryRetention(policy: HistoryRetentionPolicy): Promise<HistoryRetentionPreview>;
+  applyHistoryRetention(token: string): Promise<string[]>;
+  onHistoryRetentionApplied(callback: (removedIds: string[]) => void): () => void;
   chooseAudioFile(): Promise<AudioFileSelection | null>;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;

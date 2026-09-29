@@ -13,9 +13,11 @@ import type { MenuItemConstructorOptions } from "electron";
 import electronUpdater from "electron-updater";
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import type {
   AppSettings,
   ExportFormat,
+  HistoryRetentionPreview,
   LabRequest,
   MagicPreset,
   MagicRewriteRequest,
@@ -38,6 +40,7 @@ import {
   StorageService,
 } from "./services/storage";
 import { exportRecord } from "./services/transcripts";
+import { affectedByRetention, historyFingerprint, validateRetentionPolicy } from "./services/historyRetention";
 import { UpdateService } from "./services/updates";
 import {
   rendererRecoveryState,
@@ -84,6 +87,15 @@ const settingsQueue = new SerialQueue();
 let lastTranscript: TranscriptRecord | null = null;
 const sessionTranscripts = new Map<string, TranscriptRecord>();
 const selectedAudioFiles = new Set<string>();
+let retentionPreview: {
+  preview: HistoryRetentionPreview;
+  savedFingerprint: string;
+  fullFingerprint: string;
+} | null = null;
+
+function retentionHistoryFingerprint(saved: TranscriptRecord[]): string {
+  return historyFingerprint({ saved, session: [...sessionTranscripts.values()] });
+}
 
 function preloadPath(): string {
   return join(__dirname, "../preload/preload.cjs");
@@ -743,6 +755,48 @@ function registerIpc(): void {
     return [...records.values()]
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 500);
+  });
+  handle("history:retentionPreview", (_event, value: unknown) => {
+    const policy = validateRetentionPolicy(value);
+    const saved = storage.getHistory();
+    // Show the same current text as History for saved records also held in this session.
+    const current = saved.map((record) => sessionTranscripts.get(record.id) ?? record);
+    const previewedAt = Date.now();
+    const affected = affectedByRetention(current, policy, previewedAt);
+    const preview: HistoryRetentionPreview = {
+      token: randomUUID(), policy, previewedAt,
+      totalSaved: saved.length,
+      retainedCount: saved.length - affected.length,
+      affected,
+    };
+    retentionPreview = {
+      preview,
+      savedFingerprint: historyFingerprint(saved),
+      fullFingerprint: retentionHistoryFingerprint(saved),
+    };
+    return preview;
+  });
+  handle("history:retentionApply", (_event, value: unknown) => {
+    const token = validateText(value, 128);
+    const pending = retentionPreview;
+    if (!pending || pending.preview.token !== token)
+      throw new Error("This retention preview is no longer available. Preview the records again.");
+    const saved = storage.getHistory();
+    if (retentionHistoryFingerprint(saved) !== pending.fullFingerprint) {
+      retentionPreview = null;
+      throw new Error("History changed since the preview. Preview the affected records again; nothing was removed.");
+    }
+    const removedIds = pending.preview.affected.map(({ record }) => record.id);
+    if (removedIds.length) {
+      // No await between snapshot comparison, durable write and session invalidation.
+      storage.applyHistoryRetention(pending.savedFingerprint, removedIds);
+      for (const id of removedIds) sessionTranscripts.delete(id);
+      if (lastTranscript && removedIds.includes(lastTranscript.id)) lastTranscript = null;
+    }
+    retentionPreview = null;
+    broadcast("history:retentionApplied", removedIds);
+    rebuildTrayMenu();
+    return removedIds;
   });
   handle("history:updateTranscript", (_event, id: unknown, text: unknown) => {
     const key = validateText(id, 128);
