@@ -198,6 +198,8 @@ export type RecordingSubmission = {
 export type MicrophoneDevice = {
   deviceId: string;
   label: string;
+  /** False when privacy permissions hide the real label; default tracks inventory visibility. */
+  labelKnown?: boolean;
 };
 
 export type PlatformCapabilities = {

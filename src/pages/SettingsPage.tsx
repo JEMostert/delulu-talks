@@ -18,6 +18,7 @@ import { MAGIC_MODELS } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
 import { Diagnostics } from "../components/Diagnostics";
+import { MicrophoneNotice } from "../components/MicrophoneNotice";
 import type {
   AppSettings,
   DictationStatus,
@@ -156,7 +157,7 @@ export function SettingsPage(props: Props) {
               >
                 {!devices.some((d) => d.deviceId === s.inputDeviceId) && (
                   <option value={s.inputDeviceId}>
-                    {s.inputDeviceLabel} (disconnected)
+                    {s.inputDeviceLabel} (not listed)
                   </option>
                 )}
                 {devices.map((device) => (
@@ -165,6 +166,7 @@ export function SettingsPage(props: Props) {
                   </option>
                 ))}
               </select>
+              <MicrophoneNotice settings={s} devices={devices} />
             </SettingRow>
             <SettingRow title="Language">
               <select
