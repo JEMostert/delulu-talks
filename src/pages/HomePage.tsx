@@ -15,6 +15,7 @@ import {
   type TranscriptActions,
 } from "../components/TranscriptCard";
 import { Toggle } from "../components/ui";
+import { MicrophoneNotice } from "../components/MicrophoneNotice";
 import type {
   AppSettings,
   DictationStatus,
@@ -187,7 +188,7 @@ export function HomePage({
                 >
                   {!devices.some((d) => d.deviceId === s.inputDeviceId) && (
                     <option value={s.inputDeviceId}>
-                      {s.inputDeviceLabel} (disconnected)
+                      {s.inputDeviceLabel} (not listed)
                     </option>
                   )}
                   {devices.map((device) => (
@@ -196,6 +197,7 @@ export function HomePage({
                     </option>
                   ))}
                 </select>
+                <MicrophoneNotice settings={s} devices={devices} />
               </ControlField>
               <ControlField label="Language">
                 <select

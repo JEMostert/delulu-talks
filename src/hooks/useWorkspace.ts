@@ -175,22 +175,32 @@ export function useWorkspace() {
   }, [startupAttempt]);
 
   useEffect(() => {
-    if (page !== "settings" && page !== "home") return;
     let alive = true;
+    let revision = 0;
     const refresh = () => {
+      const current = ++revision;
       void listMicrophones(false)
         .then((next) => {
-          if (alive) setDevices(next);
+          if (alive && current === revision) setDevices(next);
         })
-        .catch(report);
+        .catch((reason: unknown) => {
+          if (alive && current === revision) {
+            setDevices([
+              { deviceId: "default", label: "System default", labelKnown: false },
+            ]);
+            report(reason);
+          }
+        });
     };
     refresh();
     navigator.mediaDevices?.addEventListener("devicechange", refresh);
+    window.addEventListener("focus", refresh);
     return () => {
       alive = false;
       navigator.mediaDevices?.removeEventListener("devicechange", refresh);
+      window.removeEventListener("focus", refresh);
     };
-  }, [page]);
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
