@@ -1,4 +1,5 @@
 import { RewriteDialog } from "./RewriteDialog";
+import { FillerPreview } from "./FillerPreview";
 import { correctionSuggestion } from "../correctionSuggestion";
 import { useState } from "react";
 import {
@@ -65,6 +66,7 @@ export function TranscriptCard({
   const [open, setOpen] = useState(defaultOpen || inspector);
   const [showSource, setShowSource] = useState(false);
   const [rewriting, setRewriting] = useState(false);
+  const [fillerPreview, setFillerPreview] = useState(false);
   const [correctionSuggested, setCorrectionSuggested] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -331,6 +333,7 @@ export function TranscriptCard({
                     <RotateCcw /> Undo rewrite
                   </button>
                 )}
+                <button className="tool-button" disabled={saving || transcriptText(record).length > 50_000} title="Compare hesitation-word removal before opening a correction draft (up to 50,000 characters)" onClick={() => setFillerPreview(true)}>Preview filler removal</button>
                 {onRemember && (
                   <button
                     className="tool-button"
@@ -414,6 +417,13 @@ export function TranscriptCard({
           </p>
         </ConfirmDialog>
       )}
+      {fillerPreview && <FillerPreview text={transcriptText(record)} onClose={() => setFillerPreview(false)} onDraft={(source, result) => {
+        setFillerPreview(false);
+        setShowSource(true);
+        setEditSource(source);
+        setDraft(result);
+        setEditing(true);
+      }} />}
       {remember && (
         <Modal
           title="Remember correction"
