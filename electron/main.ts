@@ -713,6 +713,24 @@ function registerIpc(): void {
   handle("recorder:limit", (_event, sessionId: unknown) =>
     dictation.recordingLimitReached(validateText(sessionId, 128)),
   );
+  handle(
+    "recorder:silence",
+    (_event, sessionId: unknown, remaining: unknown, stop: unknown) => {
+      if (
+        typeof stop !== "boolean" ||
+        (remaining !== null &&
+          (typeof remaining !== "number" ||
+            !Number.isInteger(remaining) || remaining < 0 || remaining > 30)) ||
+        (stop && remaining !== 0)
+      )
+        throw new Error("Invalid trailing-silence countdown");
+      dictation.recordingSilence(
+        validateText(sessionId, 128),
+        remaining as number | null,
+        stop,
+      );
+    },
+  );
   handle("recorder:ready", () => dictation.recorderAvailable());
   handle("recorder:failed", (_event, message: unknown, sessionId: unknown) =>
     dictation.recordingFailed(

@@ -1,6 +1,7 @@
 import captureWorkletUrl from "./captureWorklet.js?url&no-inline";
 import { bridge } from "./bridge";
 import { MAX_CAPTURE_DURATION_MS, MAX_CAPTURE_SAMPLES } from "./captureLimits";
+import { TrailingSilenceStop } from "./trailingSilence";
 import type { MicrophoneDevice, RecorderCommand } from "./types";
 
 function merge(chunks: Float32Array[]): Float32Array {
@@ -80,6 +81,8 @@ export class PcmRecorder {
   private sampleLimit = MAX_CAPTURE_SAMPLES;
   private limitStopRequested = false;
   private captureLimitTimer: ReturnType<typeof setTimeout> | null = null;
+  private silenceStop: TrailingSilenceStop | null = null;
+  private lastSilenceCountdown: number | null = null;
   private startedAt = 0;
   private stopping = false;
   private lastLevelAt = 0;
@@ -119,7 +122,12 @@ export class PcmRecorder {
     const generation = this.generation;
     const operation = this.commands.then(async () => {
       if (command.action === "start") {
-        await this.start(command.inputDeviceId, generation, sessionId!);
+        await this.start(
+          command.inputDeviceId,
+          generation,
+          sessionId!,
+          command.trailingSilence,
+        );
       } else if (!sessionId || sessionId === this.sessionId) {
         if (command.action === "stop" && generation === this.generation)
           await this.stop(true, generation);
@@ -139,6 +147,7 @@ export class PcmRecorder {
     deviceId: string,
     generation: number,
     sessionId: string,
+    trailingSilence?: RecorderCommand["trailingSilence"],
   ): Promise<void> {
     if (this.stream || this.stopping || generation !== this.generation) return;
     this.sessionId = sessionId;
@@ -171,6 +180,13 @@ export class PcmRecorder {
         Math.floor((this.context.sampleRate * MAX_CAPTURE_DURATION_MS) / 1000),
       );
       this.limitStopRequested = false;
+      this.silenceStop = trailingSilence
+        ? new TrailingSilenceStop(
+            trailingSilence.seconds,
+            trailingSilence.thresholdDb,
+          )
+        : null;
+      this.lastSilenceCountdown = null;
       if (await this.connectWorklet(generation)) {
         this.source.connect(this.worklet!);
         this.worklet!.connect(this.sink);
@@ -232,6 +248,25 @@ export class PcmRecorder {
     this.chunks.push(new Float32Array(samples.subarray(0, accepted)));
     this.capturedSamples += accepted;
     if (this.capturedSamples >= this.sampleLimit) this.requestLimitStop();
+    if (this.silenceStop && !this.stopping && !this.limitStopRequested) {
+      const countdown = this.silenceStop.update(
+        samples.subarray(0, accepted),
+        this.context!.sampleRate,
+      );
+      if (countdown.shouldStop) {
+        this.requestLimitStop("silence");
+      } else if (
+        countdown.remainingSeconds !== this.lastSilenceCountdown &&
+        this.sessionId
+      ) {
+        this.lastSilenceCountdown = countdown.remainingSeconds;
+        void bridge.recordingSilence(
+          this.sessionId,
+          countdown.remainingSeconds,
+          false,
+        ).catch(() => undefined);
+      }
+    }
     const now = performance.now();
     if (now - this.lastLevelAt < 50) return;
     this.lastLevelAt = now;
@@ -249,16 +284,20 @@ export class PcmRecorder {
     this.captureLimitTimer = null;
   }
 
-  private requestLimitStop(): void {
+  private requestLimitStop(reason: "limit" | "silence" = "limit"): void {
     if (!this.sessionId || this.stopping || this.limitStopRequested) return;
     this.limitStopRequested = true;
     this.clearCaptureLimitTimer();
     this.source?.disconnect();
     const sessionId = this.sessionId;
     const generation = this.generation;
+    const notify =
+      reason === "silence"
+        ? bridge.recordingSilence(sessionId, 0, true)
+        : bridge.recordingLimitReached(sessionId);
     // Main must enter stopping ownership before the WAV can be committed.
     // The tagged callback cannot stop a newer capture after Cancel/reload.
-    void bridge.recordingLimitReached(sessionId)
+    void notify
       .then(() => {
         if (generation !== this.generation) return;
         return this.handle({
@@ -276,7 +315,7 @@ export class PcmRecorder {
           sessionId,
         }).catch(() => undefined);
         void bridge.recordingFailed(
-          `Could not finish the recording at its limit: ${error instanceof Error ? error.message : String(error)}`,
+          `Could not finish the recording automatically: ${error instanceof Error ? error.message : String(error)}`,
           sessionId,
         ).catch(() => undefined);
       });
@@ -344,6 +383,8 @@ export class PcmRecorder {
 
   private async dispose(): Promise<void> {
     this.clearCaptureLimitTimer();
+    this.silenceStop = null;
+    this.lastSilenceCountdown = null;
     if (this.worklet) this.worklet.port.onmessage = null;
     if (this.processor) this.processor.onaudioprocess = null;
     this.source?.disconnect();

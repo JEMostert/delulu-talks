@@ -132,6 +132,17 @@ function boolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function boundedNumber(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(maximum, Math.max(minimum, value))
+    : fallback;
+}
+
 export function normalizeSettings(value: unknown): AppSettings {
   const source =
     value && typeof value === "object"
@@ -188,6 +199,22 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.inputDeviceLabel,
       DEFAULT_SETTINGS.inputDeviceLabel,
       512,
+    ),
+    trailingSilenceStopEnabled: boolean(
+      source.trailingSilenceStopEnabled,
+      DEFAULT_SETTINGS.trailingSilenceStopEnabled,
+    ),
+    trailingSilenceSeconds: boundedNumber(
+      source.trailingSilenceSeconds,
+      DEFAULT_SETTINGS.trailingSilenceSeconds,
+      2,
+      30,
+    ),
+    trailingSilenceThresholdDb: boundedNumber(
+      source.trailingSilenceThresholdDb,
+      DEFAULT_SETTINGS.trailingSilenceThresholdDb,
+      -60,
+      -20,
     ),
     autoPaste: boolean(source.autoPaste, DEFAULT_SETTINGS.autoPaste),
     copyToClipboard: boolean(

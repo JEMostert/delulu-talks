@@ -35,6 +35,9 @@ export type AppSettings = {
   pythonCommand: string;
   inputDeviceId: string;
   inputDeviceLabel: string;
+  trailingSilenceStopEnabled: boolean;
+  trailingSilenceSeconds: number;
+  trailingSilenceThresholdDb: number;
   autoPaste: boolean;
   copyToClipboard: boolean;
   pastePortalToken: string;
@@ -81,6 +84,7 @@ export type MagicRewriteResult = {
 export type DictationStatus = {
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
+  silenceCountdownSeconds?: number | null;
   migrationRequired?: boolean;
   phase: DictationPhase;
   engine: EnginePhase;
@@ -155,6 +159,7 @@ export type LabRequest = {
 };
 
 export type RecorderCommand = {
+  trailingSilence?: { seconds: number; thresholdDb: number } | null;
   action: "start" | "stop" | "cancel";
   inputDeviceId: string;
   /** Native commands identify their capture; standalone capture can omit this. */
@@ -257,6 +262,11 @@ export type DeluluApi = {
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   recordingStarted(sessionId: string): Promise<void>;
   recordingLimitReached(sessionId: string): Promise<void>;
+  recordingSilence(
+    sessionId: string,
+    remainingSeconds: number | null,
+    stop: boolean,
+  ): Promise<void>;
   recorderReady(): Promise<void>;
   recordingFailed(message: string, sessionId: string): Promise<void>;
   recordingLevel(level: number): void;

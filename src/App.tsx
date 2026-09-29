@@ -227,6 +227,18 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             Runtime to avoid loading it again between recordings.
           </div>
         )}
+        {w.status.silenceCountdownSeconds != null &&
+          w.status.silenceCountdownSeconds > 0 && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="px-6 pt-3 text-sm text-muted max-[900px]:px-4"
+            >
+              Quiet input — recording stops in {w.status.silenceCountdownSeconds}s.
+              Speaking above the configured threshold restarts the countdown.
+              You can press Stop at any time.
+            </div>
+          )}
         {w.error && (
           <div className="px-6 pt-3 max-[900px]:px-4">
             <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>

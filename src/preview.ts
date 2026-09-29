@@ -239,6 +239,7 @@ export const previewApi: DeluluApi = {
   },
   async recordingStarted() {},
   async recordingLimitReached() {},
+  async recordingSilence() {},
   async recorderReady() {},
   async recordingFailed() {},
   recordingLevel(_level: number) {},

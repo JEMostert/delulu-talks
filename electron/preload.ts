@@ -77,6 +77,8 @@ const api: DeluluApi = {
     ipcRenderer.invoke("recorder:started", sessionId),
   recordingLimitReached: (sessionId: string) =>
     ipcRenderer.invoke("recorder:limit", sessionId),
+  recordingSilence: (sessionId, remainingSeconds, stop) =>
+    ipcRenderer.invoke("recorder:silence", sessionId, remainingSeconds, stop),
   recorderReady: () => ipcRenderer.invoke("recorder:ready"),
   recordingFailed: (message: string, sessionId: string) =>
     ipcRenderer.invoke("recorder:failed", message, sessionId),
