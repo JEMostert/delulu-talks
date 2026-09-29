@@ -63,7 +63,15 @@ export type AppSettings = {
   personalProfiles?: PersonalProfileDocument;
 };
 
+/** Observed downloader counters; aggregate totals may change during discovery. */
+export type DownloadBytes = {
+  completed: number;
+  total: number | null;
+  kind: "transfer" | "reconstruction";
+};
+
 export type MagicStatus = {
+  downloadBytes?: DownloadBytes | null;
   phase: MagicPhase;
   engine: EnginePhase;
   message: string;
@@ -106,6 +114,7 @@ export type RetryAudioState = {
 };
 
 export type DictationStatus = {
+  downloadBytes?: DownloadBytes | null;
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   retryAudio?: RetryAudioState;

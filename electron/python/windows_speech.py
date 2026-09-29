@@ -42,6 +42,7 @@ class WindowsSpeech:
         from cuda_preflight import ensure_cuda_compatible
         self.cuda_preflight = ensure_cuda_compatible(torch)
         from huggingface_hub import snapshot_download
+        from download_progress import download_progress_class
         from huggingface_hub.constants import HF_HOME
         from accelerate import init_empty_weights
         from safetensors.torch import load_file
@@ -58,6 +59,7 @@ class WindowsSpeech:
             cache_dir=str(Path(cache_root) / "hub") if cache_root else None,
             local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1",
             allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.tiktoken"],
+            tqdm_class=download_progress_class(),
         ))
         converted_root = Path(cache_root or HF_HOME) / "delulu-r2t2-transformers" / CONVERSION_VERSION / MODEL_REVISION
         try:

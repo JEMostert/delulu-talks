@@ -144,7 +144,10 @@ export class AsrService {
         env: this.workerEnvironment("speech"),
       }),
       (error) => this.fail(error),
-      (detail) => this.updateStatus({ detail }),
+      (detail, event) => this.updateStatus({
+        detail,
+        downloadBytes: event?.command === "load" ? event.downloadBytes ?? null : null,
+      }),
     );
     this.magicWorker = new WorkerClient(
       () => ({
@@ -153,6 +156,10 @@ export class AsrService {
         env: this.workerEnvironment("magic"),
       }),
       (error) => this.failMagic(error),
+      (detail, event) => this.updateMagicStatus({
+        detail,
+        downloadBytes: event?.command === "magicLoad" ? event.downloadBytes ?? null : null,
+      }),
     );
   }
 
@@ -188,11 +195,15 @@ export class AsrService {
 
   private updateStatus(patch: Partial<DictationStatus>): void {
     this.status = { ...this.status, ...patch };
+    if (patch.phase !== undefined || !["preparing", "loading"].includes(this.status.phase))
+      this.status.downloadBytes = null;
     for (const listener of this.statusListeners) listener(this.getStatus());
   }
 
   private updateMagicStatus(patch: Partial<MagicStatus>): void {
     this.magicStatus = { ...this.magicStatus, ...patch };
+    if (patch.phase !== undefined || !["preparing", "loading"].includes(this.magicStatus.phase))
+      this.magicStatus.downloadBytes = null;
     for (const listener of this.magicStatusListeners)
       listener(this.getMagicStatus());
   }

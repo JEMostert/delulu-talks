@@ -1,6 +1,14 @@
 import { Alert } from "../ui";
 import type { DictationStatus, MagicStatus } from "../../types";
 
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "Unavailable";
+  const gib = 1024 ** 3;
+  const unit = bytes >= gib ? "GiB" : "MiB";
+  const value = bytes / (bytes >= gib ? gib : 1024 ** 2);
+  return `${value.toFixed(2)} ${unit}`;
+}
+
 export function ModelSetupStatus({
   status,
   kind,
@@ -14,6 +22,7 @@ export function ModelSetupStatus({
 }) {
   const settingUp = ["preparing", "loading"].includes(status.phase);
   const failed = status.phase === "error" || status.engine === "error";
+  const bytes = status.downloadBytes;
   return (
     <>
       {settingUp && (
@@ -27,7 +36,7 @@ export function ModelSetupStatus({
             <span>
               {status.progress != null
                 ? `${Math.round(status.progress * 100)}% of setup stages`
-                : "Working…"}
+                : "Setup stages indeterminate"}
             </span>
           </div>
           <progress
@@ -44,9 +53,28 @@ export function ModelSetupStatus({
               {status.detail}
             </p>
           )}
+          {bytes ? (
+            <p className="caption">
+              <strong>
+                {bytes.kind === "transfer" ? "Network transfer" : "Cache reconstruction"}
+              </strong>
+              {": "}
+              <span
+                title={`${bytes.completed} bytes completed; ${bytes.total == null ? "total unknown" : `${bytes.total} bytes reported total`}`}
+              >
+                {formatBytes(bytes.completed)} completed
+                {bytes.total == null
+                  ? " · total unavailable"
+                  : ` / ${formatBytes(bytes.total)} reported total`}
+              </span>
+              . Reported total may change as more files are discovered.
+            </p>
+          ) : (
+            <p className="caption">Byte totals unavailable for this setup.</p>
+          )}
           <p className="caption">
-            Downloads can take a while. This indicates setup stages, not bytes
-            downloaded. Keep the app open.
+            Downloads can take a while. The progress bar shows setup stages,
+            not download percentage. Keep the app open.
           </p>
         </section>
       )}

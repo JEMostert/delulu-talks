@@ -41,6 +41,7 @@ class MetalSpeech:
             return self.status()
         import mlx.core as mx
         from huggingface_hub import snapshot_download
+        from download_progress import download_progress_class
         from mlx_audio.stt.utils import load_model
 
         if not mx.metal.is_available():
@@ -53,6 +54,7 @@ class MetalSpeech:
             cache_dir=str(Path(cache_root) / "hub") if cache_root else None,
             local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1",
             allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.tiktoken"],
+            tqdm_class=download_progress_class(),
         )
         progress("Loading R2T2 with MLX…", "load")
         try:
