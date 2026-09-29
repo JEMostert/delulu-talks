@@ -15,35 +15,28 @@ type PortalInterface = ClientInterface &
   Record<string, (...args: unknown[]) => Promise<unknown>>;
 type ConnectedBus = MessageBus & { name: string | null };
 
+export type PasteIo = {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  spawn?: typeof spawn;
+  spawnSync?: typeof spawnSync;
+};
+
 const APP_ID = "delulu-talks";
 const KEYBOARD = 1;
 const KEYSYM_LEFTCTRL = 0xffe3;
 const KEYSYM_V = 0x76;
-
-function exists(program: string): boolean {
-  const command = process.platform === "win32" ? "where" : "which";
-  return (
-    spawnSync(command, [program], { stdio: "ignore", windowsHide: true })
-      .status === 0
-  );
-}
 
 function variantValue<T>(value: Variant<T> | T | undefined): T | undefined {
   return value instanceof Variant ? value.value : value;
 }
 
 export class PasteService {
-  private readonly waylandPortal =
-    process.platform === "linux" &&
-    process.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland";
-  private readonly kdeWayland =
-    this.waylandPortal &&
-    /(?:^|:)KDE(?:$|:)/i.test(process.env.XDG_CURRENT_DESKTOP ?? "");
-  private readonly qdbus = exists("qdbus6")
-    ? "qdbus6"
-    : exists("qdbus")
-      ? "qdbus"
-      : null;
+  private readonly platform: NodeJS.Platform;
+  private readonly env: NodeJS.ProcessEnv;
+  private readonly waylandPortal: boolean;
+  private readonly kdeWayland: boolean;
+  private readonly qdbus: string | null;
   private readonly command: PasteCommand | null;
   private bus: ConnectedBus | null = null;
   private remoteDesktop: PortalInterface | null = null;
@@ -54,12 +47,36 @@ export class PasteService {
     private readonly getRestoreToken: () => string | null = () => null,
     private readonly saveRestoreToken: (token: string) => void = () =>
       undefined,
+    private readonly io: PasteIo = {},
   ) {
+    this.platform = io.platform ?? process.platform;
+    this.env = io.env ?? process.env;
+    this.waylandPortal =
+      this.platform === "linux" &&
+      this.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland";
+    this.kdeWayland =
+      this.waylandPortal &&
+      /(?:^|:)KDE(?:$|:)/i.test(this.env.XDG_CURRENT_DESKTOP ?? "");
+    this.qdbus = this.exists("qdbus6")
+      ? "qdbus6"
+      : this.exists("qdbus")
+        ? "qdbus"
+        : null;
     this.command = this.resolveCommand();
   }
 
+  private exists(program: string): boolean {
+    const command = this.platform === "win32" ? "where" : "which";
+    return (
+      (this.io.spawnSync ?? spawnSync)(command, [program], {
+        stdio: "ignore",
+        windowsHide: true,
+      }).status === 0
+    );
+  }
+
   private resolveCommand(): PasteCommand | null {
-    if (process.platform === "darwin") {
+    if (this.platform === "darwin") {
       return {
         program: "osascript",
         args: [
@@ -68,7 +85,7 @@ export class PasteService {
         ],
       };
     }
-    if (process.platform === "win32") {
+    if (this.platform === "win32") {
       return {
         program: "powershell.exe",
         args: [
@@ -79,7 +96,7 @@ export class PasteService {
         ],
       };
     }
-    if (exists("xdotool"))
+    if (this.exists("xdotool"))
       return {
         program: "xdotool",
         args: ["key", "--clearmodifiers", "ctrl+v"],
@@ -94,7 +111,7 @@ export class PasteService {
     // previous clipboard item. Publish through Plasma's clipboard service as
     // well so the destination sees the transcript after focus has moved.
     if (this.kdeWayland && this.qdbus) {
-      const result = spawnSync(
+      const result = (this.io.spawnSync ?? spawnSync)(
         this.qdbus,
         ["org.kde.klipper", "/klipper", "setClipboardContents", text],
         {
@@ -126,9 +143,13 @@ export class PasteService {
       );
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 120));
     await new Promise<void>((resolvePaste, reject) => {
-      const child = spawn(this.command!.program, this.command!.args, {
-        windowsHide: true,
-      });
+      const child = (this.io.spawn ?? spawn)(
+        this.command!.program,
+        this.command!.args,
+        {
+          windowsHide: true,
+        },
+      );
       let stderr = "";
       child.stderr.on("data", (chunk: Buffer) => {
         stderr += chunk.toString();
@@ -185,7 +206,7 @@ export class PasteService {
   }
 
   private async openPortalSession(): Promise<void> {
-    const busAddress = compatibleSessionBusAddress(process.env);
+    const busAddress = compatibleSessionBusAddress(this.env);
     const bus = sessionBus(
       busAddress ? { busAddress } : undefined,
     ) as ConnectedBus;
@@ -299,14 +320,11 @@ export class PasteService {
     overlayMethod: PlatformCapabilities["overlayMethod"] = "unavailable",
     overlayDetail?: string,
   ): PlatformCapabilities {
-    const sessionType =
-      process.env.XDG_SESSION_TYPE?.toLowerCase() ?? "unknown";
+    const sessionType = this.env.XDG_SESSION_TYPE?.toLowerCase() ?? "unknown";
     return {
-      platform: process.platform as PlatformCapabilities["platform"],
+      platform: this.platform as PlatformCapabilities["platform"],
       desktop:
-        process.env.XDG_CURRENT_DESKTOP ??
-        process.env.DESKTOP_SESSION ??
-        "unknown",
+        this.env.XDG_CURRENT_DESKTOP ?? this.env.DESKTOP_SESSION ?? "unknown",
       sessionType,
       pasteMethod: this.waylandPortal
         ? "wayland-portal"
