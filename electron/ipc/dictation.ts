@@ -3,7 +3,7 @@ import type { RecordingSubmission } from "../../src/types";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
-export function registerDictationIpc({ handle, on }: IpcRegistrar, { paste, dictation, schedulePasteLast }: Pick<IpcDependencies, "pasteLast" | "paste" | "dictation" | "schedulePasteLast">): void {
+export function registerDictationIpc({ handle, on }: IpcRegistrar, { pasteLast, paste, dictation, schedulePasteLast }: Pick<IpcDependencies, "pasteLast" | "paste" | "dictation" | "schedulePasteLast">): void {
 
 handle("dictation:pasteLast", () => schedulePasteLast());
 handle("dictation:pasteLastStatus", () => pasteLast.getStatus());
