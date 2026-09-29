@@ -1,4 +1,5 @@
 import { RewriteDialog } from "./RewriteDialog";
+import { IdentifierPreview } from "./IdentifierPreview";
 import { useState } from "react";
 import {
   BookPlus,
@@ -64,6 +65,7 @@ export function TranscriptCard({
   const [open, setOpen] = useState(defaultOpen || inspector);
   const [showSource, setShowSource] = useState(false);
   const [rewriting, setRewriting] = useState(false);
+  const [identifierPreview, setIdentifierPreview] = useState(false);
   const [correctionSuggested, setCorrectionSuggested] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -316,6 +318,9 @@ export function TranscriptCard({
                 <button className="tool-button" onClick={() => onCopy(text)}>
                   <Copy /> Copy {showSource ? "speech" : "result"}
                 </button>
+                <button className="tool-button" onClick={() => setIdentifierPreview(true)}>
+                  Identifiers
+                </button>
                 {edited && (
                   <button
                     className="tool-button"
@@ -526,6 +531,13 @@ export function TranscriptCard({
             />
           </label>
         </Modal>
+      )}
+      {identifierPreview && (
+        <IdentifierPreview
+          source={transcriptText(record)}
+          onCopy={onCopy}
+          onClose={() => setIdentifierPreview(false)}
+        />
       )}
     </article>
   );
