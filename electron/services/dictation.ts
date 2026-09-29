@@ -430,6 +430,7 @@ export class DictationService {
       this.storage.cacheDirectory,
       `dictation-${Date.now()}-${randomUUID()}.wav`,
     );
+    let deliveryStarted = false;
     try {
       mkdirSync(this.storage.cacheDirectory, { recursive: true });
       writeFileSync(audioPath, submission.wav, { mode: 0o600 });
@@ -496,6 +497,7 @@ export class DictationService {
       let completion = `${outputName} ready in Latest output`;
       let delivery: "ready" | "pasted" | "copied" | "failed" = "ready";
       this.setHud({ state: "delivering" });
+      deliveryStarted = true;
       if (settings.autoPaste) {
         try {
           await this.paste.paste(output, settings.restoreClipboardAfterPaste);
@@ -549,7 +551,8 @@ export class DictationService {
       this.asr.setActivity("idle", completion);
       return true;
     } catch (error) {
-      const retained = retryLease || this.retryAudio.retain(submission);
+      if (deliveryStarted) this.retryAudio.discard();
+      const retained = !deliveryStarted && (retryLease || this.retryAudio.retain(submission));
       this.publishRetryAudio();
       this.setHud({ state: "error" });
       const cause = error instanceof Error ? error.message : String(error);

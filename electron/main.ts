@@ -908,9 +908,11 @@ function registerIpc(): void {
       validateText(sessionId, 128),
     ),
   );
-  handle("recorder:submit", (_event, submission: RecordingSubmission) =>
-    dictation.submitRecording(submission),
-  );
+  handle("recorder:submit", (_event, submission: RecordingSubmission) => {
+    if (typeof submission?.sessionId !== "string" || !submission.sessionId)
+      throw new Error("Recording submission requires a capture session ID");
+    return dictation.submitRecording(submission);
+  });
   ipcMain.on("recorder:level", (event, value: unknown) => {
     if (
       event.sender !== mainWindow?.webContents ||
