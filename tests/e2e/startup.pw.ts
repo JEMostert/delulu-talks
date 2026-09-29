@@ -4,11 +4,13 @@ async function openStartup(page: Page, hung: string[]) {
   await page.clock.install();
   await page.addInitScript((hung) => {
     const calls: string[] = [];
+    const completed: string[] = [];
     const listeners = new Map<string, Set<(value: unknown) => void>>();
     const pending = new Map<string, (value: unknown) => void>();
     Object.assign(window, {
       __startup: {
         calls,
+        completed,
         release: (method: string, value: unknown) =>
           pending.get(method)?.(value),
         emit: (event: string, value: unknown) =>
@@ -42,7 +44,9 @@ async function openStartup(page: Page, hung: string[]) {
               const action = previewApi[method as keyof typeof previewApi] as (
                 ...args: unknown[]
               ) => unknown;
-              return action.apply(previewApi, args);
+              const result = await action.apply(previewApi, args);
+              completed.push(method);
+              return result;
             };
           },
         },
@@ -50,16 +54,18 @@ async function openStartup(page: Page, hung: string[]) {
     });
   }, hung);
   await page.goto("/");
+  // Importing the preview bridge is asynchronous. Advance the fake clock only
+  // after the ordinary reads finish, so the deadline isolates the hung reads.
   await expect
     .poll(() =>
       page.evaluate(
         () =>
           (
-            window as unknown as { __startup: { calls: string[] } }
-          ).__startup.calls.filter((name) => name.startsWith("get")).length,
+            window as unknown as { __startup: { completed: string[] } }
+          ).__startup.completed.filter((name) => name.startsWith("get")).length,
       ),
     )
-    .toBe(7);
+    .toBe(7 - hung.length);
 }
 
 test("hung optional services reach a usable workspace at the startup deadline", async ({
