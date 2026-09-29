@@ -1,5 +1,6 @@
 import { app } from "electron";
 import { speechModelForPlatform } from "../runtime/platform";
+import { normalizeReportedLanguage } from "../../src/transcriptLanguage";
 import {
   existsSync,
   mkdirSync,
@@ -264,6 +265,16 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     ),
     model,
     language: safeString(source.language, "en", 12),
+    ...(source.requestedLanguage === undefined
+      ? {}
+      : {
+          requestedLanguage: normalizeReportedLanguage(source.requestedLanguage),
+        }),
+    ...(source.recognizedLanguage === undefined
+      ? {}
+      : {
+          recognizedLanguage: normalizeReportedLanguage(source.recognizedLanguage),
+        }),
     source: ["dictation", "file"].includes(String(source.source))
       ? (source.source as TranscriptRecord["source"])
       : "dictation",
