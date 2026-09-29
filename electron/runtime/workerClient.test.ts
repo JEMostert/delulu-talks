@@ -100,7 +100,7 @@ test("responses complete by ID even when the worker finishes in reverse order", 
   const h = harness(`import sys,json
 requests = [json.loads(sys.stdin.readline()) for _ in range(2)]
 for request in reversed(requests):
- print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':request['command']}),flush=True)
+ print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':request['command']}),flush=True)
 `);
   try {
     expect(
@@ -120,10 +120,10 @@ test("duplicate and unknown response IDs cannot complete a different request", a
   const h = harness(`import sys,json
 first,second = [json.loads(sys.stdin.readline()) for _ in range(2)]
 for response in [
- {'id':first['id'],'ok':True,'result':'first'},
- {'id':first['id'],'ok':True,'result':'duplicate'},
- {'id':'unknown','ok':True,'result':'unrelated'},
- {'id':second['id'],'ok':True,'result':'second'},
+ {'protocolVersion':1,'id':first['id'],'ok':True,'result':'first'},
+ {'protocolVersion':1,'id':first['id'],'ok':True,'result':'duplicate'},
+ {'protocolVersion':1,'id':'unknown','ok':True,'result':'unrelated'},
+ {'protocolVersion':1,'id':second['id'],'ok':True,'result':'second'},
 ]:
  print('@delulu:'+json.dumps(response),flush=True)
 `);
@@ -146,15 +146,15 @@ test("an operation error rejects its request while another request still succeed
 for line in sys.stdin:
  request = json.loads(line)
  if request['command'] == 'broken':
-  response = {'id':request['id'],'ok':False,'error':'Fixture operation failed'}
+  response = {'protocolVersion':1,'id':request['id'],'ok':False,'error':'Fixture operation failed'}
  else:
-  response = {'id':request['id'],'ok':True,'result':'healthy'}
+  response = {'protocolVersion':1,'id':request['id'],'ok':True,'result':'healthy'}
  print('@delulu:'+json.dumps(response),flush=True)
 `);
   try {
     const [broken, healthy] = await Promise.allSettled([
       h.client.request("broken", {}, 3000),
-      h.client.request<string>("ping", {}, 3000),
+      h.client.request<string>("fixturePing", {}, 3000),
     ]);
     expect(broken.status).toBe("rejected");
     if (broken.status === "rejected")
@@ -209,12 +209,12 @@ for line in sys.stdin:
   sys.stdout.write('@delulu:not-json\\n@delulu:{}\\n@delulu-progress:obsolete progress\\n')
   sys.stdout.flush()
  else:
-  print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':'recovered'}),flush=True)
+  print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'recovered'}),flush=True)
 `,
     {
       onFailure: () => {
         if (!retry.promise) {
-          retry.promise = h.client.request<string>("ping", {}, 3000);
+          retry.promise = h.client.request<string>("fixturePing", {}, 3000);
           void retry.promise.catch(() => undefined);
         }
       },
@@ -235,13 +235,13 @@ for line in sys.stdin:
 });
 
 test("independent speech/writing clients survive repeated stop and restart cycles", async () => {
-  const script = `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu:'+json.dumps({'id':r['id'],'ok':True,'result':r['command']}),flush=True)\n`;
+  const script = `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu:'+json.dumps({'protocolVersion':1,'id':r['id'],'ok':True,'result':r['command']}),flush=True)\n`;
   const speech = harness(script);
   const writing = harness(script);
   try {
     for (let cycle = 0; cycle < 3; cycle++) {
-      expect(await speech.client.request<string>("transcribe")).toBe(
-        "transcribe",
+      expect(await speech.client.request<string>("fixtureTranscribe")).toBe(
+        "fixtureTranscribe",
       );
       await speech.client.stopAndWait();
       expect(speech.client.running).toBe(false);
@@ -259,10 +259,10 @@ test("independent speech/writing clients survive repeated stop and restart cycle
 
 test("worker separates logging from protocol responses", async () => {
   const h = harness(
-    `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('ordinary log',flush=True)\n print('@delulu:'+json.dumps({'id':r['id'],'ok':True,'result':r['command']}),flush=True)\n`,
+    `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('ordinary log',flush=True)\n print('@delulu:'+json.dumps({'protocolVersion':1,'id':r['id'],'ok':True,'result':r['command']}),flush=True)\n`,
   );
   try {
-    expect(await h.client.request<string>("ping")).toBe("ping");
+    expect(await h.client.request<string>("fixturePing")).toBe("fixturePing");
     expect(h.client.busy).toBe(false);
     expect(h.failures).toHaveLength(0);
   } finally {
@@ -277,7 +277,7 @@ for line in sys.stdin:
  if request['command'] == 'slow':
   time.sleep(60)
  else:
-  print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':'recovered'}),flush=True)
+  print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'recovered'}),flush=True)
 `);
   try {
     const results = await Promise.allSettled([
@@ -288,7 +288,7 @@ for line in sys.stdin:
     expect(h.client.running).toBe(false);
     expect(h.client.busy).toBe(false);
     expect(h.failures).toHaveLength(1);
-    expect(await h.client.request<string>("ping", {}, 3000)).toBe("recovered");
+    expect(await h.client.request<string>("fixturePing", {}, 3000)).toBe("recovered");
     expect(h.client.running).toBe(true);
     expect(h.client.busy).toBe(false);
     expect(h.failures).toHaveLength(1);
@@ -303,7 +303,7 @@ test("spawn failures reject immediately rather than waiting for timeout", async 
     () => undefined,
   );
   try {
-    await expect(client.request("ping", {}, 3000)).rejects.toThrow();
+    await expect(client.request("fixturePing", {}, 3000)).rejects.toThrow();
     expect(client.busy).toBe(false);
   } finally {
     client.stop();
@@ -317,10 +317,10 @@ test.skipIf(process.platform === "win32")(
     const stopped = join(dir, "stopped");
     const descendant = `import signal,time,pathlib\ndef stop(*args):\n pathlib.Path(${JSON.stringify(stopped)}).touch()\n raise SystemExit(0)\nsignal.signal(signal.SIGTERM,stop)\nprint('ready',flush=True)\ntime.sleep(60)\n`;
     const h = harness(
-      `import subprocess,sys,json\np=subprocess.Popen([sys.executable,'-u','-c',${JSON.stringify(descendant)}],stdout=subprocess.PIPE,text=True)\np.stdout.readline()\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu:'+json.dumps({'id':r['id'],'ok':True,'result':p.pid}),flush=True)\n`,
+      `import subprocess,sys,json\np=subprocess.Popen([sys.executable,'-u','-c',${JSON.stringify(descendant)}],stdout=subprocess.PIPE,text=True)\np.stdout.readline()\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu:'+json.dumps({'protocolVersion':1,'id':r['id'],'ok':True,'result':p.pid}),flush=True)\n`,
     );
     try {
-      await h.client.request<string>("ping", {}, 3000);
+      await h.client.request<string>("fixturePing", {}, 3000);
       h.client.stop();
       for (let attempt = 0; attempt < 100 && !existsSync(stopped); attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 20));
@@ -338,7 +338,7 @@ test("download progress does not consume the pending model response", async () =
   const path = join(dir, "worker.py");
   writeFileSync(
     path,
-    `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu-progress:Downloading weights 50%',flush=True)\n print('@delulu:'+json.dumps({'id':r['id'],'ok':True,'result':{'loaded':True}}),flush=True)\n`,
+    `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu-progress:Downloading weights 50%',flush=True)\n print('@delulu:'+json.dumps({'protocolVersion':1,'id':r['id'],'ok':True,'result':{'loaded':True}}),flush=True)\n`,
   );
   const progress: string[] = [];
   const failures: Error[] = [];
@@ -362,23 +362,23 @@ test("download progress does not consume the pending model response", async () =
 const echoWorker = `import sys,json
 for line in sys.stdin:
  request = json.loads(line)
- print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':request.get('text',request['command'])}),flush=True)
+ print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':request.get('text',request['command'])}),flush=True)
 `;
 
 test("exact UTF-8 request budget succeeds and excess requests reject before spawn", async () => {
   const payload = { text: "👋" };
   const bytes = Buffer.byteLength(
-    JSON.stringify({ ...payload, id: "0".repeat(36), command: "ping" }),
+    JSON.stringify({ ...payload, protocolVersion: 1, id: "0".repeat(36), command: "fixturePing" }),
   );
   const h = harness(echoWorker, { limits: { requestBytes: bytes } });
   try {
     await expect(
-      h.client.request<string>("ping", { text: "👋x" }),
+      h.client.request<string>("fixturePing", { text: "👋x" }),
     ).rejects.toThrow("UTF-8 bytes");
     expect(h.starts).toBe(0);
     expect(h.client.running).toBe(false);
     expect(h.client.busy).toBe(false);
-    expect(await h.client.request<string>("ping", payload)).toBe("👋");
+    expect(await h.client.request<string>("fixturePing", payload)).toBe("👋");
     expect(h.starts).toBe(1);
     expect(h.failures).toHaveLength(0);
   } finally {
@@ -398,13 +398,13 @@ test("unserializable requests cannot spawn a worker or strand pending work", asy
       { value: Symbol("unsent") },
       { toJSON: () => undefined },
     ]) {
-      await expect(h.client.request<string>("ping", payload)).rejects.toThrow(
+      await expect(h.client.request<string>("fixturePing", payload)).rejects.toThrow(
         "serialized as JSON",
       );
       expect(h.starts).toBe(0);
       expect(h.client.busy).toBe(false);
     }
-    expect(await h.client.request<string>("ping")).toBe("ping");
+    expect(await h.client.request<string>("fixturePing")).toBe("fixturePing");
     expect(h.starts).toBe(1);
     expect(h.failures).toHaveLength(0);
   } finally {
@@ -418,7 +418,7 @@ test("rejected input leaves an existing request and its generation healthy", asy
 for line in sys.stdin:
  request = json.loads(line)
  time.sleep(0.05)
- print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':request['command']}),flush=True)
+ print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':request['command']}),flush=True)
 `,
     { limits: { requestBytes: 128 } },
   );
@@ -444,7 +444,7 @@ test("pending request cap rejects only excess work and releases slots on complet
 for line in sys.stdin:
  request = json.loads(line)
  time.sleep(0.05)
- print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':request['command']}),flush=True)
+ print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':request['command']}),flush=True)
 `,
     { limits: { pendingRequests: 2 } },
   );
@@ -474,7 +474,7 @@ test("real subprocess response framing preserves byte-split UTF-8 and CRLF", asy
     `import sys,json,time
 for line in sys.stdin:
  request = json.loads(line)
- output = 'ordinary log\\r\\n@delulu-progress:Loading 👋\\r\\n@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':'👋é'},ensure_ascii=False)+'\\r\\n'
+ output = 'ordinary log\\r\\n@delulu-progress:Loading 👋\\r\\n@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'👋é'},ensure_ascii=False)+'\\r\\n'
  for byte in output.encode('utf-8'):
   sys.stdout.buffer.write(bytes([byte]))
   sys.stdout.buffer.flush()
@@ -483,7 +483,7 @@ for line in sys.stdin:
     { onProgress: (detail) => progress.push(detail) },
   );
   try {
-    expect(await h.client.request<string>("ping", {}, 3000)).toBe("👋é");
+    expect(await h.client.request<string>("fixturePing", {}, 3000)).toBe("👋é");
     expect(progress).toEqual(["Loading 👋"]);
     expect(h.failures).toHaveLength(0);
   } finally {
@@ -494,11 +494,11 @@ for line in sys.stdin:
 test("EOF delivers a final protocol response without a trailing newline", async () => {
   const h = harness(`import sys,json
 request=json.loads(sys.stdin.readline())
-sys.stdout.write('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':'final 👋'},ensure_ascii=False))
+sys.stdout.write('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'final 👋'},ensure_ascii=False))
 sys.stdout.flush()
 `);
   try {
-    expect(await h.client.request<string>("ping", {}, 3000)).toBe("final 👋");
+    expect(await h.client.request<string>("fixturePing", {}, 3000)).toBe("final 👋");
     expect(h.client.busy).toBe(false);
   } finally {
     h.cleanup();
@@ -507,14 +507,14 @@ sys.stdout.flush()
 
 test("exact response-line UTF-8 budget succeeds and one excess byte stops the generation", async () => {
   const bytes = Buffer.byteLength(
-    `@delulu:${JSON.stringify({ id: "0".repeat(36), ok: true, result: "👋" })}`,
+    `@delulu:${JSON.stringify({ protocolVersion: 1, id: "0".repeat(36), ok: true, result: "👋" })}`,
   );
   const h = harness(
     `import sys,json
 for line in sys.stdin:
  request=json.loads(line)
  result='👋x' if request['command']=='over' else '👋'
- print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':result},ensure_ascii=False,separators=(',',':')),end='\\r\\n',flush=True)
+ print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':result},ensure_ascii=False,separators=(',',':')),end='\\r\\n',flush=True)
 `,
     { limits: { stdoutLineBytes: bytes } },
   );
@@ -539,7 +539,7 @@ test("ordinary stdout logs obey the same exact-line bound as responses", async (
 for line in sys.stdin:
  request=json.loads(line)
  print('x'*(129 if request['command']=='over' else 128),flush=True)
- print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':'healthy'}),flush=True)
+ print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'healthy'}),flush=True)
 `,
     { limits: { stdoutLineBytes: 128 } },
   );
@@ -566,7 +566,7 @@ for line in sys.stdin:
   sys.stdout.flush()
   time.sleep(60)
  else:
-  print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':'recovered'}),flush=True)
+  print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'recovered'}),flush=True)
 `,
     { limits: { stdoutLineBytes: 128 } },
   );
@@ -583,7 +583,7 @@ for line in sys.stdin:
     expect(h.failures).toHaveLength(1);
     expect(h.client.running).toBe(false);
     expect(h.client.busy).toBe(false);
-    expect(await h.client.request<string>("ping", {}, 3000)).toBe("recovered");
+    expect(await h.client.request<string>("fixturePing", {}, 3000)).toBe("recovered");
     expect(h.starts).toBe(2);
     expect(h.failures).toHaveLength(1);
   } finally {
@@ -602,13 +602,13 @@ for line in sys.stdin:
   sys.stdout.write('x'*129+'\\n@delulu-progress:obsolete\\n')
   sys.stdout.flush()
  else:
-  print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':'fresh'}),flush=True)
+  print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'fresh'}),flush=True)
 `,
     {
       limits: { stdoutLineBytes: 128 },
       onProgress: (detail) => progress.push(detail),
       onFailure: () => {
-        retry.promise ??= h.client.request<string>("ping", {}, 3000);
+        retry.promise ??= h.client.request<string>("fixturePing", {}, 3000);
         void retry.promise.catch(() => undefined);
       },
     },
@@ -635,12 +635,12 @@ for line in sys.stdin:
   for byte in 'older 👋é\\n'.encode('utf-8'):
    sys.stderr.buffer.write(bytes([byte]))
    sys.stderr.buffer.flush()
- print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':'logged'}),flush=True)
+ print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'logged'}),flush=True)
 `,
     { limits: { stderrBytes: 17 } },
   );
   try {
-    expect(await h.client.request<string>("ping", {}, 3000)).toBe("logged");
+    expect(await h.client.request<string>("fixturePing", {}, 3000)).toBe("logged");
     // Stdout and stderr are independent pipes; ensure the final log bytes arrived.
     await h.client.stopAndWait();
     expect(Buffer.byteLength(h.client.stderr)).toBeLessThanOrEqual(17);
@@ -665,7 +665,7 @@ test("desktop transport and real Python entrypoint agree at the default request 
     (error) => failures.push(error),
   );
   const overhead = Buffer.byteLength(
-    JSON.stringify({ text: "", id: "0".repeat(36), command: "status" }),
+    JSON.stringify({ text: "", protocolVersion: 1, id: "0".repeat(36), command: "status" }),
   );
   const remaining = DEFAULT_WORKER_PROTOCOL_LIMITS.requestBytes - overhead;
   const text =

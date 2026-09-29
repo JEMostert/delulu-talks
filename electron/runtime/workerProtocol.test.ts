@@ -30,10 +30,10 @@ test("serialization counts exact UTF-8 wire bytes, excluding the delimiter", () 
   const id = "fixture";
   const payload = { text: "👋" };
   const bytes = Buffer.byteLength(
-    JSON.stringify({ ...payload, id, command: "ping" }),
+    JSON.stringify({ ...payload, protocolVersion: 1, id, command: "ping" }),
   );
   expect(serializeWorkerRequest(id, "ping", payload, bytes)).toBe(
-    `${JSON.stringify({ ...payload, id, command: "ping" })}\n`,
+    `${JSON.stringify({ ...payload, protocolVersion: 1, id, command: "ping" })}\n`,
   );
   expect(() => serializeWorkerRequest(id, "ping", payload, bytes - 1)).toThrow(
     "UTF-8 bytes",

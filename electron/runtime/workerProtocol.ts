@@ -1,5 +1,135 @@
 import { StringDecoder } from "node:string_decoder";
 
+export const WORKER_PROTOCOL_VERSION = 1;
+const PRESETS = new Set(["polish", "concise", "structured", "prompt", "bullet-points", "professional-message"]);
+const MAGIC_MODELS = new Set(["qwen35Small", "qwen35Medium", "qwen35Large"]);
+type JsonObject = Record<string, unknown>;
+export type WorkerResponse =
+  | { protocolVersion: 1; id: string; ok: true; result: unknown }
+  | { protocolVersion: 1; id: string; ok: false; error: string };
+
+function object(value: unknown, label: string): JsonObject {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error(`Invalid model worker ${label}: expected an object`);
+  return value as JsonObject;
+}
+
+function stringField(value: JsonObject, key: string, required = false, nonempty = false): void {
+  if (!(key in value) && !required) return;
+  if (typeof value[key] !== "string" || (nonempty && !value[key]))
+    throw new Error(`Invalid model worker ${key}: expected ${nonempty ? "a nonempty" : "a"} string`);
+}
+
+function numberField(value: JsonObject, key: string, required = false): void {
+  if (!(key in value) && !required) return;
+  const field = value[key];
+  if (typeof field !== "number" || !Number.isFinite(field) || field < 0)
+    throw new Error(`Invalid model worker ${key}: expected a finite nonnegative number`);
+}
+
+function booleanField(value: JsonObject, key: string, required = false): void {
+  if (!(key in value) && !required) return;
+  if (typeof value[key] !== "boolean")
+    throw new Error(`Invalid model worker ${key}: expected a boolean`);
+}
+
+// Keep schema traversal bounded independently of the serialized byte budget.
+function jsonValue(value: unknown, depth = 0): void {
+  if (depth > 64) throw new Error("Model worker JSON exceeds 64 nesting levels");
+  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number" && Number.isFinite(value)) return;
+  if (value && typeof value === "object") {
+    for (const item of Object.values(value)) jsonValue(item, depth + 1);
+    return;
+  }
+  throw new Error("Model worker payload must contain finite JSON values");
+}
+
+export function validateWorkerRequest(value: unknown): JsonObject {
+  const request = object(value, "request");
+  if (request.protocolVersion !== WORKER_PROTOCOL_VERSION)
+    throw new Error("Model worker protocol version mismatch. Restart the app or repair its runtime.");
+  stringField(request, "id", true, true);
+  stringField(request, "command", true, true);
+  if (Buffer.byteLength(request.id as string, "utf8") > 128 || Buffer.byteLength(request.command as string, "utf8") > 64)
+    throw new Error("Model worker request ID/command exceeds its byte limit");
+  jsonValue(request);
+  if (request.command === "load" || request.command === "magicLoad") stringField(request, "cacheDir");
+  if (request.command === "magicLoad") {
+    stringField(request, "model");
+    if (request.model !== undefined && !MAGIC_MODELS.has(request.model as string))
+      throw new Error("Invalid model worker writing model");
+  }
+  if (request.command === "transcribe") {
+    stringField(request, "audioPath", true, true);
+    stringField(request, "language");
+    numberField(request, "durationMs");
+  }
+  if (request.command === "magicRewrite") {
+    stringField(request, "text", true);
+    stringField(request, "preset");
+    stringField(request, "instructions");
+    booleanField(request, "allowInferences");
+    if ((request.text as string).length > 500_000 || ((request.instructions as string | undefined)?.length ?? 0) > 4_000)
+      throw new Error("Model worker writing input exceeds its character limit");
+    if (request.preset !== undefined && !PRESETS.has(request.preset as string))
+      throw new Error("Invalid model worker rewrite preset");
+  }
+  return request;
+}
+
+export function validateWorkerResponse(value: unknown): WorkerResponse {
+  const response = object(value, "response");
+  if (response.protocolVersion !== WORKER_PROTOCOL_VERSION)
+    throw new Error("Model worker protocol version mismatch. Restart the app or repair its runtime.");
+  stringField(response, "id", true, true);
+  if (Buffer.byteLength(response.id as string, "utf8") > 128)
+    throw new Error("Invalid model worker response ID");
+  booleanField(response, "ok", true);
+  if (response.ok) {
+    if (!("result" in response) || "error" in response)
+      throw new Error("Invalid model worker success response");
+    jsonValue(response.result);
+  } else {
+    stringField(response, "error", true, true);
+    if ("result" in response || Buffer.byteLength(response.error as string, "utf8") > 8_000)
+      throw new Error("Invalid model worker failure response");
+  }
+  return response.ok
+    ? { protocolVersion: 1, id: response.id as string, ok: true, result: response.result }
+    : { protocolVersion: 1, id: response.id as string, ok: false, error: response.error as string };
+}
+
+export function validateWorkerResult(command: string, value: unknown): void {
+  const statusCommands = ["ping", "status", "load", "unload", "magicStatus", "magicLoad", "magicUnload"];
+  if (statusCommands.includes(command)) {
+    const result = object(value, "status result");
+    booleanField(result, "loaded", true);
+    for (const key of ["model", "device"]) if (result[key] !== null) stringField(result, key);
+    if (command === "ping") stringField(result, "python", true, true);
+  } else if (command === "transcribe") {
+    const result = object(value, "transcription result");
+    stringField(result, "text", true);
+    stringField(result, "language", true);
+    for (const key of ["duration", "processingTime"]) numberField(result, key, true);
+    numberField(result, "inferenceTime");
+  } else if (command === "magicRewrite") {
+    const result = object(value, "rewrite result");
+    stringField(result, "text", true);
+    stringField(result, "model", true);
+    for (const key of ["processingTimeMs", "inputCharacters", "outputCharacters"]) numberField(result, key, true);
+    for (const key of ["inputCharacters", "outputCharacters"]) {
+      const count = result[key];
+      if (typeof count !== "number" || !Number.isSafeInteger(count))
+        throw new Error(`Invalid model worker ${key}: expected a safe integer`);
+    }
+    booleanField(result, "includedInferences", true);
+  } else if (command === "shutdown") {
+    if (object(value, "shutdown result").shutdown !== true)
+      throw new Error("Invalid model worker shutdown result");
+  }
+}
+
 export type WorkerProtocolLimits = {
   requestBytes: number;
   stdoutLineBytes: number;
@@ -134,16 +264,19 @@ export function serializeWorkerRequest(
     throw new Error("Model worker payload must be a JSON object");
   let serialized: string | undefined;
   try {
-    serialized = JSON.stringify({ ...payload, id, command }, (_key, value) => {
+    serialized = JSON.stringify({ ...payload, protocolVersion: WORKER_PROTOCOL_VERSION, id, command }, (_key, value) => {
+      if (typeof value === "number" && !Number.isFinite(value))
+        throw new Error("Non-finite number");
       if (["bigint", "function", "symbol"].includes(typeof value))
         throw new Error(`Unsupported ${typeof value} value`);
       return value;
     });
     const envelope = serialized && JSON.parse(serialized);
-    if (!envelope || envelope.id !== id || envelope.command !== command)
+    if (!envelope || envelope.id !== id || envelope.command !== command || envelope.protocolVersion !== WORKER_PROTOCOL_VERSION)
       throw new Error(
         "Payload serialization must preserve the request envelope",
       );
+    validateWorkerRequest(envelope);
   } catch (reason) {
     throw new Error(
       `Model worker request cannot be serialized as JSON: ${reason instanceof Error ? reason.message : String(reason)}. Correct the request and try again.`,

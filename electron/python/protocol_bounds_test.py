@@ -41,19 +41,19 @@ class ProtocolBoundsTest(unittest.TestCase):
         return code, calls, responses, output.getvalue(), diagnostic.getvalue()
 
     def test_exact_utf8_request_boundary_accepts_lf_crlf_and_eof(self):
-        value = {"id": "unicode", "command": "status", "text": "👋 中文 é"}
+        value = {"protocolVersion": 1, "id": "unicode", "command": "status", "text": "👋 中文 é"}
         raw = request_line(value)
         self.assertGreater(len(raw), len(raw.decode("utf-8")))
         for ending in [b"\n", b"\r\n", b""]:
             with self.subTest(ending=ending):
                 code, calls, responses, _, _ = self.run_loop(
-                    raw + ending, lambda request: request["text"], len(raw))
+                    raw + ending, lambda request: {"loaded": False, "text": request["text"]}, len(raw))
                 self.assertEqual(code, 0)
                 self.assertEqual(calls, [value])
-                self.assertEqual(responses, [{"id": "unicode", "ok": True, "result": value["text"]}])
+                self.assertEqual(responses, [{"protocolVersion": 1, "id": "unicode", "ok": True, "result": {"loaded": False, "text": value["text"]}}])
 
     def test_oversized_input_exits_without_dispatch_or_partial_response(self):
-        value = {"id": "oversized", "command": "status", "text": "👋" * 32}
+        value = {"protocolVersion": 1, "id": "oversized", "command": "status", "text": "👋" * 32}
         raw = request_line(value)
         for ending in [b"\n", b"", b"\r\n"]:
             with self.subTest(ending=ending):
@@ -66,7 +66,7 @@ class ProtocolBoundsTest(unittest.TestCase):
                 self.assertIn("Shorten the input", diagnostic)
 
     def test_extra_carriage_returns_cannot_hide_oversized_or_partial_input(self):
-        value = {"id": "boundary", "command": "status"}
+        value = {"protocolVersion": 1, "id": "boundary", "command": "status"}
         raw = request_line(value)
         for ending in [b"\r\r\n", b"\r" * 40 + b"\n", b"\r\r" + request_line(value)]:
             with self.subTest(ending=ending):
@@ -77,7 +77,7 @@ class ProtocolBoundsTest(unittest.TestCase):
                 self.assertEqual(responses, [])
 
     def test_exact_response_byte_boundary_is_valid_and_overflow_writes_nothing(self):
-        payload = {"id": "unicode", "ok": True, "result": "👋中文"}
+        payload = {"protocolVersion": 1, "id": "unicode", "ok": True, "result": {"loaded": False, "text": "👋中文"}}
         expected = engine.PROTOCOL_PREFIX + json.dumps(payload, ensure_ascii=False)
         for difference in [0, -1]:
             with self.subTest(difference=difference):
@@ -86,32 +86,32 @@ class ProtocolBoundsTest(unittest.TestCase):
                         patch.object(engine.sys, "stdout", output):
                     if difference:
                         with self.assertRaisesRegex(ValueError, "response exceeds"):
-                            engine.emit(payload)
+                            engine.emit(payload, "status")
                         self.assertEqual(output.getvalue(), "")
                     else:
-                        engine.emit(payload)
+                        engine.emit(payload, "status")
                         self.assertEqual(output.getvalue(), expected + "\n")
 
     def test_response_overflow_rejects_one_request_and_allows_intentional_retry(self):
-        values = [{"id": "large", "command": "large"}, {"id": "retry", "command": "status"}]
+        values = [{"protocolVersion": 1, "id": "large", "command": "status"}, {"protocolVersion": 1, "id": "retry", "command": "status"}]
         raw = b"\n".join(map(request_line, values)) + b"\n"
         code, calls, responses, output, _ = self.run_loop(
-            raw, lambda request: "👋" * 2048 if request["command"] == "large" else "still ready",
+            raw, lambda request: {"loaded": False, "text": "👋" * 2048 if request["id"] == "large" else "still ready"},
             response_limit=512)
         self.assertEqual(code, 0)
         self.assertEqual(calls, values)
         self.assertFalse(responses[0]["ok"])
         self.assertIn("Shorten the input", responses[0]["error"])
-        self.assertEqual(responses[1], {"id": "retry", "ok": True, "result": "still ready"})
+        self.assertEqual(responses[1], {"protocolVersion": 1, "id": "retry", "ok": True, "result": {"loaded": False, "text": "still ready"}})
         self.assertTrue(all(len(line.encode("utf-8")) <= 512 for line in output.splitlines()))
 
     def test_huge_exception_text_is_byte_bounded_and_next_request_survives(self):
-        values = [{"id": "failure", "command": "fail"}, {"id": "retry", "command": "status"}]
+        values = [{"protocolVersion": 1, "id": "failure", "command": "status"}, {"protocolVersion": 1, "id": "retry", "command": "status"}]
 
         def dispatch(request):
-            if request["command"] == "fail":
+            if request["id"] == "failure":
                 raise RuntimeError("👋" * 20_000)
-            return "available for retry"
+            return {"loaded": False, "text": "available for retry"}
 
         code, _, responses, _, diagnostic = self.run_loop(
             b"\n".join(map(request_line, values)), dispatch, response_limit=16_384)
@@ -120,13 +120,13 @@ class ProtocolBoundsTest(unittest.TestCase):
         self.assertLessEqual(len(error.encode("utf-8")), engine.MAX_ERROR_BYTES)
         self.assertNotIn("�", error)
         self.assertLess(len(diagnostic.encode("utf-8")), engine.MAX_ERROR_BYTES + 2048)
-        self.assertEqual(responses[1]["result"], "available for retry")
+        self.assertEqual(responses[1]["result"]["text"], "available for retry")
 
     def test_blank_lines_and_request_local_errors_preserve_order(self):
-        values = [{"id": "bad", "command": "fail"}, {"id": "good", "command": "shutdown"}]
+        values = [{"protocolVersion": 1, "id": "bad", "command": "status"}, {"protocolVersion": 1, "id": "good", "command": "shutdown"}]
 
         def dispatch(request):
-            if request["command"] == "fail":
+            if request["id"] == "bad":
                 raise ValueError("Fixture rejection")
             return {"shutdown": True}
 

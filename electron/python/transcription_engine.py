@@ -22,6 +22,8 @@ import traceback
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+from worker_protocol import correlation_id, terminal_response, validate_request
+
 if TYPE_CHECKING:
     from speech_engine import SpeechEngine
 
@@ -85,9 +87,10 @@ MAGIC_PRESETS = {
 }
 
 
-def emit(payload: dict[str, Any]) -> None:
+def emit(payload: dict[str, Any], command: str | None = None) -> None:
+    payload = terminal_response(payload, command)
     encoded = bytearray(PROTOCOL_PREFIX, "utf-8")
-    for part in json.JSONEncoder(ensure_ascii=False).iterencode(payload):
+    for part in json.JSONEncoder(ensure_ascii=False, allow_nan=False).iterencode(payload):
         chunk = part.encode("utf-8")
         if len(encoded) + len(chunk) > MAX_RESPONSE_BYTES:
             raise ValueError(
@@ -101,7 +104,7 @@ def emit(payload: dict[str, Any]) -> None:
 
 
 def bounded_error(exc: Exception) -> str:
-    message = str(exc)[:MAX_ERROR_BYTES]
+    message = (str(exc) or type(exc).__name__)[:MAX_ERROR_BYTES]
     encoded = message.encode("utf-8", errors="replace")
     return encoded[:MAX_ERROR_BYTES].decode("utf-8", errors="ignore")
 
@@ -493,10 +496,11 @@ def main() -> int:
         request_id: Any = None
         try:
             request = json.loads(line)
-            request_id = request.get("id")
+            request_id = correlation_id(request)
+            request = validate_request(request)
             with contextlib.redirect_stdout(sys.stderr):
                 result = worker.dispatch(request)
-            emit({"id": request_id, "ok": True, "result": result})
+            emit({"id": request_id, "ok": True, "result": result}, request["command"])
             if request.get("command") == "shutdown":
                 return 0
         except Exception as exc:
