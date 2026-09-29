@@ -1,3 +1,4 @@
+import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { app } from "electron";
 import { speechModelForPlatform } from "../runtime/platform";
 import {
@@ -270,6 +271,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     sourceName:
       typeof source.sourceName === "string" ? source.sourceName : null,
     processingTimeMs: Math.max(0, Number(source.processingTimeMs) || 0),
+    captureDiagnostics: normalizeCaptureDiagnostics(source.captureDiagnostics),
   };
 }
 

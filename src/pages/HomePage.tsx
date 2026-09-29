@@ -1,3 +1,4 @@
+import { CaptureDiagnostics } from "../components/CaptureDiagnostics";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
@@ -17,6 +18,7 @@ import {
 import { Toggle } from "../components/ui";
 import type {
   AppSettings,
+  CaptureDiagnostics as CaptureStats,
   DictationStatus,
   MagicStatus,
   MicrophoneDevice,
@@ -54,6 +56,7 @@ export function HomePage({
   shortcutStatus,
   devices,
   history,
+  captureDiagnostics,
   saving,
   busy,
   onNavigate,
@@ -69,6 +72,7 @@ export function HomePage({
   shortcutStatus: ShortcutStatus;
   devices: MicrophoneDevice[];
   history: TranscriptRecord[];
+  captureDiagnostics?: CaptureStats | null;
   saving: boolean;
   busy: boolean;
   onNavigate: (page: Page) => void;
@@ -281,6 +285,7 @@ export function HomePage({
                 )}
               </div>
             </div>
+            <CaptureDiagnostics value={captureDiagnostics} />
             {!shortcutStatus.registered && (
               <p className="control-warning">{shortcutStatus.message}</p>
             )}

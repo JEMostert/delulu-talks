@@ -5,6 +5,7 @@ import { PcmRecorder, listMicrophones } from "../recorder";
 import { readStartupService } from "../startupServices";
 import type {
   AppSettings,
+  CaptureDiagnostics,
   DictationStatus,
   MagicStatus,
   MicrophoneDevice,
@@ -37,6 +38,8 @@ export function useWorkspace() {
     method: "native",
     message: "Checking shortcut",
   });
+  const [captureDiagnostics, setCaptureDiagnostics] =
+    useState<CaptureDiagnostics | null>(null);
   const [history, setHistory] = useState<TranscriptRecord[]>([]);
   const [devices, setDevices] = useState<MicrophoneDevice[]>([
     { deviceId: "default", label: "System default" },
@@ -80,7 +83,9 @@ export function useWorkspace() {
     const read = <T>(name: string, request: () => Promise<T>) =>
       readStartupService(name, request, startup.signal);
     setStartupError(null);
-    const recorder = new PcmRecorder();
+    const recorder = new PcmRecorder((stats) => {
+      if (alive) setCaptureDiagnostics(stats);
+    });
     const subscriptions = [
       bridge.onStatus(subscribe("speech status", setStatus)),
       bridge.onMagicStatus(subscribe("rewriting status", setMagicStatus)),
@@ -277,6 +282,7 @@ export function useWorkspace() {
     magicStatus,
     shortcutStatus,
     history,
+    captureDiagnostics,
     setHistory,
     devices,
     capabilities,

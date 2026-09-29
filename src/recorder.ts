@@ -1,6 +1,7 @@
 import captureWorkletUrl from "./captureWorklet.js?url&no-inline";
 import { bridge } from "./bridge";
-import type { MicrophoneDevice, RecorderCommand } from "./types";
+import { CLIPPING_THRESHOLD } from "./captureDiagnostics";
+import type { CaptureDiagnostics, MicrophoneDevice, RecorderCommand } from "./types";
 
 function merge(chunks: Float32Array[]): Float32Array {
   const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
@@ -75,6 +76,15 @@ export class PcmRecorder {
   private source: MediaStreamAudioSourceNode | null = null;
   private sink: GainNode | null = null;
   private chunks: Float32Array[] = [];
+  private sampleCount = 0;
+  private peakAmplitude = 0;
+  private sumSquares = 0;
+  private clippedSampleCount = 0;
+
+  constructor(
+    private readonly onDiagnostics?: (stats: CaptureDiagnostics | null) => void,
+  ) {}
+
   private startedAt = 0;
   private stopping = false;
   private lastLevelAt = 0;
@@ -122,6 +132,11 @@ export class PcmRecorder {
       this.sink = this.context.createGain();
       this.sink.gain.value = 0;
       this.chunks = [];
+      this.sampleCount = 0;
+      this.peakAmplitude = 0;
+      this.sumSquares = 0;
+      this.clippedSampleCount = 0;
+      this.onDiagnostics?.(null);
       if (await this.connectWorklet()) {
         this.source.connect(this.worklet!);
         this.worklet!.connect(this.sink);
@@ -168,6 +183,14 @@ export class PcmRecorder {
 
   private ingest(samples: Float32Array, rms?: number): void {
     this.chunks.push(new Float32Array(samples));
+    // Inspect the actual worklet/fallback samples without changing them.
+    for (const sample of samples) {
+      const amplitude = Math.abs(sample);
+      this.peakAmplitude = Math.max(this.peakAmplitude, amplitude);
+      this.sumSquares += sample * sample;
+      if (amplitude >= CLIPPING_THRESHOLD) this.clippedSampleCount += 1;
+    }
+    this.sampleCount += samples.length;
     const now = performance.now();
     if (now - this.lastLevelAt < 50) return;
     this.lastLevelAt = now;
@@ -204,9 +227,21 @@ export class PcmRecorder {
       });
     }
     const captured = merge(this.chunks);
+    const captureDiagnostics: CaptureDiagnostics = {
+      sampleCount: this.sampleCount,
+      sampleRate,
+      peakAmplitude: this.peakAmplitude,
+      rmsAmplitude: Math.min(
+        this.peakAmplitude,
+        Math.sqrt(this.sumSquares / Math.max(1, this.sampleCount)),
+      ),
+      clippedSampleCount: this.clippedSampleCount,
+      clippingThreshold: CLIPPING_THRESHOLD,
+    };
     await this.dispose();
     this.stopping = false;
     if (submit) {
+      this.onDiagnostics?.(captured.length ? captureDiagnostics : null);
       if (!captured.length) {
         await bridge.recordingFailed(
           "The microphone did not produce audio. Try another input.",
@@ -216,6 +251,7 @@ export class PcmRecorder {
       await bridge.submitRecording({
         wav: wav(resample(captured, sampleRate)),
         durationMs,
+        captureDiagnostics,
       });
     }
   }

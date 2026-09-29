@@ -90,6 +90,16 @@ export type DictationStatus = {
   progress?: number | null;
 };
 
+/** Diagnostics of captured mono PCM before resampling/encoding, not hardware gain. */
+export type CaptureDiagnostics = {
+  sampleCount: number;
+  sampleRate: number;
+  peakAmplitude: number;
+  rmsAmplitude: number;
+  clippedSampleCount: number;
+  clippingThreshold: number;
+};
+
 export type TranscriptRecord = {
   id: string;
   createdAt: number;
@@ -107,6 +117,7 @@ export type TranscriptRecord = {
   source: TranscriptSource;
   sourceName?: string | null;
   processingTimeMs: number;
+  captureDiagnostics?: CaptureDiagnostics;
 };
 
 export type ModelProvenance = {
@@ -162,6 +173,7 @@ export type RecorderCommand = {
 export type RecordingSubmission = {
   wav: Uint8Array;
   durationMs: number;
+  captureDiagnostics?: CaptureDiagnostics;
 };
 
 export type MicrophoneDevice = {

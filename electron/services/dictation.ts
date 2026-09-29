@@ -1,3 +1,4 @@
+import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { personalize } from "../../src/personalization";
 import { deliveredText } from "../../src/transcriptText";
 import type { BrowserWindow } from "electron";
@@ -339,6 +340,9 @@ export class DictationService {
         submission.durationMs,
         null,
         settings,
+      );
+      record.captureDiagnostics = normalizeCaptureDiagnostics(
+        submission.captureDiagnostics,
       );
       let output = this.outputText(record, settings);
       if (!output.trim()) {

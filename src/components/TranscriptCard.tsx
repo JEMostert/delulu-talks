@@ -1,3 +1,4 @@
+import { CaptureDiagnostics } from "./CaptureDiagnostics";
 import { RewriteDialog } from "./RewriteDialog";
 import { useState } from "react";
 import {
@@ -169,6 +170,7 @@ export function TranscriptCard({
           )}
         </div>
       </header>
+      {open && <CaptureDiagnostics value={record.captureDiagnostics} />}
       {!inspector && (
         <p
           className={`transcript-preview mt-4 text-[15px] leading-[1.85] text-ink whitespace-pre-wrap wrap-anywhere ${
