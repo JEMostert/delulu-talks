@@ -52,7 +52,7 @@ try:
             except importlib.metadata.PackageNotFoundError:
                 pass
         observation = {
-            "model": speech["model"], "device": speech["device"],
+            "model": speech["model"], "modelSource": "worker status", "device": speech["device"],
             "backend": "mlx" if speech["device"] == "mlx" else "cuda-transformers" if sys.platform == "win32" else "cuda-vllm",
             "backendSource": "worker device and platform",
             "fixtureSha256": hashlib.sha256((root / "test-audio.m4a").read_bytes()).hexdigest(),

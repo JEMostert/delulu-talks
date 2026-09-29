@@ -217,6 +217,7 @@ try {
         process.env.DELULU_EVIDENCE_NATIVE_RESULT,
         JSON.stringify({
           model: records[0]?.model,
+          modelSource: "application transcript attribution",
           backend: metal
             ? "mlx"
             : process.platform === "win32"

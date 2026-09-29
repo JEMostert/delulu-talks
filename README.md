@@ -162,7 +162,8 @@ Electron main process
 
 ```bash
 bun run typecheck
-bun test
+bun run test
+bun run test:python
 bun run test:e2e
 bun run test:desktop
 bun run build
@@ -202,6 +203,13 @@ Delulu Talks is [MIT licensed](LICENSE). Vendored conversion helpers and their l
 
 ## Development checks
 
+[Verification evidence](docs/VERIFICATION.md) separates fixture-only, mocked,
+native-inference and manual-desktop results. The reporting commands below save
+SHA-bound JSON evidence under ignored `artifacts/verification/`; CI retains the
+reports after failures too. Run `bun run test:evidence` for the current HEAD's
+summary. Ordinary suites do not establish native inference or manual delivery.
+
+
 Development uses its own **Delulu Talks Dev** profile, audio cache, and Linux desktop entry. It does not import production history, overwrite the installed launcher, automatically bind the production shortcut, or change login startup. `DELULU_USER_DATA_DIR` is an explicit development/test override; do not point it at your everyday profile.
 
 Repairs build a fresh environment under `speech-venv/generations/` (or the Writing runtime root), validate dependencies and imports, then atomically activate it. Virtualenv directories are never renamed. Failed installation leaves the previous runtime selected; a failed initial model load rolls activation back. Previous and interrupted generations are retained for recovery, so repairs temporarily require extra disk space. The existing `asr-venv` can still be the active Writing runtime; do not delete it merely because its name is old.
@@ -211,7 +219,8 @@ Cold starts load model weights into GPU memory. **Settings → Runtime → Keep 
 ```bash
 bun run format:check
 bun run typecheck
-bun test
+bun run test
+bun run test:python
 bunx playwright install chromium
 bun run test:e2e
 bun run test:desktop
@@ -220,7 +229,7 @@ bun run test:desktop
 The desktop smoke check uses temporary user data and skips global desktop integration. For opt-in real model verification with an existing runtime and cached models:
 
 ```bash
-/path/to/active-speech-generation/bin/python scripts/runtime-smoke.py --cache /path/to/models
+bun run test:native -- --metadata /path/to/native-metadata.json --python /path/to/active-speech-generation/bin/python --cache /path/to/models
 ```
 
 To exercise the full Electron transcription, correction and export path with the same existing runtime:
