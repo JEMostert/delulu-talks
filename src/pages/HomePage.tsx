@@ -1,26 +1,35 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { technicalDictationGuide } from "../technicalDictation";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { CaptureDiagnostics } from "../components/CaptureDiagnostics";
+import { InputLevel } from "../components/InputLevel";
 import {
   ArrowUpRight,
   Check,
   ClipboardPaste,
+  Copy,
   Keyboard,
   Mic,
   Settings2,
-  Square,
   WandSparkles,
 } from "lucide-react";
+import { deliveredText } from "../transcriptText";
 import { speechLanguageCapability } from "../speechCapabilities";
+import { MAX_CAPTURE_DURATION_MS } from "../captureLimits";
 import {
   TranscriptCard,
   type TranscriptActions,
 } from "../components/TranscriptCard";
 import { Toggle } from "../components/ui";
+import { LiveCaptureStatus } from "../components/LiveCaptureStatus";
+import { MicrophoneNotice } from "../components/MicrophoneNotice";
 import type {
   AppSettings,
+  CaptureDiagnostics as CaptureStats,
   DictationStatus,
   MagicStatus,
   MicrophoneDevice,
   Page,
+  PlatformCapabilities,
   ShortcutStatus,
   TranscriptRecord,
 } from "../types";
@@ -51,37 +60,54 @@ function ControlField({
 export function HomePage({
   settings: s,
   status,
+  magicStatus,
+  capabilities,
   shortcutStatus,
   devices,
   history,
+  captureDiagnostics,
   saving,
   busy,
   onNavigate,
   onUpdateSettings: save,
   onConfigureShortcut,
   onPasteLast,
+  pasteLastBusy,
   onToggleRecord,
   ...actions
 }: TranscriptActions & {
   settings: AppSettings;
   status: DictationStatus;
   magicStatus: MagicStatus;
+  capabilities?: PlatformCapabilities | null;
   shortcutStatus: ShortcutStatus;
   devices: MicrophoneDevice[];
   history: TranscriptRecord[];
+  captureDiagnostics?: CaptureStats | null;
   saving: boolean;
   busy: boolean;
   onNavigate: (page: Page) => void;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onConfigureShortcut: () => void;
   onPasteLast: () => void;
-  onToggleRecord: () => void;
+  onToggleRecord: () => Promise<boolean>;
+  pasteLastBusy: boolean;
 }) {
   const [shortcut, setShortcut] = useState(s.shortcut);
   useEffect(() => setShortcut(s.shortcut), [s.shortcut]);
   const portal = shortcutStatus.method === "portal";
   const latest = history[0];
   const recording = status.phase === "listening";
+  const needsSetup = ["missing", "error"].includes(status.engine);
+  const startedFromHome = useRef(false);
+  useEffect(() => {
+    if (recording && startedFromHome.current) {
+      document.getElementById("recording-stop-control")?.focus({ preventScroll: true });
+      startedFromHome.current = false;
+    } else if (status.phase === "error") {
+      startedFromHome.current = false;
+    }
+  }, [recording, status.phase]);
   const languageCapability = speechLanguageCapability(s.model);
   const engineText = (engine: DictationStatus["engine"]) =>
     ({
@@ -107,6 +133,7 @@ export function HomePage({
           <ArrowUpRight className="w-3.5 h-3.5" />
         </button>
       </div>
+      <LiveCaptureStatus settings={s} speech={status} rewrite={magicStatus} shortcut={shortcutStatus} devices={devices} capabilities={capabilities} />
       <div className="grid gap-4 items-start grid-cols-[minmax(0,1.55fr)_minmax(300px,1fr)] max-[1150px]:grid-cols-1">
         <div className="grid grid-cols-2 gap-3.5 max-[700px]:grid-cols-1">
           <section
@@ -123,27 +150,36 @@ export function HomePage({
               </span>
             </header>
             <div className="flex items-center gap-[18px] mx-3.5 mt-2.5 px-3.5 py-2.5 border border-line rounded-xl bg-[linear-gradient(115deg,var(--panel-heading),var(--surface)_70%)] backdrop-blur-md">
-              <button
-                className={`inline-flex items-center gap-2.5 shrink-0 min-h-11 px-[22px] py-2 rounded-[12px] border-0 text-[15px] font-[650] tracking-[0.2px] text-on-accent bg-[linear-gradient(160deg,var(--accent),var(--accent-hover))] shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_22px_rgba(10,132,255,0.35)] hover:brightness-[1.07] ${
-                  recording
-                    ? "bg-[linear-gradient(160deg,var(--danger),#c94a60)] shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_22px_rgba(200,60,80,0.35)]"
-                    : ""
-                }`}
-                disabled={busy && !recording}
-                onClick={() =>
-                  ["missing", "error"].includes(status.engine) && !recording
-                    ? onNavigate("models")
-                    : onToggleRecord()
-                }
-                aria-label={recording ? "Stop dictation" : "Start dictation"}
-              >
-                {recording ? (
-                  <Square className="w-5 h-5 animate-[voice_1.2s_ease-in-out_infinite]" />
-                ) : (
+              {recording ? (
+                <span
+                  className="inline-flex items-center gap-2 shrink-0 text-[13px] font-[650] text-accent-ink"
+                  role="status"
+                >
+                  <Mic className="w-4 h-4 animate-[voice_1.2s_ease-in-out_infinite]" />
+                  Listening
+                </span>
+              ) : (
+                <button
+                  className="inline-flex items-center gap-2.5 shrink-0 min-h-11 px-[22px] py-2 rounded-[12px] border-0 text-[15px] font-[650] tracking-[0.2px] text-on-accent bg-[linear-gradient(160deg,var(--accent),var(--accent-hover))] shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_22px_rgba(10,132,255,0.35)] hover:brightness-[1.07]"
+                  disabled={busy}
+                  onClick={() => {
+                    if (needsSetup) {
+                      onNavigate("models");
+                    } else {
+                      startedFromHome.current = true;
+                      void onToggleRecord().then((started) => {
+                        if (!started) startedFromHome.current = false;
+                      }).catch(() => {
+                        startedFromHome.current = false;
+                      });
+                    }
+                  }}
+                  aria-label={needsSetup ? "Set up speech" : "Start dictation"}
+                >
                   <Mic className="w-5 h-5" />
-                )}
-                <span>{recording ? "Stop" : "Record"}</span>
-              </button>
+                  <span>{needsSetup ? "Set up speech" : "Record"}</span>
+                </button>
+              )}
               <div className="flex flex-col justify-center gap-1 flex-1 min-w-0">
                 <div className="engine-line border-0 m-0 p-0 min-h-0">
                   <span
@@ -161,14 +197,19 @@ export function HomePage({
                 <span className="text-[11px] text-muted">
                   {recording
                     ? portal && s.shortcutMode === "hold"
-                      ? "Listening — release the shortcut or press Stop"
-                      : "Listening — press the shortcut again or press Stop"
+                      ? "Release the shortcut or press Stop in the header to finish."
+                      : "Press the shortcut again or press Stop in the header to finish."
                     : portal && s.shortcutMode === "hold"
                       ? "Hold your shortcut, or press Record, and just talk."
                       : "Press your shortcut or Record to start; press again to finish."}
                 </span>
               </div>
             </div>
+            <p className="px-3.5 pt-2.5 text-[11px] text-muted">
+              Recordings finish automatically at {MAX_CAPTURE_DURATION_MS / 60_000}{" "}
+              minutes. High sample-rate inputs may finish sooner to limit memory
+              use. Captured audio is transcribed.
+            </p>
             <div className="grid grid-cols-3 gap-2.5 px-3.5 pt-2.5 pb-1.5 max-[700px]:grid-cols-1">
               <ControlField label="Microphone">
                 <select
@@ -187,7 +228,7 @@ export function HomePage({
                 >
                   {!devices.some((d) => d.deviceId === s.inputDeviceId) && (
                     <option value={s.inputDeviceId}>
-                      {s.inputDeviceLabel} (disconnected)
+                      {s.inputDeviceLabel} (not listed)
                     </option>
                   )}
                   {devices.map((device) => (
@@ -196,8 +237,9 @@ export function HomePage({
                     </option>
                   ))}
                 </select>
+                <MicrophoneNotice settings={s} devices={devices} />
               </ControlField>
-              <ControlField label="Language">
+              <ControlField label="Language hint">
                 <select
                   aria-label="Dictation language"
                   className="w-full min-h-[34px] px-[9px] py-[7px] pr-[23px] text-[12px] bg-input"
@@ -212,6 +254,19 @@ export function HomePage({
                       {label}
                     </option>
                   ))}
+                </select>
+              </ControlField>
+              <ControlField label="Text mode">
+                <select
+                  aria-label="Dictation text mode"
+                  className="w-full min-h-[34px] px-[9px] py-[7px] text-[12px] bg-input"
+                  value={s.dictationMode ?? "prose"}
+                  disabled={saving || busy}
+                  onChange={(e) => save({ dictationMode: e.target.value as AppSettings["dictationMode"] })}
+                >
+                  <option value="prose">Prose</option>
+                  <option value="code">Code symbols</option>
+                  <option value="command">Command text</option>
                 </select>
               </ControlField>
               <ControlField label="Record mode">
@@ -236,6 +291,26 @@ export function HomePage({
                   <option value="toggle">Toggle</option>
                 </select>
               </ControlField>
+              {s.dictationMode && s.dictationMode !== "prose" && (
+                <div className="col-span-full text-[11px] text-muted">
+                  Spoken symbols become text after recognition. Original speech stays in history.
+                  Vocabulary expansion and automatic rewriting are bypassed. Command text is never executed by Delulu Talks.
+                  <details className="mt-1">
+                    <summary className="cursor-pointer">Spoken symbol guide</summary>
+                    <p className="mt-1">Say “open parenthesis”, “close parenthesis”, “equals”, “semicolon”,
+                      “forward slash”, “backslash”, “new line”, “tab” or “space”.
+                      Say “literal” before a word to keep that word unchanged.
+                      Ordinary words keep their spacing; operators receive spaces.</p>
+                    <ul className="mt-2 grid gap-1">
+                      {technicalDictationGuide.map((entry) => (
+                        <li key={entry.label}>
+                          {entry.phrases.join(" / ")} → <code>{JSON.stringify(entry.output)}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                </div>
+              )}
               <div className="flex items-center gap-2 min-h-[37px] mt-0.5 border-t border-line pt-[9px] col-span-full">
                 <span className="flex items-center gap-1.5 text-[10px] text-muted">
                   <Keyboard className="w-[13px] h-[13px]" /> Shortcut
@@ -281,6 +356,15 @@ export function HomePage({
                 )}
               </div>
             </div>
+            {s.inputDeviceId === "default" && (
+              <p className="px-3.5 pb-2.5 text-[11px] text-muted">
+                System default is chosen when recording starts. Changing it during
+                capture keeps the original microphone; if that input disconnects,
+                capture stops and keeps the recorded audio.
+              </p>
+            )}
+            <InputLevel />
+            <CaptureDiagnostics value={captureDiagnostics} />
             {!shortcutStatus.registered && (
               <p className="control-warning">{shortcutStatus.message}</p>
             )}
@@ -333,7 +417,7 @@ export function HomePage({
                   className="text-button"
                   onClick={() => onNavigate("settings")}
                 >
-                  Configure automatic writing <ArrowUpRight />
+                  Configure automatic rewriting <ArrowUpRight />
                 </button>
               )}
             </div>
@@ -352,6 +436,23 @@ export function HomePage({
               </span>
             </header>
             <div className="px-3.5 pt-[3px] pb-[5px]">
+              <div className="py-2.5 border-b border-line">
+                <button
+                  className="secondary-button text-[12px]"
+                  aria-pressed={!s.autoPaste && s.copyToClipboard}
+                  disabled={saving || busy}
+                  onClick={() =>
+                    save({ autoPaste: false, copyToClipboard: true })
+                  }
+                >
+                  <Copy /> Use clipboard only
+                </button>
+                <p className="caption mt-2">
+                  {!s.autoPaste && s.copyToClipboard
+                    ? "Results are copied. Switch to your destination and use its Paste command. No keyboard permission is needed."
+                    : "Choose clipboard only if automatic paste is unreliable on your desktop."}
+                </p>
+              </div>
               {(
                 [
                   [
@@ -419,9 +520,15 @@ export function HomePage({
                 </span>
                 <button
                   className="secondary-button text-[11px] min-h-[31px] px-[9px] py-1.5"
-                  onClick={onPasteLast}
+                  disabled={busy || (s.autoPaste && pasteLastBusy)}
+                  onClick={() =>
+                    s.autoPaste
+                      ? onPasteLast()
+                      : actions.onCopy(deliveredText(latest))
+                  }
                 >
-                  <ClipboardPaste /> Paste last
+                  {s.autoPaste ? <ClipboardPaste /> : <Copy />}
+                  {s.autoPaste ? "Paste last" : "Copy last result"}
                 </button>
               </div>
             </>

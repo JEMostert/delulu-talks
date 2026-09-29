@@ -1,0 +1,126 @@
+# Provenance-bound transcript reports
+
+`scripts/evaluation_report.py` combines supplied UTF-8 reference and hypothesis
+files with explicit provenance. It imports the text evaluator from PR #381;
+that dependency must land first. It never runs a speech model. Raw transcript
+files remain untouched, and an existing report is never replaced.
+
+```sh
+python scripts/evaluation_report.py --reference reference.txt --hypothesis hypothesis.txt \
+  --provenance provenance.json --case-id nl-short-001 --output report.json
+```
+
+Every report requires the following provenance shape. Replace illustrative
+values with the actual producing runtime's values. Use `unknown` explicitly
+when a fact was not recorded; do not substitute the evaluator machine's facts.
+A conversion revision should identify the converted weights and source weights
+(or explicitly record missing evidence). Decode settings should include the
+actual generation parameters, chunking, preprocessing and sample rate.
+
+```json
+{
+  "model": {
+    "repository": "mlx-community/Confucius4-R2T2-bf16",
+    "revision": "747f5fc5f84bc9976baa2f02714e2fed67ed8611",
+    "conversion_provenance": "unknown"
+  },
+  "runtime": {
+    "backend": "r2t2-mlx",
+    "revision": "unknown",
+    "dependencies": {"mlx-audio": "0.5.7"}
+  },
+  "hardware": {
+    "os": "unknown", "processor": "unknown",
+    "accelerator": "unknown", "memory": "unknown"
+  },
+  "decode": {
+    "language": "nl", "precision": "bfloat16",
+    "settings": {"sample_rate": 16000, "max_tokens": 4096}
+  },
+  "hypothesis_origin": "unknown"
+}
+```
+
+The report stores input hashes, both evaluator hashes, raw fidelity metrics,
+normalization operations and UTC creation time. Its provenance is explicitly
+user supplied; producing a report does not establish native inference, model
+compatibility, hardware performance, or a passed quality gate. The standalone
+text-metrics script remains useful when no runtime provenance is available;
+its output is a text comparison, not a model evaluation report.
+
+Implementation status: **UNVERIFIED — checks not run per user instruction**.
+
+## Reference comparisons and external controls
+
+`scripts/evaluation_comparison.py` consumes provenance-bound reports, requires
+matched reference bytes and normalization across every participant, and records
+per-case raw fidelity and WER with the original report hashes. It refuses
+missing/duplicate cases. The manifest must explicitly describe tradeoffs and
+limitations; the tool does not invent conclusions or select a winner.
+
+```json
+{
+  "title": "NL short utterances",
+  "tradeoffs": "Describe observed accuracy/resource tradeoffs; state unavailable measurements.",
+  "limitations": "Supplied transcripts only; native execution and resources not verified here.",
+  "participants": [
+    {"label": "R2T2 MLX", "role": "supported-r2t2-adapter", "reports": ["r2t2-report.json"]},
+    {"label": "External reference", "role": "external-benchmark-control", "reports": ["control-report.json"]}
+  ]
+}
+```
+
+```sh
+python scripts/evaluation_comparison.py --manifest comparison.json --output comparison-report.json
+```
+
+Relative report paths resolve against the manifest directory. Supported adapter
+classification requires one of the app's two R2T2 checkpoint repositories. This
+classification does not prove runtime compatibility. All other controls must
+use `external-benchmark-control`; this records benchmark context and never
+changes the app model catalog. Resource claims belong to actual measured
+artifacts, not an inference from text accuracy. This comparison implementation
+is **UNVERIFIED — checks not run per user instruction**.
+
+## Retaining raw resource benchmarks
+
+`scripts/benchmark_artifact.py` packages already-collected measurements and raw
+files in a new directory. It does not invoke a runner, install models, measure
+hardware or synthesize benchmark evidence. Its manifest requires the same
+`provenance` object shown above, plus these fields:
+
+```json
+{
+  "measurement_method": "Describe the actual clock, memory sampler and execution order.",
+  "limitations": "Describe noise, missing samples and native evidence limitations.",
+  "runs": [
+    {"run_id": "warm-1", "case_id": "nl-short-001", "phase": "warm",
+     "measurements": {"wall_time": {"value": 1.2, "unit": "seconds"}}},
+    {"run_id": "warm-2", "case_id": "nl-short-001", "phase": "warm",
+     "measurements": {"wall_time": {"value": 1.3, "unit": "seconds"}}}
+  ],
+  "artifacts": [{"role": "runner-log", "path": "runner-log.jsonl"}]
+}
+```
+
+The numbers above illustrate syntax only; they are not measured Delulu results.
+Add the required provenance object before using this manifest. Artifact paths
+resolve against the manifest directory. Listed raw files can contain private
+transcripts: retain them locally and share only after inspecting their contents.
+
+```sh
+python scripts/benchmark_artifact.py --manifest benchmark.json --output-directory retained-benchmark
+```
+
+Bundles retain the original manifest and exact raw file bytes with hashes. Runs
+remain individually available. Summaries group by case, phase, metric and unit;
+cold, load, warmup and warm measurements remain separate. Each group records its
+sample count, mean, median, range, sample deviation and conditional standard
+error. One observation has unknown spread. Conditional standard error assumes
+independent observations; the tool does not assert that assumption or produce a
+confidence interval. Missing resource measurements stay missing.
+
+The destination must not exist; an interrupted copy removes only the newly
+created incomplete bundle. Reports retain producing revisions, hardware and
+decode metadata as user-supplied facts. **UNVERIFIED — checks not run per user
+instruction**; no native benchmark evidence was generated for this change.

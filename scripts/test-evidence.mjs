@@ -106,6 +106,16 @@ export function planSuite(suite, input = []) {
       scope =
         "Real Chromium and synthetic microphone capture, with preview/mock backend IPC; no native model or system paste.";
       break;
+    case "settings-write":
+      if (args.length || metadataPath)
+        throw new Error(
+          "Settings-write reporting accepts no runtime, metadata or filters",
+        );
+      command = ["node", "scripts/settings-write-smoke.mjs"];
+      kinds = ["fixture-only"];
+      scope =
+        "Real isolated Electron/preload/main IPC, temporary settings write failure and native shortcut rollback/retry. No inference, real microphone or manual delivery.";
+      break;
     case "data-deletion":
       if (args.length)
         throw new Error(
@@ -136,6 +146,21 @@ export function planSuite(suite, input = []) {
         : "Real isolated Electron, preload/IPC and settings/history fixtures. No speech inference, real microphone or manual focus/delivery verification.";
       break;
     }
+    case "package-resources":
+      if (
+        metadataPath ||
+        args.length !== 2 ||
+        args[0].startsWith("-") ||
+        !["linux", "mac", "win"].includes(args[1])
+      )
+        throw new Error(
+          "Package resource reporting requires an unpacked directory and linux/mac/win; no runtime or filters",
+        );
+      command = ["bun", "scripts/package-resources.mjs", ...args];
+      kinds = ["fixture-only"];
+      scope =
+        "Actual unpacked resource hashes and configured native icon payloads. No application launch, native model inference or manual desktop verification.";
+      break;
     case "mac-package":
       if (args.length > 1 || args.some((arg) => arg.startsWith("-")))
         throw new Error(
