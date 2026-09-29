@@ -35,6 +35,13 @@ export class DictationService {
   get isActive(): boolean {
     return this.captureState !== "idle";
   }
+
+  get canStopRecording(): boolean {
+    return (
+      this.recorderReady &&
+      (this.captureState === "opening" || this.captureState === "listening")
+    );
+  }
   discardFailure(): void {
     this.failedRecording = null;
     this.asr.setRecovery?.(false);
@@ -142,7 +149,7 @@ export class DictationService {
 
   recorderUnavailable(): void {
     this.recorderReady = false;
-    if (this.captureState !== "idle") {
+    if (this.captureState !== "idle" && this.captureState !== "processing") {
       this.captureState = "idle";
       this.setHud({ state: "hidden" });
       this.asr.setActivity(

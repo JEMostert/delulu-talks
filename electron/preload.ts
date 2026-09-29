@@ -26,6 +26,10 @@ function listener<T>(
 }
 
 const api: DeluluApi = {
+  getRendererRecoveryState: () => ipcRenderer.invoke("renderer:recoveryState"),
+  reloadWorkspace: () => ipcRenderer.invoke("renderer:reload"),
+  rendererControllerFailed: () =>
+    ipcRenderer.invoke("renderer:controllerFailed"),
   getDiagnostics: () => ipcRenderer.invoke("runtime:diagnostics"),
   pasteLastTranscript: () => ipcRenderer.invoke("dictation:pasteLast"),
   discardFailedRecording: () => ipcRenderer.invoke("dictation:discardFailed"),

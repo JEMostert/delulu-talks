@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { bridge } from "./bridge";
-import { useWorkspace } from "./hooks/useWorkspace";
+import type { useWorkspace } from "./hooks/useWorkspace";
 import { useTheme } from "./hooks/useTheme";
 import { Sidebar } from "./components/Sidebar";
 import { Onboarding } from "./components/Onboarding";
@@ -47,8 +47,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
     subtitle: "Capture, output, runtime and application",
   },
 };
-function App() {
-  const w = useWorkspace();
+function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   useTheme(w.settings.theme);
   const [visited, setVisited] = useState<Set<Page>>(new Set(["home"]));
   useEffect(() => {

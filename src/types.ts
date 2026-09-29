@@ -192,6 +192,9 @@ export type UpdateStatus = {
 };
 
 export type DeluluApi = {
+  getRendererRecoveryState(): Promise<RendererRecoveryState>;
+  reloadWorkspace(): Promise<void>;
+  rendererControllerFailed(): Promise<void>;
   getSettings(): Promise<AppSettings>;
   getDiagnostics(): Promise<RuntimeDiagnostics>;
   pasteLastTranscript(): Promise<void>;
@@ -247,6 +250,12 @@ export type DeluluApi = {
   onTranscript(callback: (record: TranscriptRecord) => void): () => void;
   onRecorderCommand(callback: (command: RecorderCommand) => void): () => void;
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
+};
+
+export type RendererRecoveryState = {
+  canReload: boolean;
+  reason: string | null;
+  canStopRecording: boolean;
 };
 
 export type RuntimeDiagnostics = {
