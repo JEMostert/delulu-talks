@@ -1,6 +1,8 @@
 import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { app } from "electron";
+import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
 import { speechModelForPlatform } from "../runtime/platform";
+import { normalizeTranscriptTitle } from "../../src/transcriptTitle";
 import { normalizeReportedLanguage } from "../../src/transcriptLanguage";
 import {
   existsSync,
@@ -201,6 +203,10 @@ export function normalizeSettings(value: unknown): AppSettings {
       512,
     ),
     autoPaste: boolean(source.autoPaste, DEFAULT_SETTINGS.autoPaste),
+    pasteShortcut:
+      source.pasteShortcut === "terminal"
+        ? "terminal"
+        : DEFAULT_SETTINGS.pasteShortcut,
     pasteLastDelaySeconds:
       typeof source.pasteLastDelaySeconds === "number" &&
       Number.isInteger(source.pasteLastDelaySeconds) &&
@@ -261,8 +267,17 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
   const model = validHistoryModels.has(source.model as ModelId)
     ? (source.model as ModelId)
     : DEFAULT_SETTINGS.model;
+  let title: string | null = null;
+  if (source.title !== undefined) {
+    try {
+      title = normalizeTranscriptTitle(source.title);
+    } catch {
+      // Invalid optional metadata must not discard original transcript content.
+    }
+  }
   return {
     id: safeString(source.id, `legacy-${Date.now()}-${Math.random()}`, 128),
+    ...(source.title === undefined ? {} : { title }),
     createdAt: Number(source.createdAt) || Date.now(),
     durationMs: Math.max(0, Number(source.durationMs) || 0),
     text,
@@ -385,6 +400,16 @@ export class StorageService {
           .flatMap((item) => migrateRecord(item) ?? [])
           .slice(0, MAX_HISTORY)
       : [];
+    const settingsChanged = rawSettings !== undefined &&
+      JSON.stringify(rawSettings) !== JSON.stringify(this.settings);
+    const historyChanged = rawHistory !== undefined &&
+      (JSON.stringify(rawHistory) !== JSON.stringify(this.history) || !existsSync(historyPath));
+    if (settingsChanged || historyChanged || (rawSettings !== undefined && !existsSync(settingsPath))) {
+      backupProfileMigration(this.dataDirectory, {
+        "settings.json": existsSync(settingsPath) ? settingsPath : legacy ? join(legacy, SETTINGS_FILE) : undefined,
+        "history.json": existsSync(historyPath) ? historyPath : legacy ? join(legacy, HISTORY_FILE) : undefined,
+      });
+    }
     if (!existsSync(historyPath) && this.history.length) {
       // Stage both migration outputs before replacing either destination.
       // Publish the previously absent history first: if the settings rename
@@ -485,6 +510,21 @@ export class StorageService {
     return structuredClone(updated);
   }
 
+  setTranscriptTitle(id: string, title: string | null): TranscriptRecord {
+    const index = this.history.findIndex((item) => item.id === id);
+    if (index < 0) throw new Error("Transcript not found");
+    const updated = {
+      ...this.history[index],
+      title: normalizeTranscriptTitle(title),
+    };
+    const next = this.history.map((item, itemIndex) =>
+      itemIndex === index ? updated : item,
+    );
+    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.history = next;
+    return structuredClone(updated);
+  }
+
   replaceHistory(record: TranscriptRecord): void {
     if (!this.findHistory(record.id)) throw new Error("Transcript not found");
     const next = this.history.map((item) =>
@@ -497,11 +537,13 @@ export class StorageService {
   deleteHistory(id: string): void {
     const next = this.history.filter((item) => item.id !== id);
     writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    removeMigrationHistoryBackups(this.dataDirectory);
     this.history = next;
   }
 
   clearHistory(): void {
     writeJson(join(this.dataDirectory, HISTORY_FILE), []);
+    removeMigrationHistoryBackups(this.dataDirectory);
     this.history = [];
   }
 }

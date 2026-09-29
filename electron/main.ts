@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { changePersonalProfiles } from "../src/personalProfileCommands";
 import {
   app,
   BrowserWindow,
@@ -26,6 +28,7 @@ import type {
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
 import { modelById } from "../src/data";
 import { deliveredText } from "../src/transcriptText";
+import { normalizeTranscriptTitle } from "../src/transcriptTitle";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
@@ -44,6 +47,8 @@ import {
   renderExportTemplate,
   validateExportTemplateRequest,
 } from "../src/exportTemplates";
+import { localDataOverview } from "./services/localData";
+import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { UpdateService } from "./services/updates";
 import {
   rendererRecoveryState,
@@ -674,6 +679,7 @@ function registerIpc(): void {
     dictation.recorderUnavailable();
   });
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
+  handle("storage:overview", () => localDataOverview(storage));
   handle("dictation:pasteLast", () => schedulePasteLast());
   handle("dictation:pasteLastStatus", () => pasteLast.getStatus());
   handle("dictation:cancelPasteLast", (_event, operationId: unknown) => {
@@ -685,6 +691,17 @@ function registerIpc(): void {
   handle("dictation:retry", () => dictation.retry());
   handle("settings:get", () => storage.getSettings());
   handle("settings:update", (_event, value: unknown) => persistSettings(value));
+  handle("profiles:manage", (_event, command: unknown) =>
+    settingsQueue.run(() =>
+      applySettings({
+        personalProfiles: changePersonalProfiles(
+          storage.getSettings(),
+          command,
+          randomUUID,
+        ),
+      }),
+    ),
+  );
   handle("runtime:status", () => asr.getStatus());
   handle("shortcut:status", () => shortcut.getStatus());
   handle("shortcut:configure", () => shortcut.configure());
@@ -803,6 +820,22 @@ function registerIpc(): void {
         ? applyTranscriptEdit(sessionRecord, correction)
         : null;
     if (!updated) throw new Error("Transcript not found");
+    sessionTranscripts.set(key, updated);
+    if (lastTranscript?.id === key) lastTranscript = updated;
+    rebuildTrayMenu();
+    return updated;
+  });
+  handle("history:setTitle", (_event, id: unknown, title: unknown) => {
+    const key = validateText(id, 128);
+    const normalized = normalizeTranscriptTitle(title);
+    const sessionRecord = sessionTranscripts.get(key);
+    const updated = storage.findHistory(key)
+      ? storage.setTranscriptTitle(key, normalized)
+      : sessionRecord
+        ? { ...sessionRecord, title: normalized }
+        : null;
+    if (!updated) throw new Error("Transcript not found");
+    // A rejected saved-history write leaves session and last-record state intact.
     sessionTranscripts.set(key, updated);
     if (lastTranscript?.id === key) lastTranscript = updated;
     rebuildTrayMenu();
@@ -1003,6 +1036,14 @@ function registerIpc(): void {
 async function start(): Promise<void> {
   if (!smokeTest) ensureDevelopmentDesktopEntry();
   storage = new StorageService();
+  // start() is entered only by the instance holding the user-data singleton lock.
+  // No new worker/capture/import exists while prior-session generated WAVs are inspected.
+  const audioRecovery = await recoverTemporaryAudio(storage.cacheDirectory);
+  if (audioRecovery.failureCount) {
+    const detail = `${audioRecovery.failureCount} temporary-audio cleanup failure(s). Some prior-session audio may remain on disk.\n\n${audioRecovery.failures.join("\n")}\n\nClose Delulu before inspecting the audio-cache directory in its local data folder. Only remove generated dictation/import WAVs you recognise. Your saved history, settings, source media, models and runtimes were not removed by this cleanup.`;
+    console.error("Temporary audio cleanup incomplete:", detail);
+    dialog.showErrorBox("Temporary audio cleanup needs attention", detail);
+  }
   paste = new PasteService(
     () => storage.getSettings().pastePortalToken || null,
     (pastePortalToken) => {
@@ -1012,6 +1053,7 @@ async function start(): Promise<void> {
       });
       broadcast("settings:changed", saved);
     },
+    { getShortcut: () => storage.getSettings().pasteShortcut },
   );
   pill = new PillService(
     smokeTest ? { env: { ...process.env, XDG_SESSION_TYPE: "" } } : {},

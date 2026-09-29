@@ -1,5 +1,6 @@
 import captureWorkletUrl from "./captureWorklet.js?url&no-inline";
 import { bridge } from "./bridge";
+import { microphoneSelection } from "./microphoneSelection";
 import { MAX_CAPTURE_DURATION_MS, MAX_CAPTURE_SAMPLES } from "./captureLimits";
 import type { MicrophoneDevice, RecorderCommand } from "./types";
 
@@ -143,6 +144,17 @@ export class PcmRecorder {
     if (this.stream || this.stopping || generation !== this.generation) return;
     this.sessionId = sessionId;
     try {
+      if (deviceId && deviceId !== "default") {
+        // Discovery can be unavailable independently of capture permission.
+        // In that case let getUserMedia check the exact saved input itself.
+        const devices = await listMicrophones(false).catch(() => []);
+        if (generation !== this.generation) return;
+        const selection = microphoneSelection(
+          { inputDeviceId: deviceId, inputDeviceLabel: "Selected microphone" },
+          devices,
+        );
+        if (selection.state === "missing") throw new Error(selection.message!);
+      }
       const exactDevice =
         deviceId && deviceId !== "default" ? { exact: deviceId } : undefined;
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -384,13 +396,27 @@ export async function listMicrophones(
     temporary?.getTracks().forEach((track) => track.stop());
   }
   const microphones = devices.filter((device) => device.kind === "audioinput");
+  let inventoryKnown = microphones.some((device) => !!device.label);
+  if (!inventoryKnown && navigator.permissions) {
+    try {
+      inventoryKnown =
+        (
+          await navigator.permissions.query({
+            name: "microphone" as PermissionName,
+          })
+        ).state === "granted";
+    } catch {
+      // Some browsers do not expose microphone permission through this API.
+    }
+  }
   return [
-    { deviceId: "default", label: "System default" },
+    { deviceId: "default", label: "System default", labelKnown: inventoryKnown },
     ...microphones
-      .filter((device) => device.deviceId !== "default")
+      .filter((device) => device.deviceId && device.deviceId !== "default")
       .map((device, index) => ({
         deviceId: device.deviceId,
         label: device.label || `Microphone ${index + 1}`,
+        labelKnown: !!device.label,
       })),
   ];
 }

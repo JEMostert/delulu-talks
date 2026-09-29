@@ -1,4 +1,5 @@
 import type { ExportTemplateRequest } from "./exportTemplates";
+import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
 
 export type Page =
@@ -16,6 +17,7 @@ export type EnginePhase =
 export type MagicPhase =
   "idle" | "preparing" | "loading" | "rewriting" | "error";
 export type TranscriptSource = "dictation" | "file";
+export type PasteShortcut = "standard" | "terminal";
 export type ExportFormat = "txt" | "json" | "md";
 
 export type CustomWord = {
@@ -39,6 +41,7 @@ export type AppSettings = {
   inputDeviceId: string;
   inputDeviceLabel: string;
   autoPaste: boolean;
+  pasteShortcut: PasteShortcut;
   pasteLastDelaySeconds: number;
   copyToClipboard: boolean;
   spokenFormattingCommands: boolean;
@@ -82,6 +85,7 @@ export type MagicRewriteResult = {
   processingTimeMs: number;
   inputCharacters: number;
   outputCharacters: number;
+  /** Records permission to add assumptions, not evidence that any were added. */
   includedInferences: boolean;
 };
 
@@ -106,8 +110,14 @@ export type DictationStatus = {
   progress?: number | null;
 };
 
+/**
+ * Speech backends currently provide no calibrated confidence evidence.
+ * Do not infer confidence from timing, length, model identity, or rewrites.
+ * Add score/uncertainty UI only with a backend calibration contract.
+ */
 export type TranscriptRecord = {
   id: string;
+  title?: string | null;
   createdAt: number;
   durationMs: number;
   text: string;
@@ -116,6 +126,7 @@ export type TranscriptRecord = {
   magicText?: string | null;
   magicModel?: MagicModelId | null;
   magicPreset?: MagicPreset | null;
+  /** Historical name: assumptions were allowed; their presence is not detected. */
   magicIncludedInferences?: boolean;
   magicProcessingTimeMs?: number;
   model: ModelId;
@@ -190,6 +201,8 @@ export type RecordingSubmission = {
 export type MicrophoneDevice = {
   deviceId: string;
   label: string;
+  /** False when privacy permissions hide the real label; default tracks inventory visibility. */
+  labelKnown?: boolean;
 };
 
 export type PlatformCapabilities = {
@@ -235,12 +248,14 @@ export type DeluluApi = {
   rendererControllerFailed(): Promise<void>;
   getSettings(): Promise<AppSettings>;
   getDiagnostics(): Promise<RuntimeDiagnostics>;
+  getLocalDataOverview(): Promise<LocalDataOverview>;
   pasteLastTranscript(): Promise<PasteLastStatus>;
   getPasteLastStatus(): Promise<PasteLastStatus>;
   cancelPasteLast(operationId: string): Promise<PasteLastStatus>;
   retryRecording(): Promise<void>;
   discardFailedRecording(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
+  managePersonalProfile(command: PersonalProfileCommand): Promise<AppSettings>;
   getStatus(): Promise<DictationStatus>;
   getMagicStatus(): Promise<MagicStatus>;
   getShortcutStatus(): Promise<ShortcutStatus>;
@@ -267,6 +282,7 @@ export type DeluluApi = {
   authorizePaste(): Promise<void>;
   testPaste(): Promise<void>;
   updateTranscript(id: string, text: string | null): Promise<TranscriptRecord>;
+  setTranscriptTitle(id: string, title: string | null): Promise<TranscriptRecord>;
   setTranscriptRewrite(
     id: string,
     result: MagicRewriteResult | null,
@@ -304,6 +320,12 @@ export type RendererRecoveryState = {
   canStopRecording: boolean;
 };
 
+export type AccessibilityPermission = {
+  state: "granted" | "denied" | "unknown" | "not-applicable";
+  canAttemptPaste: boolean;
+  detail: string;
+};
+
 export type RuntimeDiagnostics = {
   platform: string;
   arch: string;
@@ -314,7 +336,28 @@ export type RuntimeDiagnostics = {
   dataDirectory: string;
   runtimeInstalled: boolean;
   packages: Record<string, string>;
+  accessibility?: AccessibilityPermission;
   checkedAt: number;
+};
+
+export type LocalDataLocation = {
+  path: string;
+  status: "present" | "missing" | "partial";
+  bytes: number;
+  files: number;
+  skippedLinks: number;
+  problems: string[];
+};
+
+export type LocalDataOverview = {
+  dataDirectory: string;
+  checkedAt: number;
+  categories: {
+    id: "history" | "settings" | "models" | "runtimes" | "audio";
+    label: string;
+    description: string;
+    locations: LocalDataLocation[];
+  }[];
 };
 
 export type PasteLastStatus = {
