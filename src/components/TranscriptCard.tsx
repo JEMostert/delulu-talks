@@ -1,4 +1,8 @@
+import { ExportTemplateDialog } from "./ExportTemplateDialog";
+import type { ExportTemplateRequest } from "../exportTemplates";
 import { RewriteDialog } from "./RewriteDialog";
+import { TranscriptTitleDialog } from "./TranscriptTitleDialog";
+import { SuggestedRulePreview } from "./SuggestedRulePreview";
 import { useState } from "react";
 import {
   BookPlus,
@@ -39,9 +43,15 @@ export type TranscriptActions = {
   rewriteStatus?: MagicStatus;
   onCopy: (text: string) => void;
   onUpdateTranscript: (id: string, text: string | null) => Promise<boolean>;
+  onSetTitle?: (id: string, title: string | null) => Promise<boolean>;
   onDelete?: (id: string) => void;
   onExport?: (id: string, format: ExportFormat) => void;
+  onExportTemplate?: (
+    id: string,
+    request: ExportTemplateRequest,
+  ) => Promise<string | null>;
   onRemember?: (word: CustomWord) => Promise<boolean>;
+  ruleExamples?: TranscriptRecord[];
 };
 export function TranscriptCard({
   record,
@@ -49,9 +59,12 @@ export function TranscriptCard({
   inspector = false,
   onCopy,
   onUpdateTranscript,
+  onSetTitle,
   onDelete,
   onExport,
+  onExportTemplate,
   onRemember,
+  ruleExamples,
   onRewrite,
   onSetRewrite,
   onRewriteSetup,
@@ -61,6 +74,7 @@ export function TranscriptCard({
   defaultOpen?: boolean;
   inspector?: boolean;
 }) {
+  const [templateExport, setTemplateExport] = useState(false);
   const [open, setOpen] = useState(defaultOpen || inspector);
   const [showSource, setShowSource] = useState(false);
   const [rewriting, setRewriting] = useState(false);
@@ -73,6 +87,7 @@ export function TranscriptCard({
   const [remember, setRemember] = useState(false);
   const [heard, setHeard] = useState("");
   const [correct, setCorrect] = useState("");
+  const [naming, setNaming] = useState(false);
   const delivered = deliveredText(record);
   const edited = transcriptIsEdited(record);
   const text = showSource ? transcriptText(record) : delivered;
@@ -135,10 +150,17 @@ export function TranscriptCard({
         <span className="transcript-icon grid size-8 place-items-center rounded-md bg-soft text-muted [&_svg]:size-[15px]">
           {record.source === "dictation" ? <Mic /> : <FileAudio />}
         </span>
-        <div className="transcript-meta flex-1">
-          <strong className="block text-[12px]">
-            {record.sourceName ?? "Dictation"}
+        <div className="transcript-meta flex-1 min-w-0">
+          <strong className="block text-[12px] wrap-anywhere">
+            {record.title || record.sourceName || "Dictation"}
           </strong>
+          {record.title &&
+            record.sourceName &&
+            record.title !== record.sourceName && (
+              <span className="block text-[10px] text-muted wrap-anywhere">
+                {record.sourceName}
+              </span>
+            )}
           <span className="mt-[3px] flex items-center gap-1 text-[10px] text-muted">
             {date} · {Math.max(1, Math.round(record.durationMs / 1000))}s{" "}
             {record.magicText && (
@@ -147,8 +169,39 @@ export function TranscriptCard({
               </>
             )}
           </span>
+          <span
+            className="mt-1 block text-[10px] text-muted break-words"
+            aria-label="Transcript language metadata"
+            title="The backend language label may reflect a forced decoder hint; it is not an independent language detection result."
+          >
+            {record.recognizedLanguage !== undefined ||
+            record.requestedLanguage !== undefined ? (
+              <>
+                Backend language: {record.recognizedLanguage || "Unknown"}
+                {" · "}Requested hint:{" "}
+                {record.requestedLanguage || "Not recorded"}
+              </>
+            ) : (
+              <>Legacy language: {record.language || "Unknown"}</>
+            )}
+          </span>
         </div>
         <div className="panel-actions">
+          {onSetTitle && (
+            <button
+              className="icon-button"
+              aria-label={
+                record.title ? "Edit transcript title" : "Add transcript title"
+              }
+              title={
+                record.title ? "Edit transcript title" : "Add transcript title"
+              }
+              disabled={saving}
+              onClick={() => setNaming(true)}
+            >
+              <Pencil />
+            </button>
+          )}
           <button
             className="icon-button"
             aria-label="Copy delivered text"
@@ -184,7 +237,7 @@ export function TranscriptCard({
             {deliveredText(record).trim().split(/\s+/).filter(Boolean).length}{" "}
             words
             {record.magicIncludedInferences
-              ? " · Review added assumptions"
+              ? " · Added assumptions were allowed"
               : ""}
             {edited ? " · Corrected" : ""}
           </span>
@@ -243,6 +296,10 @@ export function TranscriptCard({
                   : "Corrections & shortcuts applied"}
             </span>
           </div>
+          <p className="caption mt-2.5">
+            No calibrated confidence score is available for this transcript.
+            Review the text before using it.
+          </p>
           {editing ? (
             <textarea
               aria-label="Correct transcript"
@@ -398,19 +455,34 @@ export function TranscriptCard({
           {onExport && (
             <div className="export-row mt-3.5 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted [&_.tool-button]:min-h-[28px] [&_.tool-button]:px-2 [&_.tool-button]:py-[5px] [&_svg]:size-3">
               <span>Export</span>
-              {(["txt", "json"] as ExportFormat[]).map((format) => (
+              {(["txt", "json", "md"] as ExportFormat[]).map((format) => (
                 <button
                   className="tool-button"
                   key={format}
                   onClick={() => onExport(record.id, format)}
                 >
                   <Download />
-                  {format.toUpperCase()}
+                  {format === "md" ? "Markdown" : format.toUpperCase()}
                 </button>
               ))}
+              {onExportTemplate && (
+                <button
+                  className="tool-button"
+                  onClick={() => setTemplateExport(true)}
+                >
+                  <Download /> Template…
+                </button>
+              )}
             </div>
           )}
         </div>
+      )}
+      {templateExport && onExportTemplate && (
+        <ExportTemplateDialog
+          record={record}
+          onClose={() => setTemplateExport(false)}
+          onExport={(request) => onExportTemplate(record.id, request)}
+        />
       )}
       {rewriting && onRewrite && onSetRewrite && (
         <RewriteDialog
@@ -425,6 +497,13 @@ export function TranscriptCard({
             if (applied) setShowSource(false);
             return applied;
           }}
+        />
+      )}
+      {naming && onSetTitle && (
+        <TranscriptTitleDialog
+          title={record.title ?? null}
+          onClose={() => setNaming(false)}
+          onSave={(title) => onSetTitle(record.id, title)}
         />
       )}
       {deleting && (
@@ -498,7 +577,7 @@ export function TranscriptCard({
           }
         >
           {rememberError && (
-            <p className="field-error" role="alert">
+            <p className="field-error break-words" role="alert">
               {rememberError}
             </p>
           )}
@@ -525,6 +604,7 @@ export function TranscriptCard({
               placeholder="e.g. Delulu"
             />
           </label>
+          <SuggestedRulePreview source={record} examples={ruleExamples} heard={heard} correct={correct} />
         </Modal>
       )}
     </article>
