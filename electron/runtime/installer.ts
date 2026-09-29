@@ -386,7 +386,7 @@ export class RuntimeInstaller {
       constraints,
       kind === "speech"
         ? "Installing the speech runtime"
-        : "Installing the Magic runtime",
+        : "Installing the rewrite runtime",
       0.45,
       constraints.length
         ? {

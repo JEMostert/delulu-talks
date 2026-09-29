@@ -41,7 +41,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
     title: "Audio files",
     subtitle: "Transcribe imported recordings",
   },
-  models: { title: "Models", subtitle: "Speech engine and device resources" },
+  models: { title: "Models", subtitle: "Speech and rewrite models, runtimes and backends" },
   settings: {
     title: "Settings",
     subtitle: "Capture, output, runtime and application",

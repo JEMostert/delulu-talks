@@ -237,10 +237,10 @@ function engineLabel(status: {
   migrationRequired?: boolean;
 }): string {
   if (status.engine === "missing" && status.migrationRequired)
-    return "Update setup";
+    return "Update runtime";
   return {
     missing: "Setup needed",
-    unloaded: "Sleeping",
+    unloaded: "Model not loaded",
     settingUp: "Installing…",
     loading: "Loading…",
     ready: "Ready",
@@ -290,27 +290,27 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
           }
         : {
             label: speech.migrationRequired
-              ? "Update speech setup…"
-              : "Set up speech model…",
+              ? "Update speech runtime…"
+              : "Set up speech runtime…",
             enabled: !speechBusy,
             click: () => showMainWindow("models"),
           };
   const magicAction: MenuItemConstructorOptions =
     magic.engine === "ready"
       ? {
-          label: "Unload Magic model",
+          label: "Unload rewrite model",
           enabled: !magicBusy,
           click: () => runTrayAction(() => asr.unloadMagic(), true),
         }
       : magic.engine === "unloaded"
         ? {
-            label: "Load Magic model now",
+            label: "Load rewrite model now",
             enabled: !magicBusy,
             click: () =>
               runTrayAction(() => asr.loadMagic(storage.getSettings()), true),
           }
         : {
-            label: "Set up Magic model…",
+            label: "Set up rewrite runtime…",
             enabled: !magicBusy,
             click: () => showMainWindow("models"),
           };
@@ -330,14 +330,14 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
     },
     { type: "separator" },
     {
-      label: `Writing · ${engineLabel(magic)}`,
+      label: `Rewriting · ${engineLabel(magic)}`,
       sublabel: magic.message,
       enabled: false,
     },
     magicAction,
     {
       type: "checkbox",
-      label: "Keep writing model ready",
+      label: "Keep rewrite model ready",
       checked: settings.preloadMagicModel,
       click: () =>
         patchTraySettings({ preloadMagicModel: !settings.preloadMagicModel }),
@@ -429,12 +429,12 @@ function rebuildTrayMenu(): void {
     { type: "separator" },
     {
       type: "checkbox",
-      label: "✦  Magic after dictation",
+      label: "✦  Rewrite after dictation",
       checked: settings.magicEnabled,
       click: () => patchTraySettings({ magicEnabled: !settings.magicEnabled }),
     },
     {
-      label: "Magic style",
+      label: "Rewrite style",
       enabled: settings.magicEnabled,
       submenu: presets.map(([preset, label]) => ({
         type: "radio",
@@ -486,12 +486,12 @@ function rebuildTrayMenu(): void {
         },
       ],
     },
-    { label: "Local engines", submenu: runtimeMenu(settings) },
+    { label: "Models & runtimes", submenu: runtimeMenu(settings) },
     {
       label: "Open workspace",
       submenu: [
         { label: "History", click: () => showMainWindow("history") },
-        { label: "Models & runtime", click: () => showMainWindow("models") },
+        { label: "Models & runtimes", click: () => showMainWindow("models") },
         { label: "Settings", click: () => showMainWindow("settings") },
       ],
     },
@@ -556,7 +556,7 @@ function rebuildTrayMenu(): void {
         ? "Ready"
         : engineLabel(status);
   tray.setToolTip(
-    `Delulu Talks — ${state}${settings.magicEnabled ? ` · Magic ${engineLabel(magic)}` : " · Magic off"}`,
+    `Delulu Talks — ${state}${settings.magicEnabled ? ` · Rewriting ${engineLabel(magic)}` : " · Rewriting off"}`,
   );
 }
 
@@ -649,7 +649,7 @@ async function applySettings(value: unknown): Promise<AppSettings> {
       (dictation.isActive || asr.isBusy)
     )
       throw new Error(
-        "Finish the current recording or model operation before changing engines",
+        "Finish the current recording or model operation before changing models",
       );
   };
   assertEngineChangeIdle();
@@ -821,7 +821,7 @@ function registerIpc(): void {
   });
   handle("magic:rewrite", (_event, value: unknown) => {
     if (!value || typeof value !== "object")
-      throw new Error("Expected a Magic rewrite request");
+      throw new Error("Expected a rewriting request");
     const source = value as Record<string, unknown>;
     const preset = isMagicPreset(source.preset)
       ? (source.preset as MagicRewriteRequest["preset"])
@@ -836,7 +836,7 @@ function registerIpc(): void {
       allowInferences: source.allowInferences === true,
     };
     if (!request.text.trim())
-      throw new Error("Add a transcript or draft before using Magic");
+      throw new Error("Add a transcript or draft before rewriting");
     assertRuntimeIdle();
     return asr.rewriteMagic(request, storage.getSettings());
   });

@@ -369,7 +369,7 @@ class Worker:
         model_name = str(request.get("model", "qwen35Medium"))
         model_id = MAGIC_MODELS.get(model_name)
         if not model_id:
-            raise ValueError(f"Unsupported Magic model: {model_name}")
+            raise ValueError(f"Unsupported rewrite model: {model_name}")
         device = self.magic_runtime_device()
         if self.magic_model is not None and self.magic_model_name == model_name and self.magic_device == device:
             return self.magic_status()
@@ -400,13 +400,13 @@ class Worker:
     def magic_prompt(request: dict[str, Any]) -> tuple[str, str]:
         text = str(request.get("text", "")).strip()
         if not text:
-            raise ValueError("Add a transcript or draft before using Magic")
+            raise ValueError("Add a transcript or draft before rewriting")
         if len(text) > 50_000:
-            raise ValueError("Magic input is limited to 50,000 characters")
+            raise ValueError("Rewrite input is limited to 50,000 characters")
         preset = str(request.get("preset", "polish"))
         preset_instruction = MAGIC_PRESETS.get(preset)
         if not preset_instruction:
-            raise ValueError(f"Unsupported Magic preset: {preset}")
+            raise ValueError(f"Unsupported rewrite preset: {preset}")
         custom = str(request.get("instructions", "")).strip()[:4_000]
         allow_inferences = bool(request.get("allowInferences", False))
         fact_boundary = (
@@ -437,7 +437,7 @@ class Worker:
 
     def generate_rewrite(self, request: dict[str, Any]) -> dict[str, Any]:
         if self.magic_model is None or self.magic_processor is None or self.magic_model_name is None:
-            raise RuntimeError("No Magic model is loaded")
+            raise RuntimeError("No rewrite model is loaded")
         import torch
 
         system, user = self.magic_prompt(request)
@@ -469,7 +469,7 @@ class Worker:
         output = self.magic_processor.decode(generated[0][input_length:], skip_special_tokens=True).strip()
         output = re.sub(r"^<think>.*?</think>\s*", "", output, flags=re.DOTALL).strip()
         if not output:
-            raise RuntimeError("Magic returned an empty rewrite")
+            raise RuntimeError("The rewrite model returned an empty rewrite")
         self.magic_warmup = "complete"
         source = str(request.get("text", "")).strip()
         return {

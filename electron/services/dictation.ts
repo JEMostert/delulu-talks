@@ -200,15 +200,15 @@ export class DictationService {
       this.asr.setActivity(
         "error",
         status.engine === "missing"
-          ? "Set up R2T2 before your first dictation"
-          : "Repair or reload the speech engine before starting another dictation",
+          ? "Set up the speech runtime before your first dictation"
+          : "Repair the speech runtime or reload the speech model before starting another dictation",
       );
       this.setHud(
         status.engine === "missing"
           ? {
               state: "error",
               title: "Setup needed",
-              detail: "Install a speech model",
+              detail: "Set up the speech runtime",
             }
           : {
               state: "error",
@@ -432,7 +432,7 @@ export class DictationService {
       if (settings.magicEnabled) {
         this.asr.setActivity(
           "transcribing",
-          "Magic is polishing the transcript",
+          "Rewriting is polishing the transcript",
         );
         this.setHud({ state: "magic" });
         try {
@@ -465,7 +465,7 @@ export class DictationService {
       }
       this.storage.addHistory(record);
       this.broadcastTranscript(record);
-      const outputName = record.magicText ? "Magic result" : "Transcript";
+      const outputName = record.magicText ? "Rewrite result" : "Transcript";
       let completion = `${outputName} ready`;
       let pasteFailed = false;
       let pasteAttempted = false;
@@ -486,7 +486,7 @@ export class DictationService {
         completion = `${outputName} copied to clipboard`;
       }
       if (magicFailure)
-        completion = `${completion} · Magic unavailable: ${magicFailure}`;
+        completion = `${completion} · Rewriting unavailable: ${magicFailure}`;
       this.setHud(pasteFailed ? {
         state: "error",
         title: "Paste failed",
@@ -500,7 +500,7 @@ export class DictationService {
               ? "Copied"
               : "Done",
         detail: magicFailure
-          ? "Magic skipped"
+          ? "Rewriting skipped"
           : pasteAttempted
             ? "Check the destination; text is also copied"
             : "Ready to keep talking",

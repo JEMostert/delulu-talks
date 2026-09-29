@@ -348,7 +348,7 @@ export function HomePage({
                   className="text-button"
                   onClick={() => onNavigate("settings")}
                 >
-                  Configure automatic writing <ArrowUpRight />
+                  Configure automatic rewriting <ArrowUpRight />
                 </button>
               )}
             </div>
