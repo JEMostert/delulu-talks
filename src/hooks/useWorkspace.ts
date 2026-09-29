@@ -71,6 +71,7 @@ export function useWorkspace() {
     let alive = true;
     const owner = { alive: true };
     lifecycle.current = owner;
+    const isCurrent = () => alive && owner.alive;
     const startup = new AbortController();
     const liveRecords = new Map<string, TranscriptRecord>();
     let readingHistory = true;
@@ -78,7 +79,7 @@ export function useWorkspace() {
     const subscribe =
       <T>(name: string, receive: (value: T) => void) =>
       (value: T) => {
-        if (!alive) return;
+        if (!isCurrent()) return;
         received.add(name);
         receive(value);
       };
@@ -90,20 +91,20 @@ export function useWorkspace() {
       bridge.onStatus(subscribe("speech status", setStatus)),
       bridge.onMagicStatus(subscribe("rewriting status", setMagicStatus)),
       bridge.onSettingsChanged(subscribe("settings", receiveSettings)),
-      bridge.onNavigate((next) => { if (alive) setPage(next); }),
+      bridge.onNavigate((next) => { if (isCurrent()) setPage(next); }),
       bridge.onShortcutStatus(subscribe("shortcut status", setShortcutStatus)),
       bridge.onUpdateStatus(subscribe("update status", setUpdateStatus)),
       bridge.onRecorderCommand((command) => {
-        if (!alive) return;
-        void recorder.handle(command).catch((reason) => { if (alive) report(reason); });
+        if (!isCurrent()) return;
+        void recorder.handle(command).catch((reason) => { if (isCurrent()) report(reason); });
       }),
       bridge.onTranscript((record) => {
-        if (!alive) return;
+        if (!isCurrent()) return;
         if (readingHistory) liveRecords.set(record.id, record);
         receiveTranscript(record);
       }),
     ];
-    void bridge.recorderReady().catch((reason) => { if (alive) report(reason); });
+    void bridge.recorderReady().catch((reason) => { if (isCurrent()) report(reason); });
     void Promise.allSettled([
       read("settings", () => bridge.getSettings()),
       read("speech status", () => bridge.getStatus()),
@@ -114,8 +115,10 @@ export function useWorkspace() {
       read("update status", () => bridge.getUpdateStatus()),
     ])
       .then(([next, speech, magic, shortcut, records, platform, update]) => {
-        if (!alive) return;
+        if (!isCurrent()) return;
+        readingHistory = false;
         if (next.status === "rejected" || records.status === "rejected") {
+          liveRecords.clear();
           const reason =
             next.status === "rejected"
               ? next.reason
@@ -175,7 +178,7 @@ export function useWorkspace() {
         setReady(true);
       })
       .catch((reason: unknown) => {
-        if (alive)
+        if (isCurrent())
           setStartupError(
             reason instanceof Error ? reason.message : String(reason),
           );
