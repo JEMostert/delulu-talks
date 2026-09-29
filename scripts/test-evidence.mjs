@@ -200,6 +200,7 @@ export function validateNativeObservation(observation, metadata) {
   if (
     ![
       "r2t2",
+      "r2t2Mlx",
       "netease-youdao/Confucius4-R2T2",
       "mlx-community/Confucius4-R2T2-bf16",
     ].includes(observation.model)

@@ -41,6 +41,31 @@ const manual = () => ({
 });
 
 describe("evidence boundaries", () => {
+  test("Apple Silicon desktop model attribution accepts R2T2 MLX but rejects backend mismatch and old Qwen identities", () => {
+    const observation = {
+      model: "r2t2Mlx",
+      modelSource: "application transcript attribution",
+      backend: "mlx",
+      fixtureSha256: "a".repeat(64),
+      characters: 20,
+      backendSource:
+        "Electron platform selection and returned transcript model",
+    };
+    expect(validateNativeObservation(observation, { backend: "mlx" })).toBe(
+      observation,
+    );
+    expect(() =>
+      validateNativeObservation(observation, { backend: "cuda-vllm" }),
+    ).toThrow("does not match");
+    for (const model of ["qwen3Asr", "Qwen/Qwen3-ASR-0.6B"])
+      expect(() =>
+        validateNativeObservation(
+          { ...observation, model },
+          { backend: "mlx" },
+        ),
+      ).toThrow("not R2T2");
+  });
+
   test("native success requires observed R2T2 transcription and the selected backend", () => {
     const observation = {
       model: "netease-youdao/Confucius4-R2T2",
