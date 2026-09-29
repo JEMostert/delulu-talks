@@ -1,6 +1,7 @@
 import { ExportTemplateDialog } from "./ExportTemplateDialog";
 import type { ExportTemplateRequest } from "../exportTemplates";
 import { RewriteDialog } from "./RewriteDialog";
+import { correctionSuggestion } from "../correctionSuggestion";
 import { useEffect, useRef, useState } from "react";
 import {
   discardCorrectionDraft,
@@ -93,6 +94,7 @@ export function TranscriptCard({
   const draft = pendingDraft?.text ?? "";
   const setDraft = (value: string) =>
     writeCorrectionDraft(record.id, value, transcriptText(record));
+  const [editSource, setEditSource] = useState(pendingDraft?.savedText ?? "");
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const recordIdRef = useRef(record.id);
@@ -124,39 +126,10 @@ export function TranscriptCard({
         discardCorrectionDraft(record.id);
         if (recordIdRef.current !== record.id) return;
         setEditing(false);
-        const before = text.trim().split(/\s+/),
-          after = draft.trim().split(/\s+/);
-        let start = 0,
-          tail = 0;
-        while (
-          start < Math.min(before.length, after.length) &&
-          before[start] === after[start]
-        )
-          start++;
-        while (
-          tail < Math.min(before.length, after.length) - start &&
-          before[before.length - 1 - tail] === after[after.length - 1 - tail]
-        )
-          tail++;
-        const from = before
-          .slice(start, before.length - tail)
-          .join(" ")
-          .replace(/[.,!?;:]+$/, "");
-        const to = after
-          .slice(start, after.length - tail)
-          .join(" ")
-          .replace(/[.,!?;:]+$/, "");
-        if (
-          from &&
-          to &&
-          from !== to &&
-          from.length <= 256 &&
-          to.length <= 256
-        ) {
-          setHeard(from);
-          setCorrect(to);
-          setCorrectionSuggested(true);
-        }
+        const suggestion = correctionSuggestion(editSource, draft);
+        setCorrectionSuggested(!!suggestion);
+        setHeard(suggestion?.heard ?? "");
+        setCorrect(suggestion?.correct ?? "");
       } else {
         failCorrectionDraft(
           record.id,
@@ -430,6 +403,7 @@ export function TranscriptCard({
                   className="tool-button"
                   onClick={() => {
                     setShowSource(true);
+                    setEditSource(pendingDraft?.savedText ?? transcriptText(record));
                     if (!pendingDraft) setDraft(transcriptText(record));
                     setEditing(true);
                   }}
