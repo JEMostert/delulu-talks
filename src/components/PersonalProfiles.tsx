@@ -25,6 +25,48 @@ function ProfileSummary({ profile }: { profile: PersonalProfileV1 }) {
   );
 }
 
+function EffectiveProfileSettings({ profile, settings }: { profile: PersonalProfileV1; settings: AppSettings }) {
+  const languageName = (code: string) => LANGUAGES.find(([value]) => value === code)?.[1] ?? code;
+  const yesNo = (value: boolean) => value ? "On" : "Off";
+  const saved: [string, string, string][] = [
+    ["Recognition language", languageName(profile.language), languageName(settings.language)],
+    ["Automatic paste", yesNo(profile.delivery.autoPaste), yesNo(settings.autoPaste)],
+    ["Copy to clipboard", yesNo(profile.delivery.copyToClipboard), yesNo(settings.copyToClipboard)],
+    ["Keep history", yesNo(profile.delivery.keepHistory), yesNo(settings.keepHistory)],
+    ["Vocabulary", `${profile.vocabulary.rules.length} saved rules`, `${settings.customWords.length} current rules`],
+    ["Optional rewriting", yesNo(profile.rewrite.enabled), yesNo(settings.magicEnabled)],
+    ["Rewrite model", profile.rewrite.model, settings.magicModel],
+    ["Rewrite preset", profile.rewrite.preset, settings.magicPreset],
+    ["Allow rewrite inferences", yesNo(profile.rewrite.allowInferences), yesNo(settings.magicAllowInferences)],
+  ];
+  const inherited: [string, string][] = [
+    ["Microphone", settings.inputDeviceLabel || (settings.inputDeviceId === "default" ? "System default" : settings.inputDeviceId)],
+    ["Shortcut", `${settings.shortcut} · ${settings.shortcutMode}`],
+    ["Speech backend", settings.model],
+    ["Recording indicator", yesNo(settings.showOverlay)],
+    ["Keep speech loaded", yesNo(settings.preloadModel)],
+    ["Keep rewriting loaded", yesNo(settings.preloadMagicModel)],
+    ["Model idle timeout", settings.modelIdleMinutes ? `${settings.modelIdleMinutes} minutes` : "Disabled"],
+    ["Python command", settings.pythonCommand || "Automatic discovery"],
+  ];
+  return <details className="mt-2">
+    <summary className="text-[12px] cursor-pointer">Effective settings and global defaults</summary>
+    <p className="caption mt-2">Profile values are saved snapshots, including values matching today's defaults. Global values below remain shared and follow later global changes. Native paste permissions remain global; requesting paste does not grant permission.</p>
+    <div className="overflow-x-auto mt-2">
+      <table className="w-full text-left text-[12px]">
+        <caption className="text-left caption mb-2">Requested configuration for this profile; saving does not activate it.</caption>
+        <thead><tr><th className="p-2">Setting</th><th className="p-2">Profile value</th><th className="p-2">Current global default</th><th className="p-2">Source</th></tr></thead>
+        <tbody>
+          {saved.map(([label, value, global]) => <tr key={label} className="border-t border-line"><th scope="row" className="p-2 font-normal">{label}</th><td className="p-2 break-words">{value}</td><td className="p-2 break-words">{global}</td><td className="p-2">Saved profile snapshot</td></tr>)}
+          {inherited.map(([label, value]) => <tr key={label} className="border-t border-line"><th scope="row" className="p-2 font-normal">{label}</th><td className="p-2 break-words">{value}</td><td className="p-2 break-words">{value}</td><td className="p-2">Inherited from global settings</td></tr>)}
+          <tr className="border-t border-line"><th scope="row" className="p-2 font-normal">Decoding</th><td colSpan={2} className="p-2">{profile.decode.mode === "backend-default" ? "Backend defaults; not overridden by profile" : `Requested temperature ${profile.decode.temperature}, token budget ${profile.decode.maxTokens}; not applied by this profile manager`}</td><td className="p-2">{profile.decode.mode === "backend-default" ? "Backend" : "Saved request"}</td></tr>
+          <tr className="border-t border-line"><th scope="row" className="p-2 font-normal">Context access</th><td colSpan={2} className="p-2">{profile.context.mode === "none" ? "None requested" : `${profile.context.mode} requested; not captured by this profile manager`}</td><td className="p-2">Saved request; permissions separate</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>;
+}
+
 export function PersonalProfiles({ settings, saving, onManage }: {
   settings: AppSettings;
   saving: boolean;
@@ -100,6 +142,7 @@ export function PersonalProfiles({ settings, saving, onManage }: {
             {preview && <div className="rounded-lg border border-line p-3">
               <strong className="text-[12px]">Settings to save</strong>
               <ProfileSummary profile={preview} />
+              <EffectiveProfileSettings profile={preview} settings={settings} />
               <p className="caption mt-1">Identifier preservation requested; no literal terms added. Optional rewriting uses {preview.rewrite.model}. These settings are stored only.</p>
             </div>}
             {previewError && <p role="alert" className="control-warning">{previewError}</p>}
@@ -114,6 +157,7 @@ export function PersonalProfiles({ settings, saving, onManage }: {
             {profiles.map((profile) => <article key={profile.id} className="rounded-lg border border-line p-3 grid gap-2">
               <strong className="text-[13px]">{profile.name}</strong>
               <ProfileSummary profile={profile} />
+              <EffectiveProfileSettings profile={profile} settings={settings} />
               <div className="flex gap-2">
                 <button className="secondary-button" disabled={busy} onClick={() => { setError(null); setRename({ id: profile.id, name: profile.name }); }}>Rename</button>
                 <button className="secondary-button" disabled={busy} onClick={() => { setError(null); setRemove({ id: profile.id, name: profile.name }); }}>Delete</button>
@@ -124,6 +168,7 @@ export function PersonalProfiles({ settings, saving, onManage }: {
       )}
       {error && <p role="alert" className="control-warning">{error}</p>}
       {rename && <Modal title="Rename profile" busy={busy} onClose={() => setRename(null)}>
+        {profiles.find((profile) => profile.id === rename.id) && <EffectiveProfileSettings profile={profiles.find((profile) => profile.id === rename.id)!} settings={settings} />}
         <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); void run({ action: "rename", id: rename.id, name: rename.name }, () => setRename(null)); }}>
           <label className="grid gap-1">Profile name<input autoFocus required maxLength={128} disabled={busy} value={rename.name} onChange={(event) => setRename({ ...rename, name: event.target.value })} /></label>
           <button className="primary-button" type="submit" disabled={busy || !rename.name.trim()}>{pending ? "Saving…" : "Save name"}</button>
