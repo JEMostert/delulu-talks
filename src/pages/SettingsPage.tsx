@@ -272,6 +272,33 @@ export function SettingsPage(props: Props) {
               )}
             </SettingRow>
             <SettingRow
+              title="Mute capture sounds"
+              description="Silence the cues when recording starts and stops."
+            >
+              {toggle("captureSoundsMuted", "Mute capture sounds")}
+            </SettingRow>
+            <SettingRow
+              title="Capture sound volume"
+              description="Adjust the start and stop cues, even while muted."
+            >
+              <div className="inline-control">
+                <input
+                  type="range"
+                  aria-label="Capture sound volume"
+                  aria-valuetext={`${Math.round(s.captureSoundVolume * 100)}%`}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={s.captureSoundVolume}
+                  disabled={saving}
+                  onChange={(e) =>
+                    save({ captureSoundVolume: Number(e.target.value) })
+                  }
+                />
+                <span>{Math.round(s.captureSoundVolume * 100)}%</span>
+              </div>
+            </SettingRow>
+            <SettingRow
               title="Launch at login"
               description="Have your shortcut ready when you sign in."
             >

@@ -233,6 +233,15 @@ export function normalizeSettings(value: unknown): AppSettings {
     ),
     keepHistory: boolean(source.keepHistory, DEFAULT_SETTINGS.keepHistory),
     showOverlay: boolean(source.showOverlay, DEFAULT_SETTINGS.showOverlay),
+    captureSoundsMuted: boolean(
+      source.captureSoundsMuted,
+      DEFAULT_SETTINGS.captureSoundsMuted,
+    ),
+    captureSoundVolume:
+      typeof source.captureSoundVolume === "number" &&
+      Number.isFinite(source.captureSoundVolume)
+        ? Math.min(1, Math.max(0, source.captureSoundVolume))
+        : DEFAULT_SETTINGS.captureSoundVolume,
     preloadModel: boolean(source.preloadModel, DEFAULT_SETTINGS.preloadModel),
     magicEnabled: boolean(source.magicEnabled, DEFAULT_SETTINGS.magicEnabled),
     magicModel,

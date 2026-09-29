@@ -56,6 +56,8 @@ export type AppSettings = {
   pastePortalToken: string;
   keepHistory: boolean;
   showOverlay: boolean;
+  captureSoundsMuted: boolean;
+  captureSoundVolume: number;
   preloadModel: boolean;
   magicEnabled: boolean;
   magicModel: MagicModelId;
