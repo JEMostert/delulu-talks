@@ -260,6 +260,9 @@ export function HomePage({
                       “forward slash”, “backslash”, “new line”, “tab” or “space”.
                       Say “literal” before a word to keep that word unchanged.
                       Ordinary words keep their spacing; operators receive spaces.</p>
+                    <p className="mt-2">Identifiers: say “camel case user account end identifier” for userAccount.
+                      Also use pascal case, snake case, kebab case or literal spelling.
+                      Literal spelling accepts letters, digit names and “capital”/“hoofdletter”.</p>
                     <ul className="mt-2 grid gap-1">
                       {technicalDictationGuide.map((entry) => (
                         <li key={entry.label}>

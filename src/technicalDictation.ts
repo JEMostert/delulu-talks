@@ -1,3 +1,5 @@
+import { parseTechnicalIdentifier, type IdentifierStyle } from "./technicalIdentifiers";
+
 /** Recognition-independent rendering: these modes only produce text, never actions. */
 export type DictationMode = "prose" | "code" | "command";
 
@@ -64,7 +66,12 @@ const byPhrase = new Map(entries.map(({ phrase, entry }) => [phrase, entry]));
 const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const phrasePattern = entries.map(({ phrase }) => escapeRegex(phrase).replace(/ /g, "[ \\t]+")).join("|");
 // Unicode letter/number boundaries prevent matching inside names or accented words.
-const tokenPattern = `(?<![\\p{L}\\p{N}_])(?:(?:literal|literally|literaal)[ \\t]+([\\p{L}\\p{N}_]+(?:['’][\\p{L}\\p{N}_]+)*)|(${phrasePattern}))(?![\\p{L}\\p{N}_])`;
+const identifierStyles: Record<string, IdentifierStyle> = {
+  "camel case": "camel", "pascal case": "pascal", "snake case": "snake",
+  "kebab case": "kebab", "literal spelling": "literal",
+};
+const identifierPattern = `(camel[ \\t]+case|pascal[ \\t]+case|snake[ \\t]+case|kebab[ \\t]+case|literal[ \\t]+spelling)[ \\t]+([^\\r\\n]*?)[ \\t]+(?:end[ \\t]+identifier|einde[ \\t]+naam)`;
+const tokenPattern = `(?<![\\p{L}\\p{M}\\p{N}_])(?:${identifierPattern}|(?:literal|literally|literaal)[ \\t]+([\\p{L}\\p{N}_]+(?:['’][\\p{L}\\p{N}_]+)*)|(${phrasePattern}))(?![\\p{L}\\p{M}\\p{N}_])`;
 
 /**
  * Prose is byte-for-byte unchanged. Code and command share an explicit grammar.
@@ -83,9 +90,16 @@ export function renderTechnicalDictation(text: string, mode: DictationMode): str
   for (const match of text.matchAll(matcher)) {
     const index = match.index;
     chunks.push({ text: text.slice(cursor, index) });
-    chunks.push(match[1] !== undefined
-      ? { text: match[1] }
-      : { text: "", entry: byPhrase.get(match[2].toLowerCase().replace(/[ \t]+/g, " ")) });
+    if (match[1] !== undefined) {
+      const style = identifierStyles[match[1].toLowerCase().replace(/[ \t]+/g, " ")];
+      // Render as a literal chunk: identifiers named "dot" or "space" must
+      // never be fed back into the symbol grammar. Invalid commands stay exact.
+      chunks.push({ text: parseTechnicalIdentifier(match[2], style) ?? match[0] });
+    } else {
+      chunks.push(match[3] !== undefined
+        ? { text: match[3] }
+        : { text: "", entry: byPhrase.get(match[4].toLowerCase().replace(/[ \t]+/g, " ")) });
+    }
     cursor = index + match[0].length;
   }
   chunks.push({ text: text.slice(cursor) });
