@@ -67,18 +67,28 @@ function audibleLevel(rms: number): number {
   return Math.min(1, Math.max(0, rms * 4.2));
 }
 
+type CaptureSession = {
+  readonly generation: number;
+  readonly sessionId?: string;
+  context: AudioContext | null;
+  stream: MediaStream | null;
+  worklet: AudioWorkletNode | null;
+  processor: ScriptProcessorNode | null;
+  source: MediaStreamAudioSourceNode | null;
+  sink: GainNode | null;
+  chunks: Float32Array[];
+  startedAt: number;
+  lastLevelAt: number;
+  stopping: boolean;
+  cancelled: boolean;
+  readonly cancellation: Promise<void>;
+  cancel: () => void;
+  finishFlush?: () => void;
+  disposal?: Promise<void>;
+};
+
 export class PcmRecorder {
-  private context: AudioContext | null = null;
-  private stream: MediaStream | null = null;
-  private worklet: AudioWorkletNode | null = null;
-  private processor: ScriptProcessorNode | null = null;
-  private source: MediaStreamAudioSourceNode | null = null;
-  private sink: GainNode | null = null;
-  private chunks: Float32Array[] = [];
-  private startedAt = 0;
-  private sessionId: string | undefined;
-  private stopping = false;
-  private lastLevelAt = 0;
+  private session: CaptureSession | null = null;
   private generation = 0;
   private commands: Promise<void> = Promise.resolve();
 
@@ -87,24 +97,54 @@ export class PcmRecorder {
   }
 
   handle(command: RecorderCommand): Promise<void> {
-    if (command.action === "cancel") this.generation += 1;
+    if (command.action === "cancel") {
+      if (command.sessionId && this.session?.sessionId !== command.sessionId)
+        return Promise.resolve();
+      this.generation += 1;
+      const session = this.session;
+      if (session) {
+        // Invalidate immediately, including while acquisition or flush awaits.
+        session.cancelled = true;
+        session.cancel();
+        session.finishFlush?.();
+        void this.dispose(session);
+      }
+    }
     const generation = this.generation;
     const operation = this.commands.then(async () => {
       if (command.action === "start")
         await this.start(command.inputDeviceId, generation, command.sessionId);
-      if (command.action === "stop") await this.stop(true);
-      if (command.action === "cancel") await this.stop(false);
+      if (command.action === "stop") await this.stop(true, command.sessionId);
+      if (command.action === "cancel") await this.stop(false, command.sessionId);
     });
     this.commands = operation.catch(() => undefined);
     return operation;
   }
 
+  private current(session: CaptureSession): boolean {
+    return (
+      this.session === session &&
+      !session.cancelled &&
+      session.generation === this.generation &&
+      !session.disposal
+    );
+  }
+
   private async start(deviceId: string, generation: number, sessionId?: string): Promise<void> {
-    if (this.stream || this.stopping || generation !== this.generation) return;
+    if (this.session || generation !== this.generation) return;
+    let cancel!: () => void;
+    const cancellation = new Promise<void>((resolve) => { cancel = resolve; });
+    const session: CaptureSession = {
+      generation, sessionId, cancellation, cancel,
+      context: null, stream: null, worklet: null, processor: null,
+      source: null, sink: null, chunks: [], startedAt: 0, lastLevelAt: 0,
+      stopping: false, cancelled: false,
+    };
+    this.session = session;
     try {
       const exactDevice =
         deviceId && deviceId !== "default" ? { exact: deviceId } : undefined;
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const acquisition = navigator.mediaDevices.getUserMedia({
         audio: {
           deviceId: exactDevice,
           channelCount: 1,
@@ -112,67 +152,82 @@ export class PcmRecorder {
           noiseSuppression: false,
           autoGainControl: false,
         },
+      }).then((stream) => {
+        // Browser permission requests cannot be aborted. A late grant belongs
+        // only to this session and must never become the next session's mic.
+        if (!this.current(session)) {
+          stream.getTracks().forEach((track) => track.stop());
+          return null;
+        }
+        session.stream = stream;
+        return stream;
       });
-      if (generation !== this.generation) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      this.stream = stream;
-      this.sessionId = sessionId;
-      this.context = new AudioContext({ latencyHint: "interactive" });
-      this.source = this.context.createMediaStreamSource(this.stream);
-      this.sink = this.context.createGain();
-      this.sink.gain.value = 0;
-      this.chunks = [];
-      if (await this.connectWorklet()) {
-        this.source.connect(this.worklet!);
-        this.worklet!.connect(this.sink);
+      const stream = await Promise.race([
+        acquisition,
+        session.cancellation.then(() => null),
+      ]);
+      if (!stream || !this.current(session)) return;
+      const context = new AudioContext({ latencyHint: "interactive" });
+      session.context = context;
+      session.source = context.createMediaStreamSource(stream);
+      session.sink = context.createGain();
+      session.sink.gain.value = 0;
+      const connected = await this.connectWorklet(session);
+      if (!this.current(session)) return;
+      if (connected) {
+        session.source.connect(session.worklet!);
+        session.worklet!.connect(session.sink);
       } else {
-        this.processor = this.context.createScriptProcessor(4096, 1, 1);
-        this.processor.onaudioprocess = (event) =>
-          this.ingest(event.inputBuffer.getChannelData(0));
-        this.source.connect(this.processor);
-        this.processor.connect(this.sink);
+        session.processor = context.createScriptProcessor(4096, 1, 1);
+        session.processor.onaudioprocess = (event) =>
+          this.ingest(session, event.inputBuffer.getChannelData(0));
+        session.source.connect(session.processor);
+        session.processor.connect(session.sink);
       }
-      if (generation !== this.generation) {
-        await this.dispose();
-        return;
-      }
-      this.sink.connect(this.context.destination);
-      this.startedAt = performance.now();
-      await bridge.recordingStarted();
+      session.sink.connect(context.destination);
+      session.startedAt = performance.now();
+      await Promise.race([bridge.recordingStarted(), session.cancellation]);
     } catch (error) {
-      await this.dispose();
-      if (generation !== this.generation) return;
+      const report = this.current(session);
+      await this.dispose(session);
+      if (!report || session.cancelled || generation !== this.generation) return;
       await bridge.recordingFailed(
         `Microphone unavailable: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
 
-  private async connectWorklet(): Promise<boolean> {
-    if (!this.context) return false;
+  private async connectWorklet(session: CaptureSession): Promise<boolean> {
+    const context = session.context;
+    if (!context) return false;
     try {
-      await this.context.audioWorklet.addModule(captureWorkletUrl);
-      this.worklet = new AudioWorkletNode(this.context, "delulu-capture");
-      this.worklet.port.onmessage = (
+      await Promise.race([
+        context.audioWorklet.addModule(captureWorkletUrl),
+        session.cancellation,
+      ]);
+      if (!this.current(session)) return false;
+      session.worklet = new AudioWorkletNode(context, "delulu-capture");
+      session.worklet.port.onmessage = (
         event: MessageEvent<{ samples: Float32Array; rms: number }>,
       ) => {
         if (event.data?.samples)
-          this.ingest(event.data.samples, event.data.rms);
+          this.ingest(session, event.data.samples, event.data.rms);
       };
       return true;
     } catch {
-      this.worklet = null;
+      session.worklet = null;
       return false;
     }
   }
 
-  private ingest(samples: Float32Array, rms?: number): void {
-    this.chunks.push(new Float32Array(samples));
+  private ingest(session: CaptureSession, samples: Float32Array, rms?: number): void {
+    // Messages queued by a detached worklet and fallback callbacks can outlive
+    // resource disposal. They can only append to their original live session.
+    if (!this.current(session)) return;
+    session.chunks.push(new Float32Array(samples));
     const now = performance.now();
-    if (now - this.lastLevelAt < 50) return;
-    this.lastLevelAt = now;
+    if (now - session.lastLevelAt < 50) return;
+    session.lastLevelAt = now;
     let level = rms;
     if (level == null) {
       let sum = 0;
@@ -182,34 +237,59 @@ export class PcmRecorder {
     bridge.recordingLevel(audibleLevel(level));
   }
 
-  private async stop(submit: boolean): Promise<void> {
-    if (!this.stream || !this.context || this.stopping) return;
-    this.stopping = true;
-    const durationMs = Math.round(performance.now() - this.startedAt);
-    const sampleRate = this.context.sampleRate;
-    const sessionId = this.sessionId;
-    this.source?.disconnect();
-    if (this.worklet && submit) {
-      const port = this.worklet.port;
-      const receive = port.onmessage;
-      await new Promise<void>((resolve) => {
-        const finish = () => {
-          clearTimeout(timer);
-          port.onmessage = receive;
-          resolve();
-        };
-        const timer = setTimeout(finish, 300);
-        port.onmessage = (event) => {
-          if (event.data?.flushed) finish();
-          else receive?.call(port, event);
-        };
-        port.postMessage("flush");
-      });
+  private async stop(submit: boolean, sessionId?: string): Promise<void> {
+    const session = this.session;
+    if (!session || (sessionId && session.sessionId !== sessionId)) return;
+    if (!submit) {
+      session.cancelled = true;
+      session.cancel();
+      session.finishFlush?.();
+      await this.dispose(session);
+      return;
     }
-    const captured = merge(this.chunks);
-    await this.dispose();
-    this.stopping = false;
-    if (submit) {
+    if (
+      !this.current(session) ||
+      !session.stream ||
+      !session.context ||
+      session.stopping
+    )
+      return;
+    session.stopping = true;
+    const durationMs = Math.round(performance.now() - session.startedAt);
+    const sampleRate = session.context.sampleRate;
+    try {
+      session.source?.disconnect();
+      if (session.worklet) {
+        const port = session.worklet.port;
+        const receive = port.onmessage;
+        await new Promise<void>((resolve) => {
+          let finished = false;
+          const finish = () => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            session.finishFlush = undefined;
+            port.onmessage = this.current(session) ? receive : null;
+            resolve();
+          };
+          const timer = setTimeout(finish, 300);
+          session.finishFlush = finish;
+          port.onmessage = (event) => {
+            if (event.data?.flushed) finish();
+            else receive?.call(port, event);
+          };
+          try {
+            port.postMessage("flush");
+          } catch {
+            finish();
+          }
+        });
+      }
+      if (!this.current(session)) return;
+      const captured = merge(session.chunks);
+      await this.dispose(session);
+      // Cancellation can arrive while AudioContext.close is still pending.
+      if (session.cancelled || session.generation !== this.generation) return;
       if (!captured.length) {
         await bridge.recordingFailed(
           "The microphone did not produce audio. Try another input.",
@@ -217,32 +297,50 @@ export class PcmRecorder {
         return;
       }
       await bridge.submitRecording({
-        sessionId,
+        sessionId: session.sessionId,
         wav: wav(resample(captured, sampleRate)),
         durationMs,
       });
+    } finally {
+      await this.dispose(session);
     }
   }
 
-  private async dispose(): Promise<void> {
-    if (this.worklet) this.worklet.port.onmessage = null;
-    if (this.processor) this.processor.onaudioprocess = null;
-    this.source?.disconnect();
-    this.worklet?.disconnect();
-    this.processor?.disconnect();
-    this.sink?.disconnect();
-    this.stream?.getTracks().forEach((track) => track.stop());
-    if (this.context && this.context.state !== "closed")
-      await this.context.close();
-    this.context = null;
-    this.stream = null;
-    this.sessionId = undefined;
-    this.worklet = null;
-    this.processor = null;
-    this.source = null;
-    this.sink = null;
-    this.chunks = [];
-    this.lastLevelAt = 0;
+  private dispose(session: CaptureSession): Promise<void> {
+    if (session.disposal) return session.disposal;
+    // Reserve disposal before clearing resources so repeated cancellation and
+    // finalization await the same release instead of closing a context twice.
+    session.disposal = Promise.resolve().then(async () => {
+      session.finishFlush?.();
+      if (session.worklet) session.worklet.port.onmessage = null;
+      if (session.processor) session.processor.onaudioprocess = null;
+      for (const node of [session.source, session.worklet, session.processor, session.sink]) {
+        try {
+          node?.disconnect();
+        } catch { /* already disconnected */ }
+      }
+      session.stream?.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch { /* continue releasing the remaining tracks */ }
+      });
+      try {
+        if (session.context && session.context.state !== "closed")
+          await session.context.close();
+      } catch {
+        // Tracks and graph are already released even if the context was lost.
+      } finally {
+        session.context = null;
+        session.stream = null;
+        session.worklet = null;
+        session.processor = null;
+        session.source = null;
+        session.sink = null;
+        session.chunks = [];
+        if (this.session === session) this.session = null;
+      }
+    });
+    return session.disposal;
   }
 }
 
