@@ -41,10 +41,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   inputDeviceId: "default",
   inputDeviceLabel: "System default",
   autoPaste: true,
+  pasteShortcut: "standard",
+  pasteLastDelaySeconds: 3,
   copyToClipboard: true,
+  spokenFormattingCommands: false,
   pastePortalToken: "",
   keepHistory: true,
   showOverlay: true,
+  captureSoundsMuted: true,
+  captureSoundVolume: 0.15,
   preloadModel: true,
   magicEnabled: false,
   magicModel: "qwen35Medium",
@@ -54,6 +59,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   modelIdleMinutes: 15,
   launchAtLogin: false,
   customWords: [],
+  personalProfiles: { schemaVersion: 1, profiles: [] },
 };
 
 export const MODELS: ModelInfo[] = [

@@ -3,10 +3,10 @@ import {
   clearCorrectionDrafts,
   discardCorrectionDraft,
 } from "./correctionDrafts";
-import { ruleConflict, ruleKind } from "./personalization";
+import { ruleConflict, ruleKind, ruleLanguage } from "./personalization";
 import type { TranscriptActions } from "./components/TranscriptCard";
 import type { useWorkspace } from "./hooks/useWorkspace";
-import type { CustomWord, ExportFormat, MagicRewriteResult } from "./types";
+import type { CustomWord, ExportFormat, MagicRewriteResult, TranscriptRecord } from "./types";
 
 type TranscriptWorkspace = Pick<
   ReturnType<typeof useWorkspace>,
@@ -19,7 +19,7 @@ type TranscriptWorkspace = Pick<
   | "setHistory"
   | "setPage"
   | "setToast"
->;
+> & { history?: TranscriptRecord[] };
 
 /** Shared record commands; workspace and main IPC retain state/persistence ownership. */
 export function createTranscriptCommands(w: TranscriptWorkspace) {
@@ -34,6 +34,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     const existing = w.settings.customWords.find(
       (item) =>
         ruleKind(item) === "correction" &&
+        ruleLanguage(item) === ruleLanguage(word) &&
         item.term.toLowerCase() === word.term.toLowerCase(),
     );
     const conflict = ruleConflict(
@@ -69,6 +70,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     );
   };
   const actions: TranscriptActions = {
+    ruleExamples: w.settings.keepHistory ? (w.history ?? []) : [],
     onCopy: w.copy,
     onRewrite: bridge.rewriteMagic,
     onRewriteSetup: () => w.setPage("models"),
@@ -77,6 +79,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
       id: string,
       result: MagicRewriteResult | null,
       sourceText: string,
+      expectedSourceRevision?: number,
     ) =>
       w.action(
         async () => {
@@ -84,6 +87,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
             id,
             result,
             sourceText,
+            expectedSourceRevision,
           );
           w.setHistory((items) =>
             items.map((item) => (item.id === id ? record : item)),
@@ -92,6 +96,16 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
         result ? "Rewrite applied" : "Rewrite undone",
       ),
     onUpdateTranscript: w.updateTranscript,
+    onSetTitle: (id, title) =>
+      w.action(
+        async () => {
+          const record = await bridge.setTranscriptTitle(id, title);
+          w.setHistory((items) =>
+            items.map((item) => (item.id === id ? record : item)),
+          );
+        },
+        title?.trim() ? "Transcript title saved" : "Transcript title removed",
+      ),
     onRemember: remember,
     onDelete: (id: string) => {
       void w.action(async () => {
@@ -99,6 +113,11 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
         discardCorrectionDraft(id);
         w.setHistory((items) => items.filter((item) => item.id !== id));
       }, "Transcript deleted");
+    },
+    onExportTemplate: async (id, request) => {
+      const path = await bridge.exportTranscriptTemplate(id, request);
+      if (path) w.setToast("Transcript exported");
+      return path;
     },
     onExport: (id: string, format: ExportFormat) => {
       void w.action(async () => {
