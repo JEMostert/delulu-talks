@@ -25,6 +25,7 @@ import type {
 } from "../src/types";
 import { modelById } from "../src/data";
 import { deliveredText } from "../src/transcriptText";
+import { normalizeTranscriptTitle } from "../src/transcriptTitle";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
@@ -754,6 +755,22 @@ function registerIpc(): void {
         ? applyTranscriptEdit(sessionRecord, correction)
         : null;
     if (!updated) throw new Error("Transcript not found");
+    sessionTranscripts.set(key, updated);
+    if (lastTranscript?.id === key) lastTranscript = updated;
+    rebuildTrayMenu();
+    return updated;
+  });
+  handle("history:setTitle", (_event, id: unknown, title: unknown) => {
+    const key = validateText(id, 128);
+    const normalized = normalizeTranscriptTitle(title);
+    const sessionRecord = sessionTranscripts.get(key);
+    const updated = storage.findHistory(key)
+      ? storage.setTranscriptTitle(key, normalized)
+      : sessionRecord
+        ? { ...sessionRecord, title: normalized }
+        : null;
+    if (!updated) throw new Error("Transcript not found");
+    // A rejected saved-history write leaves session and last-record state intact.
     sessionTranscripts.set(key, updated);
     if (lastTranscript?.id === key) lastTranscript = updated;
     rebuildTrayMenu();

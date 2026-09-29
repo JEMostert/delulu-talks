@@ -88,6 +88,16 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
         result ? "Rewrite applied" : "Rewrite undone",
       ),
     onUpdateTranscript: w.updateTranscript,
+    onSetTitle: (id, title) =>
+      w.action(
+        async () => {
+          const record = await bridge.setTranscriptTitle(id, title);
+          w.setHistory((items) =>
+            items.map((item) => (item.id === id ? record : item)),
+          );
+        },
+        title?.trim() ? "Transcript title saved" : "Transcript title removed",
+      ),
     onRemember: remember,
     onDelete: (id: string) => {
       void w.action(async () => {

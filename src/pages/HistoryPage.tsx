@@ -41,6 +41,7 @@ export function HistoryPage({
               ? item.source === "dictation"
               : item.source !== "dictation")) &&
           [
+            item.title,
             item.text,
             item.personalizedText,
             item.editedText,
