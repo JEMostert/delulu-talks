@@ -155,7 +155,10 @@ export function SettingsPage(props: Props) {
                 ))}
               </select>
             </SettingRow>
-            <SettingRow title="Language">
+            <SettingRow
+              title="Language hint"
+              description="Choose a hint supported by the speech adapter. This guides recognition; it is not a detected-language report. Automatic language selection is not offered."
+            >
               <select
                 aria-label="Language"
                 value={s.language}

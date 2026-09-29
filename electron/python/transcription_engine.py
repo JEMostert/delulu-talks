@@ -55,6 +55,17 @@ LANGUAGE_NAMES = {
     "ko": "Korean",
     "vi": "Vietnamese",
 }
+def language_hint(request):
+    code = request.get("language", "en")
+    if not isinstance(code, str) or code.lower() not in LANGUAGE_NAMES:
+        raise ValueError(
+            "Unsupported language hint. Select one of the adapter's supported "
+            "language controls; automatic language selection is not offered."
+        )
+    normalized = code.lower()
+    return normalized, LANGUAGE_NAMES[normalized]
+
+
 MAGIC_MODELS = {
     "qwen35Small": "Qwen/Qwen3.5-0.8B",
     "qwen35Medium": "Qwen/Qwen3.5-2B",
@@ -378,6 +389,7 @@ class Worker:
             raise
 
     def transcribe_speech(self, request: dict[str, Any]) -> dict[str, Any]:
+        language_code, language = language_hint(request)
         speech = self.speech_engine()
         if speech is not None:
             return speech.transcribe(request)
@@ -403,8 +415,6 @@ class Worker:
             wav = soxr.resample(wav, sample_rate, 16000)
         if not len(wav):
             raise ValueError("The selected audio file contains no samples")
-        language_code = str(request.get("language", "en")).lower()
-        language = LANGUAGE_NAMES.get(language_code)
         inference_started = time.perf_counter()
         results = self.model.transcribe(
             audio=[(wav, 16000)],

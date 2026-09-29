@@ -74,6 +74,8 @@ class MetalSpeech:
             raise
 
     def transcribe(self, request):
+        from transcription_engine import LANGUAGE_NAMES, language_hint
+        language_code, language = language_hint(request)
         if self.model is None:
             raise RuntimeError("R2T2 is not loaded. Load the model to try again.")
         audio = Path(request["audioPath"])
@@ -81,7 +83,6 @@ class MetalSpeech:
             raise FileNotFoundError("The selected audio file no longer exists")
         from mlx_audio.stt.utils import load_audio
         import mlx.core as mx
-        from transcription_engine import LANGUAGE_NAMES
 
         started = time.perf_counter()
         # MLX Audio decodes and mixes/resamples locally. FLAC imports no longer
@@ -89,8 +90,6 @@ class MetalSpeech:
         samples = load_audio(str(audio), sr=SAMPLE_RATE)
         if not len(samples):
             raise ValueError("The selected audio file contains no samples")
-        language_code = str(request.get("language", "en")).lower()
-        language = LANGUAGE_NAMES.get(language_code)
         inference_started = time.perf_counter()
         try:
             result = self.model.generate(
