@@ -55,6 +55,7 @@ export function useWorkspace() {
   const settingsRef = useRef(settings);
   const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   const pendingSaves = useRef(0);
+  const lifecycle = useRef({ alive: false });
   const report = (reason: unknown) =>
     setError(reason instanceof Error ? reason.message : String(reason));
   const receiveSettings = (next: AppSettings) => {
@@ -68,7 +69,11 @@ export function useWorkspace() {
 
   useEffect(() => {
     let alive = true;
+    const owner = { alive: true };
+    lifecycle.current = owner;
     const startup = new AbortController();
+    const liveRecords = new Map<string, TranscriptRecord>();
+    let readingHistory = true;
     const received = new Set<string>();
     const subscribe =
       <T>(name: string, receive: (value: T) => void) =>
@@ -85,15 +90,20 @@ export function useWorkspace() {
       bridge.onStatus(subscribe("speech status", setStatus)),
       bridge.onMagicStatus(subscribe("rewriting status", setMagicStatus)),
       bridge.onSettingsChanged(subscribe("settings", receiveSettings)),
-      bridge.onNavigate(setPage),
+      bridge.onNavigate((next) => { if (alive) setPage(next); }),
       bridge.onShortcutStatus(subscribe("shortcut status", setShortcutStatus)),
       bridge.onUpdateStatus(subscribe("update status", setUpdateStatus)),
       bridge.onRecorderCommand((command) => {
-        void recorder.handle(command).catch(report);
+        if (!alive) return;
+        void recorder.handle(command).catch((reason) => { if (alive) report(reason); });
       }),
-      bridge.onTranscript(receiveTranscript),
+      bridge.onTranscript((record) => {
+        if (!alive) return;
+        if (readingHistory) liveRecords.set(record.id, record);
+        receiveTranscript(record);
+      }),
     ];
-    void bridge.recorderReady().catch(report);
+    void bridge.recorderReady().catch((reason) => { if (alive) report(reason); });
     void Promise.allSettled([
       read("settings", () => bridge.getSettings()),
       read("speech status", () => bridge.getStatus()),
@@ -118,7 +128,11 @@ export function useWorkspace() {
           return;
         }
         if (!received.has("settings")) receiveSettings(next.value);
-        setHistory(records.value);
+        const initialHistory = new Map(records.value.map((record) => [record.id, record]));
+        for (const record of liveRecords.values()) initialHistory.set(record.id, record);
+        setHistory([...initialHistory.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, 500));
+        readingHistory = false;
+        liveRecords.clear();
         if (!received.has("speech status")) {
           if (speech.status === "fulfilled") setStatus(speech.value);
           else
@@ -168,9 +182,10 @@ export function useWorkspace() {
       });
     return () => {
       alive = false;
+      owner.alive = false;
       startup.abort();
       subscriptions.forEach((remove) => remove());
-      void recorder.cancel();
+      void recorder.cancel().catch(() => { /* The retired owner cannot publish an error. */ });
     };
   }, [startupAttempt]);
 
@@ -202,13 +217,16 @@ export function useWorkspace() {
     run: () => Promise<unknown>,
     success?: string,
   ): Promise<boolean> {
+    const owner = lifecycle.current;
+    if (!owner.alive) return false;
     try {
       await run();
+      if (!owner.alive) return false;
       setError(null);
       if (success) setToast(success);
       return true;
     } catch (reason) {
-      report(reason);
+      if (owner.alive) report(reason);
       return false;
     }
   }
@@ -217,20 +235,25 @@ export function useWorkspace() {
     patch: Partial<AppSettings>,
     message: string | null = "Changes saved",
   ): Promise<boolean> {
+    const owner = lifecycle.current;
+    if (!owner.alive) return Promise.resolve(false);
     pendingSaves.current += 1;
     setSaving(true);
     const run = saveQueue.current.then(async () => {
       try {
-        receiveSettings(await bridge.updateSettings(patch));
+        if (!owner.alive) return false;
+        const next = await bridge.updateSettings(patch);
+        if (!owner.alive) return false;
+        receiveSettings(next);
         setError(null);
         if (message) setToast(message);
         return true;
       } catch (reason) {
-        report(reason);
+        if (owner.alive) report(reason);
         return false;
       } finally {
         pendingSaves.current -= 1;
-        setSaving(pendingSaves.current > 0);
+        if (lifecycle.current.alive) setSaving(pendingSaves.current > 0);
       }
     });
     saveQueue.current = run;
@@ -241,11 +264,13 @@ export function useWorkspace() {
     id: string,
     text: string | null,
   ): Promise<boolean> {
+    const owner = lifecycle.current;
     return action(
       async () => {
         if (text !== null && !text.trim())
           throw new Error("A correction cannot be empty");
         const updated = await bridge.updateTranscript(id, text);
+        if (!owner.alive) return;
         setHistory((items) =>
           items.map((item) => (item.id === id ? updated : item)),
         );
@@ -272,7 +297,11 @@ export function useWorkspace() {
     settings,
     ready,
     startupError,
-    retryStartup: () => setStartupAttempt((attempt) => attempt + 1),
+    retryStartup: () => {
+      lifecycle.current.alive = false;
+      setReady(false);
+      setStartupAttempt((attempt) => attempt + 1);
+    },
     status,
     magicStatus,
     shortcutStatus,
