@@ -4,7 +4,6 @@ import {
   Cpu,
   Settings2,
   SlidersHorizontal,
-  WandSparkles,
 } from "lucide-react";
 import type { DictationStatus, MagicStatus, Page } from "../types";
 const groups = [
@@ -19,7 +18,6 @@ const groups = [
   {
     label: "Tools",
     items: [
-      { id: "magic", label: "Writing", icon: WandSparkles },
       { id: "history", label: "History", icon: Clock3 },
       { id: "lab", label: "Audio files", icon: AudioLines },
     ],
@@ -118,14 +116,14 @@ export function Sidebar({
         </button>
         <button
           className="relative mt-[3px] flex w-full items-center gap-2.5 rounded-[5px] border border-transparent bg-transparent px-3 py-2 text-left text-[11px] text-[#bed2e4] rounded-[9px] hover:bg-white/10 hover:text-white"
-          onClick={() => onNavigate("magic")}
+          onClick={() => onNavigate("models")}
           title={magicStatus.message}
         >
           <span
             className={`engine-indicator block h-[6px] w-[6px] rounded-[2px] ${magicStatus.engine === "ready" ? "ready bg-[#35d5ba] shadow-[0_0_7px_#35d5ba33]" : "bg-[#6a859b]"}`}
           />
           <span>
-            Writing
+            Rewriting
             <small className="mt-px block text-[10px] text-[#87abc6]">
               {label(magicStatus.engine)}
             </small>

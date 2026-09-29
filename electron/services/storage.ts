@@ -27,15 +27,22 @@ import type {
 const SETTINGS_FILE = "settings.json";
 const HISTORY_FILE = "history.json";
 const MAX_HISTORY = 500;
-const validModels = new Set(MODELS.map((model) => model.id));
+const validHistoryModels = new Set<ModelId>([
+  ...MODELS.map((model) => model.id),
+  "qwen3Asr",
+]);
 const validMagicModels = new Set(MAGIC_MODELS.map((model) => model.id));
 const validLanguages = new Set<string>(LANGUAGES.map(([code]) => code));
 
 function readJson(path: string): unknown {
   try {
     return JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    return undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw new Error(
+      `Could not read local data at ${path}. The file has been preserved. Restore a valid backup or repair the JSON before reopening Delulu Talks.`,
+      { cause: error },
+    );
   }
 }
 
@@ -190,7 +197,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     250_000,
   );
   if (!text) return null;
-  const model = validModels.has(source.model as ModelId)
+  const model = validHistoryModels.has(source.model as ModelId)
     ? (source.model as ModelId)
     : DEFAULT_SETTINGS.model;
   return {

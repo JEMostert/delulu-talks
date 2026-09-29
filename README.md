@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/readme-header.svg" width="100%" alt="Delulu Talks — private desktop dictation, with the ocean-blue wave logo" />
+  <img src="docs/assets/readme-header.svg" width="100%" alt="Delulu Talks — private desktop dictation, with the ocean-blue voice mark" />
   <p><strong>Native clean dictation. Personal corrections. Optional local rewriting.</strong></p>
   <p>
     <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><img src="https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&amp;label=release&amp;color=16b3e8&amp;labelColor=0a2942" alt="Latest release" /></a>
@@ -9,13 +9,16 @@
   <p>
     <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><strong>Download the latest release</strong></a> ·
     <a href="docs/ARCHITECTURE.md">Architecture</a> ·
-    <a href="docs/PRODUCT_RESEARCH.md">Product research</a>
+    <a href="https://github.com/JEMostert/delulu-talks/issues/14">GitHub roadmap</a> ·
+    <a href="docs/MODEL_RESEARCH.md">Model research</a> ·
+    <a href="docs/MAC_SUPPORT.md">Mac support</a> ·
+    <a href="docs/WINDOWS_SUPPORT.md">Windows support</a>
   </p>
 </div>
 
 ---
 
-Delulu Talks turns speech into text in the app you are using. Qwen3-ASR produces dictation locally through MLX on Apple Silicon; R2T2 handles CUDA systems; Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
+Delulu Talks turns speech into text in the app you are using. R2T2 produces dictation locally through MLX on Apple Silicon, vLLM on Linux CUDA, and native PyTorch on Windows CUDA; Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
 
 ## Dictate, review, keep working
 
@@ -37,13 +40,13 @@ On supported Wayland desktops, the recording pill stays above your apps without 
 
 ## What it brings
 
-| Feature | What it does |
-| --- | --- |
-| **System dictation** | Hold-to-talk by default, optional press-to-toggle, tray controls, and desktop-owned shortcut remapping. |
-| **Optional rewriting** | Optional local transformations with preview, apply and undo beside each transcript. Automatic rewriting is off by default. |
+| Feature                       | What it does                                                                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **System dictation**          | Hold-to-talk by default, optional press-to-toggle, tray controls, and desktop-owned shortcut remapping.                      |
+| **Optional rewriting**        | Optional local transformations with preview, apply and undo beside each transcript. Automatic rewriting is off by default.   |
 | **Native Wayland experience** | Uses XDG GlobalShortcuts, secure Remote Desktop paste, and a click-through layer-shell recording pill on supported desktops. |
-| **Audio files** | Imports audio or video for local transcription. |
-| **Local by design** | Runs speech and writing models on your machine. There is no telemetry or cloud transcription. |
+| **Audio files**               | Imports audio or video for local transcription.                                                                              |
+| **Local by design**           | Runs speech and writing models on your machine. There is no telemetry or cloud transcription.                                |
 
 ### Corrections and text shortcuts
 
@@ -63,9 +66,9 @@ The app opens directly into dictation controls. Microphone, language, shortcut, 
   <img src="docs/assets/controls-dark.png" width="100%" alt="Delulu Talks controls: capture, transcription, personalization, and delivery settings beside the latest transcript" />
 </picture>
 
-*Current interface captured from the browser preview with demo text. The image follows your light or dark theme.*
+_Current interface captured from the browser preview with demo text. The image follows your light or dark theme._
 
-The interface uses ocean-blue and navy panels with light/dark/system themes. Settings is at the top of navigation. Writing, file transcription, model management, history and personalization share the same compact visual system. The application icon is a new wave-shaped D.
+The interface uses ocean-blue and navy panels with light/dark/system themes. Controls, Settings, and Models lead the navigation. Transcript rewriting, file transcription, model management, history and personalization share the same compact visual system. The application icon is an abstract ocean-blue voice mark. See the [editable brand assets](docs/BRAND.md).
 
 - **Configure quickly:** priority controls fit above the fold in compact desktop windows.
 - **Recover results:** paste the latest transcript, retry failed audio from memory, or discard it explicitly.
@@ -76,15 +79,17 @@ The interface uses ocean-blue and navy panels with light/dark/system themes. Set
 
 Speech stays ready by default. The optional writing model loads on demand; you can keep either model loaded or let it unload after a configurable idle period.
 
-| Runtime | Available models | Good for |
-| --- | --- | --- |
-| **Qwen3-ASR** (Apple Silicon) | 0.6B ASR | Local MLX transcription with automatic language detection. |
-| **R2T2** (Confucius4-R2T2) | 2B streaming ASR | Low-latency, high-accuracy dictation through vLLM on your CUDA GPU. |
-| **Qwen 3.5 writing** | 0.8B · 2B · 4B | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default. |
+| Runtime                         | Available models                   | Good for                                                                                                   |
+| ------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **R2T2 MLX** (Apple Silicon)    | BF16 conversion of Confucius4-R2T2 | Direct local MLX speech inference with language hints; native validation pending.                          |
+| **R2T2 CUDA** (Linux / Windows) | Confucius4-R2T2                    | Linux uses vLLM; Windows uses native PyTorch/Transformers. Native Windows inference validation is pending. |
+| **Qwen 3.5 writing**            | 0.8B · 2B · 4B                     | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default.   |
 
-On Apple Silicon with macOS 15+, Delulu automatically selects **Qwen/Qwen3-ASR-0.6B**, served by vLLM Metal through MLX. It detects Dutch, English, and other supported languages automatically. The model download is approximately 1.9 GB, plus runtime packages. The pinned vLLM endpoint returns text without a language tag; history records `und` (unknown) rather than inventing one. Timing comes from the recorded WAV and elapsed inference time.
+On Apple Silicon with macOS 15+, Delulu selects the approximately 4.1 GB [R2T2 BF16 MLX conversion](https://huggingface.co/mlx-community/Confucius4-R2T2-bf16). This preserves the preferred fine-tune instead of substituting Qwen3-ASR-0.6B. The checkpoint revision and runtime packages are pinned. Language hints are available; missing or mixed detected language stays unknown. Existing vLLM Metal installations need **Update setup/Repair** for the new runtime.
 
-On other supported systems, R2T2 runs through the vLLM backend and requires a CUDA GPU. Intel Macs and Rosetta Python are unsupported.
+**The new R2T2 Mac route is implemented but has not passed native Apple Silicon inference validation in this development pass.** See [Mac support and acceptance steps](docs/MAC_SUPPORT.md). The previous v0.9.4 validation applies to the older Qwen backend. Speech is currently buffered until recording stops; true R2T2 streaming remains roadmap work.
+
+Linux CUDA retains the existing R2T2/vLLM backend. Windows CUDA uses a separate PyTorch/Transformers adapter because upstream vLLM does not support native Windows. **The Windows adapter also requires native hardware validation.** See [Windows support](docs/WINDOWS_SUPPORT.md). Intel Macs and Rosetta Python are unsupported. R2T2 is the only speech model offered; [model research](docs/MODEL_RESEARCH.md) keeps alternatives as external benchmark references. Optional Qwen 3.5 rewriting remains available.
 
 ## Install
 
@@ -112,13 +117,13 @@ Supported installed packages check GitHub Releases for updates. Downloads are ex
 1. Open Delulu Talks. Controls are immediately available; the inline setup notice points you to model installation.
 2. Choose **Install engine**. The app installs the local runtime and downloads the model weights.
 3. Focus a text field and use the shortcut shown in Controls. On supported Wayland desktops, hold <kbd>Meta</kbd> + <kbd>Z</kbd>, speak, then release; toggle mode uses a second press to finish.
-4. Dictate immediately with native clean output. Optionally open **Writing** to install Qwen, then use **Rewrite** beside any result. Automatic rewriting is a separate opt-in setting.
+4. Dictate immediately with native clean output. Optionally install the rewriting engine in **Models**, then use **Rewrite** beside any result to preview, apply, or undo it. Automatic rewriting is a separate opt-in setting.
 
 The app manages separate isolated Python environments for platform-selected speech and Magic rewriting, plus a shared model cache, inside the platform application-data directory. Existing shared runtimes are detected as an “Update setup” migration instead of failing with a package conflict. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → Application offers repair and update controls.
 
 ## Run from source
 
-You will need [Bun](https://bun.sh/), native **arm64 Python 3.12 on Apple Silicon** (Python 3.11–3.13 for CUDA), and FFmpeg for compressed audio or video imports. On Mac, install Python using `brew install python@3.12` or `uv python install 3.12`; set its full path under Settings → Advanced if necessary. The app installs matched vLLM core and `vllm-metal[stt]` wheels into its own environment.
+You will need [Bun](https://bun.sh/), **Python 3.12 on Windows and native arm64 Python 3.12 on Apple Silicon** (Python 3.11–3.13 for Linux CUDA), and FFmpeg for compressed audio or video imports. On Mac, install Python using `brew install python@3.12` or `uv python install 3.12`; set its full path under Settings → Runtime if necessary. The Mac speech environment installs pinned MLX, MLX Audio, and Transformers packages; it does not install a vLLM server.
 
 ```bash
 bun install
@@ -147,7 +152,7 @@ Electron main process
 │   ├── R2T2 speech runtime
 │   └── Qwen writing runtime
 └── sandboxed React renderer
-    ├── Controls + Writing
+    ├── Controls + contextual transcript rewriting
     ├── Audio files + History + Personalization
     └── Models + Settings + onboarding
 ```
@@ -181,7 +186,7 @@ electron/
   python/             persistent speech + Magic worker
 src/
   components/         Electron app shell components
-  pages/              Controls, Writing, Audio files, History, Models, Settings
+  pages/              Controls, Audio files, History, Models, Settings
   bridge.ts           typed Electron/browser boundary
   recorder.ts         microphone capture and 16 kHz WAV encoder
   data.ts             R2T2, Qwen, and language catalogs
@@ -193,7 +198,7 @@ src/
 
 Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Failed captures can remain in memory for Retry during the session; Discard releases them, and closing the app loses that recovery copy. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environment, and downloaded models stay under Electron's application-data directory.
 
-Delulu Talks is [MIT licensed](LICENSE). R2T2 inference code is Apache-2.0; the [model weights](https://huggingface.co/netease-youdao/Confucius4-R2T2) use the [NetEase Model Use License](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE) and require a CUDA GPU. Delulu Talks does not bundle weights. Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
+Delulu Talks is [MIT licensed](LICENSE). Vendored conversion helpers and their license are recorded in [third-party notices](docs/THIRD_PARTY_NOTICES.md). R2T2 inference code is Apache-2.0; the [model weights](https://huggingface.co/netease-youdao/Confucius4-R2T2) use the [NetEase Model Use License](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE); the Linux vLLM and Windows PyTorch speech backends require an NVIDIA CUDA GPU, while the MLX conversion targets Apple Silicon. Delulu Talks does not bundle weights. Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
 
 ## Development checks
 
@@ -215,7 +220,7 @@ bun run test:desktop
 The desktop smoke check uses temporary user data and skips global desktop integration. For opt-in real model verification with an existing runtime and cached models:
 
 ```bash
-/path/to/asr-venv/bin/python scripts/runtime-smoke.py --cache /path/to/models --magic
+/path/to/active-speech-generation/bin/python scripts/runtime-smoke.py --cache /path/to/models
 ```
 
 To exercise the full Electron transcription, correction and export path with the same existing runtime:
@@ -237,4 +242,6 @@ This reports startup including synthetic inference warm-up, then first, changed-
 
 Ready now follows a bounded synthetic transcription warm-up. Recording timings include worker communication and any on-demand model load, rather than just GPU inference; they do not include microphone capture, optional Writing, or paste delivery. Short dictations time out after two minutes, longer captures scale up to fifteen minutes, and imported files allow fifteen minutes. Model installation/loading retains a separate download-sized deadline. Busy shortcut notices dismiss on release, cancellation, readiness, or after two seconds, without queuing an unexpected recording.
 
-This uses temporary settings/history, disables clipboard/paste, and runs offline against cached models. The Python command above also runs offline against the included short audio sample. It is a smoke check, not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
+This uses temporary settings/history, disables clipboard/paste, and runs offline against cached models. The Python command uses the active speech runtime; rewriting is separate. It also runs offline against the included short audio sample. It is a smoke check, not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
+
+The [GitHub roadmap](https://github.com/JEMostert/delulu-talks/issues/14) tracks the entire project through individual task issues, area/priority labels, and milestones: streaming, coding dictation, contextual rewriting, advanced profiles, timestamped imports, durable history, local automation, GPU optimization, and architecture. It targets an ambitious personal technical tool; customer onboarding and public support obligations are outside scope. The 12 completed items record local implementation only, without claiming pushed changes or native Mac/Windows inference validation.

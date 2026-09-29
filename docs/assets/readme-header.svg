@@ -1,29 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="280" viewBox="0 0 1280 280" role="img" aria-labelledby="banner-title banner-description">
-  <title id="banner-title">Delulu Talks — private desktop dictation</title>
-  <desc id="banner-description">The ocean-blue wave-shaped D logo beside Delulu Talks on a deep navy background.</desc>
-  <defs>
-    <linearGradient id="ocean" x1="0" y1="0" x2="1280" y2="280" gradientUnits="userSpaceOnUse"><stop stop-color="#10364f"/><stop offset="1" stop-color="#061625"/></linearGradient>
-    <linearGradient id="horizon"><stop stop-color="#68e4f5"/><stop offset="1" stop-color="#1372d0"/></linearGradient>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 280" role="img" aria-labelledby="title description">
+<title id="title">Delulu Talks — speak, keep your flow</title>
+<desc id="description">The voice-current logo beside Delulu Talks on a deep ocean-blue background.</desc>
+<defs><linearGradient id="banner" x2="1" y2="1"><stop stop-color="#0d3555"/><stop offset="1" stop-color="#061527"/></linearGradient></defs>
+<rect width="1280" height="280" rx="24" fill="url(#banner)"/>
+<path d="M936 50v180M984 90v100M1032 30v220M1080 74v132M1128 104v72M1176 48v184" stroke="#32baff" stroke-width="16" stroke-linecap="round" opacity=".08"/>
+<svg x="60" y="44" width="192" height="192" viewBox="0 0 256 256">  <defs>
+    <linearGradient id="voice" x1="48" y1="58" x2="208" y2="192" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#75e4ff"/><stop offset=".48" stop-color="#32baff"/><stop offset="1" stop-color="#237bff"/>
+    </linearGradient>
   </defs>
-  <rect width="1280" height="280" rx="20" fill="url(#ocean)"/>
-  <path d="M800 233c120-130 173 65 304-43s153-75 215-79M804 263c120-130 173 65 304-43s153-75 215-79M804 293c120-130 173 65 304-43s153-75 215-79" fill="none" stroke="#19b5e5" stroke-width="2" opacity=".18"/>
-  <path d="M24 1h1232" stroke="url(#horizon)" stroke-width="2"/>
-<svg x="60" y="44" width="192" height="192" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
-  <title id="title">Delulu Talks</title>
-  <desc id="desc">An ocean-blue D shaped by a flowing wave.</desc>
-  <defs>
-    <linearGradient id="depth" x1="40" y1="20" x2="206" y2="238" gradientUnits="userSpaceOnUse"><stop stop-color="#123d59"/><stop offset="1" stop-color="#061625"/></linearGradient>
-    <linearGradient id="current" x1="52" y1="49" x2="195" y2="213" gradientUnits="userSpaceOnUse"><stop stop-color="#68e4f5"/><stop offset=".48" stop-color="#19b5e5"/><stop offset="1" stop-color="#1372d0"/></linearGradient>
-  </defs>
-  <rect x="8" y="8" width="240" height="240" rx="53" fill="url(#depth)"/>
-  <path d="M60 46h65c52 0 89 34 89 81 0 19-6 36-17 50l-27-15c9-9 14-21 14-35 0-30-24-51-60-51H90v32H60Zm0 112h30v23h34c13 0 25-3 34-8l28 17c-16 14-38 21-61 21H60Z" fill="url(#current)"/>
-  <path d="M36 135c27-22 47-24 69-5l26 24c22 20 42 20 69 2" fill="none" stroke="#061c2e" stroke-width="22" stroke-linecap="round"/>
-  <path d="M36 132c27-22 47-24 69-5l26 24c22 20 42 20 69 2" fill="none" stroke="url(#current)" stroke-width="12" stroke-linecap="round"/>
-</svg>
-
-  <g font-family="Segoe UI, Arial, sans-serif">
-    <text x="292" y="122" font-size="64" font-weight="700" letter-spacing="-2" fill="#e6f3fc">Delulu Talks</text>
-    <text x="295" y="166" font-size="26" fill="#a6c4d8">Private desktop dictation</text>
-    <text x="296" y="211" font-size="14" font-weight="600" letter-spacing="2.2" fill="#68d9f2">R2T2  /  LOCAL MODELS</text>
+  <rect x="8" y="8" width="240" height="240" rx="58" fill="#071e34"/>
+  <g fill="none" stroke="url(#voice)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M94 56h65c39 0 65 27 65 64s-26 65-65 65h-36l-43 30 7-35c-32-9-55-31-55-60 0-37 27-64 62-64Z" stroke-width="16"/>
+    <path d="M91 109v24M128 91v60M165 104v34" stroke-width="17"/>
   </g>
 </svg>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="294" y="124" font-size="64" font-weight="750" letter-spacing="-2" fill="#eff9ff">Delulu Talks</text>
+<text x="298" y="170" font-size="26" fill="#aac8df">Speak. Keep your flow.</text>
+<text x="300" y="211" font-size="13" font-weight="600" letter-spacing="2.5" fill="#75e4ff">PRIVATE DICTATION · R2T2 · LOCAL FIRST</text>
+</g></svg>

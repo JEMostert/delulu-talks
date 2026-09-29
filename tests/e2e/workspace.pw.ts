@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 
 test("all pages fit desktop and compact windows in both themes", async ({
   page,
-}) => {
+}, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   for (const theme of ["light", "dark"]) {
@@ -20,7 +20,6 @@ test("all pages fit desktop and compact windows in both themes", async ({
       for (const name of [
         "Controls",
         "History",
-        "Writing",
         "Audio files",
         "Models",
         "Settings",
@@ -35,26 +34,43 @@ test("all pages fit desktop and compact windows in both themes", async ({
             .locator(".page-scroll")
             .evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
         ).toBe(true);
+        if (width === 1280 && name === "Controls") {
+          await page.screenshot({
+            path: testInfo.outputPath(`controls-${theme}.png`),
+          });
+        }
       }
     }
   }
   expect(errors).toEqual([]);
 });
 
-test("Magic drafts survive navigation and can be cleared", async ({ page }) => {
-  await page.getByRole("button", { name: "Writing", exact: true }).click();
+test("rewriting lives beside transcripts and model setup stays accessible", async ({
+  page,
+}) => {
+  await expect(
+    page
+      .getByRole("navigation")
+      .getByRole("button", { name: "Writing", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Rewrite", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Rewrite transcript" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "Rewrite source" }),
+  ).not.toBeEmpty();
+  await page.keyboard.press("Escape");
   await page
-    .getByRole("textbox", { name: "Text to rewrite" })
-    .fill("Please keep my draft while I check settings.");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("button", { name: "Writing", exact: true }).click();
+    .getByRole("navigation")
+    .getByRole("button", { name: "Models", exact: true })
+    .click();
   await expect(
-    page.getByRole("textbox", { name: "Text to rewrite" }),
-  ).toHaveValue("Please keep my draft while I check settings.");
-  await page.getByRole("button", { name: "Clear source", exact: true }).click();
+    page.getByRole("heading", { name: "Rewrite where your text is" }),
+  ).toBeVisible();
   await expect(
-    page.getByRole("textbox", { name: "Text to rewrite" }),
-  ).toBeEmpty();
+    page.getByRole("combobox", { name: "Local rewrite model" }),
+  ).toBeVisible();
 });
 
 test("text shortcuts can be previewed, edited, persisted and removed", async ({

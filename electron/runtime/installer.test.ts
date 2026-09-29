@@ -122,7 +122,7 @@ test("readiness is reused for a validated interpreter but not a different genera
 });
 
 for (const failDownload of [false, true]) {
-  test(`Metal wheel installation and download recovery: ${failDownload}`, async () => {
+  test(`MLX installation and download recovery: ${failDownload}`, async () => {
     const root = mkdtempSync(join(tmpdir(), "delulu-metal-"));
     const oldPython = runtimePython(root);
     mkdirSync(dirname(oldPython), { recursive: true });
@@ -140,7 +140,7 @@ for (const failDownload of [false, true]) {
         const command = args.join(" ");
         commands.push(command);
         if (command.includes("print('.'.join")) return "3.12";
-        if (command.includes("vllm-metal[stt]") && fail)
+        if (command.includes("mlx-audio[stt]") && fail)
           throw new Error("Download interrupted");
         return "";
       },
@@ -158,13 +158,11 @@ for (const failDownload of [false, true]) {
       expect(
         commands.some((c) => c.includes("platform.machine() == 'arm64'")),
       ).toBe(true);
-      expect(commands.some((c) => c.includes("vllm-metal[stt]"))).toBe(true);
-      expect(commands.some((c) => c.includes("macosx_11_0_arm64.whl"))).toBe(
-        true,
-      );
+      expect(commands.some((c) => c.includes("mlx-audio[stt]"))).toBe(true);
+      expect(commands.some((c) => c.includes("mlx==0.32.2"))).toBe(true);
       expect(
         commands.some((c) =>
-          c.includes("import vllm, vllm_metal, mlx.core, librosa"),
+          c.includes("from mlx_audio.stt.utils import load_model, load_audio"),
         ),
       ).toBe(true);
       installer.rollback();
@@ -194,6 +192,103 @@ test("Metal refuses Python other than native 3.12 before downloading packages", 
     await expect(
       installer.install("speech", DEFAULT_SETTINGS, () => {}),
     ).rejects.toThrow("native arm64 Python 3.12");
+    expect(commands.every((c) => !c.includes("pip install"))).toBe(true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+for (const failure of ["none", "cuda", "decoder-import"] as const) {
+  test(`Windows native CUDA install and transaction: ${failure}`, async () => {
+    const root = mkdtempSync(join(tmpdir(), "delulu-windows-"));
+    const oldPython = runtimePython(root);
+    mkdirSync(dirname(oldPython), { recursive: true });
+    writeFileSync(oldPython, "previous runtime");
+    const installer = new RuntimeInstaller(
+      { dataDirectory: root, venvDirectory: root },
+      "/linux-constraints.txt",
+      () => process.env,
+      false,
+      true,
+    );
+    const commands: string[] = [];
+    Object.defineProperty(installer, "run", {
+      value: async (_: string, args: string[]) => {
+        const command = args.join(" ");
+        commands.push(command);
+        if (command.includes("version_info") && command.includes("print"))
+          return "3.12";
+        if (
+          (failure === "cuda" && command.includes("--index-url")) ||
+          (failure === "decoder-import" &&
+            command.includes("torch.cuda.is_available"))
+        )
+          throw new Error("Windows validation failed");
+        return "";
+      },
+    });
+    try {
+      if (failure === "none") {
+        await installer.install("speech", DEFAULT_SETTINGS, () => {});
+        expect(runtimePython(root)).not.toBe(oldPython);
+        expect(
+          commands.some((c) =>
+            c.includes(
+              "--index-url https://download.pytorch.org/whl/cu130 torch==2.13.0+cu130 torchvision==0.28.0+cu130",
+            ),
+          ),
+        ).toBe(true);
+        expect(commands.some((c) => c.includes("transformers==5.15.0"))).toBe(
+          true,
+        );
+        expect(
+          commands.some((c) => c.includes("torch.cuda.is_available")),
+        ).toBe(true);
+        expect(
+          commands.some((c) => c.includes("Qwen3ASRFeatureExtractor")),
+        ).toBe(true);
+        expect(commands.some((c) => c.includes("pip check"))).toBe(true);
+        expect(
+          commands.every(
+            (c) =>
+              !c.includes("git+") &&
+              !c.includes("vllm") &&
+              !c.includes("nagisa") &&
+              !c.includes("--constraint"),
+          ),
+        ).toBe(true);
+      } else {
+        await expect(
+          installer.install("speech", DEFAULT_SETTINGS, () => {}),
+        ).rejects.toThrow("Windows validation failed");
+        expect(runtimePython(root)).toBe(oldPython);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
+
+test("Windows rejects unsupported Python before CUDA downloads", async () => {
+  const root = mkdtempSync(join(tmpdir(), "delulu-windows-python-"));
+  const installer = new RuntimeInstaller(
+    { dataDirectory: root, venvDirectory: root },
+    null,
+    () => process.env,
+    false,
+    true,
+  );
+  const commands: string[] = [];
+  Object.defineProperty(installer, "run", {
+    value: async (_: string, args: string[]) => {
+      commands.push(args.join(" "));
+      return "3.13";
+    },
+  });
+  try {
+    await expect(
+      installer.install("speech", DEFAULT_SETTINGS, () => {}),
+    ).rejects.toThrow("Install Python 3.12");
     expect(commands.every((c) => !c.includes("pip install"))).toBe(true);
   } finally {
     rmSync(root, { recursive: true, force: true });
