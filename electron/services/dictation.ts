@@ -389,30 +389,57 @@ export class DictationService {
       this.storage.addHistory(record);
       this.broadcastTranscript(record);
       const outputName = record.magicText ? "Magic result" : "Transcript";
-      let completion = `${outputName} ready`;
+      let completion = `${outputName} ready in Latest output`;
+      let delivery: "ready" | "pasted" | "copied" | "failed" = "ready";
       this.setHud({ state: "delivering" });
       if (settings.autoPaste) {
         try {
           await this.paste.paste(output);
+          delivery = "pasted";
           completion = `${outputName} pasted`;
         } catch (error) {
-          completion = `Copied — paste manually (${error instanceof Error ? error.message : String(error)})`;
+          const reason = error instanceof Error ? error.message : String(error);
+          // A paste error may originate from the clipboard write itself.
+          // Confirm a copy before telling the user they can paste manually.
+          try {
+            this.paste.copy(output);
+            delivery = "copied";
+            completion = `Copied — paste manually (${reason})`;
+          } catch (copyError) {
+            delivery = "failed";
+            completion = `${outputName} ready in Latest output — clipboard delivery failed: ${copyError instanceof Error ? copyError.message : String(copyError)}`;
+          }
         }
       } else if (settings.copyToClipboard) {
-        this.paste.copy(output);
-        completion = `${outputName} copied to clipboard`;
+        try {
+          this.paste.copy(output);
+          delivery = "copied";
+          completion = `${outputName} copied to clipboard — paste manually`;
+        } catch (error) {
+          delivery = "failed";
+          completion = `${outputName} ready in Latest output — clipboard delivery failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
       }
       if (magicFailure)
         completion = `${completion} · Magic unavailable: ${magicFailure}`;
       this.setHud({
-        state: "success",
+        state: delivery === "failed" ? "error" : "success",
         title:
-          settings.autoPaste && !completion.startsWith("Copied")
+          delivery === "pasted"
             ? "Pasted"
-            : settings.copyToClipboard || completion.startsWith("Copied")
+            : delivery === "copied"
               ? "Copied"
-              : "Done",
-        detail: magicFailure ? "Magic skipped" : "Ready to keep talking",
+              : delivery === "failed"
+                ? "Copy failed"
+                : "Ready",
+        detail:
+          delivery === "failed"
+            ? "Copy from Latest output"
+            : delivery === "copied"
+              ? "Paste in your destination"
+              : magicFailure
+                ? "Magic skipped"
+                : "Ready to keep talking",
       });
       this.asr.setActivity("idle", completion);
     } catch (error) {
