@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
+import { parseIpcRequest } from "../src/ipcRequests";
+import type { IpcRequestChannel } from "../src/ipcRequests";
 import type {
   AppSettings,
   DeluluApi,
@@ -15,6 +17,14 @@ import type {
   UpdateStatus,
 } from "../src/types";
 
+async function invoke(channel: IpcRequestChannel, ...args: unknown[]) {
+  return ipcRenderer.invoke(channel, ...parseIpcRequest(channel, args));
+}
+
+function send(channel: IpcRequestChannel, ...args: unknown[]): void {
+  ipcRenderer.send(channel, ...parseIpcRequest(channel, args));
+}
+
 function listener<T>(
   channel: string,
   callback: (value: T) => void,
@@ -26,60 +36,60 @@ function listener<T>(
 }
 
 const api: DeluluApi = {
-  getRendererRecoveryState: () => ipcRenderer.invoke("renderer:recoveryState"),
-  reloadWorkspace: () => ipcRenderer.invoke("renderer:reload"),
+  getRendererRecoveryState: () => invoke("renderer:recoveryState"),
+  reloadWorkspace: () => invoke("renderer:reload"),
   rendererControllerFailed: () =>
-    ipcRenderer.invoke("renderer:controllerFailed"),
-  getDiagnostics: () => ipcRenderer.invoke("runtime:diagnostics"),
-  pasteLastTranscript: () => ipcRenderer.invoke("dictation:pasteLast"),
-  discardFailedRecording: () => ipcRenderer.invoke("dictation:discardFailed"),
-  retryRecording: () => ipcRenderer.invoke("dictation:retry"),
-  getSettings: () => ipcRenderer.invoke("settings:get"),
+    invoke("renderer:controllerFailed"),
+  getDiagnostics: () => invoke("runtime:diagnostics"),
+  pasteLastTranscript: () => invoke("dictation:pasteLast"),
+  discardFailedRecording: () => invoke("dictation:discardFailed"),
+  retryRecording: () => invoke("dictation:retry"),
+  getSettings: () => invoke("settings:get"),
   updateSettings: (settings: Partial<AppSettings>) =>
-    ipcRenderer.invoke("settings:update", settings),
-  getStatus: () => ipcRenderer.invoke("runtime:status"),
-  getMagicStatus: () => ipcRenderer.invoke("magic:status"),
-  getShortcutStatus: () => ipcRenderer.invoke("shortcut:status"),
-  configureShortcut: () => ipcRenderer.invoke("shortcut:configure"),
-  getHistory: () => ipcRenderer.invoke("history:get"),
-  getCapabilities: () => ipcRenderer.invoke("platform:capabilities"),
-  getUpdateStatus: () => ipcRenderer.invoke("updates:get"),
-  checkForUpdates: () => ipcRenderer.invoke("updates:check"),
-  downloadUpdate: () => ipcRenderer.invoke("updates:download"),
-  installUpdate: () => ipcRenderer.invoke("updates:install"),
-  toggleDictation: () => ipcRenderer.invoke("dictation:toggle"),
-  startDictation: () => ipcRenderer.invoke("dictation:start"),
-  stopDictation: () => ipcRenderer.invoke("dictation:stop"),
-  cancelDictation: () => ipcRenderer.invoke("dictation:cancel"),
-  setupModel: () => ipcRenderer.invoke("runtime:setup"),
-  loadModel: () => ipcRenderer.invoke("runtime:load"),
-  unloadModel: () => ipcRenderer.invoke("runtime:unload"),
-  resetPythonEnvironment: () => ipcRenderer.invoke("runtime:reset"),
-  setupMagic: () => ipcRenderer.invoke("magic:setup"),
-  loadMagic: () => ipcRenderer.invoke("magic:load"),
-  unloadMagic: () => ipcRenderer.invoke("magic:unload"),
+    invoke("settings:update", settings),
+  getStatus: () => invoke("runtime:status"),
+  getMagicStatus: () => invoke("magic:status"),
+  getShortcutStatus: () => invoke("shortcut:status"),
+  configureShortcut: () => invoke("shortcut:configure"),
+  getHistory: () => invoke("history:get"),
+  getCapabilities: () => invoke("platform:capabilities"),
+  getUpdateStatus: () => invoke("updates:get"),
+  checkForUpdates: () => invoke("updates:check"),
+  downloadUpdate: () => invoke("updates:download"),
+  installUpdate: () => invoke("updates:install"),
+  toggleDictation: () => invoke("dictation:toggle"),
+  startDictation: () => invoke("dictation:start"),
+  stopDictation: () => invoke("dictation:stop"),
+  cancelDictation: () => invoke("dictation:cancel"),
+  setupModel: () => invoke("runtime:setup"),
+  loadModel: () => invoke("runtime:load"),
+  unloadModel: () => invoke("runtime:unload"),
+  resetPythonEnvironment: () => invoke("runtime:reset"),
+  setupMagic: () => invoke("magic:setup"),
+  loadMagic: () => invoke("magic:load"),
+  unloadMagic: () => invoke("magic:unload"),
   rewriteMagic: (request: MagicRewriteRequest) =>
-    ipcRenderer.invoke("magic:rewrite", request),
-  copyText: (text: string) => ipcRenderer.invoke("clipboard:copy", text),
-  authorizePaste: () => ipcRenderer.invoke("paste:authorize"),
-  testPaste: () => ipcRenderer.invoke("paste:test"),
+    invoke("magic:rewrite", request),
+  copyText: (text: string) => invoke("clipboard:copy", text),
+  authorizePaste: () => invoke("paste:authorize"),
+  testPaste: () => invoke("paste:test"),
   updateTranscript: (id: string, text: string | null) =>
-    ipcRenderer.invoke("history:updateTranscript", id, text),
+    invoke("history:updateTranscript", id, text),
   setTranscriptRewrite: (id, result, sourceText) =>
-    ipcRenderer.invoke("history:setRewrite", id, result, sourceText),
-  deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),
-  clearHistory: () => ipcRenderer.invoke("history:clear"),
-  chooseAudioFile: () => ipcRenderer.invoke("lab:chooseAudio"),
-  runLab: (request: LabRequest) => ipcRenderer.invoke("lab:run", request),
+    invoke("history:setRewrite", id, result, sourceText),
+  deleteHistory: (id: string) => invoke("history:delete", id),
+  clearHistory: () => invoke("history:clear"),
+  chooseAudioFile: () => invoke("lab:chooseAudio"),
+  runLab: (request: LabRequest) => invoke("lab:run", request),
   exportTranscript: (id: string, format: ExportFormat) =>
-    ipcRenderer.invoke("history:export", id, format),
-  recordingStarted: () => ipcRenderer.invoke("recorder:started"),
-  recorderReady: () => ipcRenderer.invoke("recorder:ready"),
+    invoke("history:export", id, format),
+  recordingStarted: () => invoke("recorder:started"),
+  recorderReady: () => invoke("recorder:ready"),
   recordingFailed: (message: string) =>
-    ipcRenderer.invoke("recorder:failed", message),
-  recordingLevel: (level: number) => ipcRenderer.send("recorder:level", level),
+    invoke("recorder:failed", message),
+  recordingLevel: (level: number) => send("recorder:level", level),
   submitRecording: (recording: RecordingSubmission) =>
-    ipcRenderer.invoke("recorder:submit", recording),
+    invoke("recorder:submit", recording),
   onStatus: (callback: (status: DictationStatus) => void) =>
     listener("runtime:statusChanged", callback),
   onMagicStatus: (callback: (status: MagicStatus) => void) =>
