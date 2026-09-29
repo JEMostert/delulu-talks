@@ -104,7 +104,7 @@ def verified_snapshot(repo_id, revision, cache_dir=None, local_files_only=False,
                 cached = None
             if cached is not None and cached.is_file() and cached.stat().st_size == size and _digest(cached, expected) == expected:
                 try:
-                    os.link(cached, target)
+                    os.link(cached.resolve(), target)
                 except OSError:
                     shutil.copyfile(cached, target)
                 continue
@@ -145,6 +145,8 @@ def verified_snapshot(repo_id, revision, cache_dir=None, local_files_only=False,
                             output.write(chunk)
                         output.flush()
                         os.fsync(output.fileno())
+            if size == 0 and not partial.exists():
+                partial.touch()
             if partial.stat().st_size != size:
                 raise RuntimeError(f"Interrupted download retained for retry: {name}")
             if _digest(partial, expected) != expected:
