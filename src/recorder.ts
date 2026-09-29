@@ -4,6 +4,7 @@ import { CaptureCuePlayer, type CaptureCue } from "./captureCues";
 import { microphoneSelection } from "./microphoneSelection";
 import { MAX_CAPTURE_DURATION_MS, MAX_CAPTURE_SAMPLES } from "./captureLimits";
 import { CLIPPING_THRESHOLD } from "./captureDiagnostics";
+import { beginCaptureLevel } from "./captureLevel";
 import type { CaptureDiagnostics, MicrophoneDevice, RecorderCommand } from "./types";
 
 function merge(chunks: Float32Array[]): Float32Array {
@@ -83,6 +84,7 @@ export class PcmRecorder {
   private peakAmplitude = 0;
   private sumSquares = 0;
   private clippedSampleCount = 0;
+  private liveLevel: ReturnType<typeof beginCaptureLevel> | null = null;
 
   constructor(private readonly onDiagnostics?: (stats: CaptureDiagnostics | null) => void) {}
 
@@ -194,6 +196,8 @@ export class PcmRecorder {
       }
       this.stream = stream;
       this.context = new AudioContext({ latencyHint: "interactive" });
+      const track = stream.getAudioTracks()[0];
+      if (track) this.liveLevel = beginCaptureLevel(track, this.context);
       this.source = this.context.createMediaStreamSource(this.stream);
       this.sink = this.context.createGain();
       this.sink.gain.value = 0;
@@ -214,8 +218,9 @@ export class PcmRecorder {
         this.worklet!.connect(this.sink);
       } else {
         this.processor = this.context.createScriptProcessor(4096, 1, 1);
-        this.processor.onaudioprocess = (event) => {
-          if (generation === this.generation)
+        const processor = this.processor;
+        processor.onaudioprocess = (event) => {
+          if (this.processor === processor && generation === this.generation)
             this.ingest(event.inputBuffer.getChannelData(0));
         };
         this.source.connect(this.processor);
@@ -250,10 +255,11 @@ export class PcmRecorder {
     try {
       await this.context.audioWorklet.addModule(captureWorkletUrl);
       this.worklet = new AudioWorkletNode(this.context, "delulu-capture");
-      this.worklet.port.onmessage = (
+      const worklet = this.worklet;
+      worklet.port.onmessage = (
         event: MessageEvent<{ samples: Float32Array; rms: number }>,
       ) => {
-        if (generation === this.generation && event.data?.samples)
+        if (this.worklet === worklet && generation === this.generation && event.data?.samples)
           this.ingest(event.data.samples, event.data.rms);
       };
       return true;
@@ -288,6 +294,7 @@ export class PcmRecorder {
       level = Math.sqrt(sum / Math.max(1, samples.length));
     }
     bridge.recordingLevel(audibleLevel(level));
+    this.liveLevel?.sample(level);
   }
 
   private async playCue(
@@ -422,6 +429,8 @@ export class PcmRecorder {
   }
 
   private async dispose(): Promise<void> {
+    this.liveLevel?.stop();
+    this.liveLevel = null;
     this.clearCaptureLimitTimer();
     if (this.worklet) this.worklet.port.onmessage = null;
     if (this.processor) this.processor.onaudioprocess = null;
