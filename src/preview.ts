@@ -238,6 +238,7 @@ export const previewApi: DeluluApi = {
     return desktopOnly();
   },
   async recordingStarted() {},
+  async recordingLimitReached() {},
   async recorderReady() {},
   async recordingFailed() {},
   recordingLevel(_level: number) {},

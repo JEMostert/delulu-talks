@@ -75,6 +75,8 @@ const api: DeluluApi = {
     ipcRenderer.invoke("history:export", id, format),
   recordingStarted: (sessionId: string) =>
     ipcRenderer.invoke("recorder:started", sessionId),
+  recordingLimitReached: (sessionId: string) =>
+    ipcRenderer.invoke("recorder:limit", sessionId),
   recorderReady: () => ipcRenderer.invoke("recorder:ready"),
   recordingFailed: (message: string, sessionId: string) =>
     ipcRenderer.invoke("recorder:failed", message, sessionId),

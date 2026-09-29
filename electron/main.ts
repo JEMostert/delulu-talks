@@ -712,6 +712,9 @@ function registerIpc(): void {
   handle("recorder:started", (_event, sessionId: unknown) =>
     dictation.recordingStarted(validateText(sessionId, 128)),
   );
+  handle("recorder:limit", (_event, sessionId: unknown) =>
+    dictation.recordingLimitReached(validateText(sessionId, 128)),
+  );
   handle("recorder:ready", () => dictation.recorderAvailable());
   handle("recorder:failed", (_event, message: unknown, sessionId: unknown) =>
     dictation.recordingFailed(
