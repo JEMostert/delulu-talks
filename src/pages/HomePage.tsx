@@ -61,6 +61,7 @@ export function HomePage({
   onUpdateSettings: save,
   onConfigureShortcut,
   onPasteLast,
+  pasteLastBusy,
   onToggleRecord,
   ...actions
 }: TranscriptActions & {
@@ -76,6 +77,7 @@ export function HomePage({
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onConfigureShortcut: () => void;
   onPasteLast: () => void;
+  pasteLastBusy: boolean;
   onToggleRecord: () => void;
 }) {
   const [shortcut, setShortcut] = useState(s.shortcut);
@@ -426,6 +428,7 @@ export function HomePage({
                 <button
                   className="secondary-button text-[11px] min-h-[31px] px-[9px] py-1.5"
                   onClick={onPasteLast}
+                  disabled={pasteLastBusy || busy}
                 >
                   <ClipboardPaste /> Paste last
                 </button>

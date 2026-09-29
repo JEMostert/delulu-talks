@@ -10,6 +10,7 @@ import type {
   MagicStatus,
   MicrophoneDevice,
   Page,
+  PasteLastStatus,
   PlatformCapabilities,
   ShortcutStatus,
   TranscriptRecord,
@@ -37,6 +38,13 @@ export function useWorkspace() {
     registered: false,
     method: "native",
     message: "Checking shortcut",
+  });
+  const [pasteLastStatus, setPasteLastStatus] = useState<PasteLastStatus>({
+    phase: "idle",
+    operationId: null,
+    dueAt: null,
+    remainingSeconds: 0,
+    message: "",
   });
   const [history, setHistory] = useState<TranscriptRecord[]>([]);
   // Session-only view state survives History navigation and page remounts.
@@ -87,6 +95,7 @@ export function useWorkspace() {
     const recorder = new PcmRecorder();
     const subscriptions = [
       bridge.onStatus(subscribe("speech status", setStatus)),
+      bridge.onPasteLastStatus(subscribe("paste last", setPasteLastStatus)),
       bridge.onMagicStatus(subscribe("rewriting status", setMagicStatus)),
       bridge.onSettingsChanged(subscribe("settings", receiveSettings)),
       bridge.onNavigate(setPage),
@@ -98,6 +107,14 @@ export function useWorkspace() {
       bridge.onTranscript(receiveTranscript),
     ];
     void bridge.recorderReady().catch(report);
+    void bridge
+      .getPasteLastStatus()
+      .then((state) => {
+        if (alive && !received.has("paste last")) setPasteLastStatus(state);
+      })
+      .catch((reason) => {
+        if (alive) report(reason);
+      });
     void Promise.allSettled([
       read("settings", () => bridge.getSettings()),
       read("speech status", () => bridge.getStatus()),
@@ -267,8 +284,9 @@ export function useWorkspace() {
     void action(() => bridge.copyText(text), "Copied to clipboard");
   };
   const pasteLast = () => {
-    setToast("Focus a text field — pasting in 3 seconds…");
-    void action(() => bridge.pasteLastTranscript(), "Last result pasted");
+    void action(async () => {
+      await bridge.pasteLastTranscript();
+    });
   };
   return {
     page,
@@ -298,6 +316,13 @@ export function useWorkspace() {
     finishOnboarding,
     copy,
     pasteLast,
+    pasteLastStatus,
+    cancelPasteLast: () => {
+      if (pasteLastStatus.operationId)
+        void action(async () => {
+          await bridge.cancelPasteLast(pasteLastStatus.operationId!);
+        });
+    },
     receiveTranscript,
   };
 }

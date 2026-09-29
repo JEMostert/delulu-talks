@@ -199,6 +199,13 @@ export function normalizeSettings(value: unknown): AppSettings {
       512,
     ),
     autoPaste: boolean(source.autoPaste, DEFAULT_SETTINGS.autoPaste),
+    pasteLastDelaySeconds:
+      typeof source.pasteLastDelaySeconds === "number" &&
+      Number.isInteger(source.pasteLastDelaySeconds) &&
+      source.pasteLastDelaySeconds >= 1 &&
+      source.pasteLastDelaySeconds <= 30
+        ? source.pasteLastDelaySeconds
+        : DEFAULT_SETTINGS.pasteLastDelaySeconds,
     copyToClipboard: boolean(
       source.copyToClipboard,
       DEFAULT_SETTINGS.copyToClipboard,

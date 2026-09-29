@@ -30,6 +30,7 @@ import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
 import { PasteService } from "./services/paste";
+import { PasteLastService } from "./services/pasteLast";
 import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
 import {
@@ -76,6 +77,7 @@ let quitting = false;
 let storage: StorageService;
 let asr: AsrService;
 let paste: PasteService;
+let pasteLast: PasteLastService;
 let pill: PillService;
 let dictation: DictationService;
 let shortcut: ShortcutService;
@@ -288,6 +290,19 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
   ];
 }
 
+function schedulePasteLast() {
+  const record = lastTranscript
+    ? (storage.findHistory(lastTranscript.id) ??
+      sessionTranscripts.get(lastTranscript.id))
+    : storage.getHistory()[0];
+  if (!record) throw new Error("Record something first");
+  return pasteLast.start(
+    record.id,
+    deliveredText(record),
+    storage.getSettings().pasteLastDelaySeconds,
+  );
+}
+
 function rebuildTrayMenu(): void {
   if (!tray) return;
   const settings = storage.getSettings();
@@ -329,11 +344,25 @@ function rebuildTrayMenu(): void {
     { label: "Open Delulu Talks", click: () => showMainWindow("home") },
     {
       label: "Paste latest result",
-      enabled: Boolean(latest) && !dictation.isActive,
+      enabled:
+        Boolean(latest) &&
+        !dictation.isActive &&
+        !["pending", "delivering"].includes(
+          pasteLast?.getStatus().phase ?? "idle",
+        ),
       click: () =>
         runTrayAction(async () => {
-          if (latest) await paste.paste(deliveredText(latest));
+          schedulePasteLast();
         }),
+    },
+    {
+      label:
+        pasteLast?.getStatus().phase === "pending"
+          ? `Cancel scheduled paste (${pasteLast.getStatus().remainingSeconds}s)`
+          : "Cancel scheduled paste",
+      enabled: pasteLast?.getStatus().phase === "pending",
+      click: () =>
+        pasteLast.cancelPending("Scheduled paste cancelled from the tray."),
     },
     {
       label: "Copy latest result",
@@ -619,28 +648,27 @@ function registerIpc(): void {
   );
   handle("renderer:reload", (event) => {
     reloadRenderer(recoveryInput(), () => {
+      pasteLast.cancelPending(
+      "Scheduled paste cancelled because the workspace reloaded.",
+    );
       // Close the shortcut start race until the new controller calls ready.
       dictation.recorderUnavailable();
       event.sender.reload();
     });
   });
-  handle("renderer:controllerFailed", () => dictation.recorderUnavailable());
+  handle("renderer:controllerFailed", () => {
+    pasteLast.cancelPending(
+      "Scheduled paste cancelled because the workspace controller failed.",
+    );
+    dictation.recorderUnavailable();
+  });
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
-  handle("dictation:pasteLast", async () => {
-    const record = lastTranscript
-      ? (storage.findHistory(lastTranscript.id) ?? lastTranscript)
-      : storage.getHistory()[0];
-    if (!record) throw new Error("Record something first");
-    if (dictation.isActive)
-      throw new Error("Finish the current recording first");
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
-    if (dictation.isActive)
-      throw new Error("Paste cancelled because a recording started");
-    const current =
-      storage.findHistory(record.id) ?? sessionTranscripts.get(record.id);
-    if (!current)
-      throw new Error("Paste cancelled because the transcript was removed");
-    await paste.paste(deliveredText(current));
+  handle("dictation:pasteLast", () => schedulePasteLast());
+  handle("dictation:pasteLastStatus", () => pasteLast.getStatus());
+  handle("dictation:cancelPasteLast", (_event, operationId: unknown) => {
+    if (typeof operationId !== "string")
+      throw new Error("Invalid paste operation");
+    return pasteLast.cancel(operationId);
   });
   handle("dictation:discardFailed", () => dictation.discardFailure());
   handle("dictation:retry", () => dictation.retry());
@@ -970,9 +998,26 @@ async function start(): Promise<void> {
       rebuildTrayMenu();
     },
   );
-  mainWindow.webContents.on("did-start-loading", () =>
-    dictation.recorderUnavailable(),
-  );
+  pasteLast = new PasteLastService({
+    captureActive: () => dictation.isActive,
+    currentText: (id) => {
+      const record = storage.findHistory(id) ?? sessionTranscripts.get(id);
+      return record ? deliveredText(record) : null;
+    },
+    paste: (text) => paste.paste(text),
+    copy: (text) => paste.copy(text),
+    clipboardOnly: () => paste.capabilities().pasteMethod === "clipboard-only",
+    changed: (status) => {
+      broadcast("dictation:pasteLastChanged", status);
+      rebuildTrayMenu();
+    },
+  });
+  mainWindow.webContents.on("did-start-loading", () => {
+    pasteLast.cancelPending(
+      "Scheduled paste cancelled because the workspace reloaded.",
+    );
+    dictation.recorderUnavailable();
+  });
   shortcut = new ShortcutService(() => storage.getSettings().shortcutMode, {
     start: () => dictation.start(),
     stop: () => dictation.stop(),
@@ -980,6 +1025,8 @@ async function start(): Promise<void> {
   });
   asr.onStatus((status) => {
     dictation.runtimeChanged();
+    if (dictation.isActive)
+      pasteLast.cancelPending("Paste cancelled because a recording started.");
     broadcast("runtime:statusChanged", status);
     rebuildTrayMenu();
   });
@@ -1031,6 +1078,7 @@ app.on("activate", () => showMainWindow());
 app.on("before-quit", () => {
   quitting = true;
   pill?.shutdown();
+  pasteLast?.shutdown();
   paste?.shutdown();
   void shortcut?.shutdown();
   void asr?.shutdown();
