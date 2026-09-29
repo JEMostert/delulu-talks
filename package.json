@@ -26,6 +26,7 @@
     "dist:win": "bun run build && electron-builder --win nsis zip",
     "test:e2e": "node scripts/test-evidence.mjs browser",
     "test:desktop": "bun run build && node scripts/test-evidence.mjs desktop",
+    "test:data-deletion": "bun run build && node scripts/test-evidence.mjs data-deletion",
     "format": "prettier --write src electron/**/*.ts electron/*.ts tests scripts/*.mjs playwright.config.ts",
     "format:check": "prettier --check src electron/**/*.ts electron/*.ts tests scripts/*.mjs playwright.config.ts",
     "test:python": "node scripts/test-evidence.mjs python",
