@@ -430,6 +430,15 @@ export function SettingsPage(props: Props) {
             <div className="group-heading">
               <h3>Appearance</h3>
             </div>
+            {capabilities?.platform === "darwin" && (
+              <SettingRow
+                icon={Monitor}
+                title="Menu bar only"
+                description="Hide the Dock icon and start with Controls closed. Reopen Controls, view status or quit from the menu bar. This window stays open when you enable the setting."
+              >
+                {toggle("menuBarOnly", "Menu bar only")}
+              </SettingRow>
+            )}
             <SettingRow
               icon={Monitor}
               title="Appearance"

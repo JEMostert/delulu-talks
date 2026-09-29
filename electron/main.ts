@@ -108,6 +108,27 @@ function broadcast(channel: string, value: unknown): void {
     mainWindow.webContents.send(channel, value);
 }
 
+function menuBarOnlyActive(): boolean {
+  return (
+    process.platform === "darwin" &&
+    !smokeTest &&
+    !!tray &&
+    storage.getSettings().menuBarOnly
+  );
+}
+
+function syncMacDock(): void {
+  if (process.platform !== "darwin" || smokeTest || !app.dock) return;
+  if (menuBarOnlyActive()) app.dock.hide();
+  else
+    void app.dock.show().catch(() => {
+      broadcast(
+        "app:message",
+        "Could not show the Dock icon. Use the menu bar to reopen Delulu Talks.",
+      );
+    });
+}
+
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
     title: "Delulu Talks",
@@ -129,6 +150,9 @@ function createMainWindow(): BrowserWindow {
     },
   });
   const reveal = () => {
+    // Keep the renderer alive for capture, but require an installed tray before
+    // suppressing startup visibility. Explicit reopen actions still show it.
+    if (menuBarOnlyActive()) return;
     if (!window.isDestroyed() && !window.isVisible()) window.show();
   };
   window.once("ready-to-show", reveal);
@@ -422,6 +446,17 @@ function rebuildTrayMenu(): void {
       click: () =>
         patchTraySettings({ launchAtLogin: !settings.launchAtLogin }),
     },
+    ...(process.platform === "darwin"
+      ? [
+          {
+            type: "checkbox" as const,
+            label: "Menu bar only (hide Dock icon)",
+            checked: settings.menuBarOnly,
+            click: () =>
+              patchTraySettings({ menuBarOnly: !settings.menuBarOnly }),
+          },
+        ]
+      : []),
     update
       ? {
           label:
@@ -483,6 +518,7 @@ function installTray(): void {
   tray = new Tray(trayIcon);
   rebuildTrayMenu();
   tray.on("click", () => showMainWindow("home"));
+  syncMacDock();
 }
 
 function ensureDevelopmentDesktopEntry(): void {
@@ -562,6 +598,7 @@ async function applySettings(value: unknown): Promise<AppSettings> {
       "Finish the current recording or model operation before changing engines",
     );
   const saved = storage.updateSettings(next);
+  if (saved.menuBarOnly !== previous.menuBarOnly) syncMacDock();
   if (
     !smokeTest &&
     app.isPackaged &&

@@ -222,6 +222,7 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.launchAtLogin,
       DEFAULT_SETTINGS.launchAtLogin,
     ),
+    menuBarOnly: boolean(source.menuBarOnly, DEFAULT_SETTINGS.menuBarOnly),
     customWords: normalizeWords(source.customWords),
   };
 }

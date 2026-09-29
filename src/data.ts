@@ -53,6 +53,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   preloadMagicModel: false,
   modelIdleMinutes: 15,
   launchAtLogin: false,
+  menuBarOnly: false,
   customWords: [],
 };
 

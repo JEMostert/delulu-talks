@@ -48,6 +48,7 @@ export type AppSettings = {
   preloadMagicModel: boolean;
   modelIdleMinutes: number;
   launchAtLogin: boolean;
+  menuBarOnly: boolean;
   customWords: CustomWord[];
 };
 
