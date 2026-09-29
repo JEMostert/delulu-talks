@@ -9,6 +9,7 @@ import {
 import { modelById } from "../../data";
 import type { AppSettings, DictationStatus } from "../../types";
 import { ModelSetupStatus } from "./ModelSetupStatus";
+import { ModelProvenance } from "./ModelProvenance";
 
 export type SpeechSetupProps = {
   status: DictationStatus;
@@ -126,6 +127,7 @@ export function SpeechSetup({
           </article>
         ))}
       </div>
+      <ModelProvenance {...model} />
       <p className="flex items-center justify-center gap-[7px] text-[11px] text-muted">
         <ShieldCheck className="w-3.5 h-3.5" /> Models stay on your device.
         Dictation runs fully locally.
