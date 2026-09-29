@@ -18,6 +18,7 @@ import {
   transcriptIsEdited,
   transcriptText,
 } from "../transcriptText";
+import { normalizeRuleLanguage } from "../personalization";
 import { ConfirmDialog, Modal } from "./ui";
 import type {
   MagicRewriteRequest,
@@ -416,6 +417,7 @@ export function TranscriptCard({
         <RewriteDialog
           text={text}
           baseline={deliveredText(record)}
+          sourceLanguage={record.language}
           status={rewriteStatus}
           onClose={() => setRewriting(false)}
           onSetup={onRewriteSetup ?? (() => {})}
@@ -467,6 +469,7 @@ export function TranscriptCard({
                     if (
                       await onRemember?.({
                         kind: "correction",
+                        language: normalizeRuleLanguage(record.language),
                         id: crypto.randomUUID(),
                         term: correct.trim(),
                         soundsLike: heard.trim(),
@@ -503,8 +506,9 @@ export function TranscriptCard({
             </p>
           )}
           <p>
-            Replace this recognized phrase in future clean results. This does
-            not train the speech model.
+            Replace this recognized phrase in future {record.language} results.
+            You can change its language scope in Vocabulary. This does not train
+            the speech model.
           </p>
           <label className="field">
             Recognized text

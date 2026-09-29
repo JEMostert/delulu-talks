@@ -11,6 +11,7 @@ import type {
 export function RewriteDialog({
   text,
   baseline,
+  sourceLanguage,
   status,
   onClose,
   onSetup,
@@ -19,6 +20,7 @@ export function RewriteDialog({
 }: {
   text: string;
   baseline: string;
+  sourceLanguage?: string;
   status?: MagicStatus;
   onClose: () => void;
   onSetup: () => void;
@@ -172,6 +174,7 @@ export function RewriteDialog({
             setResult(
               await onRewrite({
                 text: source,
+                sourceLanguage,
                 preset,
                 instructions,
                 allowInferences: false,

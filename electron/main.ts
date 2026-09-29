@@ -689,6 +689,9 @@ function registerIpc(): void {
       text: validateText(source.text, 50_000).trim(),
       preset,
       instructions: validateText(source.instructions ?? "", 4_000).trim(),
+      sourceLanguage: source.sourceLanguage == null
+        ? undefined
+        : validateText(source.sourceLanguage, 64).trim(),
       allowInferences: source.allowInferences === true,
     };
     if (!request.text)

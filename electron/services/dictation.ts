@@ -364,6 +364,7 @@ export class DictationService {
           const magic = await this.asr.rewriteMagic(
             {
               text: output,
+              sourceLanguage: record.language,
               preset: settings.magicPreset,
               allowInferences: settings.magicAllowInferences,
             },
@@ -538,6 +539,7 @@ export class DictationService {
     settings: AppSettings,
   ): TranscriptRecord {
     const text = String(result.text ?? "").trim();
+    const language = String(result.language ?? settings.language);
     const durationMs =
       durationOverride ?? Math.round(numeric(result.duration) * 1000);
     return {
@@ -545,9 +547,9 @@ export class DictationService {
       createdAt: Date.now(),
       durationMs,
       text,
-      personalizedText: personalize(text, settings.customWords),
+      personalizedText: personalize(text, settings.customWords, language),
       model: settings.model,
-      language: String(result.language ?? settings.language),
+      language,
       source,
       sourceName,
       processingTimeMs: Math.round(numeric(result.processingTime) * 1000),

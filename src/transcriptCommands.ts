@@ -1,5 +1,5 @@
 import { bridge } from "./bridge";
-import { ruleConflict, ruleKind } from "./personalization";
+import { ruleConflict, ruleKind, ruleLanguage } from "./personalization";
 import type { TranscriptActions } from "./components/TranscriptCard";
 import type { useWorkspace } from "./hooks/useWorkspace";
 import type { CustomWord, ExportFormat, MagicRewriteResult } from "./types";
@@ -30,6 +30,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     const existing = w.settings.customWords.find(
       (item) =>
         ruleKind(item) === "correction" &&
+        ruleLanguage(item) === ruleLanguage(word) &&
         item.term.toLowerCase() === word.term.toLowerCase(),
     );
     const conflict = ruleConflict(

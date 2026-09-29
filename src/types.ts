@@ -17,6 +17,8 @@ export type ExportFormat = "txt" | "json";
 
 export type CustomWord = {
   kind?: "correction" | "shortcut";
+  /** Omitted for legacy/global rules; scoped rules require a matching language. */
+  language?: string;
   id: string;
   term: string;
   soundsLike: string;
@@ -65,6 +67,7 @@ export type MagicRewriteRequest = {
   text: string;
   preset: MagicPreset;
   instructions?: string;
+  sourceLanguage?: string;
   allowInferences: boolean;
 };
 

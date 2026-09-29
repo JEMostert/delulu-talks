@@ -120,9 +120,14 @@ function normalizeWords(value: unknown): CustomWord[] {
             : "correction",
         id: safeString(source.id, `word-${Date.now()}-${index}`, 128),
         term,
+        // Preserve nonempty scopes, including unknown codes: never widen a saved rule.
+        language: typeof source.language === "string" && source.language.trim()
+          ? source.language.trim().toLowerCase().slice(0, 64)
+          : undefined,
         soundsLike: safeString(source.soundsLike, "", 1024),
         replacement: safeString(source.replacement, "", 4096),
-        enabled: source.enabled !== false,
+        enabled: source.enabled !== false &&
+          (source.language == null || typeof source.language === "string"),
       },
     ];
   });
