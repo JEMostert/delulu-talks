@@ -7,7 +7,7 @@ export type ModelId = SpeechModelId | "qwen3Asr";
 export type MagicModelId = "qwen35Small" | "qwen35Medium" | "qwen35Large";
 export type MagicPreset = "polish" | "concise" | "structured" | "prompt";
 export type DictationPhase =
-  "idle" | "preparing" | "loading" | "listening" | "transcribing" | "error";
+  "idle" | "preparing" | "loading" | "listening" | "paused" | "transcribing" | "error";
 export type EnginePhase =
   "missing" | "unloaded" | "settingUp" | "loading" | "ready" | "error";
 export type MagicPhase =
@@ -155,7 +155,7 @@ export type LabRequest = {
 };
 
 export type RecorderCommand = {
-  action: "start" | "stop" | "cancel";
+  action: "start" | "stop" | "cancel" | "pause" | "resume";
   inputDeviceId: string;
   sessionId?: string;
 };
@@ -232,6 +232,8 @@ export type DeluluApi = {
   startDictation(): Promise<void>;
   stopDictation(): Promise<void>;
   cancelDictation(): Promise<void>;
+  pauseDictation(): Promise<void>;
+  resumeDictation(): Promise<void>;
   setupModel(): Promise<void>;
   loadModel(): Promise<void>;
   unloadModel(): Promise<void>;
@@ -255,6 +257,7 @@ export type DeluluApi = {
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   recordingStarted(): Promise<void>;
+  recordingPauseChanged(sessionId: string, paused: boolean): Promise<void>;
   recorderReady(): Promise<void>;
   recordingFailed(message: string): Promise<void>;
   recordingLevel(level: number): void;

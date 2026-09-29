@@ -81,7 +81,7 @@ export function HomePage({
   useEffect(() => setShortcut(s.shortcut), [s.shortcut]);
   const portal = shortcutStatus.method === "portal";
   const latest = history[0];
-  const recording = status.phase === "listening";
+  const recording = status.phase === "listening" || status.phase === "paused";
   const languageCapability = speechLanguageCapability(s.model);
   const engineText = (engine: DictationStatus["engine"]) =>
     ({
@@ -161,8 +161,8 @@ export function HomePage({
                 <span className="text-[11px] text-muted">
                   {recording
                     ? portal && s.shortcutMode === "hold"
-                      ? "Listening — release the shortcut or press Stop"
-                      : "Listening — press the shortcut again or press Stop"
+                      ? status.phase === "paused" ? "Paused — microphone open; Stop transcribes retained audio" : "Listening — release the shortcut or press Stop"
+                      : status.phase === "paused" ? "Paused — microphone open; Resume in the header" : "Listening — press the shortcut again or press Stop"
                     : portal && s.shortcutMode === "hold"
                       ? "Hold your shortcut, or press Record, and just talk."
                       : "Press your shortcut or Record to start; press again to finish."}

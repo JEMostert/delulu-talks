@@ -80,6 +80,7 @@ type CaptureSession = {
   startedAt: number;
   lastLevelAt: number;
   stopping: boolean;
+  paused: boolean;
   cancelled: boolean;
   readonly cancellation: Promise<void>;
   cancel: () => void;
@@ -114,6 +115,8 @@ export class PcmRecorder {
     const operation = this.commands.then(async () => {
       if (command.action === "start")
         await this.start(command.inputDeviceId, generation, command.sessionId);
+      if (command.action === "pause" || command.action === "resume")
+        await this.changePause(command.action === "pause", command.sessionId);
       if (command.action === "stop") await this.stop(true, command.sessionId);
       if (command.action === "cancel") await this.stop(false, command.sessionId);
     });
@@ -138,7 +141,7 @@ export class PcmRecorder {
       generation, sessionId, cancellation, cancel,
       context: null, stream: null, worklet: null, processor: null,
       source: null, sink: null, chunks: [], startedAt: 0, lastLevelAt: 0,
-      stopping: false, cancelled: false,
+      stopping: false, paused: false, cancelled: false,
     };
     this.session = session;
     try {
@@ -223,7 +226,7 @@ export class PcmRecorder {
   private ingest(session: CaptureSession, samples: Float32Array, rms?: number): void {
     // Messages queued by a detached worklet and fallback callbacks can outlive
     // resource disposal. They can only append to their original live session.
-    if (!this.current(session)) return;
+    if (!this.current(session) || session.paused) return;
     session.chunks.push(new Float32Array(samples));
     const now = performance.now();
     if (now - session.lastLevelAt < 50) return;
@@ -235,6 +238,42 @@ export class PcmRecorder {
       level = Math.sqrt(sum / Math.max(1, samples.length));
     }
     bridge.recordingLevel(audibleLevel(level));
+  }
+
+  private async changePause(paused: boolean, sessionId?: string): Promise<void> {
+    const session = this.session;
+    if (!session || !this.current(session) || session.stopping || !session.context ||
+        (sessionId && session.sessionId !== sessionId) || session.paused === paused) return;
+    if (!paused) session.paused = false;
+    const port = session.worklet?.port;
+    const receive = port?.onmessage;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const control = port ? new Promise<void>((resolve) => {
+        // The acknowledgement follows all pre-pause samples on the same port.
+        port.onmessage = (event) => {
+          if (event.data?.pauseChanged === paused) resolve();
+          else receive?.call(port, event);
+        };
+        port.postMessage({ action: paused ? "pause" : "resume" });
+      }) : paused ? session.context.suspend() : session.context.resume();
+      await Promise.race([control, session.cancellation, new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Pause/resume acknowledgement timed out")), 2000);
+      })]);
+    } catch (reason) {
+      if (port) port.onmessage = this.current(session) ? receive ?? null : null;
+      // An uncertain pause boundary cannot continue as if successful. Finalize
+      // the retained audio through the existing stop path instead of dropping it.
+      if (this.current(session)) await this.stop(true, session.sessionId);
+      throw new Error(`${reason instanceof Error ? reason.message : String(reason)}. Recording was stopped to preserve retained audio.`);
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (port && this.current(session)) port.onmessage = receive ?? null;
+    }
+    if (!this.current(session)) return;
+    session.paused = paused;
+    bridge.recordingLevel(0);
+    if (session.sessionId) await bridge.recordingPauseChanged(session.sessionId, paused);
   }
 
   private async stop(submit: boolean, sessionId?: string): Promise<void> {
@@ -255,7 +294,8 @@ export class PcmRecorder {
     )
       return;
     session.stopping = true;
-    const durationMs = Math.round(performance.now() - session.startedAt);
+    // Duration describes retained audio, excluding paused wall-clock time.
+
     const sampleRate = session.context.sampleRate;
     try {
       session.source?.disconnect();
@@ -287,6 +327,7 @@ export class PcmRecorder {
       }
       if (!this.current(session)) return;
       const captured = merge(session.chunks);
+      const durationMs = Math.round(captured.length / sampleRate * 1000);
       await this.dispose(session);
       // Cancellation can arrive while AudioContext.close is still pending.
       if (session.cancelled || session.generation !== this.generation) return;

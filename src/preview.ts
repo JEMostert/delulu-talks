@@ -150,6 +150,9 @@ export const previewApi: DeluluApi = {
   async installUpdate() {
     desktopOnly();
   },
+  async pauseDictation() { throw new Error("Pause requires the desktop recorder"); },
+  async resumeDictation() { throw new Error("Resume requires the desktop recorder"); },
+  async recordingPauseChanged() {},
   async toggleDictation() {
     desktopOnly();
   },

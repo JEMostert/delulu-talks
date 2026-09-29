@@ -297,7 +297,7 @@ function rebuildTrayMenu(): void {
   const latest = lastTranscript
     ? (storage.findHistory(lastTranscript.id) ?? lastTranscript)
     : storage.getHistory()[0];
-  const listening = status.phase === "listening";
+  const listening = status.phase === "listening" || status.phase === "paused";
   const dictationBusy = ["preparing", "loading", "transcribing"].includes(
     status.phase,
   );
@@ -327,6 +327,9 @@ function rebuildTrayMenu(): void {
       click: () =>
         speechUnavailable ? showMainWindow("models") : dictation.toggle(),
     },
+    { label: status.phase === "paused" ? "Resume recording" : "Pause recording",
+      enabled: listening,
+      click: () => status.phase === "paused" ? dictation.resume() : dictation.pause() },
     { label: "Open Delulu Talks", click: () => showMainWindow("home") },
     {
       label: "Paste latest result",
@@ -458,7 +461,7 @@ function rebuildTrayMenu(): void {
   ];
   tray.setContextMenu(Menu.buildFromTemplate(template));
   const state = listening
-    ? "Listening"
+    ? status.phase === "paused" ? "Paused — microphone open" : "Listening"
     : status.phase === "transcribing"
       ? "Transcribing"
       : status.engine === "ready"
@@ -711,6 +714,12 @@ function registerIpc(): void {
   handle("updates:install", () => updates.install());
   handle("dictation:start", () => dictation.start());
   handle("dictation:stop", () => dictation.stop());
+  handle("dictation:pause", () => dictation.pause());
+  handle("dictation:resume", () => dictation.resume());
+  handle("recorder:pause-changed", (_event, sessionId: unknown, paused: unknown) => {
+    if (typeof sessionId !== "string" || typeof paused !== "boolean") throw new Error("Invalid pause acknowledgement");
+    dictation.recordingPauseChanged(sessionId, paused);
+  });
   handle("dictation:toggle", () => dictation.toggle());
   handle("dictation:cancel", () => dictation.cancel());
   handle("recorder:started", () => dictation.recordingStarted());

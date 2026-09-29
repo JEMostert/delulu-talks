@@ -54,7 +54,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
       .getElementById("page-content")
       ?.scrollTo({ top: 0, behavior: "instant" });
   }, [w.page]);
-  const recording = w.status.phase === "listening";
+  const recording = w.status.phase === "listening" || w.status.phase === "paused";
   const needsSetup =
     !recording && ["missing", "error"].includes(w.status.engine);
   const speechBusy = ["preparing", "loading", "transcribing"].includes(
@@ -144,7 +144,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
               )}
               <span>
                 {recording
-                  ? "Listening"
+                  ? w.status.phase === "paused" ? "Paused" : "Listening"
                   : speechBusy
                     ? w.status.phase === "transcribing"
                       ? "Transcribing…"
@@ -162,6 +162,9 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                           : "Loads on demand"}
               </span>
             </button>
+            {recording && <button className="secondary-button" onClick={run(() => w.status.phase === "paused" ? bridge.resumeDictation() : bridge.pauseDictation())}>
+              {w.status.phase === "paused" ? "Resume" : "Pause"}
+            </button>}
             {recording && (
               <button
                 className="icon-button"
@@ -227,6 +230,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             Runtime to avoid loading it again between recordings.
           </div>
         )}
+        {w.status.phase === "paused" && <div role="status" className="px-6 pt-3 text-sm text-muted">Paused. Audio stays in this session; the microphone remains open. Resume to keep recording, or Stop to transcribe the retained audio.</div>}
         {w.error && (
           <div className="px-6 pt-3 max-[900px]:px-4">
             <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>

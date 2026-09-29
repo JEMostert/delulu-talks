@@ -23,7 +23,7 @@ type WindowProvider = {
 };
 
 type CaptureState =
-  "idle" | "opening" | "listening" | "stopping" | "processing";
+  "idle" | "opening" | "listening" | "pausing" | "paused" | "resuming" | "stopping" | "processing";
 
 function numeric(value: unknown, fallback = 0): number {
   const parsed = Number(value);
@@ -40,7 +40,7 @@ export class DictationService {
   get canStopRecording(): boolean {
     return (
       this.recorderReady &&
-      (this.captureState === "opening" || this.captureState === "listening")
+      (["opening", "listening", "pausing", "paused", "resuming"].includes(this.captureState))
     );
   }
   discardFailure(): void {
@@ -227,7 +227,7 @@ export class DictationService {
       );
       return;
     }
-    if (this.captureState !== "listening") return;
+    if (!["listening", "pausing", "paused", "resuming"].includes(this.captureState)) return;
     this.captureState = "stopping";
     this.sendRecorder({
       action: "stop",
@@ -236,9 +236,31 @@ export class DictationService {
   }
 
   toggle(): void {
-    if (this.captureState === "opening" || this.captureState === "listening")
+    if (["opening", "listening", "pausing", "paused", "resuming"].includes(this.captureState))
       this.stop();
     else if (this.captureState === "idle") this.start();
+  }
+
+  pause(): void {
+    if (this.captureState !== "listening") return;
+    this.captureState = "pausing";
+    this.sendRecorder({ action: "pause", sessionId: this.pendingSessionId ?? undefined, inputDeviceId: this.settings().inputDeviceId });
+  }
+
+  resume(): void {
+    if (this.captureState !== "paused") return;
+    this.captureState = "resuming";
+    this.sendRecorder({ action: "resume", sessionId: this.pendingSessionId ?? undefined, inputDeviceId: this.settings().inputDeviceId });
+  }
+
+  recordingPauseChanged(sessionId: string, paused: boolean): void {
+    if (sessionId !== this.pendingSessionId || this.captureState !== (paused ? "pausing" : "resuming")) return;
+    this.captureState = paused ? "paused" : "listening";
+    this.asr.setActivity(paused ? "paused" : "listening", paused
+      ? "Paused — audio retained; microphone remains open. Resume or Stop to transcribe."
+      : "Listening — resumed the same recording");
+    if (paused) this.setHud({ state: "hidden" });
+    else this.setHud({ state: "listening", detail: "Resumed — Stop to transcribe" });
   }
 
   cancel(): void {
