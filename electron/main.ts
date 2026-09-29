@@ -1,41 +1,12 @@
-import { randomUUID } from "node:crypto";
-import { changePersonalProfiles } from "../src/personalProfileCommands";
-import {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  Menu,
-  nativeImage,
-  session,
-  shell,
-  Tray,
-} from "electron";
+import { app, BrowserWindow, dialog, Menu, nativeImage, session, shell, Tray } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import electronUpdater from "electron-updater";
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
-import { basename, extname, join, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
-import type {
-  AppSettings,
-  ExportFormat,
-  HistoryRetentionPreview,
-  LabRequest,
-  MagicPreset,
-  MagicRewriteRequest,
-  Page,
-  PasteRecovery,
-  RecordingSubmission,
-  TranscriptRecord,
-} from "../src/types";
-import { isMagicPreset, REWRITE_PRESETS } from "../src/rewritePresets";
-import { validateRewriteInstructions } from "../src/rewriteInstructions";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import type { AppSettings, MagicPreset, Page, PasteRecovery, TranscriptRecord } from "../src/types";
+import { REWRITE_PRESETS } from "../src/rewritePresets";
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
-import { modelById } from "../src/data";
-import { runtimeSetupSnapshot } from "./runtime/setupSnapshot";
-import { deliveredText, transcriptSourceRevision } from "../src/transcriptText";
-import { normalizeTranscriptTitle } from "../src/transcriptTitle";
-import { runtimeDiagnostics } from "./runtime/diagnostics";
+import { deliveredText } from "../src/transcriptText";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { ModelCacheService } from "./services/modelCache";
@@ -45,24 +16,44 @@ import { PasteService } from "./services/paste";
 import { PasteLastService } from "./services/pasteLast";
 import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
-import {
-  applyTranscriptEdit,
-  normalizeSettings,
-  StorageService,
-} from "./services/storage";
-import { affectedByRetention, historyFingerprint, validateRetentionPolicy } from "./services/historyRetention";
-import { exportRecord, saveTemplateExport } from "./services/transcripts";
-import {
-  renderExportTemplate,
-  validateExportTemplateRequest,
-} from "../src/exportTemplates";
-import { localDataOverview } from "./services/localData";
+import { normalizeSettings, StorageService } from "./services/storage";
 import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { UpdateService } from "./services/updates";
-import {
-  rendererRecoveryState,
-  reloadRenderer,
-} from "./services/rendererRecovery";
+import { registerMainIpc } from "./ipc";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 const { autoUpdater } = electronUpdater;
 
@@ -113,15 +104,6 @@ function setPasteRecovery(recovery: PasteRecovery | null): void {
   broadcast("paste:recoveryChanged", recovery);
 }
 const selectedAudioFiles = new Set<string>();
-let retentionPreview: {
-  preview: HistoryRetentionPreview;
-  savedFingerprint: string;
-  fullFingerprint: string;
-} | null = null;
-
-function retentionHistoryFingerprint(saved: TranscriptRecord[]): string {
-  return historyFingerprint({ saved, session: [...sessionTranscripts.values()] });
-}
 
 function preloadPath(): string {
   return join(__dirname, "../preload/preload.cjs");
@@ -698,520 +680,6 @@ function assertRuntimeIdle(): void {
     throw new Error("Finish the current recording or model operation first");
 }
 
-function registerIpc(): void {
-  const handle = <Args extends unknown[]>(
-    channel: string,
-    listener: (event: Electron.IpcMainInvokeEvent, ...args: Args) => unknown,
-  ) => {
-    ipcMain.handle(channel, (event, ...args) => {
-      if (
-        event.sender !== mainWindow?.webContents ||
-        event.senderFrame !== event.sender.mainFrame
-      )
-        throw new Error("Untrusted IPC sender");
-      return listener(event, ...(args as Args));
-    });
-  };
-  const recoveryInput = () => ({
-    captureActive: dictation.isActive,
-    canStopRecording: dictation.canStopRecording,
-    runtimeBusy: asr.isBusy,
-    settingsBusy: settingsQueue.busy,
-    updateBusy: ["checking", "downloading"].includes(updates.getStatus().phase),
-  });
-  handle("renderer:recoveryState", () =>
-    rendererRecoveryState(recoveryInput()),
-  );
-  handle("renderer:reload", (event) => {
-    reloadRenderer(recoveryInput(), () => {
-      pasteLast.cancelPending(
-      "Scheduled paste cancelled because the workspace reloaded.",
-    );
-      // Close the shortcut start race until the new controller calls ready.
-      dictation.recorderUnavailable();
-      event.sender.reload();
-    });
-  });
-  handle("renderer:controllerFailed", () => {
-    pasteLast.cancelPending(
-      "Scheduled paste cancelled because the workspace controller failed.",
-    );
-    dictation.recorderUnavailable();
-  });
-  handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
-  handle("cache:preview", () => modelCache.preview());
-  handle("cache:cleanup", (_event, token: unknown, ids: unknown) => {
-    assertRuntimeIdle();
-    if (settingsQueue.busy)
-      throw new Error("Wait for settings to finish saving before cleaning the cache");
-    const unloaded = new Set(["unloaded", "missing"]);
-    if (
-      !unloaded.has(asr.getStatus().engine) ||
-      !unloaded.has(asr.getMagicStatus().engine)
-    )
-      throw new Error("Explicitly unload speech and rewriting before deleting cached models");
-    if (
-      typeof token !== "string" || token.length > 128 ||
-      !Array.isArray(ids) || ids.length === 0 || ids.length > 100 ||
-      ids.some((id) => typeof id !== "string" || id.length > 512)
-    )
-      throw new Error("Select cached models from a fresh preview");
-    // Stay synchronous after the authoritative idle/residency checks: another
-    // IPC request cannot start loading a model between the guard and deletion.
-    return modelCache.cleanup(token, ids as string[]);
-  });
-  handle("runtime:setupSnapshot", () => runtimeSetupSnapshot(storage));
-  handle("runtime:setupLog", (_event, kind: unknown) => {
-    if (kind !== "speech" && kind !== "rewrite")
-      throw new Error("Choose speech or rewriting setup logs");
-    return asr.getSetupLog(kind);
-  });
-  handle("storage:overview", () => localDataOverview(storage));
-  handle("dictation:pasteLast", () => schedulePasteLast());
-  handle("dictation:pasteLastStatus", () => pasteLast.getStatus());
-  handle("dictation:cancelPasteLast", (_event, operationId: unknown) => {
-    if (typeof operationId !== "string")
-      throw new Error("Invalid paste operation");
-    return pasteLast.cancel(operationId);
-  });
-  handle("paste:recovery", () => pasteRecovery);
-  handle("paste:dismissRecovery", (_event, id: unknown) => {
-    const key = validateText(id, 128);
-    if (pasteRecovery?.transcriptId === key) setPasteRecovery(null);
-  });
-  handle("paste:copyInstead", (_event, id: unknown) => {
-    const key = validateText(id, 128);
-    if (pasteRecovery?.transcriptId !== key)
-      throw new Error("This paste recovery is no longer available. Open History to copy a retained transcript.");
-    // Resolve at the moment of the action: edits apply, deleted records never fall back to cached text.
-    const record = storage.findHistory(key) ?? sessionTranscripts.get(key);
-    if (!record) {
-      setPasteRecovery(null);
-      throw new Error("The transcript was removed. Nothing was copied.");
-    }
-    try {
-      paste.copy(deliveredText(record));
-    } catch (error) {
-      const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
-      setPasteRecovery({ transcriptId: key, detail: `Copy failed: ${detail}. Try Copy instead again, or open History to select the text manually.` });
-      throw new Error("Copy failed. Try again or select the text in History.");
-    }
-    setPasteRecovery(null);
-  });
-  handle("dictation:discardFailed", () => dictation.discardFailure());
-  handle("dictation:retry", () => dictation.retry());
-  handle("settings:get", () => storage.getSettings());
-  const ruleIds = () => storage.getSettings().customWords.map((rule) => rule.id);
-  handle("rules:usage", () => ruleUsage.get(ruleIds()));
-  handle("rules:resetUsage", () => {
-    ruleUsage.reset();
-    return ruleUsage.get(ruleIds());
-  });
-  handle("settings:update", (_event, value: unknown) => persistSettings(value));
-  handle("profiles:manage", (_event, command: unknown) =>
-    settingsQueue.run(() =>
-      applySettings({
-        personalProfiles: changePersonalProfiles(
-          storage.getSettings(),
-          command,
-          randomUUID,
-        ),
-      }),
-    ),
-  );
-  handle("runtime:status", () => asr.getStatus());
-  handle("shortcut:status", () => shortcut.getStatus());
-  handle("shortcut:configure", () => shortcut.configure());
-  handle("runtime:setup", () => {
-    assertRuntimeIdle();
-    return asr.setup(storage.getSettings());
-  });
-  handle("runtime:load", () => {
-    assertRuntimeIdle();
-    return asr.loadModel(storage.getSettings());
-  });
-  handle("runtime:unload", () => {
-    assertRuntimeIdle();
-    return asr.unload();
-  });
-  handle("runtime:reset", () => {
-    assertRuntimeIdle();
-    return asr.reset();
-  });
-  handle("magic:status", () => asr.getMagicStatus());
-  handle("magic:setup", () => {
-    assertRuntimeIdle();
-    return asr.setupMagic(storage.getSettings());
-  });
-  handle("magic:load", () => {
-    assertRuntimeIdle();
-    return asr.loadMagic(storage.getSettings());
-  });
-  handle("magic:unload", () => {
-    assertRuntimeIdle();
-    return asr.unloadMagic();
-  });
-  handle("magic:rewrite", (_event, value: unknown) => {
-    if (!value || typeof value !== "object")
-      throw new Error("Expected a rewriting request");
-    const source = value as Record<string, unknown>;
-    const preset = isMagicPreset(source.preset)
-      ? (source.preset as MagicRewriteRequest["preset"])
-      : "polish";
-    const request: MagicRewriteRequest = {
-      text: validateText(source.text, 50_000),
-      preset,
-      instructions: validateRewriteInstructions(source.instructions),
-      sourceLanguage: source.sourceLanguage == null
-        ? undefined
-        : validateText(source.sourceLanguage, 64).trim(),
-      allowInferences: source.allowInferences === true,
-    };
-    if (!request.text.trim())
-      throw new Error("Add a transcript or draft before rewriting");
-    assertRuntimeIdle();
-    return asr.rewriteMagic(request, storage.getSettings());
-  });
-  handle("platform:capabilities", () =>
-    paste.capabilities(pill.method, pill.detail),
-  );
-  handle("updates:get", () => updates.getStatus());
-  handle("updates:check", () => updates.check());
-  handle("updates:download", () => updates.download());
-  handle("updates:install", () => updates.install());
-  handle("dictation:start", () => dictation.start());
-  handle("dictation:stop", () => dictation.stop());
-  handle("dictation:toggle", () => dictation.toggle());
-  handle("dictation:cancel", () => dictation.cancel());
-  handle("recorder:started", (_event, sessionId: unknown) =>
-    dictation.recordingStarted(validateText(sessionId, 128)),
-  );
-  handle("recorder:limit", (_event, sessionId: unknown) =>
-    dictation.recordingLimitReached(validateText(sessionId, 128)),
-  );
-  handle("recorder:ready", () => dictation.recorderAvailable());
-  handle(
-    "recorder:inputChanged",
-    (_event, sessionId: unknown, message: unknown, inputLost: unknown) => {
-      if (typeof inputLost !== "boolean")
-        throw new Error("Invalid microphone change event");
-      dictation.recordingInputChanged(
-        validateText(sessionId, 128),
-        validateText(message, 1000),
-        inputLost,
-      );
-    },
-  );
-  handle("recorder:failed", (_event, message: unknown, sessionId: unknown) =>
-    dictation.recordingFailed(
-      validateText(message, 1000),
-      validateText(sessionId, 128),
-    ),
-  );
-  handle("recorder:submit", (_event, submission: RecordingSubmission) => {
-    if (typeof submission?.sessionId !== "string" || !submission.sessionId)
-      throw new Error("Recording submission requires a capture session ID");
-    return dictation.submitRecording(submission);
-  });
-  ipcMain.on("recorder:level", (event, value: unknown) => {
-    if (
-      event.sender !== mainWindow?.webContents ||
-      event.senderFrame !== event.sender.mainFrame
-    )
-      return;
-    const level =
-      typeof value === "number" && Number.isFinite(value)
-        ? Math.min(1, Math.max(0, value))
-        : 0;
-    dictation.recordingLevel(level);
-  });
-  handle("clipboard:copy", (_event, text: unknown) =>
-    paste.copy(validateText(text, 500_000)),
-  );
-  handle("paste:authorize", () => paste.authorize());
-  handle("paste:test", async () => {
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 3_000));
-    await paste.paste("Delulu Talks paste test");
-  });
-  handle("history:get", () => {
-    const records = new Map(
-      storage.getHistory().map((record) => [record.id, record]),
-    );
-    for (const [id, record] of sessionTranscripts) records.set(id, record);
-    return [...records.values()]
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, 500);
-  });
-  handle("history:retentionPreview", (_event, value: unknown) => {
-    const policy = validateRetentionPolicy(value);
-    const saved = storage.getHistory();
-    // Show the same current text as History for saved records also held in this session.
-    const current = saved.map((record) => sessionTranscripts.get(record.id) ?? record);
-    const previewedAt = Date.now();
-    const affected = affectedByRetention(current, policy, previewedAt);
-    const preview: HistoryRetentionPreview = {
-      token: randomUUID(), policy, previewedAt,
-      totalSaved: saved.length,
-      retainedCount: saved.length - affected.length,
-      affected,
-    };
-    retentionPreview = {
-      preview,
-      savedFingerprint: historyFingerprint(saved),
-      fullFingerprint: retentionHistoryFingerprint(saved),
-    };
-    return preview;
-  });
-  handle("history:retentionApply", (_event, value: unknown) => {
-    const token = validateText(value, 128);
-    const pending = retentionPreview;
-    if (!pending || pending.preview.token !== token)
-      throw new Error("This retention preview is no longer available. Preview the records again.");
-    const saved = storage.getHistory();
-    if (retentionHistoryFingerprint(saved) !== pending.fullFingerprint) {
-      retentionPreview = null;
-      throw new Error("History changed since the preview. Preview the affected records again; nothing was removed.");
-    }
-    const removedIds = pending.preview.affected.map(({ record }) => record.id);
-    if (removedIds.length) {
-      // No await between snapshot comparison, durable write and session invalidation.
-      storage.applyHistoryRetention(pending.savedFingerprint, removedIds);
-      for (const id of removedIds) sessionTranscripts.delete(id);
-      if (lastTranscript && removedIds.includes(lastTranscript.id)) lastTranscript = null;
-    }
-    retentionPreview = null;
-    broadcast("history:retentionApplied", removedIds);
-    rebuildTrayMenu();
-    return removedIds;
-  });
-  handle("history:updateTranscript", (_event, id: unknown, text: unknown) => {
-    const key = validateText(id, 128);
-    const correction = text === null ? null : validateText(text, 500_000);
-    const sessionRecord = sessionTranscripts.get(key);
-    const updated = storage.findHistory(key)
-      ? storage.updateTranscript(key, correction)
-      : sessionRecord
-        ? applyTranscriptEdit(sessionRecord, correction)
-        : null;
-    if (!updated) throw new Error("Transcript not found");
-    sessionTranscripts.set(key, updated);
-    if (lastTranscript?.id === key) lastTranscript = updated;
-    rebuildTrayMenu();
-    return updated;
-  });
-  handle("history:setTitle", (_event, id: unknown, title: unknown) => {
-    const key = validateText(id, 128);
-    const normalized = normalizeTranscriptTitle(title);
-    const sessionRecord = sessionTranscripts.get(key);
-    const updated = storage.findHistory(key)
-      ? storage.setTranscriptTitle(key, normalized)
-      : sessionRecord
-        ? { ...sessionRecord, title: normalized }
-        : null;
-    if (!updated) throw new Error("Transcript not found");
-    // A rejected saved-history write leaves session and last-record state intact.
-    sessionTranscripts.set(key, updated);
-    if (lastTranscript?.id === key) lastTranscript = updated;
-    rebuildTrayMenu();
-    return updated;
-  });
-  handle(
-    "history:setRewrite",
-    (_event, id: unknown, value: unknown, expected: unknown, expectedRevision: unknown = 0) => {
-      const key = validateText(id, 128);
-      const record = storage.findHistory(key) ?? sessionTranscripts.get(key);
-      if (!record) throw new Error("Transcript not found");
-      if (!Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0)
-        throw new Error("Invalid transcript source revision");
-      if (transcriptSourceRevision(record) !== expectedRevision ||
-          deliveredText(record) !== validateText(expected, 500_000))
-        throw new Error(
-          "This transcript changed while rewriting. Review the current text and try again.",
-        );
-      let updated: TranscriptRecord;
-      if (value === null) {
-        updated = {
-          ...record,
-          magicText: null,
-          rewriteSourceRevision: null,
-          magicModel: null,
-          magicPreset: null,
-          magicIncludedInferences: false,
-          magicProcessingTimeMs: 0,
-        };
-      } else {
-        if (!value || typeof value !== "object")
-          throw new Error("Invalid rewrite");
-        const rewrite = value as Record<string, unknown>;
-        const text = validateText(rewrite.text, 500_000);
-        if (!text.trim()) throw new Error("A rewrite cannot be empty");
-        updated = {
-          ...record,
-          magicText: text,
-          rewriteSourceRevision: transcriptSourceRevision(record),
-          magicPreset: isMagicPreset(rewrite.preset)
-            ? (rewrite.preset as MagicPreset)
-            : null,
-          magicModel: ["qwen35Small", "qwen35Medium", "qwen35Large"].includes(
-            String(rewrite.model),
-          )
-            ? (rewrite.model as TranscriptRecord["magicModel"])
-            : null,
-          magicIncludedInferences: rewrite.includedInferences === true,
-          magicProcessingTimeMs: Number.isFinite(rewrite.processingTimeMs)
-            ? Math.max(0, Number(rewrite.processingTimeMs))
-            : 0,
-        };
-      }
-      if (storage.findHistory(key)) storage.replaceHistory(updated);
-      sessionTranscripts.set(key, updated);
-      if (lastTranscript?.id === key) lastTranscript = updated;
-      rebuildTrayMenu();
-      return updated;
-    },
-  );
-  handle("history:delete", (_event, id: unknown) => {
-    const key = validateText(id, 128);
-    storage.deleteHistory(key);
-    sessionTranscripts.delete(key);
-    if (pasteRecovery?.transcriptId === key) setPasteRecovery(null);
-    if (lastTranscript?.id === key) lastTranscript = null;
-    rebuildTrayMenu();
-  });
-  handle("history:clear", () => {
-    storage.clearHistory();
-    sessionTranscripts.clear();
-    setPasteRecovery(null);
-    lastTranscript = null;
-    rebuildTrayMenu();
-  });
-  handle("lab:chooseAudio", async () => {
-    const options: Electron.OpenDialogOptions = {
-      title: "Choose audio or video",
-      properties: ["openFile"],
-      filters: [
-        {
-          name: "Audio and video",
-          extensions: [
-            "wav",
-            "mp3",
-            "m4a",
-            "flac",
-            "ogg",
-            "opus",
-            "webm",
-            "mp4",
-            "mov",
-            "mkv",
-          ],
-        },
-      ],
-    };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
-      : await dialog.showOpenDialog(options);
-    const path = result.canceled ? undefined : result.filePaths[0];
-    if (!path) return null;
-    const resolved = resolve(path);
-    selectedAudioFiles.add(resolved);
-    return {
-      path: resolved,
-      name: basename(resolved),
-      size: statSync(resolved).size,
-    };
-  });
-  handle("lab:run", async (_event, request: LabRequest) => {
-    const path = resolve(validateText(request.path, 4096));
-    if (!selectedAudioFiles.has(path) || !existsSync(path))
-      throw new Error("Choose the source file through Audio files first");
-    return dictation.runLab({ path });
-  });
-  handle(
-    "history:exportTemplate",
-    async (_event, id: unknown, input: unknown) => {
-      const key = validateText(id, 128);
-      const request = validateExportTemplateRequest(input);
-      const findRecord = () =>
-        sessionTranscripts.get(key) ?? storage.findHistory(key);
-      const renderCurrent = () => {
-        const record = findRecord();
-        if (!record) throw new Error("Transcript no longer exists");
-        const text = renderExportTemplate(record, request);
-        if (text !== request.expectedOutput)
-          throw new Error(
-            "The transcript changed. Reopen the export preview before saving.",
-          );
-        return { record, text };
-      };
-      const { record } = renderCurrent();
-      const stem = (record.sourceName ?? `delulu-${record.createdAt}`)
-        .replace(/[/\\]/g, "-")
-        .replace(/\.[^.]+$/, "");
-      const extension = request.extension;
-      const options: Electron.SaveDialogOptions = {
-        title: "Save transcript template",
-        defaultPath: `${stem}.${extension}`,
-        filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
-        properties: ["showOverwriteConfirmation"],
-      };
-      const result = mainWindow
-        ? await dialog.showSaveDialog(mainWindow, options)
-        : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) return null;
-      // The native dialog confirms the actual destination, including its suffix.
-      // Do not silently append a suffix after its overwrite confirmation.
-      if (extname(result.filePath).toLowerCase() !== `.${extension}`)
-        throw new Error(`Choose a filename ending in .${extension}.`);
-      const { text } = renderCurrent();
-      saveTemplateExport(result.filePath, text);
-      return result.filePath;
-    },
-  );
-  handle(
-    "history:export",
-    async (_event, id: unknown, requestedFormat: ExportFormat) => {
-      const key = validateText(id, 128);
-      const record = sessionTranscripts.get(key) ?? storage.findHistory(key);
-      if (!record) throw new Error("Transcript not found");
-      const format = ["txt", "json", "md"].includes(requestedFormat)
-        ? requestedFormat
-        : "txt";
-      const defaultName = `${(record.sourceName ?? `delulu-${record.createdAt}`).replace(/\.[^.]+$/, "")}.${format}`;
-      const options: Electron.SaveDialogOptions = {
-        title: format === "md" ? "Export Markdown note" : `Export ${format.toUpperCase()}`,
-        defaultPath: defaultName,
-        filters: [{ name: format === "md" ? "Markdown notes" : format.toUpperCase(), extensions: [format] }],
-      };
-      const result = mainWindow
-        ? await dialog.showSaveDialog(mainWindow, options)
-        : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) return null;
-      const outputPath = extname(result.filePath)
-        ? result.filePath
-        : `${result.filePath}.${format}`;
-      if (format === "md") {
-        try {
-          // A note export creates a new destination. Exclusive creation also
-          // protects against a file appearing after the native picker closes.
-          writeFileSync(outputPath, exportRecord(record, format), {
-            encoding: "utf8", mode: 0o600, flag: "wx",
-          });
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "EEXIST")
-            throw new Error(
-              "A note already exists at this destination. Export again with a different filename; the existing note was preserved.",
-              { cause: error },
-            );
-          throw error;
-        }
-      } else {
-        writeFileSync(outputPath, exportRecord(record, format), "utf8");
-      }
-      return outputPath;
-    },
-  );
-}
-
 async function start(): Promise<void> {
   if (!smokeTest) ensureDevelopmentDesktopEntry();
   storage = new StorageService();
@@ -1317,7 +785,7 @@ async function start(): Promise<void> {
   });
   shortcut.onStatus((status) => broadcast("shortcut:statusChanged", status));
   setupPermissions();
-  registerIpc();
+  registerMainIpc({ getMainWindow: () => mainWindow, storage, asr, paste, pill, dictation, shortcut, updates, persistSettings, settingsBusy: () => settingsQueue.busy, getLastTranscript: () => lastTranscript, setLastTranscript: (record) => { lastTranscript = record; }, sessionTranscripts, rebuildTrayMenu, pasteLast, modelCache, ruleUsage, schedulePasteLast, getPasteRecovery: () => pasteRecovery, setPasteRecovery, applySettings, settingsQueue, broadcast, selectedAudioFiles });
   if (!smokeTest) {
     if (app.isPackaged)
       void shortcut
