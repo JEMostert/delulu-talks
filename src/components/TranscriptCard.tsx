@@ -203,7 +203,7 @@ export function TranscriptCard({
             {deliveredText(record).trim().split(/\s+/).filter(Boolean).length}{" "}
             words
             {record.magicIncludedInferences
-              ? " · Review added assumptions"
+              ? " · Added assumptions were allowed"
               : ""}
             {edited ? " · Corrected" : ""}
           </span>
@@ -262,6 +262,10 @@ export function TranscriptCard({
                   : "Corrections & shortcuts applied"}
             </span>
           </div>
+          <p className="caption mt-2.5">
+            No calibrated confidence score is available for this transcript.
+            Review the text before using it.
+          </p>
           {editing ? (
             <textarea
               aria-label="Correct transcript"

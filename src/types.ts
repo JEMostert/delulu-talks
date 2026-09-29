@@ -82,6 +82,7 @@ export type MagicRewriteResult = {
   processingTimeMs: number;
   inputCharacters: number;
   outputCharacters: number;
+  /** Records permission to add assumptions, not evidence that any were added. */
   includedInferences: boolean;
 };
 
@@ -106,6 +107,11 @@ export type DictationStatus = {
   progress?: number | null;
 };
 
+/**
+ * Speech backends currently provide no calibrated confidence evidence.
+ * Do not infer confidence from timing, length, model identity, or rewrites.
+ * Add score/uncertainty UI only with a backend calibration contract.
+ */
 export type TranscriptRecord = {
   id: string;
   createdAt: number;
@@ -116,6 +122,7 @@ export type TranscriptRecord = {
   magicText?: string | null;
   magicModel?: MagicModelId | null;
   magicPreset?: MagicPreset | null;
+  /** Historical name: assumptions were allowed; their presence is not detected. */
   magicIncludedInferences?: boolean;
   magicProcessingTimeMs?: number;
   model: ModelId;
