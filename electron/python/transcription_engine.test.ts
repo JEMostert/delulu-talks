@@ -11,6 +11,7 @@ test("Windows worker routes all speech commands to native CUDA without importing
       "-c",
       `
 import importlib.util,sys,types
+sys.path.insert(0, str(__import__('pathlib').Path(sys.argv[1]).parent))
 spec=importlib.util.spec_from_file_location('engine',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 calls=[]
 class Speech:
@@ -59,6 +60,7 @@ test("speech load warms bounded inference before reporting ready and restores no
       "-c",
       `
 import importlib.util, sys, types
+sys.path.insert(0, str(__import__('pathlib').Path(sys.argv[1]).parent))
 spec=importlib.util.spec_from_file_location('engine',sys.argv[1])
 m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 calls=[]
@@ -69,6 +71,8 @@ def transcribe(**kwargs):
     assert kwargs['language']==['English']
     return []
 model.transcribe=transcribe
+# Model warmup fixture deliberately stubs native CUDA preflight.
+sys.modules['cuda_preflight']=types.SimpleNamespace(ensure_cuda_compatible=lambda _: {'probe':'synthetic-no-hardware'})
 sys.modules['torch']=types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda:True,empty_cache=lambda:None))
 sys.modules['numpy']=types.SimpleNamespace(zeros=lambda *a,**k:'synthetic',float32='float32')
 sys.modules['qwen_asr']=types.SimpleNamespace(Qwen3ASRModel=types.SimpleNamespace(LLM=lambda **kw:model))
@@ -92,6 +96,7 @@ test("PCM transcription uses the lightweight reader and reports preparation plus
       "-c",
       `
 import importlib.util,sys,types
+sys.path.insert(0, str(__import__('pathlib').Path(sys.argv[1]).parent))
 spec=importlib.util.spec_from_file_location('engine',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class Audio:
     ndim=1
@@ -119,6 +124,7 @@ test("stereo imports are mixed to mono and resampled before inference", () => {
       "-c",
       `
 import importlib.util,sys,types
+sys.path.insert(0, str(__import__('pathlib').Path(sys.argv[1]).parent))
 spec=importlib.util.spec_from_file_location('engine',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class Mono:
     ndim=1
@@ -151,6 +157,7 @@ assert w.transcribe({'audioPath':sys.argv[1]})['duration']==1
 function buildPrompt(allowInferences: boolean) {
   const script = [
     "import importlib.util, json, sys",
+    "sys.path.insert(0, str(__import__('pathlib').Path(sys.argv[1]).parent))",
     "spec = importlib.util.spec_from_file_location('engine', sys.argv[1])",
     "module = importlib.util.module_from_spec(spec)",
     "spec.loader.exec_module(module)",

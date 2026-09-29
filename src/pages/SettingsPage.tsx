@@ -1,3 +1,6 @@
+import { REWRITE_PRESETS } from "../rewritePresets";
+import { PersonalProfiles } from "../components/PersonalProfiles";
+import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
 import {
@@ -15,8 +18,10 @@ import {
 import { MAGIC_MODELS } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
+import { LocalData } from "../components/LocalData";
 import { Diagnostics } from "../components/Diagnostics";
 import { HistoryRetention } from "../components/HistoryRetention";
+import { MicrophoneNotice } from "../components/MicrophoneNotice";
 import type {
   AppSettings,
   DictationStatus,
@@ -37,6 +42,7 @@ type Props = {
   magicStatus: MagicStatus;
   saving: boolean;
   onSave: (patch: Partial<AppSettings>) => Promise<boolean>;
+  onManagePersonalProfile: (command: PersonalProfileCommand) => Promise<boolean>;
   onConfigureShortcut: () => void;
   onAuthorizePaste: () => void;
   onTestPaste: () => void;
@@ -93,9 +99,11 @@ export function SettingsPage(props: Props) {
         {[
           ["general", "Capture & delivery"],
           ["personalization", "Personalization"],
+          ["profiles", "Profiles"],
           ["writing", "Writing"],
           ["advanced", "Runtime"],
           ["maintenance", "Application"],
+          ["data", "Local data"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -111,6 +119,14 @@ export function SettingsPage(props: Props) {
           {saving ? "Saving…" : "Changes save automatically"}
         </span>
       </div>
+      {tab === "data" && <LocalData />}
+      {tab === "profiles" && (
+        <PersonalProfiles
+          settings={s}
+          saving={saving}
+          onManage={props.onManagePersonalProfile}
+        />
+      )}
       {tab === "personalization" && (
         <VocabularyPage
           words={s.customWords}
@@ -146,7 +162,7 @@ export function SettingsPage(props: Props) {
               >
                 {!devices.some((d) => d.deviceId === s.inputDeviceId) && (
                   <option value={s.inputDeviceId}>
-                    {s.inputDeviceLabel} (disconnected)
+                    {s.inputDeviceLabel} (not listed)
                   </option>
                 )}
                 {devices.map((device) => (
@@ -155,6 +171,7 @@ export function SettingsPage(props: Props) {
                   </option>
                 ))}
               </select>
+              <MicrophoneNotice settings={s} devices={devices} />
             </SettingRow>
             <SettingRow title="Language">
               <select
@@ -171,6 +188,16 @@ export function SettingsPage(props: Props) {
                   </option>
                 ))}
               </select>
+            </SettingRow>
+            <SettingRow
+              title="Spoken formatting commands"
+              description="Opt in to explicit line commands: English ‘command new line/paragraph’ or Dutch ‘commando nieuwe regel/alinea’. Original speech stays available. Other language hints keep text unchanged."
+            >
+              {toggle(
+                "spokenFormattingCommands",
+                "Interpret spoken formatting commands",
+                busy,
+              )}
             </SettingRow>
             <SettingRow
               icon={Keyboard}
@@ -246,6 +273,33 @@ export function SettingsPage(props: Props) {
               )}
             </SettingRow>
             <SettingRow
+              title="Mute capture sounds"
+              description="Silence the cues when recording starts and stops."
+            >
+              {toggle("captureSoundsMuted", "Mute capture sounds")}
+            </SettingRow>
+            <SettingRow
+              title="Capture sound volume"
+              description="Adjust the start and stop cues, even while muted."
+            >
+              <div className="inline-control">
+                <input
+                  type="range"
+                  aria-label="Capture sound volume"
+                  aria-valuetext={`${Math.round(s.captureSoundVolume * 100)}%`}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={s.captureSoundVolume}
+                  disabled={saving}
+                  onChange={(e) =>
+                    save({ captureSoundVolume: Number(e.target.value) })
+                  }
+                />
+                <span>{Math.round(s.captureSoundVolume * 100)}%</span>
+              </div>
+            </SettingRow>
+            <SettingRow
               title="Launch at login"
               description="Have your shortcut ready when you sign in."
             >
@@ -262,6 +316,33 @@ export function SettingsPage(props: Props) {
               description="Deliver the finished text to the app you were using."
             >
               {toggle("autoPaste", "Paste automatically")}
+            </SettingRow>
+            <SettingRow
+              icon={Keyboard}
+              title="Paste shortcut"
+              description="Applies to automatic paste and Paste last; terminals are not detected automatically. Choose a shortcut supported by the focused app, or turn off automatic paste and copy to clipboard. Delulu only sends the paste shortcut, never Enter; pasted newlines may execute commands depending on the terminal."
+            >
+              <select
+                aria-label="Paste shortcut"
+                value={s.pasteShortcut}
+                disabled={saving}
+                onChange={(e) =>
+                  save({
+                    pasteShortcut: e.target.value as AppSettings["pasteShortcut"],
+                  })
+                }
+              >
+                <option value="standard">
+                  Standard ({capabilities?.platform === "darwin"
+                    ? "Cmd+V"
+                    : "Ctrl+V"})
+                </option>
+                <option value="terminal">
+                  Terminal ({capabilities?.platform === "darwin"
+                    ? "Cmd+V"
+                    : "Ctrl+Shift+V"})
+                </option>
+              </select>
             </SettingRow>
             {capabilities?.wayland && (
               <SettingRow
@@ -284,6 +365,27 @@ export function SettingsPage(props: Props) {
                 </div>
               </SettingRow>
             )}
+            <SettingRow
+              title="Paste-last delay"
+              description="Wait before sending paste keystrokes so you can focus the intended field. Cancel from the countdown or tray. Destination insertion cannot be confirmed."
+            >
+              <select
+                aria-label="Paste-last delay"
+                value={s.pasteLastDelaySeconds}
+                disabled={saving}
+                onChange={(e) =>
+                  save({ pasteLastDelaySeconds: Number(e.target.value) })
+                }
+              >
+                {Array.from({ length: 30 }, (_, index) => index + 1).map(
+                  (seconds) => (
+                    <option key={seconds} value={seconds}>
+                      {seconds} seconds
+                    </option>
+                  ),
+                )}
+              </select>
+            </SettingRow>
             <SettingRow
               title="Copy results to clipboard"
               description="Keep text ready for a manual paste."
@@ -327,10 +429,9 @@ export function SettingsPage(props: Props) {
                 })
               }
             >
-              <option value="polish">Polished</option>
-              <option value="concise">Concise</option>
-              <option value="structured">Structured</option>
-              <option value="prompt">Prompt builder</option>
+              {REWRITE_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.label}</option>
+              ))}
             </select>
           </SettingRow>
           <SettingRow
@@ -432,6 +533,15 @@ export function SettingsPage(props: Props) {
             <div className="group-heading">
               <h3>Appearance</h3>
             </div>
+            {capabilities?.platform === "darwin" && (
+              <SettingRow
+                icon={Monitor}
+                title="Menu bar only"
+                description="Hide the Dock icon and start with Controls closed. Reopen Controls, view status or quit from the menu bar. This window stays open when you enable the setting."
+              >
+                {toggle("menuBarOnly", "Menu bar only")}
+              </SettingRow>
+            )}
             <SettingRow
               icon={Monitor}
               title="Appearance"
