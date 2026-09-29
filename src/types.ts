@@ -70,6 +70,7 @@ export type MagicStatus = {
 export type MagicRewriteRequest = {
   text: string;
   preset: MagicPreset;
+  /** Optional style request for this rewrite only; never a saved preference. Max 4,000 UTF-16 units. */
   instructions?: string;
   allowInferences: boolean;
 };

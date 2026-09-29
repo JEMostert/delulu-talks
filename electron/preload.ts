@@ -1,3 +1,4 @@
+import { validateRewriteInstructions } from "../src/rewriteInstructions";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AppSettings,
@@ -59,7 +60,10 @@ const api: DeluluApi = {
   loadMagic: () => ipcRenderer.invoke("magic:load"),
   unloadMagic: () => ipcRenderer.invoke("magic:unload"),
   rewriteMagic: (request: MagicRewriteRequest) =>
-    ipcRenderer.invoke("magic:rewrite", request),
+    ipcRenderer.invoke("magic:rewrite", {
+      ...request,
+      instructions: validateRewriteInstructions(request.instructions),
+    }),
   copyText: (text: string) => ipcRenderer.invoke("clipboard:copy", text),
   authorizePaste: () => ipcRenderer.invoke("paste:authorize"),
   testPaste: () => ipcRenderer.invoke("paste:test"),

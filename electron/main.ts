@@ -24,6 +24,7 @@ import type {
   TranscriptRecord,
 } from "../src/types";
 import { isMagicPreset, REWRITE_PRESETS } from "../src/rewritePresets";
+import { validateRewriteInstructions } from "../src/rewriteInstructions";
 import { modelById } from "../src/data";
 import { deliveredText } from "../src/transcriptText";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
@@ -684,7 +685,7 @@ function registerIpc(): void {
     const request: MagicRewriteRequest = {
       text: validateText(source.text, 50_000).trim(),
       preset,
-      instructions: validateText(source.instructions ?? "", 4_000).trim(),
+      instructions: validateRewriteInstructions(source.instructions),
       allowInferences: source.allowInferences === true,
     };
     if (!request.text)

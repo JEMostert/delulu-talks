@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
+import { MAX_REWRITE_INSTRUCTIONS, validateRewriteInstructions } from "../rewriteInstructions";
 import { REWRITE_PRESETS } from "../rewritePresets";
 import type {
   MagicPreset,
@@ -26,6 +27,13 @@ export function RewriteDialog({
   onRewrite: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
   onApply: (result: MagicRewriteResult, source: string) => Promise<boolean>;
 }) {
+  const instructionHelpId = useId();
+  const active = useRef(true);
+  const requestGeneration = useRef(0);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
   const [source] = useState(text);
   const [expectedOutput] = useState(baseline);
   const [preset, setPreset] = useState<MagicPreset>("concise");
@@ -33,19 +41,27 @@ export function RewriteDialog({
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const closeDialog = () => {
+    requestGeneration.current += 1;
+    setBusy(false);
+    setInstructions("");
+    setResult(null);
+    setError(null);
+    onClose();
+  };
   const presetDetails = REWRITE_PRESETS.find((item) => item.id === preset)!;
   const missing = status?.engine === "missing" || status?.engine === "error";
   return (
     <Modal
       title="Rewrite transcript"
       busy={busy}
-      onClose={onClose}
+      onClose={closeDialog}
       footer={
         <>
           <button
             className="secondary-button"
             disabled={busy}
-            onClick={onClose}
+            onClick={closeDialog}
           >
             Cancel
           </button>
@@ -56,7 +72,7 @@ export function RewriteDialog({
               onClick={async () => {
                 setBusy(true);
                 try {
-                  if (await onApply(result, expectedOutput)) onClose();
+                  if (await onApply(result, expectedOutput)) closeDialog();
                   else
                     setError(
                       "Could not apply this rewrite. The transcript may have changed; close this preview and review the current result.",
@@ -86,7 +102,7 @@ export function RewriteDialog({
           <button
             className="secondary-button"
             onClick={() => {
-              onClose();
+              closeDialog();
               onSetup();
             }}
           >
@@ -104,6 +120,7 @@ export function RewriteDialog({
             onChange={(e) => {
               setPreset(e.target.value as MagicPreset);
               setResult(null);
+              setError(null);
             }}
           >
             {REWRITE_PRESETS.map((item) => (
@@ -112,19 +129,36 @@ export function RewriteDialog({
           </select>
         </label>
         <label className="field">
-          Instructions <small>Optional</small>
-          <input
+          Instructions for this rewrite <small>Optional</small>
+          <textarea
             aria-label="Rewrite instructions"
-            maxLength={4000}
+            aria-describedby={instructionHelpId}
+            rows={3}
+            maxLength={MAX_REWRITE_INSTRUCTIONS}
             disabled={busy}
             value={instructions}
             onChange={(e) => {
               setInstructions(e.target.value);
               setResult(null);
+              setError(null);
             }}
             placeholder="For example: format as a short email"
           />
         </label>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <p id={instructionHelpId} className="flex-1 text-xs text-muted">
+          Kept for retries in this dialog and discarded when you close it.
+          Never saved as a writing preference or transcript metadata. Instructions
+          request tone or format; they do not guarantee factual accuracy. Compare
+          the full preview before applying it. Saved shortcut blocks stay protected.
+        </p>
+        <span className="text-xs text-muted">{instructions.length.toLocaleString()} / 4,000</span>
+        <button className="secondary-button" disabled={busy || !instructions} onClick={() => {
+          setInstructions("");
+          setResult(null);
+          setError(null);
+        }}>Clear instructions</button>
       </div>
       <p className="mt-3" aria-live="polite">{presetDetails.description}</p>
       <details className="my-3 rounded-panel border border-line p-3">
@@ -176,21 +210,21 @@ export function RewriteDialog({
         className="secondary-button"
         disabled={busy || missing || source.length > 50_000}
         onClick={async () => {
+          const generation = ++requestGeneration.current;
           setBusy(true);
           setError(null);
           try {
-            setResult(
-              await onRewrite({
-                text: source,
-                preset,
-                instructions,
-                allowInferences: false,
-              }),
-            );
+            const rewritten = await onRewrite({
+              text: source,
+              preset,
+              instructions: validateRewriteInstructions(instructions),
+              allowInferences: false,
+            });
+            if (active.current && requestGeneration.current === generation) setResult(rewritten);
           } catch (reason) {
-            setError(reason instanceof Error ? reason.message : String(reason));
+            if (active.current && requestGeneration.current === generation) setError(reason instanceof Error ? reason.message : String(reason));
           } finally {
-            setBusy(false);
+            if (active.current && requestGeneration.current === generation) setBusy(false);
           }
         }}
       >
