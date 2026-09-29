@@ -195,3 +195,46 @@ verification; sampled RSS is not accelerator allocation. The app continues to
 offer its existing BF16 R2T2 adapter only. **UNVERIFIED — checks not run per user
 instruction**; no conversion, quantized inference or quality evaluation has
 been run for this implementation.
+
+## Comparing distinct quality dimensions
+
+`scripts/quality_dimensions.py` compares two or more participants against the
+same reference files and human case annotations, preserving provenance and
+raw/normalized metrics per case. It adds punctuation-character alignment,
+explicit named-entity mention counts, exact numeric lexical forms, nonempty
+output on annotated silence, and correction burden. There is no automatic
+entity recognizer, spoken-number interpretation or semantic hallucination judge.
+
+```json
+{
+  "normalization": "wer-basic-v1",
+  "cases": [
+    {"case_id": "nl-entity-001", "reference": "reference.txt",
+     "annotations": {"speech_present": true, "named_entities": ["Amsterdam"]}}
+  ],
+  "participants": [
+    {"label": "R2T2", "provenance": "r2t2-provenance.json",
+     "hypotheses": {"nl-entity-001": {"path": "r2t2-hypothesis.txt"}}},
+    {"label": "External control", "provenance": "control-provenance.json",
+     "hypotheses": {"nl-entity-001": {"path": "control-hypothesis.txt"}}}
+  ]
+}
+```
+
+```sh
+python scripts/quality_dimensions.py --manifest quality.json --output quality-report.json
+```
+
+All participants must cover exactly the same cases. References and hypotheses
+remain untouched. Silence annotations require empty references. Named entities
+are exact case-sensitive annotated reference strings; missing, extra and exact
+mentions are separate. Numeric comparisons preserve lexical comma/point forms
+and do not claim value equivalence. Punctuation sequence distance does not
+establish grammatical correctness. Raw character edit distance is only a
+correction proxy; optionally supply `measured_correction_seconds` and its
+`correction_measurement_method` on each hypothesis to retain human measurements.
+Omitted correction time remains unknown. No semantic hallucination rate or
+human-effort conclusion is inferred from ordinary insertions.
+
+**UNVERIFIED — checks not run per user instruction**. No native reference
+comparison or human correction measurement was performed for this change.
