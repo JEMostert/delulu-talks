@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
 import type {
@@ -15,6 +15,7 @@ export function RewriteDialog({
   onClose,
   onSetup,
   onRewrite,
+  onCancelRewrite,
   onApply,
 }: {
   text: string;
@@ -23,6 +24,7 @@ export function RewriteDialog({
   onClose: () => void;
   onSetup: () => void;
   onRewrite: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
+  onCancelRewrite?: (operationId: string) => Promise<boolean>;
   onApply: (result: MagicRewriteResult, source: string) => Promise<boolean>;
 }) {
   const [source] = useState(text);
@@ -31,7 +33,85 @@ export function RewriteDialog({
   const [instructions, setInstructions] = useState("");
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const mounted = useRef(true);
+  const activeSession = useRef<{ id: string; cancelled: boolean } | null>(null);
+  const cancelRewrite = useRef(onCancelRewrite);
+  cancelRewrite.current = onCancelRewrite;
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const session = activeSession.current;
+      activeSession.current = null;
+      if (session && !session.cancelled) {
+        session.cancelled = true;
+        const cancel = cancelRewrite.current;
+        if (cancel) void Promise.resolve().then(() => cancel(session.id)).catch(() => undefined);
+      }
+    };
+  }, []);
+
+  async function generatePreview() {
+    if (activeSession.current || busy) return;
+    const session = { id: crypto.randomUUID(), cancelled: false };
+    activeSession.current = session;
+    setBusy(true);
+    setGenerating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const preview = await onRewrite({
+        operationId: session.id,
+        text: source,
+        preset,
+        instructions,
+        allowInferences: false,
+      });
+      if (mounted.current && activeSession.current === session && !session.cancelled) {
+        setResult(preview);
+      }
+    } catch (reason) {
+      if (mounted.current && activeSession.current === session && !session.cancelled) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    } finally {
+      if (mounted.current && activeSession.current === session && !session.cancelled) {
+        activeSession.current = null;
+        setGenerating(false);
+        setBusy(false);
+      }
+    }
+  }
+
+  async function cancelPreview() {
+    const session = activeSession.current;
+    if (!session || session.cancelled || !onCancelRewrite) return;
+    session.cancelled = true;
+    setCancelling(true);
+    setError(null);
+    let cleanupFailed = false;
+    try {
+      await onCancelRewrite(session.id);
+    } catch {
+      cleanupFailed = true;
+    } finally {
+      if (mounted.current && activeSession.current === session) {
+        activeSession.current = null;
+        setGenerating(false);
+        setCancelling(false);
+        setBusy(false);
+        setNotice(cleanupFailed
+          ? "Preview request cancelled; runtime cleanup could not be confirmed."
+          : "Preview request cancelled");
+      }
+    }
+  }
+
   const missing = status?.engine === "missing" || status?.engine === "error";
   return (
     <Modal
@@ -54,13 +134,15 @@ export function RewriteDialog({
               onClick={async () => {
                 setBusy(true);
                 try {
-                  if (await onApply(result, expectedOutput)) onClose();
+                  const applied = await onApply(result, expectedOutput);
+                  if (!mounted.current) return;
+                  if (applied) onClose();
                   else
                     setError(
                       "Could not apply this rewrite. The transcript may have changed; close this preview and review the current result.",
                     );
                 } finally {
-                  setBusy(false);
+                  if (mounted.current) setBusy(false);
                 }
               }}
             >
@@ -83,6 +165,7 @@ export function RewriteDialog({
           </p>
           <button
             className="secondary-button"
+            disabled={busy}
             onClick={() => {
               onClose();
               onSetup();
@@ -162,35 +245,28 @@ export function RewriteDialog({
           {error}
         </p>
       )}
+      {notice && <p role="status">{notice}</p>}
       <button
         className="secondary-button"
         disabled={busy || missing || source.length > 50_000}
-        onClick={async () => {
-          setBusy(true);
-          setError(null);
-          try {
-            setResult(
-              await onRewrite({
-                text: source,
-                preset,
-                instructions,
-                allowInferences: false,
-              }),
-            );
-          } catch (reason) {
-            setError(reason instanceof Error ? reason.message : String(reason));
-          } finally {
-            setBusy(false);
-          }
-        }}
+        onClick={generatePreview}
       >
-        {busy ? <LoaderCircle className="spin" /> : <WandSparkles />}
-        {busy
-          ? "Rewriting locally…"
+        {generating ? <LoaderCircle className="spin" /> : <WandSparkles />}
+        {generating
+          ? cancelling ? "Cancelling preview…" : "Rewriting locally…"
           : result
             ? "Try again"
             : "Generate preview"}
       </button>
+      {generating && onCancelRewrite && (
+        <button
+          className="secondary-button"
+          disabled={cancelling}
+          onClick={cancelPreview}
+        >
+          {cancelling ? "Cancelling preview…" : "Cancel rewrite"}
+        </button>
+      )}
       {source.length > 50_000 && (
         <p className="field-error">
           This transcript exceeds the 50,000-character rewrite limit. Shorten

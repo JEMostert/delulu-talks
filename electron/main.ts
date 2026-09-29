@@ -591,6 +591,12 @@ function assertRuntimeIdle(): void {
     throw new Error("Finish the current recording or model operation first");
 }
 
+function validateRewriteOperationId(value: unknown): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value))
+    throw new Error("Expected an opaque rewrite operation ID of at most 128 characters");
+  return value;
+}
+
 function registerIpc(): void {
   const handle = <Args extends unknown[]>(
     channel: string,
@@ -686,6 +692,7 @@ function registerIpc(): void {
       ? (source.preset as MagicRewriteRequest["preset"])
       : "polish";
     const request: MagicRewriteRequest = {
+      ...(source.operationId === undefined ? {} : { operationId: validateRewriteOperationId(source.operationId) }),
       text: validateText(source.text, 50_000).trim(),
       preset,
       instructions: validateText(source.instructions ?? "", 4_000).trim(),
@@ -696,6 +703,9 @@ function registerIpc(): void {
     assertRuntimeIdle();
     return asr.rewriteMagic(request, storage.getSettings());
   });
+  handle("magic:cancelRewrite", (_event, operationId: unknown) =>
+    asr.cancelRewrite(validateRewriteOperationId(operationId)),
+  );
   handle("platform:capabilities", () =>
     paste.capabilities(pill.method, pill.detail),
   );

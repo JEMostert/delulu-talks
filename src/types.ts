@@ -82,6 +82,7 @@ export type MagicStatus = RuntimeLifecycle & {
 };
 
 export type MagicRewriteRequest = {
+  operationId?: string;
   text: string;
   preset: MagicPreset;
   instructions?: string;
@@ -258,6 +259,7 @@ export type DeluluApi = {
   loadMagic(): Promise<void>;
   unloadMagic(): Promise<void>;
   rewriteMagic(request: MagicRewriteRequest): Promise<MagicRewriteResult>;
+  cancelRewrite(operationId: string): Promise<boolean>;
   copyText(text: string): Promise<void>;
   authorizePaste(): Promise<void>;
   testPaste(): Promise<void>;

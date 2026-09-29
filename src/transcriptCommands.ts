@@ -67,6 +67,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
   const actions: TranscriptActions = {
     onCopy: w.copy,
     onRewrite: bridge.rewriteMagic,
+    onCancelRewrite: bridge.cancelRewrite,
     onRewriteSetup: () => w.setPage("models"),
     rewriteStatus: w.magicStatus,
     onSetRewrite: async (
