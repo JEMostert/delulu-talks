@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
   Check,
@@ -6,7 +6,6 @@ import {
   Keyboard,
   Mic,
   Settings2,
-  Square,
   WandSparkles,
 } from "lucide-react";
 import { speechLanguageCapability } from "../speechCapabilities";
@@ -75,13 +74,23 @@ export function HomePage({
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onConfigureShortcut: () => void;
   onPasteLast: () => void;
-  onToggleRecord: () => void;
+  onToggleRecord: () => Promise<boolean>;
 }) {
   const [shortcut, setShortcut] = useState(s.shortcut);
   useEffect(() => setShortcut(s.shortcut), [s.shortcut]);
   const portal = shortcutStatus.method === "portal";
   const latest = history[0];
   const recording = status.phase === "listening";
+  const needsSetup = ["missing", "error"].includes(status.engine);
+  const startedFromHome = useRef(false);
+  useEffect(() => {
+    if (recording && startedFromHome.current) {
+      document.getElementById("recording-stop-control")?.focus({ preventScroll: true });
+      startedFromHome.current = false;
+    } else if (status.phase === "error") {
+      startedFromHome.current = false;
+    }
+  }, [recording, status.phase]);
   const languageCapability = speechLanguageCapability(s.model);
   const engineText = (engine: DictationStatus["engine"]) =>
     ({
@@ -123,27 +132,36 @@ export function HomePage({
               </span>
             </header>
             <div className="flex items-center gap-[18px] mx-3.5 mt-2.5 px-3.5 py-2.5 border border-line rounded-xl bg-[linear-gradient(115deg,var(--panel-heading),var(--surface)_70%)] backdrop-blur-md">
-              <button
-                className={`inline-flex items-center gap-2.5 shrink-0 min-h-11 px-[22px] py-2 rounded-[12px] border-0 text-[15px] font-[650] tracking-[0.2px] text-on-accent bg-[linear-gradient(160deg,var(--accent),var(--accent-hover))] shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_22px_rgba(10,132,255,0.35)] hover:brightness-[1.07] ${
-                  recording
-                    ? "bg-[linear-gradient(160deg,var(--danger),#c94a60)] shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_22px_rgba(200,60,80,0.35)]"
-                    : ""
-                }`}
-                disabled={busy && !recording}
-                onClick={() =>
-                  ["missing", "error"].includes(status.engine) && !recording
-                    ? onNavigate("models")
-                    : onToggleRecord()
-                }
-                aria-label={recording ? "Stop dictation" : "Start dictation"}
-              >
-                {recording ? (
-                  <Square className="w-5 h-5 animate-[voice_1.2s_ease-in-out_infinite]" />
-                ) : (
+              {recording ? (
+                <span
+                  className="inline-flex items-center gap-2 shrink-0 text-[13px] font-[650] text-accent-ink"
+                  role="status"
+                >
+                  <Mic className="w-4 h-4 animate-[voice_1.2s_ease-in-out_infinite]" />
+                  Listening
+                </span>
+              ) : (
+                <button
+                  className="inline-flex items-center gap-2.5 shrink-0 min-h-11 px-[22px] py-2 rounded-[12px] border-0 text-[15px] font-[650] tracking-[0.2px] text-on-accent bg-[linear-gradient(160deg,var(--accent),var(--accent-hover))] shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_22px_rgba(10,132,255,0.35)] hover:brightness-[1.07]"
+                  disabled={busy}
+                  onClick={() => {
+                    if (needsSetup) {
+                      onNavigate("models");
+                    } else {
+                      startedFromHome.current = true;
+                      void onToggleRecord().then((started) => {
+                        if (!started) startedFromHome.current = false;
+                      }).catch(() => {
+                        startedFromHome.current = false;
+                      });
+                    }
+                  }}
+                  aria-label={needsSetup ? "Set up speech" : "Start dictation"}
+                >
                   <Mic className="w-5 h-5" />
-                )}
-                <span>{recording ? "Stop" : "Record"}</span>
-              </button>
+                  <span>{needsSetup ? "Set up speech" : "Record"}</span>
+                </button>
+              )}
               <div className="flex flex-col justify-center gap-1 flex-1 min-w-0">
                 <div className="engine-line border-0 m-0 p-0 min-h-0">
                   <span
@@ -161,8 +179,8 @@ export function HomePage({
                 <span className="text-[11px] text-muted">
                   {recording
                     ? portal && s.shortcutMode === "hold"
-                      ? "Listening — release the shortcut or press Stop"
-                      : "Listening — press the shortcut again or press Stop"
+                      ? "Release the shortcut or press Stop in the header to finish."
+                      : "Press the shortcut again or press Stop in the header to finish."
                     : portal && s.shortcutMode === "hold"
                       ? "Hold your shortcut, or press Record, and just talk."
                       : "Press your shortcut or Record to start; press again to finish."}
