@@ -61,15 +61,19 @@ $entries = @($acl.Access | ForEach-Object {
 async function ownedProbe(role, parent) {
   let directory;
   let path;
+  let directoryCreated = false;
+  let fileCreated = false;
   const result = { role, status: "unknown" };
   try {
     const parentInfo = await lstat(parent);
     if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) throw Object.assign(new Error(), { code: "UNSAFE_PARENT" });
     directory = join(parent, `.delulu-permission-probe-${randomUUID()}`);
     await mkdir(directory, { mode: 0o700 });
+    directoryCreated = true;
     path = join(directory, "probe.txt");
     const payload = `synthetic permission probe ${randomUUID()}`;
     await writeFile(path, payload, { flag: "wx", mode: 0o600 });
+    fileCreated = true;
     result.roundTrip = await readFile(path, "utf8") === payload;
     result.directory = await observe(`${role}-directory`, directory);
     result.file = await observe(`${role}-file`, path);
@@ -79,8 +83,8 @@ async function ownedProbe(role, parent) {
   } finally {
     // Remove only the exact newly created file/directory. Never recurse through
     // user data or delete another file even if something changed during a probe.
-    try { if (path) await unlink(path); } catch (reason) { if (reason.code !== "ENOENT") result.cleanupErrorCode = reason.code; }
-    try { if (directory) await rmdir(directory); } catch (reason) { if (reason.code !== "ENOENT") result.cleanupErrorCode = reason.code; }
+    try { if (fileCreated) await unlink(path); } catch (reason) { if (reason.code !== "ENOENT") result.cleanupErrorCode = reason.code; }
+    try { if (directoryCreated) await rmdir(directory); } catch (reason) { if (reason.code !== "ENOENT") result.cleanupErrorCode = reason.code; }
   }
   return result;
 }
