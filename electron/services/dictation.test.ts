@@ -85,6 +85,7 @@ function harness(
   );
   return {
     service,
+    asr,
     copied,
     pasted,
     records,
@@ -142,6 +143,38 @@ function captureHarness(settings: AppSettings = { ...DEFAULT_SETTINGS }) {
     },
   };
 }
+
+test("a controller disconnect during submitted inference cannot admit another capture", async () => {
+  const h = harness({
+    ...DEFAULT_SETTINGS,
+    magicEnabled: false,
+    autoPaste: false,
+  });
+  let finish!: (result: Record<string, unknown>) => void;
+  h.asr.transcribe = () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
+  try {
+    const pending = h.service.submitRecording({
+      wav: new Uint8Array(128),
+      durationMs: 1000,
+    });
+    await Promise.resolve();
+    expect(h.service.isActive).toBe(true);
+    expect(h.service.canStopRecording).toBe(false);
+    h.service.recorderUnavailable();
+    expect(h.service.isActive).toBe(true);
+    h.service.start();
+    expect(h.service.isActive).toBe(true);
+    finish({ text: "Original submitted speech", language: "en" });
+    await pending;
+    expect(h.service.isActive).toBe(false);
+    expect(h.records[0].text).toBe("Original submitted speech");
+  } finally {
+    h.cleanup();
+  }
+});
 
 describe("dictation delivery pipeline", () => {
   for (const action of ["stop", "cancel", "ready"] as const) {

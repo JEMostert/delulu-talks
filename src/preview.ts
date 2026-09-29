@@ -53,6 +53,13 @@ function desktopOnly(): never {
 }
 
 export const previewApi: DeluluApi = {
+  async getRendererRecoveryState() {
+    return { canReload: true, reason: null, canStopRecording: false };
+  },
+  async reloadWorkspace() {
+    window.location.reload();
+  },
+  async rendererControllerFailed() {},
   async getDiagnostics() {
     return {
       platform: "Browser preview",
