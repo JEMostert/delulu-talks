@@ -18,7 +18,6 @@ import platform
 import re
 import sys
 import time
-import traceback
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -182,9 +181,32 @@ def emit(payload: dict[str, Any], command: str | None = None) -> None:
 
 
 def bounded_error(exc: Exception) -> str:
-    message = (str(exc) or type(exc).__name__)[:MAX_ERROR_BYTES]
-    encoded = message.encode("utf-8", errors="replace")
-    return encoded[:MAX_ERROR_BYTES].decode("utf-8", errors="ignore")
+    # Exception strings can echo prompts, audio filenames, URLs or model inputs.
+    # Return fixed causes/actions rather than trying to redact arbitrary prose.
+    detail = str(exc).lower()
+    if "out of memory" in detail or "memory allocation" in detail or isinstance(exc, MemoryError):
+        return "Model out of memory. Unload the other model or select a smaller rewriting model."
+    if isinstance(exc, (ModuleNotFoundError, ImportError)):
+        return "Model dependency unavailable. Repair this runtime."
+    if isinstance(exc, PermissionError):
+        return "Permission denied for a required local resource. Check permissions and retry."
+    if isinstance(exc, FileNotFoundError):
+        return "Required file unavailable. Re-select the audio file or repair this runtime."
+    if "cuda" in detail or "cudnn" in detail or "cublas" in detail or "nvidia" in detail:
+        return "CUDA accelerator failed. Check the GPU driver and runtime setup, then reload."
+    if "not loaded" in detail or "no model is loaded" in detail:
+        return "No model is loaded. Load the model and retry."
+    if "cancelled" in detail or "canceled" in detail:
+        return "Model operation cancelled. Retry when ready."
+    if "connection" in detail or "network" in detail or "download" in detail or "offline" in detail:
+        return "Model download or connection failed. Check connectivity and retry setup."
+    if isinstance(exc, TimeoutError) or "timed out" in detail:
+        return "Model operation timed out. Reload the model and retry."
+    if "protocol" in detail or "byte limit" in detail or "mib limit" in detail or isinstance(exc, json.JSONDecodeError):
+        return "Model worker protocol failed. Restart the app or repair its runtime."
+    if isinstance(exc, (ValueError, TypeError, KeyError)):
+        return "Invalid model input. Check the audio or text selection and retry."
+    return "Model backend failed. Reload the model or repair its runtime. Details omitted to protect text and local paths."
 
 
 class Worker:
@@ -641,8 +663,8 @@ def main() -> int:
                 return 0
         except Exception as exc:
             error = bounded_error(exc)
-            traceback.print_tb(exc.__traceback__, file=sys.stderr)
-            sys.stderr.write(f"{type(exc).__name__}: {error}\n")
+            # Do not print traceback source lines, absolute paths or raw exceptions.
+            sys.stderr.write(f"Worker failure: {error}\n")
             emit({"id": request_id, "ok": False, "error": error})
         finally:
             operation.close()

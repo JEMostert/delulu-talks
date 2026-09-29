@@ -19,7 +19,9 @@ export type ProfileStarterId = (typeof PROFILE_STARTERS)[number]["id"];
 export type PersonalProfileCommand =
   | { action: "create"; name: string; starter: ProfileStarterId }
   | { action: "rename"; id: string; name: string }
-  | { action: "delete"; id: string };
+  | { action: "duplicate"; id: string; name: string }
+  | { action: "delete"; id: string }
+  | { action: "import"; document: PersonalProfileDocument; includeVocabulary: boolean };
 
 function profileName(value: unknown): string {
   if (typeof value !== "string" || !value.trim() || value.trim().length > 128) {
@@ -29,6 +31,22 @@ function profileName(value: unknown): string {
 }
 function nameKey(name: string): string {
   return name.normalize("NFKC").toLowerCase();
+}
+
+/** Enabled saved shortcuts with overlapping language scope must be unambiguous. */
+function validateShortcutConflicts(profile: PersonalProfileV1): void {
+  const shortcuts = profile.vocabulary.rules.filter((rule) => rule.enabled && rule.kind === "shortcut");
+  const trigger = (value: string) => value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+  for (let index = 0; index < shortcuts.length; index += 1) {
+    const rule = shortcuts[index];
+    const terms = new Set([rule.term, rule.soundsLike].map(trigger).filter(Boolean));
+    for (const other of shortcuts.slice(index + 1)) {
+      const overlaps = !rule.language || rule.language === "auto" || !other.language || other.language === "auto" || rule.language === other.language;
+      if (overlaps && [other.term, other.soundsLike].map(trigger).some((value) => terms.has(value))) {
+        throw new Error(`Profile “${profile.name}” has conflicting enabled shortcuts “${rule.term}” and “${other.term}”. Disable or rename one before importing or duplicating.`);
+      }
+    }
+  }
 }
 
 /** Prepare a starter from supported current settings; never apply it to the app. */
@@ -57,13 +75,43 @@ export function changePersonalProfiles(settings: AppSettings, input: unknown, ne
   if (current.status !== "supported") throw new Error("These profiles use a newer schema and are read-only in this app.");
   const document = current.document;
   const profiles = document.profiles;
-  if (command.action === "create") {
+  if (command.action === "import") {
+    if (typeof command.includeVocabulary !== "boolean") throw new Error("Choose whether to import personal vocabulary.");
+    const imported = readPersonalProfiles(command.document);
+    if (imported.status !== "supported") throw new Error("This export needs a newer compatible app version.");
+    if (!imported.document.profiles.length) throw new Error("This export contains no profiles.");
+    if (profiles.length + imported.document.profiles.length > 128) throw new Error("Import would exceed the 128-profile limit.");
+    const names = new Set(profiles.map((profile) => nameKey(profile.name)));
+    for (const entry of imported.document.profiles) {
+      const name = profileName(entry.name);
+      if (names.has(nameKey(name))) throw new Error(`A profile named “${name}” already exists or appears twice in this import. Rename it before importing.`);
+      names.add(nameKey(name));
+      if (command.includeVocabulary) validateShortcutConflicts(entry);
+    }
+    // Validate the entire batch before adding anything; never overwrite IDs.
+    for (const entry of imported.document.profiles) {
+      const importedProfile = structuredClone(entry);
+      importedProfile.id = newId();
+      importedProfile.name = profileName(importedProfile.name);
+      if (!command.includeVocabulary) importedProfile.vocabulary.rules = [];
+      profiles.push(importedProfile);
+    }
+  } else if (command.action === "create") {
     const name = profileName(command.name);
     if (profiles.some((profile) => nameKey(profile.name) === nameKey(name))) throw new Error("A profile with this name already exists. Choose another name.");
     if (profiles.length >= 128) throw new Error("The profile limit (128) has been reached.");
     const starter = PROFILE_STARTERS.find((item) => item.id === command.starter);
     if (!starter) throw new Error("Unknown profile starter.");
     profiles.push(profileForStarter(settings, starter.id, newId(), name));
+  } else if (command.action === "duplicate") {
+    if (typeof command.id !== "string") throw new Error("Expected a profile ID.");
+    const source = profiles.find((profile) => profile.id === command.id);
+    if (!source) throw new Error("This profile no longer exists.");
+    if (profiles.length >= 128) throw new Error("The profile limit (128) has been reached.");
+    const name = profileName(command.name);
+    if (profiles.some((profile) => nameKey(profile.name) === nameKey(name))) throw new Error("A profile with this name already exists. Choose another name.");
+    validateShortcutConflicts(source);
+    profiles.push({ ...structuredClone(source), id: newId(), name });
   } else if (command.action === "rename" || command.action === "delete") {
     if (typeof command.id !== "string") throw new Error("Expected a profile ID.");
     const index = profiles.findIndex((profile) => profile.id === command.id);
