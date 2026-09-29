@@ -372,3 +372,41 @@ evaluations when their consent changes.
 
 **UNVERIFIED — checks not run per user instruction**. No recordings or actual
 consent were collected, no corpus was built, and no native accuracy is claimed.
+
+## External Parakeet multilingual reference
+
+`scripts/external_parakeet_benchmark.py` uses the publisher's documented
+Transformers `AutoModelForTDT`/`AutoProcessor` interface in a separate existing
+observer environment. [NVIDIA's model card](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
+identifies Parakeet TDT 0.6B v3 as multilingual and lists CC-BY-4.0. The runner
+retains NVIDIA attribution, model-card URL and the actual immutable checkpoint
+revision. Runtime compatibility still depends on the installed Transformers
+version supporting that interface; missing APIs fail, with no runtime repair or
+package installation performed by the runner.
+
+```sh
+python scripts/external_parakeet_benchmark.py --execute-native --revision FULL_COMMIT_SHA \
+  --manifest local-corpus/corpus.json --provenance parakeet-provenance.json \
+  --cache-dir /path/to/external-cache --output-directory parakeet-run
+```
+
+The explicit execution flag, cached full-commit snapshot and consent-declared
+identical WAV corpus are mandatory. The model remains an
+`external-benchmark-control` outside the Delulu catalog. Use actual dtype in
+provenance; default CUDA BF16 requires a supported GPU. Explicit CPU references
+use `--device cpu --precision float32`, are labeled accordingly and should not
+be compared to CUDA resource figures without disclosing that difference.
+
+Parakeet uses automatic language identification; reports retain `auto` as its
+actual decode language and the expected corpus language separately. Compare
+quality on the same audio hashes and references; the language-conditioning
+tradeoff against forced-language R2T2 must remain disclosed. Load/warmup is
+separate, and external request timings cover predecoded PCM to output text with
+CUDA synchronization. App-adapter timings also include their input decoding,
+so these scopes are deliberately recorded instead of silently equated. Raw
+hypotheses, exact reports, dependency versions and incomplete status remain
+available for the comparison/artifact tools.
+
+**UNVERIFIED — checks not run per user instruction**. The external runner has
+not been executed, and no Parakeet/R2T2 quality or native compatibility is
+claimed. License attribution is metadata, not approval to publish private speech.
