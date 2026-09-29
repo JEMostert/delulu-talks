@@ -37,6 +37,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   shortcutMode: "hold",
   model: "r2t2",
   language: "en",
+  dictationMode: "prose",
   pythonCommand: "python3",
   inputDeviceId: "default",
   inputDeviceLabel: "System default",

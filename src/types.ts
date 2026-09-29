@@ -1,3 +1,4 @@
+import type { DictationMode } from "./technicalDictation";
 import type { ExportTemplateRequest } from "./exportTemplates";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
@@ -45,6 +46,7 @@ export type AppSettings = {
   shortcutMode: "hold" | "toggle";
   model: SpeechModelId;
   language: string;
+  dictationMode: DictationMode;
   pythonCommand: string;
   inputDeviceId: string;
   inputDeviceLabel: string;
@@ -191,6 +193,8 @@ export type TranscriptRecord = {
   /** Source version used for this rewrite; null means unknown legacy provenance. */
   rewriteSourceRevision?: number | null;
   personalizedText?: string | null;
+  technicalText?: string | null;
+  dictationMode?: DictationMode;
   editedText?: string | null;
   magicText?: string | null;
   magicModel?: MagicModelId | null;

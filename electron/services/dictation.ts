@@ -1,3 +1,4 @@
+import { renderTechnicalDictation } from "../../src/technicalDictation";
 import { personalizeWithUsage } from "../../src/personalization";
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { formatSpokenCommands } from "../../src/spokenFormatting";
@@ -457,7 +458,7 @@ export class DictationService {
         throw new Error("Personalization returned no text. Review your saved rules and retry.");
       }
       let magicFailure: string | null = null;
-      if (settings.magicEnabled) {
+      if (settings.magicEnabled && (!settings.dictationMode || settings.dictationMode === "prose")) {
         this.asr.setActivity(
           "transcribing",
           "Rewriting is polishing the transcript",
@@ -706,6 +707,12 @@ export class DictationService {
       createdAt: Date.now(),
       durationMs,
       text,
+      dictationMode: source === "dictation" ? settings.dictationMode ?? "prose" : "prose",
+      technicalText:
+        source === "dictation" &&
+        (settings.dictationMode === "code" || settings.dictationMode === "command")
+          ? renderTechnicalDictation(text, settings.dictationMode)
+          : null,
       sourceRevision: 0,
       rewriteSourceRevision: null,
       personalizedText: personalized.text,

@@ -22,7 +22,7 @@ export function deliveredText(record: TranscriptRecord): string {
     ((record.rewriteSourceRevision == null ||
       record.rewriteSourceRevision === transcriptSourceRevision(record))
       ? (record.magicText?.trim() ? record.magicText : null) : null) ||
-    (record.editedText == null ? record.personalizedText : null) ||
+    (record.editedText == null ? record.technicalText ?? record.personalizedText : null) ||
     transcriptText(record)
   );
 }
