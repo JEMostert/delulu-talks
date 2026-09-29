@@ -1,38 +1,6 @@
+import captureWorkletUrl from "./captureWorklet.js?url&no-inline";
 import { bridge } from "./bridge";
 import type { MicrophoneDevice, RecorderCommand } from "./types";
-
-const WORKLET_SOURCE = `
-class DeluluCaptureProcessor extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.chunks = [];
-    this.samples = 0;
-    this.sumSquares = 0;
-    this.port.onmessage = (event) => {
-      if (event.data === "flush") { this.flush(); this.port.postMessage({ flushed: true }); }
-    };
-  }
-  flush() {
-    if (!this.samples) return;
-    const merged = new Float32Array(this.samples);
-    let offset = 0;
-    for (const chunk of this.chunks) { merged.set(chunk, offset); offset += chunk.length; }
-    this.port.postMessage({ samples: merged, rms: Math.sqrt(this.sumSquares / this.samples) }, [merged.buffer]);
-    this.chunks = []; this.samples = 0; this.sumSquares = 0;
-  }
-  process(inputs) {
-    const channel = inputs[0] && inputs[0][0];
-    if (channel) {
-      this.chunks.push(new Float32Array(channel));
-      this.samples += channel.length;
-      for (let index = 0; index < channel.length; index += 1) this.sumSquares += channel[index] * channel[index];
-      if (this.samples >= 2048) this.flush();
-    }
-    return true;
-  }
-}
-registerProcessor("delulu-capture", DeluluCaptureProcessor);
-`;
 
 function merge(chunks: Float32Array[]): Float32Array {
   const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
@@ -183,15 +151,7 @@ export class PcmRecorder {
   private async connectWorklet(): Promise<boolean> {
     if (!this.context) return false;
     try {
-      const blob = new Blob([WORKLET_SOURCE], {
-        type: "application/javascript",
-      });
-      const url = URL.createObjectURL(blob);
-      try {
-        await this.context.audioWorklet.addModule(url);
-      } finally {
-        URL.revokeObjectURL(url);
-      }
+      await this.context.audioWorklet.addModule(captureWorkletUrl);
       this.worklet = new AudioWorkletNode(this.context, "delulu-capture");
       this.worklet.port.onmessage = (
         event: MessageEvent<{ samples: Float32Array; rms: number }>,
