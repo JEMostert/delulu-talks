@@ -44,7 +44,7 @@ jobs:
 
       - name: Verify and build application
         run: |
-          bun test
+          bun run test
           bun run build
 
       - name: Verify tag matches package version
@@ -65,7 +65,19 @@ jobs:
 
       - name: Test Mac package replacement and relaunch
         if: runner.os == 'macOS'
-        run: node scripts/mac-package-smoke.mjs "release/mac-arm64/Delulu Talks.app"
+        run: bun run test:mac-package -- "release/mac-arm64/Delulu Talks.app"
+
+      - name: Summarize package verification evidence
+        if: always()
+        run: bun run test:evidence
+
+      - name: Preserve package verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-verification-${{ matrix.name }}
+          path: artifacts/verification/
+          if-no-files-found: warn
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
@@ -91,6 +103,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: delulu-talks-*
           merge-multiple: true
 
       - name: Publish GitHub release
