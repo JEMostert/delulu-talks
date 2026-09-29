@@ -8,6 +8,7 @@ import type {
   MagicRewriteRequest,
   MagicStatus,
   Page,
+  PasteLastStatus,
   RecorderCommand,
   RecordingSubmission,
   ShortcutStatus,
@@ -32,6 +33,11 @@ const api: DeluluApi = {
     ipcRenderer.invoke("renderer:controllerFailed"),
   getDiagnostics: () => ipcRenderer.invoke("runtime:diagnostics"),
   pasteLastTranscript: () => ipcRenderer.invoke("dictation:pasteLast"),
+  getPasteLastStatus: () => ipcRenderer.invoke("dictation:pasteLastStatus"),
+  cancelPasteLast: (operationId: string) =>
+    ipcRenderer.invoke("dictation:cancelPasteLast", operationId),
+  onPasteLastStatus: (callback: (status: PasteLastStatus) => void) =>
+    listener("dictation:pasteLastChanged", callback),
   discardFailedRecording: () => ipcRenderer.invoke("dictation:discardFailed"),
   retryRecording: () => ipcRenderer.invoke("dictation:retry"),
   getSettings: () => ipcRenderer.invoke("settings:get"),

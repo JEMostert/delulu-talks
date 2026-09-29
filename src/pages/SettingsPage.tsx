@@ -284,6 +284,27 @@ export function SettingsPage(props: Props) {
               </SettingRow>
             )}
             <SettingRow
+              title="Paste-last delay"
+              description="Wait before sending paste keystrokes so you can focus the intended field. Cancel from the countdown or tray. Destination insertion cannot be confirmed."
+            >
+              <select
+                aria-label="Paste-last delay"
+                value={s.pasteLastDelaySeconds}
+                disabled={saving}
+                onChange={(e) =>
+                  save({ pasteLastDelaySeconds: Number(e.target.value) })
+                }
+              >
+                {Array.from({ length: 30 }, (_, index) => index + 1).map(
+                  (seconds) => (
+                    <option key={seconds} value={seconds}>
+                      {seconds} seconds
+                    </option>
+                  ),
+                )}
+              </select>
+            </SettingRow>
+            <SettingRow
               title="Copy results to clipboard"
               description="Keep text ready for a manual paste."
             >

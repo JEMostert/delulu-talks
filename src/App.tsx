@@ -15,6 +15,7 @@ import type { useWorkspace } from "./hooks/useWorkspace";
 import { useTheme } from "./hooks/useTheme";
 import { Sidebar } from "./components/Sidebar";
 import { Onboarding } from "./components/Onboarding";
+import { PasteLastNotice } from "./components/PasteLastNotice";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { Alert } from "./components/ui";
 import { HomePage } from "./pages/HomePage";
@@ -280,6 +281,10 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           id="page-content"
           tabIndex={-1}
         >
+          <PasteLastNotice
+            status={w.pasteLastStatus}
+            onCancel={w.cancelPasteLast}
+          />
           {!w.ready ? (
             <div className="empty-state mx-auto max-w-[1440px]">
               {w.startupError ? (
@@ -317,6 +322,9 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     void w.saveSettings(patch, null);
                   }}
                   onPasteLast={w.pasteLast}
+                  pasteLastBusy={["pending", "delivering"].includes(
+                    w.pasteLastStatus.phase,
+                  )}
                   onToggleRecord={onRecord}
                   {...transcriptActions}
                 />

@@ -36,6 +36,7 @@ export type AppSettings = {
   inputDeviceId: string;
   inputDeviceLabel: string;
   autoPaste: boolean;
+  pasteLastDelaySeconds: number;
   copyToClipboard: boolean;
   pastePortalToken: string;
   keepHistory: boolean;
@@ -212,7 +213,9 @@ export type DeluluApi = {
   rendererControllerFailed(): Promise<void>;
   getSettings(): Promise<AppSettings>;
   getDiagnostics(): Promise<RuntimeDiagnostics>;
-  pasteLastTranscript(): Promise<void>;
+  pasteLastTranscript(): Promise<PasteLastStatus>;
+  getPasteLastStatus(): Promise<PasteLastStatus>;
+  cancelPasteLast(operationId: string): Promise<PasteLastStatus>;
   retryRecording(): Promise<void>;
   discardFailedRecording(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
@@ -257,6 +260,7 @@ export type DeluluApi = {
   recordingFailed(message: string): Promise<void>;
   recordingLevel(level: number): void;
   submitRecording(recording: RecordingSubmission): Promise<void>;
+  onPasteLastStatus(callback: (status: PasteLastStatus) => void): () => void;
   onStatus(callback: (status: DictationStatus) => void): () => void;
   onMagicStatus(callback: (status: MagicStatus) => void): () => void;
   onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
@@ -284,4 +288,19 @@ export type RuntimeDiagnostics = {
   runtimeInstalled: boolean;
   packages: Record<string, string>;
   checkedAt: number;
+};
+
+export type PasteLastStatus = {
+  phase:
+    | "idle"
+    | "pending"
+    | "delivering"
+    | "attempted"
+    | "copied"
+    | "cancelled"
+    | "error";
+  operationId: string | null;
+  dueAt: number | null;
+  remainingSeconds: number;
+  message: string;
 };
