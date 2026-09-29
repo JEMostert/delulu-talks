@@ -5,10 +5,13 @@ import {
   WorkerDiagnosticTail,
   serializeWorkerRequest,
   workerProtocolLimits,
+  validateWorkerResponse,
+  validateWorkerResult,
   type WorkerProtocolLimits,
 } from "./workerProtocol";
 
 type Pending = {
+  command: string;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
@@ -80,11 +83,10 @@ export class WorkerClient {
       }
       if (!line.startsWith(PREFIX)) return true;
       try {
-        const response = JSON.parse(line.slice(PREFIX.length));
-        if (typeof response.id !== "string" || typeof response.ok !== "boolean")
-          throw new Error("Invalid model worker response");
+        const response = validateWorkerResponse(JSON.parse(line.slice(PREFIX.length)));
         const request = this.pending.get(response.id);
         if (!request) return true;
+        if (response.ok) validateWorkerResult(request.command, response.result);
         clearTimeout(request.timer);
         this.pending.delete(response.id);
         if (response.ok) request.resolve(response.result);
@@ -172,6 +174,7 @@ export class WorkerClient {
         timeoutMs,
       );
       this.pending.set(id, {
+        command,
         resolve: (value) => resolve(value as T),
         reject,
         timer,

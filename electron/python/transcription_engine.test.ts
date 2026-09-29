@@ -11,6 +11,7 @@ test("Windows worker routes all speech commands to native CUDA without importing
       "-c",
       `
 import importlib.util,sys,types
+sys.path.insert(0, str(__import__('pathlib').Path(sys.argv[1]).parent))
 spec=importlib.util.spec_from_file_location('engine',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 calls=[]
 class Speech:
@@ -59,6 +60,7 @@ test("speech load warms bounded inference before reporting ready and restores no
       "-c",
       `
 import importlib.util, sys, types
+sys.path.insert(0, str(__import__('pathlib').Path(sys.argv[1]).parent))
 spec=importlib.util.spec_from_file_location('engine',sys.argv[1])
 m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 calls=[]
@@ -92,6 +94,7 @@ test("PCM transcription uses the lightweight reader and reports preparation plus
       "-c",
       `
 import importlib.util,sys,types
+sys.path.insert(0, str(__import__('pathlib').Path(sys.argv[1]).parent))
 spec=importlib.util.spec_from_file_location('engine',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class Audio:
     ndim=1
@@ -119,6 +122,7 @@ test("stereo imports are mixed to mono and resampled before inference", () => {
       "-c",
       `
 import importlib.util,sys,types
+sys.path.insert(0, str(__import__('pathlib').Path(sys.argv[1]).parent))
 spec=importlib.util.spec_from_file_location('engine',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class Mono:
     ndim=1
@@ -151,6 +155,7 @@ assert w.transcribe({'audioPath':sys.argv[1]})['duration']==1
 function buildPrompt(allowInferences: boolean) {
   const script = [
     "import importlib.util, json, sys",
+    "sys.path.insert(0, str(__import__('pathlib').Path(sys.argv[1]).parent))",
     "spec = importlib.util.spec_from_file_location('engine', sys.argv[1])",
     "module = importlib.util.module_from_spec(spec)",
     "spec.loader.exec_module(module)",
