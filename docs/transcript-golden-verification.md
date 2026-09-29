@@ -10,8 +10,10 @@ Run:
 
 ```sh
 bun test electron/services/transcriptGolden.test.ts
-bun run test:e2e -- tests/e2e/transcript-golden.pw.ts
+bunx playwright test tests/e2e/transcript-golden.pw.ts
 ```
+
+For a complete browser-suite evidence report, use `bun run test:e2e` without a file filter. The evidence wrapper deliberately rejects filtered runs. `DELULU_TEST_WEB_PORT` selects an isolated test server port when other agents are testing.
 
 Two temporary regression experiments demonstrated that the service cases fail when protected blocks are sent to the model or when a correction overwrites the source transcript. Both mutations were removed before committing.
 
