@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { bridge } from "../bridge";
-import { deliveredText, transcriptText } from "../transcriptText";
+import { deliveredText, transcriptText, transcriptSourceRevision } from "../transcriptText";
 import type { AudioFileSelection, MagicRewriteRequest, Page, TranscriptRecord } from "../types";
 
 export type ImportOperation = {
@@ -14,6 +14,8 @@ export type RewriteOperation = {
   transcriptId: string;
   label: string;
   source: string;
+  sourceRevision: number;
+  sourceLanguage: string;
   baseline: string;
   origin: Page;
   visible: boolean;
@@ -66,7 +68,7 @@ export function useWorkspaceOperations(receiveTranscript: (record: TranscriptRec
     // A second card resumes the existing draft instead of replacing its source/result.
     const current = rewriteRef.current;
     if (current) { writeRewrite({ ...current, visible: true }); return; }
-    writeRewrite({ key: ++nextKey.current, transcriptId: record.id, label: `${record.sourceName ?? "Dictation"} · ${new Date(record.createdAt).toLocaleString()}`, source: transcriptText(record), baseline: deliveredText(record), origin, visible: true, phase: "draft" });
+    writeRewrite({ key: ++nextKey.current, transcriptId: record.id, label: `${record.sourceName ?? "Dictation"} · ${new Date(record.createdAt).toLocaleString()}`, source: transcriptText(record), sourceRevision: transcriptSourceRevision(record), sourceLanguage: record.language, baseline: deliveredText(record), origin, visible: true, phase: "draft" });
   };
   const showRewrite = () => {
     if (rewriteRef.current) writeRewrite({ ...rewriteRef.current, visible: true });
