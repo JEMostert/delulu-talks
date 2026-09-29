@@ -15,7 +15,9 @@ export function transcriptIsEdited(record: TranscriptRecord): boolean {
 export function deliveredText(record: TranscriptRecord): string {
   return (
     record.magicText?.trim() ||
-    (record.editedText == null ? record.personalizedText : null) ||
+    (record.editedText == null
+      ? record.technicalText ?? record.personalizedText
+      : null) ||
     transcriptText(record)
   );
 }
