@@ -72,12 +72,12 @@ export function ruleConflict(
   words: CustomWord[],
 ): string | null {
   const triggers = ruleTriggers(draft);
+  if (!triggers.length) return null;
+  const pattern = new RegExp(`^(?:${triggers.map(escape).join("|")})$`, "iu");
   const conflict = words.find(
     (word) =>
       word.id !== draft.id &&
-      ruleTriggers(word).some((trigger) =>
-        triggers.some((phrase) => samePhrase(phrase, trigger)),
-      ),
+      ruleTriggers(word).some((trigger) => pattern.test(trigger)),
   );
   return conflict
     ? `This phrase is already used by “${conflict.term}”. Edit that rule or choose another phrase.`

@@ -321,6 +321,12 @@ describe("vocabulary edge cases", () => {
       const last = (500 * 200 - 1).toString(36).padStart(4, '0');
       const input = '0000 ' + last + ' 0000';
       assert.equal(personalize(input, words), 'fixed fixed fixed');
+      assert.equal(ruleConflict({
+        ...words[0], id: 'new',
+        soundsLike: Array.from({ length: 200 }, (_, alias) =>
+          (500 * 200 + alias).toString(36).padStart(4, '0')
+        ).join(','),
+      }, words), null);
       const shortcuts = words.map((word, index) => ({
         ...word, kind: 'shortcut', term: 'block-' + index,
         replacement: 'EXACT-' + index,
