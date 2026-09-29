@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -79,14 +80,18 @@ function readProfileJson(
   return value;
 }
 
-function writeJson(path: string, value: unknown): void {
+function stageJson(path: string, value: unknown): string {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
     encoding: "utf8",
     mode: 0o600,
   });
-  renameSync(temporary, path);
+  return temporary;
+}
+
+function writeJson(path: string, value: unknown): void {
+  renameSync(stageJson(path, value), path);
 }
 
 function safeString(value: unknown, fallback: string, max = 512): string {
@@ -347,9 +352,38 @@ export class StorageService {
           .flatMap((item) => migrateRecord(item) ?? [])
           .slice(0, MAX_HISTORY)
       : [];
-    writeJson(settingsPath, this.settings);
-    if (!existsSync(historyPath) && this.history.length)
-      writeJson(historyPath, this.history);
+    if (!existsSync(historyPath) && this.history.length) {
+      // Stage both migration outputs before replacing either destination.
+      // Publish the previously absent history first: if the settings rename
+      // fails, remove only the history created by this attempt. Existing
+      // settings and both legacy source files remain untouched.
+      const stagedSettings = stageJson(settingsPath, this.settings);
+      let stagedHistory: string | undefined;
+      let historyPublished = false;
+      try {
+        stagedHistory = stageJson(historyPath, this.history);
+        renameSync(stagedHistory, historyPath);
+        historyPublished = true;
+        renameSync(stagedSettings, settingsPath);
+      } catch (error) {
+        if (historyPublished) {
+          try {
+            rmSync(historyPath);
+          } catch (rollbackError) {
+            throw new AggregateError(
+              [error, rollbackError],
+              "Profile migration failed and its newly created history could not be rolled back. Existing settings and legacy source files were preserved.",
+            );
+          }
+        }
+        throw error;
+      } finally {
+        rmSync(stagedSettings, { force: true });
+        if (stagedHistory) rmSync(stagedHistory, { force: true });
+      }
+    } else {
+      writeJson(settingsPath, this.settings);
+    }
   }
 
   private findLegacyDirectory(): string | null {
