@@ -108,6 +108,8 @@ export type TranscriptRecord = {
   requestedLanguage?: string | null;
   /** Language reported by the backend; forced prompts may influence it. */
   recognizedLanguage?: string | null;
+  recognizedLanguages?: string[];
+  languageStatus?: "reported" | "mixed" | "unknown";
   source: TranscriptSource;
   sourceName?: string | null;
   processingTimeMs: number;

@@ -1,6 +1,6 @@
 import { personalize } from "../../src/personalization";
 import { deliveredText } from "../../src/transcriptText";
-import { normalizeReportedLanguage } from "../../src/transcriptLanguage";
+import { normalizeLanguageMetadata } from "../../src/transcriptLanguage";
 import type { BrowserWindow } from "electron";
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -541,6 +541,7 @@ export class DictationService {
     const text = String(result.text ?? "").trim();
     const durationMs =
       durationOverride ?? Math.round(numeric(result.duration) * 1000);
+    const languageMetadata = normalizeLanguageMetadata(result);
     return {
       id: randomUUID(),
       createdAt: Date.now(),
@@ -548,8 +549,8 @@ export class DictationService {
       text,
       personalizedText: personalize(text, settings.customWords),
       model: settings.model,
-      language: normalizeReportedLanguage(result.recognizedLanguage) ?? "und",
-      recognizedLanguage: normalizeReportedLanguage(result.recognizedLanguage),
+      language: languageMetadata.recognizedLanguage ?? "und",
+      ...languageMetadata,
       requestedLanguage: settings.language,
       source,
       sourceName,

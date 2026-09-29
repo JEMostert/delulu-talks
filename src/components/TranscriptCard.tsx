@@ -1,4 +1,5 @@
 import { RewriteDialog } from "./RewriteDialog";
+import { normalizeLanguageMetadata } from "../transcriptLanguage";
 import { useState } from "react";
 import {
   BookPlus,
@@ -73,6 +74,7 @@ export function TranscriptCard({
   const [remember, setRemember] = useState(false);
   const [heard, setHeard] = useState("");
   const [correct, setCorrect] = useState("");
+  const languageMetadata = normalizeLanguageMetadata(record);
   const delivered = deliveredText(record);
   const edited = transcriptIsEdited(record);
   const text = showSource ? transcriptText(record) : delivered;
@@ -153,9 +155,12 @@ export function TranscriptCard({
             title="The backend language label may reflect a forced decoder hint; it is not an independent language detection result."
           >
             {record.recognizedLanguage !== undefined ||
-            record.requestedLanguage !== undefined ? (
+            record.requestedLanguage !== undefined ||
+            record.languageStatus !== undefined ? (
               <>
-                Backend language: {record.recognizedLanguage || "Unknown"}
+                {languageMetadata.languageStatus === "mixed"
+                  ? `Backend languages: Mixed (${languageMetadata.recognizedLanguages.join(", ")})`
+                  : `Backend language: ${languageMetadata.recognizedLanguage || "Unknown"}`}
                 {" · "}Requested hint:{" "}
                 {record.requestedLanguage || "Not recorded"}
               </>

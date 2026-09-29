@@ -78,6 +78,42 @@ def normalize_recognized_language(value: Any) -> str | None:
     return {name.lower(): code for code, name in LANGUAGE_NAMES.items()}.get(label)
 
 
+def recognized_language_metadata(value: Any) -> dict[str, Any]:
+    """Describe returned labels, without inferring speech languages from hints.
+
+    Flatten the scalar/list segment labels used by the adapters, keeping
+    missing segments unknown. A reported label is not calibrated detection.
+    """
+    values = value if isinstance(value, list) else [value]
+    labels = []
+    for item in values:
+        if isinstance(item, list):
+            labels.extend(item if item else [None])
+        else:
+            labels.append(item)
+    languages = []
+    complete = bool(labels)
+    for label in labels:
+        code = normalize_recognized_language(label) if isinstance(label, str) else None
+        if code is None:
+            complete = False
+        elif code not in languages:
+            languages.append(code)
+    status = "unknown"
+    recognized = None
+    if complete:
+        if len(languages) >= 2:
+            status = "mixed"
+        elif len(languages) == 1:
+            status = "reported"
+            recognized = languages[0]
+    return {
+        "recognizedLanguage": recognized,
+        "recognizedLanguages": languages,
+        "languageStatus": status,
+    }
+
+
 MAGIC_MODELS = {
     "qwen35Small": "Qwen/Qwen3.5-0.8B",
     "qwen35Medium": "Qwen/Qwen3.5-2B",
@@ -437,12 +473,12 @@ class Worker:
         finished = time.perf_counter()
         # A returned label may reflect a forced prompt; it is not an independent
         # detector. Missing model metadata remains unknown even with a hint.
-        recognized_language = normalize_recognized_language(getattr(results[0], "language", None))
+        language_metadata = recognized_language_metadata(getattr(results[0], "language", None))
         return {
             "text": str(results[0].text).strip(),
-            "language": recognized_language or "und",
+            "language": language_metadata["recognizedLanguage"] or "und",
             "requestedLanguage": language_code,
-            "recognizedLanguage": recognized_language,
+            **language_metadata,
             "duration": len(wav) / 16000.0,
             "processingTime": finished - started,
             "inferenceTime": finished - inference_started,
