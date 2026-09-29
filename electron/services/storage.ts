@@ -565,7 +565,7 @@ export class StorageService {
   }
 
   addHistory(record: TranscriptRecord): void {
-    if (!this.settings.keepHistory) return;
+    if (!this.settings.keepHistory || record.sessionOnly) return;
     const next = [
       record,
       ...this.history.filter((item) => item.id !== record.id),

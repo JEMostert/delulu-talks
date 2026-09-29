@@ -7,6 +7,7 @@ import type { AppSettings, MagicPreset, Page, PasteRecovery, TranscriptRecord } 
 import { REWRITE_PRESETS } from "../src/rewritePresets";
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
 import { deliveredText } from "../src/transcriptText";
+import { rememberSessionTranscript } from "../src/sessionTranscriptRetention";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { ModelCacheService } from "./services/modelCache";
@@ -757,9 +758,7 @@ async function start(): Promise<void> {
     { main: () => mainWindow, pill },
     (record: TranscriptRecord) => {
       lastTranscript = record;
-      sessionTranscripts.set(record.id, record);
-      if (sessionTranscripts.size > 500)
-        sessionTranscripts.delete(sessionTranscripts.keys().next().value!);
+      rememberSessionTranscript(sessionTranscripts, record);
       broadcast("history:added", record);
       rebuildTrayMenu();
     },

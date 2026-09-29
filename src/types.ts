@@ -192,6 +192,8 @@ export type CaptureDiagnostics = {
  * Add score/uncertainty UI only with a backend calibration contract.
  */
 export type TranscriptRecord = {
+  /** Never automatically persisted, even if history is enabled later. */
+  sessionOnly?: boolean;
   id: string;
   title?: string | null;
   createdAt: number;

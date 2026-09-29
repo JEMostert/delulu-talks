@@ -1091,11 +1091,13 @@ export class AsrService {
     this.speechFailureGeneration += 1;
     const message = error instanceof Error ? error.message : String(error);
     try {
+      if (this.storage.getSettings().keepHistory) {
       writeFileSync(
         join(this.storage.dataDirectory, "last-asr-error.log"),
         privateFailureLog("speech", error, this.speechWorker.stderr),
         { encoding: "utf8", mode: 0o600 },
       );
+      }
     } catch {
       /* diagnostics are best-effort */
     }
@@ -1114,11 +1116,13 @@ export class AsrService {
     this.magicFailureGeneration += 1;
     const message = error instanceof Error ? error.message : String(error);
     try {
+      if (this.storage.getSettings().keepHistory) {
       writeFileSync(
         join(this.storage.dataDirectory, "last-magic-error.log"),
         privateFailureLog("magic", error, this.magicWorker.stderr),
         { encoding: "utf8", mode: 0o600 },
       );
+      }
     } catch {
       /* diagnostics are best-effort */
     }

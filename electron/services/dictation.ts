@@ -492,6 +492,8 @@ export class DictationService {
             .slice(0, 180);
         }
       }
+      record.sessionOnly =
+        !settings.keepHistory || !this.storage.getSettings().keepHistory;
       this.storage.addHistory(record);
       this.broadcastTranscript(record);
       const outputName = record.magicText ? "Rewrite result" : "Transcript";
@@ -580,6 +582,8 @@ export class DictationService {
         basename(request.path),
         settings,
       );
+      record.sessionOnly =
+        !settings.keepHistory || !this.storage.getSettings().keepHistory;
       this.storage.addHistory(record);
       this.broadcastTranscript(record);
       this.asr.setActivity("idle", "Speech Lab result ready");

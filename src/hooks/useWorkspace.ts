@@ -1,6 +1,7 @@
 import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
+import { retainSessionTranscripts } from "../sessionTranscriptRetention";
 import { DEFAULT_SETTINGS } from "../data";
 import { PcmRecorder, listMicrophones } from "../recorder";
 import { readStartupService } from "../startupServices";
@@ -81,7 +82,10 @@ export function useWorkspace() {
   };
   const receiveTranscript = (record: TranscriptRecord) =>
     setHistory((items) =>
-      [record, ...items.filter((item) => item.id !== record.id)].slice(0, 500),
+      retainSessionTranscripts([
+        record,
+        ...items.filter((item) => item.id !== record.id),
+      ]).slice(0, 500),
     );
 
   const operations = useWorkspaceOperations(receiveTranscript);
@@ -168,7 +172,7 @@ export function useWorkspace() {
         if (!received.has("settings")) receiveSettings(next.value);
         const initialHistory = new Map(records.value.map((record) => [record.id, record]));
         for (const record of liveRecords.values()) initialHistory.set(record.id, record);
-        setHistory([...initialHistory.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, 500));
+        setHistory(retainSessionTranscripts([...initialHistory.values()].sort((a, b) => b.createdAt - a.createdAt)));
         readingHistory = false;
         liveRecords.clear();
         if (!received.has("speech status")) {
@@ -327,7 +331,9 @@ export function useWorkspace() {
         const updated = await bridge.updateTranscript(id, text);
         if (!owner.alive) return;
         setHistory((items) =>
-          items.map((item) => (item.id === id ? updated : item)),
+          retainSessionTranscripts(
+            items.map((item) => (item.id === id ? updated : item)),
+          ),
         );
       },
       text === null ? "Original restored" : "Correction saved",

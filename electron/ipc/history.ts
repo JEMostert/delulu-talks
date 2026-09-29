@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { dialog, session } from "electron";
 import { writeFileSync } from "node:fs";
 import { extname } from "node:path";
-import { randomUUID } from "node:crypto";
 import type { ExportFormat, HistoryRetentionPreview, MagicPreset, TranscriptRecord } from "../../src/types";
 import { isMagicPreset } from "../../src/rewritePresets";
 import { deliveredText, transcriptSourceRevision } from "../../src/transcriptText";
 import { normalizeTranscriptTitle } from "../../src/transcriptTitle";
+import { rememberSessionTranscript, retainSessionTranscripts } from "../../src/sessionTranscriptRetention";
 import { applyTranscriptEdit } from "../services/storage";
 import { affectedByRetention, historyFingerprint, validateRetentionPolicy } from "../services/historyRetention";
 import { exportRecord, saveTemplateExport } from "../services/transcripts";
@@ -22,7 +22,7 @@ handle("history:get", () => {
       storage.getHistory().map((record) => [record.id, record]),
     );
     for (const [id, record] of sessionTranscripts) records.set(id, record);
-    return [...records.values()]
+    return retainSessionTranscripts([...records.values()])
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 500);
   });
@@ -78,7 +78,7 @@ handle("history:updateTranscript", (_event, id: unknown, text: unknown) => {
         ? applyTranscriptEdit(sessionRecord, correction)
         : null;
     if (!updated) throw new Error("Transcript not found");
-    sessionTranscripts.set(key, updated);
+    rememberSessionTranscript(sessionTranscripts, updated);
     if (getLastTranscript()?.id === key) setLastTranscript(updated);
     rebuildTrayMenu();
     return updated;
@@ -148,7 +148,7 @@ handle(
         };
       }
       if (storage.findHistory(key)) storage.replaceHistory(updated);
-      sessionTranscripts.set(key, updated);
+      rememberSessionTranscript(sessionTranscripts, updated);
       if (getLastTranscript()?.id === key) setLastTranscript(updated);
       rebuildTrayMenu();
       return updated;
