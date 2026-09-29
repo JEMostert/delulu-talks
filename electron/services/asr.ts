@@ -482,7 +482,7 @@ export class AsrService {
     } finally {
       this.speechOperations -= 1;
       this.scheduleSpeechIdle();
-      this.configureResidency(this.storage.getSettings());
+      this.applyDeferredResidency();
     }
   }
 
@@ -640,7 +640,7 @@ export class AsrService {
     } finally {
       this.magicOperations -= 1;
       this.scheduleMagicIdle();
-      this.configureResidency(this.storage.getSettings());
+      this.applyDeferredResidency();
     }
   }
 
@@ -682,20 +682,32 @@ export class AsrService {
       return;
     }
     this.residencyPending = false;
-    if (settings.preloadModel) {
+    if (settings.preloadModel && this.status.engine !== "error") {
       this.clearSpeechIdle();
       void this.isEnvironmentReady().then((ready) => {
         const current = this.storage.getSettings();
-        if (!ready || !current.preloadModel || this.shuttingDown) return;
+        if (
+          !ready ||
+          !current.preloadModel ||
+          this.shuttingDown ||
+          this.status.engine === "error"
+        )
+          return;
         if (this.isBusy) this.residencyPending = true;
         else void this.ensureLoaded(current).catch((error) => this.fail(error));
       });
     }
-    if (settings.preloadMagicModel) {
+    if (settings.preloadMagicModel && this.magicStatus.engine !== "error") {
       this.clearMagicIdle();
       void this.isMagicEnvironmentReady().then((ready) => {
         const current = this.storage.getSettings();
-        if (!ready || !current.preloadMagicModel || this.shuttingDown) return;
+        if (
+          !ready ||
+          !current.preloadMagicModel ||
+          this.shuttingDown ||
+          this.magicStatus.engine === "error"
+        )
+          return;
         if (this.isBusy) this.residencyPending = true;
         else
           void this.ensureMagicLoaded(current).catch((error) =>

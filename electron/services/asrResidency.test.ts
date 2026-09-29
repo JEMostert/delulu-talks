@@ -373,3 +373,41 @@ for (const kind of ["speech", "magic"]) {
       assert.equal(deadlines().length, 0);
     `));
 }
+
+for (const kind of ["speech", "magic"]) {
+  for (const deferredPolicy of [false, true]) {
+    test(`${kind} pinned worker failure requires deliberate recovery${deferredPolicy ? " even with deferred residency changes" : ""}`, () =>
+      verify(`
+        settings = { ...settings, ${kind === "speech" ? "preloadModel" : "preloadMagicModel"}: true };
+        await ${kind === "speech" ? "primeSpeech" : "primeMagic"}();
+        ${kind}.requests.length = 0;
+        ${kind}.gate = deferred();
+        const operation = ${kind === "speech" ? "service.transcribe({ durationMs: 1000 }, { ...settings })" : "service.rewriteMagic(rewriteRequest, { ...settings })"};
+        const rejected = assert.rejects(() => operation, /Fixture worker failure/);
+        await ticks();
+        assert.equal(${kind}.busy, true);
+        ${
+          deferredPolicy
+            ? `settings = { ...settings, modelIdleMinutes: 7 }; service.configureResidency(settings);`
+            : ""
+        }
+        const failure = new Error("Fixture worker failure");
+        service.${kind === "speech" ? "fail" : "failMagic"}(failure);
+        ${kind}.gate.reject(failure);
+        await rejected;
+        await ticks();
+        assert.deepEqual(${kind}.requests, [${JSON.stringify(kind === "speech" ? "transcribe" : "magicRewrite")}], "completion must not silently reload a failed pinned engine");
+        assert.equal(service.${kind === "speech" ? "getStatus" : "getMagicStatus"}().engine, "error");
+        assert.equal(service.isBusy, false);
+        assert.equal(deadlines().length, 0);
+        ${kind}.gate = null;
+        await ${kind === "speech" ? "primeSpeech" : "primeMagic"}();
+        await ${kind === "speech" ? "service.transcribe({ durationMs: 1000 }, settings)" : "service.rewriteMagic(rewriteRequest, settings)"};
+        await ticks();
+        assert.deepEqual(${kind}.requests, ${JSON.stringify(kind === "speech" ? ["transcribe", "load", "transcribe"] : ["magicRewrite", "magicLoad", "magicRewrite"])});
+        assert.equal(service.${kind === "speech" ? "getStatus" : "getMagicStatus"}().engine, "ready");
+        assert.equal(service.isBusy, false);
+        assert.equal(deadlines().length, 0);
+      `));
+  }
+}
