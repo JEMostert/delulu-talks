@@ -128,7 +128,7 @@ export function HomePage({
                     ? "bg-[linear-gradient(160deg,var(--danger),#c94a60)] shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_22px_rgba(200,60,80,0.35)]"
                     : ""
                 }`}
-                disabled={busy}
+                disabled={busy && !recording}
                 onClick={() =>
                   ["missing", "error"].includes(status.engine) && !recording
                     ? onNavigate("models")
@@ -159,8 +159,12 @@ export function HomePage({
                 </div>
                 <span className="text-[11px] text-muted">
                   {recording
-                    ? "Listening — release the shortcut or press Stop"
-                    : "Hold your shortcut, or press Record, and just talk."}
+                    ? portal && s.shortcutMode === "hold"
+                      ? "Listening — release the shortcut or press Stop"
+                      : "Listening — press the shortcut again or press Stop"
+                    : portal && s.shortcutMode === "hold"
+                      ? "Hold your shortcut, or press Record, and just talk."
+                      : "Press your shortcut or Record to start; press again to finish."}
                 </span>
               </div>
             </div>

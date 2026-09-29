@@ -5,28 +5,48 @@ import {
   LoaderCircle,
   Play,
   ShieldCheck,
+  WandSparkles,
 } from "lucide-react";
-import { modelById } from "../data";
+import { MAGIC_MODELS, magicModelById, modelById } from "../data";
 import { Diagnostics } from "../components/Diagnostics";
 import { Alert } from "../components/ui";
-import type { DictationStatus } from "../types";
+import type { AppSettings, DictationStatus, MagicStatus } from "../types";
 
 export function ModelsPage({
   status,
+  magicStatus,
+  settings,
+  busy,
+  saving,
+  onUpdateSettings,
+  onSetupMagic,
+  onLoadMagic,
+  onUnloadMagic,
   onSetup,
   onLoad,
   onUnload,
 }: {
   status: DictationStatus;
+  magicStatus: MagicStatus;
+  settings: AppSettings;
+  busy: boolean;
+  saving: boolean;
+  onUpdateSettings: (patch: Partial<AppSettings>) => void;
+  onSetupMagic: () => void;
+  onLoadMagic: () => void;
+  onUnloadMagic: () => void;
   onSetup: () => void;
   onLoad: () => void;
   onUnload: () => void;
 }) {
-  const model = modelById(status.speechModel ?? status.model ?? "r2t2");
-  const busy =
-    ["preparing", "loading", "listening", "transcribing"].includes(
-      status.phase,
-    ) || false;
+  const model = modelById(status.speechModel ?? status.model ?? settings.model);
+  const speechBusy = ["preparing", "loading", "transcribing"].includes(
+    status.phase,
+  );
+  const writingModel = magicModelById(settings.magicModel);
+  const writingBusy = ["preparing", "loading", "rewriting"].includes(
+    magicStatus.phase,
+  );
   return (
     <div className="content-stack">
       <section className="flex items-center gap-5 bg-hero rounded-panel p-7 shadow-panel backdrop-blur-xl max-[1150px]:flex-wrap">
@@ -44,7 +64,7 @@ export function ModelsPage({
                   : "Install the speech engine"
                 : status.engine === "error"
                   ? "Speech engine error"
-                  : busy
+                  : speechBusy
                     ? "Preparing speech engine…"
                     : "Speech model unloaded"}
           </h2>
@@ -77,7 +97,7 @@ export function ModelsPage({
             )
           )}
           <button className="primary-button" disabled={busy} onClick={onSetup}>
-            {busy ? <LoaderCircle className="spin" /> : <Download />}
+            {speechBusy ? <LoaderCircle className="spin" /> : <Download />}
             {status.engine === "missing"
               ? status.migrationRequired
                 ? "Update setup"
@@ -166,6 +186,90 @@ export function ModelsPage({
         <ShieldCheck className="w-3.5 h-3.5" /> Models stay on your device.
         Dictation runs fully locally.
       </p>
+      <section className="card" aria-labelledby="rewrite-model-heading">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">OPTIONAL REWRITING</span>
+            <h3 id="rewrite-model-heading">Rewrite where your text is</h3>
+          </div>
+          <WandSparkles className="h-5 w-5 text-accent-ink" />
+        </div>
+        <p className="mt-3 text-sm text-muted">
+          Use Rewrite beside any transcript to shorten, polish, organize, or
+          build a prompt. Compare the preview before applying it, and undo at
+          any time.
+        </p>
+        <div className="mt-4 flex flex-wrap items-end gap-4">
+          <label className="field min-w-[180px] flex-1">
+            Local rewrite model
+            <select
+              aria-label="Local rewrite model"
+              value={settings.magicModel}
+              disabled={busy || saving}
+              onChange={(event) =>
+                onUpdateSettings({
+                  magicModel: event.target.value as AppSettings["magicModel"],
+                })
+              }
+            >
+              {MAGIC_MODELS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="runtime-actions">
+            {magicStatus.engine === "ready" ? (
+              <button
+                className="secondary-button"
+                disabled={busy}
+                onClick={onUnloadMagic}
+              >
+                Unload rewriting
+              </button>
+            ) : magicStatus.engine === "unloaded" ? (
+              <button
+                className="secondary-button"
+                disabled={busy}
+                onClick={onLoadMagic}
+              >
+                <Play /> Load rewriting
+              </button>
+            ) : null}
+            <button
+              className="primary-button"
+              disabled={busy}
+              onClick={onSetupMagic}
+            >
+              {writingBusy ? <LoaderCircle className="spin" /> : <Download />}
+              {magicStatus.engine === "missing"
+                ? "Install rewriting"
+                : "Repair rewriting"}
+            </button>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-muted">{writingModel.description}</p>
+        <p className="mt-2 text-xs text-muted" role="status">
+          {magicStatus.message}
+        </p>
+        {writingBusy && (
+          <>
+            <progress
+              className="mt-3 w-full"
+              aria-label="Rewrite model setup stages"
+              max={1}
+              value={magicStatus.progress ?? undefined}
+            />
+            {magicStatus.detail && (
+              <p className="caption" role="status">
+                {magicStatus.detail}
+              </p>
+            )}
+          </>
+        )}
+        {magicStatus.engine === "error" && <Alert>{magicStatus.message}</Alert>}
+      </section>
       <Diagnostics />
     </div>
   );

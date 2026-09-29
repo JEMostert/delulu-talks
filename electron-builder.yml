@@ -20,6 +20,14 @@ extraResources:
     to: python/speech_engine.py
   - from: electron/python/metal_speech.py
     to: python/metal_speech.py
+  - from: electron/python/windows_speech.py
+    to: python/windows_speech.py
+  - from: electron/python/windows_checkpoint.py
+    to: python/windows_checkpoint.py
+  - from: docs/THIRD_PARTY_NOTICES.md
+    to: python/THIRD_PARTY_NOTICES.md
+  - from: docs/licenses/transformers-Apache-2.0.txt
+    to: python/licenses/transformers-Apache-2.0.txt
   - from: electron/python/constraints-linux-x64.txt
     to: python/constraints-linux-x64.txt
   - from: electron/python/transcription_engine.py
@@ -28,6 +36,12 @@ extraResources:
     to: overlay/pill.py
   - from: build/icon.png
     to: icon.png
+  - from: build/tray.png
+    to: tray.png
+  - from: build/trayTemplate.png
+    to: trayTemplate.png
+  - from: build/trayTemplate@2x.png
+    to: trayTemplate@2x.png
 linux:
   category: AudioVideo
   executableName: delulu-talks

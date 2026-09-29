@@ -96,7 +96,7 @@ try {
   const metal =
     state.diagnostics.platform === "darwin" &&
     state.diagnostics.arch === "arm64";
-  assert.equal(state.settings.model, metal ? "qwen3Asr" : "r2t2");
+  assert.equal(state.settings.model, metal ? "r2t2Mlx" : "r2t2");
   assert.equal(state.status.speechModel, state.settings.model);
   if (metal) {
     const update = await page.evaluate(() => window.delulu.getUpdateStatus());

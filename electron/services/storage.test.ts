@@ -1,14 +1,84 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import { speechModelForPlatform } from "../runtime/platform";
 import type { TranscriptRecord } from "../../src/types";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-mock.module("electron", () => ({ app: {} }));
+let testDirectory = "";
+mock.module("electron", () => ({
+  app: { getPath: () => testDirectory, isPackaged: false },
+}));
 
 let normalizeSettings: (typeof import("./storage"))["normalizeSettings"];
 let applyTranscriptEdit: (typeof import("./storage"))["applyTranscriptEdit"];
+let StorageService: (typeof import("./storage"))["StorageService"];
 
 beforeAll(async () => {
-  ({ normalizeSettings, applyTranscriptEdit } = await import("./storage"));
+  ({ normalizeSettings, applyTranscriptEdit, StorageService } =
+    await import("./storage"));
+});
+
+describe("local data recovery", () => {
+  test("migrates old Qwen speech settings without relabeling historical output or removing rewriting", () => {
+    testDirectory = mkdtempSync(join(tmpdir(), "delulu-migration-"));
+    try {
+      writeFileSync(
+        join(testDirectory, "settings.json"),
+        JSON.stringify({
+          workflowVersion: 1,
+          model: "qwen3Asr",
+          language: "nl",
+          magicEnabled: true,
+          magicModel: "qwen35Medium",
+        }),
+      );
+      writeFileSync(
+        join(testDirectory, "history.json"),
+        JSON.stringify([
+          {
+            id: "old-qwen",
+            text: "Mijn oorspronkelijke tekst.",
+            model: "qwen3Asr",
+            language: "nl",
+            editedText: "Mijn correctie.",
+          },
+        ]),
+      );
+      const storage = new StorageService();
+      expect(storage.getSettings().model).toBe(speechModelForPlatform());
+      expect(storage.getSettings().magicEnabled).toBe(true);
+      expect(storage.getSettings().magicModel).toBe("qwen35Medium");
+      expect(storage.getHistory()[0].model).toBe("qwen3Asr");
+      expect(storage.getHistory()[0].editedText).toBe("Mijn correctie.");
+      expect(storage.getHistory()[0].text).toBe("Mijn oorspronkelijke tekst.");
+    } finally {
+      rmSync(testDirectory, { recursive: true, force: true });
+    }
+  });
+  for (const filename of ["settings.json", "history.json"]) {
+    test(`preserves corrupt ${filename} and other local data`, () => {
+      testDirectory = mkdtempSync(join(tmpdir(), "delulu-storage-"));
+      try {
+        const settings = '{"language":"nl","workflowVersion":1}';
+        const corrupt = '{"interrupted":';
+        writeFileSync(join(testDirectory, "settings.json"), settings);
+        writeFileSync(join(testDirectory, filename), corrupt);
+        expect(() => new StorageService()).toThrow(
+          "The file has been preserved",
+        );
+        expect(readFileSync(join(testDirectory, filename), "utf8")).toBe(
+          corrupt,
+        );
+        if (filename === "history.json")
+          expect(
+            readFileSync(join(testDirectory, "settings.json"), "utf8"),
+          ).toBe(settings);
+      } finally {
+        rmSync(testDirectory, { recursive: true, force: true });
+      }
+    });
+  }
 });
 
 describe("settings migration", () => {

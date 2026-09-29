@@ -19,7 +19,6 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { Alert } from "./components/ui";
 import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
-import { MagicPage } from "./pages/MagicPage";
 import { ModelsPage } from "./pages/ModelsPage";
 import { VocabularyPage } from "./pages/VocabularyPage";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -32,7 +31,6 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
     title: "History",
     subtitle: "Search, review and export transcripts",
   },
-  magic: { title: "Writing", subtitle: "Rewrite text with your local model" },
   vocabulary: {
     title: "Personalization",
     subtitle: "Corrections and voice shortcuts",
@@ -118,7 +116,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const transcriptActions = {
     onCopy: w.copy,
     onRewrite: bridge.rewriteMagic,
-    onRewriteSetup: () => w.setPage("magic"),
+    onRewriteSetup: () => w.setPage("models"),
     rewriteStatus: w.magicStatus,
     onSetRewrite: async (
       id: string,
@@ -365,8 +363,19 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         >
           {!w.ready ? (
             <div className="empty-state mx-auto max-w-[1440px]">
-              <LoaderCircle className="spin" />
-              <p>Opening your workspace…</p>
+              {w.startupError ? (
+                <>
+                  <p role="alert">{w.startupError}</p>
+                  <button className="secondary-button" onClick={w.retryStartup}>
+                    <RotateCcw /> Retry opening workspace
+                  </button>
+                </>
+              ) : (
+                <>
+                  <LoaderCircle className="spin" />
+                  <p>Opening your workspace…</p>
+                </>
+              )}
             </div>
           ) : (
             <>
@@ -408,30 +417,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   />
                 </div>
               )}
-              {(visited.has("magic") || w.page === "magic") && (
-                <div
-                  hidden={w.page !== "magic"}
-                  className="mx-auto max-w-[1440px]"
-                >
-                  <MagicPage
-                    settings={w.settings}
-                    status={w.magicStatus}
-                    history={w.history}
-                    saving={
-                      w.saving || (busy && w.magicStatus.phase === "idle")
-                    }
-                    onUpdateSettings={(patch) => {
-                      void w.saveSettings(patch);
-                    }}
-                    onSetup={setupMagic}
-                    onLoad={loadMagic}
-                    onUnload={unloadMagic}
-                    onRewrite={(request) => bridge.rewriteMagic(request)}
-                    onCopy={w.copy}
-                    onToast={w.setToast}
-                  />
-                </div>
-              )}
               {(visited.has("lab") || w.page === "lab") && (
                 <div
                   hidden={w.page !== "lab"}
@@ -454,6 +439,16 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                 >
                   <ModelsPage
                     status={w.status}
+                    magicStatus={w.magicStatus}
+                    settings={w.settings}
+                    busy={busy}
+                    saving={w.saving}
+                    onUpdateSettings={(patch) => {
+                      void w.saveSettings(patch, null);
+                    }}
+                    onSetupMagic={setupMagic}
+                    onLoadMagic={loadMagic}
+                    onUnloadMagic={unloadMagic}
                     onSetup={setup}
                     onLoad={load}
                     onUnload={unload}

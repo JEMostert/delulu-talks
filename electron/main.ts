@@ -255,7 +255,7 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
         : {
             label: "Set up Magic model…",
             enabled: !magicBusy,
-            click: () => showMainWindow("magic"),
+            click: () => showMainWindow("models"),
           };
 
   return [
@@ -409,7 +409,6 @@ function rebuildTrayMenu(): void {
     {
       label: "Open workspace",
       submenu: [
-        { label: "Magic", click: () => showMainWindow("magic") },
         { label: "History", click: () => showMainWindow("history") },
         { label: "Models & runtime", click: () => showMainWindow("models") },
         { label: "Settings", click: () => showMainWindow("settings") },
@@ -470,10 +469,18 @@ function rebuildTrayMenu(): void {
 }
 
 function installTray(): void {
-  const icon = nativeImage
-    .createFromPath(iconPath())
-    .resize({ width: 20, height: 20 });
-  tray = new Tray(icon);
+  const filename =
+    process.platform === "darwin" ? "trayTemplate.png" : "tray.png";
+  const path = app.isPackaged
+    ? join(process.resourcesPath, filename)
+    : resolve(app.getAppPath(), "build", filename);
+  const icon = nativeImage.createFromPath(path);
+  if (process.platform === "darwin") icon.setTemplateImage(true);
+  const trayIcon =
+    process.platform === "darwin"
+      ? icon
+      : icon.resize({ width: 20, height: 20 });
+  tray = new Tray(trayIcon);
   rebuildTrayMenu();
   tray.on("click", () => showMainWindow("home"));
 }

@@ -2,7 +2,8 @@
 """Persistent JSON-lines worker for Delulu Talks local speech and writing models.
 
 The speech engine is R2T2 (Confucius4-R2T2), a streaming-capable Qwen3-ASR model
-served through vLLM. The process keeps the speech and Magic models resident
+served through vLLM on Linux CUDA, native Transformers on Windows CUDA, or
+direct MLX Audio on Apple Silicon. The process keeps the speech and Magic models resident
 independently. Protocol messages are prefixed so library progress output can
 never be mistaken for a response by Electron.
 """
@@ -89,6 +90,9 @@ class Worker:
         if sys.platform == "darwin" and platform.machine() == "arm64":
             from metal_speech import MetalSpeech
             self.speech = MetalSpeech()
+        elif sys.platform == "win32":
+            from windows_speech import WindowsSpeech
+            self.speech = WindowsSpeech()
         self.model: Any | None = None
         self.model_name: str | None = None
         self.device: str | None = None

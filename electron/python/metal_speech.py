@@ -1,158 +1,131 @@
-"""Qwen3-ASR adapter: an owned, loopback-only vLLM Metal server.
+"""R2T2 inference directly on Apple Silicon through MLX Audio.
 
-Shares the load/status/transcribe/unload contract with the CUDA worker. Audio
-never leaves the machine; a per-process API key protects the local endpoint.
+The BF16 checkpoint is an unquantized MLX conversion of Confucius4-R2T2,
+not a substitution with the smaller base Qwen model. No CUDA, vLLM server,
+or local HTTP endpoint is involved. Dependencies and model revision are pinned.
+The direct generate API transcribes buffered audio; it does not implement
+R2T2's acoustic streaming/committed-prefix protocol.
 """
 from __future__ import annotations
 
-import io
-import json
+import gc
 import os
-import secrets
-import socket
-import subprocess
 import sys
-import tempfile
-import threading
 import time
-import urllib.error
-import urllib.request
-import wave
 from pathlib import Path
 
-MODEL = "Qwen/Qwen3-ASR-0.6B"
+MODEL = "mlx-community/Confucius4-R2T2-bf16"
+MODEL_REVISION = "747f5fc5f84bc9976baa2f02714e2fed67ed8611"
+SAMPLE_RATE = 16000
+MAX_TOKENS = 4096
+# The pinned encoder constructs a dense attention mask even for its local
+# attention windows. Bound each chunk to keep long imports within Mac memory.
+CHUNK_SECONDS = 30.0
+
+
+def progress(detail: str) -> None:
+    sys.__stdout__.write("@delulu-progress:" + detail + "\n")
+    sys.__stdout__.flush()
 
 
 class MetalSpeech:
     def __init__(self):
-        self.process = None
-        self.endpoint = None
-        self.key = secrets.token_urlsafe(32)
-        self.log = None
-        self.http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-
-    def _watch(self, process):
-        while self.process is process:
-            if process.poll() is not None:
-                if self.process is not process:
-                    return
-                print("Qwen3-ASR server exited unexpectedly. Load the model to restart it.", file=sys.stderr, flush=True)
-                # The Electron worker supervisor resets readiness and releases
-                # the whole process group, including any remaining descendants.
-                os._exit(1)
-            time.sleep(1)
+        self.model = None
 
     def status(self):
-        return {"loaded": self.process is not None and self.process.poll() is None,
-                "model": MODEL, "device": "mlx"}
-
-    def _request(self, path, data=None, content_type=None, timeout=10):
-        headers = {"Authorization": "Bearer " + self.key}
-        if content_type:
-            headers["Content-Type"] = content_type
-        request = urllib.request.Request(self.endpoint + path, data=data, headers=headers)
-        try:
-            with self.http.open(request, timeout=timeout) as response:
-                raw = response.read()
-                return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as exc:
-            detail = exc.read(4096).decode("utf-8", errors="replace")
-            raise RuntimeError(f"Qwen3-ASR endpoint failed ({exc.code}): {detail}") from exc
+        return {"loaded": self.model is not None, "model": MODEL, "device": "mlx"}
 
     def load(self, request):
-        if self.status()["loaded"]:
-            self._request("/health")
+        if self.model is not None:
             return self.status()
-        self.unload()
-        # Reserve a free loopback port. A collision after closing is detected by
-        # server exit; authentication prevents accidentally using another server.
-        with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0))
-            port = listener.getsockname()[1]
-        self.endpoint = f"http://127.0.0.1:{port}"
-        self.log = tempfile.TemporaryFile(mode="w+b")
-        self.process = subprocess.Popen(
-            [sys.executable, "-m", "vllm.entrypoints.cli.main", "serve", MODEL,
-             "--host", "127.0.0.1", "--port", str(port)],
-            stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log,
-            env={**os.environ, "VLLM_API_KEY": self.key, "VLLM_NO_USAGE_STATS": "1", "DO_NOT_TRACK": "1"},
+        import mlx.core as mx
+        from huggingface_hub import snapshot_download
+        from mlx_audio.stt.utils import load_model
+
+        if not mx.metal.is_available():
+            raise RuntimeError("R2T2 MLX requires a native Apple Silicon Mac with Metal available.")
+        cache_root = request.get("cacheDir")
+        progress("Downloading the pinned R2T2 BF16 MLX checkpoint (~4.1 GB)…")
+        model_path = snapshot_download(
+            repo_id=MODEL,
+            revision=MODEL_REVISION,
+            cache_dir=str(Path(cache_root) / "hub") if cache_root else None,
+            local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1",
+            allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.tiktoken"],
         )
-        deadline = time.monotonic() + 25 * 60
-        log_offset = 0
+        progress("Loading R2T2 with MLX and warming up speech inference…")
         try:
-            while time.monotonic() < deadline:
-                output = os.pread(self.log.fileno(), 16384, log_offset)
-                if output:
-                    log_offset += len(output)
-                    lines = output.decode(errors="replace").strip().splitlines()
-                    detail = lines[-1][-350:] if lines else "Loading Qwen3-ASR…"
-                    # sys.stdout is redirected to stderr by the request loop.
-                    sys.__stdout__.write("@delulu-progress:" + detail + "\n")
-                    sys.__stdout__.flush()
-                if self.process.poll() is not None:
-                    self.log.seek(0, 2)
-                    self.log.seek(max(0, self.log.tell() - 12000))
-                    raise RuntimeError("Qwen3-ASR server stopped: " + self.log.read().decode(errors="replace"))
-                try:
-                    self._request("/health", timeout=2)
-                    break
-                except (OSError, RuntimeError):
-                    time.sleep(0.5)
-            else:
-                raise TimeoutError("Qwen3-ASR download/startup timed out. Check your connection and retry Repair.")
-            wav = io.BytesIO()
-            with wave.open(wav, "wb") as audio:
-                audio.setnchannels(1)
-                audio.setsampwidth(2)
-                audio.setframerate(16000)
-                audio.writeframes(b"\0\0" * 16000)
-            self._transcribe(wav.getvalue(), timeout=120)
-            threading.Thread(target=self._watch, args=(self.process,), daemon=True).start()
+            self.model = load_model(Path(model_path), strict=True)
+            # Exercise the full decoder before reporting Ready. Warmup output
+            # is discarded and never enters transcript history or delivery.
+            self.model.generate(
+                mx.zeros(SAMPLE_RATE, dtype=mx.float32),
+                language="English", max_tokens=8, verbose=False,
+            )
             return self.status()
         except BaseException:
-            self.unload()
+            # Loading itself can fail after allocating Metal buffers, before
+            # load_model returns an object that we can assign to self.model.
+            self.model = None
+            gc.collect()
+            mx.clear_cache()
             raise
 
-    def _transcribe(self, audio, timeout):
-        boundary = "delulu-" + secrets.token_hex(16)
-        body = bytearray()
-        for name, value in (("model", MODEL), ("response_format", "json")):
-            body.extend(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode())
-        body.extend(f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"recording.wav\"\r\nContent-Type: audio/wav\r\n\r\n".encode())
-        body.extend(audio)
-        body.extend(f"\r\n--{boundary}--\r\n".encode())
-        return self._request("/v1/audio/transcriptions", bytes(body), "multipart/form-data; boundary=" + boundary, timeout)
-
     def transcribe(self, request):
-        if not self.status()["loaded"]:
-            raise RuntimeError("Qwen3-ASR is not running. Load the model to try again.")
-        started = time.perf_counter()
+        if self.model is None:
+            raise RuntimeError("R2T2 is not loaded. Load the model to try again.")
         audio = Path(request["audioPath"])
-        with wave.open(str(audio), "rb") as wav:
-            duration = wav.getnframes() / wav.getframerate()
-        result = self._transcribe(audio.read_bytes(), timeout=min(900, max(120, duration * 3)))
-        if not isinstance(result, dict) or not isinstance(result.get("text"), str):
-            raise RuntimeError("Qwen3-ASR returned an invalid transcription response")
-        language = str(result.get("language") or "und").lower()
+        if not audio.is_file():
+            raise FileNotFoundError("The selected audio file no longer exists")
+        from mlx_audio.stt.utils import load_audio
+        import mlx.core as mx
         from transcription_engine import LANGUAGE_NAMES
-        language = {name.lower(): code for code, name in LANGUAGE_NAMES.items()}.get(language, language)
-        elapsed = time.perf_counter() - started
-        return {"text": result["text"].strip(), "language": language,
-                "duration": duration, "processingTime": elapsed,
-                "inferenceTime": elapsed}
+
+        started = time.perf_counter()
+        # MLX Audio decodes and mixes/resamples locally. FLAC imports no longer
+        # enter wave.open(), which only understands RIFF WAV files.
+        samples = load_audio(str(audio), sr=SAMPLE_RATE)
+        if not len(samples):
+            raise ValueError("The selected audio file contains no samples")
+        language_code = str(request.get("language", "en")).lower()
+        language = LANGUAGE_NAMES.get(language_code)
+        inference_started = time.perf_counter()
+        try:
+            result = self.model.generate(
+                samples, language=language, max_tokens=MAX_TOKENS,
+                chunk_duration=CHUNK_SECONDS,
+                temperature=0.0, verbose=False,
+            )
+        finally:
+            # Upstream clears its decode cache on successful chunks only.
+            # Release allocator buffers after failed generations as well.
+            mx.clear_cache()
+        finished = time.perf_counter()
+        if not isinstance(getattr(result, "text", None), str):
+            raise RuntimeError("R2T2 returned an invalid transcription response")
+        if getattr(result, "generation_tokens", 0) >= MAX_TOKENS:
+            raise RuntimeError(
+                "R2T2 reached its transcription length limit. Split the audio into shorter files and try again."
+            )
+        # MLX Audio returns one language label per decoded segment (the prompt
+        # language when forced). Mixed labels stay unknown; this is not an
+        # independent code-switching detector.
+        detected = getattr(result, "language", None)
+        if isinstance(detected, list):
+            languages = {item.strip().lower() for item in detected if isinstance(item, str) and item.strip()}
+            detected = next(iter(languages)) if len(languages) == 1 else None
+        detected = detected.strip().lower() if isinstance(detected, str) else "und"
+        code = {name.lower(): code for code, name in LANGUAGE_NAMES.items()}.get(detected, detected)
+        return {"text": result.text.strip(), "language": code or "und",
+                "duration": len(samples) / SAMPLE_RATE,
+                "processingTime": finished - started,
+                "inferenceTime": finished - inference_started}
 
     def unload(self):
-        process, self.process = self.process, None
-        if process is not None:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-        if self.log is not None:
-            self.log.close()
-            self.log = None
-        self.endpoint = None
+        loaded = self.model is not None
+        self.model = None
+        gc.collect()
+        if loaded:
+            import mlx.core as mx
+            mx.clear_cache()
         return {"loaded": False}
