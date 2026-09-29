@@ -16,6 +16,7 @@ import type { AsrService } from "./asr";
 import type { PasteService } from "./paste";
 import type { PillService } from "./pill";
 import type { StorageService } from "./storage";
+import { RetryAudioStore, type RetryAudioLease } from "./retryAudio";
 
 type WindowProvider = {
   main(): BrowserWindow | null;
@@ -31,7 +32,7 @@ function numeric(value: unknown, fallback = 0): number {
 }
 
 export class DictationService {
-  private failedRecording: RecordingSubmission | null = null;
+  private readonly retryAudio = new RetryAudioStore();
   get isActive(): boolean {
     return this.captureState !== "idle";
   }
@@ -43,15 +44,34 @@ export class DictationService {
     );
   }
   discardFailure(): void {
-    this.failedRecording = null;
-    this.asr.setRecovery?.(false);
-    this.asr.setActivity("idle", "Failed recording discarded");
+    this.retryAudio.discard();
+    this.publishRetryAudio();
+    if (!this.isActive)
+      this.asr.setActivity("idle", "Failed recording discarded");
+  }
+
+  releaseRetryAudio(): void {
+    this.retryAudio.dispose();
+    this.publishRetryAudio();
+  }
+
+  private publishRetryAudio(): void {
+    this.asr.setRecovery?.(this.retryAudio.available, this.retryAudio.state);
   }
 
   async retry(): Promise<void> {
-    if (this.isActive || !this.failedRecording)
+    if (this.isActive || !this.retryAudio.available)
       throw new Error("No failed recording is available to retry");
-    await this.processRecording(this.failedRecording);
+    const lease = this.retryAudio.beginRetry();
+    if (!lease) throw new Error("No failed recording is available to retry");
+    this.publishRetryAudio();
+    let failed = true;
+    try {
+      failed = !(await this.processRecording(lease.recording, lease));
+    } finally {
+      this.retryAudio.finishRetry(lease, failed);
+      this.publishRetryAudio();
+    }
   }
 
   private captureState: CaptureState = "idle";
@@ -325,7 +345,8 @@ export class DictationService {
 
   private async processRecording(
     submission: RecordingSubmission,
-  ): Promise<void> {
+    retryLease?: RetryAudioLease,
+  ): Promise<boolean> {
     if (this.captureState === "processing")
       throw new Error("A recording is already being processed");
     this.captureState = "processing";
@@ -335,13 +356,13 @@ export class DictationService {
       submission.wav.byteLength < 44
     ) {
       this.failCapture("The microphone returned an empty recording");
-      return;
+      return false;
     }
     if (submission.wav.byteLength > 500 * 1024 * 1024) {
       this.failCapture(
         "Recording is too large; keep dictation captures below 500 MB",
       );
-      return;
+      return false;
     }
     if (submission.durationMs < 180) {
       this.captureState = "idle";
@@ -351,7 +372,7 @@ export class DictationService {
         detail: "Hold a little longer",
       });
       this.asr.setActivity("idle", "Recording was too short and was discarded");
-      return;
+      return true;
     }
 
     const audioPath = join(
@@ -367,8 +388,8 @@ export class DictationService {
         { audioPath, durationMs: submission.durationMs },
         settings,
       );
-      this.failedRecording = null;
-      this.asr.setRecovery?.(false);
+      this.retryAudio.clearAvailable();
+      this.publishRetryAudio();
       let record = this.createRecord(
         result,
         "dictation",
@@ -387,7 +408,7 @@ export class DictationService {
           "idle",
           "No speech detected — nothing was copied or pasted",
         );
-        return;
+        return true;
       }
       let magicFailure: string | null = null;
       if (settings.magicEnabled) {
@@ -451,14 +472,19 @@ export class DictationService {
         detail: magicFailure ? "Magic skipped" : "Ready to keep talking",
       });
       this.asr.setActivity("idle", completion);
+      return true;
     } catch (error) {
-      this.failedRecording = submission;
-      this.asr.setRecovery?.(true);
+      const retained = retryLease || this.retryAudio.retain(submission);
+      this.publishRetryAudio();
       this.setHud({ state: "error" });
+      const cause = error instanceof Error ? error.message : String(error);
       this.asr.setActivity(
         "error",
-        error instanceof Error ? error.message : String(error),
+        retained
+          ? cause
+          : `${cause} — This recording could not be retained for retry.`,
       );
+      return false;
     } finally {
       this.captureState = "idle";
       rmSync(audioPath, { force: true });

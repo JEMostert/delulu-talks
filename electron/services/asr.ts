@@ -9,6 +9,7 @@ import type {
   MagicRewriteRequest,
   MagicRewriteResult,
   MagicStatus,
+  RetryAudioState,
 } from "../../src/types";
 import type { StorageService } from "./storage";
 
@@ -62,6 +63,14 @@ export class AsrService {
     engine: "missing",
     message: "Local engine setup required",
     progress: null,
+    retryAvailable: false,
+    retryAudio: {
+      phase: "empty",
+      byteLength: 0,
+      durationMs: null,
+      discarded: false,
+      sessionOnly: true,
+    },
   };
   private statusListeners = new Set<(status: DictationStatus) => void>();
   private magicStatus: MagicStatus = {
@@ -144,8 +153,8 @@ export class AsrService {
     return structuredClone(this.magicStatus);
   }
 
-  setRecovery(available: boolean): void {
-    this.updateStatus({ retryAvailable: available });
+  setRecovery(available: boolean, retryAudio?: RetryAudioState): void {
+    this.updateStatus({ retryAvailable: available, retryAudio });
   }
 
   setActivity(

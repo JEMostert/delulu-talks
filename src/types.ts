@@ -78,9 +78,18 @@ export type MagicRewriteResult = {
   includedInferences: boolean;
 };
 
+export type RetryAudioState = {
+  phase: "empty" | "available" | "retrying";
+  byteLength: number;
+  durationMs: number | null;
+  discarded: boolean;
+  sessionOnly: true;
+};
+
 export type DictationStatus = {
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
+  retryAudio?: RetryAudioState;
   migrationRequired?: boolean;
   phase: DictationPhase;
   engine: EnginePhase;
