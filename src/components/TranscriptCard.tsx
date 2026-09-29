@@ -193,6 +193,14 @@ export function TranscriptCard({
               </>
             )}
           </span>
+          <span className="block text-[10px] text-muted" title={record.delivery?.detail}>
+            {record.delivery?.state === "paste-attempted"
+              ? "Paste attempted · destination unconfirmed"
+              : record.delivery?.state === "confirmed" ? "Delivery confirmed"
+                : record.delivery?.state === "copied" ? "Copied to clipboard"
+                  : record.delivery?.state === "transcribed" ? "Transcribed · no delivery recorded"
+                    : "Delivery not recorded"}
+          </span>
           <span
             className="mt-1 block text-[10px] text-muted break-words"
             aria-label="Transcript language metadata"

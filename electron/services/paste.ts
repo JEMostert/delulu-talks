@@ -12,6 +12,13 @@ import { compatibleSessionBusAddress } from "../compat";
 import { getAccessibilityPermission } from "./accessibilityPermission";
 import { portalRequest, PORTAL_NAME, PORTAL_PATH } from "./shortcutPortal";
 
+export class ClipboardCopyError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "ClipboardCopyError";
+  }
+}
+
 type PasteCommand = { program: string; args: string[]; input?: string };
 type PortalInterface = ClientInterface &
   Record<string, (...args: unknown[]) => Promise<unknown>>;
@@ -159,7 +166,7 @@ export class PasteService {
     const shortcut = this.io.getShortcut?.() ?? "standard";
     const prepareRestore = this.clipboardRestore.begin(restoreClipboard, (previous) => this.copy(previous));
     const generation = this.clipboardRestore.generation;
-    this.publishClipboard(text);
+    try { this.publishClipboard(text); } catch (error) { throw new ClipboardCopyError(error); }
     const finishRestore = prepareRestore?.();
     try {
     if (this.platform === "darwin") {

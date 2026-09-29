@@ -11,8 +11,8 @@ import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { ModelCacheService } from "./services/modelCache";
 import { DictationService } from "./services/dictation";
-import { RuleUsageService } from "./services/ruleUsage";
 import { PasteService } from "./services/paste";
+import { RuleUsageService } from "./services/ruleUsage";
 import { PasteLastService } from "./services/pasteLast";
 import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
@@ -332,6 +332,26 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
   ];
 }
 
+function recordDelivery(
+  record: TranscriptRecord,
+  state: NonNullable<TranscriptRecord["delivery"]>["state"],
+  detail?: string,
+  method?: string,
+): void {
+  const saved = storage.findHistory(record.id);
+  const current = saved ?? sessionTranscripts.get(record.id);
+  if (!current) return;
+  const updated = {
+    ...current,
+    delivery: { state, updatedAt: Date.now(), detail, method },
+  };
+  if (saved) storage.replaceHistory(updated);
+  sessionTranscripts.set(record.id, updated);
+  if (lastTranscript?.id === record.id) lastTranscript = updated;
+  broadcast("history:added", updated);
+  rebuildTrayMenu();
+}
+
 function schedulePasteLast() {
   const record = lastTranscript
     ? (storage.findHistory(lastTranscript.id) ??
@@ -410,7 +430,10 @@ function rebuildTrayMenu(): void {
         : "Your most recent dictation appears here",
       enabled: Boolean(latest),
       click: () => {
-        if (latest) paste.copy(deliveredText(latest));
+        if (latest) {
+          paste.copy(deliveredText(latest));
+          recordDelivery(latest, "copied");
+        }
       },
     },
     { type: "separator" },
@@ -755,6 +778,10 @@ async function start(): Promise<void> {
     paste: (text) => paste.paste(text),
     copy: (text) => paste.copy(text),
     clipboardOnly: () => paste.capabilities().pasteMethod === "clipboard-only",
+    delivery: (id, state, detail, method) => {
+      const record = storage.findHistory(id) ?? sessionTranscripts.get(id);
+      if (record) recordDelivery(record, state, detail, method);
+    },
     changed: (status) => {
       broadcast("dictation:pasteLastChanged", status);
       rebuildTrayMenu();

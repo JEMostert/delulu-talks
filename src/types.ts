@@ -155,6 +155,13 @@ export type DictationStatus = RuntimeLifecycle & {
   progress?: number | null;
 };
 
+export type TranscriptDelivery = {
+  state: "transcribed" | "copied" | "paste-attempted" | "confirmed";
+  updatedAt: number;
+  method?: string;
+  detail?: string;
+};
+
 export type HistoryRetentionPolicy = {
   maxAgeDays: number | null;
   maxCount: number | null;
@@ -215,6 +222,7 @@ export type TranscriptRecord = {
   source: TranscriptSource;
   sourceName?: string | null;
   processingTimeMs: number;
+  delivery?: TranscriptDelivery;
   captureDiagnostics?: CaptureDiagnostics;
 };
 

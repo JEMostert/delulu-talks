@@ -17,7 +17,7 @@ import type {
   TranscriptRecord,
 } from "../../src/types";
 import type { AsrService } from "./asr";
-import type { PasteService } from "./paste";
+import { ClipboardCopyError, type PasteService } from "./paste";
 import type { PillService } from "./pill";
 import type { StorageService } from "./storage";
 import { getMicrophonePermission } from "./microphonePermission";
@@ -501,31 +501,29 @@ export class DictationService {
       deliveryStarted = true;
       if (settings.autoPaste) {
         try {
-          await this.paste.paste(output, settings.restoreClipboardAfterPaste);
+          const method = await this.paste.paste(output, settings.restoreClipboardAfterPaste);
+          record = this.recordDelivery(record, "paste-attempted", "Paste command sent; destination receipt is not confirmed", method);
           delivery = "pasted";
-          completion = `${outputName} copied · paste shortcut sent`;
+          completion = `${outputName}: paste attempted — destination unconfirmed`;
         } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          this.reportPasteFailure(record.id, reason.slice(0, 500));
-          // A paste error may originate from the clipboard write itself.
-          // Confirm a copy before telling the user they can paste manually.
-          try {
-            this.paste.copy(output);
-            delivery = "copied";
-            completion = `Copied — paste manually (${reason})`;
-          } catch (copyError) {
-            delivery = "failed";
-            completion = `${outputName} ready in Latest output — clipboard delivery failed: ${copyError instanceof Error ? copyError.message : String(copyError)}`;
-          }
+          const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+          const copied = !(error instanceof ClipboardCopyError);
+          this.reportPasteFailure(record.id, detail);
+          delivery = copied ? "copied" : "failed";
+          record = this.recordDelivery(record, copied ? "copied" : "transcribed", detail);
+          completion = copied ? `Copied — paste manually (${detail})` : `Transcribed — clipboard copy failed (${detail})`;
         }
       } else if (settings.copyToClipboard) {
         try {
           this.paste.copy(output);
           delivery = "copied";
-          completion = `${outputName} copied to clipboard — paste manually`;
+          record = this.recordDelivery(record, "copied");
+          completion = `${outputName} copied to clipboard`;
         } catch (error) {
+          const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
           delivery = "failed";
-          completion = `${outputName} ready in Latest output — clipboard delivery failed: ${error instanceof Error ? error.message : String(error)}`;
+          record = this.recordDelivery(record, "transcribed", detail);
+          completion = `Transcribed — clipboard copy failed (${detail})`;
         }
       }
       if (magicFailure)
@@ -533,21 +531,12 @@ export class DictationService {
       this.setHud({
         state: delivery === "failed" ? "error" : "success",
         title:
-          delivery === "pasted"
+          record.delivery?.state === "paste-attempted"
             ? "Paste attempted"
-            : delivery === "copied"
-              ? "Copied"
-              : delivery === "failed"
-                ? "Copy failed"
-                : "Ready",
-        detail:
-          delivery === "failed"
-            ? "Copy from Latest output"
-            : delivery === "copied"
-              ? "Paste in your destination"
-              : magicFailure
-                ? "Rewriting skipped"
-                : "Ready to keep talking",
+            : record.delivery?.state === "copied" ? "Copied" : "Transcribed",
+        detail: record.delivery?.state === "paste-attempted"
+          ? "Destination unconfirmed"
+          : magicFailure ? "Rewriting skipped" : "Ready to keep talking",
       });
       this.asr.setActivity("idle", completion);
       return true;
@@ -723,7 +712,21 @@ export class DictationService {
       source,
       sourceName,
       processingTimeMs: Math.round(numeric(result.processingTime) * 1000),
+      delivery: { state: "transcribed", updatedAt: Date.now() },
     };
+  }
+
+  private recordDelivery(
+    record: TranscriptRecord,
+    state: NonNullable<TranscriptRecord["delivery"]>["state"],
+    detail?: string,
+    method?: string,
+  ): TranscriptRecord {
+    const saved = this.storage.findHistory(record.id);
+    const updated = { ...(saved ?? record), delivery: { state, updatedAt: Date.now(), detail, method } };
+    if (saved) this.storage.replaceHistory(updated);
+    this.broadcastTranscript(updated);
+    return updated;
   }
 
   private outputText(record: TranscriptRecord, settings: AppSettings): string {
