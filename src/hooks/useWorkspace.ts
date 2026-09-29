@@ -1,3 +1,4 @@
+import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
 import { DEFAULT_SETTINGS } from "../data";
@@ -196,22 +197,32 @@ export function useWorkspace() {
   }, [startupAttempt]);
 
   useEffect(() => {
-    if (page !== "settings" && page !== "home") return;
     let alive = true;
+    let revision = 0;
     const refresh = () => {
+      const current = ++revision;
       void listMicrophones(false)
         .then((next) => {
-          if (alive) setDevices(next);
+          if (alive && current === revision) setDevices(next);
         })
-        .catch(report);
+        .catch((reason: unknown) => {
+          if (alive && current === revision) {
+            setDevices([
+              { deviceId: "default", label: "System default", labelKnown: false },
+            ]);
+            report(reason);
+          }
+        });
     };
     refresh();
     navigator.mediaDevices?.addEventListener("devicechange", refresh);
+    window.addEventListener("focus", refresh);
     return () => {
       alive = false;
       navigator.mediaDevices?.removeEventListener("devicechange", refresh);
+      window.removeEventListener("focus", refresh);
     };
-  }, [page]);
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -256,6 +267,13 @@ export function useWorkspace() {
     });
     saveQueue.current = run;
     return run;
+  }
+
+  function managePersonalProfile(command: PersonalProfileCommand): Promise<boolean> {
+    const verb = command.action === "delete" ? "deleted" : command.action === "rename" ? "renamed" : "saved";
+    return action(async () => {
+      receiveSettings(await bridge.managePersonalProfile(command));
+    }, `Profile ${verb} · active settings unchanged`);
   }
 
   async function updateTranscript(
@@ -312,6 +330,7 @@ export function useWorkspace() {
     setError,
     action,
     saveSettings,
+    managePersonalProfile,
     updateTranscript,
     finishOnboarding,
     copy,

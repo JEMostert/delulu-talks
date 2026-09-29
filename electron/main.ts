@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { changePersonalProfiles } from "../src/personalProfileCommands";
 import {
   app,
   BrowserWindow,
@@ -23,8 +25,10 @@ import type {
   RecordingSubmission,
   TranscriptRecord,
 } from "../src/types";
+import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
 import { modelById } from "../src/data";
 import { deliveredText } from "../src/transcriptText";
+import { normalizeTranscriptTitle } from "../src/transcriptTitle";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
@@ -40,6 +44,7 @@ import {
 } from "./services/storage";
 import { localDataOverview } from "./services/localData";
 import { exportRecord } from "./services/transcripts";
+import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { UpdateService } from "./services/updates";
 import {
   rendererRecoveryState,
@@ -569,6 +574,12 @@ async function applySettings(value: unknown): Promise<AppSettings> {
   const previous = storage.getSettings();
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Expected a settings object");
+  assertPersonalProfilesUpdate(
+    previous.personalProfiles,
+    Object.prototype.hasOwnProperty.call(value, "personalProfiles")
+      ? (value as Record<string, unknown>).personalProfiles
+      : previous.personalProfiles,
+  );
   const next = normalizeSettings({ ...previous, ...value });
   const runtimeChanged = next.model !== previous.model;
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
@@ -676,6 +687,17 @@ function registerIpc(): void {
   handle("dictation:retry", () => dictation.retry());
   handle("settings:get", () => storage.getSettings());
   handle("settings:update", (_event, value: unknown) => persistSettings(value));
+  handle("profiles:manage", (_event, command: unknown) =>
+    settingsQueue.run(() =>
+      applySettings({
+        personalProfiles: changePersonalProfiles(
+          storage.getSettings(),
+          command,
+          randomUUID,
+        ),
+      }),
+    ),
+  );
   handle("runtime:status", () => asr.getStatus());
   handle("shortcut:status", () => shortcut.getStatus());
   handle("shortcut:configure", () => shortcut.configure());
@@ -794,6 +816,22 @@ function registerIpc(): void {
         ? applyTranscriptEdit(sessionRecord, correction)
         : null;
     if (!updated) throw new Error("Transcript not found");
+    sessionTranscripts.set(key, updated);
+    if (lastTranscript?.id === key) lastTranscript = updated;
+    rebuildTrayMenu();
+    return updated;
+  });
+  handle("history:setTitle", (_event, id: unknown, title: unknown) => {
+    const key = validateText(id, 128);
+    const normalized = normalizeTranscriptTitle(title);
+    const sessionRecord = sessionTranscripts.get(key);
+    const updated = storage.findHistory(key)
+      ? storage.setTranscriptTitle(key, normalized)
+      : sessionRecord
+        ? { ...sessionRecord, title: normalized }
+        : null;
+    if (!updated) throw new Error("Transcript not found");
+    // A rejected saved-history write leaves session and last-record state intact.
     sessionTranscripts.set(key, updated);
     if (lastTranscript?.id === key) lastTranscript = updated;
     rebuildTrayMenu();
@@ -953,6 +991,14 @@ function registerIpc(): void {
 async function start(): Promise<void> {
   if (!smokeTest) ensureDevelopmentDesktopEntry();
   storage = new StorageService();
+  // start() is entered only by the instance holding the user-data singleton lock.
+  // No new worker/capture/import exists while prior-session generated WAVs are inspected.
+  const audioRecovery = await recoverTemporaryAudio(storage.cacheDirectory);
+  if (audioRecovery.failureCount) {
+    const detail = `${audioRecovery.failureCount} temporary-audio cleanup failure(s). Some prior-session audio may remain on disk.\n\n${audioRecovery.failures.join("\n")}\n\nClose Delulu before inspecting the audio-cache directory in its local data folder. Only remove generated dictation/import WAVs you recognise. Your saved history, settings, source media, models and runtimes were not removed by this cleanup.`;
+    console.error("Temporary audio cleanup incomplete:", detail);
+    dialog.showErrorBox("Temporary audio cleanup needs attention", detail);
+  }
   paste = new PasteService(
     () => storage.getSettings().pastePortalToken || null,
     (pastePortalToken) => {
@@ -1079,6 +1125,7 @@ if (!hasLock) {
 app.on("activate", () => showMainWindow());
 app.on("before-quit", () => {
   quitting = true;
+  dictation?.releaseRetryAudio();
   pill?.shutdown();
   pasteLast?.shutdown();
   paste?.shutdown();

@@ -44,6 +44,7 @@ const api: DeluluApi = {
   getSettings: () => ipcRenderer.invoke("settings:get"),
   updateSettings: (settings: Partial<AppSettings>) =>
     ipcRenderer.invoke("settings:update", settings),
+  managePersonalProfile: (command) => ipcRenderer.invoke("profiles:manage", command),
   getStatus: () => ipcRenderer.invoke("runtime:status"),
   getMagicStatus: () => ipcRenderer.invoke("magic:status"),
   getShortcutStatus: () => ipcRenderer.invoke("shortcut:status"),
@@ -72,6 +73,8 @@ const api: DeluluApi = {
   testPaste: () => ipcRenderer.invoke("paste:test"),
   updateTranscript: (id: string, text: string | null) =>
     ipcRenderer.invoke("history:updateTranscript", id, text),
+  setTranscriptTitle: (id: string, title: string | null) =>
+    ipcRenderer.invoke("history:setTitle", id, title),
   setTranscriptRewrite: (id, result, sourceText) =>
     ipcRenderer.invoke("history:setRewrite", id, result, sourceText),
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),

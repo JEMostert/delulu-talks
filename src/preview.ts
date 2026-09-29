@@ -1,5 +1,7 @@
+import { changePersonalProfiles } from "./personalProfileCommands";
 import { DEFAULT_SETTINGS } from "./data";
 import { deliveredText, originalTranscriptText } from "./transcriptText";
+import { normalizeTranscriptTitle } from "./transcriptTitle";
 import type {
   AppSettings,
   AudioFileSelection,
@@ -73,6 +75,11 @@ export const previewApi: DeluluApi = {
       ffmpeg: "Not available",
       dataDirectory: "Desktop app required",
       runtimeInstalled: false,
+      accessibility: {
+        state: "not-applicable",
+        canAttemptPaste: false,
+        detail: "Native Accessibility permission is available in the desktop app. Browser preview cannot attempt native paste.",
+      },
       packages: {},
       checkedAt: Date.now(),
     };
@@ -104,6 +111,15 @@ export const previewApi: DeluluApi = {
   },
   async updateSettings(settings) {
     const next = { ...mockSettings(), ...settings };
+    localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
+    return next;
+  },
+  async managePersonalProfile(command) {
+    const current = mockSettings();
+    const next = {
+      ...current,
+      personalProfiles: changePersonalProfiles(current, command, () => crypto.randomUUID()),
+    };
     localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
     return next;
   },
@@ -235,6 +251,14 @@ export const previewApi: DeluluApi = {
       magicModel: result?.model ?? null,
       magicIncludedInferences: result?.includedInferences ?? false,
     };
+    demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
+    return updated;
+  },
+  async setTranscriptTitle(id, title) {
+    const normalized = normalizeTranscriptTitle(title);
+    const record = demoHistory.find((item) => item.id === id);
+    if (!record) throw new Error("Transcript not found");
+    const updated = { ...record, title: normalized };
     demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
     return updated;
   },

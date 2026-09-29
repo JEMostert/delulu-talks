@@ -43,6 +43,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoPaste: true,
   pasteLastDelaySeconds: 3,
   copyToClipboard: true,
+  spokenFormattingCommands: false,
   pastePortalToken: "",
   keepHistory: true,
   showOverlay: true,
@@ -55,6 +56,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   modelIdleMinutes: 15,
   launchAtLogin: false,
   customWords: [],
+  personalProfiles: { schemaVersion: 1, profiles: [] },
 };
 
 export const MODELS: ModelInfo[] = [

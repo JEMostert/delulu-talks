@@ -1,3 +1,5 @@
+import { PersonalProfiles } from "../components/PersonalProfiles";
+import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
 import {
@@ -17,6 +19,7 @@ import { speechLanguageCapability } from "../speechCapabilities";
 import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
 import { LocalData } from "../components/LocalData";
 import { Diagnostics } from "../components/Diagnostics";
+import { MicrophoneNotice } from "../components/MicrophoneNotice";
 import type {
   AppSettings,
   DictationStatus,
@@ -37,6 +40,7 @@ type Props = {
   magicStatus: MagicStatus;
   saving: boolean;
   onSave: (patch: Partial<AppSettings>) => Promise<boolean>;
+  onManagePersonalProfile: (command: PersonalProfileCommand) => Promise<boolean>;
   onConfigureShortcut: () => void;
   onAuthorizePaste: () => void;
   onTestPaste: () => void;
@@ -93,6 +97,7 @@ export function SettingsPage(props: Props) {
         {[
           ["general", "Capture & delivery"],
           ["personalization", "Personalization"],
+          ["profiles", "Profiles"],
           ["writing", "Writing"],
           ["advanced", "Runtime"],
           ["maintenance", "Application"],
@@ -113,6 +118,13 @@ export function SettingsPage(props: Props) {
         </span>
       </div>
       {tab === "data" && <LocalData />}
+      {tab === "profiles" && (
+        <PersonalProfiles
+          settings={s}
+          saving={saving}
+          onManage={props.onManagePersonalProfile}
+        />
+      )}
       {tab === "personalization" && (
         <VocabularyPage
           words={s.customWords}
@@ -148,7 +160,7 @@ export function SettingsPage(props: Props) {
               >
                 {!devices.some((d) => d.deviceId === s.inputDeviceId) && (
                   <option value={s.inputDeviceId}>
-                    {s.inputDeviceLabel} (disconnected)
+                    {s.inputDeviceLabel} (not listed)
                   </option>
                 )}
                 {devices.map((device) => (
@@ -157,6 +169,7 @@ export function SettingsPage(props: Props) {
                   </option>
                 ))}
               </select>
+              <MicrophoneNotice settings={s} devices={devices} />
             </SettingRow>
             <SettingRow title="Language">
               <select
@@ -173,6 +186,16 @@ export function SettingsPage(props: Props) {
                   </option>
                 ))}
               </select>
+            </SettingRow>
+            <SettingRow
+              title="Spoken formatting commands"
+              description="Opt in to explicit line commands: English ‘command new line/paragraph’ or Dutch ‘commando nieuwe regel/alinea’. Original speech stays available. Other language hints keep text unchanged."
+            >
+              {toggle(
+                "spokenFormattingCommands",
+                "Interpret spoken formatting commands",
+                busy,
+              )}
             </SettingRow>
             <SettingRow
               icon={Keyboard}

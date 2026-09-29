@@ -7,6 +7,8 @@ import {
   workerProtocolLimits,
   validateWorkerResponse,
   validateWorkerResult,
+  validateWorkerProgress,
+  type WorkerProgress,
   type WorkerProtocolLimits,
 } from "./workerProtocol";
 
@@ -44,7 +46,7 @@ export class WorkerClient {
       env: NodeJS.ProcessEnv;
     },
     private readonly onFailure: (error: Error) => void,
-    private readonly onProgress?: (detail: string) => void,
+    private readonly onProgress?: (detail: string, event?: WorkerProgress) => void,
     limits: Partial<WorkerProtocolLimits> = {},
   ) {
     this.limits = workerProtocolLimits(limits);
@@ -78,7 +80,10 @@ export class WorkerClient {
       // to its generation, even if a failure callback has already retried.
       if (this.child !== child) return false;
       if (line.startsWith("@delulu-progress:")) {
-        this.onProgress?.(line.slice("@delulu-progress:".length).slice(-350));
+        const event = validateWorkerProgress(JSON.parse(line.slice("@delulu-progress:".length)));
+        const request = this.pending.get(event.id);
+        if (request && request.command === event.command)
+          this.onProgress?.(event.detail.slice(-350), event);
         return this.child === child;
       }
       if (!line.startsWith(PREFIX)) return true;
@@ -242,11 +247,26 @@ export class WorkerClient {
       );
       killer.once("error", () => child.kill());
     } else {
+      const pid = child.pid;
       try {
-        process.kill(-child.pid, "SIGTERM");
+        process.kill(-pid, "SIGTERM");
       } catch (reason) {
         if ((reason as NodeJS.ErrnoException).code !== "ESRCH") child.kill();
       }
+      // Reject active requests immediately, then give this generation five seconds
+      // to release resources. stop() is also used by timeout/failure paths that
+      // never call stopAndWait(); their GPU descendants must not survive forever.
+      // Keep the timer even if the parent exits: children can outlive it. Capture
+      // the old group rather than this.child, which may already be a new worker.
+      const escalation = setTimeout(() => {
+        try {
+          process.kill(-pid, "SIGKILL");
+        } catch (reason) {
+          if ((reason as NodeJS.ErrnoException).code !== "ESRCH")
+            child.kill("SIGKILL");
+        }
+      }, 5000);
+      escalation.unref();
     }
   }
 }

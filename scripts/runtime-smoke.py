@@ -17,11 +17,12 @@ import uuid
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "electron/python"))
-from worker_protocol import PROTOCOL_VERSION, terminal_response, validate_request
+from worker_protocol import PROTOCOL_VERSION, terminal_response, validate_progress, validate_request
 
 MAX_REQUEST_BYTES = 4 * 1024 * 1024
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 PROTOCOL_PREFIX = b"@delulu:"
+PROGRESS_PREFIX = b"@delulu-progress:"
 PROTOCOL_REPAIR = "Repair the local runtime and restart the app before retrying the smoke check."
 
 
@@ -52,6 +53,9 @@ class SmokeWorker:
         return request_id
 
     def _receive(self, request_id, command):
+        def invalid_constant(value):
+            raise ValueError(f"Invalid JSON constant: {value}")
+
         while True:
             line = self.child.stdout.readline(MAX_RESPONSE_BYTES + 3)
             if not line:
@@ -59,12 +63,20 @@ class SmokeWorker:
             content = line.removesuffix(b"\n").removesuffix(b"\r")
             if len(content) > MAX_RESPONSE_BYTES:
                 raise RuntimeError(f"Model worker stdout exceeds the 8 MiB protocol limit. {PROTOCOL_REPAIR}")
+            if content.startswith(PROGRESS_PREFIX):
+                try:
+                    event = validate_progress(json.loads(
+                        content[len(PROGRESS_PREFIX):], parse_constant=invalid_constant,
+                    ))
+                except (ValueError, UnicodeDecodeError) as error:
+                    raise RuntimeError(f"Invalid model worker progress event. {PROTOCOL_REPAIR}") from error
+                if event["id"] != request_id or event["command"] != command:
+                    continue
+                # Progress belongs to this operation, but never completes it.
+                continue
             if not content.startswith(PROTOCOL_PREFIX):
                 continue
             try:
-                def invalid_constant(value):
-                    raise ValueError(f"Invalid JSON constant: {value}")
-
                 response = json.loads(content[len(PROTOCOL_PREFIX):], parse_constant=invalid_constant)
             except (ValueError, UnicodeDecodeError) as error:
                 raise RuntimeError(f"Invalid model worker terminal response. {PROTOCOL_REPAIR}") from error

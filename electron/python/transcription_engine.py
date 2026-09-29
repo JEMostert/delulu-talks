@@ -22,7 +22,7 @@ import traceback
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from worker_protocol import correlation_id, terminal_response, validate_request
+from worker_protocol import correlation_id, emit_progress, operation_scope, terminal_response, validate_request, validate_result
 
 if TYPE_CHECKING:
     from speech_engine import SpeechEngine
@@ -145,6 +145,7 @@ class Worker:
         self.model: Any | None = None
         self.model_name: str | None = None
         self.device: str | None = None
+        self.cuda_preflight: dict[str, Any] | None = None
         self.magic_model: Any | None = None
         self.magic_processor: Any | None = None
         self.magic_model_name: str | None = None
@@ -166,6 +167,7 @@ class Worker:
         self.model = None
         self.model_name = None
         self.device = None
+        self.cuda_preflight = None
         self.clear_allocator(speech=True)
         return {"loaded": False}
 
@@ -223,10 +225,9 @@ class Worker:
         try:
             import torch
 
-            if not torch.cuda.is_available():
-                raise RuntimeError(
-                    "R2T2 needs a CUDA GPU. No usable CUDA device was found."
-                )
+            from cuda_preflight import ensure_cuda_compatible
+            self.cuda_preflight = None
+            self.cuda_preflight = ensure_cuda_compatible(torch)
         except ImportError as exc:
             raise RuntimeError(
                 "The speech runtime is incomplete. Run Repair in Models."
@@ -283,6 +284,8 @@ class Worker:
             "loaded": self.model is not None,
             "model": self.model_name,
             "device": self.device,
+            **({"cudaPreflight": self.cuda_preflight}
+               if getattr(self, "cuda_preflight", None) is not None else {}),
         }
 
     def magic_status(self) -> dict[str, Any]:
@@ -522,12 +525,17 @@ def main() -> int:
         if not line:
             continue
         request_id: Any = None
+        operation = contextlib.ExitStack()
         try:
             request = json.loads(line)
             request_id = correlation_id(request)
             request = validate_request(request)
+            operation.enter_context(operation_scope(request_id, request["command"]))
+            emit_progress("Starting worker operation", stage="dispatch")
             with contextlib.redirect_stdout(sys.stderr):
                 result = worker.dispatch(request)
+            validate_result(request["command"], result)
+            emit_progress("Worker operation completed", stage="complete")
             emit({"id": request_id, "ok": True, "result": result}, request["command"])
             if request.get("command") == "shutdown":
                 return 0
@@ -536,6 +544,8 @@ def main() -> int:
             traceback.print_tb(exc.__traceback__, file=sys.stderr)
             sys.stderr.write(f"{type(exc).__name__}: {error}\n")
             emit({"id": request_id, "ok": False, "error": error})
+        finally:
+            operation.close()
 
 
 if __name__ == "__main__":

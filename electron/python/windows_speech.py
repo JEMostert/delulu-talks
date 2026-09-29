@@ -14,6 +14,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from worker_protocol import emit_progress
+
 MODEL = "netease-youdao/Confucius4-R2T2"
 MODEL_REVISION = "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9"
 SAMPLE_RATE = 16000
@@ -25,16 +27,20 @@ class WindowsSpeech:
     def __init__(self):
         self.model = None
         self.processor = None
+        self.cuda_preflight = None
 
     def status(self):
-        return {"loaded": self.model is not None, "model": MODEL, "device": "cuda"}
+        return {"loaded": self.model is not None, "model": MODEL, "device": "cuda",
+                **({"cudaPreflight": self.cuda_preflight}
+                   if getattr(self, "cuda_preflight", None) is not None else {})}
 
     def load(self, request):
         if self.model is not None:
             return self.status()
+        self.cuda_preflight = None
         import torch
-        if not torch.cuda.is_available():
-            raise RuntimeError("R2T2 needs a CUDA GPU. No usable CUDA device was found.")
+        from cuda_preflight import ensure_cuda_compatible
+        self.cuda_preflight = ensure_cuda_compatible(torch)
         from huggingface_hub import snapshot_download
         from huggingface_hub.constants import HF_HOME
         from accelerate import init_empty_weights
@@ -46,8 +52,7 @@ class WindowsSpeech:
                                         clean_config, convert_state_dict)
 
         cache_root = request.get("cacheDir")
-        sys.__stdout__.write("@delulu-progress:Downloading the pinned R2T2 checkpoint…\n")
-        sys.__stdout__.flush()
+        emit_progress("Downloading the pinned R2T2 checkpoint…", stage="download")
         source = Path(snapshot_download(
             repo_id=MODEL, revision=MODEL_REVISION,
             cache_dir=str(Path(cache_root) / "hub") if cache_root else None,
@@ -64,8 +69,7 @@ class WindowsSpeech:
                 ).eval()
                 self._warmup()
                 return self.status()
-            sys.__stdout__.write("@delulu-progress:Converting R2T2 for native Windows CUDA (first load only)…\n")
-            sys.__stdout__.flush()
+            emit_progress("Converting R2T2 for native Windows CUDA (first load only)…", stage="conversion")
             self.processor = Qwen3ASRProcessor(
                 feature_extractor=Qwen3ASRFeatureExtractor(),
                 tokenizer=AutoTokenizer.from_pretrained(source), chat_template=ASR_CHAT_TEMPLATE,
@@ -185,6 +189,7 @@ class WindowsSpeech:
     def unload(self):
         self.model = None
         self.processor = None
+        self.cuda_preflight = None
         gc.collect()
         torch = sys.modules.get("torch")
         with contextlib.suppress(Exception):
