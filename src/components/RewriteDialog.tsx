@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
+import { REWRITE_PRESETS } from "../rewritePresets";
 import { RewriteDiff } from "./RewriteDiff";
 import { RewriteWarnings } from "./RewriteWarnings";
 import type {
@@ -36,6 +37,7 @@ export function RewriteDialog({
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const presetDetails = REWRITE_PRESETS.find((item) => item.id === preset)!;
   const missing = status?.engine === "missing" || status?.engine === "error";
   const stale = source !== text || expectedOutput !== baseline;
   return (
@@ -124,10 +126,9 @@ export function RewriteDialog({
               setResult(null);
             }}
           >
-            <option value="polish">Polish</option>
-            <option value="concise">Shorten</option>
-            <option value="structured">Organize</option>
-            <option value="prompt">Build a prompt</option>
+            {REWRITE_PRESETS.map((item) => (
+              <option key={item.id} value={item.id}>{item.label}</option>
+            ))}
           </select>
         </label>
         <label className="field">
@@ -145,6 +146,15 @@ export function RewriteDialog({
           />
         </label>
       </div>
+      <p className="mt-3" aria-live="polite">{presetDetails.description}</p>
+      <details className="my-3 rounded-panel border border-line p-3">
+        <summary>Illustrative example: {presetDetails.label}</summary>
+        <p className="my-2">Written examples only; your local model's output may differ. Generate a preview to rewrite your transcript.</p>
+        <p><strong>Example source</strong></p>
+        <p className="whitespace-pre-wrap break-words">{presetDetails.exampleSource}</p>
+        <p className="mt-2"><strong>Example output</strong></p>
+        <p className="whitespace-pre-wrap break-words">{presetDetails.exampleOutput}</p>
+      </details>
       <div className="rewrite-comparison mb-4 mt-3 grid grid-cols-2 gap-4">
         <label className="field">
           Current text

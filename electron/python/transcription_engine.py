@@ -99,6 +99,16 @@ MAGIC_PRESETS = {
         "Rewrite this transcript as a short, direct message. Remove repetition and "
         "nonessential wording while preserving every decision, request, and fact."
     ),
+    "bullet-points": (
+        "Rewrite this transcript as concise bullet points, one existing point per bullet. "
+        "Preserve all facts, requests, negations, commitments, and uncertainty. Do not add "
+        "headings, priorities, tasks, or conclusions not present in the source."
+    ),
+    "professional-message": (
+        "Rewrite this transcript as a brief, courteous professional message. Preserve the "
+        "original intent, requests, facts, and uncertainty. Do not invent a recipient, "
+        "greeting, signature, deadline, promise, or claim of completed work."
+    ),
     "structured": (
         "Rewrite this transcript into a detailed, easy-to-scan document. Add useful "
         "headings or bullets when they improve clarity, and make implicit relationships explicit."

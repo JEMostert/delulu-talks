@@ -1,3 +1,4 @@
+import { REWRITE_PRESETS } from "../rewritePresets";
 import { PersonalProfiles } from "../components/PersonalProfiles";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { VocabularyPage } from "./VocabularyPage";
@@ -400,10 +401,9 @@ export function SettingsPage(props: Props) {
                 })
               }
             >
-              <option value="polish">Polished</option>
-              <option value="concise">Concise</option>
-              <option value="structured">Structured</option>
-              <option value="prompt">Prompt builder</option>
+              {REWRITE_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.label}</option>
+              ))}
             </select>
           </SettingRow>
           <SettingRow
