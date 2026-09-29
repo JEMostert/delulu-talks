@@ -35,10 +35,15 @@ import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
-import { PasteService } from "./services/paste";
+import {
+  createIndicatorAdapter,
+  createPasteAdapter,
+  createShortcutAdapter,
+  type DesktopIndicatorAdapter,
+  type DesktopPasteAdapter,
+  type DesktopShortcutAdapter,
+} from "./services/desktopAdapters";
 import { PasteLastService } from "./services/pasteLast";
-import { PillService } from "./services/pill";
-import { ShortcutService } from "./services/shortcut";
 import {
   applyTranscriptEdit,
   normalizeSettings,
@@ -88,11 +93,11 @@ let tray: Tray | null = null;
 let quitting = false;
 let storage: StorageService;
 let asr: AsrService;
-let paste: PasteService;
+let paste: DesktopPasteAdapter;
 let pasteLast: PasteLastService;
-let pill: PillService;
+let pill: DesktopIndicatorAdapter;
 let dictation: DictationService;
-let shortcut: ShortcutService;
+let shortcut: DesktopShortcutAdapter;
 let updates: UpdateService;
 const settingsQueue = new SerialQueue();
 let lastTranscript: TranscriptRecord | null = null;
@@ -1079,7 +1084,7 @@ async function start(): Promise<void> {
     console.error("Temporary audio cleanup incomplete:", detail);
     dialog.showErrorBox("Temporary audio cleanup needs attention", detail);
   }
-  paste = new PasteService(
+  paste = createPasteAdapter(
     () => storage.getSettings().pastePortalToken || null,
     (pastePortalToken) => {
       const saved = storage.updateSettings({
@@ -1090,7 +1095,7 @@ async function start(): Promise<void> {
     },
     { getShortcut: () => storage.getSettings().pasteShortcut },
   );
-  pill = new PillService(
+  pill = createIndicatorAdapter(
     smokeTest ? { env: { ...process.env, XDG_SESSION_TYPE: "" } } : {},
   );
   if (!smokeTest && storage.getSettings().showOverlay) pill.prepare();
@@ -1151,7 +1156,7 @@ async function start(): Promise<void> {
     );
     dictation.recorderUnavailable();
   });
-  shortcut = new ShortcutService(() => storage.getSettings().shortcutMode, {
+  shortcut = createShortcutAdapter(() => storage.getSettings().shortcutMode, {
     start: () => dictation.start(),
     stop: () => dictation.stop(),
     toggle: () => dictation.toggle(),
