@@ -8,6 +8,8 @@ import type {
   MagicRewriteRequest,
   MagicStatus,
   Page,
+  PasteRecovery,
+  PasteLastStatus,
   RecorderCommand,
   RecordingSubmission,
   ShortcutStatus,
@@ -31,12 +33,24 @@ const api: DeluluApi = {
   rendererControllerFailed: () =>
     ipcRenderer.invoke("renderer:controllerFailed"),
   getDiagnostics: () => ipcRenderer.invoke("runtime:diagnostics"),
+  getLocalDataOverview: () => ipcRenderer.invoke("storage:overview"),
   pasteLastTranscript: () => ipcRenderer.invoke("dictation:pasteLast"),
+  getPasteRecovery: () => ipcRenderer.invoke("paste:recovery"),
+  copyInstead: (id: string) => ipcRenderer.invoke("paste:copyInstead", id),
+  dismissPasteRecovery: (id: string) => ipcRenderer.invoke("paste:dismissRecovery", id),
+  onPasteRecovery: (callback: (recovery: PasteRecovery | null) => void) =>
+    listener("paste:recoveryChanged", callback),
+  getPasteLastStatus: () => ipcRenderer.invoke("dictation:pasteLastStatus"),
+  cancelPasteLast: (operationId: string) =>
+    ipcRenderer.invoke("dictation:cancelPasteLast", operationId),
+  onPasteLastStatus: (callback: (status: PasteLastStatus) => void) =>
+    listener("dictation:pasteLastChanged", callback),
   discardFailedRecording: () => ipcRenderer.invoke("dictation:discardFailed"),
   retryRecording: () => ipcRenderer.invoke("dictation:retry"),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   updateSettings: (settings: Partial<AppSettings>) =>
     ipcRenderer.invoke("settings:update", settings),
+  managePersonalProfile: (command) => ipcRenderer.invoke("profiles:manage", command),
   getStatus: () => ipcRenderer.invoke("runtime:status"),
   getMagicStatus: () => ipcRenderer.invoke("magic:status"),
   getShortcutStatus: () => ipcRenderer.invoke("shortcut:status"),
@@ -65,6 +79,8 @@ const api: DeluluApi = {
   testPaste: () => ipcRenderer.invoke("paste:test"),
   updateTranscript: (id: string, text: string | null) =>
     ipcRenderer.invoke("history:updateTranscript", id, text),
+  setTranscriptTitle: (id: string, title: string | null) =>
+    ipcRenderer.invoke("history:setTitle", id, title),
   setTranscriptRewrite: (id, result, sourceText) =>
     ipcRenderer.invoke("history:setRewrite", id, result, sourceText),
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),
@@ -73,8 +89,12 @@ const api: DeluluApi = {
   runLab: (request: LabRequest) => ipcRenderer.invoke("lab:run", request),
   exportTranscript: (id: string, format: ExportFormat) =>
     ipcRenderer.invoke("history:export", id, format),
+  exportTranscriptTemplate: (id, request) =>
+    ipcRenderer.invoke("history:exportTemplate", id, request),
   recordingStarted: (sessionId: string) =>
     ipcRenderer.invoke("recorder:started", sessionId),
+  recordingLimitReached: (sessionId: string) =>
+    ipcRenderer.invoke("recorder:limit", sessionId),
   recorderReady: () => ipcRenderer.invoke("recorder:ready"),
   recordingFailed: (message: string, sessionId: string) =>
     ipcRenderer.invoke("recorder:failed", message, sessionId),

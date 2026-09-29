@@ -1,6 +1,8 @@
 import captureWorkletUrl from "./captureWorklet.js?url&no-inline";
 import { bridge } from "./bridge";
 import { CaptureCuePlayer, type CaptureCue } from "./captureCues";
+import { microphoneSelection } from "./microphoneSelection";
+import { MAX_CAPTURE_DURATION_MS, MAX_CAPTURE_SAMPLES } from "./captureLimits";
 import type { MicrophoneDevice, RecorderCommand } from "./types";
 
 function merge(chunks: Float32Array[]): Float32Array {
@@ -76,6 +78,10 @@ export class PcmRecorder {
   private source: MediaStreamAudioSourceNode | null = null;
   private sink: GainNode | null = null;
   private chunks: Float32Array[] = [];
+  private capturedSamples = 0;
+  private sampleLimit = MAX_CAPTURE_SAMPLES;
+  private limitStopRequested = false;
+  private captureLimitTimer: ReturnType<typeof setTimeout> | null = null;
   private startedAt = 0;
   private stopping = false;
   private lastLevelAt = 0;
@@ -151,6 +157,17 @@ export class PcmRecorder {
     const cueEpoch = this.cueEpoch;
     this.sessionId = sessionId;
     try {
+      if (deviceId && deviceId !== "default") {
+        // Discovery can be unavailable independently of capture permission.
+        // In that case let getUserMedia check the exact saved input itself.
+        const devices = await listMicrophones(false).catch(() => []);
+        if (generation !== this.generation) return;
+        const selection = microphoneSelection(
+          { inputDeviceId: deviceId, inputDeviceLabel: "Selected microphone" },
+          devices,
+        );
+        if (selection.state === "missing") throw new Error(selection.message!);
+      }
       const exactDevice =
         deviceId && deviceId !== "default" ? { exact: deviceId } : undefined;
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -173,6 +190,12 @@ export class PcmRecorder {
       this.sink = this.context.createGain();
       this.sink.gain.value = 0;
       this.chunks = [];
+      this.capturedSamples = 0;
+      this.sampleLimit = Math.min(
+        MAX_CAPTURE_SAMPLES,
+        Math.floor((this.context.sampleRate * MAX_CAPTURE_DURATION_MS) / 1000),
+      );
+      this.limitStopRequested = false;
       if (await this.connectWorklet(generation)) {
         this.source.connect(this.worklet!);
         this.worklet!.connect(this.sink);
@@ -192,6 +215,10 @@ export class PcmRecorder {
       }
       this.sink.connect(this.context.destination);
       this.startedAt = performance.now();
+      this.captureLimitTimer = setTimeout(
+        () => this.requestLimitStop(),
+        MAX_CAPTURE_DURATION_MS,
+      );
       await bridge.recordingStarted(sessionId);
       void this.playCue("start", sessionId, generation, cueEpoch);
     } catch (error) {
@@ -224,7 +251,13 @@ export class PcmRecorder {
   }
 
   private ingest(samples: Float32Array, rms?: number): void {
-    this.chunks.push(new Float32Array(samples));
+    const remaining = this.sampleLimit - this.capturedSamples;
+    if (remaining <= 0) return;
+    const accepted = Math.min(samples.length, remaining);
+    if (!accepted) return;
+    this.chunks.push(new Float32Array(samples.subarray(0, accepted)));
+    this.capturedSamples += accepted;
+    if (this.capturedSamples >= this.sampleLimit) this.requestLimitStop();
     const now = performance.now();
     if (now - this.lastLevelAt < 50) return;
     this.lastLevelAt = now;
@@ -259,14 +292,56 @@ export class PcmRecorder {
     }
   }
 
+  private clearCaptureLimitTimer(): void {
+    if (this.captureLimitTimer) clearTimeout(this.captureLimitTimer);
+    this.captureLimitTimer = null;
+  }
+
+  private requestLimitStop(): void {
+    if (!this.sessionId || this.stopping || this.limitStopRequested) return;
+    this.limitStopRequested = true;
+    this.clearCaptureLimitTimer();
+    this.source?.disconnect();
+    const sessionId = this.sessionId;
+    const generation = this.generation;
+    // Main must enter stopping ownership before the WAV can be committed.
+    // The tagged callback cannot stop a newer capture after Cancel/reload.
+    void bridge.recordingLimitReached(sessionId)
+      .then(() => {
+        if (generation !== this.generation) return;
+        return this.handle({
+          action: "stop",
+          inputDeviceId: "default",
+          sessionId,
+        });
+      })
+      .catch((error) => {
+        // Release bounded capture if its desktop controller cannot accept Stop.
+        // A failure is visible instead of silently leaving the mic running.
+        void this.handle({
+          action: "cancel",
+          inputDeviceId: "default",
+          sessionId,
+        }).catch(() => undefined);
+        void bridge.recordingFailed(
+          `Could not finish the recording at its limit: ${error instanceof Error ? error.message : String(error)}`,
+          sessionId,
+        ).catch(() => undefined);
+      });
+  }
+
   private async stop(submit: boolean, generation: number): Promise<void> {
     if (!this.stream || !this.context || this.stopping) return;
     const sessionId = this.sessionId!;
     this.stopping = true;
     this.cueEpoch += 1;
     void this.cuePlayer.dispose().catch(() => undefined);
+    this.clearCaptureLimitTimer();
     try {
-      const durationMs = Math.round(performance.now() - this.startedAt);
+      const durationMs = Math.min(
+        MAX_CAPTURE_DURATION_MS,
+        Math.round(performance.now() - this.startedAt),
+      );
       const sampleRate = this.context.sampleRate;
       this.source?.disconnect();
       if (this.worklet && submit) {
@@ -287,6 +362,7 @@ export class PcmRecorder {
         });
       }
       const captured = merge(this.chunks);
+      this.chunks = [];
       await this.dispose();
       // End cues use a separate output context only after microphone release.
       void this.playCue("stop", sessionId, this.generation, this.cueEpoch);
@@ -319,6 +395,7 @@ export class PcmRecorder {
   }
 
   private async dispose(): Promise<void> {
+    this.clearCaptureLimitTimer();
     if (this.worklet) this.worklet.port.onmessage = null;
     if (this.processor) this.processor.onaudioprocess = null;
     this.source?.disconnect();
@@ -335,6 +412,8 @@ export class PcmRecorder {
     this.source = null;
     this.sink = null;
     this.chunks = [];
+    this.capturedSamples = 0;
+    this.limitStopRequested = false;
     this.lastLevelAt = 0;
   }
 }
@@ -357,13 +436,27 @@ export async function listMicrophones(
     temporary?.getTracks().forEach((track) => track.stop());
   }
   const microphones = devices.filter((device) => device.kind === "audioinput");
+  let inventoryKnown = microphones.some((device) => !!device.label);
+  if (!inventoryKnown && navigator.permissions) {
+    try {
+      inventoryKnown =
+        (
+          await navigator.permissions.query({
+            name: "microphone" as PermissionName,
+          })
+        ).state === "granted";
+    } catch {
+      // Some browsers do not expose microphone permission through this API.
+    }
+  }
   return [
-    { deviceId: "default", label: "System default" },
+    { deviceId: "default", label: "System default", labelKnown: inventoryKnown },
     ...microphones
-      .filter((device) => device.deviceId !== "default")
+      .filter((device) => device.deviceId && device.deviceId !== "default")
       .map((device, index) => ({
         deviceId: device.deviceId,
         label: device.label || `Microphone ${index + 1}`,
+        labelKnown: !!device.label,
       })),
   ];
 }

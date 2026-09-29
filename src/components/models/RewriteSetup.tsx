@@ -38,7 +38,7 @@ export function RewriteSetup({
         <WandSparkles className="h-5 w-5 text-accent-ink" />
       </div>
       <p className="mt-3 text-sm text-muted">
-        Use Rewrite beside any transcript to shorten, polish, organize, or build
+        Use Rewrite beside any transcript to shorten, polish, make bullet points, write a professional message, organize, or build
         a prompt. Compare the preview before applying it, and undo at any time.
       </p>
       <div className="mt-4 flex flex-wrap items-end gap-4">
