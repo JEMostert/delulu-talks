@@ -7,6 +7,15 @@ type JsonObject = Record<string, unknown>;
 export type WorkerResponse =
   | { protocolVersion: 1; id: string; ok: true; result: unknown }
   | { protocolVersion: 1; id: string; ok: false; error: string };
+export type WorkerProgress = {
+  protocolVersion: 1;
+  type: "progress";
+  id: string;
+  command: string;
+  stage: string;
+  detail: string;
+  fraction?: number;
+};
 
 function object(value: unknown, label: string): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -98,6 +107,30 @@ export function validateWorkerResponse(value: unknown): WorkerResponse {
   return response.ok
     ? { protocolVersion: 1, id: response.id as string, ok: true, result: response.result }
     : { protocolVersion: 1, id: response.id as string, ok: false, error: response.error as string };
+}
+
+export function validateWorkerProgress(value: unknown): WorkerProgress {
+  const event = object(value, "progress event");
+  if (event.protocolVersion !== WORKER_PROTOCOL_VERSION || event.type !== "progress")
+    throw new Error("Model worker progress protocol mismatch. Restart the app or repair its runtime.");
+  for (const key of ["id", "command", "stage"]) stringField(event, key, true, true);
+  stringField(event, "detail", true);
+  for (const [key, limit] of [["id", 128], ["command", 64], ["stage", 64], ["detail", 4_000]] as const)
+    if (Buffer.byteLength(event[key] as string, "utf8") > limit)
+      throw new Error(`Model worker progress ${key} exceeds ${limit} UTF-8 bytes`);
+  numberField(event, "fraction");
+  if (typeof event.fraction === "number" && event.fraction > 1)
+    throw new Error("Model worker progress fraction must be between zero and one");
+  const progress: WorkerProgress = {
+    protocolVersion: 1,
+    type: "progress",
+    id: event.id as string,
+    command: event.command as string,
+    stage: event.stage as string,
+    detail: event.detail as string,
+  };
+  if (typeof event.fraction === "number") progress.fraction = event.fraction;
+  return progress;
 }
 
 export function validateWorkerResult(command: string, value: unknown): void {
