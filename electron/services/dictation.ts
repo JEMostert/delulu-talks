@@ -2,7 +2,7 @@ import { personalize } from "../../src/personalization";
 import { deliveredText } from "../../src/transcriptText";
 import type { BrowserWindow } from "electron";
 import { spawn } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
@@ -435,7 +435,8 @@ export class DictationService {
     this.captureState = "processing";
     const settings = this.settings();
     this.asr.setActivity("transcribing", "Transcribing imported audio");
-    let preparedAudio: { path: string; temporary: boolean } | null = null;
+    let preparedAudio: { path: string; directory?: string } | null = null;
+    let failure: unknown;
     try {
       preparedAudio = await this.prepareAudio(request.path);
       const payload = await this.asr.transcribe(
@@ -454,6 +455,7 @@ export class DictationService {
       this.asr.setActivity("idle", "Speech Lab result ready");
       return record;
     } catch (error) {
+      failure = error;
       this.asr.setActivity(
         "error",
         error instanceof Error ? error.message : String(error),
@@ -461,73 +463,81 @@ export class DictationService {
       throw error;
     } finally {
       this.captureState = "idle";
-      if (preparedAudio?.temporary) rmSync(preparedAudio.path, { force: true });
+      if (preparedAudio?.directory) {
+        try {
+          this.removeImportDirectory(preparedAudio.directory, failure);
+        } catch (error) {
+          this.asr.setActivity("error", error instanceof Error ? error.message : String(error));
+          throw error;
+        }
+      }
+    }
+  }
+
+  private removeImportDirectory(directory: string, failure?: unknown): void {
+    try {
+      rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    } catch (cleanupError) {
+      const message = "Could not remove temporary converted audio after import";
+      if (failure !== undefined)
+        throw new AggregateError([failure, cleanupError], message, { cause: failure });
+      throw new Error(message, { cause: cleanupError });
     }
   }
 
   private async prepareAudio(
     sourcePath: string,
-  ): Promise<{ path: string; temporary: boolean }> {
+  ): Promise<{ path: string; directory?: string }> {
     if (
       [".wav", ".flac", ".ogg", ".opus"].includes(
         extname(sourcePath).toLowerCase(),
       )
     ) {
-      return { path: sourcePath, temporary: false };
+      // Source files are read-only inference inputs, never cleanup targets.
+      return { path: sourcePath };
     }
 
     mkdirSync(this.storage.cacheDirectory, { recursive: true });
-    const outputPath = join(
-      this.storage.cacheDirectory,
-      `import-${Date.now()}-${randomUUID()}.wav`,
-    );
-    await new Promise<void>((resolveConversion, reject) => {
-      const child = spawn(
-        "ffmpeg",
-        [
-          "-nostdin",
-          "-hide_banner",
-          "-loglevel",
-          "error",
-          "-y",
-          "-i",
-          sourcePath,
-          "-vn",
-          "-ac",
-          "1",
-          "-ar",
-          "16000",
-          "-c:a",
-          "pcm_s16le",
-          outputPath,
-        ],
-        { windowsHide: true },
-      );
-      let stderr = "";
-      child.stderr.on("data", (chunk: Buffer) => {
-        stderr = `${stderr}${chunk.toString()}`.slice(-16_000);
-      });
-      child.once("error", (error) => {
-        rmSync(outputPath, { force: true });
-        reject(
-          new Error(
-            `This format needs FFmpeg. Install ffmpeg and try again (${error.message})`,
-          ),
+    // mkdtemp creates an exclusively owned directory with owner-only access.
+    const directory = mkdtempSync(join(this.storage.cacheDirectory, "import-"));
+    const outputPath = join(directory, "audio.wav");
+    try {
+      await new Promise<void>((resolveConversion, reject) => {
+        const child = spawn(
+          "ffmpeg",
+          [
+            "-nostdin", "-hide_banner", "-loglevel", "error", "-n",
+            "-i", sourcePath, "-vn", "-ac", "1", "-ar", "16000",
+            "-c:a", "pcm_s16le", outputPath,
+          ],
+          { windowsHide: true },
         );
+        let stderr = "";
+        let spawnError: Error | null = null;
+        child.stderr.on("data", (chunk: Buffer) => {
+          stderr = `${stderr}${chunk.toString()}`.slice(-16_000);
+        });
+        child.once("error", (error) => {
+          spawnError = error;
+        });
+        // Wait for stdio/file handles to close before removing partial output.
+        child.once("close", (code) => {
+          if (spawnError) {
+            reject(new Error(
+              `This format needs FFmpeg. Install ffmpeg and try again (${spawnError.message})`,
+              { cause: spawnError },
+            ));
+          } else if (code === 0) resolveConversion();
+          else reject(new Error(
+            `FFmpeg could not decode this media file: ${stderr.trim() || `exit code ${code}`}`,
+          ));
+        });
       });
-      child.once("exit", (code) => {
-        if (code === 0) resolveConversion();
-        else {
-          rmSync(outputPath, { force: true });
-          reject(
-            new Error(
-              `FFmpeg could not decode this media file: ${stderr.trim() || `exit code ${code}`}`,
-            ),
-          );
-        }
-      });
-    });
-    return { path: outputPath, temporary: true };
+      return { path: outputPath, directory };
+    } catch (error) {
+      this.removeImportDirectory(directory, error);
+      throw error;
+    }
   }
 
   private createRecord(
