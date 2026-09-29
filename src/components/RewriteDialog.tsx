@@ -105,7 +105,7 @@ export function RewriteDialog({
           <p>
             {status?.engine === "error"
               ? status.message
-              : "Install a local writing model to use this optional tool. Dictation is ready without it."}
+              : "Install a local rewrite model to use this optional tool. Dictation is ready without it."}
           </p>
           <button
             className="secondary-button"

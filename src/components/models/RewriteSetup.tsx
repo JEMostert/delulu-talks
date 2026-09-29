@@ -70,7 +70,7 @@ export function RewriteSetup({
               disabled={busy}
               onClick={onUnloadMagic}
             >
-              Unload rewriting
+              Unload rewrite model
             </button>
           ) : magicStatus.engine === "unloaded" ? (
             <button
@@ -78,7 +78,7 @@ export function RewriteSetup({
               disabled={busy || setupPending}
               onClick={onLoadMagic}
             >
-              <Play /> Load rewriting
+              <Play /> Load rewrite model
             </button>
           ) : null}
           <button
@@ -88,8 +88,8 @@ export function RewriteSetup({
           >
             {writingBusy ? <LoaderCircle className="spin" /> : <Download />}
             {magicStatus.engine === "missing"
-              ? "Install rewriting"
-              : "Repair rewriting"}
+              ? "Install rewrite runtime"
+              : "Repair rewrite runtime"}
           </button>
         </div>
       </div>

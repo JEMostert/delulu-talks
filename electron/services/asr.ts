@@ -46,7 +46,7 @@ function conciseError(value: string): string {
   return (
     useful.at(-1) ??
     lines.at(-1) ??
-    "The speech engine stopped unexpectedly"
+    "The model worker stopped unexpectedly"
   ).slice(0, 800);
 }
 
@@ -94,7 +94,7 @@ export class AsrService {
     speechModel: speechModelForPlatform(),
     phase: "idle",
     engine: "missing",
-    message: "Local engine setup required",
+    message: "Speech runtime setup required",
     progress: null,
     retryAvailable: false,
     retryAudio: {
@@ -109,7 +109,7 @@ export class AsrService {
   private magicStatus: MagicStatus = {
     phase: "idle",
     engine: "missing",
-    message: "Magic setup required",
+    message: "Rewrite runtime setup required",
     progress: null,
   };
   private magicStatusListeners = new Set<(status: MagicStatus) => void>();
@@ -241,12 +241,12 @@ export class AsrService {
     this.updateStatus({
       phase: "loading",
       engine: "unloaded",
-      message: "Checking your local speech engine…",
+      message: "Checking your speech runtime…",
     });
     this.updateMagicStatus({
       phase: "loading",
       engine: "unloaded",
-      message: "Checking your local writing engine…",
+      message: "Checking your rewrite runtime…",
     });
     const [ready, magicReady] = await Promise.all([
       this.isEnvironmentReady(),
@@ -262,8 +262,8 @@ export class AsrService {
             phase: "idle",
             engine: "unloaded",
             message: settings.preloadModel
-              ? "Preparing selected model"
-              : "Engine installed — model loads on demand",
+              ? "Preparing the speech model"
+              : "Speech runtime installed — speech model loads on demand",
             migrationRequired: false,
           }
         : {
@@ -271,7 +271,7 @@ export class AsrService {
             engine: "missing",
             message: migrationRequired
               ? "Speech runtime update required"
-              : "Local engine setup required",
+              : "Speech runtime setup required",
             migrationRequired,
           },
     );
@@ -281,10 +281,10 @@ export class AsrService {
             phase: "idle",
             engine: "unloaded",
             message: settings.magicEnabled
-              ? "Magic installed — model loads on demand"
-              : "Writing available on demand",
+              ? "Rewrite runtime installed — rewrite model loads on demand"
+              : "Rewrite runtime installed — rewriting available on demand",
           }
-        : { phase: "idle", engine: "missing", message: "Magic setup required" },
+        : { phase: "idle", engine: "missing", message: "Rewrite runtime setup required" },
     );
     if (ready && settings.preloadModel) {
       void this.loadModel(settings).catch((error) => this.fail(error));
@@ -329,7 +329,7 @@ export class AsrService {
             phase: "idle",
             engine: "unloaded",
             message:
-              "Setup failed; your existing runtime is preserved. Load it to continue, or retry Repair.",
+              "Setup failed; your existing speech runtime is preserved. Load the speech model to continue, or retry Repair.",
             progress: null,
           });
         throw error;
@@ -357,7 +357,7 @@ export class AsrService {
     this.updateStatus({
       phase: "loading",
       engine: "loading",
-      message: "Downloading and loading the selected model",
+      message: "Downloading and loading the speech model",
       progress: 0.82,
     });
     this.speechInstaller.recordSetupStage("Downloading, loading and warming up the speech model");
@@ -406,7 +406,7 @@ export class AsrService {
             phase: "idle",
             engine: "unloaded",
             message:
-              "Setup failed; your existing Writing runtime is preserved. Load it to continue, or retry Repair.",
+              "Setup failed; your existing rewrite runtime is preserved. Load the rewrite model to continue, or retry Repair.",
             progress: null,
           });
         throw error;
@@ -435,7 +435,7 @@ export class AsrService {
     this.updateMagicStatus({
       phase: "loading",
       engine: "loading",
-      message: `Downloading and loading ${model.name}`,
+      message: `Downloading and loading rewrite model ${model.name}`,
       progress: 0.82,
     });
     this.magicInstaller.recordSetupStage("Downloading, loading and warming up the rewrite model");
@@ -491,7 +491,7 @@ export class AsrService {
     timeoutMs?: number,
   ): Promise<T> {
     if (this.shuttingDown)
-      return Promise.reject(new Error("The model engines are shutting down"));
+      return Promise.reject(new Error("The model workers are shutting down"));
     const worker = kind === "speech" ? this.speechWorker : this.magicWorker;
     return worker.request<T>(command, payload, timeoutMs);
   }
@@ -503,7 +503,7 @@ export class AsrService {
   ): Promise<void> {
     if (!eligible()) return;
     if (this.shuttingDown)
-      throw new Error("The speech engine is shutting down");
+      throw new Error("The speech model worker is shutting down");
     if (!fromSetup && this.maintenance.busy)
       throw new Error("Wait for runtime setup to finish");
     if (this.loadPromise) return this.loadPromise;
@@ -515,13 +515,13 @@ export class AsrService {
       if (!eligible()) return;
       if (!ready)
         throw new Error(
-          "Local engine setup is required before loading a model",
+          "Speech runtime setup is required before loading the speech model",
         );
       const model = modelById(settings.model);
       this.updateStatus({
         phase: "loading",
         engine: "loading",
-        message: `Loading and warming up ${model.name}. Ready means speech inference has been exercised, not just the weights loaded.`,
+        message: `Loading and warming up speech model ${model.name}. Ready means speech inference has been exercised, not just the weights loaded.`,
         model: settings.model,
         progress: 0.85,
       });
@@ -533,7 +533,7 @@ export class AsrService {
       this.updateStatus({
         phase: "idle",
         engine: "ready",
-        message: `${model.name} ready`,
+        message: `Speech model ${model.name} ready`,
         detail: null,
         model: settings.model,
         progress: 1,
@@ -561,11 +561,11 @@ export class AsrService {
   ): Promise<void> {
     if (!eligible()) return;
     if (this.shuttingDown)
-      throw new Error("The speech engine is shutting down");
+      throw new Error("The speech model worker is shutting down");
     await this.speechUnloadPromise;
     if (!eligible()) return;
     if (this.shuttingDown)
-      throw new Error("The speech engine is shutting down");
+      throw new Error("The speech model worker is shutting down");
     if (this.status.engine === "ready" && this.status.model === settings.model)
       return;
     await this.loadModel(settings, false, eligible);
@@ -616,7 +616,7 @@ export class AsrService {
       this.updateStatus({
         phase: "idle",
         engine: existsSync(this.venvPython()) ? "unloaded" : "missing",
-        message: "Model unloaded",
+        message: "Speech model unloaded",
         model: null,
         progress: null,
       });
@@ -634,7 +634,7 @@ export class AsrService {
   ): Promise<void> {
     if (!eligible()) return;
     if (this.shuttingDown)
-      throw new Error("The writing engine is shutting down");
+      throw new Error("The rewrite model worker is shutting down");
     if (!fromSetup && this.maintenance.busy)
       throw new Error("Wait for runtime setup to finish");
     if (this.magicLoadPromise) return this.magicLoadPromise;
@@ -645,12 +645,12 @@ export class AsrService {
       const ready = fromSetup || (await this.isMagicEnvironmentReady());
       if (!eligible()) return;
       if (!ready)
-        throw new Error("Install the Magic runtime before loading a model");
+        throw new Error("Install the rewrite runtime before loading a model");
       const model = magicModelById(settings.magicModel);
       this.updateMagicStatus({
         phase: "loading",
         engine: "loading",
-        message: `Loading ${model.name}`,
+        message: `Loading rewrite model ${model.name}`,
         model: settings.magicModel,
         progress: 0.86,
       });
@@ -667,7 +667,7 @@ export class AsrService {
       this.updateMagicStatus({
         phase: "idle",
         engine: "ready",
-        message: `${model.name} ready`,
+        message: `Rewrite model ${model.name} ready`,
         model: settings.magicModel,
         device: runtime.device,
         progress: 1,
@@ -692,11 +692,11 @@ export class AsrService {
   ): Promise<void> {
     if (!eligible()) return;
     if (this.shuttingDown)
-      throw new Error("The writing engine is shutting down");
+      throw new Error("The rewrite model worker is shutting down");
     await this.magicUnloadPromise;
     if (!eligible()) return;
     if (this.shuttingDown)
-      throw new Error("The writing engine is shutting down");
+      throw new Error("The rewrite model worker is shutting down");
     if (
       this.magicStatus.engine === "ready" &&
       this.magicStatus.model === settings.magicModel
@@ -755,7 +755,7 @@ export class AsrService {
       this.updateMagicStatus({
         phase: "idle",
         engine: "ready",
-        message: `${model.name} ready`,
+        message: `Rewrite model ${model.name} ready`,
         progress: 1,
       });
       return {
@@ -785,14 +785,14 @@ export class AsrService {
       this.magicOperations > 0 ||
       !this.canIdleUnload()
     )
-      throw new Error("Wait for Writing to finish before unloading");
+      throw new Error("Wait for rewriting to finish before unloading the rewrite model");
     this.clearMagicIdle();
     this.magicUnloadPromise = (async () => {
       await this.magicWorker.stopAndWait();
       this.updateMagicStatus({
         phase: "idle",
         engine: existsSync(this.magicInstaller.python) ? "unloaded" : "missing",
-        message: "Magic model unloaded",
+        message: "Rewrite model unloaded",
         model: null,
         device: null,
         progress: null,
@@ -927,7 +927,7 @@ export class AsrService {
     this.updateStatus({
       phase: "idle",
       engine: "missing",
-      message: "Local Python environment removed",
+      message: "Speech and rewrite runtimes removed",
       model: null,
       progress: null,
       migrationRequired: false,
@@ -935,7 +935,7 @@ export class AsrService {
     this.updateMagicStatus({
       phase: "idle",
       engine: "missing",
-      message: "Magic setup required",
+      message: "Rewrite runtime setup required",
       model: null,
       device: null,
       progress: null,
