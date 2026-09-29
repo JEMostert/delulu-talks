@@ -26,7 +26,7 @@ import type {
   RecordingSubmission,
   TranscriptRecord,
 } from "../src/types";
-import { isMagicPreset, REWRITE_PRESETS } from "../src/rewritePresets";
+import { isMagicPreset, AUTOMATIC_REWRITE_PRESETS } from "../src/rewritePresets";
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
 import { modelById } from "../src/data";
 import { deliveredText, transcriptSourceRevision } from "../src/transcriptText";
@@ -336,8 +336,8 @@ function rebuildTrayMenu(): void {
   const update = updates?.getStatus();
   const speechUnavailable =
     status.engine === "missing" || status.engine === "error";
-  const presets: Array<[MagicPreset, string]> = REWRITE_PRESETS.map(
-    ({ id, label }) => [id, label],
+  const presets: Array<[AppSettings["magicPreset"], string]> = AUTOMATIC_REWRITE_PRESETS.map(
+    ({ id, label }) => [id as AppSettings["magicPreset"], label],
   );
   const template: MenuItemConstructorOptions[] = [
     { label: "DELULU TALKS", enabled: false },
@@ -777,7 +777,7 @@ function registerIpc(): void {
       sourceLanguage: source.sourceLanguage == null
         ? undefined
         : validateText(source.sourceLanguage, 64).trim(),
-      allowInferences: source.allowInferences === true,
+      allowInferences: preset !== "summary" && source.allowInferences === true,
     };
     if (!request.text.trim())
       throw new Error("Add a transcript or draft before using Magic");

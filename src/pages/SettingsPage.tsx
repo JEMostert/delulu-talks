@@ -1,4 +1,4 @@
-import { REWRITE_PRESETS } from "../rewritePresets";
+import { AUTOMATIC_REWRITE_PRESETS } from "../rewritePresets";
 import { PersonalProfiles } from "../components/PersonalProfiles";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { VocabularyPage } from "./VocabularyPage";
@@ -428,7 +428,7 @@ export function SettingsPage(props: Props) {
                 })
               }
             >
-              {REWRITE_PRESETS.map((preset) => (
+              {AUTOMATIC_REWRITE_PRESETS.map((preset) => (
                 <option key={preset.id} value={preset.id}>{preset.label}</option>
               ))}
             </select>

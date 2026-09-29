@@ -15,7 +15,8 @@ export type MagicPreset =
   | "bullet-points"
   | "professional-message"
   | "structured"
-  | "prompt";
+  | "prompt"
+  | "summary";
 export type DictationPhase =
   "idle" | "preparing" | "loading" | "listening" | "transcribing" | "error";
 export type EnginePhase =
@@ -61,7 +62,7 @@ export type AppSettings = {
   preloadModel: boolean;
   magicEnabled: boolean;
   magicModel: MagicModelId;
-  magicPreset: MagicPreset;
+  magicPreset: Exclude<MagicPreset, "summary">;
   magicAllowInferences: boolean;
   preloadMagicModel: boolean;
   modelIdleMinutes: number;

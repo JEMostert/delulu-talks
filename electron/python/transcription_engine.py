@@ -117,6 +117,13 @@ MAGIC_PRESETS = {
         "Turn this transcript into a high-quality prompt for an AI or technical collaborator. "
         "Make the goal, context, requirements, constraints, deliverables, and success criteria explicit."
     ),
+    "summary": (
+        "Produce a concise, factual summary using only information stated in the source transcript. "
+        "Preserve stated names, numbers, dates, decisions, uncertainty, negation, and unresolved items "
+        "where relevant to the summary. Do not turn tentative statements into facts or unresolved "
+        "items into decisions. Do not infer plans, next steps, causes, commitments, or unsupported "
+        "claims. Retain the source language where known. Return only the summary."
+    ),
 }
 
 
@@ -358,7 +365,7 @@ class Worker:
         if not preset_instruction:
             raise ValueError(f"Unsupported Magic preset: {preset}")
         custom = str(request.get("instructions", "")).strip()[:4_000]
-        allow_inferences = bool(request.get("allowInferences", False))
+        allow_inferences = preset != "summary" and bool(request.get("allowInferences", False))
         fact_boundary = (
             "You may add reasonable implementation details, examples, constraints, or success criteria "
             "that make the result more useful. Never invent names, dates, measurements, credentials, "

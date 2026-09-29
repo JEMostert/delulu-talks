@@ -1,7 +1,7 @@
 import { transcriptSourceRevision } from "../../src/transcriptText";
 import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { app } from "electron";
-import { isMagicPreset } from "../../src/rewritePresets";
+import { isAutomaticMagicPreset, isMagicPreset } from "../../src/rewritePresets";
 import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
 import { speechModelForPlatform } from "../runtime/platform";
 import { normalizeTranscriptTitle } from "../../src/transcriptTitle";
@@ -160,8 +160,8 @@ export function normalizeSettings(value: unknown): AppSettings {
   const magicModel = validMagicModels.has(source.magicModel as MagicModelId)
     ? (source.magicModel as MagicModelId)
     : DEFAULT_SETTINGS.magicModel;
-  const magicPreset = isMagicPreset(source.magicPreset)
-    ? (source.magicPreset as MagicPreset)
+  const magicPreset = isAutomaticMagicPreset(source.magicPreset)
+    ? source.magicPreset
     : DEFAULT_SETTINGS.magicPreset;
   const requestedLanguage = safeString(
     source.language,
