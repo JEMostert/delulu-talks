@@ -1,7 +1,7 @@
 import { StringDecoder } from "node:string_decoder";
 
 export const WORKER_PROTOCOL_VERSION = 1;
-const PRESETS = new Set(["polish", "concise", "structured", "prompt"]);
+const PRESETS = new Set(["polish", "concise", "structured", "prompt", "bullet-points", "professional-message"]);
 const MAGIC_MODELS = new Set(["qwen35Small", "qwen35Medium", "qwen35Large"]);
 type JsonObject = Record<string, unknown>;
 export type WorkerResponse =

@@ -14,7 +14,7 @@ COMMANDS = frozenset({
     "ping", "status", "load", "unload", "magicStatus", "magicLoad",
     "magicUnload", "magicRewrite", "transcribe", "shutdown",
 })
-MAGIC_PRESETS = frozenset({"polish", "concise", "structured", "prompt"})
+MAGIC_PRESETS = frozenset({"polish", "concise", "structured", "prompt", "bullet-points", "professional-message"})
 MAGIC_MODELS = frozenset({"qwen35Small", "qwen35Medium", "qwen35Large"})
 
 
