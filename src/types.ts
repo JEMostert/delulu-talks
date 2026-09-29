@@ -427,6 +427,18 @@ export type RendererRecoveryState = {
   canStopRecording: boolean;
 };
 
+export type MicrophonePermission = {
+  state:
+    | "not-determined"
+    | "granted"
+    | "denied"
+    | "restricted"
+    | "unknown"
+    | "not-applicable";
+  canRequestCapture: boolean;
+  detail: string;
+};
+
 export type RuntimeSetupKind = "speech" | "rewrite";
 export type RuntimeSetupLogEntry = {
   at: number;
@@ -466,6 +478,7 @@ export type RuntimeDiagnostics = {
   dataDirectory: string;
   runtimeInstalled: boolean;
   packages: Record<string, string>;
+  microphone?: MicrophonePermission;
   accessibility?: AccessibilityPermission;
   checkedAt: number;
 };

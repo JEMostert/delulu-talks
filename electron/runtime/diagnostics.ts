@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { freemem, totalmem } from "node:os";
 import type { RuntimeDiagnostics } from "../../src/types";
 import type { StorageService } from "../services/storage";
+import { getMicrophonePermission } from "../services/microphonePermission";
 import { getAccessibilityPermission } from "../services/accessibilityPermission";
 import { runtimePython } from "./location";
 
@@ -54,6 +55,7 @@ export async function runtimeDiagnostics(
     dataDirectory: storage.dataDirectory,
     runtimeInstalled: installed,
     packages,
+    microphone: getMicrophonePermission(),
     accessibility: getAccessibilityPermission(),
     checkedAt: Date.now(),
   };

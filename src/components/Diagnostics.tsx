@@ -73,6 +73,14 @@ export function Diagnostics() {
               </span>
             </div>
           </div>
+          {data.microphone && (
+            <div className="mb-[18px] rounded-xl bg-soft p-[15px]" role="status">
+              <strong className="text-xs text-ink">
+                Microphone permission: {data.microphone.state.replaceAll("-", " ")}
+              </strong>
+              <p className="caption mt-2">{data.microphone.detail}</p>
+            </div>
+          )}
           {data.accessibility && (
             <div className="mb-[18px] rounded-xl bg-soft p-[15px]" role="status">
               <strong className="text-xs text-ink">
