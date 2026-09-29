@@ -62,6 +62,65 @@ LANGUAGE_NAMES = {
     "ko": "Korean",
     "vi": "Vietnamese",
 }
+
+
+def normalize_recognized_language(value: Any) -> str | None:
+    """Normalize only labels explicitly returned by the speech model.
+
+    A missing/unknown segment or differing segment languages leaves the whole
+    result unknown. Requested prompt hints must never fill a missing label.
+    """
+    if isinstance(value, list):
+        if not value:
+            return None
+        languages = {normalize_recognized_language(item) for item in value}
+        if len(languages) == 1 and None not in languages:
+            return next(iter(languages))
+        return None
+    if not isinstance(value, str):
+        return None
+    label = value.strip().lower()
+    if label in LANGUAGE_NAMES:
+        return label
+    return {name.lower(): code for code, name in LANGUAGE_NAMES.items()}.get(label)
+
+
+def recognized_language_metadata(value: Any) -> dict[str, Any]:
+    """Describe returned labels, without inferring speech languages from hints.
+
+    Flatten the scalar/list segment labels used by the adapters, keeping
+    missing segments unknown. A reported label is not calibrated detection.
+    """
+    values = value if isinstance(value, list) else [value]
+    labels = []
+    for item in values:
+        if isinstance(item, list):
+            labels.extend(item if item else [None])
+        else:
+            labels.append(item)
+    languages = []
+    complete = bool(labels)
+    for label in labels:
+        code = normalize_recognized_language(label) if isinstance(label, str) else None
+        if code is None:
+            complete = False
+        elif code not in languages:
+            languages.append(code)
+    status = "unknown"
+    recognized = None
+    if complete:
+        if len(languages) >= 2:
+            status = "mixed"
+        elif len(languages) == 1:
+            status = "reported"
+            recognized = languages[0]
+    return {
+        "recognizedLanguage": recognized,
+        "recognizedLanguages": languages,
+        "languageStatus": status,
+    }
+
+
 MAGIC_MODELS = {
     "qwen35Small": "Qwen/Qwen3.5-0.8B",
     "qwen35Medium": "Qwen/Qwen3.5-2B",
@@ -75,6 +134,16 @@ MAGIC_PRESETS = {
     "concise": (
         "Rewrite this transcript as a short, direct message. Remove repetition and "
         "nonessential wording while preserving every decision, request, and fact."
+    ),
+    "bullet-points": (
+        "Rewrite this transcript as concise bullet points, one existing point per bullet. "
+        "Preserve all facts, requests, negations, commitments, and uncertainty. Do not add "
+        "headings, priorities, tasks, or conclusions not present in the source."
+    ),
+    "professional-message": (
+        "Rewrite this transcript as a brief, courteous professional message. Preserve the "
+        "original intent, requests, facts, and uncertainty. Do not invent a recipient, "
+        "greeting, signature, deadline, promise, or claim of completed work."
     ),
     "structured": (
         "Rewrite this transcript into a detailed, easy-to-scan document. Add useful "
@@ -123,6 +192,7 @@ class Worker:
         self.model_name: str | None = None
         self.device: str | None = None
         self.speech_warmup = "not-started"
+        self.cuda_preflight: dict[str, Any] | None = None
         self.magic_model: Any | None = None
         self.magic_processor: Any | None = None
         self.magic_model_name: str | None = None
@@ -146,6 +216,7 @@ class Worker:
         self.model = None
         self.model_name = None
         self.device = None
+        self.cuda_preflight = None
         self.clear_allocator(speech=True)
         return self.status()
 
@@ -205,10 +276,9 @@ class Worker:
         try:
             import torch
 
-            if not torch.cuda.is_available():
-                raise RuntimeError(
-                    "R2T2 needs a CUDA GPU. No usable CUDA device was found."
-                )
+            from cuda_preflight import ensure_cuda_compatible
+            self.cuda_preflight = None
+            self.cuda_preflight = ensure_cuda_compatible(torch)
         except ImportError as exc:
             raise RuntimeError(
                 "The speech runtime is incomplete. Run Repair in Models."
@@ -272,6 +342,8 @@ class Worker:
             "device": self.device if self.model is not None else None,
             "residency": "resident" if self.model is not None else "unloaded",
             "warmup": self.speech_warmup,
+            **({"cudaPreflight": self.cuda_preflight}
+               if getattr(self, "cuda_preflight", None) is not None else {}),
         }
 
     def magic_status(self) -> dict[str, Any]:
@@ -454,9 +526,14 @@ class Worker:
             return_time_stamps=False,
         )
         finished = time.perf_counter()
+        # A returned label may reflect a forced prompt; it is not an independent
+        # detector. Missing model metadata remains unknown even with a hint.
+        language_metadata = recognized_language_metadata(getattr(results[0], "language", None))
         return {
             "text": str(results[0].text).strip(),
-            "language": language_code,
+            "language": language_metadata["recognizedLanguage"] or "und",
+            "requestedLanguage": language_code,
+            **language_metadata,
             "duration": len(wav) / 16000.0,
             "processingTime": finished - started,
             "inferenceTime": finished - inference_started,

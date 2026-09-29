@@ -16,6 +16,7 @@ export type SpeechSetupProps = {
   status: DictationStatus;
   settings: AppSettings;
   busy: boolean;
+  setupPending?: boolean;
   onSetup: () => void;
   onLoad: () => void;
   onUnload: () => void;
@@ -24,6 +25,7 @@ export function SpeechSetup({
   status,
   settings,
   busy,
+  setupPending = false,
   onSetup,
   onLoad,
   onUnload,
@@ -74,14 +76,14 @@ export function SpeechSetup({
             status.engine === "unloaded" && (
               <button
                 className="secondary-button"
-                disabled={busy}
+                disabled={busy || setupPending}
                 onClick={onLoad}
               >
                 <Play /> Load model
               </button>
             )
           )}
-          <button className="primary-button" disabled={busy} onClick={onSetup}>
+          <button className="primary-button" disabled={busy || setupPending} onClick={onSetup}>
             {speechBusy ? <LoaderCircle className="spin" /> : <Download />}
             {status.engine === "missing"
               ? status.migrationRequired
@@ -95,7 +97,7 @@ export function SpeechSetup({
       <ModelSetupStatus
         status={status}
         kind="speech"
-        busy={busy}
+        busy={busy || setupPending}
         onRepair={onSetup}
       />
       <div className="section-heading">

@@ -4,6 +4,8 @@
 
 A local desktop voice companion. A global shortcut records in the renderer; Electron owns transcription, optional Magic rewriting, and delivery to the previous app. The main window provides recent results, contextual transcript rewriting, personalization, file transcription, and maintenance. Linux/Wayland is the reference desktop.
 
+The [architecture decision records](decisions/README.md) explain the current transport, backend catalog, runtime packaging, and history-storage choices, including their deferred requirements.
+
 ## Boundaries
 
 - `src/pages/HomePage.tsx` is the settings-first Controls workspace. It exposes capture, transcription, writing and delivery settings alongside a latest-output inspector. Microphone enumeration runs here and on Settings.
@@ -27,6 +29,8 @@ Direct dependency versions and Linux constraints were taken from the reference m
 Pinned models stay loaded. Unpinned models stay warm until the idle delay expires; the dictation service no longer immediately unloads them after each result. Reset removes only the virtual environment. Model caches, transcript history and settings remain.
 
 Idle unloading checks actual capture ownership, runtime maintenance and pending speech/writing requests before stopping either worker. A blocked deadline defers another full idle interval without changing engine status. Requests reserve ownership before awaiting readiness, and requests arriving during an unload wait for it to finish before loading a new worker. Timer policy uses the latest saved residency settings, including changes made during inference; shutdown prevents completion callbacks from rearming idle timers. These ownership contracts are tested with controlled transports and clocks, without GPU inference or a native memory-release claim.
+
+An errored speech or writing worker stays failed until an explicit Load/Repair or transcript retry requests recovery. Keep-loaded policy does not retry errors, including after an operation finishes or a pending readiness check returns. Automatic loads retain the engine failure generation across every asynchronous readiness/unload wait and worker response, so a newer failure cannot be overwritten by a stale load result or rejection, including when speech cleanup is still waiting. Deferred residency changes still apply to healthy engines. Error causes and session-only retry audio remain available through the existing recovery controls; no automatic restart loop or background model download is introduced.
 
 The native GTK4 overlay keeps a dark ocean-blue palette for visibility over arbitrary apps. It is click-through and does not own recording or inference logic. Unsupported desktops use the main window and tray without the overlay.
 
