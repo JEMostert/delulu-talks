@@ -51,10 +51,11 @@ export class DictationService {
   async retry(): Promise<void> {
     if (this.isActive || !this.failedRecording)
       throw new Error("No failed recording is available to retry");
-    await this.submitRecording(this.failedRecording);
+    await this.processRecording(this.failedRecording);
   }
 
   private captureState: CaptureState = "idle";
+  private captureSessionId: string | null = null;
   private recorderReady = false;
   private busyNoticeTimer: NodeJS.Timeout | null = null;
   private busyNotice = false;
@@ -78,6 +79,7 @@ export class DictationService {
     const window = this.windows.main();
     if (!window || window.isDestroyed() || !this.recorderReady) {
       this.captureState = "idle";
+      this.captureSessionId = null;
       this.asr.setActivity(
         "error",
         "The microphone controller is still starting — try again in a moment",
@@ -151,6 +153,7 @@ export class DictationService {
     this.recorderReady = false;
     if (this.captureState !== "idle" && this.captureState !== "processing") {
       this.captureState = "idle";
+      this.captureSessionId = null;
       this.setHud({ state: "hidden" });
       this.asr.setActivity(
         "error",
@@ -204,11 +207,13 @@ export class DictationService {
       return;
     }
     const settings = this.settings();
+    this.captureSessionId = randomUUID();
     this.captureState = "opening";
     this.asr.setActivity("idle", "Opening microphone");
     this.sendRecorder({
       action: "start",
       inputDeviceId: settings.inputDeviceId,
+      sessionId: this.captureSessionId,
     });
   }
 
@@ -227,6 +232,7 @@ export class DictationService {
     this.sendRecorder({
       action: "stop",
       inputDeviceId: this.settings().inputDeviceId,
+      sessionId: this.captureSessionId!,
     });
   }
 
@@ -240,21 +246,26 @@ export class DictationService {
     if (this.busyNotice) this.setHud({ state: "hidden" });
     if (this.captureState === "idle" || this.captureState === "processing")
       return;
+    const sessionId = this.captureSessionId!;
     this.captureState = "idle";
+    this.captureSessionId = null;
     this.sendRecorder({
       action: "cancel",
       inputDeviceId: this.settings().inputDeviceId,
+      sessionId,
     });
     this.setHud({ state: "hidden" });
     this.asr.setActivity("idle", "Recording cancelled");
   }
 
-  recordingStarted(): void {
+  recordingStarted(sessionId: string): void {
+    if (sessionId !== this.captureSessionId) return;
     if (this.captureState === "stopping") {
       this.asr.setActivity("listening", "Finishing capture");
       this.sendRecorder({
         action: "stop",
         inputDeviceId: this.settings().inputDeviceId,
+        sessionId,
       });
       return;
     }
@@ -273,8 +284,18 @@ export class DictationService {
     });
   }
 
-  recordingFailed(message: string): void {
+  recordingFailed(message: string, sessionId: string): void {
+    if (
+      sessionId !== this.captureSessionId ||
+      this.captureState === "processing"
+    )
+      return;
+    this.failCapture(message);
+  }
+
+  private failCapture(message: string): void {
     this.captureState = "idle";
+    this.captureSessionId = null;
     this.setHud({
       state: "error",
       title: "Could not finish",
@@ -284,25 +305,40 @@ export class DictationService {
   }
 
   async submitRecording(submission: RecordingSubmission): Promise<void> {
-    if (this.captureState === "processing")
-      throw new Error("A recording is already being processed");
     if (
       !submission ||
       !Number.isFinite(submission.durationMs) ||
       submission.durationMs < 0
     )
       throw new Error("Invalid recording duration");
+    // Cancellation/reload consumes the identity. A late callback cannot commit
+    // audio into an idle or newer session, and duplicate submissions stay inert.
+    if (
+      this.captureState !== "stopping" ||
+      !this.captureSessionId ||
+      submission.sessionId !== this.captureSessionId
+    )
+      return;
+    this.captureSessionId = null;
+    await this.processRecording(submission);
+  }
+
+  private async processRecording(
+    submission: RecordingSubmission,
+  ): Promise<void> {
+    if (this.captureState === "processing")
+      throw new Error("A recording is already being processed");
     this.captureState = "processing";
     const settings = this.settings();
     if (
       !(submission.wav instanceof Uint8Array) ||
       submission.wav.byteLength < 44
     ) {
-      this.recordingFailed("The microphone returned an empty recording");
+      this.failCapture("The microphone returned an empty recording");
       return;
     }
     if (submission.wav.byteLength > 500 * 1024 * 1024) {
-      this.recordingFailed(
+      this.failCapture(
         "Recording is too large; keep dictation captures below 500 MB",
       );
       return;

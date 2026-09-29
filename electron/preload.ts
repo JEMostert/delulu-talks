@@ -73,10 +73,11 @@ const api: DeluluApi = {
   runLab: (request: LabRequest) => ipcRenderer.invoke("lab:run", request),
   exportTranscript: (id: string, format: ExportFormat) =>
     ipcRenderer.invoke("history:export", id, format),
-  recordingStarted: () => ipcRenderer.invoke("recorder:started"),
+  recordingStarted: (sessionId: string) =>
+    ipcRenderer.invoke("recorder:started", sessionId),
   recorderReady: () => ipcRenderer.invoke("recorder:ready"),
-  recordingFailed: (message: string) =>
-    ipcRenderer.invoke("recorder:failed", message),
+  recordingFailed: (message: string, sessionId: string) =>
+    ipcRenderer.invoke("recorder:failed", message, sessionId),
   recordingLevel: (level: number) => ipcRenderer.send("recorder:level", level),
   submitRecording: (recording: RecordingSubmission) =>
     ipcRenderer.invoke("recorder:submit", recording),

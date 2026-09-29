@@ -703,10 +703,15 @@ function registerIpc(): void {
   handle("dictation:stop", () => dictation.stop());
   handle("dictation:toggle", () => dictation.toggle());
   handle("dictation:cancel", () => dictation.cancel());
-  handle("recorder:started", () => dictation.recordingStarted());
+  handle("recorder:started", (_event, sessionId: unknown) =>
+    dictation.recordingStarted(validateText(sessionId, 128)),
+  );
   handle("recorder:ready", () => dictation.recorderAvailable());
-  handle("recorder:failed", (_event, message: unknown) =>
-    dictation.recordingFailed(validateText(message, 1000)),
+  handle("recorder:failed", (_event, message: unknown, sessionId: unknown) =>
+    dictation.recordingFailed(
+      validateText(message, 1000),
+      validateText(sessionId, 128),
+    ),
   );
   handle("recorder:submit", (_event, submission: RecordingSubmission) =>
     dictation.submitRecording(submission),

@@ -79,6 +79,8 @@ export class PcmRecorder {
   private stopping = false;
   private lastLevelAt = 0;
   private generation = 0;
+  private sessionId: string | null = null;
+  private requestedSessionId: string | null = null;
   private commands: Promise<void> = Promise.resolve();
 
   async cancel(): Promise<void> {
@@ -86,20 +88,56 @@ export class PcmRecorder {
   }
 
   handle(command: RecorderCommand): Promise<void> {
-    if (command.action === "cancel") this.generation += 1;
+    let sessionId = command.sessionId;
+    if (command.action === "start") {
+      if (
+        sessionId &&
+        this.requestedSessionId &&
+        sessionId !== this.requestedSessionId
+      )
+        return Promise.resolve();
+      sessionId ??= this.requestedSessionId ?? crypto.randomUUID();
+      this.requestedSessionId = sessionId;
+    } else {
+      sessionId ??= this.requestedSessionId ?? this.sessionId ?? undefined;
+      if (
+        sessionId &&
+        sessionId !== this.requestedSessionId &&
+        sessionId !== this.sessionId
+      )
+        return Promise.resolve();
+      if (command.action === "cancel") {
+        this.generation += 1;
+        if (!sessionId || this.requestedSessionId === sessionId)
+          this.requestedSessionId = null;
+      }
+    }
     const generation = this.generation;
     const operation = this.commands.then(async () => {
-      if (command.action === "start")
-        await this.start(command.inputDeviceId, generation);
-      if (command.action === "stop") await this.stop(true);
-      if (command.action === "cancel") await this.stop(false);
+      if (command.action === "start") {
+        await this.start(command.inputDeviceId, generation, sessionId!);
+      } else if (!sessionId || sessionId === this.sessionId) {
+        if (command.action === "stop" && generation === this.generation)
+          await this.stop(true, generation);
+        if (command.action === "cancel") await this.stop(false, generation);
+      }
     });
     this.commands = operation.catch(() => undefined);
     return operation;
   }
 
-  private async start(deviceId: string, generation: number): Promise<void> {
+  private finishSession(sessionId: string): void {
+    if (this.sessionId === sessionId) this.sessionId = null;
+    if (this.requestedSessionId === sessionId) this.requestedSessionId = null;
+  }
+
+  private async start(
+    deviceId: string,
+    generation: number,
+    sessionId: string,
+  ): Promise<void> {
     if (this.stream || this.stopping || generation !== this.generation) return;
+    this.sessionId = sessionId;
     try {
       const exactDevice =
         deviceId && deviceId !== "default" ? { exact: deviceId } : undefined;
@@ -114,6 +152,7 @@ export class PcmRecorder {
       });
       if (generation !== this.generation) {
         stream.getTracks().forEach((track) => track.stop());
+        this.finishSession(sessionId);
         return;
       }
       this.stream = stream;
@@ -122,33 +161,38 @@ export class PcmRecorder {
       this.sink = this.context.createGain();
       this.sink.gain.value = 0;
       this.chunks = [];
-      if (await this.connectWorklet()) {
+      if (await this.connectWorklet(generation)) {
         this.source.connect(this.worklet!);
         this.worklet!.connect(this.sink);
       } else {
         this.processor = this.context.createScriptProcessor(4096, 1, 1);
-        this.processor.onaudioprocess = (event) =>
-          this.ingest(event.inputBuffer.getChannelData(0));
+        this.processor.onaudioprocess = (event) => {
+          if (generation === this.generation)
+            this.ingest(event.inputBuffer.getChannelData(0));
+        };
         this.source.connect(this.processor);
         this.processor.connect(this.sink);
       }
       if (generation !== this.generation) {
         await this.dispose();
+        this.finishSession(sessionId);
         return;
       }
       this.sink.connect(this.context.destination);
       this.startedAt = performance.now();
-      await bridge.recordingStarted();
+      await bridge.recordingStarted(sessionId);
     } catch (error) {
       await this.dispose();
+      this.finishSession(sessionId);
       if (generation !== this.generation) return;
       await bridge.recordingFailed(
         `Microphone unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        sessionId,
       );
     }
   }
 
-  private async connectWorklet(): Promise<boolean> {
+  private async connectWorklet(generation: number): Promise<boolean> {
     if (!this.context) return false;
     try {
       await this.context.audioWorklet.addModule(captureWorkletUrl);
@@ -156,7 +200,7 @@ export class PcmRecorder {
       this.worklet.port.onmessage = (
         event: MessageEvent<{ samples: Float32Array; rms: number }>,
       ) => {
-        if (event.data?.samples)
+        if (generation === this.generation && event.data?.samples)
           this.ingest(event.data.samples, event.data.rms);
       };
       return true;
@@ -180,43 +224,58 @@ export class PcmRecorder {
     bridge.recordingLevel(audibleLevel(level));
   }
 
-  private async stop(submit: boolean): Promise<void> {
+  private async stop(submit: boolean, generation: number): Promise<void> {
     if (!this.stream || !this.context || this.stopping) return;
+    const sessionId = this.sessionId!;
     this.stopping = true;
-    const durationMs = Math.round(performance.now() - this.startedAt);
-    const sampleRate = this.context.sampleRate;
-    this.source?.disconnect();
-    if (this.worklet && submit) {
-      const port = this.worklet.port;
-      const receive = port.onmessage;
-      await new Promise<void>((resolve) => {
-        const finish = () => {
-          clearTimeout(timer);
-          port.onmessage = receive;
-          resolve();
-        };
-        const timer = setTimeout(finish, 300);
-        port.onmessage = (event) => {
-          if (event.data?.flushed) finish();
-          else receive?.call(port, event);
-        };
-        port.postMessage("flush");
-      });
-    }
-    const captured = merge(this.chunks);
-    await this.dispose();
-    this.stopping = false;
-    if (submit) {
-      if (!captured.length) {
-        await bridge.recordingFailed(
-          "The microphone did not produce audio. Try another input.",
-        );
-        return;
+    try {
+      const durationMs = Math.round(performance.now() - this.startedAt);
+      const sampleRate = this.context.sampleRate;
+      this.source?.disconnect();
+      if (this.worklet && submit) {
+        const port = this.worklet.port;
+        const receive = port.onmessage;
+        await new Promise<void>((resolve) => {
+          const finish = () => {
+            clearTimeout(timer);
+            port.onmessage = receive;
+            resolve();
+          };
+          const timer = setTimeout(finish, 300);
+          port.onmessage = (event) => {
+            if (event.data?.flushed) finish();
+            else receive?.call(port, event);
+          };
+          port.postMessage("flush");
+        });
       }
-      await bridge.submitRecording({
-        wav: wav(resample(captured, sampleRate)),
-        durationMs,
-      });
+      const captured = merge(this.chunks);
+      await this.dispose();
+      if (submit && generation === this.generation) {
+        if (!captured.length) {
+          const failure = bridge.recordingFailed(
+            "The microphone did not produce audio. Try another input.",
+            sessionId,
+          );
+          this.finishSession(sessionId);
+          this.stopping = false;
+          await failure;
+          return;
+        }
+        const delivery = bridge.submitRecording({
+          sessionId,
+          wav: wav(resample(captured, sampleRate)),
+          durationMs,
+        });
+        // Capture is committed to desktop ownership. Accept a later Start even
+        // if the IPC reply still waits for completed inference/delivery.
+        this.finishSession(sessionId);
+        this.stopping = false;
+        await delivery;
+      }
+    } finally {
+      this.stopping = false;
+      this.finishSession(sessionId);
     }
   }
 

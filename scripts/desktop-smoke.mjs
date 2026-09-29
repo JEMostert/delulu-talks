@@ -203,14 +203,12 @@ try {
         audioPath,
       ]);
     }
-    const audio = Array.from(await readFile(audioPath));
-    await page.evaluate(async (wav) => {
+    // Native inference consumes the explicit file fixture through the import API.
+    // Recorder submissions belong exclusively to their live capture session.
+    await page.evaluate(async (path) => {
       await window.delulu.loadModel();
-      await window.delulu.submitRecording({
-        wav: new Uint8Array(wav),
-        durationMs: 4573,
-      });
-    }, audio);
+      await window.delulu.runLab({ path });
+    }, audioPath);
     const records = await page.evaluate(() => window.delulu.getHistory());
     if (process.env.DELULU_EVIDENCE_NATIVE_RESULT) {
       await writeFile(
@@ -234,16 +232,13 @@ try {
     }
     if (process.argv.includes("--lifecycle")) {
       for (let cycle = 0; cycle < 3; cycle++) {
-        await page.evaluate(async (wav) => {
+        await page.evaluate(async (path) => {
           await window.delulu.unloadModel();
           if ((await window.delulu.getStatus()).engine !== "unloaded")
             throw new Error("Speech did not unload");
           await window.delulu.loadModel();
-          await window.delulu.submitRecording({
-            wav: new Uint8Array(wav),
-            durationMs: 4573,
-          });
-        }, audio);
+          await window.delulu.runLab({ path });
+        }, audioPath);
       }
       const cycles = await page.evaluate(() => window.delulu.getHistory());
       assert.equal(cycles.length, 4);
