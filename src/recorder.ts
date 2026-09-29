@@ -3,7 +3,8 @@ import { bridge } from "./bridge";
 import { CaptureCuePlayer, type CaptureCue } from "./captureCues";
 import { microphoneSelection } from "./microphoneSelection";
 import { MAX_CAPTURE_DURATION_MS, MAX_CAPTURE_SAMPLES } from "./captureLimits";
-import type { MicrophoneDevice, RecorderCommand } from "./types";
+import { CLIPPING_THRESHOLD } from "./captureDiagnostics";
+import type { CaptureDiagnostics, MicrophoneDevice, RecorderCommand } from "./types";
 
 function merge(chunks: Float32Array[]): Float32Array {
   const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
@@ -78,6 +79,13 @@ export class PcmRecorder {
   private source: MediaStreamAudioSourceNode | null = null;
   private sink: GainNode | null = null;
   private chunks: Float32Array[] = [];
+  private sampleCount = 0;
+  private peakAmplitude = 0;
+  private sumSquares = 0;
+  private clippedSampleCount = 0;
+
+  constructor(private readonly onDiagnostics?: (stats: CaptureDiagnostics | null) => void) {}
+
   private capturedSamples = 0;
   private sampleLimit = MAX_CAPTURE_SAMPLES;
   private limitStopRequested = false;
@@ -190,6 +198,11 @@ export class PcmRecorder {
       this.sink = this.context.createGain();
       this.sink.gain.value = 0;
       this.chunks = [];
+      this.sampleCount = 0;
+      this.peakAmplitude = 0;
+      this.sumSquares = 0;
+      this.clippedSampleCount = 0;
+      this.onDiagnostics?.(null);
       this.capturedSamples = 0;
       this.sampleLimit = Math.min(
         MAX_CAPTURE_SAMPLES,
@@ -256,6 +269,13 @@ export class PcmRecorder {
     const accepted = Math.min(samples.length, remaining);
     if (!accepted) return;
     this.chunks.push(new Float32Array(samples.subarray(0, accepted)));
+    for (const sample of samples.subarray(0, accepted)) {
+      const amplitude = Math.abs(sample);
+      this.peakAmplitude = Math.max(this.peakAmplitude, amplitude);
+      this.sumSquares += sample * sample;
+      if (amplitude >= CLIPPING_THRESHOLD) this.clippedSampleCount += 1;
+    }
+    this.sampleCount += accepted;
     this.capturedSamples += accepted;
     if (this.capturedSamples >= this.sampleLimit) this.requestLimitStop();
     const now = performance.now();
@@ -362,11 +382,17 @@ export class PcmRecorder {
         });
       }
       const captured = merge(this.chunks);
+      const captureDiagnostics: CaptureDiagnostics = {
+        sampleCount: this.sampleCount, sampleRate, peakAmplitude: this.peakAmplitude,
+        rmsAmplitude: Math.min(this.peakAmplitude, Math.sqrt(this.sumSquares / Math.max(1, this.sampleCount))),
+        clippedSampleCount: this.clippedSampleCount, clippingThreshold: CLIPPING_THRESHOLD,
+      };
       this.chunks = [];
       await this.dispose();
       // End cues use a separate output context only after microphone release.
       void this.playCue("stop", sessionId, this.generation, this.cueEpoch);
       if (submit && generation === this.generation) {
+        this.onDiagnostics?.(captured.length ? captureDiagnostics : null);
         if (!captured.length) {
           const failure = bridge.recordingFailed(
             "The microphone did not produce audio. Try another input.",
@@ -381,6 +407,7 @@ export class PcmRecorder {
           sessionId,
           wav: wav(resample(captured, sampleRate)),
           durationMs,
+          captureDiagnostics,
         });
         // Capture is committed to desktop ownership. Accept a later Start even
         // if the IPC reply still waits for completed inference/delivery.

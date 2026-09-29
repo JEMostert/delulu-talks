@@ -1,3 +1,4 @@
+import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { transcriptSourceRevision } from "../../src/transcriptText";
 import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { app } from "electron";
@@ -337,6 +338,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     sourceName:
       typeof source.sourceName === "string" ? source.sourceName : null,
     processingTimeMs: Math.max(0, Number(source.processingTimeMs) || 0),
+    captureDiagnostics: normalizeCaptureDiagnostics(source.captureDiagnostics),
   };
 }
 

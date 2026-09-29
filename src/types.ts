@@ -126,6 +126,16 @@ export type DictationStatus = {
   progress?: number | null;
 };
 
+/** Diagnostics of captured mono PCM before resampling/encoding, not hardware gain. */
+export type CaptureDiagnostics = {
+  sampleCount: number;
+  sampleRate: number;
+  peakAmplitude: number;
+  rmsAmplitude: number;
+  clippedSampleCount: number;
+  clippingThreshold: number;
+};
+
 /**
  * Speech backends currently provide no calibrated confidence evidence.
  * Do not infer confidence from timing, length, model identity, or rewrites.
@@ -160,6 +170,7 @@ export type TranscriptRecord = {
   source: TranscriptSource;
   sourceName?: string | null;
   processingTimeMs: number;
+  captureDiagnostics?: CaptureDiagnostics;
 };
 
 export type ModelProvenance = {
@@ -218,6 +229,7 @@ export type RecordingSubmission = {
   sessionId: string;
   wav: Uint8Array;
   durationMs: number;
+  captureDiagnostics?: CaptureDiagnostics;
 };
 
 export type MicrophoneDevice = {

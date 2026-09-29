@@ -358,6 +358,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   onConfigureShortcut={run(() => bridge.configureShortcut())}
                   shortcutStatus={w.shortcutStatus}
                   history={w.history}
+                  captureDiagnostics={w.captureDiagnostics}
                   saving={w.saving}
                   onNavigate={w.setPage}
                   onUpdateSettings={(patch) => {

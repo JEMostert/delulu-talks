@@ -1,3 +1,4 @@
+import { CaptureDiagnostics } from "./CaptureDiagnostics";
 import { ExportTemplateDialog } from "./ExportTemplateDialog";
 import type { ExportTemplateRequest } from "../exportTemplates";
 import { RewriteDialog } from "./RewriteDialog";
@@ -241,6 +242,7 @@ export function TranscriptCard({
           )}
         </div>
       </header>
+      {open && <CaptureDiagnostics value={record.captureDiagnostics} />}
       {!inspector && (
         <p
           className={`transcript-preview mt-4 text-[15px] leading-[1.85] text-ink whitespace-pre-wrap wrap-anywhere ${
