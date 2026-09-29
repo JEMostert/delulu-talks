@@ -1,0 +1,13 @@
+# Local deletion and reset boundaries
+
+Clear history removes durable transcripts and their corrections/rewrites, the main-process session map, the latest-record reference and renderer review lists. Deleting one transcript removes those references for its id. Neither operation removes settings, vocabulary rules, cached models or Python environments. A failed durable write retains the in-memory record and permits an explicit retry.
+
+Paste last waits three seconds for focus. After that delay it resolves the requested id again: deleting/clearing it cancels delivery, and correcting it during the delay uses the current text. It does not substitute a different latest transcript. Clear history does not cancel ongoing capture or transcription; a newly completed operation can create a new record afterward. Previously exported files and an already populated system clipboard are outside clear history.
+
+Reset Python environments is a distinct Models action. It stops workers and removes the speech and rewriting environment directories; settings, history and the model cache are excluded. This is not a factory reset or history deletion command.
+
+Run `bun run test:data-deletion` on Linux. CI runs the fixture after the production build through `scripts/test-evidence.mjs data-deletion` and retains its fixture-only evidence report. Four fresh isolated Electron profiles exercise clear, individual delete, correction during delayed delivery and a failed atomic clear followed by retry. Each verifies durable empty history, rejection of correction/rewrite attempts against the deleted id, empty history after renderer reload, preserved settings/model/runtime sentinels, and the explicitly scoped runtime reset. A corrected durable record creates a real session-map copy before deletion, so the test detects resurrection from that copy.
+
+The fixture captures clipboard writes and supplies a harmless Linux injector; it never sends input to another application. It holds the focus-delay timer deterministically, uses no downloaded models, and never reads a personal profile. It refuses other platforms until a harmless platform-specific injector fixture exists. This establishes Linux Electron IPC/data behavior, not native Mac/Windows filesystem behavior, native inference, manual focus/delivery, or actual history-disabled inference.
+
+Two preview browser journeys verify successful clearing removes both History and Controls review references while preserving the selected language, and failed clearing retains visible records with an error until retry succeeds. Preview IPC does not establish durable deletion; the Electron fixture covers that boundary.
