@@ -233,6 +233,7 @@ export const previewApi: DeluluApi = {
   },
   async getAudioJobs() { return desktopOnly(); },
   async removeAudioJob(_path: string) { return desktopOnly(); },
+  async relinkAudioJob(_path: string) { return desktopOnly(); },
   async chooseAudioFiles(): Promise<AudioFileSelection[]> {
     return desktopOnly();
   },

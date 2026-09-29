@@ -866,7 +866,7 @@ function registerIpc(): void {
     lastTranscript = null;
     rebuildTrayMenu();
   });
-  const chooseAudioFiles = async (multiple: boolean): Promise<AudioFileSelection[]> => {
+  const chooseAudioFiles = async (multiple: boolean, register = true): Promise<AudioFileSelection[]> => {
     const options: Electron.OpenDialogOptions = {
       title: "Choose audio or video",
       properties: multiple ? ["openFile", "multiSelections"] : ["openFile"],
@@ -877,7 +877,7 @@ function registerIpc(): void {
     const result = mainWindow
       ? await dialog.showOpenDialog(mainWindow, options)
       : await dialog.showOpenDialog(options);
-    return result.canceled ? [] : selectAudioFiles(result.filePaths);
+    return result.canceled ? [] : register ? selectAudioFiles(result.filePaths) : result.filePaths.map(validateAudioFile);
   };
   handle("lab:chooseAudio", async () => (await chooseAudioFiles(false))[0] ?? null);
   handle("lab:chooseAudioFiles", () => chooseAudioFiles(true));
@@ -905,11 +905,25 @@ function registerIpc(): void {
     try {
       const file = validateAudioFile(job.path);
       selectedAudioFiles.add(file.path);
-      return job;
+      return { ...job, sourceAvailable: true };
     } catch (reason) {
-      return { ...job, state: "failed", error: reason instanceof Error ? reason.message : String(reason) };
+      return { ...job, state: job.state === "done" ? "done" : "failed", sourceAvailable: false, sourceError: reason instanceof Error ? reason.message : String(reason) };
     }
   }));
+  handle("lab:relinkJob", async (_event, path: unknown) => {
+    if (dictation.isActive || asr.isBusy) throw new Error("Finish the current operation before relinking a source");
+    const key = resolve(validateText(path, 4096));
+    if (!importJobs().getJobs().some((job) => job.path === key))
+      throw new Error("This import job was removed");
+    const file = (await chooseAudioFiles(false, false))[0];
+    if (!file) return null;
+    if (dictation.isActive || asr.isBusy) throw new Error("Relink cancelled because another operation started");
+    const current = validateAudioFile(file.path);
+    const updated = importJobs().relink(key, current);
+    selectedAudioFiles.delete(key);
+    selectedAudioFiles.add(updated.path);
+    return { ...updated, sourceAvailable: true };
+  });
   handle("lab:removeJob", (_event, path: unknown) => {
     if (dictation.isActive) throw new Error("Finish the current recording or import first");
     const key = resolve(validateText(path, 4096));

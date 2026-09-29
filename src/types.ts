@@ -156,6 +156,8 @@ export type AudioImportJob = AudioFileSelection & {
   updatedAt: number;
   resultId?: string;
   error?: string;
+  sourceAvailable?: boolean;
+  sourceError?: string;
 };
 
 export type LabRequest = {
@@ -262,6 +264,7 @@ export type DeluluApi = {
   resolveAudioFiles(files: File[]): Promise<AudioFileSelection[]>;
   getAudioJobs(): Promise<AudioImportJob[]>;
   removeAudioJob(path: string): Promise<void>;
+  relinkAudioJob(path: string): Promise<AudioImportJob | null>;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   recordingStarted(): Promise<void>;

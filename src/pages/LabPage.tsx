@@ -10,6 +10,8 @@ type SelectedFile = AudioFileSelection & {
   state: "pending" | "running" | "done" | "failed";
   error?: string;
   resultId?: string;
+  sourceAvailable?: boolean;
+  sourceError?: string;
 };
 
 export function LabPage({ settings, busy, onResult, onToast, history, ...actions }: TranscriptActions & {
@@ -42,7 +44,7 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
     return () => { alive = false; stop.current = true; };
   }, []);
   const result = history.find((record) => record.id === resultId);
-  const pending = files.filter((file) => file.state === "pending").length;
+  const pending = files.filter((file) => file.state === "pending" && file.sourceAvailable !== false).length;
 
   function select(selected: AudioFileSelection[]) {
     if (!selected.length) return;
@@ -93,6 +95,21 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
     }
   }
 
+  async function relink(path: string) {
+    if (active.current || selectionActive.current || busy) return;
+    selectionActive.current = true;
+    setSelecting(true);
+    try {
+      const job = await bridge.relinkAudioJob(path);
+      if (job) setFiles((items) => items.map((item) => item.path === path ? job : item));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      selectionActive.current = false;
+      setSelecting(false);
+    }
+  }
+
   async function run() {
     if (!pending || busy || active.current || selectionActive.current) return;
     active.current = true;
@@ -101,7 +118,7 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
     setRunning(true);
     let completed = 0;
     try {
-      for (const file of files.filter((item) => item.state === "pending")) {
+      for (const file of files.filter((item) => item.state === "pending" && item.sourceAvailable !== false)) {
         if (stop.current) break;
         update(file.path, { state: "running", error: undefined });
         try {
@@ -112,6 +129,10 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
           completed += 1;
         } catch (reason) {
           update(file.path, { state: "failed", error: reason instanceof Error ? reason.message : String(reason) });
+          try {
+            const saved = (await bridge.getAudioJobs()).find((job) => job.path === file.path);
+            if (saved?.sourceAvailable === false) update(file.path, { sourceAvailable: false, sourceError: saved.sourceError });
+          } catch { /* Keep the original visible import failure. */ }
         }
       }
       if (completed) onToast(`${completed} transcript${completed === 1 ? "" : "s"} ${settings.keepHistory ? "saved to history" : "ready for this session"}`);
@@ -150,9 +171,11 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
                   <strong>{file.name}</strong>
                   <div className="text-[10px] text-muted">{(file.size / 1024 / 1024).toFixed(1)} MB · {file.state === "running" ? "Transcribing locally" : file.state === "done" ? "Complete" : file.state === "failed" ? "Failed" : "Ready"}</div>
                   {file.error && <p role="alert" className="text-[11px]">{file.error}</p>}
-                  <div className="flex gap-3 mt-1">
+                  {file.sourceError && <p role="alert" className="text-[11px]">Source unavailable: {file.sourceError}. Relink explicitly to process this job.</p>}
+                  <div className="flex flex-wrap gap-3 mt-1">
                     {file.resultId && <button className="text-accent" onClick={() => setResultId(file.resultId!)}>Show transcript</button>}
-                    {file.state === "failed" && <button disabled={running} className="text-accent" onClick={() => update(file.path, { state: "pending", error: undefined })}>Retry</button>}
+                    {file.state === "failed" && <button disabled={running || selecting || file.sourceAvailable === false} className="text-accent" onClick={() => update(file.path, { state: "pending", error: undefined })}>Retry</button>}
+                    {(file.sourceAvailable === false || file.state === "failed") && <button disabled={running || selecting || busy} className="text-accent" onClick={() => void relink(file.path)}>Relink source</button>}
                     <button disabled={running || selecting} className="text-muted" onClick={() => void remove(file.path)}>Remove</button>
                   </div>
                 </li>

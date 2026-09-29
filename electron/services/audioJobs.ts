@@ -126,19 +126,39 @@ export class AudioJobsService {
     return { ...updated };
   }
 
+  relink(oldPath: string, file: AudioFileSelection): AudioImportJob {
+    const index = this.jobs.findIndex((job) => job.path === oldPath);
+    if (index < 0)
+      throw new Error("Audio job no longer exists; select the file again explicitly");
+    if (this.jobs[index].state === "running")
+      throw new Error("Wait for this audio job to finish before relinking its source");
+    const replacement = selection(file);
+    if (this.jobs.some((job, position) => position !== index && job.path === replacement.path))
+      throw new Error("This source file already belongs to another audio job");
+    const updated: AudioImportJob = {
+      ...replacement,
+      state: "pending",
+      createdAt: this.jobs[index].createdAt,
+      updatedAt: Date.now(),
+    };
+    this.persist(this.jobs.map((job, position) => position === index ? updated : job));
+    return { ...updated };
+  }
+
   remove(path: string): void {
     this.persist(this.jobs.filter((job) => job.path !== path));
   }
 
   private persist(jobs: AudioImportJob[]): void {
+    const metadata = jobs.map(persistedJob);
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     const temporary = join(this.directory, `.import-jobs-${randomUUID()}.tmp`);
     try {
-      writeFileSync(temporary, `${JSON.stringify({ schemaVersion: 1, jobs })}\n`, {
+      writeFileSync(temporary, `${JSON.stringify({ schemaVersion: 1, jobs: metadata })}\n`, {
         encoding: "utf8", mode: 0o600, flag: "wx",
       });
       renameSync(temporary, this.filePath);
-      this.jobs = jobs;
+      this.jobs = metadata;
     } finally {
       rmSync(temporary, { force: true });
     }
