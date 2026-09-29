@@ -14,12 +14,16 @@ async function exerciseRace(
     | "cancel-flush"
     | "duplicates"
     | "permission-restart"
+    | "permission-stale-cancel"
     | "stale-commands"
     | "submission-restart",
 ) {
   return page.evaluate(async (scenario) => {
     const { PcmRecorder } = await import(/* @vite-ignore */ "/src/recorder.ts");
     const { bridge } = await import(/* @vite-ignore */ "/src/bridge.ts");
+    const permissionRestart =
+      scenario === "permission-restart" ||
+      scenario === "permission-stale-cancel";
     const NativeContext = window.AudioContext;
     const NativeWorklet = window.AudioWorkletNode;
     const getUserMedia = navigator.mediaDevices.getUserMedia;
@@ -124,7 +128,7 @@ async function exerciseRace(
     };
     navigator.mediaDevices.getUserMedia = async function (constraints) {
       acquisition += 1;
-      if (scenario === "permission-restart" && acquisition === 1) {
+      if (permissionRestart && acquisition === 1) {
         const permission = new Promise<void>((resolve) => {
           releasePermission = resolve;
         });
@@ -175,15 +179,21 @@ async function exerciseRace(
       });
     let staleCommandsPreservedCapture = true;
     try {
-      if (scenario === "permission-restart") {
+      if (permissionRestart) {
         const opening = start();
         await within(pendingPermission, "Permission was not requested");
         const cancelling = cancel();
         sessionId = "current-session";
         const reopening = start();
+        // A still owns its pending permission operation, but B already owns
+        // the next reservation. A delayed duplicate Cancel must affect only A.
+        const staleCancel =
+          scenario === "permission-stale-cancel"
+            ? cancel("abandoned-session")
+            : Promise.resolve();
         releasePermission();
         await within(
-          Promise.all([opening, cancelling, reopening]),
+          Promise.all([opening, cancelling, reopening, staleCancel]),
           "Cancelled permission response or new capture did not settle",
         );
       } else if (scenario === "stale-commands") {
@@ -202,7 +212,10 @@ async function exerciseRace(
           "Microphone start did not settle",
         );
       }
-      await within(heardAudio, "Real worklet did not deliver microphone audio");
+      await within(
+        heardAudio,
+        `Real worklet did not deliver microphone audio (starts=${startedSessions.join(",")}; acquisitions=${acquisition}; contexts=${contexts.length})`,
+      );
       const liveBeforeStop = streams
         .at(-1)!
         .getTracks()
@@ -270,7 +283,7 @@ async function exerciseRace(
         released: released(),
         staleCommandsPreservedCapture,
         abandonedPermissionTrackEnded:
-          scenario !== "permission-restart" ||
+          !permissionRestart ||
           streams[0].getTracks().every((track) => track.readyState === "ended"),
       };
     } finally {
@@ -388,5 +401,23 @@ test("late tagged Stop and Cancel cannot end a newer capture session", async ({
   expect(result.submissions).toHaveLength(1);
   expect(result.submissions[0].sessionId).toBe("current-session");
   expect(result.submissions[0].samples).toBeGreaterThan(0);
+  expect(result.released).toBe(true);
+});
+
+test("a duplicate abandoned Cancel cannot invalidate a new Start reserved during pending permission", async ({
+  page,
+}) => {
+  const result = await exerciseRace(page, "permission-stale-cancel");
+  expect(result.failures).toEqual([]);
+  expect(result.startedSessions).toEqual(["current-session"]);
+  expect(result.acquisition).toBe(2);
+  expect(result.streams).toBe(2);
+  expect(result.contexts).toBe(1);
+  expect(result.worklets).toBe(1);
+  expect(result.abandonedPermissionTrackEnded).toBe(true);
+  expect(result.submissions).toHaveLength(1);
+  expect(result.submissions[0].sessionId).toBe("current-session");
+  expect(result.submissions[0].samples).toBeGreaterThan(0);
+  expect(result.submissions[0].released).toBe(true);
   expect(result.released).toBe(true);
 });

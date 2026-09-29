@@ -99,13 +99,12 @@ export class PcmRecorder {
       sessionId ??= this.requestedSessionId ?? crypto.randomUUID();
       this.requestedSessionId = sessionId;
     } else {
-      sessionId ??= this.requestedSessionId ?? this.sessionId ?? undefined;
-      if (
-        sessionId &&
-        sessionId !== this.requestedSessionId &&
-        sessionId !== this.sessionId
-      )
-        return Promise.resolve();
+      // A queued Start already owns the next generation while the abandoned
+      // capture is still unwinding permission/flush/disposal. Old commands
+      // must not invalidate that newer reservation.
+      const owner = this.requestedSessionId ?? this.sessionId;
+      sessionId ??= owner ?? undefined;
+      if (sessionId && sessionId !== owner) return Promise.resolve();
       if (command.action === "cancel") {
         this.generation += 1;
         if (!sessionId || this.requestedSessionId === sessionId)
