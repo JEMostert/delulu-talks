@@ -39,6 +39,8 @@ jobs:
       - name: Verify isolated Electron desktop
         run: xvfb-run --auto-servernum node scripts/test-evidence.mjs desktop
 
+      - name: Verify isolated local data inventory
+        run: xvfb-run --auto-servernum node scripts/local-data-smoke.mjs
       - name: Verify isolated settings persistence failure
         run: xvfb-run --auto-servernum node scripts/test-evidence.mjs settings-write
 

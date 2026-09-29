@@ -42,6 +42,7 @@ import {
   normalizeSettings,
   StorageService,
 } from "./services/storage";
+import { localDataOverview } from "./services/localData";
 import { exportRecord } from "./services/transcripts";
 import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { UpdateService } from "./services/updates";
@@ -674,6 +675,7 @@ function registerIpc(): void {
     dictation.recorderUnavailable();
   });
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
+  handle("storage:overview", () => localDataOverview(storage));
   handle("dictation:pasteLast", () => schedulePasteLast());
   handle("dictation:pasteLastStatus", () => pasteLast.getStatus());
   handle("dictation:cancelPasteLast", (_event, operationId: unknown) => {
