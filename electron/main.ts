@@ -905,6 +905,7 @@ async function start(): Promise<void> {
       });
       broadcast("settings:changed", saved);
     },
+    { getShortcut: () => storage.getSettings().pasteShortcut },
   );
   pill = new PillService(
     smokeTest ? { env: { ...process.env, XDG_SESSION_TYPE: "" } } : {},

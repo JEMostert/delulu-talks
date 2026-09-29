@@ -41,6 +41,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   inputDeviceId: "default",
   inputDeviceLabel: "System default",
   autoPaste: true,
+  pasteShortcut: "standard",
   copyToClipboard: true,
   pastePortalToken: "",
   keepHistory: true,

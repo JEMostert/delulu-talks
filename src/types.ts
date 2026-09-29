@@ -14,6 +14,7 @@ export type MagicPhase =
   "idle" | "preparing" | "loading" | "rewriting" | "error";
 export type TranscriptSource = "dictation" | "file";
 export type ExportFormat = "txt" | "json";
+export type PasteShortcut = "standard" | "terminal";
 
 export type CustomWord = {
   kind?: "correction" | "shortcut";
@@ -36,6 +37,7 @@ export type AppSettings = {
   inputDeviceId: string;
   inputDeviceLabel: string;
   autoPaste: boolean;
+  pasteShortcut: PasteShortcut;
   copyToClipboard: boolean;
   pastePortalToken: string;
   keepHistory: boolean;

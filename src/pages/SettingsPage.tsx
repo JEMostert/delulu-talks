@@ -262,6 +262,33 @@ export function SettingsPage(props: Props) {
             >
               {toggle("autoPaste", "Paste automatically")}
             </SettingRow>
+            <SettingRow
+              icon={Keyboard}
+              title="Paste shortcut"
+              description="Applies to automatic paste and Paste last; terminals are not detected automatically. Choose a shortcut supported by the focused app, or turn off automatic paste and copy to clipboard. Delulu only sends the paste shortcut, never Enter; pasted newlines may execute commands depending on the terminal."
+            >
+              <select
+                aria-label="Paste shortcut"
+                value={s.pasteShortcut}
+                disabled={saving}
+                onChange={(e) =>
+                  save({
+                    pasteShortcut: e.target.value as AppSettings["pasteShortcut"],
+                  })
+                }
+              >
+                <option value="standard">
+                  Standard ({capabilities?.platform === "darwin"
+                    ? "Cmd+V"
+                    : "Ctrl+V"})
+                </option>
+                <option value="terminal">
+                  Terminal ({capabilities?.platform === "darwin"
+                    ? "Cmd+V"
+                    : "Ctrl+Shift+V"})
+                </option>
+              </select>
+            </SettingRow>
             {capabilities?.wayland && (
               <SettingRow
                 title="Keyboard permission"

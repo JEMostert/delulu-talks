@@ -190,6 +190,10 @@ export function normalizeSettings(value: unknown): AppSettings {
       512,
     ),
     autoPaste: boolean(source.autoPaste, DEFAULT_SETTINGS.autoPaste),
+    pasteShortcut:
+      source.pasteShortcut === "terminal"
+        ? "terminal"
+        : DEFAULT_SETTINGS.pasteShortcut,
     copyToClipboard: boolean(
       source.copyToClipboard,
       DEFAULT_SETTINGS.copyToClipboard,
