@@ -493,44 +493,58 @@ export class DictationService {
       this.storage.addHistory(record);
       this.broadcastTranscript(record);
       const outputName = record.magicText ? "Rewrite result" : "Transcript";
-      let completion = `${outputName} ready`;
-      let pasteFailed = false;
-      let pasteAttempted = false;
+      let completion = `${outputName} ready in Latest output`;
+      let delivery: "ready" | "pasted" | "copied" | "failed" = "ready";
       this.setHud({ state: "delivering" });
       if (settings.autoPaste) {
         try {
           await this.paste.paste(output);
-          pasteAttempted = true;
+          delivery = "pasted";
           completion = `${outputName} copied · paste shortcut sent`;
         } catch (error) {
-          pasteFailed = true;
-          const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
-          completion = "Automatic paste failed — use Copy instead or open History";
-          this.reportPasteFailure(record.id, detail);
+          const reason = error instanceof Error ? error.message : String(error);
+          this.reportPasteFailure(record.id, reason.slice(0, 500));
+          // A paste error may originate from the clipboard write itself.
+          // Confirm a copy before telling the user they can paste manually.
+          try {
+            this.paste.copy(output);
+            delivery = "copied";
+            completion = `Copied — paste manually (${reason})`;
+          } catch (copyError) {
+            delivery = "failed";
+            completion = `${outputName} ready in Latest output — clipboard delivery failed: ${copyError instanceof Error ? copyError.message : String(copyError)}`;
+          }
         }
       } else if (settings.copyToClipboard) {
-        this.paste.copy(output);
-        completion = `${outputName} copied to clipboard`;
+        try {
+          this.paste.copy(output);
+          delivery = "copied";
+          completion = `${outputName} copied to clipboard — paste manually`;
+        } catch (error) {
+          delivery = "failed";
+          completion = `${outputName} ready in Latest output — clipboard delivery failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
       }
       if (magicFailure)
         completion = `${completion} · Rewriting unavailable: ${magicFailure}`;
-      this.setHud(pasteFailed ? {
-        state: "error",
-        title: "Paste failed",
-        detail: "Open Delulu — Copy instead",
-      } : {
-        state: "success",
+      this.setHud({
+        state: delivery === "failed" ? "error" : "success",
         title:
-          pasteAttempted
+          delivery === "pasted"
             ? "Paste attempted"
-            : settings.copyToClipboard || completion.startsWith("Copied")
+            : delivery === "copied"
               ? "Copied"
-              : "Done",
-        detail: magicFailure
-          ? "Rewriting skipped"
-          : pasteAttempted
-            ? "Check the destination; text is also copied"
-            : "Ready to keep talking",
+              : delivery === "failed"
+                ? "Copy failed"
+                : "Ready",
+        detail:
+          delivery === "failed"
+            ? "Copy from Latest output"
+            : delivery === "copied"
+              ? "Paste in your destination"
+              : magicFailure
+                ? "Rewriting skipped"
+                : "Ready to keep talking",
       });
       this.asr.setActivity("idle", completion);
       return true;

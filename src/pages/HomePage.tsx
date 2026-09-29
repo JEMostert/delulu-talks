@@ -5,11 +5,13 @@ import {
   ArrowUpRight,
   Check,
   ClipboardPaste,
+  Copy,
   Keyboard,
   Mic,
   Settings2,
   WandSparkles,
 } from "lucide-react";
+import { deliveredText } from "../transcriptText";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { MAX_CAPTURE_DURATION_MS } from "../captureLimits";
 import {
@@ -394,6 +396,23 @@ export function HomePage({
               </span>
             </header>
             <div className="px-3.5 pt-[3px] pb-[5px]">
+              <div className="py-2.5 border-b border-line">
+                <button
+                  className="secondary-button text-[12px]"
+                  aria-pressed={!s.autoPaste && s.copyToClipboard}
+                  disabled={saving || busy}
+                  onClick={() =>
+                    save({ autoPaste: false, copyToClipboard: true })
+                  }
+                >
+                  <Copy /> Use clipboard only
+                </button>
+                <p className="caption mt-2">
+                  {!s.autoPaste && s.copyToClipboard
+                    ? "Results are copied. Switch to your destination and use its Paste command. No keyboard permission is needed."
+                    : "Choose clipboard only if automatic paste is unreliable on your desktop."}
+                </p>
+              </div>
               {(
                 [
                   [
@@ -461,10 +480,15 @@ export function HomePage({
                 </span>
                 <button
                   className="secondary-button text-[11px] min-h-[31px] px-[9px] py-1.5"
-                  onClick={onPasteLast}
-                  disabled={pasteLastBusy || busy}
+                  disabled={busy || (s.autoPaste && pasteLastBusy)}
+                  onClick={() =>
+                    s.autoPaste
+                      ? onPasteLast()
+                      : actions.onCopy(deliveredText(latest))
+                  }
                 >
-                  <ClipboardPaste /> Paste last
+                  {s.autoPaste ? <ClipboardPaste /> : <Copy />}
+                  {s.autoPaste ? "Paste last" : "Copy last result"}
                 </button>
               </div>
             </>

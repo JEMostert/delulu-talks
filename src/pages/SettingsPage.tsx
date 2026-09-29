@@ -315,6 +315,24 @@ export function SettingsPage(props: Props) {
             </div>
             <SettingRow
               icon={Clipboard}
+              title="Clipboard-only mode"
+              description="Copy each result, then switch to your destination and use its Paste command. No input injector or keyboard permission is needed."
+            >
+              <button
+                className="secondary-button"
+                aria-pressed={!s.autoPaste && s.copyToClipboard}
+                disabled={saving || busy}
+                onClick={() =>
+                  save({ autoPaste: false, copyToClipboard: true })
+                }
+              >
+                {!s.autoPaste && s.copyToClipboard
+                  ? "Clipboard only enabled"
+                  : "Use clipboard only"}
+              </button>
+            </SettingRow>
+            <SettingRow
+              icon={Clipboard}
               title="Paste automatically"
               description="Deliver the finished text to the app you were using."
             >
@@ -347,7 +365,7 @@ export function SettingsPage(props: Props) {
                 </option>
               </select>
             </SettingRow>
-            {capabilities?.wayland && (
+            {s.autoPaste && capabilities?.wayland && (
               <SettingRow
                 title="Keyboard permission"
                 description="Allow your desktop to paste for you. For a test, focus another text field within three seconds."
