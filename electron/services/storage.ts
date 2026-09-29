@@ -46,6 +46,39 @@ function readJson(path: string): unknown {
   }
 }
 
+/** Only a missing file is a first-run profile; invalid data must survive startup. */
+function readProfileJson(
+  path: string,
+  legacyPath: string | undefined,
+  kind: "settings" | "history",
+): unknown {
+  let sourcePath = path;
+  let value = readJson(sourcePath);
+  if (value === undefined && legacyPath) {
+    sourcePath = legacyPath;
+    value = readJson(sourcePath);
+  }
+  if (value === undefined) return undefined;
+
+  let problem: string | undefined;
+  if (kind === "history") {
+    if (!Array.isArray(value)) problem = "expected a JSON array of transcripts";
+  } else if (!value || typeof value !== "object" || Array.isArray(value)) {
+    problem = "expected a JSON object of settings";
+  } else {
+    const version = (value as Record<string, unknown>).workflowVersion;
+    // Unversioned profiles are the supported legacy format. Never downgrade a
+    // newer or malformed version by normalizing it into workflowVersion 1.
+    if (version !== undefined && version !== 1)
+      problem = `unsupported workflowVersion ${JSON.stringify(version)}; supported formats are an unversioned legacy object or workflowVersion 1`;
+  }
+  if (problem)
+    throw new Error(
+      `Unsupported local data at ${sourcePath}: ${problem}. The file has been preserved. Restore a compatible backup or use an app version that supports this format.`,
+    );
+  return value;
+}
+
 function writeJson(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.tmp`;
@@ -286,12 +319,18 @@ export class StorageService {
     const settingsPath = join(this.dataDirectory, SETTINGS_FILE);
     const historyPath = join(this.dataDirectory, HISTORY_FILE);
     const legacy = this.findLegacyDirectory();
-    const rawSettings =
-      readJson(settingsPath) ??
-      (legacy ? readJson(join(legacy, SETTINGS_FILE)) : undefined);
-    const rawHistory =
-      readJson(historyPath) ??
-      (legacy ? readJson(join(legacy, HISTORY_FILE)) : undefined);
+    // Validate both files before any migration writes. JSON null is invalid,
+    // not a signal to fall back to an older profile or default settings.
+    const rawSettings = readProfileJson(
+      settingsPath,
+      legacy ? join(legacy, SETTINGS_FILE) : undefined,
+      "settings",
+    );
+    const rawHistory = readProfileJson(
+      historyPath,
+      legacy ? join(legacy, HISTORY_FILE) : undefined,
+      "history",
+    );
     // Old releases enabled rewriting by default, so that setting did not record opt-in.
     // Migrate once; subsequent explicit choices persist with the workflow version.
     const prior =
