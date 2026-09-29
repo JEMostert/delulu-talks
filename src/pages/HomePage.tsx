@@ -15,12 +15,14 @@ import {
   type TranscriptActions,
 } from "../components/TranscriptCard";
 import { Toggle } from "../components/ui";
+import { LiveCaptureStatus } from "../components/LiveCaptureStatus";
 import type {
   AppSettings,
   DictationStatus,
   MagicStatus,
   MicrophoneDevice,
   Page,
+  PlatformCapabilities,
   ShortcutStatus,
   TranscriptRecord,
 } from "../types";
@@ -51,6 +53,8 @@ function ControlField({
 export function HomePage({
   settings: s,
   status,
+  magicStatus,
+  capabilities,
   shortcutStatus,
   devices,
   history,
@@ -66,6 +70,7 @@ export function HomePage({
   settings: AppSettings;
   status: DictationStatus;
   magicStatus: MagicStatus;
+  capabilities?: PlatformCapabilities | null;
   shortcutStatus: ShortcutStatus;
   devices: MicrophoneDevice[];
   history: TranscriptRecord[];
@@ -107,6 +112,7 @@ export function HomePage({
           <ArrowUpRight className="w-3.5 h-3.5" />
         </button>
       </div>
+      <LiveCaptureStatus settings={s} speech={status} rewrite={magicStatus} shortcut={shortcutStatus} devices={devices} capabilities={capabilities} />
       <div className="grid gap-4 items-start grid-cols-[minmax(0,1.55fr)_minmax(300px,1fr)] max-[1150px]:grid-cols-1">
         <div className="grid grid-cols-2 gap-3.5 max-[700px]:grid-cols-1">
           <section

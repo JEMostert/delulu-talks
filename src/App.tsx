@@ -307,6 +307,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   status={w.status}
                   magicStatus={w.magicStatus}
                   devices={w.devices}
+                  capabilities={w.capabilities}
                   busy={busy}
                   onConfigureShortcut={run(() => bridge.configureShortcut())}
                   shortcutStatus={w.shortcutStatus}
