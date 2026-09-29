@@ -906,7 +906,7 @@ async function start(): Promise<void> {
     smokeTest ? { env: { ...process.env, XDG_SESSION_TYPE: "" } } : {},
   );
   if (!smokeTest && storage.getSettings().showOverlay) pill.prepare();
-  asr = new AsrService(storage);
+  asr = new AsrService(storage, () => !dictation?.isActive);
   updates = new UpdateService(
     app.isPackaged &&
       process.platform !== "darwin" &&

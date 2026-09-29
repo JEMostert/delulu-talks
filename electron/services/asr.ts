@@ -49,7 +49,11 @@ export class AsrService {
       this.speechWorker.busy ||
       this.magicWorker.busy ||
       !!this.loadPromise ||
-      !!this.magicLoadPromise
+      !!this.magicLoadPromise ||
+      !!this.speechUnloadPromise ||
+      !!this.magicUnloadPromise ||
+      this.speechOperations > 0 ||
+      this.magicOperations > 0
     );
   }
   private status: DictationStatus = {
@@ -71,10 +75,19 @@ export class AsrService {
   private loadPromise: Promise<void> | null = null;
   private magicSetupPromise: Promise<void> | null = null;
   private magicLoadPromise: Promise<void> | null = null;
+  private speechUnloadPromise: Promise<void> | null = null;
+  private magicUnloadPromise: Promise<void> | null = null;
+  private speechOperations = 0;
+  private magicOperations = 0;
+  private shuttingDown = false;
+  private residencyPending = false;
   private speechIdleTimer: NodeJS.Timeout | null = null;
   private magicIdleTimer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly storage: StorageService) {
+  constructor(
+    private readonly storage: StorageService,
+    private readonly canIdleUnload: () => boolean = () => true,
+  ) {
     const magicConstraints = app.isPackaged
       ? join(process.resourcesPath, "python/constraints-linux-x64.txt")
       : resolve(app.getAppPath(), "electron/python/constraints-linux-x64.txt");
@@ -174,6 +187,7 @@ export class AsrService {
   }
 
   async initialize(settings: AppSettings): Promise<void> {
+    this.shuttingDown = false;
     this.initializing = true;
     this.updateStatus({
       phase: "loading",
@@ -240,6 +254,7 @@ export class AsrService {
 
   async setup(settings: AppSettings): Promise<void> {
     if (this.setupPromise) return this.setupPromise;
+    this.shuttingDown = false;
     this.setupPromise = this.maintenance
       .run(() => this.performSetup(settings))
       .catch(async (error) => {
@@ -256,6 +271,7 @@ export class AsrService {
       })
       .finally(() => {
         this.setupPromise = null;
+        this.applyDeferredResidency();
       });
     return this.setupPromise;
   }
@@ -291,6 +307,7 @@ export class AsrService {
 
   async setupMagic(settings: AppSettings): Promise<void> {
     if (this.magicSetupPromise) return this.magicSetupPromise;
+    this.shuttingDown = false;
     this.magicSetupPromise = this.maintenance
       .run(() => this.performMagicSetup(settings))
       .catch(async (error) => {
@@ -307,6 +324,7 @@ export class AsrService {
       })
       .finally(() => {
         this.magicSetupPromise = null;
+        this.applyDeferredResidency();
       });
     return this.magicSetupPromise;
   }
@@ -374,15 +392,21 @@ export class AsrService {
     payload: Record<string, unknown> = {},
     timeoutMs?: number,
   ): Promise<T> {
+    if (this.shuttingDown)
+      return Promise.reject(new Error("The model engines are shutting down"));
     const worker = kind === "speech" ? this.speechWorker : this.magicWorker;
     return worker.request<T>(command, payload, timeoutMs);
   }
 
   async loadModel(settings: AppSettings, fromSetup = false): Promise<void> {
+    if (this.shuttingDown)
+      throw new Error("The speech engine is shutting down");
     if (!fromSetup && this.maintenance.busy)
       throw new Error("Wait for runtime setup to finish");
     if (this.loadPromise) return this.loadPromise;
+    this.clearSpeechIdle();
     this.loadPromise = (async () => {
+      await this.speechUnloadPromise;
       if (!fromSetup && !(await this.isEnvironmentReady()))
         throw new Error(
           "Local engine setup is required before loading a model",
@@ -407,7 +431,7 @@ export class AsrService {
         progress: 1,
         migrationRequired: false,
       });
-      this.scheduleSpeechIdle(settings);
+      this.scheduleSpeechIdle();
     })()
       .catch(async (error) => {
         await this.speechWorker.stopAndWait();
@@ -416,11 +440,17 @@ export class AsrService {
       })
       .finally(() => {
         this.loadPromise = null;
+        this.applyDeferredResidency();
       });
     return this.loadPromise;
   }
 
   async ensureLoaded(settings: AppSettings): Promise<void> {
+    if (this.shuttingDown)
+      throw new Error("The speech engine is shutting down");
+    await this.speechUnloadPromise;
+    if (this.shuttingDown)
+      throw new Error("The speech engine is shutting down");
     if (this.status.engine === "ready" && this.status.model === settings.model)
       return;
     await this.loadModel(settings);
@@ -431,10 +461,11 @@ export class AsrService {
     settings: AppSettings,
   ): Promise<Record<string, unknown>> {
     const started = performance.now();
-    this.clearSpeechIdle();
-    await this.ensureLoaded(settings);
+    this.speechOperations += 1;
     this.clearSpeechIdle();
     try {
+      await this.ensureLoaded(settings);
+      this.clearSpeechIdle();
       const result = await this.request<Record<string, unknown>>(
         "speech",
         "transcribe",
@@ -449,29 +480,47 @@ export class AsrService {
         processingTime: (performance.now() - started) / 1000,
       };
     } finally {
-      this.scheduleSpeechIdle(settings);
+      this.speechOperations -= 1;
+      this.scheduleSpeechIdle();
+      this.configureResidency(this.storage.getSettings());
     }
   }
 
   async unload(): Promise<void> {
-    if (this.speechWorker.busy || this.loadPromise)
+    if (this.speechUnloadPromise) return this.speechUnloadPromise;
+    if (
+      this.speechWorker.busy ||
+      this.loadPromise ||
+      this.speechOperations > 0 ||
+      !this.canIdleUnload()
+    )
       throw new Error("Wait for speech to finish before unloading");
     this.clearSpeechIdle();
-    await this.speechWorker.stopAndWait();
-    this.updateStatus({
-      phase: "idle",
-      engine: existsSync(this.venvPython()) ? "unloaded" : "missing",
-      message: "Model unloaded",
-      model: null,
-      progress: null,
+    this.speechUnloadPromise = (async () => {
+      await this.speechWorker.stopAndWait();
+      this.updateStatus({
+        phase: "idle",
+        engine: existsSync(this.venvPython()) ? "unloaded" : "missing",
+        message: "Model unloaded",
+        model: null,
+        progress: null,
+      });
+    })().finally(() => {
+      this.speechUnloadPromise = null;
+      this.applyDeferredResidency();
     });
+    return this.speechUnloadPromise;
   }
 
   async loadMagic(settings: AppSettings, fromSetup = false): Promise<void> {
+    if (this.shuttingDown)
+      throw new Error("The writing engine is shutting down");
     if (!fromSetup && this.maintenance.busy)
       throw new Error("Wait for runtime setup to finish");
     if (this.magicLoadPromise) return this.magicLoadPromise;
+    this.clearMagicIdle();
     this.magicLoadPromise = (async () => {
+      await this.magicUnloadPromise;
       if (!fromSetup && !(await this.isMagicEnvironmentReady()))
         throw new Error("Install the Magic runtime before loading a model");
       const model = magicModelById(settings.magicModel);
@@ -498,7 +547,7 @@ export class AsrService {
         device: runtime.device,
         progress: 1,
       });
-      this.scheduleMagicIdle(settings);
+      this.scheduleMagicIdle();
     })()
       .catch((error) => {
         this.failMagic(error);
@@ -506,11 +555,17 @@ export class AsrService {
       })
       .finally(() => {
         this.magicLoadPromise = null;
+        this.applyDeferredResidency();
       });
     return this.magicLoadPromise;
   }
 
   async ensureMagicLoaded(settings: AppSettings): Promise<void> {
+    if (this.shuttingDown)
+      throw new Error("The writing engine is shutting down");
+    await this.magicUnloadPromise;
+    if (this.shuttingDown)
+      throw new Error("The writing engine is shutting down");
     if (
       this.magicStatus.engine === "ready" &&
       this.magicStatus.model === settings.magicModel
@@ -528,17 +583,18 @@ export class AsrService {
       throw new Error(
         "This text contains too many separate shortcut blocks to rewrite at once. Rewrite a shorter selection.",
       );
+    this.magicOperations += 1;
     this.clearMagicIdle();
-    await this.ensureMagicLoaded(settings);
-    this.clearMagicIdle();
-    const model = magicModelById(settings.magicModel);
-    this.updateMagicStatus({
-      phase: "rewriting",
-      engine: "ready",
-      message: `${model.name} is rewriting`,
-      progress: null,
-    });
     try {
+      await this.ensureMagicLoaded(settings);
+      this.clearMagicIdle();
+      const model = magicModelById(settings.magicModel);
+      this.updateMagicStatus({
+        phase: "rewriting",
+        engine: "ready",
+        message: `${model.name} is rewriting`,
+        progress: null,
+      });
       const output: string[] = [];
       let processingTimeMs = 0;
       for (const part of parts) {
@@ -582,47 +638,76 @@ export class AsrService {
       this.failMagic(error);
       throw error;
     } finally {
-      this.scheduleMagicIdle(settings);
+      this.magicOperations -= 1;
+      this.scheduleMagicIdle();
+      this.configureResidency(this.storage.getSettings());
     }
   }
 
   async unloadMagic(): Promise<void> {
-    if (this.magicWorker.busy || this.magicLoadPromise)
+    if (this.magicUnloadPromise) return this.magicUnloadPromise;
+    if (
+      this.magicWorker.busy ||
+      this.magicLoadPromise ||
+      this.magicOperations > 0 ||
+      !this.canIdleUnload()
+    )
       throw new Error("Wait for Writing to finish before unloading");
     this.clearMagicIdle();
-    await this.magicWorker.stopAndWait();
-    this.updateMagicStatus({
-      phase: "idle",
-      engine: existsSync(this.magicInstaller.python) ? "unloaded" : "missing",
-      message: "Magic model unloaded",
-      model: null,
-      device: null,
-      progress: null,
+    this.magicUnloadPromise = (async () => {
+      await this.magicWorker.stopAndWait();
+      this.updateMagicStatus({
+        phase: "idle",
+        engine: existsSync(this.magicInstaller.python) ? "unloaded" : "missing",
+        message: "Magic model unloaded",
+        model: null,
+        device: null,
+        progress: null,
+      });
+    })().finally(() => {
+      this.magicUnloadPromise = null;
+      this.applyDeferredResidency();
     });
+    return this.magicUnloadPromise;
   }
 
   configureResidency(settings: AppSettings): void {
-    if (this.isBusy) return;
+    if (this.shuttingDown) return;
+    // Apply saved timer policy even when a request is still pending. Completion
+    // reads storage again rather than restoring the request's old snapshot.
+    this.scheduleSpeechIdle();
+    this.scheduleMagicIdle();
+    if (this.isBusy) {
+      this.residencyPending = true;
+      return;
+    }
+    this.residencyPending = false;
     if (settings.preloadModel) {
       this.clearSpeechIdle();
       void this.isEnvironmentReady().then((ready) => {
-        if (ready)
-          void this.ensureLoaded(settings).catch((error) => this.fail(error));
+        const current = this.storage.getSettings();
+        if (!ready || !current.preloadModel || this.shuttingDown) return;
+        if (this.isBusy) this.residencyPending = true;
+        else void this.ensureLoaded(current).catch((error) => this.fail(error));
       });
-    } else {
-      this.scheduleSpeechIdle(settings);
     }
     if (settings.preloadMagicModel) {
       this.clearMagicIdle();
       void this.isMagicEnvironmentReady().then((ready) => {
-        if (ready)
-          void this.ensureMagicLoaded(settings).catch((error) =>
+        const current = this.storage.getSettings();
+        if (!ready || !current.preloadMagicModel || this.shuttingDown) return;
+        if (this.isBusy) this.residencyPending = true;
+        else
+          void this.ensureMagicLoaded(current).catch((error) =>
             this.failMagic(error),
           );
       });
-    } else {
-      this.scheduleMagicIdle(settings);
     }
+  }
+
+  private applyDeferredResidency(): void {
+    if (this.residencyPending && !this.isBusy)
+      this.configureResidency(this.storage.getSettings());
   }
 
   private clearSpeechIdle(): void {
@@ -635,23 +720,48 @@ export class AsrService {
     this.magicIdleTimer = null;
   }
 
-  private scheduleSpeechIdle(settings: AppSettings): void {
+  private scheduleSpeechIdle(): void {
     this.clearSpeechIdle();
-    if (settings.preloadModel || this.status.engine !== "ready") return;
-    this.speechIdleTimer = setTimeout(
-      () => void this.unload().catch((error) => this.fail(error)),
-      settings.modelIdleMinutes * 60_000,
-    );
+    const settings = this.storage.getSettings();
+    if (
+      this.shuttingDown ||
+      settings.preloadModel ||
+      this.status.engine !== "ready"
+    )
+      return;
+    this.speechIdleTimer = setTimeout(() => {
+      this.speechIdleTimer = null;
+      if (
+        this.shuttingDown ||
+        this.storage.getSettings().preloadModel ||
+        this.status.engine !== "ready"
+      )
+        return;
+      if (this.isBusy || !this.canIdleUnload()) this.scheduleSpeechIdle();
+      else void this.unload().catch((error) => this.fail(error));
+    }, settings.modelIdleMinutes * 60_000);
   }
 
-  private scheduleMagicIdle(settings: AppSettings): void {
+  private scheduleMagicIdle(): void {
     this.clearMagicIdle();
-    if (settings.preloadMagicModel || this.magicStatus.engine !== "ready")
+    const settings = this.storage.getSettings();
+    if (
+      this.shuttingDown ||
+      settings.preloadMagicModel ||
+      this.magicStatus.engine !== "ready"
+    )
       return;
-    this.magicIdleTimer = setTimeout(
-      () => void this.unloadMagic().catch((error) => this.failMagic(error)),
-      settings.modelIdleMinutes * 60_000,
-    );
+    this.magicIdleTimer = setTimeout(() => {
+      this.magicIdleTimer = null;
+      if (
+        this.shuttingDown ||
+        this.storage.getSettings().preloadMagicModel ||
+        this.magicStatus.engine !== "ready"
+      )
+        return;
+      if (this.isBusy || !this.canIdleUnload()) this.scheduleMagicIdle();
+      else void this.unloadMagic().catch((error) => this.failMagic(error));
+    }, settings.modelIdleMinutes * 60_000);
   }
 
   async reset(): Promise<void> {
@@ -679,6 +789,8 @@ export class AsrService {
   }
 
   async shutdown(): Promise<void> {
+    this.shuttingDown = true;
+    this.residencyPending = false;
     this.speechInstaller.stop();
     this.magicInstaller.stop();
     this.clearSpeechIdle();
