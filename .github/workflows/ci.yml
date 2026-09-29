@@ -22,13 +22,13 @@ jobs:
       - name: Typecheck, test, and build
         run: |
           bun run format:check
-          bun test
+          bun run test
           bun run build
 
       - name: Validate Python worker
         run: |
           python3 -m py_compile electron/python/transcription_engine.py electron/python/metal_speech.py electron/python/speech_engine.py
-          python3 -m unittest discover -s electron/python -p '*_test.py'
+          bun run test:python
 
       - name: Install browser test runtime
         run: bunx playwright install --with-deps chromium
@@ -37,4 +37,16 @@ jobs:
         run: bun run test:e2e
 
       - name: Verify isolated Electron desktop
-        run: xvfb-run --auto-servernum node scripts/desktop-smoke.mjs
+        run: xvfb-run --auto-servernum node scripts/test-evidence.mjs desktop
+
+      - name: Summarize verification evidence
+        if: always()
+        run: bun run test:evidence
+
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-evidence
+          path: artifacts/verification/
+          if-no-files-found: warn
