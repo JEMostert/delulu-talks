@@ -398,14 +398,14 @@ export function TranscriptCard({
           {onExport && (
             <div className="export-row mt-3.5 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted [&_.tool-button]:min-h-[28px] [&_.tool-button]:px-2 [&_.tool-button]:py-[5px] [&_svg]:size-3">
               <span>Export</span>
-              {(["txt", "json"] as ExportFormat[]).map((format) => (
+              {(["txt", "json", "md"] as ExportFormat[]).map((format) => (
                 <button
                   className="tool-button"
                   key={format}
                   onClick={() => onExport(record.id, format)}
                 >
                   <Download />
-                  {format.toUpperCase()}
+                  {format === "md" ? "Markdown" : format.toUpperCase()}
                 </button>
               ))}
             </div>

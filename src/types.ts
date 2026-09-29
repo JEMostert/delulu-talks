@@ -13,7 +13,7 @@ export type EnginePhase =
 export type MagicPhase =
   "idle" | "preparing" | "loading" | "rewriting" | "error";
 export type TranscriptSource = "dictation" | "file";
-export type ExportFormat = "txt" | "json";
+export type ExportFormat = "txt" | "json" | "md";
 
 export type CustomWord = {
   kind?: "correction" | "shortcut";
