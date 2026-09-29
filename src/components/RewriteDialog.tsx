@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
+import { RewriteDiff } from "./RewriteDiff";
+import { RewriteWarnings } from "./RewriteWarnings";
 import type {
   MagicPreset,
   MagicRewriteRequest,
@@ -157,6 +159,12 @@ export function RewriteDialog({
           />
         </label>
       </div>
+      {result && (
+        <>
+          <RewriteWarnings source={source} preview={result.text} />
+          <RewriteDiff source={source} preview={result.text} />
+        </>
+      )}
       {error && (
         <p className="field-error" role="alert">
           {error}

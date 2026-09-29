@@ -1,5 +1,6 @@
 import { app } from "electron";
 import { speechModelForPlatform } from "../runtime/platform";
+import { normalizeReportedLanguage } from "../../src/transcriptLanguage";
 import {
   existsSync,
   mkdirSync,
@@ -100,9 +101,14 @@ function safeString(value: unknown, fallback: string, max = 512): string {
     : fallback;
 }
 
-function optionalText(value: unknown, max: number): string | null {
+function optionalText(
+  value: unknown,
+  max: number,
+  preserveWhitespace = false,
+): string | null {
   if (typeof value !== "string") return null;
-  return value.trim().slice(0, max) || null;
+  const text = preserveWhitespace ? value : value.trim();
+  return text.trim() ? text.slice(0, max) : null;
 }
 
 function normalizeWords(value: unknown): CustomWord[] {
@@ -121,7 +127,11 @@ function normalizeWords(value: unknown): CustomWord[] {
         id: safeString(source.id, `word-${Date.now()}-${index}`, 128),
         term,
         soundsLike: safeString(source.soundsLike, "", 1024),
-        replacement: safeString(source.replacement, "", 4096),
+        // Shortcut indentation and trailing whitespace are literal user text.
+        replacement:
+          typeof source.replacement === "string" && source.replacement.trim()
+            ? source.replacement.slice(0, 4096)
+            : "",
         enabled: source.enabled !== false,
       },
     ];
@@ -190,6 +200,13 @@ export function normalizeSettings(value: unknown): AppSettings {
       512,
     ),
     autoPaste: boolean(source.autoPaste, DEFAULT_SETTINGS.autoPaste),
+    pasteLastDelaySeconds:
+      typeof source.pasteLastDelaySeconds === "number" &&
+      Number.isInteger(source.pasteLastDelaySeconds) &&
+      source.pasteLastDelaySeconds >= 1 &&
+      source.pasteLastDelaySeconds <= 30
+        ? source.pasteLastDelaySeconds
+        : DEFAULT_SETTINGS.pasteLastDelaySeconds,
     copyToClipboard: boolean(
       source.copyToClipboard,
       DEFAULT_SETTINGS.copyToClipboard,
@@ -243,12 +260,12 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     createdAt: Number(source.createdAt) || Date.now(),
     durationMs: Math.max(0, Number(source.durationMs) || 0),
     text,
-    personalizedText: optionalText(source.personalizedText, 500_000),
+    personalizedText: optionalText(source.personalizedText, 500_000, true),
     editedText: optionalText(
       source.editedText ?? source.editedIntendedText,
       500_000,
     ),
-    magicText: optionalText(source.magicText, 500_000),
+    magicText: optionalText(source.magicText, 500_000, true),
     magicModel: validMagicModels.has(source.magicModel as MagicModelId)
       ? (source.magicModel as MagicModelId)
       : null,
@@ -264,6 +281,16 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     ),
     model,
     language: safeString(source.language, "en", 12),
+    ...(source.requestedLanguage === undefined
+      ? {}
+      : {
+          requestedLanguage: normalizeReportedLanguage(source.requestedLanguage),
+        }),
+    ...(source.recognizedLanguage === undefined
+      ? {}
+      : {
+          recognizedLanguage: normalizeReportedLanguage(source.recognizedLanguage),
+        }),
     source: ["dictation", "file"].includes(String(source.source))
       ? (source.source as TranscriptRecord["source"])
       : "dictation",

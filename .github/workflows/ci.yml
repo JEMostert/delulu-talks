@@ -41,6 +41,8 @@ jobs:
 
       - name: Verify isolated local data inventory
         run: xvfb-run --auto-servernum node scripts/local-data-smoke.mjs
+      - name: Verify isolated settings persistence failure
+        run: xvfb-run --auto-servernum node scripts/test-evidence.mjs settings-write
 
       - name: Verify isolated deletion and reset
         run: xvfb-run --auto-servernum node scripts/test-evidence.mjs data-deletion

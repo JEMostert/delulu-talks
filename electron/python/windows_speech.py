@@ -5,6 +5,7 @@ HuggingFace mappings. Native Windows hardware inference still needs validation.
 """
 from __future__ import annotations
 
+import contextlib
 import gc
 import os
 import shutil
@@ -141,7 +142,7 @@ class WindowsSpeech:
         audio = Path(request["audioPath"])
         if not audio.is_file():
             raise FileNotFoundError("The selected audio file no longer exists")
-        from transcription_engine import LANGUAGE_NAMES
+        from transcription_engine import LANGUAGE_NAMES, normalize_recognized_language
         import soundfile as sf
         started = time.perf_counter()
         try:
@@ -164,14 +165,19 @@ class WindowsSpeech:
             for offset in range(0, len(samples), CHUNK_SAMPLES):
                 results.append(self._generate(samples[offset:offset + CHUNK_SAMPLES], language, 4096))
         except BaseException:
-            import torch
-            torch.cuda.empty_cache()
+            with contextlib.suppress(Exception):
+                torch = sys.modules.get("torch")
+                if torch is not None:
+                    torch.cuda.empty_cache()
             raise
         finished = time.perf_counter()
-        languages = {str(result.get("language") or language or "und").lower() for result in results}
-        detected = next(iter(languages)) if len(languages) == 1 else "und"
-        detected = {name.lower(): key for key, name in LANGUAGE_NAMES.items()}.get(detected, "und")
-        return {"text": " ".join(result["transcription"].strip() for result in results).strip(), "language": detected,
+        # These are labels from the parsed model output, not a separate detector;
+        # a forced prompt can influence them. Never substitute the prompt hint.
+        recognized_language = normalize_recognized_language([result.get("language") for result in results])
+        return {"text": " ".join(result["transcription"].strip() for result in results).strip(),
+                "language": recognized_language or "und",
+                "requestedLanguage": code,
+                "recognizedLanguage": recognized_language,
                 "duration": len(samples) / SAMPLE_RATE,
                 "processingTime": finished - started,
                 "inferenceTime": finished - inference_started}
@@ -181,6 +187,7 @@ class WindowsSpeech:
         self.processor = None
         gc.collect()
         torch = sys.modules.get("torch")
-        if torch is not None and torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        with contextlib.suppress(Exception):
+            if torch is not None and torch.cuda.is_available():
+                torch.cuda.empty_cache()
         return {"loaded": False}
