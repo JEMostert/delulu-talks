@@ -206,7 +206,26 @@ export type UpdateStatus = {
   bytesPerSecond?: number;
 };
 
+export type ModelCacheEntry = {
+  id: string;
+  label: string;
+  bytes: number;
+  sizeComplete: boolean;
+};
+
+export type ModelCachePreview = {
+  token: string;
+  entries: ModelCacheEntry[];
+};
+
+export type ModelCacheCleanupResult = {
+  deletedIds: string[];
+  failures: { id: string; message: string }[];
+};
+
 export type DeluluApi = {
+  previewModelCache(): Promise<ModelCachePreview>;
+  cleanupModelCache(token: string, ids: string[]): Promise<ModelCacheCleanupResult>;
   getRendererRecoveryState(): Promise<RendererRecoveryState>;
   reloadWorkspace(): Promise<void>;
   rendererControllerFailed(): Promise<void>;

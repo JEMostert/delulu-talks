@@ -26,6 +26,8 @@ function listener<T>(
 }
 
 const api: DeluluApi = {
+  previewModelCache: () => ipcRenderer.invoke("cache:preview"),
+  cleanupModelCache: (token, ids) => ipcRenderer.invoke("cache:cleanup", token, ids),
   getRendererRecoveryState: () => ipcRenderer.invoke("renderer:recoveryState"),
   reloadWorkspace: () => ipcRenderer.invoke("renderer:reload"),
   rendererControllerFailed: () =>

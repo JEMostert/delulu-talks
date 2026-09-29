@@ -28,6 +28,7 @@ import { deliveredText } from "../src/transcriptText";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
+import { ModelCacheService } from "./services/modelCache";
 import { DictationService } from "./services/dictation";
 import { PasteService } from "./services/paste";
 import { PillService } from "./services/pill";
@@ -75,6 +76,7 @@ let tray: Tray | null = null;
 let quitting = false;
 let storage: StorageService;
 let asr: AsrService;
+let modelCache: ModelCacheService;
 let paste: PasteService;
 let pill: PillService;
 let dictation: DictationService;
@@ -624,6 +626,27 @@ function registerIpc(): void {
   });
   handle("renderer:controllerFailed", () => dictation.recorderUnavailable());
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
+  handle("cache:preview", () => modelCache.preview());
+  handle("cache:cleanup", (_event, token: unknown, ids: unknown) => {
+    assertRuntimeIdle();
+    if (settingsQueue.busy)
+      throw new Error("Wait for settings to finish saving before cleaning the cache");
+    const unloaded = new Set(["unloaded", "missing"]);
+    if (
+      !unloaded.has(asr.getStatus().engine) ||
+      !unloaded.has(asr.getMagicStatus().engine)
+    )
+      throw new Error("Explicitly unload speech and rewriting before deleting cached models");
+    if (
+      typeof token !== "string" || token.length > 128 ||
+      !Array.isArray(ids) || ids.length === 0 || ids.length > 100 ||
+      ids.some((id) => typeof id !== "string" || id.length > 512)
+    )
+      throw new Error("Select cached models from a fresh preview");
+    // Stay synchronous after the authoritative idle/residency checks: another
+    // IPC request cannot start loading a model between the guard and deletion.
+    return modelCache.cleanup(token, ids as string[]);
+  });
   handle("dictation:pasteLast", async () => {
     const record = lastTranscript
       ? (storage.findHistory(lastTranscript.id) ?? lastTranscript)
@@ -896,6 +919,7 @@ function registerIpc(): void {
 async function start(): Promise<void> {
   if (!smokeTest) ensureDevelopmentDesktopEntry();
   storage = new StorageService();
+  modelCache = new ModelCacheService(storage.modelCacheDirectory);
   paste = new PasteService(
     () => storage.getSettings().pastePortalToken || null,
     (pastePortalToken) => {
