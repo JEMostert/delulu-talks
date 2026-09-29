@@ -211,6 +211,10 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.copyToClipboard,
       DEFAULT_SETTINGS.copyToClipboard,
     ),
+    spokenFormattingCommands: boolean(
+      source.spokenFormattingCommands,
+      DEFAULT_SETTINGS.spokenFormattingCommands,
+    ),
     pastePortalToken: safeString(
       source.pastePortalToken,
       DEFAULT_SETTINGS.pastePortalToken,

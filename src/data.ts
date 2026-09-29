@@ -43,6 +43,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoPaste: true,
   pasteLastDelaySeconds: 3,
   copyToClipboard: true,
+  spokenFormattingCommands: false,
   pastePortalToken: "",
   keepHistory: true,
   showOverlay: true,

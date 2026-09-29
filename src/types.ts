@@ -38,6 +38,7 @@ export type AppSettings = {
   autoPaste: boolean;
   pasteLastDelaySeconds: number;
   copyToClipboard: boolean;
+  spokenFormattingCommands: boolean;
   pastePortalToken: string;
   keepHistory: boolean;
   showOverlay: boolean;
