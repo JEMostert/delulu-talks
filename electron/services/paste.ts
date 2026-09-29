@@ -6,7 +6,7 @@ import {
   type ClientInterface,
   type MessageBus,
 } from "dbus-next";
-import type { PlatformCapabilities } from "../../src/types";
+import type { PipelineTimings, PlatformCapabilities } from "../../src/types";
 import { compatibleSessionBusAddress } from "../compat";
 import { portalRequest, PORTAL_NAME, PORTAL_PATH } from "./shortcutPortal";
 
@@ -104,25 +104,30 @@ export class PasteService {
     return null;
   }
 
-  copy(text: string): void {
-    clipboard.writeText(text);
-    // Native-Wayland Electron can retain clipboard ownership without Klipper
-    // observing the new text, causing Ctrl+V in another app to paste the
-    // previous clipboard item. Publish through Plasma's clipboard service as
-    // well so the destination sees the transcript after focus has moved.
-    if (this.kdeWayland && this.qdbus) {
-      const result = (this.io.spawnSync ?? spawnSync)(
-        this.qdbus,
-        ["org.kde.klipper", "/klipper", "setClipboardContents", text],
-        {
-          encoding: "utf8",
-          windowsHide: true,
-        },
-      );
-      if (result.status !== 0)
-        throw new Error(
-          result.stderr.trim() || "KDE clipboard rejected the transcript",
+  copy(text: string, timings?: PipelineTimings): void {
+    const started = performance.now();
+    try {
+      clipboard.writeText(text);
+      // Native-Wayland Electron can retain clipboard ownership without Klipper
+      // observing the new text, causing Ctrl+V in another app to paste the
+      // previous clipboard item. Publish through Plasma's clipboard service as
+      // well so the destination sees the transcript after focus has moved.
+      if (this.kdeWayland && this.qdbus) {
+        const result = (this.io.spawnSync ?? spawnSync)(
+          this.qdbus,
+          ["org.kde.klipper", "/klipper", "setClipboardContents", text],
+          {
+            encoding: "utf8",
+            windowsHide: true,
+          },
         );
+        if (result.status !== 0)
+          throw new Error(
+            result.stderr.trim() || "KDE clipboard rejected the transcript",
+          );
+      }
+    } finally {
+      if (timings) timings.clipboardMs = performance.now() - started;
     }
   }
 
@@ -131,43 +136,48 @@ export class PasteService {
     await this.ensurePortalSession();
   }
 
-  async paste(text: string): Promise<string> {
-    this.copy(text);
-    if (this.waylandPortal) {
-      await this.pasteThroughPortal();
-      return "wayland-portal";
-    }
-    if (!this.command)
-      throw new Error(
-        "no compatible input injector is available; the transcript is on the clipboard",
-      );
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 120));
-    await new Promise<void>((resolvePaste, reject) => {
-      const child = (this.io.spawn ?? spawn)(
-        this.command!.program,
-        this.command!.args,
-        {
-          windowsHide: true,
-        },
-      );
-      let stderr = "";
-      child.stderr.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString();
-      });
-      if (this.command!.input) child.stdin.end(this.command!.input);
-      child.once("error", reject);
-      child.once("exit", (code) =>
-        code === 0
-          ? resolvePaste()
-          : reject(
-              new Error(
-                stderr.trim() ||
-                  `${this.command!.program} exited with code ${code}`,
+  async paste(text: string, timings?: PipelineTimings): Promise<string> {
+    this.copy(text, timings);
+    const started = performance.now();
+    try {
+      if (this.waylandPortal) {
+        await this.pasteThroughPortal();
+        return "wayland-portal";
+      }
+      if (!this.command)
+        throw new Error(
+          "no compatible input injector is available; the transcript is on the clipboard",
+        );
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 120));
+      await new Promise<void>((resolvePaste, reject) => {
+        const child = (this.io.spawn ?? spawn)(
+          this.command!.program,
+          this.command!.args,
+          {
+            windowsHide: true,
+          },
+        );
+        let stderr = "";
+        child.stderr.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString();
+        });
+        if (this.command!.input) child.stdin.end(this.command!.input);
+        child.once("error", reject);
+        child.once("exit", (code) =>
+          code === 0
+            ? resolvePaste()
+            : reject(
+                new Error(
+                  stderr.trim() ||
+                    `${this.command!.program} exited with code ${code}`,
+                ),
               ),
-            ),
-      );
-    });
-    return this.command.program;
+        );
+      });
+      return this.command.program;
+    } finally {
+      if (timings) timings.pasteMs = performance.now() - started;
+    }
   }
 
   private async pasteThroughPortal(): Promise<void> {

@@ -1,3 +1,4 @@
+import { PipelineTimingDetails } from "./PipelineTimingDetails";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
@@ -273,6 +274,7 @@ export function RewriteDialog({
           the transcript before rewriting it.
         </p>
       )}
+      {result && <PipelineTimingDetails timings={result.timings} />}
     </Modal>
   );
 }

@@ -1,4 +1,5 @@
 import { splitForRewrite } from "../../src/personalization";
+import { normalizeTimings } from "../../src/pipelineTimings";
 import { app } from "electron";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
@@ -561,7 +562,9 @@ export class AsrService {
     this.speechOperations += 1;
     this.clearSpeechIdle();
     try {
+      const loadStarted = performance.now();
       await this.ensureLoaded(settings);
+      const speechLoadMs = performance.now() - loadStarted;
       this.clearSpeechIdle();
       const capabilities = this.status.capabilities;
       if (!capabilities) {
@@ -575,6 +578,7 @@ export class AsrService {
             : "This adapter advertises no language hints; repair the local speech runtime."}`,
         );
       }
+      const requestStarted = performance.now();
       const result = await this.request<Record<string, unknown>>(
         "speech",
         "transcribe",
@@ -584,8 +588,14 @@ export class AsrService {
         },
         transcriptionTimeout(payload.durationMs),
       );
+      const speechRequestMs = performance.now() - requestStarted;
       return {
         ...result,
+        timings: normalizeTimings({
+          ...normalizeTimings(result.timings),
+          speechLoadMs,
+          speechRequestMs,
+        }),
         processingTime: (performance.now() - started) / 1000,
       };
     } finally {
@@ -775,7 +785,9 @@ export class AsrService {
     this.clearMagicIdle();
     try {
       this.throwIfRewriteCancelled(operation);
+      const loadStarted = performance.now();
       await this.ensureMagicLoaded(settings, operation);
+      const rewriteLoadMs = performance.now() - loadStarted;
       this.throwIfRewriteCancelled(operation);
       this.clearMagicIdle();
       const model = magicModelById(settings.magicModel);
@@ -788,12 +800,14 @@ export class AsrService {
       this.throwIfRewriteCancelled(operation);
       const output: string[] = [];
       let processingTimeMs = 0;
+      let rewritingMs = 0;
       for (const part of parts) {
         this.throwIfRewriteCancelled(operation);
         if (part.protected || !part.text.trim()) {
           output.push(part.text);
           continue;
         }
+        const requestStarted = performance.now();
         const result = await this.request<MagicRewriteResult & Partial<WorkerRuntime>>(
           "magic",
           "magicRewrite",
@@ -802,6 +816,7 @@ export class AsrService {
             text: part.text.trim(),
           } as unknown as Record<string, unknown>,
         );
+        rewritingMs += performance.now() - requestStarted;
         this.throwIfRewriteCancelled(operation);
         if (result.residency !== undefined || result.warmup !== undefined || result.device !== undefined) {
           this.updateMagicStatus({
@@ -830,6 +845,7 @@ export class AsrService {
       return {
         model: settings.magicModel,
         processingTimeMs,
+        timings: normalizeTimings({ rewriteLoadMs, rewritingMs }),
         inputCharacters: request.text.length,
         includedInferences: request.allowInferences,
         preset: request.preset,

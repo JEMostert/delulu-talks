@@ -1,3 +1,4 @@
+import { PipelineTimingDetails } from "./PipelineTimingDetails";
 import { RewriteDialog } from "./RewriteDialog";
 import { useState } from "react";
 import {
@@ -397,6 +398,7 @@ export function TranscriptCard({
               </button>
             </div>
           )}
+          <PipelineTimingDetails timings={record.timings} />
           {onExport && (
             <div className="export-row mt-3.5 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted [&_.tool-button]:min-h-[28px] [&_.tool-button]:px-2 [&_.tool-button]:py-[5px] [&_svg]:size-3">
               <span>Export</span>

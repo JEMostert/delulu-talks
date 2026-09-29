@@ -25,6 +25,12 @@ COMMANDS = frozenset({
 })
 MAGIC_PRESETS = frozenset({"polish", "concise", "structured", "prompt", "bullet-points", "professional-message"})
 MAGIC_MODELS = frozenset({"qwen35Small", "qwen35Medium", "qwen35Large"})
+# Keep aligned with the shared PipelineTimings contract; unknown stages are omitted.
+TIMING_FIELDS = frozenset({
+    "captureEndMs", "preprocessingMs", "speechLoadMs", "speechRequestMs",
+    "backendPreprocessingMs", "inferenceMs", "rewriteLoadMs", "rewritingMs",
+    "clipboardMs", "pasteMs",
+})
 
 
 @contextlib.contextmanager
@@ -201,6 +207,12 @@ def validate_result(command: str, result: Any) -> None:
     if not isinstance(result, dict):
         raise ValueError(f"Invalid worker {command} result: expected an object")
     validate_json_value(result)
+    if "timings" in result:
+        timings = result["timings"]
+        if not isinstance(timings, dict) or any(key not in TIMING_FIELDS for key in timings):
+            raise ValueError("Worker timings must be an object containing only known timing fields")
+        for key in timings:
+            require_number(timings, key)
     for key, options in (("residency", ("resident", "unloaded")),
                          ("warmup", ("not-started", "warming", "complete", "unknown"))):
         if key in result and result[key] not in options:

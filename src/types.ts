@@ -89,7 +89,21 @@ export type MagicRewriteRequest = {
   allowInferences: boolean;
 };
 
+export type PipelineTimings = {
+  captureEndMs?: number;
+  preprocessingMs?: number;
+  speechLoadMs?: number;
+  speechRequestMs?: number;
+  backendPreprocessingMs?: number;
+  inferenceMs?: number;
+  rewriteLoadMs?: number;
+  rewritingMs?: number;
+  clipboardMs?: number;
+  pasteMs?: number;
+};
+
 export type MagicRewriteResult = RuntimeLifecycle & {
+  timings?: PipelineTimings;
   preset?: MagicPreset;
   text: string;
   model: MagicModelId;
@@ -112,6 +126,7 @@ export type DictationStatus = RuntimeLifecycle & {
 };
 
 export type TranscriptRecord = {
+  timings?: PipelineTimings;
   id: string;
   createdAt: number;
   durationMs: number;
@@ -181,6 +196,7 @@ export type RecorderCommand = {
 };
 
 export type RecordingSubmission = {
+  timings?: PipelineTimings;
   wav: Uint8Array;
   durationMs: number;
 };

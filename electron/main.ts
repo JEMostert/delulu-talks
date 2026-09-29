@@ -1,3 +1,4 @@
+import { normalizeTimings, withoutRewriteTimings } from "../src/pipelineTimings";
 import {
   app,
   BrowserWindow,
@@ -788,11 +789,13 @@ function registerIpc(): void {
           magicPreset: null,
           magicIncludedInferences: false,
           magicProcessingTimeMs: 0,
+          timings: withoutRewriteTimings(record.timings),
         };
       } else {
         if (!value || typeof value !== "object")
           throw new Error("Invalid rewrite");
         const rewrite = value as Record<string, unknown>;
+        const rewriteTimings = normalizeTimings(rewrite.timings);
         const text = validateText(rewrite.text, 500_000).trim();
         if (!text) throw new Error("A rewrite cannot be empty");
         updated = {
@@ -808,6 +811,11 @@ function registerIpc(): void {
           )
             ? (rewrite.model as TranscriptRecord["magicModel"])
             : null,
+          timings: normalizeTimings({
+            ...withoutRewriteTimings(record.timings),
+            ...(rewriteTimings?.rewriteLoadMs === undefined ? {} : { rewriteLoadMs: rewriteTimings.rewriteLoadMs }),
+            ...(rewriteTimings?.rewritingMs === undefined ? {} : { rewritingMs: rewriteTimings.rewritingMs }),
+          }),
           magicIncludedInferences: rewrite.includedInferences === true,
           magicProcessingTimeMs: Number.isFinite(rewrite.processingTimeMs)
             ? Math.max(0, Number(rewrite.processingTimeMs))
@@ -945,6 +953,19 @@ async function start(): Promise<void> {
     paste,
     { main: () => mainWindow, pill },
     (record: TranscriptRecord) => {
+      // Delivery measurements may arrive after a user changes this transcript.
+      const current = sessionTranscripts.get(record.id);
+      if (current) {
+        if (deliveredText(current) !== deliveredText(record)) return;
+        record = {
+          ...current,
+          timings: normalizeTimings({
+            ...current.timings,
+            ...(record.timings?.clipboardMs === undefined ? {} : { clipboardMs: record.timings.clipboardMs }),
+            ...(record.timings?.pasteMs === undefined ? {} : { pasteMs: record.timings.pasteMs }),
+          }),
+        };
+      }
       lastTranscript = record;
       sessionTranscripts.set(record.id, record);
       if (sessionTranscripts.size > 500)

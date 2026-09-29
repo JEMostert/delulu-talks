@@ -123,15 +123,21 @@ class WindowsSpeech:
         self._generate(np.zeros(SAMPLE_RATE, dtype=np.float32), "English", 8)
         self.warmup = "complete"
 
-    def _generate(self, samples, language, max_tokens):
+    def _generate(self, samples, language, max_tokens, timings=None):
         import torch
+        preprocessing_started = time.perf_counter()
         inputs = self.processor.apply_transcription_request(
             audio=samples, language=language, return_tensors="pt",
             processor_kwargs={"audio_kwargs": {"sampling_rate": SAMPLE_RATE}},
         ).to(self.model.device).to(self.model.dtype)
         length = int(inputs["input_ids"].shape[-1])
         with torch.inference_mode():
+            inference_started = time.perf_counter()
             generated = self.model.generate(**inputs, max_new_tokens=max_tokens, do_sample=False)
+            inference_finished = time.perf_counter()
+        if timings is not None:
+            timings["backendPreprocessingMs"] += (inference_started - preprocessing_started) * 1000
+            timings["inferenceMs"] += (inference_finished - inference_started) * 1000
         output = generated[0][length:]
         if max_tokens > 8 and len(output) >= max_tokens and int(output[-1]) not in (151643, 151645):
             raise RuntimeError("R2T2 reached its transcription token limit. Try a shorter audio segment.")
@@ -166,10 +172,12 @@ class WindowsSpeech:
         code = str(request.get("language", "en")).lower()
         language = LANGUAGE_NAMES.get(code)
         inference_started = time.perf_counter()
+        timings = {"backendPreprocessingMs": (inference_started - started) * 1000,
+                   "inferenceMs": 0.0}
         results = []
         try:
             for offset in range(0, len(samples), CHUNK_SAMPLES):
-                results.append(self._generate(samples[offset:offset + CHUNK_SAMPLES], language, 4096))
+                results.append(self._generate(samples[offset:offset + CHUNK_SAMPLES], language, 4096, timings))
         except BaseException:
             with contextlib.suppress(Exception):
                 torch = sys.modules.get("torch")
@@ -183,7 +191,8 @@ class WindowsSpeech:
         return {"text": " ".join(result["transcription"].strip() for result in results).strip(), "language": detected,
                 "duration": len(samples) / SAMPLE_RATE,
                 "processingTime": finished - started,
-                "inferenceTime": finished - inference_started}
+                "inferenceTime": finished - inference_started,
+                "timings": timings}
 
     def unload(self):
         self.model = None

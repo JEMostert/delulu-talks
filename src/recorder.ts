@@ -183,6 +183,7 @@ export class PcmRecorder {
   private async stop(submit: boolean): Promise<void> {
     if (!this.stream || !this.context || this.stopping) return;
     this.stopping = true;
+    const captureEndStarted = performance.now();
     const durationMs = Math.round(performance.now() - this.startedAt);
     const sampleRate = this.context.sampleRate;
     this.source?.disconnect();
@@ -203,19 +204,25 @@ export class PcmRecorder {
         port.postMessage("flush");
       });
     }
-    const captured = merge(this.chunks);
+    const chunks = this.chunks;
     await this.dispose();
+    const captureEndMs = performance.now() - captureEndStarted;
     this.stopping = false;
     if (submit) {
+      const preprocessingStarted = performance.now();
+      const captured = merge(chunks);
       if (!captured.length) {
         await bridge.recordingFailed(
           "The microphone did not produce audio. Try another input.",
         );
         return;
       }
+      const audio = wav(resample(captured, sampleRate));
+      const preprocessingMs = performance.now() - preprocessingStarted;
       await bridge.submitRecording({
-        wav: wav(resample(captured, sampleRate)),
+        wav: audio,
         durationMs,
+        timings: { captureEndMs, preprocessingMs },
       });
     }
   }

@@ -1,3 +1,4 @@
+import { normalizeTimings, withoutRewriteTimings } from "../../src/pipelineTimings";
 import { app } from "electron";
 import { speechModelForPlatform } from "../runtime/platform";
 import {
@@ -270,6 +271,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     sourceName:
       typeof source.sourceName === "string" ? source.sourceName : null,
     processingTimeMs: Math.max(0, Number(source.processingTimeMs) || 0),
+    timings: normalizeTimings(source.timings),
   };
 }
 
@@ -284,6 +286,7 @@ export function applyTranscriptEdit(
     magicPreset: null,
     magicIncludedInferences: false,
     magicProcessingTimeMs: 0,
+    timings: withoutRewriteTimings(record.timings),
   };
   const normalized = text?.trim() ?? null;
   if (text !== null && !normalized)
