@@ -75,10 +75,12 @@ export function Diagnostics() {
           </div>
           <p className="caption">
             {data.platform === "darwin" && data.arch === "arm64"
-              ? "Qwen3-ASR runs locally through MLX on Apple Silicon. Language is detected automatically."
-              : data.memoryGB < 16
-                ? "Speech uses the CUDA GPU when present. Keep one model loaded at a time if memory is tight."
-                : "R2T2 loads on your CUDA GPU. Magic rewrites are optional and use more memory while loaded."}
+              ? "R2T2 runs directly through MLX on Apple Silicon. The speech runtime needs native arm64 Python 3.12."
+              : data.platform === "win32"
+                ? "R2T2 uses native PyTorch with CUDA on Windows. An NVIDIA GPU and 64-bit Python 3.12 are required. Native Windows inference validation is pending."
+                : data.memoryGB < 16
+                  ? "Speech uses the CUDA GPU when present. Keep one model loaded at a time if memory is tight."
+                  : "R2T2 loads on your CUDA GPU. Rewriting is optional and uses more memory while loaded."}
           </p>
           <details>
             <summary>Technical details</summary>
@@ -91,12 +93,14 @@ export function Diagnostics() {
               <dd>{data.dataDirectory}</dd>
               <dt>Runtime</dt>
               <dd>{data.runtimeInstalled ? "Installed" : "Not installed"}</dd>
-              {["qwen_asr", "torch", "transformers"].map((name) => (
-                <div key={name}>
-                  <dt>{name}</dt>
-                  <dd>{data.packages[name] ?? "Not installed"}</dd>
-                </div>
-              ))}
+              {["mlx", "mlx-audio", "qwen-asr", "torch", "transformers"].map(
+                (name) => (
+                  <div key={name}>
+                    <dt>{name}</dt>
+                    <dd>{data.packages[name] ?? "Not installed"}</dd>
+                  </div>
+                ),
+              )}
             </dl>
             <button
               className="secondary-button"

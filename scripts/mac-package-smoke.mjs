@@ -87,13 +87,13 @@ try {
       diagnostics: await window.delulu.getDiagnostics(),
     }));
     assert.equal(state.diagnostics.dataDirectory, profile);
-    assert.equal(state.settings.model, "qwen3Asr");
+    assert.equal(state.settings.model, "r2t2Mlx");
     assert.equal(state.settings.language, "nl");
     assert.equal(state.update.phase, "unsupported");
     assert.match(state.update.message, /manual updates/);
     await page.getByRole("button", { name: "Models", exact: true }).click();
     await expect(
-      page.getByRole("heading", { name: "Qwen3-ASR", exact: true }),
+      page.getByRole("heading", { name: "R2T2", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page
@@ -101,10 +101,10 @@ try {
       .click();
     await expect(
       page.getByRole("combobox", { name: "Language", exact: true }),
-    ).toHaveValue("auto");
+    ).toHaveValue("nl");
     await expect(
       page.getByRole("combobox", { name: "Language", exact: true }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     assert.equal(
       state.records[0].model,
       "r2t2",

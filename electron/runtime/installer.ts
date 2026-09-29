@@ -12,6 +12,8 @@ import {
   RUNTIME_REVISION,
   SPEECH_PACKAGES,
   METAL_PACKAGES,
+  WINDOWS_CUDA_PACKAGES,
+  WINDOWS_SPEECH_PACKAGES,
 } from "./manifest";
 
 export type InstallProgress = {
@@ -26,7 +28,9 @@ const READINESS = {
     "import torch, torchvision, transformers; from transformers import AutoModelForMultimodalLM, AutoProcessor; assert int(transformers.__version__.split('.')[0]) >= 5",
 };
 const METAL_READINESS =
-  "import sys, platform; assert sys.version_info[:2] == (3,12) and platform.machine() == 'arm64'; import vllm, vllm_metal, mlx.core, librosa";
+  "import sys, platform; assert sys.version_info[:2] == (3,12) and platform.machine() == 'arm64'; import mlx.core as mx; from mlx_audio.stt.utils import load_model, load_audio; assert mx.metal.is_available()";
+const WINDOWS_READINESS =
+  "import sys; assert sys.version_info[:2] == (3,12); import torch, soundfile, soxr; from transformers import Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor; assert torch.version.cuda is not None and torch.cuda.is_available(), 'R2T2 requires a working NVIDIA CUDA GPU and driver'";
 
 /** Owns interpreter discovery and package installation; model loading is separate. */
 export class RuntimeInstaller {
@@ -38,9 +42,16 @@ export class RuntimeInstaller {
     private readonly constraintsPath: string | null,
     private readonly environment: () => NodeJS.ProcessEnv,
     private readonly metal = usesMetal(),
+    private readonly windows = process.platform === "win32",
   ) {}
   private readiness(kind: "speech" | "magic"): string {
-    return kind === "speech" && this.metal ? METAL_READINESS : READINESS[kind];
+    return kind === "speech"
+      ? this.metal
+        ? METAL_READINESS
+        : this.windows
+          ? WINDOWS_READINESS
+          : READINESS.speech
+      : READINESS.magic;
   }
   get python(): string {
     return runtimePython(this.paths.venvDirectory);
@@ -137,8 +148,8 @@ export class RuntimeInstaller {
           ["/opt/homebrew/bin/python3.12"],
           [join(homedir(), ".local/bin/python3.12")],
         ]
-      : process.platform === "win32"
-        ? [["py", "-3.12"], ["py", "-3.11"], ["python3.12"], ["python3.11"]]
+      : this.windows
+        ? [["py", "-3.12"], ["python3.12"]]
         : [["python3.13"], ["python3.12"], ["python3.11"]];
     const candidates = ["python", "python3"].includes(configured[0] ?? "")
       ? [...fallbacks, configured]
@@ -159,7 +170,10 @@ export class RuntimeInstaller {
           5000,
         );
         const [major, minor] = version.split(".").map(Number);
-        if (major === 3 && (metal ? minor === 12 : minor >= 11 && minor <= 13))
+        if (
+          major === 3 &&
+          (metal || this.windows ? minor === 12 : minor >= 11 && minor <= 13)
+        )
           return candidate;
       } catch {
         /* Try the next supported interpreter. */
@@ -168,7 +182,9 @@ export class RuntimeInstaller {
     throw new Error(
       metal
         ? "Install native arm64 Python 3.12, then set its full path in Settings → Advanced. Rosetta Python is not supported."
-        : "Install Python 3.11–3.13, then try again. You can set its full path in Settings → Advanced.",
+        : this.windows
+          ? "Install Python 3.12, then try again. You can set its full path in Settings → Advanced."
+          : "Install Python 3.11–3.13, then try again. You can set its full path in Settings → Advanced.",
     );
   }
 
@@ -185,7 +201,7 @@ export class RuntimeInstaller {
       process.platform === "darwin" &&
       Number(release().split(".")[0]) < 24
     )
-      throw new Error("Qwen3-ASR requires macOS 15 or later.");
+      throw new Error("R2T2 MLX requires macOS 15 or later.");
     const stage = async (
       program: string,
       args: string[],
@@ -205,7 +221,7 @@ export class RuntimeInstaller {
     mkdirSync(candidate, { recursive: true });
     const candidatePython = join(
       candidate,
-      process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+      this.windows ? "Scripts/python.exe" : "bin/python",
     );
     // Never modify the active environment. Interrupted candidates are ignored,
     // and the previous generation stays on disk for recovery.
@@ -232,10 +248,27 @@ export class RuntimeInstaller {
     );
     const constraints =
       this.constraintsPath &&
+      !this.windows &&
       process.platform === "linux" &&
       process.arch === "x64"
         ? ["--constraint", this.constraintsPath]
         : [];
+    if (this.windows) {
+      await stage(
+        candidatePython,
+        [
+          "-m",
+          "pip",
+          "install",
+          "--disable-pip-version-check",
+          "--index-url",
+          "https://download.pytorch.org/whl/cu130",
+          ...WINDOWS_CUDA_PACKAGES,
+        ],
+        "Installing the native Windows CUDA runtime",
+        0.32,
+      );
+    }
     await stage(
       candidatePython,
       [
@@ -247,7 +280,9 @@ export class RuntimeInstaller {
         ...(kind === "speech"
           ? metal
             ? METAL_PACKAGES
-            : SPEECH_PACKAGES
+            : this.windows
+              ? WINDOWS_SPEECH_PACKAGES
+              : SPEECH_PACKAGES
           : MAGIC_PACKAGES),
       ],
       kind === "speech"
