@@ -10,6 +10,7 @@ import type {
   MagicRewriteResult,
   MagicStatus,
   RuntimeLifecycle,
+  SetupStage,
 } from "../../src/types";
 import type { StorageService } from "./storage";
 
@@ -17,6 +18,10 @@ import { WorkerClient, transcriptionTimeout } from "../runtime/workerClient";
 import { SerialQueue } from "../runtime/serialQueue";
 import { RuntimeInstaller } from "../runtime/installer";
 import { speechModelForPlatform } from "../runtime/platform";
+
+function modelSetupStage(stage: string): SetupStage | null {
+  return ({ download: "model-download", load: "model-load", conversion: "model-conversion", warmup: "warmup" } as Record<string, SetupStage>)[stage] ?? null;
+}
 
 type WorkerRuntime = {
   loaded: boolean;
@@ -147,6 +152,8 @@ export class AsrService {
       (error) => this.fail(error),
       (detail, event) => this.updateStatus({
         detail,
+        ...(event?.command === "load" && modelSetupStage(event.stage)
+          ? { setupStage: modelSetupStage(event.stage), progress: null } : {}),
         ...(event?.command === "load" && event.stage === "warmup"
           ? { residency: "resident" as const, warmup: "warming" as const }
           : {}),
@@ -159,7 +166,13 @@ export class AsrService {
         env: this.workerEnvironment("magic"),
       }),
       (error) => this.failMagic(error),
-      (detail) => this.updateMagicStatus({ detail }),
+      (detail, event) => this.updateMagicStatus({
+        detail,
+        ...(event?.command === "magicLoad" && modelSetupStage(event.stage)
+          ? { setupStage: modelSetupStage(event.stage), progress: null } : {}),
+        ...(event?.command === "magicRewrite" && event.stage === "warmup"
+          ? { setupStage: "warmup" as const, warmup: "warming" as const, progress: null } : {}),
+      }),
     );
   }
 
@@ -196,6 +209,7 @@ export class AsrService {
   private updateStatus(patch: Partial<DictationStatus>): void {
     this.status = {
       ...this.status,
+      ...(["unloaded", "missing", "error"].includes(patch.engine ?? "") ? { setupStage: null } : {}),
       ...(patch.engine === "unloaded" || patch.engine === "missing"
         ? UNLOADED_LIFECYCLE : {}),
       ...patch,
@@ -206,6 +220,7 @@ export class AsrService {
   private updateMagicStatus(patch: Partial<MagicStatus>): void {
     this.magicStatus = {
       ...this.magicStatus,
+      ...(["unloaded", "missing", "error"].includes(patch.engine ?? "") ? { setupStage: null } : {}),
       ...(patch.engine === "unloaded" || patch.engine === "missing"
         ? UNLOADED_LIFECYCLE : {}),
       ...patch,
@@ -339,7 +354,8 @@ export class AsrService {
     this.updateStatus({
       phase: "loading",
       engine: "loading",
-      message: "Downloading and loading the selected model",
+      setupStage: "model-prepare",
+      message: "Preparing the selected model operation",
       progress: 0.82,
     });
     try {
@@ -395,7 +411,8 @@ export class AsrService {
     this.updateMagicStatus({
       phase: "loading",
       engine: "loading",
-      message: `Downloading and loading ${model.name}`,
+      setupStage: "model-prepare",
+      message: `Preparing ${model.name}`,
       progress: 0.82,
     });
     try {
@@ -466,6 +483,7 @@ export class AsrService {
       this.updateStatus({
         phase: "loading",
         engine: "loading",
+        setupStage: "model-prepare",
         residency: "loading",
         warmup: "unknown",
         device: null,
@@ -481,6 +499,7 @@ export class AsrService {
         ...reportedLifecycle(runtime),
         phase: "idle",
         engine: "ready",
+        setupStage: runtime.warmup === "complete" ? "ready" : "model-loaded",
         message: runtime.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
         detail: null,
         model: settings.model,
@@ -589,6 +608,7 @@ export class AsrService {
       this.updateMagicStatus({
         phase: "loading",
         engine: "loading",
+        setupStage: "model-prepare",
         residency: "loading",
         warmup: "unknown",
         device: null,
@@ -609,6 +629,7 @@ export class AsrService {
         ...reportedLifecycle(runtime),
         phase: "idle",
         engine: "ready",
+        setupStage: runtime.warmup === "complete" ? "ready" : "model-loaded",
         message: runtime.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
         model: settings.magicModel,
         progress: 1,
@@ -695,7 +716,8 @@ export class AsrService {
       this.updateMagicStatus({
         phase: "idle",
         engine: "ready",
-        message: runtime.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
+        setupStage: this.magicStatus.warmup === "complete" ? "ready" : "model-loaded",
+        message: this.magicStatus.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
         progress: 1,
       });
       return {

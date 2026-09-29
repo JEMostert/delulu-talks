@@ -51,6 +51,12 @@ export type AppSettings = {
   customWords: CustomWord[];
 };
 
+export type SetupStage =
+  | "runtime-check" | "runtime-prepare" | "runtime-packages"
+  | "runtime-download" | "runtime-install" | "runtime-build" | "runtime-validate"
+  | "model-prepare" | "model-download" | "model-load" | "model-conversion"
+  | "warmup" | "model-loaded" | "ready";
+
 export type ModelResidency = "unknown" | "unloaded" | "loading" | "resident" | "unloading";
 export type WarmupState = "unknown" | "not-started" | "warming" | "complete";
 export type RuntimeLifecycle = {
@@ -61,6 +67,7 @@ export type RuntimeLifecycle = {
 };
 
 export type MagicStatus = RuntimeLifecycle & {
+  setupStage?: SetupStage | null;
   phase: MagicPhase;
   engine: EnginePhase;
   message: string;
@@ -88,6 +95,7 @@ export type MagicRewriteResult = RuntimeLifecycle & {
 };
 
 export type DictationStatus = RuntimeLifecycle & {
+  setupStage?: SetupStage | null;
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   migrationRequired?: boolean;

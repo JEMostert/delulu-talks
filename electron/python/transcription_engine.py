@@ -215,9 +215,18 @@ class Worker:
             ) from exc
 
         from qwen_asr import Qwen3ASRModel
+        from huggingface_hub import snapshot_download
 
+        emit_progress("Retrieving R2T2 checkpoint (cached files may be reused)…", stage="download")
+        model_path = snapshot_download(
+            repo_id=SPEECH_MODEL,
+            cache_dir=str(Path(request["cacheDir"]) / "hub") if request.get("cacheDir") else None,
+            local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1",
+            allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.tiktoken", "*.jinja"],
+        )
+        emit_progress("Loading R2T2 weights into the CUDA runtime…", stage="load")
         self.model = Qwen3ASRModel.LLM(
-            model=SPEECH_MODEL,
+            model=model_path,
             # R2T2 advertises a 65k context by default, which makes vLLM reserve
             # a 7+ GiB KV cache before a single audio request is processed. A
             # 32k ASR context is ample for Delulu's bounded dictation/file flow
@@ -307,11 +316,19 @@ class Worker:
             import torch
             from transformers import AutoModelForMultimodalLM, AutoProcessor
 
+            from huggingface_hub import snapshot_download
             cache_dir = str(request.get("cacheDir") or "") or None
-            self.magic_processor = AutoProcessor.from_pretrained(model_id, cache_dir=cache_dir)
+            emit_progress("Retrieving rewrite checkpoint (cached files may be reused)…", stage="download")
+            model_path = snapshot_download(
+                repo_id=model_id, cache_dir=cache_dir,
+                local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1",
+                allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.tiktoken", "*.jinja"],
+            )
+            emit_progress("Loading rewrite processor and weights…", stage="load")
+            self.magic_processor = AutoProcessor.from_pretrained(model_path, local_files_only=True)
             self.magic_model = AutoModelForMultimodalLM.from_pretrained(
-                model_id,
-                cache_dir=cache_dir,
+                model_path,
+                local_files_only=True,
                 dtype="auto",
                 device_map={"": device},
                 low_cpu_mem_usage=True,
@@ -386,6 +403,9 @@ class Worker:
         preset = str(request.get("preset", "polish"))
         max_new_tokens = 1536 if preset == "concise" else 4096
         started = time.perf_counter()
+        if self.magic_warmup != "complete":
+            self.magic_warmup = "warming"
+            emit_progress("Exercising rewrite inference for the first request…", stage="warmup")
         with torch.inference_mode():
             generated = self.magic_model.generate(
                 **inputs,
