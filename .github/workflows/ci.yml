@@ -38,3 +38,6 @@ jobs:
 
       - name: Verify isolated Electron desktop
         run: xvfb-run --auto-servernum node scripts/desktop-smoke.mjs
+
+      - name: Verify isolated settings persistence failure
+        run: xvfb-run --auto-servernum node scripts/settings-write-smoke.mjs

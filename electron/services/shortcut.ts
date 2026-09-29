@@ -53,6 +53,7 @@ export class ShortcutService {
     lastTriggeredAt: null,
   };
   private listeners = new Set<(status: ShortcutStatus) => void>();
+  private publicationDepth = 0;
   private bus: MessageBus | null = null;
   private session: string | null = null;
   private shortcuts: PortalInterface | null = null;
@@ -73,6 +74,10 @@ export class ShortcutService {
 
   private update(patch: Partial<ShortcutStatus>): void {
     this.status = { ...this.status, ...patch };
+    if (!this.publicationDepth) this.publish();
+  }
+
+  private publish(): void {
     for (const listener of this.listeners) listener(this.getStatus());
   }
 
@@ -93,6 +98,30 @@ export class ShortcutService {
   async register(accelerator: string): Promise<void> {
     if (this.portal) await this.registerPortal(accelerator);
     else this.registerNative(accelerator);
+  }
+
+  // Settings coordination serializes callers. Hold status notifications until
+  // persistence succeeds, or the previous binding has been restored.
+  async change<T>(accelerator: string, persist: () => T): Promise<T> {
+    const previous = this.getStatus();
+    this.publicationDepth++;
+    try {
+      await this.register(accelerator);
+      return await persist();
+    } catch (error) {
+      try {
+        await this.register(previous.accelerator);
+      } catch (restoreError) {
+        throw new Error(
+          `${concise(error)}. Previous shortcut could not be restored: ${concise(restoreError)}`,
+          { cause: error },
+        );
+      }
+      throw error;
+    } finally {
+      this.publicationDepth--;
+      if (!this.publicationDepth) this.publish();
+    }
   }
 
   private registerNative(accelerator: string): void {

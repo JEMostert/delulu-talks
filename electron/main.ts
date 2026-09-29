@@ -540,16 +540,6 @@ async function applySettings(value: unknown): Promise<AppSettings> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Expected a settings object");
   const next = normalizeSettings({ ...previous, ...value });
-  if (next.shortcut !== previous.shortcut) {
-    try {
-      await shortcut.register(next.shortcut);
-    } catch {
-      await shortcut.register(previous.shortcut).catch(() => undefined);
-      throw new Error(
-        `Global shortcut '${next.shortcut}' is unavailable. ${previous.shortcut} remains active.`,
-      );
-    }
-  }
   const runtimeChanged = next.model !== previous.model;
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
   if (
@@ -561,7 +551,10 @@ async function applySettings(value: unknown): Promise<AppSettings> {
     throw new Error(
       "Finish the current recording or model operation before changing engines",
     );
-  const saved = storage.updateSettings(next);
+  const saved =
+    next.shortcut !== previous.shortcut
+      ? await shortcut.change(next.shortcut, () => storage.updateSettings(next))
+      : storage.updateSettings(next);
   if (
     !smokeTest &&
     app.isPackaged &&
