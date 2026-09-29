@@ -104,6 +104,7 @@ export function splitForRewrite(
   words: CustomWord[],
 ): Array<{ text: string; protected: boolean }> {
   const rules = new Map<string, string>();
+  const savedBlocks = new Set<string>();
   for (const word of words) {
     if (
       !word.enabled ||
@@ -111,6 +112,7 @@ export function splitForRewrite(
       !word.replacement.trim()
     )
       continue;
+    savedBlocks.add(word.replacement);
     for (const phrase of [word.replacement, ...ruleTriggers(word)]) {
       if (!rules.has(phrase)) rules.set(phrase, word.replacement);
     }
@@ -122,7 +124,13 @@ export function splitForRewrite(
     const index = match.index;
     if (index > cursor)
       parts.push({ text: text.slice(cursor, index), protected: false });
-    parts.push({ text: match.output, protected: true });
+    const matchedText = text.slice(index, index + match.length);
+    // Triggers use case-insensitive recognition, but an already expanded block
+    // must retain its bytes even when another block differs only in case.
+    parts.push({
+      text: savedBlocks.has(matchedText) ? matchedText : match.output,
+      protected: true,
+    });
     cursor = index + match.length;
   }
   if (cursor < text.length)
