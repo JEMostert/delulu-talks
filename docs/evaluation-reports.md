@@ -326,3 +326,49 @@ No destination-delivery timing is inferred from this offline speech benchmark.
 **UNVERIFIED — checks not run per user instruction**. This runner has not been
 executed; no Mac/Windows/Linux inference or external-control comparison is
 claimed for this PR.
+
+## Building a consent-declared Dutch/English corpus
+
+`scripts/evaluation_corpus.py` packages supplied recordings and human references
+into a new local directory. It requires per-recording unrevoked local-evaluation
+consent metadata, pseudonymous speaker IDs, timezone-qualified consent dates,
+and declared acoustic/language categories. It does not create recordings,
+obtain consent, upload files, or certify the truth of acoustic annotations.
+
+Each source case uses this shape (paths relative to the manifest):
+
+```json
+{
+  "case_id": "nl-quiet-001", "audio": "recording.wav", "reference": "reference.txt",
+  "speaker_id": "speaker-01", "languages": ["nl"], "categories": ["quiet", "names"],
+  "named_entities": ["Amsterdam"],
+  "consent": {"record_id": "local-consent-01", "recorded_at": "2026-09-30T12:00:00Z",
+              "local_evaluation_allowed": true, "revoked": false}
+}
+```
+
+Place cases in a `{"cases": [...]}` manifest. Recordings must already be 16 kHz
+mono PCM16 WAV; references preserve original UTF-8 bytes. Speech cases need
+nonempty human references and `silence` cases need empty ones. Supported labels
+are `quiet`, `noise`, `accents`, `names`, `code-switching`, `silence`, `technical`.
+Accent cases require a speaker/operator `accent_description`. Code-switching
+cases require `languages: ["nl", "en"]` and route to automatic language selection.
+Named-entity annotations must occur exactly in the actual reference.
+
+```sh
+python scripts/evaluation_corpus.py --manifest source-corpus.json --output-directory local-corpus
+```
+
+By default, missing Dutch/English or any of quiet, noise, accents, names and code
+switching fails packaging. `--allow-incomplete` explicitly packages a draft
+whose missing coverage remains recorded. Counts establish declared coverage,
+not statistical representativeness or true acoustic conditions. Output retains
+exact recordings/references, consent records and input hashes; `corpus.json`
+feeds the native same-audio runner and exposes the reference annotations for
+quality reports. Existing directories are never overwritten. Keep recordings
+and references outside Git and inspect consent/speech before any separate sharing;
+this builder grants no sharing authorization. Revoke/remove cases before future
+evaluations when their consent changes.
+
+**UNVERIFIED — checks not run per user instruction**. No recordings or actual
+consent were collected, no corpus was built, and no native accuracy is claimed.
