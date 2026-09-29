@@ -70,6 +70,11 @@ const api: DeluluApi = {
     ipcRenderer.invoke("history:setRewrite", id, result, sourceText),
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),
   clearHistory: () => ipcRenderer.invoke("history:clear"),
+  getHistoryBatchSnapshot: () => ipcRenderer.invoke("history:batchSnapshot"),
+  stageHistoryDeletion: (ids) => ipcRenderer.invoke("history:stageDeletion", ids),
+  undoHistoryDeletion: (token) => ipcRenderer.invoke("history:undoDeletion", token),
+  onHistoryBatchChanged: (callback) => listener("history:batchChanged", callback),
+  exportHistorySelection: (ids, format) => ipcRenderer.invoke("history:exportSelection", ids, format),
   previewHistoryRetention: (policy: HistoryRetentionPolicy) => ipcRenderer.invoke("history:retentionPreview", policy),
   applyHistoryRetention: (token: string) => ipcRenderer.invoke("history:retentionApply", token),
   onHistoryRetentionApplied: (callback: (removedIds: string[]) => void) =>
