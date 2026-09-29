@@ -313,6 +313,8 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         <div
           className="page-scroll min-h-0 flex-1 overflow-y-auto px-6 pt-[18px] pb-7 max-[900px]:px-4 max-[900px]:pt-3.5 max-[900px]:pb-6"
           id="page-content"
+          role="region"
+          aria-label={pages[w.page].title}
           tabIndex={-1}
         >
           {!w.ready ? (
