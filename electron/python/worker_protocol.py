@@ -21,7 +21,7 @@ MAX_PROGRESS_LINE_BYTES = 32_768
 _active_operation: ContextVar[tuple[str, str] | None] = ContextVar("worker_operation", default=None)
 COMMANDS = frozenset({
     "ping", "status", "load", "unload", "magicStatus", "magicLoad",
-    "magicUnload", "magicRewrite", "transcribe", "shutdown",
+    "magicUnload", "magicRewrite", "transcribe", "shutdown", "capabilities",
 })
 MAGIC_PRESETS = frozenset({"polish", "concise", "structured", "prompt", "bullet-points", "professional-message"})
 MAGIC_MODELS = frozenset({"qwen35Small", "qwen35Medium", "qwen35Large"})
@@ -160,6 +160,9 @@ def validate_request(request: Any) -> dict[str, Any]:
     if command not in COMMANDS:
         raise ValueError(f"Unknown worker command: {command}")
     validate_json_value(request)
+    if command == "capabilities":
+        if request.get("engine") not in ("speech", "writing"):
+            raise ValueError("Worker capabilities engine must be speech or writing")
     if command in ("load", "magicLoad") and "cacheDir" in request:
         require_string(request, "cacheDir")
     if command == "magicLoad" and "model" in request:
@@ -172,6 +175,11 @@ def validate_request(request: Any) -> dict[str, Any]:
             require_string(request, "language")
         if "durationMs" in request:
             require_number(request, "durationMs")
+        for control in ("timestamps", "streaming", "vocabularyBiasing"):
+            if control in request:
+                require_boolean(request, control)
+                if request[control]:
+                    raise ValueError(f"The current speech pipeline does not support {control}")
     if command == "magicRewrite":
         require_string(request, "text")
         if utf16_length(request["text"]) > 500_000:
@@ -202,7 +210,27 @@ def validate_result(command: str, result: Any) -> None:
             require_string(result, "device", nonempty=True)
         elif result.get("loaded") is True or result.get("residency") == "resident":
             raise ValueError("Resident worker result requires a nonnull device")
-    if command in ("ping", "status", "load", "unload", "magicStatus", "magicLoad", "magicUnload"):
+    if command == "capabilities":
+        if type(result.get("schemaVersion")) is not int or result["schemaVersion"] != 1:
+            raise ValueError("Worker capabilities schemaVersion must be integer 1")
+        engine = result.get("engine")
+        if engine not in ("speech", "writing"):
+            raise ValueError("Worker capabilities engine must be speech or writing")
+        backends = ("mlx", "cuda-vllm", "cuda-transformers") if engine == "speech" else ("transformers",)
+        if result.get("backend") not in backends:
+            raise ValueError("Worker capabilities backend does not match engine")
+        if result.get("modelFamily") != ("r2t2" if engine == "speech" else "qwen3.5"):
+            raise ValueError("Worker capabilities modelFamily does not match engine")
+        for key in ("timestamps", "streaming", "vocabularyBiasing"):
+            require_boolean(result, key)
+        hints = result.get("languageHints")
+        if not isinstance(hints, dict):
+            raise ValueError("Worker capabilities languageHints must be an object")
+        require_boolean(hints, "supported")
+        languages = hints.get("languages")
+        if not isinstance(languages, list) or any(not bounded_string(language, 64) for language in languages):
+            raise ValueError("Worker capabilities languages must be nonempty bounded strings")
+    elif command in ("ping", "status", "load", "unload", "magicStatus", "magicLoad", "magicUnload"):
         require_boolean(result, "loaded")
         for key in ("model", "device"):
             if key in result and result[key] is not None:

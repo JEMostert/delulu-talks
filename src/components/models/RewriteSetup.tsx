@@ -4,6 +4,7 @@ import type { AppSettings, MagicStatus } from "../../types";
 import { ModelSetupStatus } from "./ModelSetupStatus";
 import { ModelProvenance } from "./ModelProvenance";
 import { ModelLifecycle } from "./ModelLifecycle";
+import { BackendCapabilities } from "./BackendCapabilities";
 
 export type RewriteSetupProps = {
   magicStatus: MagicStatus;
@@ -97,6 +98,7 @@ export function RewriteSetup({
       <p className="mt-3 text-xs text-muted">{writingModel.description}</p>
       <ModelProvenance {...writingModel} />
       <ModelLifecycle status={magicStatus} />
+      <BackendCapabilities capabilities={magicStatus.capabilities} />
       <p className="mt-2 text-xs text-muted" role="status">
         {magicStatus.message}
       </p>

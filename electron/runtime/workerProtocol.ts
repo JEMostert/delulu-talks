@@ -84,7 +84,13 @@ export function validateWorkerRequest(value: unknown): JsonObject {
     stringField(request, "audioPath", true, true);
     stringField(request, "language");
     numberField(request, "durationMs");
+    for (const key of ["timestamps", "streaming", "vocabularyBiasing"]) {
+      booleanField(request, key);
+      if (request[key] === true) throw new Error(`Current R2T2 adapter does not support ${key}. Use buffered transcription with a language hint.`);
+    }
   }
+  if (request.command === "capabilities" && !["speech", "writing"].includes(request.engine as string))
+    throw new Error("Model worker capability query requires speech or writing engine");
   if (request.command === "magicRewrite") {
     stringField(request, "text", true);
     stringField(request, "preset");
@@ -146,7 +152,21 @@ export function validateWorkerProgress(value: unknown): WorkerProgress {
 
 export function validateWorkerResult(command: string, value: unknown): void {
   const statusCommands = ["ping", "status", "load", "unload", "magicStatus", "magicLoad", "magicUnload"];
-  if (statusCommands.includes(command)) {
+  if (command === "capabilities") {
+    const result = object(value, "capability result");
+    if (result.schemaVersion !== 1 || !["speech", "writing"].includes(result.engine as string))
+      throw new Error("Invalid model worker capability schema or engine");
+    const speech = result.engine === "speech";
+    if (result.modelFamily !== (speech ? "r2t2" : "qwen3.5") || !(speech ? ["mlx", "cuda-vllm", "cuda-transformers"] : ["transformers"]).includes(result.backend as string))
+      throw new Error("Invalid model worker capability backend/model family");
+    for (const key of ["timestamps", "streaming", "vocabularyBiasing"]) booleanField(result, key, true);
+    const hints = object(result.languageHints, "language hint capability");
+    booleanField(hints, "supported", true);
+    if (!Array.isArray(hints.languages) || hints.languages.length > 128 || hints.languages.some((code) => typeof code !== "string" || !code || Buffer.byteLength(code, "utf8") > 64))
+      throw new Error("Invalid model worker language capability list");
+    if (new Set(hints.languages).size !== hints.languages.length || (!hints.supported && hints.languages.length))
+      throw new Error("Inconsistent model worker language capabilities");
+  } else if (statusCommands.includes(command)) {
     const result = object(value, "status result");
     booleanField(result, "loaded", true);
     lifecycleFields(result);
