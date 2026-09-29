@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import sys
 import time
 import wave
@@ -70,6 +71,8 @@ def bind_worker(args):
         if args.backend == "external-qwen3-asr":
             repository = require_text(args.control_repository, "control repository")
             revision = require_text(args.control_revision, "control revision")
+            if not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+                raise ValueError("External control revision must be a full immutable commit SHA")
             if not repository.startswith("Qwen/Qwen3-ASR-"):
                 raise ValueError("External fine-tune controls must explicitly identify a base Qwen3-ASR repository")
         else:
@@ -123,6 +126,8 @@ def run(args) -> None:
                     started = time.perf_counter()
                     result = worker.transcribe({"audioPath": str(case["audio"]), "language": case["language"]})
                     elapsed = time.perf_counter() - started
+                    if hashlib.sha256(case["audio"].read_bytes()).hexdigest() != case["audio_sha256"]:
+                        raise ValueError("Source audio changed during inference; comparison is invalid")
                     if not isinstance(result.get("text"), str):
                         raise ValueError("Adapter returned an invalid transcript")
                     runtime["native_inference_run"] = True
