@@ -9,3 +9,5 @@ Success responses contain a result and no error; failures contain a nonempty err
 The byte, queue and diagnostic limits in [worker bounds](worker-bounds.md) remain in force. Version/schema errors preserve source audio, model runtimes, settings and transcripts. This is a wire contract, not evidence of native MLX/CUDA behavior or acoustic streaming. The opt-in runtime smoke uses the same versioned subprocess entrypoint and production schema instead of bypassing it with direct dispatch; it still requires existing models and explicit native invocation.
 
 Implementation is UNVERIFIED: tests, builds, typechecks, formatting, packaging and native inference were skipped per the current user instruction. Existing fixtures were migrated in source for the new envelope; no check results are claimed for this revision.
+
+Audio streaming has a separately specified [chunk/session contract](audio-stream-protocol.md). Its reserved commands remain rejected until an incremental-audio backend and transport adapter are implemented.

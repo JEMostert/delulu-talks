@@ -53,6 +53,8 @@ export function validateWorkerRequest(value: unknown): JsonObject {
   stringField(request, "command", true, true);
   if (Buffer.byteLength(request.id as string, "utf8") > 128 || Buffer.byteLength(request.command as string, "utf8") > 64)
     throw new Error("Model worker request ID/command exceeds its byte limit");
+  if (["streamStart", "streamChunk", "streamFinalize", "streamCancel"].includes(request.command as string))
+    throw new Error("Audio streaming is not enabled by the active speech runtime; use whole-recording transcription");
   jsonValue(request);
   if (request.command === "load" || request.command === "magicLoad") stringField(request, "cacheDir");
   if (request.command === "magicLoad") {
