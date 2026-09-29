@@ -1,4 +1,5 @@
 import { RewriteDialog } from "./RewriteDialog";
+import { correctionSuggestion } from "../correctionSuggestion";
 import { useState } from "react";
 import {
   BookPlus,
@@ -67,6 +68,7 @@ export function TranscriptCard({
   const [correctionSuggested, setCorrectionSuggested] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [editSource, setEditSource] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [rememberError, setRememberError] = useState<string | null>(null);
@@ -85,39 +87,10 @@ export function TranscriptCard({
     try {
       if (await onUpdateTranscript(record.id, draft)) {
         setEditing(false);
-        const before = text.trim().split(/\s+/),
-          after = draft.trim().split(/\s+/);
-        let start = 0,
-          tail = 0;
-        while (
-          start < Math.min(before.length, after.length) &&
-          before[start] === after[start]
-        )
-          start++;
-        while (
-          tail < Math.min(before.length, after.length) - start &&
-          before[before.length - 1 - tail] === after[after.length - 1 - tail]
-        )
-          tail++;
-        const from = before
-          .slice(start, before.length - tail)
-          .join(" ")
-          .replace(/[.,!?;:]+$/, "");
-        const to = after
-          .slice(start, after.length - tail)
-          .join(" ")
-          .replace(/[.,!?;:]+$/, "");
-        if (
-          from &&
-          to &&
-          from !== to &&
-          from.length <= 256 &&
-          to.length <= 256
-        ) {
-          setHeard(from);
-          setCorrect(to);
-          setCorrectionSuggested(true);
-        }
+        const suggestion = correctionSuggestion(editSource, draft);
+        setCorrectionSuggested(!!suggestion);
+        setHeard(suggestion?.heard ?? "");
+        setCorrect(suggestion?.correct ?? "");
       }
     } finally {
       setSaving(false);
@@ -307,7 +280,9 @@ export function TranscriptCard({
                   className="tool-button"
                   onClick={() => {
                     setShowSource(true);
-                    setDraft(transcriptText(record));
+                    const source = transcriptText(record);
+                    setEditSource(source);
+                    setDraft(source);
                     setEditing(true);
                   }}
                 >
