@@ -30,7 +30,7 @@ before handing off a complete suite result.
 run's result and dirty state; it does not turn a previous failure into a pass or
 combine different SHAs into one approval. CI uses the reporting commands and
 uploads reports even after a failed suite. Browser reporting requires its own
-server and refuses to reuse another checkout's existing preview. Skipped CI steps have no report and
+server on an automatically selected unused port and refuses to reuse another checkout's existing preview. The port is recorded with the result. Skipped CI steps have no report and
 therefore establish no evidence. Reports describe suite boundaries, not a
 coverage guarantee for every assertion or branch. Reporting commands run complete suites and reject filters/help/list options that could produce a success without executing tests. Use raw commands for targeted investigations. Record skipped cases and
 limitations in the PR handoff. Reports from dirty trees need a clean committed

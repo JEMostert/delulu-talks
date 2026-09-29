@@ -8,6 +8,7 @@ import {
   rmSync,
 } from "node:fs";
 import { arch, platform, release } from "node:os";
+import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -241,8 +242,20 @@ function saveReport(report) {
   console.log(`Scope: ${report.scope}\nReport: ${path}`);
 }
 
+async function unusedBrowserPort() {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const port = server.address().port;
+      server.close((error) => (error ? reject(error) : resolvePort(port)));
+    });
+  });
+}
+
 export async function runSuite(suite, args) {
   const plan = planSuite(suite, args);
+  const browserPort = suite === "browser" ? await unusedBrowserPort() : null;
   const startedAt = new Date().toISOString();
   const revisionBefore = revision();
   console.log(
@@ -259,7 +272,9 @@ export async function runSuite(suite, args) {
       shell: false,
       env: {
         ...process.env,
-        ...(suite === "browser" ? { CI: "1" } : {}),
+        ...(suite === "browser"
+          ? { CI: "1", DELULU_TEST_WEB_PORT: String(browserPort) }
+          : {}),
         HF_HUB_OFFLINE: "1",
         HF_HUB_DISABLE_TELEMETRY: "1",
         DELULU_EVIDENCE_NATIVE_RESULT: observationPath ?? "",
@@ -293,6 +308,7 @@ export async function runSuite(suite, args) {
       revision: revisionBefore,
       revisionAfter,
       nativeObservation,
+      browserPort,
       platform: platform(),
       architecture: arch(),
       osRelease: release(),
