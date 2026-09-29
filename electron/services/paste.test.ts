@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 
 // Each adapter runs in its own process: platform and module mocks must never
 // change another test's Electron, child-process, or desktop state.
@@ -12,6 +13,7 @@ async function exercise(
   failure = false,
   injector = true,
   kde = false,
+  fixtureText = text,
 ) {
   const source = `
     import { mock } from "bun:test";
@@ -54,7 +56,7 @@ async function exercise(
       });
     }
     let method = null, error = null;
-    try { method = await service.paste(${JSON.stringify(text)}); }
+    try { method = await service.paste(${JSON.stringify(fixtureText)}); }
     catch (cause) { error = cause.message; }
     process.stdout.write(JSON.stringify({ copied, commands, keys, clipboardCalls, method, error }));
   `;
@@ -175,3 +177,34 @@ test("KDE publishes command text as one clipboard argument and injects Paste onl
   ]);
   expect(result.error).toBeNull();
 });
+
+
+const deliveryFixtures = JSON.parse(
+  readFileSync(new URL("../../tests/fixtures/delivery-text.json", import.meta.url), "utf8"),
+) as Array<{ id: string; tags: string[]; text: string }>;
+
+for (const fixture of deliveryFixtures) {
+  for (const route of desktopRoutes) {
+    test(`${route.platform}: ${fixture.id} reaches clipboard byte-for-byte`, async () => {
+      const result = await exercise(route.platform, "x11", false, true, false, fixture.text);
+      expect(result.error).toBeNull();
+      expect(result.copied).toEqual([fixture.text]);
+      expect(Buffer.from(result.copied[0], "utf8")).toEqual(Buffer.from(fixture.text, "utf8"));
+      expect(result.commands).toEqual([{ program: route.program, args: route.args, options: { windowsHide: true } }]);
+    });
+  }
+  test(`KDE Wayland: ${fixture.id} remains one exact clipboard argument`, async () => {
+    const result = await exercise("linux", "wayland", false, true, true, fixture.text);
+    expect(result.copied).toEqual([fixture.text]);
+    expect(result.clipboardCalls).toEqual([{ program: "qdbus6", args: ["org.kde.klipper", "/klipper", "setClipboardContents", fixture.text] }]);
+    expect(result.commands).toEqual([]);
+    expect(result.error).toBeNull();
+  });
+  test(`no injector: ${fixture.id} remains available for manual paste`, async () => {
+    const result = await exercise("linux", "x11", false, false, false, fixture.text);
+    expect(result.copied).toEqual([fixture.text]);
+    expect(result.commands).toEqual([]);
+    expect(result.method).toBeNull();
+    expect(result.error).toContain("the transcript is on the clipboard");
+  });
+}
