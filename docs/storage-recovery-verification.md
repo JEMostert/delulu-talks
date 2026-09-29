@@ -29,7 +29,8 @@ The suite covers:
 The migration fix stages both outputs before publication, commits previously
 absent history first, then settings. If the settings commit fails it removes
 only history created by that migration attempt. Existing history is never
-replaced by this rollback. Handled attempts remove their staged files. Legacy
+replaced by this rollback. Successfully staged temporary files are removed after
+handled attempts; interrupted partial writes remain ignored on reopen. Legacy
 source files are retained on success and failure.
 
 Backup restoration here means restoring owner-provided compatible JSON files
