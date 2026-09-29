@@ -79,3 +79,22 @@ Transcription/delivery and retry use the captured settings. New captures use the
 then-current settings. Metadata snapshots remain session/settings data; original
 backend text and existing history are untouched. Native indicator availability
 continues to follow platform support; no new hardware/overlay verification claim.
+
+Vocabulary rules may optionally include `profileId`. Omitted scope retains the
+legacy all-profiles behavior; explicit IDs require matching configured profile
+context. The real rule editor shows scope badges and a named-profile selector,
+with a separate preview context that never activates a profile. Deleted/unknown
+scopes remain scoped, and malformed legacy scopes remain inert rather than
+becoming global. Invalid profile-contract scopes reject the document. Collision
+checks allow the same trigger in disjoint scopes, while global scopes overlap.
+
+Dictation and imports use the explicitly selected profile at transcription start.
+Capture already freezes settings; the matcher uses that snapshot. Records retain
+optional source profile IDs and on-demand rewrites forward that source context
+(null for legacy/global records) instead of inferring it from a current selection.
+This field is app matching metadata, removed before worker calls. Inactive shortcut
+aliases do not expand during rewriting; exact already-saved blocks remain protected
+regardless of current scope. Remembering a legacy/global correction never merges
+its aliases into a different profile-scoped rule. Rule scopes are copied exactly
+into profile snapshots and activation settings; saving/editing rules never
+activates a profile. Language scopes are a separate integration.

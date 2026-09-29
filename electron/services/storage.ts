@@ -1,3 +1,4 @@
+import { validRuleProfileId } from "../../src/ruleProfileScope";
 import { readActivePersonalProfile } from "../../src/activePersonalProfile";
 import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { app } from "electron";
@@ -134,6 +135,9 @@ function normalizeWords(value: unknown): CustomWord[] {
             ? source.replacement.slice(0, 4096)
             : "",
         enabled: source.enabled !== false,
+        ...(Object.prototype.hasOwnProperty.call(source, "profileId")
+          ? { profileId: validRuleProfileId(source.profileId) ? source.profileId : "" }
+          : {}),
       },
     ];
   });
@@ -283,6 +287,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     sourceName:
       typeof source.sourceName === "string" ? source.sourceName : null,
     processingTimeMs: Math.max(0, Number(source.processingTimeMs) || 0),
+    profileId: validRuleProfileId(source.profileId) ? source.profileId : null,
   };
 }
 

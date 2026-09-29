@@ -414,6 +414,7 @@ export function TranscriptCard({
       )}
       {rewriting && onRewrite && onSetRewrite && (
         <RewriteDialog
+          profileId={record.profileId ?? null}
           text={text}
           baseline={deliveredText(record)}
           status={rewriteStatus}

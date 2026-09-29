@@ -13,6 +13,8 @@ export type ProfileVocabularyRuleV1 = {
   enabled: boolean;
   /** Omitted means all languages, matching legacy vocabulary rules. */
   language?: string;
+  /** Omitted for all profiles; explicit IDs follow visible profile selection. */
+  profileId?: string;
 };
 export type PersonalProfileV1 = {
   schemaVersion: 1;
@@ -106,6 +108,7 @@ function rule(value: unknown, path: string): void {
   text(source.replacement, `${path}.replacement`, 4096, source.kind === "shortcut");
   flag(source.enabled, `${path}.enabled`);
   if (source.language !== undefined) language(source.language, `${path}.language`);
+  if (source.profileId !== undefined) text(source.profileId, `${path}.profileId`, 128);
 }
 function uniqueIds(items: unknown[], path: string): void {
   const ids = new Set<string>();

@@ -1,3 +1,4 @@
+import { ruleAppliesToProfile, validRuleProfileId } from "../ruleProfileScope";
 import { useState } from "react";
 import { BookOpenText, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { ConfirmDialog, EmptyState, Modal, Toggle } from "../components/ui";
@@ -13,8 +14,12 @@ export function VocabularyPage({
   words,
   saving,
   onChange,
+  profiles = [],
+  activeProfileId,
 }: {
   words: CustomWord[];
+  profiles?: { id: string; name: string }[];
+  activeProfileId?: string | null;
   saving: boolean;
   onChange: (words: CustomWord[]) => Promise<boolean>;
 }) {
@@ -23,6 +28,12 @@ export function VocabularyPage({
   const [draft, setDraft] = useState<CustomWord | null>(null);
   const [remove, setRemove] = useState<CustomWord | null>(null);
   const [sample, setSample] = useState("");
+  const [previewProfile, setPreviewProfile] = useState(activeProfileId ? `profile:${activeProfileId}` : "global");
+  const scopeLabel = (word: CustomWord) => word.profileId === undefined
+    ? "All profiles"
+    : !validRuleProfileId(word.profileId)
+      ? "Invalid profile scope · inactive"
+      : profiles.find((profile) => profile.id === word.profileId)?.name ?? "Unavailable saved profile";
   const filtered = words.filter(
     (word) =>
       ruleKind(word) === kind &&
@@ -34,6 +45,7 @@ export function VocabularyPage({
   const shortcut = draft && ruleKind(draft) === "shortcut";
   const invalid =
     !draft?.term.trim() ||
+    (draft?.profileId !== undefined && !validRuleProfileId(draft.profileId)) ||
     (shortcut
       ? !draft.replacement.trim()
       : !draft.soundsLike.trim() ||
@@ -79,6 +91,7 @@ export function VocabularyPage({
             stay exact during corrections and rewriting. Wrap commands in
             backticks to keep the whole command unchanged.
           </p>
+          <p className="caption mt-2">Rules without a scope apply to every profile. Scoped rules follow explicit profile selection. Changing these rules customizes current settings; saving or reactivating a named profile is a separate action.</p>
         </div>
         <button
           className="primary-button"
@@ -123,6 +136,8 @@ export function VocabularyPage({
             <div className="flex-1 min-w-0">
               <h3 className="text-[15px] flex gap-2 items-center break-words">
                 {word.term}
+                <span className="badge">{scopeLabel(word)}</span>
+                {word.profileId !== undefined && !ruleAppliesToProfile(word, { profileId: activeProfileId }) && <span className="badge">Inactive in current profile</span>}
                 {!ruleTriggers(word).length && (
                   <span className="badge">Needs a correction phrase</span>
                 )}
@@ -247,6 +262,20 @@ export function VocabularyPage({
             </>
           }
         >
+          <label className="field">
+            Profile scope
+            <select aria-label="Rule profile scope" value={draft.profileId === undefined ? "global" : `profile:${draft.profileId}`} onChange={(event) => {
+              const updated = { ...draft };
+              if (event.target.value === "global") delete updated.profileId;
+              else updated.profileId = event.target.value.slice("profile:".length);
+              setDraft(updated);
+            }}>
+              <option value="global">All profiles (default)</option>
+              {draft.profileId !== undefined && !profiles.some((profile) => profile.id === draft.profileId) && <option value={`profile:${draft.profileId}`} disabled>{scopeLabel(draft)} · choose a scope to repair</option>}
+              {profiles.map((profile) => <option key={profile.id} value={`profile:${profile.id}`}>{profile.name}</option>)}
+            </select>
+            <small>Only this explicitly selected profile may trigger a scoped rule. Deleting a profile does not make its rules global.</small>
+          </label>
           {!shortcut && (
             <label className="field">
               Recognized text{" "}
@@ -308,6 +337,14 @@ export function VocabularyPage({
           )}
           <div className="border border-line rounded-lg p-3 my-3">
             <label className="field">
+              Preview profile (does not activate it)
+              <select aria-label="Rule preview profile" value={previewProfile} onChange={(event) => setPreviewProfile(event.target.value)}>
+                <option value="global">Global settings</option>
+                {activeProfileId && !profiles.some((profile) => profile.id === activeProfileId) && <option value={`profile:${activeProfileId}`}>Current profile snapshot</option>}
+                {profiles.map((profile) => <option key={profile.id} value={`profile:${profile.id}`}>{profile.name}</option>)}
+              </select>
+            </label>
+            <label className="field">
               Try this rule
               <input
                 aria-label="Test phrase"
@@ -326,7 +363,7 @@ export function VocabularyPage({
               aria-label="Rule preview"
             >
               {sample
-                ? personalize(sample, [{ ...draft, enabled: true }])
+                ? personalize(sample, [{ ...draft, enabled: true }], { profileId: previewProfile === "global" ? null : previewProfile.slice("profile:".length) })
                 : "Enter a phrase to preview the exact replacement."}
             </output>
           </div>

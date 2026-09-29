@@ -578,7 +578,11 @@ export class AsrService {
     request: MagicRewriteRequest,
     settings: AppSettings,
   ): Promise<MagicRewriteResult> {
-    const parts = splitForRewrite(request.text, settings.customWords);
+    const parts = splitForRewrite(request.text, settings.customWords, {
+      profileId: request.profileId === undefined ? settings.activePersonalProfile?.id : request.profileId,
+    });
+    // Profile scope is application postprocessing context, not a worker control.
+    const { profileId: _profileId, ...rewriteRequest } = request;
     if (parts.filter((part) => !part.protected && part.text.trim()).length > 16)
       throw new Error(
         "This text contains too many separate protected blocks or identifiers to rewrite at once. Rewrite a shorter selection.",
@@ -606,7 +610,7 @@ export class AsrService {
           "magic",
           "magicRewrite",
           {
-            ...request,
+            ...rewriteRequest,
             text: part.text.trim(),
           } as unknown as Record<string, unknown>,
         );

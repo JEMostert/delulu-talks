@@ -21,6 +21,8 @@ export type ExportFormat = "txt" | "json";
 
 export type CustomWord = {
   kind?: "correction" | "shortcut";
+  /** Omitted means all profiles; an explicit scope requires matching context. */
+  profileId?: string;
   id: string;
   term: string;
   soundsLike: string;
@@ -73,6 +75,8 @@ export type MagicRewriteRequest = {
   preset: MagicPreset;
   instructions?: string;
   allowInferences: boolean;
+  /** Source record/request profile, null for global or legacy source. */
+  profileId?: string | null;
 };
 
 export type MagicRewriteResult = {
@@ -113,6 +117,8 @@ export type TranscriptRecord = {
   language: string;
   source: TranscriptSource;
   sourceName?: string | null;
+  /** Explicit profile at transcription start; omitted for legacy records. */
+  profileId?: string | null;
   processingTimeMs: number;
 };
 

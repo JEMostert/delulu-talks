@@ -1,3 +1,4 @@
+import { ruleProfileChoices } from "../ruleProfileScope";
 import { ProfileActivationControls } from "../components/ProfileActivationControls";
 import type { ProfileActivationCommand } from "../activePersonalProfile";
 import { PersonalProfiles } from "../components/PersonalProfiles";
@@ -129,6 +130,8 @@ export function SettingsPage(props: Props) {
       )}
       {tab === "personalization" && (
         <VocabularyPage
+          profiles={ruleProfileChoices(s.personalProfiles)}
+          activeProfileId={s.activePersonalProfile?.id}
           words={s.customWords}
           saving={saving}
           onChange={(customWords) => onSave({ customWords })}

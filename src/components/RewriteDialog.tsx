@@ -11,6 +11,7 @@ import type {
 export function RewriteDialog({
   text,
   baseline,
+  profileId,
   status,
   onClose,
   onSetup,
@@ -19,6 +20,7 @@ export function RewriteDialog({
 }: {
   text: string;
   baseline: string;
+  profileId?: string | null;
   status?: MagicStatus;
   onClose: () => void;
   onSetup: () => void;
@@ -175,6 +177,7 @@ export function RewriteDialog({
                 preset,
                 instructions,
                 allowInferences: false,
+                profileId: profileId ?? null,
               }),
             );
           } catch (reason) {

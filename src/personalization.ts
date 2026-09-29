@@ -1,3 +1,4 @@
+import { ruleAppliesToProfile, ruleProfileScopesOverlap, type RuleProfileContext } from "./ruleProfileScope";
 import type { CustomWord } from "./types";
 import { splitTechnicalText, technicalRanges } from "./technicalIdentifiers";
 
@@ -78,6 +79,7 @@ export function ruleConflict(
   const conflict = words.find(
     (word) =>
       word.id !== draft.id &&
+      ruleProfileScopesOverlap(draft, word) &&
       ruleTriggers(word).some((trigger) => pattern.test(trigger)),
   );
   return conflict
@@ -85,10 +87,10 @@ export function ruleConflict(
     : null;
 }
 
-export function personalize(text: string, words: CustomWord[]): string {
+export function personalize(text: string, words: CustomWord[], context: RuleProfileContext = {}): string {
   const rules = new Map<string, string>();
   for (const word of words) {
-    if (!word.enabled) continue;
+    if (!word.enabled || !ruleAppliesToProfile(word, context)) continue;
     const output = ruleKind(word) === "shortcut" ? word.replacement : word.term;
     if (!output.trim()) continue;
     for (const trigger of ruleTriggers(word)) {
@@ -107,9 +109,11 @@ export function personalize(text: string, words: CustomWord[]): string {
 export function splitForRewrite(
   text: string,
   words: CustomWord[],
+  context: RuleProfileContext = {},
 ): Array<{ text: string; protected: boolean }> {
   const rules = new Map<string, string>();
   const savedBlocks = new Set<string>();
+  const activePhrases: string[] = [];
   for (const word of words) {
     if (
       !word.enabled ||
@@ -118,7 +122,10 @@ export function splitForRewrite(
     )
       continue;
     savedBlocks.add(word.replacement);
-    for (const phrase of [word.replacement, ...ruleTriggers(word)]) {
+    if (ruleAppliesToProfile(word, context)) activePhrases.push(word.replacement, ...ruleTriggers(word));
+    // Exact existing blocks remain protected in historical results even when
+    // their profile is inactive; only matching-profile aliases may expand.
+    for (const phrase of [word.replacement, ...(ruleAppliesToProfile(word, context) ? ruleTriggers(word) : [])]) {
       if (!rules.has(phrase)) rules.set(phrase, word.replacement);
     }
   }
@@ -130,6 +137,7 @@ export function splitForRewrite(
   for (const match of phraseMatches(text, rules)) {
     const index = match.index;
     const matchedText = text.slice(index, index + match.length);
+    if (!savedBlocks.has(matchedText) && !activePhrases.some((phrase) => samePhrase(phrase, matchedText))) continue;
     while (literalIndex < literals.length && literals[literalIndex].end <= index)
       literalIndex++;
     // Exact saved blocks take priority. A spoken-trigger alias inside an

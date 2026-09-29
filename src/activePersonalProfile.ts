@@ -51,6 +51,7 @@ export function profileActivationSettings(profile: PersonalProfileV1): ProfileEf
     customWords: profile.vocabulary.rules.map((rule) => ({
       id: rule.id, kind: rule.kind, term: rule.term.trim(), soundsLike: rule.soundsLike.trim(),
       replacement: rule.replacement, enabled: rule.enabled,
+      ...(rule.profileId !== undefined ? { profileId: rule.profileId } : {}),
     })),
     magicEnabled: profile.rewrite.enabled,
     magicModel: profile.rewrite.model,

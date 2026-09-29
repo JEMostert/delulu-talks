@@ -382,6 +382,7 @@ export class DictationService {
               text: output,
               preset: settings.magicPreset,
               allowInferences: settings.magicAllowInferences,
+              profileId: settings.activePersonalProfile?.id ?? null,
             },
             settings,
           );
@@ -563,7 +564,8 @@ export class DictationService {
       createdAt: Date.now(),
       durationMs,
       text,
-      personalizedText: personalize(text, settings.customWords),
+      personalizedText: personalize(text, settings.customWords, { profileId: settings.activePersonalProfile?.id }),
+      profileId: settings.activePersonalProfile?.id ?? null,
       model: settings.model,
       language: String(result.language ?? settings.language),
       source,

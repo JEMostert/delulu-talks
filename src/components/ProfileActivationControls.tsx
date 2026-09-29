@@ -9,6 +9,7 @@ import {
 } from "../activePersonalProfile";
 import { readPersonalProfiles } from "../personalProfiles";
 import type { AppSettings } from "../types";
+import { ruleProfileChoices } from "../ruleProfileScope";
 import { Modal } from "./ui";
 
 function settingRows(value: ProfileEffectiveSettings): [string, string][] {
@@ -99,7 +100,7 @@ export function ProfileActivationControls({ settings, busy, onActivate, captureP
           <strong>{String(title)}</strong>
           {(rules as AppSettings["customWords"]).length === 0 && <p>No rules</p>}
           {(rules as AppSettings["customWords"]).map((word) => <div key={word.id} className="border border-line p-2 my-1">
-            <p>{word.enabled ? "Enabled" : "Disabled"} · {word.kind ?? "correction"} · {word.term}{word.soundsLike ? ` (heard as ${word.soundsLike})` : ""}</p>
+            <p>{word.enabled ? "Enabled" : "Disabled"} · {word.kind ?? "correction"} · {word.profileId === undefined ? "all profiles" : ruleProfileChoices(settings.personalProfiles).find((profile) => profile.id === word.profileId)?.name ?? "unavailable profile scope"} · {word.term}{word.soundsLike ? ` (heard as ${word.soundsLike})` : ""}</p>
             {word.replacement && <pre className="max-h-32 overflow-auto whitespace-pre-wrap wrap-anywhere">{word.replacement}</pre>}
           </div>)}
         </div>)}

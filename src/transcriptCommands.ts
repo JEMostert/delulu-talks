@@ -30,6 +30,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     const existing = w.settings.customWords.find(
       (item) =>
         ruleKind(item) === "correction" &&
+        item.profileId === word.profileId &&
         item.term.toLowerCase() === word.term.toLowerCase(),
     );
     const conflict = ruleConflict(

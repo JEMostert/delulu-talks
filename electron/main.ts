@@ -1,3 +1,4 @@
+import { validRuleProfileId } from "../src/ruleProfileScope";
 import { activatePersonalProfile } from "../src/activePersonalProfile";
 import { randomUUID } from "node:crypto";
 import { changePersonalProfiles } from "../src/personalProfileCommands";
@@ -716,11 +717,13 @@ function registerIpc(): void {
     )
       ? (source.preset as MagicRewriteRequest["preset"])
       : "polish";
+    if (source.profileId !== undefined && source.profileId !== null && !validRuleProfileId(source.profileId)) throw new Error("Invalid rewrite profile context.");
     const request: MagicRewriteRequest = {
       text: validateText(source.text, 50_000),
       preset,
       instructions: validateText(source.instructions ?? "", 4_000).trim(),
       allowInferences: source.allowInferences === true,
+      ...(source.profileId !== undefined ? { profileId: source.profileId as string | null } : {}),
     };
     if (!request.text.trim())
       throw new Error("Add a transcript or draft before using Magic");

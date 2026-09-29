@@ -1,3 +1,4 @@
+import { ruleProfileChoices } from "./ruleProfileScope";
 import { createTranscriptCommands } from "./transcriptCommands";
 import { useEffect, useState } from "react";
 import {
@@ -379,6 +380,8 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   className="mx-auto max-w-[1440px]"
                 >
                   <VocabularyPage
+                    profiles={ruleProfileChoices(w.settings.personalProfiles)}
+                    activeProfileId={w.settings.activePersonalProfile?.id}
                     words={w.settings.customWords}
                     saving={w.saving}
                     onChange={(customWords) =>
