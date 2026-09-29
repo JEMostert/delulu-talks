@@ -116,6 +116,16 @@ export function planSuite(suite, input = []) {
       scope =
         "Real isolated Electron/preload/main IPC, temporary settings write failure and native shortcut rollback/retry. No inference, real microphone or manual delivery.";
       break;
+    case "data-deletion":
+      if (args.length)
+        throw new Error(
+          "Data deletion reporting requires the complete fixture suite",
+        );
+      command = ["node", "scripts/data-deletion-smoke.mjs"];
+      kinds = ["fixture-only"];
+      scope =
+        "Real isolated Electron deletion/reset IPC, durable and session references, delayed delivery races; clipboard captured and harmless injector. No native inference or manual delivery.";
+      break;
     case "desktop": {
       const native = args.length > 0;
       if (native && args[0].startsWith("-"))

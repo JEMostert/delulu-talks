@@ -42,6 +42,9 @@ jobs:
       - name: Verify isolated settings persistence failure
         run: xvfb-run --auto-servernum node scripts/test-evidence.mjs settings-write
 
+      - name: Verify isolated deletion and reset
+        run: xvfb-run --auto-servernum node scripts/test-evidence.mjs data-deletion
+
       - name: Summarize verification evidence
         if: always()
         run: bun run test:evidence
