@@ -22,11 +22,18 @@ import traceback
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+from worker_protocol import correlation_id, emit_progress, operation_scope, terminal_response, validate_request, validate_result
+
 if TYPE_CHECKING:
     from speech_engine import SpeechEngine
 
 
 PROTOCOL_PREFIX = "@delulu:"
+# JSON byte limits exclude the trailing newline and match the desktop transport.
+# Audio is passed by file path; these limits leave room for existing text inputs.
+MAX_REQUEST_BYTES = 4 * 1024 * 1024
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_ERROR_BYTES = 8_000
 SPEECH_MODEL = "netease-youdao/Confucius4-R2T2"
 MLX_SPEECH_MODEL = "mlx-community/Confucius4-R2T2-bf16"
 LANGUAGE_NAMES = {
@@ -55,6 +62,65 @@ LANGUAGE_NAMES = {
     "ko": "Korean",
     "vi": "Vietnamese",
 }
+
+
+def normalize_recognized_language(value: Any) -> str | None:
+    """Normalize only labels explicitly returned by the speech model.
+
+    A missing/unknown segment or differing segment languages leaves the whole
+    result unknown. Requested prompt hints must never fill a missing label.
+    """
+    if isinstance(value, list):
+        if not value:
+            return None
+        languages = {normalize_recognized_language(item) for item in value}
+        if len(languages) == 1 and None not in languages:
+            return next(iter(languages))
+        return None
+    if not isinstance(value, str):
+        return None
+    label = value.strip().lower()
+    if label in LANGUAGE_NAMES:
+        return label
+    return {name.lower(): code for code, name in LANGUAGE_NAMES.items()}.get(label)
+
+
+def recognized_language_metadata(value: Any) -> dict[str, Any]:
+    """Describe returned labels, without inferring speech languages from hints.
+
+    Flatten the scalar/list segment labels used by the adapters, keeping
+    missing segments unknown. A reported label is not calibrated detection.
+    """
+    values = value if isinstance(value, list) else [value]
+    labels = []
+    for item in values:
+        if isinstance(item, list):
+            labels.extend(item if item else [None])
+        else:
+            labels.append(item)
+    languages = []
+    complete = bool(labels)
+    for label in labels:
+        code = normalize_recognized_language(label) if isinstance(label, str) else None
+        if code is None:
+            complete = False
+        elif code not in languages:
+            languages.append(code)
+    status = "unknown"
+    recognized = None
+    if complete:
+        if len(languages) >= 2:
+            status = "mixed"
+        elif len(languages) == 1:
+            status = "reported"
+            recognized = languages[0]
+    return {
+        "recognizedLanguage": recognized,
+        "recognizedLanguages": languages,
+        "languageStatus": status,
+    }
+
+
 MAGIC_MODELS = {
     "qwen35Small": "Qwen/Qwen3.5-0.8B",
     "qwen35Medium": "Qwen/Qwen3.5-2B",
@@ -69,6 +135,16 @@ MAGIC_PRESETS = {
         "Rewrite this transcript as a short, direct message. Remove repetition and "
         "nonessential wording while preserving every decision, request, and fact."
     ),
+    "bullet-points": (
+        "Rewrite this transcript as concise bullet points, one existing point per bullet. "
+        "Preserve all facts, requests, negations, commitments, and uncertainty. Do not add "
+        "headings, priorities, tasks, or conclusions not present in the source."
+    ),
+    "professional-message": (
+        "Rewrite this transcript as a brief, courteous professional message. Preserve the "
+        "original intent, requests, facts, and uncertainty. Do not invent a recipient, "
+        "greeting, signature, deadline, promise, or claim of completed work."
+    ),
     "structured": (
         "Rewrite this transcript into a detailed, easy-to-scan document. Add useful "
         "headings or bullets when they improve clarity, and make implicit relationships explicit."
@@ -80,9 +156,26 @@ MAGIC_PRESETS = {
 }
 
 
-def emit(payload: dict[str, Any]) -> None:
-    sys.stdout.write(PROTOCOL_PREFIX + json.dumps(payload, ensure_ascii=False) + "\n")
+def emit(payload: dict[str, Any], command: str | None = None) -> None:
+    payload = terminal_response(payload, command)
+    encoded = bytearray(PROTOCOL_PREFIX, "utf-8")
+    for part in json.JSONEncoder(ensure_ascii=False, allow_nan=False).iterencode(payload):
+        chunk = part.encode("utf-8")
+        if len(encoded) + len(chunk) > MAX_RESPONSE_BYTES:
+            raise ValueError(
+                "Model worker response exceeds the 8 MiB limit. "
+                "Shorten the input and retry the operation."
+            )
+        encoded.extend(chunk)
+    # Validate the entire response before writing any prefix or partial JSON.
+    sys.stdout.write(encoded.decode("utf-8") + "\n")
     sys.stdout.flush()
+
+
+def bounded_error(exc: Exception) -> str:
+    message = (str(exc) or type(exc).__name__)[:MAX_ERROR_BYTES]
+    encoded = message.encode("utf-8", errors="replace")
+    return encoded[:MAX_ERROR_BYTES].decode("utf-8", errors="ignore")
 
 
 class Worker:
@@ -98,6 +191,7 @@ class Worker:
         self.model: Any | None = None
         self.model_name: str | None = None
         self.device: str | None = None
+        self.cuda_preflight: dict[str, Any] | None = None
         self.magic_model: Any | None = None
         self.magic_processor: Any | None = None
         self.magic_model_name: str | None = None
@@ -119,15 +213,8 @@ class Worker:
         self.model = None
         self.model_name = None
         self.device = None
-        gc.collect()
-        try:
-            # Failed loads can allocate before model assignment. Clear an
-            # already-imported allocator without loading an unused backend.
-            torch = sys.modules.get("torch")
-            if torch is not None and torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except Exception:
-            pass
+        self.cuda_preflight = None
+        self.clear_allocator(speech=True)
         return {"loaded": False}
 
     def unload_magic(self) -> dict[str, Any]:
@@ -135,16 +222,47 @@ class Worker:
         self.magic_processor = None
         self.magic_model_name = None
         self.magic_device = None
-        gc.collect()
-        try:
-            torch = sys.modules.get("torch")
-            if torch is not None and torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except Exception:
-            pass
+        self.clear_allocator()
         return {"loaded": False}
 
+    def clear_allocator(self, *, speech: bool = False) -> None:
+        # A failed load can allocate before assigning model/device metadata.
+        # Reuse imported libraries and preserve the original operation error
+        # even when an allocator itself cannot be cleared.
+        with contextlib.suppress(Exception):
+            gc.collect()
+        if speech and self.speech_backend == "mlx":
+            with contextlib.suppress(Exception):
+                mx = sys.modules.get("mlx.core")
+                if mx is not None:
+                    mx.clear_cache()
+            return
+        torch = sys.modules.get("torch")
+        if torch is None:
+            return
+        with contextlib.suppress(Exception):
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        with contextlib.suppress(Exception):
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+
     def load(self, request: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self.load_speech(request)
+        except BaseException:
+            with contextlib.suppress(Exception):
+                self.unload()
+            # Discard an adapter whose initialization did not complete; the
+            # next explicit load reacquires it, rather than trusting its state.
+            self.speech = None
+            self.model = None
+            self.model_name = None
+            self.device = None
+            self.clear_allocator(speech=True)
+            raise
+
+    def load_speech(self, request: dict[str, Any]) -> dict[str, Any]:
         speech = self.speech_engine()
         if speech is not None:
             return speech.load(request)
@@ -153,10 +271,9 @@ class Worker:
         try:
             import torch
 
-            if not torch.cuda.is_available():
-                raise RuntimeError(
-                    "R2T2 needs a CUDA GPU. No usable CUDA device was found."
-                )
+            from cuda_preflight import ensure_cuda_compatible
+            self.cuda_preflight = None
+            self.cuda_preflight = ensure_cuda_compatible(torch)
         except ImportError as exc:
             raise RuntimeError(
                 "The speech runtime is incomplete. Run Repair in Models."
@@ -187,12 +304,15 @@ class Worker:
                 audio=[(np.zeros(16000, dtype=np.float32), 16000)],
                 language=["English"], return_time_stamps=False,
             )
-        except Exception:
-            self.unload()
-            raise
-        finally:
-            if self.model is not None:
+        except BaseException:
+            # A failed restore must not replace the inference cause. The outer
+            # load transaction discards this model before an explicit retry.
+            with contextlib.suppress(Exception):
                 self.model.sampling_params = original_sampling
+            raise
+        else:
+            # Restoration on success is required before reporting Ready.
+            self.model.sampling_params = original_sampling
         self.model_name = SPEECH_MODEL
         self.device = "cuda"
         return self.status()
@@ -210,6 +330,8 @@ class Worker:
             "loaded": self.model is not None,
             "model": self.model_name,
             "device": self.device,
+            **({"cudaPreflight": self.cuda_preflight}
+               if getattr(self, "cuda_preflight", None) is not None else {}),
         }
 
     def magic_status(self) -> dict[str, Any]:
@@ -239,22 +361,26 @@ class Worker:
             return self.magic_status()
 
         self.unload_magic()
-        import torch
-        from transformers import AutoModelForMultimodalLM, AutoProcessor
+        try:
+            import torch
+            from transformers import AutoModelForMultimodalLM, AutoProcessor
 
-        cache_dir = str(request.get("cacheDir") or "") or None
-        self.magic_processor = AutoProcessor.from_pretrained(model_id, cache_dir=cache_dir)
-        self.magic_model = AutoModelForMultimodalLM.from_pretrained(
-            model_id,
-            cache_dir=cache_dir,
-            dtype="auto",
-            device_map={"": device},
-            low_cpu_mem_usage=True,
-        )
-        self.magic_model.eval()
-        self.magic_model_name = model_name
-        self.magic_device = device
-        return self.magic_status()
+            cache_dir = str(request.get("cacheDir") or "") or None
+            self.magic_processor = AutoProcessor.from_pretrained(model_id, cache_dir=cache_dir)
+            self.magic_model = AutoModelForMultimodalLM.from_pretrained(
+                model_id,
+                cache_dir=cache_dir,
+                dtype="auto",
+                device_map={"": device},
+                low_cpu_mem_usage=True,
+            )
+            self.magic_model.eval()
+            self.magic_model_name = model_name
+            self.magic_device = device
+            return self.magic_status()
+        except BaseException:
+            self.unload_magic()
+            raise
 
     @staticmethod
     def magic_prompt(request: dict[str, Any]) -> tuple[str, str]:
@@ -289,6 +415,13 @@ class Worker:
         return system, user
 
     def rewrite_magic(self, request: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self.generate_rewrite(request)
+        except BaseException:
+            self.clear_allocator()
+            raise
+
+    def generate_rewrite(self, request: dict[str, Any]) -> dict[str, Any]:
         if self.magic_model is None or self.magic_processor is None or self.magic_model_name is None:
             raise RuntimeError("No Magic model is loaded")
         import torch
@@ -334,6 +467,13 @@ class Worker:
         }
 
     def transcribe(self, request: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self.transcribe_speech(request)
+        except BaseException:
+            self.clear_allocator(speech=True)
+            raise
+
+    def transcribe_speech(self, request: dict[str, Any]) -> dict[str, Any]:
         speech = self.speech_engine()
         if speech is not None:
             return speech.transcribe(request)
@@ -368,9 +508,14 @@ class Worker:
             return_time_stamps=False,
         )
         finished = time.perf_counter()
+        # A returned label may reflect a forced prompt; it is not an independent
+        # detector. Missing model metadata remains unknown even with a hint.
+        language_metadata = recognized_language_metadata(getattr(results[0], "language", None))
         return {
             "text": str(results[0].text).strip(),
-            "language": language_code,
+            "language": language_metadata["recognizedLanguage"] or "und",
+            "requestedLanguage": language_code,
+            **language_metadata,
             "duration": len(wav) / 16000.0,
             "processingTime": finished - started,
             "inferenceTime": finished - inference_started,
@@ -405,23 +550,48 @@ class Worker:
 
 def main() -> int:
     worker = Worker()
-    for line in sys.stdin:
+    source = sys.stdin.buffer
+    while True:
+        # Reading a capped binary line bounds buffering even without a newline
+        # and measures multibyte input consistently with the desktop transport.
+        line = source.readline(MAX_REQUEST_BYTES + 3)
+        if not line:
+            return 0
+        content = line[:-1] if line.endswith(b"\n") else line
+        if line.endswith(b"\r\n"):
+            content = content[:-1]
+        if len(content) > MAX_REQUEST_BYTES:
+            sys.stderr.write(
+                "Model worker input exceeds the 4 MiB limit. "
+                "Shorten the input and load the model to retry.\n"
+            )
+            sys.stderr.flush()
+            return 2
         line = line.strip()
         if not line:
             continue
         request_id: Any = None
+        operation = contextlib.ExitStack()
         try:
             request = json.loads(line)
-            request_id = request.get("id")
+            request_id = correlation_id(request)
+            request = validate_request(request)
+            operation.enter_context(operation_scope(request_id, request["command"]))
+            emit_progress("Starting worker operation", stage="dispatch")
             with contextlib.redirect_stdout(sys.stderr):
                 result = worker.dispatch(request)
-            emit({"id": request_id, "ok": True, "result": result})
+            validate_result(request["command"], result)
+            emit_progress("Worker operation completed", stage="complete")
+            emit({"id": request_id, "ok": True, "result": result}, request["command"])
             if request.get("command") == "shutdown":
                 return 0
         except Exception as exc:
-            traceback.print_exc(file=sys.stderr)
-            emit({"id": request_id, "ok": False, "error": str(exc)})
-    return 0
+            error = bounded_error(exc)
+            traceback.print_tb(exc.__traceback__, file=sys.stderr)
+            sys.stderr.write(f"{type(exc).__name__}: {error}\n")
+            emit({"id": request_id, "ok": False, "error": error})
+        finally:
+            operation.close()
 
 
 if __name__ == "__main__":

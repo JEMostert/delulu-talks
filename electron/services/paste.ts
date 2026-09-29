@@ -6,8 +6,9 @@ import {
   type ClientInterface,
   type MessageBus,
 } from "dbus-next";
-import type { PlatformCapabilities } from "../../src/types";
+import type { PasteShortcut, PlatformCapabilities } from "../../src/types";
 import { compatibleSessionBusAddress } from "../compat";
+import { getAccessibilityPermission } from "./accessibilityPermission";
 import { portalRequest, PORTAL_NAME, PORTAL_PATH } from "./shortcutPortal";
 
 type PasteCommand = { program: string; args: string[]; input?: string };
@@ -20,11 +21,13 @@ export type PasteIo = {
   env?: NodeJS.ProcessEnv;
   spawn?: typeof spawn;
   spawnSync?: typeof spawnSync;
+  getShortcut?: () => PasteShortcut;
 };
 
 const APP_ID = "delulu-talks";
 const KEYBOARD = 1;
 const KEYSYM_LEFTCTRL = 0xffe3;
+const KEYSYM_LEFTSHIFT = 0xffe1;
 const KEYSYM_V = 0x76;
 
 function variantValue<T>(value: Variant<T> | T | undefined): T | undefined {
@@ -75,7 +78,9 @@ export class PasteService {
     );
   }
 
-  private resolveCommand(): PasteCommand | null {
+  private resolveCommand(
+    shortcut: PasteShortcut = "standard",
+  ): PasteCommand | null {
     if (this.platform === "darwin") {
       return {
         program: "osascript",
@@ -92,14 +97,18 @@ export class PasteService {
           "-NoProfile",
           "-NonInteractive",
           "-Command",
-          "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')",
+          `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${shortcut === "terminal" ? "^+v" : "^v"}')`,
         ],
       };
     }
     if (this.exists("xdotool"))
       return {
         program: "xdotool",
-        args: ["key", "--clearmodifiers", "ctrl+v"],
+        args: [
+          "key",
+          "--clearmodifiers",
+          shortcut === "terminal" ? "ctrl+shift+v" : "ctrl+v",
+        ],
       };
     return null;
   }
@@ -132,29 +141,32 @@ export class PasteService {
   }
 
   async paste(text: string): Promise<string> {
+    const shortcut = this.io.getShortcut?.() ?? "standard";
     this.copy(text);
+    if (this.platform === "darwin") {
+      const accessibility = getAccessibilityPermission(this.platform);
+      if (!accessibility.canAttemptPaste)
+        throw new Error(`The transcript was copied; ${accessibility.detail}`);
+    }
     if (this.waylandPortal) {
-      await this.pasteThroughPortal();
+      await this.pasteThroughPortal(shortcut);
       return "wayland-portal";
     }
-    if (!this.command)
+    const command = this.resolveCommand(shortcut);
+    if (!command)
       throw new Error(
         "no compatible input injector is available; the transcript is on the clipboard",
       );
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 120));
     await new Promise<void>((resolvePaste, reject) => {
-      const child = (this.io.spawn ?? spawn)(
-        this.command!.program,
-        this.command!.args,
-        {
-          windowsHide: true,
-        },
-      );
+      const child = (this.io.spawn ?? spawn)(command.program, command.args, {
+        windowsHide: true,
+      });
       let stderr = "";
       child.stderr.on("data", (chunk: Buffer) => {
         stderr += chunk.toString();
       });
-      if (this.command!.input) child.stdin.end(this.command!.input);
+      if (command.input) child.stdin.end(command.input);
       child.once("error", reject);
       child.once("exit", (code) =>
         code === 0
@@ -162,32 +174,49 @@ export class PasteService {
           : reject(
               new Error(
                 stderr.trim() ||
-                  `${this.command!.program} exited with code ${code}`,
+                  `${command.program} exited with code ${code}`,
               ),
             ),
       );
     });
-    return this.command.program;
+    return command.program;
   }
 
-  private async pasteThroughPortal(): Promise<void> {
+  private async pasteThroughPortal(shortcut: PasteShortcut): Promise<void> {
     await this.ensurePortalSession();
     if (!this.remoteDesktop || !this.portalSession)
       throw new Error("Wayland paste permission is unavailable");
-    // Let the portal dialog close and restore focus before emitting Ctrl+V.
+    const remoteDesktop = this.remoteDesktop;
+    const session = this.portalSession;
+    // Let the portal dialog close and restore focus before emitting paste.
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 220));
-    for (const [keysym, state] of [
-      [KEYSYM_LEFTCTRL, 1],
-      [KEYSYM_V, 1],
-      [KEYSYM_V, 0],
-      [KEYSYM_LEFTCTRL, 0],
-    ] as const) {
-      await this.remoteDesktop.NotifyKeyboardKeysym(
-        this.portalSession,
-        {},
-        keysym,
-        state,
-      );
+    const keys = [KEYSYM_LEFTCTRL];
+    if (shortcut === "terminal") keys.push(KEYSYM_LEFTSHIFT);
+    keys.push(KEYSYM_V);
+    const heldKeys: number[] = [];
+    let pressFailed = false;
+    try {
+      for (const keysym of keys) {
+        // A rejected notification may still have reached the compositor.
+        heldKeys.push(keysym);
+        await remoteDesktop.NotifyKeyboardKeysym(session, {}, keysym, 1);
+      }
+    } catch (error) {
+      pressFailed = true;
+      throw error;
+    } finally {
+      let releaseFailed = false;
+      let releaseError: unknown;
+      for (const keysym of heldKeys.reverse()) {
+        try {
+          await remoteDesktop.NotifyKeyboardKeysym(session, {}, keysym, 0);
+        } catch (error) {
+          if (!releaseFailed) releaseError = error;
+          releaseFailed = true;
+        }
+      }
+      // Attempt every release without masking the original injection failure.
+      if (!pressFailed && releaseFailed) throw releaseError;
     }
   }
 
