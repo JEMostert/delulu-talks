@@ -317,6 +317,9 @@ export const previewApi: DeluluApi = {
   async chooseAudioFile(): Promise<AudioFileSelection | null> {
     return desktopOnly();
   },
+  async inspectAudioFile(_path: string) {
+    throw new Error("Media inspection requires Electron");
+  },
   async runLab(_request: LabRequest) {
     throw new Error("Audio file transcription requires Electron");
   },

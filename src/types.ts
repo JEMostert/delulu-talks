@@ -269,6 +269,17 @@ export type AudioFileSelection = {
   size: number;
 };
 
+export type AudioFileMetadata = {
+  durationSeconds: number | null;
+  channels: number | null;
+  sampleRate: number | null;
+  decoder: "soundfile" | "FFmpeg";
+  decoderReady: boolean;
+  decoderDetail: string;
+  estimatedPcmBytes: number | null;
+  processingTimeEstimate: string;
+};
+
 export type LabRequest = {
   path: string;
 };
@@ -416,6 +427,7 @@ export type DeluluApi = {
   applyHistoryRetention(token: string): Promise<string[]>;
   onHistoryRetentionApplied(callback: (removedIds: string[]) => void): () => void;
   chooseAudioFile(): Promise<AudioFileSelection | null>;
+  inspectAudioFile(path: string): Promise<AudioFileMetadata>;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   exportTranscriptTemplate(

@@ -195,6 +195,8 @@ src/
 
 </details>
 
+File transcription reads media metadata after you explicitly select a source file. Before starting, it shows duration, channels, sample rate, decoder availability and an estimated mono 16 kHz PCM size. Elapsed processing time remains explicitly unknown because hardware, model residency and media length affect it. Inspection uses bounded header-only soundfile/FFprobe probes and an FFmpeg availability check; it does not load a speech model, download dependencies, convert media or modify the source. Full decoding still occurs only when transcription starts. Missing metadata is shown as unknown.
+
 ## Privacy and licenses
 
 Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Failed captures can remain in memory for Retry during the session; Discard releases them, and closing the app loses that recovery copy. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environment, and downloaded models stay under Electron's application-data directory.

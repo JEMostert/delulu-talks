@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   TranscriptCard,
   type TranscriptActions,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import { Alert } from "../components/ui";
 import type {
+  AudioFileMetadata,
   TranscriptRecord,
 } from "../types";
 
@@ -32,6 +34,16 @@ export function LabPage({
   onClearError: () => void;
 }) {
   const { file, error, resultId } = operation;
+  const [inspecting, setInspecting] = useState(false);
+  const [metadata, setMetadata] = useState<AudioFileMetadata | null>(null);
+  useEffect(() => {
+    let active = true;
+    setMetadata(null);
+    if (!file) return;
+    setInspecting(true);
+    window.delulu.inspectAudioFile(file.path).then(value => { if (active) setMetadata(value); }).catch(() => {}).finally(() => { if (active) setInspecting(false); });
+    return () => { active = false; };
+  }, [file?.path]);
   const running = operation.phase === "running";
   const choosing = operation.phase === "choosing";
   const result = history.find((record) => record.id === resultId);
@@ -84,6 +96,41 @@ export function LabPage({
             </div>
             <Upload className="w-[15px] h-[15px] text-muted" />
           </button>
+
+          {file && (
+            <div className="text-[12px] flex flex-col gap-2" aria-live="polite">
+              {inspecting ? (
+                <p className="text-muted">Reading media metadata…</p>
+              ) : metadata ? (
+                <>
+                  <dl className="grid grid-cols-2 gap-2">
+                    <dt className="text-muted">Duration</dt>
+                    <dd>{metadata.durationSeconds === null
+                      ? "Unknown"
+                      : `${Math.floor(metadata.durationSeconds / 60)}m ${Math.floor(metadata.durationSeconds % 60)}s`}</dd>
+                    <dt className="text-muted">Channels</dt>
+                    <dd>{metadata.channels ?? "Unknown"}</dd>
+                    <dt className="text-muted">Sample rate</dt>
+                    <dd>{metadata.sampleRate === null ? "Unknown" : `${metadata.sampleRate.toLocaleString()} Hz`}</dd>
+                    <dt className="text-muted">Decoder</dt>
+                    <dd>{metadata.decoder} · {metadata.decoderReady ? "available" : "not ready"}</dd>
+                    <dt className="text-muted">Decoded audio estimate</dt>
+                    <dd>{metadata.estimatedPcmBytes === null
+                      ? "Unknown"
+                      : `${(metadata.estimatedPcmBytes / 1024 / 1024).toFixed(1)} MiB`}</dd>
+                  </dl>
+                  <p className="text-muted">{metadata.decoderDetail}</p>
+                  <p className="text-muted">Processing time: {metadata.processingTimeEstimate}</p>
+                  <p className="text-muted">Audio estimate assumes mono 16 kHz, 16-bit PCM. Model memory is additional. Local processing has no API fee.</p>
+                  {metadata.durationSeconds !== null && metadata.durationSeconds >= 300 && (
+                    <p className="text-muted">Long recording: the current worker request has a maximum 15-minute time budget. Completion depends on hardware and model speed.</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-muted">Media metadata unavailable. Duration, channels, processing cost and decoder readiness are unknown.</p>
+              )}
+            </div>
+          )}
 
           <button
             className="primary-button lab-run"

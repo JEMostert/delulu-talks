@@ -3,6 +3,7 @@ import type { PasteRecovery } from "../../src/types";
 import type { ModelCacheService } from "../services/modelCache";
 import type { RuleUsageService } from "../services/ruleUsage";
 import type { SerialQueue } from "../runtime/serialQueue";
+import type { IpcRequestChannel } from "../../src/ipcRequests";
 import type {
   BrowserWindow,
   IpcMainEvent,
@@ -19,11 +20,11 @@ import type { UpdateService } from "../services/updates";
 
 export interface IpcRegistrar {
   handle<Args extends unknown[]>(
-    channel: string,
+    channel: IpcRequestChannel,
     listener: (event: IpcMainInvokeEvent, ...args: Args) => unknown,
   ): void;
   on<Args extends unknown[]>(
-    channel: string,
+    channel: IpcRequestChannel,
     listener: (event: IpcMainEvent, ...args: Args) => void,
   ): void;
 }
