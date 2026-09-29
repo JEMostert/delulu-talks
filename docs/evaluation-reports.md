@@ -49,3 +49,35 @@ text-metrics script remains useful when no runtime provenance is available;
 its output is a text comparison, not a model evaluation report.
 
 Implementation status: **UNVERIFIED — checks not run per user instruction**.
+
+## Reference comparisons and external controls
+
+`scripts/evaluation_comparison.py` consumes provenance-bound reports, requires
+matched reference bytes and normalization across every participant, and records
+per-case raw fidelity and WER with the original report hashes. It refuses
+missing/duplicate cases. The manifest must explicitly describe tradeoffs and
+limitations; the tool does not invent conclusions or select a winner.
+
+```json
+{
+  "title": "NL short utterances",
+  "tradeoffs": "Describe observed accuracy/resource tradeoffs; state unavailable measurements.",
+  "limitations": "Supplied transcripts only; native execution and resources not verified here.",
+  "participants": [
+    {"label": "R2T2 MLX", "role": "supported-r2t2-adapter", "reports": ["r2t2-report.json"]},
+    {"label": "External reference", "role": "external-benchmark-control", "reports": ["control-report.json"]}
+  ]
+}
+```
+
+```sh
+python scripts/evaluation_comparison.py --manifest comparison.json --output comparison-report.json
+```
+
+Relative report paths resolve against the manifest directory. Supported adapter
+classification requires one of the app's two R2T2 checkpoint repositories. This
+classification does not prove runtime compatibility. All other controls must
+use `external-benchmark-control`; this records benchmark context and never
+changes the app model catalog. Resource claims belong to actual measured
+artifacts, not an inference from text accuracy. This comparison implementation
+is **UNVERIFIED — checks not run per user instruction**.
