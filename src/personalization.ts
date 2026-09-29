@@ -1,4 +1,15 @@
+import { LANGUAGES } from "./data";
 import type { CustomWord } from "./types";
+
+export function normalizeRuleLanguage(language?: string): string {
+  const value = (language ?? "").trim().toLowerCase();
+  return LANGUAGES.find(([, name]) => name.toLowerCase() === value)?.[0]
+    ?? value.split(/[-_]/)[0];
+}
+export const ruleLanguage = (rule: CustomWord): string =>
+  normalizeRuleLanguage(rule.language);
+export const ruleAppliesToLanguage = (rule: CustomWord, language?: string) =>
+  !ruleLanguage(rule) || ruleLanguage(rule) === normalizeRuleLanguage(language);
 
 export const ruleKind = (rule: CustomWord) =>
   rule.kind ?? (rule.replacement ? "shortcut" : "correction");
@@ -80,7 +91,7 @@ export function ruleConflict(
   if (!triggers.length) return null;
   const pattern = new RegExp(`^(?:${triggers.map(escape).join("|")})$`, "iu");
   for (const word of words) {
-    if (word.id === draft.id) continue;
+    if (word.id === draft.id || (ruleLanguage(word) && ruleLanguage(draft) && ruleLanguage(word) !== ruleLanguage(draft))) continue;
     const existingTrigger = ruleTriggers(word).find((trigger) =>
       pattern.test(trigger),
     );
@@ -99,9 +110,9 @@ export function ruleConflict(
   return null;
 }
 
-function* enabledRules(words: CustomWord[]) {
+function* enabledRules(words: CustomWord[], language?: string) {
   for (const word of words) {
-    if (!word.enabled) continue;
+    if (!word.enabled || !ruleAppliesToLanguage(word, language)) continue;
     const output = ruleKind(word) === "shortcut" ? word.replacement : word.term;
     if (!output.trim()) continue;
     for (const trigger of ruleTriggers(word)) {
@@ -110,9 +121,9 @@ function* enabledRules(words: CustomWord[]) {
   }
 }
 
-export function personalize(text: string, words: CustomWord[]): string {
+export function personalize(text: string, words: CustomWord[], language?: string): string {
   const rules = new Map<string, string>();
-  for (const { trigger, output } of enabledRules(words)) {
+  for (const { trigger, output } of enabledRules(words, language)) {
     // Stable first-rule priority for legacy conflicts. Never cascade replacements.
     if (!rules.has(trigger)) rules.set(trigger, output);
   }
@@ -130,9 +141,9 @@ export type RuleMatch = {
 };
 
 /** Explain the same matching pass used for clean output; never save or cascade. */
-export function previewPersonalization(text: string, words: CustomWord[]) {
+export function previewPersonalization(text: string, words: CustomWord[], language?: string) {
   const rules = new Map<string, { output: string; rule: CustomWord }>();
-  for (const { trigger, output, rule } of enabledRules(words)) {
+  for (const { trigger, output, rule } of enabledRules(words, language)) {
     if (!rules.has(trigger)) rules.set(trigger, { output, rule });
   }
   const matches: RuleMatch[] = [];
@@ -160,6 +171,7 @@ export function previewPersonalization(text: string, words: CustomWord[]) {
 export function splitForRewrite(
   text: string,
   words: CustomWord[],
+  language?: string,
 ): Array<{ text: string; protected: boolean }> {
   const rules = new Map<string, string>();
   const savedBlocks = new Set<string>();
@@ -171,7 +183,9 @@ export function splitForRewrite(
     )
       continue;
     savedBlocks.add(word.replacement);
-    for (const phrase of [word.replacement, ...ruleTriggers(word)]) {
+    // Already saved exact blocks stay protected even when rewriting an older language.
+    const triggers = ruleAppliesToLanguage(word, language) ? ruleTriggers(word) : [];
+    for (const phrase of [word.replacement, ...triggers]) {
       if (!rules.has(phrase)) rules.set(phrase, word.replacement);
     }
   }

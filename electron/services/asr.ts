@@ -655,7 +655,9 @@ export class AsrService {
     request: MagicRewriteRequest,
     settings: AppSettings,
   ): Promise<MagicRewriteResult> {
-    const parts = splitForRewrite(request.text, settings.customWords);
+    const parts = splitForRewrite(
+      request.text, settings.customWords, request.sourceLanguage ?? settings.language,
+    );
     if (parts.filter((part) => !part.protected && part.text.trim()).length > 16)
       throw new Error(
         "This text contains too many separate shortcut blocks to rewrite at once. Rewrite a shorter selection.",

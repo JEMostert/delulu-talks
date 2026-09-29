@@ -8,8 +8,10 @@ import {
   previewPersonalization,
   ruleConflict,
   ruleKind,
+  ruleLanguage,
   ruleTriggers,
 } from "../personalization";
+import { LANGUAGES } from "../data";
 import type { CustomWord } from "../types";
 
 export function VocabularyPage({
@@ -207,6 +209,7 @@ export function VocabularyPage({
             <div className="flex-1 min-w-0">
               <h3 className="text-[15px] flex gap-2 items-center break-words">
                 {word.term}
+                <span className="badge">{ruleLanguage(word) || "All languages"}</span>
                 {!ruleTriggers(word).length && (
                   <span className="badge">Needs a correction phrase</span>
                 )}
@@ -331,6 +334,23 @@ export function VocabularyPage({
             </>
           }
         >
+          <label className="field">
+            Rule language
+            <select
+              aria-label="Rule language"
+              value={draft.language ?? ""}
+              onChange={(e) => setDraft({ ...draft, language: e.target.value || undefined })}
+            >
+              <option value="">All languages</option>
+              {draft.language && !LANGUAGES.some(([code]) => code === draft.language) && (
+                <option value={draft.language}>{draft.language}</option>
+              )}
+              {LANGUAGES.map(([code, label]) => (
+                <option key={code} value={code}>{label}</option>
+              ))}
+            </select>
+            <small>Scoped rules apply only to results in this language. Unknown languages use global rules only.</small>
+          </label>
           {!shortcut && (
             <label className="field">
               Recognized text{" "}
@@ -410,7 +430,7 @@ export function VocabularyPage({
               aria-label="Rule preview"
             >
               {sample
-                ? personalize(sample, [{ ...draft, enabled: true }])
+                ? personalize(sample, [{ ...draft, enabled: true }], draft.language)
                 : "Enter a phrase to preview the exact replacement."}
             </output>
           </div>

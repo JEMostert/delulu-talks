@@ -444,6 +444,7 @@ export class DictationService {
           const magic = await this.asr.rewriteMagic(
             {
               text: output,
+              sourceLanguage: record.language,
               preset: settings.magicPreset,
               allowInferences: settings.magicAllowInferences,
             },
@@ -647,6 +648,7 @@ export class DictationService {
     settings: AppSettings,
   ): TranscriptRecord {
     const text = String(result.text ?? "").trim();
+    const language = normalizeReportedLanguage(result.recognizedLanguage) ?? settings.language;
     const formatted = settings.spokenFormattingCommands
       ? formatSpokenCommands(text, settings.language)
       : text;
@@ -657,7 +659,7 @@ export class DictationService {
       createdAt: Date.now(),
       durationMs,
       text,
-      personalizedText: personalize(formatted, settings.customWords),
+      personalizedText: personalize(formatted, settings.customWords, language),
       model: settings.model,
       language: normalizeReportedLanguage(result.recognizedLanguage) ?? "und",
       recognizedLanguage: normalizeReportedLanguage(result.recognizedLanguage),
