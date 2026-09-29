@@ -14,6 +14,7 @@ export type MagicPhase =
   "idle" | "preparing" | "loading" | "rewriting" | "error";
 export type TranscriptSource = "dictation" | "file";
 export type ExportFormat = "txt" | "json";
+export type DictationFormatting = "preserve" | "spoken";
 
 export type CustomWord = {
   kind?: "correction" | "shortcut";
@@ -32,6 +33,7 @@ export type AppSettings = {
   shortcutMode: "hold" | "toggle";
   model: SpeechModelId;
   language: string;
+  dictationFormatting: DictationFormatting;
   pythonCommand: string;
   inputDeviceId: string;
   inputDeviceLabel: string;
@@ -126,6 +128,7 @@ export type DictationStatus = RuntimeLifecycle & {
 };
 
 export type TranscriptRecord = {
+  dictationFormatting?: DictationFormatting;
   timings?: PipelineTimings;
   id: string;
   createdAt: number;

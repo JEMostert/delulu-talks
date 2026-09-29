@@ -175,6 +175,7 @@ export function normalizeSettings(value: unknown): AppSettings {
     language: validLanguages.has(requestedLanguage)
       ? requestedLanguage
       : DEFAULT_SETTINGS.language,
+    dictationFormatting: source.dictationFormatting === "spoken" ? "spoken" : "preserve",
     pythonCommand: safeString(
       source.pythonCommand,
       DEFAULT_SETTINGS.pythonCommand,
@@ -265,6 +266,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     ),
     model,
     language: safeString(source.language, "en", 12),
+    dictationFormatting: source.dictationFormatting === "spoken" ? "spoken" : "preserve",
     source: ["dictation", "file"].includes(String(source.source))
       ? (source.source as TranscriptRecord["source"])
       : "dictation",

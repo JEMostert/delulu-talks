@@ -1,3 +1,4 @@
+import { formatDictation } from "../../src/dictationFormatting";
 import { personalize } from "../../src/personalization";
 import { deliveredText } from "../../src/transcriptText";
 import { normalizeTimings } from "../../src/pipelineTimings";
@@ -566,7 +567,11 @@ export class DictationService {
       createdAt: Date.now(),
       durationMs,
       text,
-      personalizedText: personalize(text, settings.customWords),
+      personalizedText: source === "dictation"
+        ? formatDictation(text, settings.customWords, settings.dictationFormatting, settings.language)
+        : personalize(text, settings.customWords),
+      dictationFormatting: source === "dictation" && settings.dictationFormatting === "spoken"
+        && (settings.language === "en" || settings.language === "nl") ? "spoken" : "preserve",
       model: settings.model,
       language: String(result.language ?? settings.language),
       source,
@@ -579,16 +584,16 @@ export class DictationService {
   private publishDeliveryTimings(record: TranscriptRecord, output: string): void {
     try {
       const existing = this.storage.findHistory(record.id);
-      if (!existing || deliveredText(existing) !== output) return;
+      if (existing && deliveredText(existing) !== output) return;
       const deliveryTimings: PipelineTimings = {};
       if (record.timings?.clipboardMs !== undefined) deliveryTimings.clipboardMs = record.timings.clipboardMs;
       if (record.timings?.pasteMs !== undefined) deliveryTimings.pasteMs = record.timings.pasteMs;
       const updated = {
-        ...existing,
-        timings: normalizeTimings({ ...existing.timings, ...deliveryTimings }),
+        ...(existing ?? record),
+        timings: normalizeTimings({ ...(existing ?? record).timings, ...deliveryTimings }),
       };
       try {
-        this.storage.replaceHistory(updated);
+        if (existing) this.storage.replaceHistory(updated);
       } catch {
         // Timing metadata must not turn completed delivery into a failed recording.
       }
