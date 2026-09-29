@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
 PROTOCOL_PREFIX = "@delulu:"
 SPEECH_MODEL = "netease-youdao/Confucius4-R2T2"
+MLX_SPEECH_MODEL = "mlx-community/Confucius4-R2T2-bf16"
 LANGUAGE_NAMES = {
     "en": "English",
     "de": "German",
@@ -87,12 +88,13 @@ def emit(payload: dict[str, Any]) -> None:
 class Worker:
     def __init__(self) -> None:
         self.speech: SpeechEngine | None = None
-        if sys.platform == "darwin" and platform.machine() == "arm64":
-            from metal_speech import MetalSpeech
-            self.speech = MetalSpeech()
-        elif sys.platform == "win32":
-            from windows_speech import WindowsSpeech
-            self.speech = WindowsSpeech()
+        # Both runtime processes use this worker, including writing-only ones.
+        # Select the platform now, but import its adapter only for speech work.
+        self.speech_backend = (
+            "mlx" if sys.platform == "darwin" and platform.machine() == "arm64"
+            else "windows" if sys.platform == "win32"
+            else "linux"
+        )
         self.model: Any | None = None
         self.model_name: str | None = None
         self.device: str | None = None
@@ -100,6 +102,16 @@ class Worker:
         self.magic_processor: Any | None = None
         self.magic_model_name: str | None = None
         self.magic_device: str | None = None
+
+    def speech_engine(self) -> SpeechEngine | None:
+        if self.speech is None:
+            if self.speech_backend == "mlx":
+                from metal_speech import MetalSpeech
+                self.speech = MetalSpeech()
+            elif self.speech_backend == "windows":
+                from windows_speech import WindowsSpeech
+                self.speech = WindowsSpeech()
+        return self.speech
 
     def unload(self) -> dict[str, Any]:
         if self.speech is not None:
@@ -109,9 +121,10 @@ class Worker:
         self.device = None
         gc.collect()
         try:
-            import torch
-
-            if torch.cuda.is_available():
+            # Failed loads can allocate before model assignment. Clear an
+            # already-imported allocator without loading an unused backend.
+            torch = sys.modules.get("torch")
+            if torch is not None and torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except Exception:
             pass
@@ -124,17 +137,17 @@ class Worker:
         self.magic_device = None
         gc.collect()
         try:
-            import torch
-
-            if torch.cuda.is_available():
+            torch = sys.modules.get("torch")
+            if torch is not None and torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except Exception:
             pass
         return {"loaded": False}
 
     def load(self, request: dict[str, Any]) -> dict[str, Any]:
-        if self.speech is not None:
-            return self.speech.load(request)
+        speech = self.speech_engine()
+        if speech is not None:
+            return speech.load(request)
         if self.model is not None:
             return self.status()
         try:
@@ -187,6 +200,12 @@ class Worker:
     def status(self) -> dict[str, Any]:
         if self.speech is not None:
             return self.speech.status()
+        if self.speech_backend != "linux":
+            return {
+                "loaded": False,
+                "model": MLX_SPEECH_MODEL if self.speech_backend == "mlx" else SPEECH_MODEL,
+                "device": "mlx" if self.speech_backend == "mlx" else "cuda",
+            }
         return {
             "loaded": self.model is not None,
             "model": self.model_name,
@@ -315,8 +334,9 @@ class Worker:
         }
 
     def transcribe(self, request: dict[str, Any]) -> dict[str, Any]:
-        if self.speech is not None:
-            return self.speech.transcribe(request)
+        speech = self.speech_engine()
+        if speech is not None:
+            return speech.transcribe(request)
         started = time.perf_counter()
         if self.model is None:
             raise RuntimeError("No model is loaded")

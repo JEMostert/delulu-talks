@@ -180,7 +180,7 @@ class WindowsSpeech:
         self.model = None
         self.processor = None
         gc.collect()
-        import torch
-        if torch.cuda.is_available():
+        torch = sys.modules.get("torch")
+        if torch is not None and torch.cuda.is_available():
             torch.cuda.empty_cache()
         return {"loaded": False}
