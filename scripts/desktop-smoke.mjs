@@ -172,6 +172,31 @@ try {
     assert.match(update.message, /unsigned Mac build uses manual updates/);
   }
   if (!runtimeData) {
+    // Exercise the real sandboxed preload/main boundary: abandoned callbacks
+    // must not change idle state or create transcript/cache data.
+    const abandoned = await page.evaluate(async () => {
+      const before = await window.delulu.getStatus();
+      await window.delulu.recordingStarted("abandoned-capture");
+      await window.delulu.recordingFailed(
+        "An abandoned microphone failed",
+        "abandoned-capture",
+      );
+      await window.delulu.submitRecording({
+        sessionId: "abandoned-capture",
+        wav: new Uint8Array(44),
+        durationMs: 1000,
+      });
+      return {
+        before,
+        after: await window.delulu.getStatus(),
+        history: await window.delulu.getHistory(),
+      };
+    });
+    assert.deepEqual(abandoned.after, abandoned.before);
+    assert.deepEqual(abandoned.history, []);
+    console.log(
+      "Abandoned capture IPC passed: late started/failed/audio callbacks leave idle state and history unchanged; no microphone or inference.",
+    );
     await page.getByRole("button", { name: "Models", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "Install engine", exact: true }),
@@ -210,6 +235,7 @@ try {
       await window.delulu.runLab({ path });
     }, audioPath);
     const records = await page.evaluate(() => window.delulu.getHistory());
+    assert.equal(records[0]?.source, "file");
     if (process.env.DELULU_EVIDENCE_NATIVE_RESULT) {
       await writeFile(
         process.env.DELULU_EVIDENCE_NATIVE_RESULT,
