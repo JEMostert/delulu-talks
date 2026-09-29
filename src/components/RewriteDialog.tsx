@@ -11,6 +11,7 @@ import type {
 export function RewriteDialog({
   text,
   baseline,
+  sourceRevision = 0,
   status,
   onClose,
   onSetup,
@@ -19,14 +20,17 @@ export function RewriteDialog({
 }: {
   text: string;
   baseline: string;
+  sourceRevision?: number;
   status?: MagicStatus;
   onClose: () => void;
   onSetup: () => void;
   onRewrite: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
-  onApply: (result: MagicRewriteResult, source: string) => Promise<boolean>;
+  onApply: (result: MagicRewriteResult, source: string, sourceRevision: number) => Promise<boolean>;
 }) {
   const [source] = useState(text);
   const [expectedOutput] = useState(baseline);
+  const [expectedRevision] = useState(sourceRevision);
+  const stale = sourceRevision !== expectedRevision || baseline !== expectedOutput;
   const [preset, setPreset] = useState<MagicPreset>("concise");
   const [instructions, setInstructions] = useState("");
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
@@ -50,11 +54,11 @@ export function RewriteDialog({
           {result && (
             <button
               className="primary-button"
-              disabled={busy || !result.text.trim()}
+              disabled={busy || stale || !result.text.trim()}
               onClick={async () => {
                 setBusy(true);
                 try {
-                  if (await onApply(result, expectedOutput)) onClose();
+                  if (await onApply(result, expectedOutput, expectedRevision)) onClose();
                   else
                     setError(
                       "Could not apply this rewrite. The transcript may have changed; close this preview and review the current result.",
@@ -157,6 +161,11 @@ export function RewriteDialog({
           />
         </label>
       </div>
+      {stale && (
+        <p className="field-error" role="alert">
+          The transcript source changed. Close this preview and generate a new rewrite from the current version.
+        </p>
+      )}
       {error && (
         <p className="field-error" role="alert">
           {error}
@@ -164,7 +173,7 @@ export function RewriteDialog({
       )}
       <button
         className="secondary-button"
-        disabled={busy || missing || source.length > 50_000}
+        disabled={busy || stale || missing || source.length > 50_000}
         onClick={async () => {
           setBusy(true);
           setError(null);

@@ -313,6 +313,7 @@ try {
           id,
           result,
           "Session correction stays private.",
+          (await window.delulu.getHistory()).find((item) => item.id === id)?.sourceRevision ?? 0,
         );
         return result;
       }, records[0].id);
@@ -326,7 +327,10 @@ try {
       );
       await page.evaluate(
         async ({ id, text }) => {
-          await window.delulu.setTranscriptRewrite(id, null, text);
+          await window.delulu.setTranscriptRewrite(
+            id, null, text,
+            (await window.delulu.getHistory()).find((item) => item.id === id)?.sourceRevision ?? 0,
+          );
         },
         { id: records[0].id, text: rewritten.text },
       );

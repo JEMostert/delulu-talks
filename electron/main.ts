@@ -24,7 +24,7 @@ import type {
   TranscriptRecord,
 } from "../src/types";
 import { modelById } from "../src/data";
-import { deliveredText } from "../src/transcriptText";
+import { deliveredText, transcriptSourceRevision } from "../src/transcriptText";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
@@ -761,11 +761,14 @@ function registerIpc(): void {
   });
   handle(
     "history:setRewrite",
-    (_event, id: unknown, value: unknown, expected: unknown) => {
+    (_event, id: unknown, value: unknown, expected: unknown, expectedRevision: unknown = 0) => {
       const key = validateText(id, 128);
       const record = storage.findHistory(key) ?? sessionTranscripts.get(key);
       if (!record) throw new Error("Transcript not found");
-      if (deliveredText(record) !== validateText(expected, 500_000))
+      if (!Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0)
+        throw new Error("Invalid transcript source revision");
+      if (transcriptSourceRevision(record) !== expectedRevision ||
+          deliveredText(record) !== validateText(expected, 500_000))
         throw new Error(
           "This transcript changed while rewriting. Review the current text and try again.",
         );
@@ -774,6 +777,7 @@ function registerIpc(): void {
         updated = {
           ...record,
           magicText: null,
+          rewriteSourceRevision: null,
           magicModel: null,
           magicPreset: null,
           magicIncludedInferences: false,
@@ -788,6 +792,7 @@ function registerIpc(): void {
         updated = {
           ...record,
           magicText: text,
+          rewriteSourceRevision: transcriptSourceRevision(record),
           magicPreset: ["polish", "concise", "structured", "prompt"].includes(
             String(rewrite.preset),
           )

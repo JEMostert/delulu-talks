@@ -1,3 +1,4 @@
+import { transcriptSourceRevision } from "../../src/transcriptText";
 import { app } from "electron";
 import { speechModelForPlatform } from "../runtime/platform";
 import {
@@ -243,6 +244,10 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     createdAt: Number(source.createdAt) || Date.now(),
     durationMs: Math.max(0, Number(source.durationMs) || 0),
     text,
+    sourceRevision: Number.isSafeInteger(source.sourceRevision) && Number(source.sourceRevision) >= 0
+      ? Number(source.sourceRevision) : 0,
+    rewriteSourceRevision: Number.isSafeInteger(source.rewriteSourceRevision) && Number(source.rewriteSourceRevision) >= 0
+      ? Number(source.rewriteSourceRevision) : null,
     personalizedText: optionalText(source.personalizedText, 500_000),
     editedText: optionalText(
       source.editedText ?? source.editedIntendedText,
@@ -277,8 +282,13 @@ export function applyTranscriptEdit(
   record: TranscriptRecord,
   text: string | null,
 ): TranscriptRecord {
+  const revision = transcriptSourceRevision(record);
+  if (revision >= Number.MAX_SAFE_INTEGER)
+    throw new Error("This transcript has reached its revision limit");
   record = {
     ...record,
+    sourceRevision: revision + 1,
+    rewriteSourceRevision: null,
     magicText: null,
     magicModel: null,
     magicPreset: null,

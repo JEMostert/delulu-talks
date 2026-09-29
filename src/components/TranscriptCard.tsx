@@ -17,6 +17,7 @@ import {
   deliveredText,
   transcriptIsEdited,
   transcriptText,
+  transcriptSourceRevision,
 } from "../transcriptText";
 import { ConfirmDialog, Modal } from "./ui";
 import type {
@@ -34,6 +35,7 @@ export type TranscriptActions = {
     id: string,
     result: MagicRewriteResult | null,
     sourceText: string,
+    expectedSourceRevision?: number,
   ) => Promise<boolean>;
   onRewriteSetup?: () => void;
   rewriteStatus?: MagicStatus;
@@ -345,6 +347,7 @@ export function TranscriptCard({
                             record.id,
                             null,
                             deliveredText(record),
+                            transcriptSourceRevision(record),
                           )
                         )
                           setShowSource(false);
@@ -416,12 +419,13 @@ export function TranscriptCard({
         <RewriteDialog
           text={text}
           baseline={deliveredText(record)}
+          sourceRevision={transcriptSourceRevision(record)}
           status={rewriteStatus}
           onClose={() => setRewriting(false)}
           onSetup={onRewriteSetup ?? (() => {})}
           onRewrite={onRewrite}
-          onApply={async (result, source) => {
-            const applied = await onSetRewrite(record.id, result, source);
+          onApply={async (result, source, revision) => {
+            const applied = await onSetRewrite(record.id, result, source, revision);
             if (applied) setShowSource(false);
             return applied;
           }}

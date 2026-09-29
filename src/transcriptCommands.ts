@@ -73,6 +73,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
       id: string,
       result: MagicRewriteResult | null,
       sourceText: string,
+      expectedSourceRevision?: number,
     ) =>
       w.action(
         async () => {
@@ -80,6 +81,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
             id,
             result,
             sourceText,
+            expectedSourceRevision,
           );
           w.setHistory((items) =>
             items.map((item) => (item.id === id ? record : item)),

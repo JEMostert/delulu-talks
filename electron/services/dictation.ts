@@ -373,6 +373,7 @@ export class DictationService {
           record = {
             ...record,
             magicText: magic.text,
+            rewriteSourceRevision: record.sourceRevision ?? 0,
             magicModel: magic.model,
             magicPreset: settings.magicPreset,
             magicIncludedInferences: magic.includedInferences,
@@ -545,6 +546,8 @@ export class DictationService {
       createdAt: Date.now(),
       durationMs,
       text,
+      sourceRevision: 0,
+      rewriteSourceRevision: null,
       personalizedText: personalize(text, settings.customWords),
       model: settings.model,
       language: String(result.language ?? settings.language),

@@ -95,6 +95,10 @@ export type TranscriptRecord = {
   createdAt: number;
   durationMs: number;
   text: string;
+  /** Monotonic version of the original/corrected source; legacy records start at zero. */
+  sourceRevision?: number;
+  /** Source version used for this rewrite; null means unknown legacy provenance. */
+  rewriteSourceRevision?: number | null;
   personalizedText?: string | null;
   editedText?: string | null;
   magicText?: string | null;
@@ -246,6 +250,7 @@ export type DeluluApi = {
     id: string,
     result: MagicRewriteResult | null,
     sourceText: string,
+    expectedSourceRevision?: number,
   ): Promise<TranscriptRecord>;
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
