@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
 import { DEFAULT_SETTINGS } from "../data";
 import { PcmRecorder, listMicrophones } from "../recorder";
+import { readStartupService } from "../startupServices";
 import type {
   AppSettings,
   DictationStatus,
@@ -67,15 +68,26 @@ export function useWorkspace() {
 
   useEffect(() => {
     let alive = true;
+    const startup = new AbortController();
+    const received = new Set<string>();
+    const subscribe =
+      <T>(name: string, receive: (value: T) => void) =>
+      (value: T) => {
+        if (!alive) return;
+        received.add(name);
+        receive(value);
+      };
+    const read = <T>(name: string, request: () => Promise<T>) =>
+      readStartupService(name, request, startup.signal);
     setStartupError(null);
     const recorder = new PcmRecorder();
     const subscriptions = [
-      bridge.onStatus(setStatus),
-      bridge.onMagicStatus(setMagicStatus),
-      bridge.onSettingsChanged(receiveSettings),
+      bridge.onStatus(subscribe("speech status", setStatus)),
+      bridge.onMagicStatus(subscribe("rewriting status", setMagicStatus)),
+      bridge.onSettingsChanged(subscribe("settings", receiveSettings)),
       bridge.onNavigate(setPage),
-      bridge.onShortcutStatus(setShortcutStatus),
-      bridge.onUpdateStatus(setUpdateStatus),
+      bridge.onShortcutStatus(subscribe("shortcut status", setShortcutStatus)),
+      bridge.onUpdateStatus(subscribe("update status", setUpdateStatus)),
       bridge.onRecorderCommand((command) => {
         void recorder.handle(command).catch(report);
       }),
@@ -83,13 +95,13 @@ export function useWorkspace() {
     ];
     void bridge.recorderReady().catch(report);
     void Promise.allSettled([
-      bridge.getSettings(),
-      bridge.getStatus(),
-      bridge.getMagicStatus(),
-      bridge.getShortcutStatus(),
-      bridge.getHistory(),
-      bridge.getCapabilities(),
-      bridge.getUpdateStatus(),
+      read("settings", () => bridge.getSettings()),
+      read("speech status", () => bridge.getStatus()),
+      read("rewriting status", () => bridge.getMagicStatus()),
+      read("shortcut status", () => bridge.getShortcutStatus()),
+      read("transcript history", () => bridge.getHistory()),
+      read("platform capabilities", () => bridge.getCapabilities()),
+      read("update status", () => bridge.getUpdateStatus()),
     ])
       .then(([next, speech, magic, shortcut, records, platform, update]) => {
         if (!alive) return;
@@ -105,38 +117,47 @@ export function useWorkspace() {
           );
           return;
         }
-        receiveSettings(next.value);
+        if (!received.has("settings")) receiveSettings(next.value);
         setHistory(records.value);
-        if (speech.status === "fulfilled") setStatus(speech.value);
-        else
-          setStatus({
-            phase: "error",
-            engine: "error",
-            message:
-              "Could not read speech engine status. Retry loading it in Models.",
-          });
-        if (magic.status === "fulfilled") setMagicStatus(magic.value);
-        else
-          setMagicStatus({
-            phase: "error",
-            engine: "error",
-            message: "Rewriting is unavailable. Dictation can still be used.",
-          });
-        if (shortcut.status === "fulfilled") setShortcutStatus(shortcut.value);
-        else
-          setShortcutStatus((previous) => ({
-            ...previous,
-            registered: false,
-            message: "Shortcut status is unavailable. Use the Record button.",
-          }));
+        if (!received.has("speech status")) {
+          if (speech.status === "fulfilled") setStatus(speech.value);
+          else
+            setStatus({
+              phase: "error",
+              engine: "error",
+              message:
+                "Could not read speech engine status. Retry loading it in Models.",
+            });
+        }
+        if (!received.has("rewriting status")) {
+          if (magic.status === "fulfilled") setMagicStatus(magic.value);
+          else
+            setMagicStatus({
+              phase: "error",
+              engine: "error",
+              message: "Rewriting is unavailable. Dictation can still be used.",
+            });
+        }
+        if (!received.has("shortcut status")) {
+          if (shortcut.status === "fulfilled")
+            setShortcutStatus(shortcut.value);
+          else
+            setShortcutStatus((previous) => ({
+              ...previous,
+              registered: false,
+              message: "Shortcut status is unavailable. Use the Record button.",
+            }));
+        }
         if (platform.status === "fulfilled") setCapabilities(platform.value);
-        if (update.status === "fulfilled") setUpdateStatus(update.value);
-        else
-          setUpdateStatus((previous) => ({
-            ...previous,
-            phase: "error",
-            message: "Could not read update status",
-          }));
+        if (!received.has("update status")) {
+          if (update.status === "fulfilled") setUpdateStatus(update.value);
+          else
+            setUpdateStatus((previous) => ({
+              ...previous,
+              phase: "error",
+              message: "Could not read update status",
+            }));
+        }
         setReady(true);
       })
       .catch((reason: unknown) => {
@@ -147,6 +168,7 @@ export function useWorkspace() {
       });
     return () => {
       alive = false;
+      startup.abort();
       subscriptions.forEach((remove) => remove());
       void recorder.cancel();
     };
