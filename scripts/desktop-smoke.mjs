@@ -63,6 +63,73 @@ try {
   );
   const page = await app.firstWindow();
   await page.getByRole("button", { name: "Dismiss setup" }).click();
+  const workletAsset = await app.evaluate(({ app }) => {
+    const { readdirSync } = process.getBuiltinModule("node:fs");
+    const { join } = process.getBuiltinModule("node:path");
+    return readdirSync(join(app.getAppPath(), "out/renderer/assets")).find(
+      (name) => /^captureWorklet-.*\.js$/.test(name),
+    );
+  });
+  assert.ok(workletAsset, "The built capture worklet must be packaged");
+  // Verify the built file:// asset with the production CSP and real Web Audio.
+  // Oscillator input requires neither microphone permission nor a speech model.
+  const workletCapture = await page.evaluate(async (asset) => {
+    const context = new AudioContext({ sampleRate: 16_000 });
+    let timer;
+    try {
+      await context.audioWorklet.addModule(
+        new URL(`assets/${asset}`, document.baseURI).href,
+      );
+      const worklet = new AudioWorkletNode(context, "delulu-capture");
+      const source = context.createOscillator();
+      const sink = context.createGain();
+      sink.gain.value = 0;
+      source.connect(worklet).connect(sink).connect(context.destination);
+      let samples = 0;
+      let first;
+      let flushed;
+      const firstBatch = new Promise((resolve) => {
+        first = resolve;
+      });
+      const flush = new Promise((resolve) => {
+        flushed = resolve;
+      });
+      worklet.port.onmessage = (event) => {
+        if (event.data.samples) {
+          samples += event.data.samples.length;
+          first();
+        }
+        if (event.data.flushed) flushed();
+      };
+      const captured = (async () => {
+        source.start();
+        await context.resume();
+        await firstBatch;
+        source.disconnect();
+        worklet.port.postMessage("flush");
+        await flush;
+        source.stop();
+        return { samples, flushed: true };
+      })();
+      return await Promise.race([
+        captured,
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("Built worklet capture timed out")),
+            5000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      await context.close();
+    }
+  }, workletAsset);
+  assert.ok(workletCapture.samples > 0);
+  assert.equal(workletCapture.flushed, true);
+  console.log(
+    "Built worklet passed: file:// asset, production CSP, synthetic Web Audio capture and flush; no microphone or inference.",
+  );
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Application", exact: true }).click();
   await page.getByRole("button", { name: "dark", exact: true }).click();
