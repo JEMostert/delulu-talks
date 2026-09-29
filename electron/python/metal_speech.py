@@ -82,7 +82,7 @@ class MetalSpeech:
             raise FileNotFoundError("The selected audio file no longer exists")
         from mlx_audio.stt.utils import load_audio
         import mlx.core as mx
-        from transcription_engine import LANGUAGE_NAMES, normalize_recognized_language
+        from transcription_engine import LANGUAGE_NAMES, recognized_language_metadata
 
         started = time.perf_counter()
         # MLX Audio decodes and mixes/resamples locally. FLAC imports no longer
@@ -112,12 +112,12 @@ class MetalSpeech:
                 "R2T2 reached its transcription length limit. Split the audio into shorter files and try again."
             )
         # MLX Audio returns one language label per decoded segment (the prompt
-        # language when forced). Mixed labels stay unknown; this is not an
+        # language when forced). Mixed labels have no single code; this is not an
         # independent code-switching detector.
-        recognized_language = normalize_recognized_language(getattr(result, "language", None))
-        return {"text": result.text.strip(), "language": recognized_language or "und",
+        language_metadata = recognized_language_metadata(getattr(result, "language", None))
+        return {"text": result.text.strip(), "language": language_metadata["recognizedLanguage"] or "und",
                 "requestedLanguage": language_code,
-                "recognizedLanguage": recognized_language,
+                **language_metadata,
                 "duration": len(samples) / SAMPLE_RATE,
                 "processingTime": finished - started,
                 "inferenceTime": finished - inference_started}

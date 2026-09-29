@@ -146,7 +146,7 @@ class WindowsSpeech:
         audio = Path(request["audioPath"])
         if not audio.is_file():
             raise FileNotFoundError("The selected audio file no longer exists")
-        from transcription_engine import LANGUAGE_NAMES, normalize_recognized_language
+        from transcription_engine import LANGUAGE_NAMES, recognized_language_metadata
         import soundfile as sf
         started = time.perf_counter()
         try:
@@ -177,11 +177,11 @@ class WindowsSpeech:
         finished = time.perf_counter()
         # These are labels from the parsed model output, not a separate detector;
         # a forced prompt can influence them. Never substitute the prompt hint.
-        recognized_language = normalize_recognized_language([result.get("language") for result in results])
+        language_metadata = recognized_language_metadata([result.get("language") for result in results])
         return {"text": " ".join(result["transcription"].strip() for result in results).strip(),
-                "language": recognized_language or "und",
+                "language": language_metadata["recognizedLanguage"] or "und",
                 "requestedLanguage": code,
-                "recognizedLanguage": recognized_language,
+                **language_metadata,
                 "duration": len(samples) / SAMPLE_RATE,
                 "processingTime": finished - started,
                 "inferenceTime": finished - inference_started}
