@@ -21,6 +21,7 @@ import { WorkerClient, transcriptionTimeout } from "../runtime/workerClient";
 import { SerialQueue } from "../runtime/serialQueue";
 import { RuntimeInstaller } from "../runtime/installer";
 import { speechModelForPlatform } from "../runtime/platform";
+import { privateFailureLog } from "../runtime/privateDiagnostics";
 
 type WorkerRuntime = {
   loaded: boolean;
@@ -1092,8 +1093,8 @@ export class AsrService {
     try {
       writeFileSync(
         join(this.storage.dataDirectory, "last-asr-error.log"),
-        `${this.speechWorker.stderr}\n${message}\n`,
-        "utf8",
+        privateFailureLog("speech", error, this.speechWorker.stderr),
+        { encoding: "utf8", mode: 0o600 },
       );
     } catch {
       /* diagnostics are best-effort */
@@ -1115,8 +1116,8 @@ export class AsrService {
     try {
       writeFileSync(
         join(this.storage.dataDirectory, "last-magic-error.log"),
-        `${this.magicWorker.stderr}\n${message}\n`,
-        "utf8",
+        privateFailureLog("magic", error, this.magicWorker.stderr),
+        { encoding: "utf8", mode: 0o600 },
       );
     } catch {
       /* diagnostics are best-effort */

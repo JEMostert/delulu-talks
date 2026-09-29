@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Check, Copy, HardDrive, RefreshCw, Terminal } from "lucide-react";
 import { bridge } from "../bridge";
+import { diagnosticReport } from "../diagnosticReport";
 import type { RuntimeDiagnostics } from "../types";
 import { Alert } from "./ui";
 
@@ -14,8 +15,8 @@ export function Diagnostics() {
     setError("");
     try {
       setData(await bridge.getDiagnostics());
-    } catch (reason) {
-      setError(String(reason));
+    } catch {
+      setError("Diagnostics could not be collected or copied. Retry the health check.");
     } finally {
       setBusy(false);
     }
@@ -123,14 +124,19 @@ export function Diagnostics() {
                 ),
               )}
             </dl>
+            <p className="caption">
+              The copied report includes device and selected package versions.
+              Local paths, transcript content and backend output are excluded.
+              The local data path above is shown only in these expanded details.
+            </p>
             <button
               className="secondary-button"
               onClick={async () => {
                 try {
-                  await bridge.copyText(JSON.stringify(data, null, 2));
+                  await bridge.copyText(JSON.stringify(diagnosticReport(data), null, 2));
                   setCopied(true);
-                } catch (reason) {
-                  setError(String(reason));
+                } catch {
+                  setError("Diagnostics could not be collected or copied. Retry the health check.");
                 }
               }}
             >
