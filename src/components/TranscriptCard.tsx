@@ -1,3 +1,4 @@
+import { TechnicalAddressPreview } from "./TechnicalAddressPreview";
 import { RewriteDialog } from "./RewriteDialog";
 import { useState } from "react";
 import {
@@ -246,6 +247,9 @@ export function TranscriptCard({
                   : "Corrections & shortcuts applied"}
             </span>
           </div>
+          {!editing && record.dictationMode && record.dictationMode !== "prose" && (
+            <TechnicalAddressPreview key={record.id} speech={record.text} onCopy={onCopy} />
+          )}
           {editing ? (
             <textarea
               aria-label="Correct transcript"
