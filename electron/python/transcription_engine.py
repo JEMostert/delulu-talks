@@ -337,6 +337,8 @@ class Worker:
         if sample_rate != 16000:
             import soxr
             wav = soxr.resample(wav, sample_rate, 16000)
+        if not len(wav):
+            raise ValueError("The selected audio file contains no samples")
         language_code = str(request.get("language", "en")).lower()
         language = LANGUAGE_NAMES.get(language_code)
         inference_started = time.perf_counter()
