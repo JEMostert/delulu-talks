@@ -80,6 +80,7 @@ export function PersonalProfiles({ settings, saving, onManage }: {
   const [starter, setStarter] = useState<ProfileStarterId>("current");
   const [name, setName] = useState("");
   const [rename, setRename] = useState<{ id: string; name: string } | null>(null);
+  const [duplicate, setDuplicate] = useState<{ id: string; name: string } | null>(null);
   const [remove, setRemove] = useState<{ id: string; name: string } | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -211,6 +212,7 @@ export function PersonalProfiles({ settings, saving, onManage }: {
               <EffectiveProfileSettings profile={profile} settings={settings} />
               <div className="flex gap-2">
                 <button className="secondary-button" disabled={busy} onClick={() => { setError(null); setRename({ id: profile.id, name: profile.name }); }}>Rename</button>
+                <button className="secondary-button" disabled={busy || profiles.length >= 128} onClick={() => { setError(null); setDuplicate({ id: profile.id, name: `${profile.name} copy` }); }}>Duplicate</button>
                 <button className="secondary-button" disabled={busy} onClick={() => { setError(null); setRemove({ id: profile.id, name: profile.name }); }}>Delete</button>
               </div>
             </article>)}
@@ -223,6 +225,14 @@ export function PersonalProfiles({ settings, saving, onManage }: {
         <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); void run({ action: "rename", id: rename.id, name: rename.name }, () => setRename(null)); }}>
           <label className="grid gap-1">Profile name<input autoFocus required maxLength={128} disabled={busy} value={rename.name} onChange={(event) => setRename({ ...rename, name: event.target.value })} /></label>
           <button className="primary-button" type="submit" disabled={busy || !rename.name.trim()}>{pending ? "Saving…" : "Save name"}</button>
+          {error && <p role="alert">{error}</p>}
+        </form>
+      </Modal>}
+      {duplicate && <Modal title="Duplicate profile" busy={busy} onClose={() => setDuplicate(null)}>
+        <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); void run({ action: "duplicate", id: duplicate.id, name: duplicate.name }, () => setDuplicate(null)); }}>
+          <p className="caption">Creates a separate saved profile with a new identity. Global shortcut bindings stay shared; duplication does not register another binding or activate the copy. Conflicting names and enabled vocabulary shortcuts reject the save.</p>
+          <label className="grid gap-1">New profile name<input autoFocus required maxLength={128} disabled={busy} value={duplicate.name} onChange={(event) => setDuplicate({ ...duplicate, name: event.target.value })} /></label>
+          <button className="primary-button" type="submit" disabled={busy || !duplicate.name.trim()}>{pending ? "Saving…" : "Save copy"}</button>
           {error && <p role="alert">{error}</p>}
         </form>
       </Modal>}
