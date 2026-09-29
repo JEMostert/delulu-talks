@@ -172,6 +172,31 @@ try {
     assert.match(update.message, /unsigned Mac build uses manual updates/);
   }
   if (!runtimeData) {
+    // Exercise the real sandboxed preload/main boundary: abandoned callbacks
+    // must not change idle state or create transcript/cache data.
+    const abandoned = await page.evaluate(async () => {
+      const before = await window.delulu.getStatus();
+      await window.delulu.recordingStarted("abandoned-capture");
+      await window.delulu.recordingFailed(
+        "An abandoned microphone failed",
+        "abandoned-capture",
+      );
+      await window.delulu.submitRecording({
+        sessionId: "abandoned-capture",
+        wav: new Uint8Array(44),
+        durationMs: 1000,
+      });
+      return {
+        before,
+        after: await window.delulu.getStatus(),
+        history: await window.delulu.getHistory(),
+      };
+    });
+    assert.deepEqual(abandoned.after, abandoned.before);
+    assert.deepEqual(abandoned.history, []);
+    console.log(
+      "Abandoned capture IPC passed: late started/failed/audio callbacks leave idle state and history unchanged; no microphone or inference.",
+    );
     await page.getByRole("button", { name: "Models", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "Install engine", exact: true }),
@@ -203,15 +228,14 @@ try {
         audioPath,
       ]);
     }
-    const audio = Array.from(await readFile(audioPath));
-    await page.evaluate(async (wav) => {
+    // Native inference consumes the explicit file fixture through the import API.
+    // Recorder submissions belong exclusively to their live capture session.
+    await page.evaluate(async (path) => {
       await window.delulu.loadModel();
-      await window.delulu.submitRecording({
-        wav: new Uint8Array(wav),
-        durationMs: 4573,
-      });
-    }, audio);
+      await window.delulu.runLab({ path });
+    }, audioPath);
     const records = await page.evaluate(() => window.delulu.getHistory());
+    assert.equal(records[0]?.source, "file");
     if (process.env.DELULU_EVIDENCE_NATIVE_RESULT) {
       await writeFile(
         process.env.DELULU_EVIDENCE_NATIVE_RESULT,
@@ -234,16 +258,13 @@ try {
     }
     if (process.argv.includes("--lifecycle")) {
       for (let cycle = 0; cycle < 3; cycle++) {
-        await page.evaluate(async (wav) => {
+        await page.evaluate(async (path) => {
           await window.delulu.unloadModel();
           if ((await window.delulu.getStatus()).engine !== "unloaded")
             throw new Error("Speech did not unload");
           await window.delulu.loadModel();
-          await window.delulu.submitRecording({
-            wav: new Uint8Array(wav),
-            durationMs: 4573,
-          });
-        }, audio);
+          await window.delulu.runLab({ path });
+        }, audioPath);
       }
       const cycles = await page.evaluate(() => window.delulu.getHistory());
       assert.equal(cycles.length, 4);
