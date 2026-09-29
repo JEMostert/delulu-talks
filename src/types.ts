@@ -174,7 +174,7 @@ export type PlatformCapabilities = {
   desktop: string;
   sessionType: string;
   pasteMethod: string;
-  overlayMethod: "layer-shell" | "unavailable";
+  overlayMethod: "layer-shell" | "mac-panel" | "unavailable";
   overlayDetail?: string;
   wayland: boolean;
 };
