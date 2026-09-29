@@ -91,3 +91,194 @@ describe("personalized output", () => {
     ]);
   });
 });
+
+const makeCorrection = (
+  soundsLike: string,
+  term = "Fixed",
+  id = soundsLike,
+): CustomWord => ({ ...correction, id, soundsLike, term });
+
+const makeShortcut = (term: string, replacement = "EXACT\n$& $1") => ({
+  ...shortcut,
+  id: term,
+  term,
+  soundsLike: "",
+  replacement,
+});
+
+describe("vocabulary edge cases", () => {
+  test("does not cut accented graphemes or Unicode words", () => {
+    const source =
+      "cafe\u0301 éword e\u0301word word\u0301 中文word word中文 2word word2 _word word_ (word)";
+    expect(
+      personalize(source, [makeCorrection("cafe"), makeCorrection("word")]),
+    ).toBe(
+      "cafe\u0301 éword e\u0301word word\u0301 中文word word中文 2word word2 _word word_ (Fixed)",
+    );
+    expect(
+      personalize("cafe\u0301, CAFÉ!", [
+        makeCorrection("cafe\u0301, café", "Café"),
+      ]),
+    ).toBe("Café, Café!");
+    expect(
+      splitForRewrite("e\u0301word word\u0301 (word)", [makeShortcut("word")]),
+    ).toEqual([
+      { text: "e\u0301word word\u0301 (", protected: false },
+      { text: "EXACT\n$& $1", protected: true },
+      { text: ")", protected: false },
+    ]);
+  });
+
+  test("matches literal dotted abbreviations without treating dots as wildcards", () => {
+    const source = "dr. a.b. axb. xa.b. a.b.c [a.b.]";
+    expect(
+      personalize(source, [
+        makeCorrection("dr.", "Dr."),
+        makeCorrection("a.b.", "AB"),
+      ]),
+    ).toBe("Dr. AB axb. xa.b. a.b.c [AB]");
+    expect(splitForRewrite("a.b. axb. a.b.c", [makeShortcut("a.b.")])).toEqual([
+      { text: "EXACT\n$& $1", protected: true },
+      { text: " axb. a.b.c", protected: false },
+    ]);
+  });
+
+  test("keeps apostrophes inside words while allowing quoted phrases", () => {
+    const source = "don't don’t 'don' ‘don’ don's don’s l'don l’don don";
+    expect(personalize(source, [makeCorrection("don")])).toBe(
+      "don't don’t 'Fixed' ‘Fixed’ don's don’s l'don l’don Fixed",
+    );
+    expect(
+      personalize("don't don’t", [makeCorrection("don't, don’t", "do not")]),
+    ).toBe("do not do not");
+    expect(
+      personalize("'s ochtends in 's-Gravenhage", [
+        makeCorrection("'s-Gravenhage", "Den Haag"),
+      ]),
+    ).toBe("'s ochtends in Den Haag");
+    expect(splitForRewrite("don't 'don'", [makeShortcut("don")])).toEqual([
+      { text: "don't '", protected: false },
+      { text: "EXACT\n$& $1", protected: true },
+      { text: "'", protected: false },
+    ]);
+  });
+
+  test("handles case-only corrections and Unicode simple case folding consistently", () => {
+    const rules = [
+      makeCorrection("github", "GitHub"),
+      makeCorrection("s", "S"),
+      makeCorrection("σ", "Σ"),
+    ];
+    expect(personalize("github GITHUB GitHub ſ ς σ", rules)).toBe(
+      "GitHub GitHub GitHub S Σ Σ",
+    );
+    expect(
+      splitForRewrite("ſ ς", [
+        makeShortcut("s", "S block"),
+        makeShortcut("σ", "Sigma block"),
+      ]),
+    ).toEqual([
+      { text: "S block", protected: true },
+      { text: " ", protected: false },
+      { text: "Sigma block", protected: true },
+    ]);
+    expect(ruleConflict(makeCorrection("ſ"), [makeCorrection("s")])).toContain(
+      "already used",
+    );
+    expect(ruleConflict(makeCorrection("ς"), [makeCorrection("σ")])).toContain(
+      "already used",
+    );
+    expect(
+      ruleConflict(makeCorrection("ss"), [makeCorrection("ß")]),
+    ).toBeNull();
+    expect(personalize("İ", [makeCorrection("İ", "Dotted I")])).toBe(
+      "Dotted I",
+    );
+    expect(splitForRewrite("İ", [makeShortcut("İ")])).toEqual([
+      { text: "EXACT\n$& $1", protected: true },
+    ]);
+    expect(
+      ruleConflict(makeCorrection("İ"), [makeCorrection("i\u0307")]),
+    ).toBeNull();
+  });
+
+  test("chooses the longest phrase at each position independent of rule order", () => {
+    const short = makeCorrection("new", "OLD");
+    const long = makeCorrection("new york", "NYC");
+    const source = "new york; new; new yorker";
+    for (const rules of [
+      [short, long],
+      [long, short],
+    ]) {
+      expect(personalize(source, rules)).toBe("NYC; OLD; OLD yorker");
+    }
+    expect(
+      personalize("one two three", [
+        makeCorrection("one two", "A"),
+        makeCorrection("two three", "B"),
+      ]),
+    ).toBe("A three");
+    expect(personalize("new york", [short, { ...long, enabled: false }])).toBe(
+      "OLD york",
+    );
+    for (const rules of [
+      [makeShortcut("new", "SHORT"), makeShortcut("new york", "LONG")],
+      [makeShortcut("new york", "LONG"), makeShortcut("new", "SHORT")],
+    ]) {
+      expect(splitForRewrite("new york new", rules)).toEqual([
+        { text: "LONG", protected: true },
+        { text: " ", protected: false },
+        { text: "SHORT", protected: true },
+      ]);
+    }
+  });
+
+  test("preserves first-rule priority for duplicate triggers without cascading", () => {
+    const rules = [
+      makeCorrection("foo", "bar", "first"),
+      makeCorrection("FOO", "other", "second"),
+      makeCorrection("bar", "final"),
+    ];
+    expect(personalize("foo bar", rules)).toBe("bar final");
+    expect(personalize("foo", rules.slice().reverse())).toBe("other");
+    expect(
+      splitForRewrite("foo", [
+        makeShortcut("foo", "first"),
+        makeShortcut("FOO", "second"),
+      ]),
+    ).toEqual([{ text: "first", protected: true }]);
+    for (const source of ["s", "ſ"]) {
+      expect(
+        personalize(source, [
+          makeCorrection("s", "FIRST"),
+          makeCorrection("ſ", "SECOND"),
+        ]),
+      ).toBe("FIRST");
+      expect(
+        splitForRewrite(source, [
+          makeShortcut("s", "FIRST"),
+          makeShortcut("ſ", "SECOND"),
+        ]),
+      ).toEqual([{ text: "FIRST", protected: true }]);
+    }
+  });
+
+  test("inserts replacement syntax literally and preserves source/rule values", () => {
+    const source = "say dollar then dollar";
+    const rules = [makeShortcut("dollar", "$& $1 $$ $(literal)\n\\path")];
+    const before = structuredClone(rules);
+    expect(personalize(source, rules)).toBe(
+      "say $& $1 $$ $(literal)\n\\path then $& $1 $$ $(literal)\n\\path",
+    );
+    expect(source).toBe("say dollar then dollar");
+    expect(rules).toEqual(before);
+  });
+
+  test("empty shortcut triggers never create zero-length matches", () => {
+    const empty = makeShortcut("   ");
+    expect(personalize("ordinary prose", [empty])).toBe("ordinary prose");
+    expect(splitForRewrite("ordinary prose", [empty])).toEqual([
+      { text: "ordinary prose", protected: false },
+    ]);
+  });
+});
