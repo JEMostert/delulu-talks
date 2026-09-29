@@ -7,18 +7,23 @@ export type PaletteCommand = {
   detail?: string;
   keywords?: string;
   disabled?: string;
+  preview?: Array<{ label: string; before: string; after: string }>;
+  confirmationLabel?: string;
   run: () => void | boolean | Promise<void | boolean>;
 };
 
-export function CommandPalette({ commands, onClose }: {
+export function CommandPalette({ commands, onClose, actionError }: {
   commands: PaletteCommand[];
   onClose: () => void;
+  actionError?: string | null;
 }) {
   const id = useId();
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [errorFromAction, setErrorFromAction] = useState(false);
+  const [confirmation, setConfirmation] = useState<PaletteCommand | null>(null);
   const running = useRef(false);
   const selectedOption = useRef<HTMLButtonElement | null>(null);
   const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
@@ -30,13 +35,15 @@ export function CommandPalette({ commands, onClose }: {
   useEffect(() => {
     selectedOption.current?.scrollIntoView({ block: "nearest" });
   }, [active, query]);
-  async function execute(command: PaletteCommand | undefined) {
+  async function execute(command: PaletteCommand | undefined, confirmed = false) {
     if (!command || command.disabled || running.current) return;
+    if (command.preview && !confirmed) { setConfirmation(command); setError(""); return; }
     running.current = true;
     setBusy(true);
     setError("");
+    setErrorFromAction(false);
     try {
-      if (await command.run() === false) setError("The command could not complete. Review the error and try again.");
+      if (await command.run() === false) { setErrorFromAction(true); setError("The command could not complete. Review the error and try again."); }
       else onClose();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -45,7 +52,22 @@ export function CommandPalette({ commands, onClose }: {
       setBusy(false);
     }
   }
-  return <Modal title="Commands" busy={busy} onClose={onClose}>
+  return <Modal title={confirmation?.label ?? "Commands"} busy={busy} onClose={onClose} footer={confirmation ? <>
+    <button className="secondary-button" disabled={busy} onClick={() => { setConfirmation(null); setError(""); }}>Back to commands</button>
+    <button className="primary-button" disabled={busy} autoFocus onClick={() => void execute(confirmation, true)}>{busy ? "Switching…" : confirmation.confirmationLabel ?? "Confirm"}</button>
+  </> : undefined}>
+    {confirmation ? <>
+      <p>Review the settings before switching. Capture must be idle. Changes made after this preview will cause the switch to be rejected.</p>
+      <div className="grid gap-3.5">
+        {confirmation.preview?.map((row) => <section key={row.label} className="border border-line rounded-xl p-3.5">
+          <h3 className="text-[13px]">{row.label}</h3>
+          <div className="grid grid-cols-2 gap-3.5 max-[700px]:grid-cols-1 text-[12px] mt-2">
+            <div><span className="text-muted">Current</span><p className="break-words whitespace-pre-wrap">{row.before}</p></div>
+            <div><span className="text-muted">After switching</span><p className="break-words whitespace-pre-wrap">{row.after}</p></div>
+          </div>
+        </section>)}
+      </div>
+    </> : <>
     <label className="field">Find a command
       <input autoFocus role="combobox" aria-label="Find a command" aria-expanded="true" aria-controls={`${id}-list`} aria-activedescendant={visible.length ? `${id}-${visible[active].id}` : undefined} value={query} disabled={busy} onChange={(event) => { setQuery(event.target.value); setIndex(0); }} onKeyDown={(event) => {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -68,7 +90,8 @@ export function CommandPalette({ commands, onClose }: {
       </button>)}
       {!visible.length && <p className="text-muted">No matching commands.</p>}
     </div>
-    {error && <p className="field-error" role="alert">{error}</p>}
     <p className="caption">↑ ↓ choose · Enter run · Escape close</p>
+    </>}
+    {error && <p className="field-error" role="alert">{errorFromAction && actionError ? actionError : error}</p>}
   </Modal>;
 }
