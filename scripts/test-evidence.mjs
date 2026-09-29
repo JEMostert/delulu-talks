@@ -106,6 +106,16 @@ export function planSuite(suite, input = []) {
       scope =
         "Real Chromium and synthetic microphone capture, with preview/mock backend IPC; no native model or system paste.";
       break;
+    case "data-deletion":
+      if (args.length)
+        throw new Error(
+          "Data deletion reporting requires the complete fixture suite",
+        );
+      command = ["node", "scripts/data-deletion-smoke.mjs"];
+      kinds = ["fixture-only"];
+      scope =
+        "Real isolated Electron deletion/reset IPC, durable and session references, delayed delivery races; clipboard captured and harmless injector. No native inference or manual delivery.";
+      break;
     case "desktop": {
       const native = args.length > 0;
       if (native && args[0].startsWith("-"))

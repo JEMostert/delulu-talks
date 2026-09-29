@@ -39,6 +39,9 @@ jobs:
       - name: Verify isolated Electron desktop
         run: xvfb-run --auto-servernum node scripts/test-evidence.mjs desktop
 
+      - name: Verify isolated deletion and reset
+        run: xvfb-run --auto-servernum node scripts/test-evidence.mjs data-deletion
+
       - name: Summarize verification evidence
         if: always()
         run: bun run test:evidence
