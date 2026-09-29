@@ -22,11 +22,18 @@ import traceback
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+from worker_protocol import correlation_id, emit_progress, operation_scope, terminal_response, validate_request, validate_result
+
 if TYPE_CHECKING:
     from speech_engine import SpeechEngine
 
 
 PROTOCOL_PREFIX = "@delulu:"
+# JSON byte limits exclude the trailing newline and match the desktop transport.
+# Audio is passed by file path; these limits leave room for existing text inputs.
+MAX_REQUEST_BYTES = 4 * 1024 * 1024
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_ERROR_BYTES = 8_000
 SPEECH_MODEL = "netease-youdao/Confucius4-R2T2"
 MLX_SPEECH_MODEL = "mlx-community/Confucius4-R2T2-bf16"
 LANGUAGE_NAMES = {
@@ -55,6 +62,29 @@ LANGUAGE_NAMES = {
     "ko": "Korean",
     "vi": "Vietnamese",
 }
+
+
+def normalize_recognized_language(value: Any) -> str | None:
+    """Normalize only labels explicitly returned by the speech model.
+
+    A missing/unknown segment or differing segment languages leaves the whole
+    result unknown. Requested prompt hints must never fill a missing label.
+    """
+    if isinstance(value, list):
+        if not value:
+            return None
+        languages = {normalize_recognized_language(item) for item in value}
+        if len(languages) == 1 and None not in languages:
+            return next(iter(languages))
+        return None
+    if not isinstance(value, str):
+        return None
+    label = value.strip().lower()
+    if label in LANGUAGE_NAMES:
+        return label
+    return {name.lower(): code for code, name in LANGUAGE_NAMES.items()}.get(label)
+
+
 MAGIC_MODELS = {
     "qwen35Small": "Qwen/Qwen3.5-0.8B",
     "qwen35Medium": "Qwen/Qwen3.5-2B",
@@ -90,9 +120,26 @@ MAGIC_PRESETS = {
 }
 
 
-def emit(payload: dict[str, Any]) -> None:
-    sys.stdout.write(PROTOCOL_PREFIX + json.dumps(payload, ensure_ascii=False) + "\n")
+def emit(payload: dict[str, Any], command: str | None = None) -> None:
+    payload = terminal_response(payload, command)
+    encoded = bytearray(PROTOCOL_PREFIX, "utf-8")
+    for part in json.JSONEncoder(ensure_ascii=False, allow_nan=False).iterencode(payload):
+        chunk = part.encode("utf-8")
+        if len(encoded) + len(chunk) > MAX_RESPONSE_BYTES:
+            raise ValueError(
+                "Model worker response exceeds the 8 MiB limit. "
+                "Shorten the input and retry the operation."
+            )
+        encoded.extend(chunk)
+    # Validate the entire response before writing any prefix or partial JSON.
+    sys.stdout.write(encoded.decode("utf-8") + "\n")
     sys.stdout.flush()
+
+
+def bounded_error(exc: Exception) -> str:
+    message = (str(exc) or type(exc).__name__)[:MAX_ERROR_BYTES]
+    encoded = message.encode("utf-8", errors="replace")
+    return encoded[:MAX_ERROR_BYTES].decode("utf-8", errors="ignore")
 
 
 class Worker:
@@ -108,6 +155,7 @@ class Worker:
         self.model: Any | None = None
         self.model_name: str | None = None
         self.device: str | None = None
+        self.cuda_preflight: dict[str, Any] | None = None
         self.magic_model: Any | None = None
         self.magic_processor: Any | None = None
         self.magic_model_name: str | None = None
@@ -129,6 +177,7 @@ class Worker:
         self.model = None
         self.model_name = None
         self.device = None
+        self.cuda_preflight = None
         self.clear_allocator(speech=True)
         return {"loaded": False}
 
@@ -186,10 +235,9 @@ class Worker:
         try:
             import torch
 
-            if not torch.cuda.is_available():
-                raise RuntimeError(
-                    "R2T2 needs a CUDA GPU. No usable CUDA device was found."
-                )
+            from cuda_preflight import ensure_cuda_compatible
+            self.cuda_preflight = None
+            self.cuda_preflight = ensure_cuda_compatible(torch)
         except ImportError as exc:
             raise RuntimeError(
                 "The speech runtime is incomplete. Run Repair in Models."
@@ -246,6 +294,8 @@ class Worker:
             "loaded": self.model is not None,
             "model": self.model_name,
             "device": self.device,
+            **({"cudaPreflight": self.cuda_preflight}
+               if getattr(self, "cuda_preflight", None) is not None else {}),
         }
 
     def magic_status(self) -> dict[str, Any]:
@@ -422,9 +472,14 @@ class Worker:
             return_time_stamps=False,
         )
         finished = time.perf_counter()
+        # A returned label may reflect a forced prompt; it is not an independent
+        # detector. Missing model metadata remains unknown even with a hint.
+        recognized_language = normalize_recognized_language(getattr(results[0], "language", None))
         return {
             "text": str(results[0].text).strip(),
-            "language": language_code,
+            "language": recognized_language or "und",
+            "requestedLanguage": language_code,
+            "recognizedLanguage": recognized_language,
             "duration": len(wav) / 16000.0,
             "processingTime": finished - started,
             "inferenceTime": finished - inference_started,
@@ -459,23 +514,48 @@ class Worker:
 
 def main() -> int:
     worker = Worker()
-    for line in sys.stdin:
+    source = sys.stdin.buffer
+    while True:
+        # Reading a capped binary line bounds buffering even without a newline
+        # and measures multibyte input consistently with the desktop transport.
+        line = source.readline(MAX_REQUEST_BYTES + 3)
+        if not line:
+            return 0
+        content = line[:-1] if line.endswith(b"\n") else line
+        if line.endswith(b"\r\n"):
+            content = content[:-1]
+        if len(content) > MAX_REQUEST_BYTES:
+            sys.stderr.write(
+                "Model worker input exceeds the 4 MiB limit. "
+                "Shorten the input and load the model to retry.\n"
+            )
+            sys.stderr.flush()
+            return 2
         line = line.strip()
         if not line:
             continue
         request_id: Any = None
+        operation = contextlib.ExitStack()
         try:
             request = json.loads(line)
-            request_id = request.get("id")
+            request_id = correlation_id(request)
+            request = validate_request(request)
+            operation.enter_context(operation_scope(request_id, request["command"]))
+            emit_progress("Starting worker operation", stage="dispatch")
             with contextlib.redirect_stdout(sys.stderr):
                 result = worker.dispatch(request)
-            emit({"id": request_id, "ok": True, "result": result})
+            validate_result(request["command"], result)
+            emit_progress("Worker operation completed", stage="complete")
+            emit({"id": request_id, "ok": True, "result": result}, request["command"])
             if request.get("command") == "shutdown":
                 return 0
         except Exception as exc:
-            traceback.print_exc(file=sys.stderr)
-            emit({"id": request_id, "ok": False, "error": str(exc)})
-    return 0
+            error = bounded_error(exc)
+            traceback.print_tb(exc.__traceback__, file=sys.stderr)
+            sys.stderr.write(f"{type(exc).__name__}: {error}\n")
+            emit({"id": request_id, "ok": False, "error": error})
+        finally:
+            operation.close()
 
 
 if __name__ == "__main__":

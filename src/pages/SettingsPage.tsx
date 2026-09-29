@@ -1,4 +1,6 @@
 import { REWRITE_PRESETS } from "../rewritePresets";
+import { PersonalProfiles } from "../components/PersonalProfiles";
+import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
 import {
@@ -16,7 +18,9 @@ import {
 import { MAGIC_MODELS } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
+import { LocalData } from "../components/LocalData";
 import { Diagnostics } from "../components/Diagnostics";
+import { MicrophoneNotice } from "../components/MicrophoneNotice";
 import type {
   AppSettings,
   DictationStatus,
@@ -37,6 +41,7 @@ type Props = {
   magicStatus: MagicStatus;
   saving: boolean;
   onSave: (patch: Partial<AppSettings>) => Promise<boolean>;
+  onManagePersonalProfile: (command: PersonalProfileCommand) => Promise<boolean>;
   onConfigureShortcut: () => void;
   onAuthorizePaste: () => void;
   onTestPaste: () => void;
@@ -93,9 +98,11 @@ export function SettingsPage(props: Props) {
         {[
           ["general", "Capture & delivery"],
           ["personalization", "Personalization"],
+          ["profiles", "Profiles"],
           ["writing", "Writing"],
           ["advanced", "Runtime"],
           ["maintenance", "Application"],
+          ["data", "Local data"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -111,6 +118,14 @@ export function SettingsPage(props: Props) {
           {saving ? "Saving…" : "Changes save automatically"}
         </span>
       </div>
+      {tab === "data" && <LocalData />}
+      {tab === "profiles" && (
+        <PersonalProfiles
+          settings={s}
+          saving={saving}
+          onManage={props.onManagePersonalProfile}
+        />
+      )}
       {tab === "personalization" && (
         <VocabularyPage
           words={s.customWords}
@@ -146,7 +161,7 @@ export function SettingsPage(props: Props) {
               >
                 {!devices.some((d) => d.deviceId === s.inputDeviceId) && (
                   <option value={s.inputDeviceId}>
-                    {s.inputDeviceLabel} (disconnected)
+                    {s.inputDeviceLabel} (not listed)
                   </option>
                 )}
                 {devices.map((device) => (
@@ -155,6 +170,7 @@ export function SettingsPage(props: Props) {
                   </option>
                 ))}
               </select>
+              <MicrophoneNotice settings={s} devices={devices} />
             </SettingRow>
             <SettingRow title="Language">
               <select
@@ -171,6 +187,16 @@ export function SettingsPage(props: Props) {
                   </option>
                 ))}
               </select>
+            </SettingRow>
+            <SettingRow
+              title="Spoken formatting commands"
+              description="Opt in to explicit line commands: English ‘command new line/paragraph’ or Dutch ‘commando nieuwe regel/alinea’. Original speech stays available. Other language hints keep text unchanged."
+            >
+              {toggle(
+                "spokenFormattingCommands",
+                "Interpret spoken formatting commands",
+                busy,
+              )}
             </SettingRow>
             <SettingRow
               icon={Keyboard}
@@ -263,6 +289,33 @@ export function SettingsPage(props: Props) {
             >
               {toggle("autoPaste", "Paste automatically")}
             </SettingRow>
+            <SettingRow
+              icon={Keyboard}
+              title="Paste shortcut"
+              description="Applies to automatic paste and Paste last; terminals are not detected automatically. Choose a shortcut supported by the focused app, or turn off automatic paste and copy to clipboard. Delulu only sends the paste shortcut, never Enter; pasted newlines may execute commands depending on the terminal."
+            >
+              <select
+                aria-label="Paste shortcut"
+                value={s.pasteShortcut}
+                disabled={saving}
+                onChange={(e) =>
+                  save({
+                    pasteShortcut: e.target.value as AppSettings["pasteShortcut"],
+                  })
+                }
+              >
+                <option value="standard">
+                  Standard ({capabilities?.platform === "darwin"
+                    ? "Cmd+V"
+                    : "Ctrl+V"})
+                </option>
+                <option value="terminal">
+                  Terminal ({capabilities?.platform === "darwin"
+                    ? "Cmd+V"
+                    : "Ctrl+Shift+V"})
+                </option>
+              </select>
+            </SettingRow>
             {capabilities?.wayland && (
               <SettingRow
                 title="Keyboard permission"
@@ -284,6 +337,27 @@ export function SettingsPage(props: Props) {
                 </div>
               </SettingRow>
             )}
+            <SettingRow
+              title="Paste-last delay"
+              description="Wait before sending paste keystrokes so you can focus the intended field. Cancel from the countdown or tray. Destination insertion cannot be confirmed."
+            >
+              <select
+                aria-label="Paste-last delay"
+                value={s.pasteLastDelaySeconds}
+                disabled={saving}
+                onChange={(e) =>
+                  save({ pasteLastDelaySeconds: Number(e.target.value) })
+                }
+              >
+                {Array.from({ length: 30 }, (_, index) => index + 1).map(
+                  (seconds) => (
+                    <option key={seconds} value={seconds}>
+                      {seconds} seconds
+                    </option>
+                  ),
+                )}
+              </select>
+            </SettingRow>
             <SettingRow
               title="Copy results to clipboard"
               description="Keep text ready for a manual paste."
