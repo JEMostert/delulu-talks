@@ -686,12 +686,12 @@ function registerIpc(): void {
       ? (source.preset as MagicRewriteRequest["preset"])
       : "polish";
     const request: MagicRewriteRequest = {
-      text: validateText(source.text, 50_000).trim(),
+      text: validateText(source.text, 50_000),
       preset,
       instructions: validateText(source.instructions ?? "", 4_000).trim(),
       allowInferences: source.allowInferences === true,
     };
-    if (!request.text)
+    if (!request.text.trim())
       throw new Error("Add a transcript or draft before using Magic");
     assertRuntimeIdle();
     return asr.rewriteMagic(request, storage.getSettings());
@@ -783,8 +783,8 @@ function registerIpc(): void {
         if (!value || typeof value !== "object")
           throw new Error("Invalid rewrite");
         const rewrite = value as Record<string, unknown>;
-        const text = validateText(rewrite.text, 500_000).trim();
-        if (!text) throw new Error("A rewrite cannot be empty");
+        const text = validateText(rewrite.text, 500_000);
+        if (!text.trim()) throw new Error("A rewrite cannot be empty");
         updated = {
           ...record,
           magicText: text,

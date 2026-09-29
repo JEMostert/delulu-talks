@@ -66,6 +66,8 @@ for (const preset of ["polish", "concise", "structured", "prompt"] as const) {
       const blocksOnly=second+"\\r\\n"+first;
       const unchanged=await service.rewriteMagic({...request,text:blocksOnly},settings);
       assert.equal(unchanged.text,blocksOnly);
+      const {deliveredText}=await import(${JSON.stringify(new URL("../../src/transcriptText.ts", import.meta.url).href)});
+      assert.equal(deliveredText({magicText:blocksOnly}),blocksOnly);
       assert.equal(unchanged.processingTimeMs,0);
       assert.equal(calls.length,callsBeforeBlocks);
       fail=true;
@@ -79,3 +81,44 @@ for (const preset of ["polish", "concise", "structured", "prompt"] as const) {
     expect(result.exitCode).toBe(0);
   });
 }
+
+test("saved shortcut bytes survive settings write, reopen, expansion and rewrite protection", () => {
+  const script = `
+    import {mock} from "bun:test";
+    import assert from "node:assert/strict";
+    import {mkdtempSync,rmSync,readFileSync} from "node:fs";
+    import {tmpdir} from "node:os";
+    import {join} from "node:path";
+    const profile=mkdtempSync(join(tmpdir(),"delulu-exact-settings-"));
+    mock.module("electron",()=>({app:{isPackaged:false,getPath:()=>profile}}));
+    const {StorageService}=await import(${JSON.stringify(new URL("./storage.ts", import.meta.url).href)});
+    const {deliveredText}=await import(${JSON.stringify(new URL("../../src/transcriptText.ts", import.meta.url).href)});
+    const {exportRecord}=await import(${JSON.stringify(new URL("./transcripts.ts", import.meta.url).href)});
+    const {personalize,splitForRewrite}=await import(${JSON.stringify(new URL("../../src/personalization.ts", import.meta.url).href)});
+    const block=${JSON.stringify(`\n${second}\r\n`)};
+    const rule={...${JSON.stringify(words[1])},replacement:block};
+    try {
+      const storage=new StorageService();
+      const saved=storage.updateSettings({...storage.getSettings(),customWords:[rule],keepHistory:true});
+      assert.equal(saved.customWords[0].replacement,block);
+      assert.equal(JSON.parse(readFileSync(join(profile,"settings.json"),"utf8")).customWords[0].replacement,block);
+      const record={id:"exact-saved",createdAt:1,text:"second snippet",personalizedText:block,magicText:block,model:"r2t2",language:"en",source:"dictation",durationMs:1,processingTimeMs:1};
+      storage.addHistory(record);
+      const reopenedStorage=new StorageService();
+      const persisted=reopenedStorage.getHistory()[0];
+      assert.equal(persisted.personalizedText,block);
+      assert.equal(persisted.magicText,block);
+      assert.equal(deliveredText(persisted),block);
+      assert.equal(exportRecord(persisted,"txt"),block+"\\n\\n--- Source transcript ---\\n\\nsecond snippet\\n");
+      const reopened=reopenedStorage.getSettings();
+      assert.equal(reopened.customWords[0].replacement,block);
+      const source="Start.\\nsecond snippet\\nFinish.";
+      const expanded="Start.\\n"+block+"\\nFinish.";
+      assert.equal(personalize(source,reopened.customWords),expanded);
+      assert.deepEqual(splitForRewrite(expanded,reopened.customWords).filter(part=>part.protected).map(part=>part.text),[block]);
+    }finally{rmSync(profile,{recursive:true,force:true})}
+  `;
+  const result = Bun.spawnSync([process.execPath, "--eval", script]);
+  expect(result.stderr.toString()).toBe("");
+  expect(result.exitCode).toBe(0);
+});
