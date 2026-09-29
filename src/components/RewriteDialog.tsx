@@ -10,6 +10,8 @@ import type {
 
 export function RewriteDialog({
   text,
+  title = "Rewrite transcript",
+  description = "Preview a change before using it. Original speech stays available and text shortcuts stay exactly as saved.",
   baseline,
   status,
   onClose,
@@ -18,6 +20,8 @@ export function RewriteDialog({
   onApply,
 }: {
   text: string;
+  title?: string;
+  description?: string;
   baseline: string;
   status?: MagicStatus;
   onClose: () => void;
@@ -35,7 +39,7 @@ export function RewriteDialog({
   const missing = status?.engine === "missing" || status?.engine === "error";
   return (
     <Modal
-      title="Rewrite transcript"
+      title={title}
       busy={busy}
       onClose={onClose}
       footer={
@@ -70,10 +74,7 @@ export function RewriteDialog({
         </>
       }
     >
-      <p>
-        Preview a change before using it. Original speech stays available and
-        text shortcuts stay exactly as saved.
-      </p>
+      <p>{description}</p>
       {missing ? (
         <div className="rewrite-setup my-3 rounded-panel border border-line p-3">
           <p>

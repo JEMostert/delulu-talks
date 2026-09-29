@@ -1,13 +1,17 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Copy, Download, Redo2, Undo2 } from "lucide-react";
+import { RewriteDialog } from "../components/RewriteDialog";
+import { rawTechnicalSelection } from "../technicalSelection";
 import { bridge } from "../bridge";
 import { TechnicalBuffer, type TechnicalEditTarget } from "../technicalBuffer";
 import { correctionWordRange, previousIdentifierRange } from "../technicalEditingCommands";
-import type { AppSettings, TranscriptRecord } from "../types";
+import type { AppSettings, MagicStatus, TranscriptRecord } from "../types";
 import { Alert, ConfirmDialog, Modal } from "../components/ui";
 
-export function TechnicalPage({ history, settings, busy, onUpdateSettings }: {
+export function TechnicalPage({ history, settings, busy, onUpdateSettings, rewriteStatus, onRewriteSetup }: {
   history: TranscriptRecord[];
+  rewriteStatus: MagicStatus;
+  onRewriteSetup: () => void;
   settings: AppSettings;
   busy: boolean;
   onUpdateSettings: (patch: Partial<AppSettings>) => Promise<boolean>;
@@ -26,6 +30,7 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings }: {
     original: string;
     text: string;
   } | null>(null);
+  const [selectedRewrite, setSelectedRewrite] = useState<{ target: TechnicalEditTarget; source: string } | null>(null);
   const [replacementError, setReplacementError] = useState("");
   const [switchingMode, setSwitchingMode] = useState(false);
   const switchingModeRef = useRef(false);
@@ -112,6 +117,22 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings }: {
       setError("");
       publish(true);
     } catch (reason) { setReplacementError(String(reason)); }
+  }
+  function rewriteSelection() {
+    if (busy || composing.current) return;
+    captureSelection();
+    const current = buffer.snapshot;
+    const selected = rawTechnicalSelection(current.text, current.selectionStart, current.selectionEnd);
+    if (selected === null || !selected.trim()) {
+      setError("Select the text you want to rewrite first.");
+      return;
+    }
+    if (selected.length > 50_000) {
+      setError("Select at most 50,000 characters for one rewrite.");
+      return;
+    }
+    setError("");
+    setSelectedRewrite({ target: buffer.captureTarget(), source: selected });
   }
   function insertNewline() {
     insert(buffer.snapshot.text.match(/\r\n|\r|\n/)?.[0] ?? "\n");
@@ -220,13 +241,15 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings }: {
             onClick={() => replaceToken("word")}>Correct word</button>
           <button className="tool-button" disabled={composing.current} aria-keyshortcuts="Control+Alt+Enter Meta+Alt+Enter"
             onClick={insertNewline}>Insert newline</button>
+          <button className="tool-button" disabled={busy || composing.current || snapshot.selectionStart === snapshot.selectionEnd}
+            aria-keyshortcuts="Control+Alt+R Meta+Alt+R" onClick={rewriteSelection}>Rewrite selection</button>
           <button className="tool-button" disabled={busy || switchingMode || composing.current}
             aria-keyshortcuts="Control+Alt+P Meta+Alt+P" onClick={() => void returnToProse()}>
             {switchingMode ? "Switching…" : "Return to prose"}
           </button>
         </div>
         <p className="mt-2 text-xs text-muted">Dictation mode: {settings.dictationMode ?? "prose"}. In the editor, use Ctrl/⌘+Alt+I
-          for the last identifier, +W for a word, +Enter for a newline, +P for prose.
+          for the last identifier, +W for a word, +Enter for a newline, +P for prose, +R to rewrite a selection.
           Replacement previews require confirmation and remain undoable.</p>
         <label className="field mt-4">
           Literal technical draft
@@ -253,12 +276,13 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings }: {
               if ((event.ctrlKey || event.metaKey) && event.altKey && !event.shiftKey &&
                   !event.getModifierState("AltGraph")) {
                 const key = event.key.toLowerCase();
-                if (["i", "w", "enter", "p"].includes(key)) {
+                if (["i", "w", "enter", "p", "r"].includes(key)) {
                   event.preventDefault();
                   if (event.repeat) return;
                   if (key === "i") replaceToken("identifier");
                   else if (key === "w") replaceToken("word");
                   else if (key === "enter") insertNewline();
+                  else if (key === "r") rewriteSelection();
                   else void returnToProse();
                   return;
                 }
@@ -288,6 +312,25 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings }: {
         {message && <p className="mt-3 text-sm" role="status">{message}</p>}
         {error && <Alert>{error}</Alert>}
       </section>
+      {selectedRewrite && <RewriteDialog
+        title="Rewrite selection"
+        description="Preview this selection before replacing it. The draft keeps an undo copy; transcript history stays unchanged."
+        text={selectedRewrite.source}
+        baseline={selectedRewrite.source}
+        status={rewriteStatus}
+        onRewrite={bridge.rewriteMagic}
+        onSetup={onRewriteSetup}
+        onClose={() => setSelectedRewrite(null)}
+        onApply={async (result, expectedSource) => {
+          if (expectedSource !== selectedRewrite.source) return false;
+          try {
+            buffer.applyInsert(selectedRewrite.target, result.text);
+            publish(true);
+            setMessage("Selection rewrite applied. Undo restores the prior draft.");
+            return true;
+          } catch (reason) { setError(String(reason)); return false; }
+        }}
+      />}
       {replacement && <Modal title={replacement.kind === "identifier" ? "Replace last identifier" : "Correct word"}
         onClose={() => setReplacement(null)} footer={<>
           <button className="secondary-button" onClick={() => setReplacement(null)}>Cancel</button>
