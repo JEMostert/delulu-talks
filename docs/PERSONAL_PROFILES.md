@@ -5,9 +5,12 @@
 nonblank `id`, and a nonblank `name`. The contract and reader live in
 `src/personalProfiles.ts`.
 
-This is the data foundation. No profile editor, activation, automatic selection,
-context capture, or runtime decode control is implemented here. Existing settings
-continue to govern behavior. There is no persisted active profile in this schema.
+The Profiles settings tab saves named current-settings snapshots or starters for
+code, terminal commands, Dutch/English messages, long notes and imported recordings.
+Saved profiles can be renamed or deleted. These operations do not activate a
+profile or change current language/delivery/vocabulary/rewrite settings. Activation,
+automatic selection, context capture and runtime decode control remain separate
+work. There is no persisted active profile in this schema.
 
 | Field | Contract |
 | --- | --- |
@@ -40,3 +43,17 @@ Later creation/activation workflows must surface a concrete profile change and
 check decode, technical grammar, and native context capabilities before applying
 it. This contract alone makes no inference, device, native context or activation
 verification claim.
+
+Management uses the serialized `profiles:manage` IPC boundary, reading the latest
+stored settings for each operation. Creation snapshots vocabulary as-is; starters
+request no context, preserve identifiers and use backend decode defaults. Code and
+terminal starters disable rewriting and automatic paste; messages choose Dutch or
+English and polish; notes choose history/copy with structured rewrite style; imports
+choose history/copy without automatic paste. Optional rewriting remains enabled
+only where inherited from current settings. Creation does not import or execute
+anything. The form previews the actual stored settings before saving.
+
+Commands reject empty/oversized names, duplicate names (Unicode-normalized and case
+insensitive), missing profile IDs, unknown starters, future schemas and collection
+limits. Rename/delete preserve the document's remaining unknown fields and rule
+text. Deletion requires confirmation in the UI; failed operations retain drafts.

@@ -1,3 +1,5 @@
+import { PersonalProfiles } from "../components/PersonalProfiles";
+import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
 import {
@@ -36,6 +38,7 @@ type Props = {
   magicStatus: MagicStatus;
   saving: boolean;
   onSave: (patch: Partial<AppSettings>) => Promise<boolean>;
+  onManagePersonalProfile: (command: PersonalProfileCommand) => Promise<boolean>;
   onConfigureShortcut: () => void;
   onAuthorizePaste: () => void;
   onTestPaste: () => void;
@@ -92,6 +95,7 @@ export function SettingsPage(props: Props) {
         {[
           ["general", "Capture & delivery"],
           ["personalization", "Personalization"],
+          ["profiles", "Profiles"],
           ["writing", "Writing"],
           ["advanced", "Runtime"],
           ["maintenance", "Application"],
@@ -110,6 +114,13 @@ export function SettingsPage(props: Props) {
           {saving ? "Saving…" : "Changes save automatically"}
         </span>
       </div>
+      {tab === "profiles" && (
+        <PersonalProfiles
+          settings={s}
+          saving={saving}
+          onManage={props.onManagePersonalProfile}
+        />
+      )}
       {tab === "personalization" && (
         <VocabularyPage
           words={s.customWords}

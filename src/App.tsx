@@ -450,6 +450,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     magicStatus={w.magicStatus}
                     saving={w.saving}
                     onSave={w.saveSettings}
+                    onManagePersonalProfile={w.managePersonalProfile}
                     onConfigureShortcut={run(() => bridge.configureShortcut())}
                     onAuthorizePaste={run(
                       () => bridge.authorizePaste(),
