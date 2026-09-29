@@ -540,28 +540,30 @@ async function applySettings(value: unknown): Promise<AppSettings> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Expected a settings object");
   const next = normalizeSettings({ ...previous, ...value });
-  if (next.shortcut !== previous.shortcut) {
-    try {
-      await shortcut.register(next.shortcut);
-    } catch {
-      await shortcut.register(previous.shortcut).catch(() => undefined);
-      throw new Error(
-        `Global shortcut '${next.shortcut}' is unavailable. ${previous.shortcut} remains active.`,
-      );
-    }
-  }
   const runtimeChanged = next.model !== previous.model;
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
-  if (
-    (runtimeChanged ||
-      magicRuntimeChanged ||
-      next.magicEnabled !== previous.magicEnabled) &&
-    (dictation.isActive || asr.isBusy)
-  )
-    throw new Error(
-      "Finish the current recording or model operation before changing engines",
-    );
-  const saved = storage.updateSettings(next);
+  const assertEngineChangeIdle = () => {
+    if (
+      (runtimeChanged ||
+        magicRuntimeChanged ||
+        next.magicEnabled !== previous.magicEnabled) &&
+      (dictation.isActive || asr.isBusy)
+    )
+      throw new Error(
+        "Finish the current recording or model operation before changing engines",
+      );
+  };
+  assertEngineChangeIdle();
+  const persist = () => {
+    // Portal registration can await permission while capture/inference starts.
+    // Revalidate before the write, so the transaction restores the old shortcut.
+    assertEngineChangeIdle();
+    return storage.updateSettings(next);
+  };
+  const saved =
+    next.shortcut !== previous.shortcut
+      ? await shortcut.change(next.shortcut, previous.shortcut, persist)
+      : persist();
   if (
     !smokeTest &&
     app.isPackaged &&
@@ -686,12 +688,12 @@ function registerIpc(): void {
       ? (source.preset as MagicRewriteRequest["preset"])
       : "polish";
     const request: MagicRewriteRequest = {
-      text: validateText(source.text, 50_000).trim(),
+      text: validateText(source.text, 50_000),
       preset,
       instructions: validateText(source.instructions ?? "", 4_000).trim(),
       allowInferences: source.allowInferences === true,
     };
-    if (!request.text)
+    if (!request.text.trim())
       throw new Error("Add a transcript or draft before using Magic");
     assertRuntimeIdle();
     return asr.rewriteMagic(request, storage.getSettings());
@@ -707,10 +709,15 @@ function registerIpc(): void {
   handle("dictation:stop", () => dictation.stop());
   handle("dictation:toggle", () => dictation.toggle());
   handle("dictation:cancel", () => dictation.cancel());
-  handle("recorder:started", () => dictation.recordingStarted());
+  handle("recorder:started", (_event, sessionId: unknown) =>
+    dictation.recordingStarted(validateText(sessionId, 128)),
+  );
   handle("recorder:ready", () => dictation.recorderAvailable());
-  handle("recorder:failed", (_event, message: unknown) =>
-    dictation.recordingFailed(validateText(message, 1000)),
+  handle("recorder:failed", (_event, message: unknown, sessionId: unknown) =>
+    dictation.recordingFailed(
+      validateText(message, 1000),
+      validateText(sessionId, 128),
+    ),
   );
   handle("recorder:submit", (_event, submission: RecordingSubmission) =>
     dictation.submitRecording(submission),
@@ -783,8 +790,8 @@ function registerIpc(): void {
         if (!value || typeof value !== "object")
           throw new Error("Invalid rewrite");
         const rewrite = value as Record<string, unknown>;
-        const text = validateText(rewrite.text, 500_000).trim();
-        if (!text) throw new Error("A rewrite cannot be empty");
+        const text = validateText(rewrite.text, 500_000);
+        if (!text.trim()) throw new Error("A rewrite cannot be empty");
         updated = {
           ...record,
           magicText: text,

@@ -157,9 +157,12 @@ export type LabRequest = {
 export type RecorderCommand = {
   action: "start" | "stop" | "cancel";
   inputDeviceId: string;
+  /** Native commands identify their capture; standalone capture can omit this. */
+  sessionId?: string;
 };
 
 export type RecordingSubmission = {
+  sessionId: string;
   wav: Uint8Array;
   durationMs: number;
 };
@@ -252,9 +255,9 @@ export type DeluluApi = {
   chooseAudioFile(): Promise<AudioFileSelection | null>;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
-  recordingStarted(): Promise<void>;
+  recordingStarted(sessionId: string): Promise<void>;
   recorderReady(): Promise<void>;
-  recordingFailed(message: string): Promise<void>;
+  recordingFailed(message: string, sessionId: string): Promise<void>;
   recordingLevel(level: number): void;
   submitRecording(recording: RecordingSubmission): Promise<void>;
   onStatus(callback: (status: DictationStatus) => void): () => void;

@@ -95,6 +95,28 @@ describe("evidence boundaries", () => {
       );
   });
 
+  test("settings failure smoke reports native registration as fixture-only, never inference or manual evidence", () => {
+    const plan = planSuite("settings-write");
+    expect(plan.command).toEqual(["node", "scripts/settings-write-smoke.mjs"]);
+    expect(makeReport("settings-write", plan, "passed", {}).evidence).toEqual({
+      "fixture-only": "passed",
+      mocked: "not-run",
+      "native-inference": "not-run",
+      "manual-desktop": "not-run",
+    });
+    expect(
+      makeReport("settings-write", plan, "failed", {}).evidence["fixture-only"],
+    ).toBe("failed");
+    for (const args of [
+      ["--help"],
+      ["/existing-runtime"],
+      ["--metadata", "metadata.json"],
+    ])
+      expect(() => planSuite("settings-write", args)).toThrow(
+        "accepts no runtime",
+      );
+  });
+
   test("native success requires observed R2T2 transcription and the selected backend", () => {
     const observation = {
       model: "netease-youdao/Confucius4-R2T2",

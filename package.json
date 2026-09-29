@@ -34,6 +34,7 @@
     "test:mac-package": "node scripts/test-evidence.mjs mac-package",
     "test:manual": "node scripts/test-evidence.mjs manual",
     "test:evidence": "node scripts/test-evidence.mjs summary",
+    "test:settings-write": "bun run build && node scripts/test-evidence.mjs settings-write",
     "test:package-resources": "node scripts/test-evidence.mjs package-resources"
   },
   "dependencies": {
