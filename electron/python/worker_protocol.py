@@ -193,6 +193,15 @@ def validate_result(command: str, result: Any) -> None:
     if not isinstance(result, dict):
         raise ValueError(f"Invalid worker {command} result: expected an object")
     validate_json_value(result)
+    for key, options in (("residency", ("resident", "unloaded")),
+                         ("warmup", ("not-started", "warming", "complete", "unknown"))):
+        if key in result and result[key] not in options:
+            raise ValueError(f"Worker field {key} has an unsupported value")
+    if "device" in result:
+        if result["device"] is not None:
+            require_string(result, "device", nonempty=True)
+        elif result.get("loaded") is True or result.get("residency") == "resident":
+            raise ValueError("Resident worker result requires a nonnull device")
     if command in ("ping", "status", "load", "unload", "magicStatus", "magicLoad", "magicUnload"):
         require_boolean(result, "loaded")
         for key in ("model", "device"):

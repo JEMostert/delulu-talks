@@ -28,11 +28,13 @@ class WindowsSpeech:
         self.model = None
         self.processor = None
         self.cuda_preflight = None
+        self.warmup = "not-started"
 
     def status(self):
-        return {"loaded": self.model is not None, "model": MODEL, "device": "cuda",
-                **({"cudaPreflight": self.cuda_preflight}
-                   if getattr(self, "cuda_preflight", None) is not None else {})}
+        loaded = self.model is not None
+        return {"loaded": loaded, "model": MODEL, "device": "cuda" if loaded else None,
+                "residency": "resident" if loaded else "unloaded", "warmup": self.warmup,
+                **({"cudaPreflight": self.cuda_preflight} if self.cuda_preflight is not None else {})}
 
     def load(self, request):
         if self.model is not None:
@@ -118,8 +120,11 @@ class WindowsSpeech:
 
     def _warmup(self):
         import numpy as np
+        self.warmup = "warming"
+        emit_progress("Warming up R2T2 speech inference…", stage="warmup")
         # Full decoder warmup must succeed before Ready; its result is private.
         self._generate(np.zeros(SAMPLE_RATE, dtype=np.float32), "English", 8)
+        self.warmup = "complete"
 
     def _generate(self, samples, language, max_tokens):
         import torch
@@ -189,10 +194,11 @@ class WindowsSpeech:
     def unload(self):
         self.model = None
         self.processor = None
+        self.warmup = "not-started"
         self.cuda_preflight = None
         gc.collect()
         torch = sys.modules.get("torch")
         with contextlib.suppress(Exception):
             if torch is not None and torch.cuda.is_available():
                 torch.cuda.empty_cache()
-        return {"loaded": False}
+        return self.status()

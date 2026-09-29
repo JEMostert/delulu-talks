@@ -191,11 +191,13 @@ class Worker:
         self.model: Any | None = None
         self.model_name: str | None = None
         self.device: str | None = None
+        self.speech_warmup = "not-started"
         self.cuda_preflight: dict[str, Any] | None = None
         self.magic_model: Any | None = None
         self.magic_processor: Any | None = None
         self.magic_model_name: str | None = None
         self.magic_device: str | None = None
+        self.magic_warmup = "not-started"
 
     def speech_engine(self) -> SpeechEngine | None:
         if self.speech is None:
@@ -208,6 +210,7 @@ class Worker:
         return self.speech
 
     def unload(self) -> dict[str, Any]:
+        self.speech_warmup = "not-started"
         if self.speech is not None:
             return self.speech.unload()
         self.model = None
@@ -215,15 +218,16 @@ class Worker:
         self.device = None
         self.cuda_preflight = None
         self.clear_allocator(speech=True)
-        return {"loaded": False}
+        return self.status()
 
     def unload_magic(self) -> dict[str, Any]:
         self.magic_model = None
         self.magic_processor = None
         self.magic_model_name = None
         self.magic_device = None
+        self.magic_warmup = "not-started"
         self.clear_allocator()
-        return {"loaded": False}
+        return self.magic_status()
 
     def clear_allocator(self, *, speech: bool = False) -> None:
         # A failed load can allocate before assigning model/device metadata.
@@ -259,6 +263,7 @@ class Worker:
             self.model = None
             self.model_name = None
             self.device = None
+            self.speech_warmup = "not-started"
             self.clear_allocator(speech=True)
             raise
 
@@ -291,6 +296,8 @@ class Worker:
             max_model_len=32768,
             max_new_tokens=4096,
         )
+        self.model_name = SPEECH_MODEL
+        self.device = "cuda"
         # Exercise preprocessing and GPU decoding before the UI reports Ready.
         # Keep this synthetic, private, and bounded; never publish its transcript.
         import copy
@@ -299,6 +306,8 @@ class Worker:
         warmup_sampling = copy.copy(original_sampling)
         warmup_sampling.max_tokens = 8
         self.model.sampling_params = warmup_sampling
+        self.speech_warmup = "warming"
+        emit_progress("Warming up R2T2 speech inference…", stage="warmup")
         try:
             self.model.transcribe(
                 audio=[(np.zeros(16000, dtype=np.float32), 16000)],
@@ -313,8 +322,7 @@ class Worker:
         else:
             # Restoration on success is required before reporting Ready.
             self.model.sampling_params = original_sampling
-        self.model_name = SPEECH_MODEL
-        self.device = "cuda"
+        self.speech_warmup = "complete"
         return self.status()
 
     def status(self) -> dict[str, Any]:
@@ -324,12 +332,16 @@ class Worker:
             return {
                 "loaded": False,
                 "model": MLX_SPEECH_MODEL if self.speech_backend == "mlx" else SPEECH_MODEL,
-                "device": "mlx" if self.speech_backend == "mlx" else "cuda",
+                "device": None,
+                "residency": "unloaded",
+                "warmup": "not-started",
             }
         return {
             "loaded": self.model is not None,
             "model": self.model_name,
-            "device": self.device,
+            "device": self.device if self.model is not None else None,
+            "residency": "resident" if self.model is not None else "unloaded",
+            "warmup": self.speech_warmup,
             **({"cudaPreflight": self.cuda_preflight}
                if getattr(self, "cuda_preflight", None) is not None else {}),
         }
@@ -338,7 +350,9 @@ class Worker:
         return {
             "loaded": self.magic_model is not None,
             "model": self.magic_model_name,
-            "device": self.magic_device,
+            "device": self.magic_device if self.magic_model is not None else None,
+            "residency": "resident" if self.magic_model is not None else "unloaded",
+            "warmup": self.magic_warmup,
         }
 
     @staticmethod
@@ -456,6 +470,7 @@ class Worker:
         output = re.sub(r"^<think>.*?</think>\s*", "", output, flags=re.DOTALL).strip()
         if not output:
             raise RuntimeError("The rewrite model returned an empty rewrite")
+        self.magic_warmup = "complete"
         source = str(request.get("text", "")).strip()
         return {
             "text": output,
@@ -464,6 +479,9 @@ class Worker:
             "inputCharacters": len(source),
             "outputCharacters": len(output),
             "includedInferences": bool(request.get("allowInferences", False)),
+            "device": self.magic_device,
+            "residency": "resident",
+            "warmup": self.magic_warmup,
         }
 
     def transcribe(self, request: dict[str, Any]) -> dict[str, Any]:

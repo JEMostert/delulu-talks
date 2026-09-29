@@ -42,6 +42,17 @@ function booleanField(value: JsonObject, key: string, required = false): void {
     throw new Error(`Invalid model worker ${key}: expected a boolean`);
 }
 
+function lifecycleFields(value: JsonObject): void {
+  if ("residency" in value && !["unloaded", "resident"].includes(value.residency as string))
+    throw new Error("Invalid model worker residency state");
+  if ("warmup" in value && !["unknown", "not-started", "warming", "complete"].includes(value.warmup as string))
+    throw new Error("Invalid model worker warmup state");
+  if (value.device !== null) stringField(value, "device");
+  if (value.residency === "resident") stringField(value, "device", true, true);
+  if (value.residency === "unloaded" && value.device != null)
+    throw new Error("Unloaded model worker must not report an active device");
+}
+
 // Keep schema traversal bounded independently of the serialized byte budget.
 function jsonValue(value: unknown, depth = 0): void {
   if (depth > 64) throw new Error("Model worker JSON exceeds 64 nesting levels");
@@ -138,6 +149,9 @@ export function validateWorkerResult(command: string, value: unknown): void {
   if (statusCommands.includes(command)) {
     const result = object(value, "status result");
     booleanField(result, "loaded", true);
+    lifecycleFields(result);
+    if ((result.residency === "resident" && !result.loaded) || (result.residency === "unloaded" && result.loaded))
+      throw new Error("Model worker residency disagrees with loaded state");
     for (const key of ["model", "device"]) if (result[key] !== null) stringField(result, key);
     if (command === "ping") stringField(result, "python", true, true);
   } else if (command === "transcribe") {
@@ -148,6 +162,7 @@ export function validateWorkerResult(command: string, value: unknown): void {
     numberField(result, "inferenceTime");
   } else if (command === "magicRewrite") {
     const result = object(value, "rewrite result");
+    lifecycleFields(result);
     stringField(result, "text", true);
     stringField(result, "model", true);
     for (const key of ["processingTimeMs", "inputCharacters", "outputCharacters"]) numberField(result, key, true);

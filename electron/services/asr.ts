@@ -9,6 +9,7 @@ import type {
   MagicRewriteRequest,
   MagicRewriteResult,
   MagicStatus,
+  RuntimeLifecycle,
   RuntimeSetupKind,
   RuntimeSetupLog,
   RetryAudioState,
@@ -19,6 +20,34 @@ import { WorkerClient, transcriptionTimeout } from "../runtime/workerClient";
 import { SerialQueue } from "../runtime/serialQueue";
 import { RuntimeInstaller } from "../runtime/installer";
 import { speechModelForPlatform } from "../runtime/platform";
+
+type WorkerRuntime = {
+  loaded: boolean;
+  residency?: RuntimeLifecycle["residency"];
+  warmup?: RuntimeLifecycle["warmup"];
+  device?: string | null;
+};
+
+const UNLOADED_LIFECYCLE: RuntimeLifecycle = {
+  residency: "unloaded",
+  warmup: "not-started",
+  device: null,
+  idleUnloadAt: null,
+};
+
+function reportedLifecycle(runtime: Partial<WorkerRuntime>): RuntimeLifecycle {
+  return {
+    residency: runtime.residency ?? "unknown",
+    warmup: runtime.warmup ?? "unknown",
+    device: runtime.device ?? null,
+  };
+}
+
+function failedLifecycle(running: boolean): RuntimeLifecycle {
+  return running
+    ? { residency: "unknown", warmup: "unknown", device: null, idleUnloadAt: null }
+    : UNLOADED_LIFECYCLE;
+}
 
 function setupCause(error: unknown, depth = 0): string {
   if (depth > 4) return "Additional nested causes omitted";
@@ -91,6 +120,7 @@ export class AsrService {
     );
   }
   private status: DictationStatus = {
+    ...UNLOADED_LIFECYCLE,
     speechModel: speechModelForPlatform(),
     phase: "idle",
     engine: "missing",
@@ -107,6 +137,7 @@ export class AsrService {
   };
   private statusListeners = new Set<(status: DictationStatus) => void>();
   private magicStatus: MagicStatus = {
+    ...UNLOADED_LIFECYCLE,
     phase: "idle",
     engine: "missing",
     message: "Rewrite runtime setup required",
@@ -158,7 +189,12 @@ export class AsrService {
         env: this.workerEnvironment("speech"),
       }),
       (error) => this.fail(error),
-      (detail) => this.updateStatus({ detail }),
+      (detail, event) => this.updateStatus({
+        detail,
+        ...(event?.command === "load" && event.stage === "warmup"
+          ? { residency: "resident" as const, warmup: "warming" as const }
+          : {}),
+      }),
     );
     this.magicWorker = new WorkerClient(
       () => ({
@@ -167,6 +203,7 @@ export class AsrService {
         env: this.workerEnvironment("magic"),
       }),
       (error) => this.failMagic(error),
+      (detail) => this.updateMagicStatus({ detail }),
     );
   }
 
@@ -206,12 +243,22 @@ export class AsrService {
   }
 
   private updateStatus(patch: Partial<DictationStatus>): void {
-    this.status = { ...this.status, ...patch };
+    this.status = {
+      ...this.status,
+      ...(patch.engine === "unloaded" || patch.engine === "missing"
+        ? UNLOADED_LIFECYCLE : {}),
+      ...patch,
+    };
     for (const listener of this.statusListeners) listener(this.getStatus());
   }
 
   private updateMagicStatus(patch: Partial<MagicStatus>): void {
-    this.magicStatus = { ...this.magicStatus, ...patch };
+    this.magicStatus = {
+      ...this.magicStatus,
+      ...(patch.engine === "unloaded" || patch.engine === "missing"
+        ? UNLOADED_LIFECYCLE : {}),
+      ...patch,
+    };
     for (const listener of this.magicStatusListeners)
       listener(this.getMagicStatus());
   }
@@ -347,6 +394,8 @@ export class AsrService {
     const reloadMagic =
       settings.preloadMagicModel && (await this.isMagicEnvironmentReady());
     await this.speechWorker.stopAndWait();
+    this.clearSpeechIdle();
+    this.updateStatus({ ...UNLOADED_LIFECYCLE });
     await this.speechInstaller.install("speech", settings, (progress) =>
       this.updateStatus({
         phase: "preparing",
@@ -424,6 +473,8 @@ export class AsrService {
     const reloadSpeech =
       settings.preloadModel && (await this.isEnvironmentReady());
     await this.magicWorker.stopAndWait();
+    this.clearMagicIdle();
+    this.updateMagicStatus({ ...UNLOADED_LIFECYCLE });
     await this.magicInstaller.install("magic", settings, (progress) =>
       this.updateMagicStatus({
         phase: "preparing",
@@ -521,19 +572,24 @@ export class AsrService {
       this.updateStatus({
         phase: "loading",
         engine: "loading",
+        residency: "loading",
+        warmup: "unknown",
+        device: null,
         message: `Loading and warming up speech model ${model.name}. Ready means speech inference has been exercised, not just the weights loaded.`,
         model: settings.model,
         progress: 0.85,
       });
       if (!eligible()) return;
-      await this.request("speech", "load", {
+      const runtime = await this.request<WorkerRuntime>("speech", "load", {
         cacheDir: this.storage.modelCacheDirectory,
       });
+      if (!runtime.loaded) throw new Error("Speech model load did not report loaded weights");
       if (!eligible()) return;
       this.updateStatus({
+        ...reportedLifecycle(runtime),
         phase: "idle",
         engine: "ready",
-        message: `Speech model ${model.name} ready`,
+        message: runtime.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
         detail: null,
         model: settings.model,
         progress: 1,
@@ -612,6 +668,7 @@ export class AsrService {
       throw new Error("Wait for speech to finish before unloading");
     this.clearSpeechIdle();
     this.speechUnloadPromise = (async () => {
+      this.updateStatus({ residency: "unloading", idleUnloadAt: null });
       await this.speechWorker.stopAndWait();
       this.updateStatus({
         phase: "idle",
@@ -620,10 +677,15 @@ export class AsrService {
         model: null,
         progress: null,
       });
-    })().finally(() => {
-      this.speechUnloadPromise = null;
-      this.applyDeferredResidency();
-    });
+    })()
+      .catch((error) => {
+        this.fail(error);
+        throw error;
+      })
+      .finally(() => {
+        this.speechUnloadPromise = null;
+        this.applyDeferredResidency();
+      });
     return this.speechUnloadPromise;
   }
 
@@ -650,12 +712,15 @@ export class AsrService {
       this.updateMagicStatus({
         phase: "loading",
         engine: "loading",
+        residency: "loading",
+        warmup: "unknown",
+        device: null,
         message: `Loading rewrite model ${model.name}`,
         model: settings.magicModel,
         progress: 0.86,
       });
       if (!eligible()) return;
-      const runtime = await this.request<{ device: string }>(
+      const runtime = await this.request<WorkerRuntime>(
         "magic",
         "magicLoad",
         {
@@ -663,13 +728,14 @@ export class AsrService {
           cacheDir: this.storage.modelCacheDirectory,
         },
       );
+      if (!runtime.loaded) throw new Error("Writing model load did not report loaded weights");
       if (!eligible()) return;
       this.updateMagicStatus({
+        ...reportedLifecycle(runtime),
         phase: "idle",
         engine: "ready",
-        message: `Rewrite model ${model.name} ready`,
+        message: runtime.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
         model: settings.magicModel,
-        device: runtime.device,
         progress: 1,
       });
       this.scheduleMagicIdle();
@@ -735,7 +801,7 @@ export class AsrService {
           output.push(part.text);
           continue;
         }
-        const result = await this.request<MagicRewriteResult>(
+        const result = await this.request<MagicRewriteResult & Partial<WorkerRuntime>>(
           "magic",
           "magicRewrite",
           {
@@ -743,6 +809,13 @@ export class AsrService {
             text: part.text.trim(),
           } as unknown as Record<string, unknown>,
         );
+        if (result.residency !== undefined || result.warmup !== undefined || result.device !== undefined) {
+          this.updateMagicStatus({
+            ...(result.residency !== undefined ? { residency: result.residency } : {}),
+            ...(result.warmup !== undefined ? { warmup: result.warmup } : {}),
+            ...(result.device !== undefined ? { device: result.device } : {}),
+          });
+        }
         processingTimeMs += result.processingTimeMs;
         // Preserve separators around immutable blocks; they never enter the model.
         output.push(
@@ -755,7 +828,7 @@ export class AsrService {
       this.updateMagicStatus({
         phase: "idle",
         engine: "ready",
-        message: `Rewrite model ${model.name} ready`,
+        message: runtime.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
         progress: 1,
       });
       return {
@@ -788,6 +861,7 @@ export class AsrService {
       throw new Error("Wait for rewriting to finish before unloading the rewrite model");
     this.clearMagicIdle();
     this.magicUnloadPromise = (async () => {
+      this.updateMagicStatus({ residency: "unloading", idleUnloadAt: null });
       await this.magicWorker.stopAndWait();
       this.updateMagicStatus({
         phase: "idle",
@@ -797,10 +871,15 @@ export class AsrService {
         device: null,
         progress: null,
       });
-    })().finally(() => {
-      this.magicUnloadPromise = null;
-      this.applyDeferredResidency();
-    });
+    })()
+      .catch((error) => {
+        this.failMagic(error);
+        throw error;
+      })
+      .finally(() => {
+        this.magicUnloadPromise = null;
+        this.applyDeferredResidency();
+      });
     return this.magicUnloadPromise;
   }
 
@@ -867,11 +946,13 @@ export class AsrService {
   private clearSpeechIdle(): void {
     if (this.speechIdleTimer) clearTimeout(this.speechIdleTimer);
     this.speechIdleTimer = null;
+    if (this.status.idleUnloadAt !== null) this.updateStatus({ idleUnloadAt: null });
   }
 
   private clearMagicIdle(): void {
     if (this.magicIdleTimer) clearTimeout(this.magicIdleTimer);
     this.magicIdleTimer = null;
+    if (this.magicStatus.idleUnloadAt !== null) this.updateMagicStatus({ idleUnloadAt: null });
   }
 
   private scheduleSpeechIdle(): void {
@@ -885,6 +966,7 @@ export class AsrService {
       return;
     this.speechIdleTimer = setTimeout(() => {
       this.speechIdleTimer = null;
+      this.updateStatus({ idleUnloadAt: null });
       if (
         this.shuttingDown ||
         this.storage.getSettings().preloadModel ||
@@ -894,6 +976,7 @@ export class AsrService {
       if (this.isBusy || !this.canIdleUnload()) this.scheduleSpeechIdle();
       else void this.unload().catch((error) => this.fail(error));
     }, settings.modelIdleMinutes * 60_000);
+    this.updateStatus({ idleUnloadAt: Date.now() + settings.modelIdleMinutes * 60_000 });
   }
 
   private scheduleMagicIdle(): void {
@@ -907,6 +990,7 @@ export class AsrService {
       return;
     this.magicIdleTimer = setTimeout(() => {
       this.magicIdleTimer = null;
+      this.updateMagicStatus({ idleUnloadAt: null });
       if (
         this.shuttingDown ||
         this.storage.getSettings().preloadMagicModel ||
@@ -916,6 +1000,7 @@ export class AsrService {
       if (this.isBusy || !this.canIdleUnload()) this.scheduleMagicIdle();
       else void this.unloadMagic().catch((error) => this.failMagic(error));
     }, settings.modelIdleMinutes * 60_000);
+    this.updateMagicStatus({ idleUnloadAt: Date.now() + settings.modelIdleMinutes * 60_000 });
   }
 
   async reset(): Promise<void> {
@@ -953,9 +1038,12 @@ export class AsrService {
       this.speechWorker.stopAndWait(),
       this.magicWorker.stopAndWait(),
     ]);
+    this.updateStatus({ ...UNLOADED_LIFECYCLE });
+    this.updateMagicStatus({ ...UNLOADED_LIFECYCLE });
   }
 
   fail(error: unknown): void {
+    this.clearSpeechIdle();
     this.speechFailureGeneration += 1;
     const message = error instanceof Error ? error.message : String(error);
     try {
@@ -968,6 +1056,7 @@ export class AsrService {
       /* diagnostics are best-effort */
     }
     this.updateStatus({
+      ...failedLifecycle(this.speechWorker.running),
       phase: "error",
       engine: "error",
       message: conciseError(message),
@@ -977,6 +1066,7 @@ export class AsrService {
   }
 
   failMagic(error: unknown): void {
+    this.clearMagicIdle();
     this.magicFailureGeneration += 1;
     const message = error instanceof Error ? error.message : String(error);
     try {
@@ -989,6 +1079,7 @@ export class AsrService {
       /* diagnostics are best-effort */
     }
     this.updateMagicStatus({
+      ...failedLifecycle(this.magicWorker.running),
       phase: "error",
       engine: "error",
       message: conciseError(message),

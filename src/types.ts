@@ -73,7 +73,16 @@ export type AppSettings = {
   personalProfiles?: PersonalProfileDocument;
 };
 
-export type MagicStatus = {
+export type ModelResidency = "unknown" | "unloaded" | "loading" | "resident" | "unloading";
+export type WarmupState = "unknown" | "not-started" | "warming" | "complete";
+export type RuntimeLifecycle = {
+  residency?: ModelResidency;
+  warmup?: WarmupState;
+  device?: string | null;
+  idleUnloadAt?: number | null;
+};
+
+export type MagicStatus = RuntimeLifecycle & {
   phase: MagicPhase;
   engine: EnginePhase;
   message: string;
@@ -91,7 +100,7 @@ export type MagicRewriteRequest = {
   allowInferences: boolean;
 };
 
-export type MagicRewriteResult = {
+export type MagicRewriteResult = RuntimeLifecycle & {
   preset?: MagicPreset;
   text: string;
   model: MagicModelId;
@@ -115,7 +124,7 @@ export type RetryAudioState = {
   sessionOnly: true;
 };
 
-export type DictationStatus = {
+export type DictationStatus = RuntimeLifecycle & {
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   retryAudio?: RetryAudioState;
