@@ -14,6 +14,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from worker_protocol import emit_progress
+
 MODEL = "netease-youdao/Confucius4-R2T2"
 MODEL_REVISION = "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9"
 SAMPLE_RATE = 16000
@@ -25,16 +27,22 @@ class WindowsSpeech:
     def __init__(self):
         self.model = None
         self.processor = None
+        self.cuda_preflight = None
+        self.warmup = "not-started"
 
     def status(self):
-        return {"loaded": self.model is not None, "model": MODEL, "device": "cuda"}
+        loaded = self.model is not None
+        return {"loaded": loaded, "model": MODEL, "device": "cuda" if loaded else None,
+                "residency": "resident" if loaded else "unloaded", "warmup": self.warmup,
+                **({"cudaPreflight": self.cuda_preflight} if self.cuda_preflight is not None else {})}
 
     def load(self, request):
         if self.model is not None:
             return self.status()
+        self.cuda_preflight = None
         import torch
-        if not torch.cuda.is_available():
-            raise RuntimeError("R2T2 needs a CUDA GPU. No usable CUDA device was found.")
+        from cuda_preflight import ensure_cuda_compatible
+        self.cuda_preflight = ensure_cuda_compatible(torch)
         from huggingface_hub import snapshot_download
         from huggingface_hub.constants import HF_HOME
         from accelerate import init_empty_weights
@@ -46,8 +54,7 @@ class WindowsSpeech:
                                         clean_config, convert_state_dict)
 
         cache_root = request.get("cacheDir")
-        sys.__stdout__.write("@delulu-progress:Downloading the pinned R2T2 checkpoint…\n")
-        sys.__stdout__.flush()
+        emit_progress("Downloading the pinned R2T2 checkpoint…", stage="download")
         source = Path(snapshot_download(
             repo_id=MODEL, revision=MODEL_REVISION,
             cache_dir=str(Path(cache_root) / "hub") if cache_root else None,
@@ -64,8 +71,7 @@ class WindowsSpeech:
                 ).eval()
                 self._warmup()
                 return self.status()
-            sys.__stdout__.write("@delulu-progress:Converting R2T2 for native Windows CUDA (first load only)…\n")
-            sys.__stdout__.flush()
+            emit_progress("Converting R2T2 for native Windows CUDA (first load only)…", stage="conversion")
             self.processor = Qwen3ASRProcessor(
                 feature_extractor=Qwen3ASRFeatureExtractor(),
                 tokenizer=AutoTokenizer.from_pretrained(source), chat_template=ASR_CHAT_TEMPLATE,
@@ -114,8 +120,11 @@ class WindowsSpeech:
 
     def _warmup(self):
         import numpy as np
+        self.warmup = "warming"
+        emit_progress("Warming up R2T2 speech inference…", stage="warmup")
         # Full decoder warmup must succeed before Ready; its result is private.
         self._generate(np.zeros(SAMPLE_RATE, dtype=np.float32), "English", 8)
+        self.warmup = "complete"
 
     def _generate(self, samples, language, max_tokens):
         import torch
@@ -142,7 +151,7 @@ class WindowsSpeech:
         audio = Path(request["audioPath"])
         if not audio.is_file():
             raise FileNotFoundError("The selected audio file no longer exists")
-        from transcription_engine import LANGUAGE_NAMES
+        from transcription_engine import LANGUAGE_NAMES, recognized_language_metadata
         import soundfile as sf
         started = time.perf_counter()
         try:
@@ -171,10 +180,13 @@ class WindowsSpeech:
                     torch.cuda.empty_cache()
             raise
         finished = time.perf_counter()
-        languages = {str(result.get("language") or language or "und").lower() for result in results}
-        detected = next(iter(languages)) if len(languages) == 1 else "und"
-        detected = {name.lower(): key for key, name in LANGUAGE_NAMES.items()}.get(detected, "und")
-        return {"text": " ".join(result["transcription"].strip() for result in results).strip(), "language": detected,
+        # These are labels from the parsed model output, not a separate detector;
+        # a forced prompt can influence them. Never substitute the prompt hint.
+        language_metadata = recognized_language_metadata([result.get("language") for result in results])
+        return {"text": " ".join(result["transcription"].strip() for result in results).strip(),
+                "language": language_metadata["recognizedLanguage"] or "und",
+                "requestedLanguage": code,
+                **language_metadata,
                 "duration": len(samples) / SAMPLE_RATE,
                 "processingTime": finished - started,
                 "inferenceTime": finished - inference_started}
@@ -182,9 +194,11 @@ class WindowsSpeech:
     def unload(self):
         self.model = None
         self.processor = None
+        self.warmup = "not-started"
+        self.cuda_preflight = None
         gc.collect()
         torch = sys.modules.get("torch")
         with contextlib.suppress(Exception):
             if torch is not None and torch.cuda.is_available():
                 torch.cuda.empty_cache()
-        return {"loaded": False}
+        return self.status()
