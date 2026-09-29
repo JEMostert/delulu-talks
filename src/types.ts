@@ -1,4 +1,5 @@
 import type { ExportTemplateRequest } from "./exportTemplates";
+import type { PersonalProfileDocument } from "./personalProfiles";
 
 export type Page =
   "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
@@ -15,7 +16,7 @@ export type EnginePhase =
 export type MagicPhase =
   "idle" | "preparing" | "loading" | "rewriting" | "error";
 export type TranscriptSource = "dictation" | "file";
-export type ExportFormat = "txt" | "json";
+export type ExportFormat = "txt" | "json" | "md";
 
 export type CustomWord = {
   kind?: "correction" | "shortcut";
@@ -38,7 +39,9 @@ export type AppSettings = {
   inputDeviceId: string;
   inputDeviceLabel: string;
   autoPaste: boolean;
+  pasteLastDelaySeconds: number;
   copyToClipboard: boolean;
+  spokenFormattingCommands: boolean;
   pastePortalToken: string;
   keepHistory: boolean;
   showOverlay: boolean;
@@ -51,6 +54,8 @@ export type AppSettings = {
   modelIdleMinutes: number;
   launchAtLogin: boolean;
   customWords: CustomWord[];
+  /** Stored contract only; no active profile or automatic behavior change. */
+  personalProfiles?: PersonalProfileDocument;
 };
 
 export type MagicStatus = {
@@ -80,9 +85,18 @@ export type MagicRewriteResult = {
   includedInferences: boolean;
 };
 
+export type RetryAudioState = {
+  phase: "empty" | "available" | "retrying";
+  byteLength: number;
+  durationMs: number | null;
+  discarded: boolean;
+  sessionOnly: true;
+};
+
 export type DictationStatus = {
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
+  retryAudio?: RetryAudioState;
   migrationRequired?: boolean;
   phase: DictationPhase;
   engine: EnginePhase;
@@ -106,6 +120,10 @@ export type TranscriptRecord = {
   magicProcessingTimeMs?: number;
   model: ModelId;
   language: string;
+  /** Decoder hint, not a detected-language claim. Absent on legacy records. */
+  requestedLanguage?: string | null;
+  /** Language reported by the backend; forced prompts may influence it. */
+  recognizedLanguage?: string | null;
   source: TranscriptSource;
   sourceName?: string | null;
   processingTimeMs: number;
@@ -159,9 +177,12 @@ export type LabRequest = {
 export type RecorderCommand = {
   action: "start" | "stop" | "cancel";
   inputDeviceId: string;
+  /** Native commands identify their capture; standalone capture can omit this. */
+  sessionId?: string;
 };
 
 export type RecordingSubmission = {
+  sessionId: string;
   wav: Uint8Array;
   durationMs: number;
 };
@@ -214,7 +235,9 @@ export type DeluluApi = {
   rendererControllerFailed(): Promise<void>;
   getSettings(): Promise<AppSettings>;
   getDiagnostics(): Promise<RuntimeDiagnostics>;
-  pasteLastTranscript(): Promise<void>;
+  pasteLastTranscript(): Promise<PasteLastStatus>;
+  getPasteLastStatus(): Promise<PasteLastStatus>;
+  cancelPasteLast(operationId: string): Promise<PasteLastStatus>;
   retryRecording(): Promise<void>;
   discardFailedRecording(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
@@ -258,11 +281,13 @@ export type DeluluApi = {
     id: string,
     request: ExportTemplateRequest,
   ): Promise<string | null>;
-  recordingStarted(): Promise<void>;
+  recordingStarted(sessionId: string): Promise<void>;
+  recordingLimitReached(sessionId: string): Promise<void>;
   recorderReady(): Promise<void>;
-  recordingFailed(message: string): Promise<void>;
+  recordingFailed(message: string, sessionId: string): Promise<void>;
   recordingLevel(level: number): void;
   submitRecording(recording: RecordingSubmission): Promise<void>;
+  onPasteLastStatus(callback: (status: PasteLastStatus) => void): () => void;
   onStatus(callback: (status: DictationStatus) => void): () => void;
   onMagicStatus(callback: (status: MagicStatus) => void): () => void;
   onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
@@ -290,4 +315,19 @@ export type RuntimeDiagnostics = {
   runtimeInstalled: boolean;
   packages: Record<string, string>;
   checkedAt: number;
+};
+
+export type PasteLastStatus = {
+  phase:
+    | "idle"
+    | "pending"
+    | "delivering"
+    | "attempted"
+    | "copied"
+    | "cancelled"
+    | "error";
+  operationId: string | null;
+  dueAt: number | null;
+  remainingSeconds: number;
+  message: string;
 };

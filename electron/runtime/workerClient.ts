@@ -1,8 +1,19 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import {
+  BoundedWorkerLines,
+  WorkerDiagnosticTail,
+  serializeWorkerRequest,
+  workerProtocolLimits,
+  validateWorkerResponse,
+  validateWorkerResult,
+  validateWorkerProgress,
+  type WorkerProgress,
+  type WorkerProtocolLimits,
+} from "./workerProtocol";
 
 type Pending = {
+  command: string;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
@@ -26,7 +37,8 @@ export function transcriptionTimeout(durationMs: unknown): number {
 export class WorkerClient {
   private child: ChildProcessWithoutNullStreams | null = null;
   private pending = new Map<string, Pending>();
-  private diagnostics = "";
+  private readonly limits: WorkerProtocolLimits;
+  private diagnostics: WorkerDiagnosticTail;
   constructor(
     private readonly config: () => {
       python: string;
@@ -34,13 +46,17 @@ export class WorkerClient {
       env: NodeJS.ProcessEnv;
     },
     private readonly onFailure: (error: Error) => void,
-    private readonly onProgress?: (detail: string) => void,
-  ) {}
+    private readonly onProgress?: (detail: string, event?: WorkerProgress) => void,
+    limits: Partial<WorkerProtocolLimits> = {},
+  ) {
+    this.limits = workerProtocolLimits(limits);
+    this.diagnostics = new WorkerDiagnosticTail(this.limits.stderrBytes);
+  }
   get running(): boolean {
     return this.child !== null;
   }
   get stderr(): string {
-    return this.diagnostics;
+    return this.diagnostics.text;
   }
   get busy(): boolean {
     return this.pending.size > 0;
@@ -57,23 +73,25 @@ export class WorkerClient {
       detached: process.platform !== "win32",
     });
     this.child = child;
-    this.diagnostics = "";
-    const lines = createInterface({ input: child.stdout });
-    lines.on("line", (line) => {
+    this.diagnostics = new WorkerDiagnosticTail(this.limits.stderrBytes);
+    const lines = new BoundedWorkerLines(this.limits.stdoutLineBytes);
+    const receive = (line: string): boolean => {
       // stop() can leave buffered lines until this process exits. They belong
       // to its generation, even if a failure callback has already retried.
-      if (this.child !== child) return;
+      if (this.child !== child) return false;
       if (line.startsWith("@delulu-progress:")) {
-        this.onProgress?.(line.slice("@delulu-progress:".length).slice(-350));
-        return;
+        const event = validateWorkerProgress(JSON.parse(line.slice("@delulu-progress:".length)));
+        const request = this.pending.get(event.id);
+        if (request && request.command === event.command)
+          this.onProgress?.(event.detail.slice(-350), event);
+        return this.child === child;
       }
-      if (!line.startsWith(PREFIX)) return;
+      if (!line.startsWith(PREFIX)) return true;
       try {
-        const response = JSON.parse(line.slice(PREFIX.length));
-        if (typeof response.id !== "string" || typeof response.ok !== "boolean")
-          throw new Error("Invalid model worker response");
+        const response = validateWorkerResponse(JSON.parse(line.slice(PREFIX.length)));
         const request = this.pending.get(response.id);
-        if (!request) return;
+        if (!request) return true;
+        if (response.ok) validateWorkerResult(request.command, response.result);
         clearTimeout(request.timer);
         this.pending.delete(response.id);
         if (response.ok) request.resolve(response.result);
@@ -88,22 +106,36 @@ export class WorkerClient {
       } catch (reason) {
         this.fail(reason instanceof Error ? reason : new Error(String(reason)));
       }
+      return this.child === child;
+    };
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (this.child !== child) return;
+      try {
+        lines.push(chunk, receive);
+      } catch (reason) {
+        if (this.child === child)
+          this.fail(
+            reason instanceof Error ? reason : new Error(String(reason)),
+          );
+      }
+    });
+    child.stdout.once("end", () => {
+      if (this.child === child) lines.end(receive);
     });
     child.stderr.on("data", (chunk: Buffer) => {
       if (this.child !== child) return;
-      this.diagnostics = `${this.diagnostics}${chunk}`.slice(-80_000);
+      this.diagnostics.push(chunk);
     });
     child.once("error", (error) => {
       if (this.child === child) this.fail(error);
     });
-    child.once("exit", (code) => {
-      lines.close();
+    child.once("close", (code) => {
       if (this.child !== child) return;
       this.fail(
         new Error(
           code === 0
             ? "Model worker closed"
-            : this.diagnostics.trim().split("\n").at(-1) ||
+            : this.stderr.trim().split("\n").at(-1) ||
                 `Model worker exited (${code})`,
         ),
       );
@@ -116,8 +148,26 @@ export class WorkerClient {
     payload: Record<string, unknown> = {},
     timeoutMs = operationTimeout(command),
   ): Promise<T> {
-    const child = this.start();
     const id = randomUUID();
+    let wire: string;
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      wire = serializeWorkerRequest(
+        id,
+        command,
+        payload,
+        this.limits.requestBytes,
+      );
+      if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+        throw new Error("Model worker timeout must be a positive number");
+      if (this.pending.size >= this.limits.pendingRequests)
+        throw new Error(
+          `Model worker already has ${this.limits.pendingRequests} pending requests. Wait for an operation to finish and try again.`,
+        );
+      child = this.start();
+    } catch (reason) {
+      return Promise.reject(reason);
+    }
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(
         () =>
@@ -129,16 +179,14 @@ export class WorkerClient {
         timeoutMs,
       );
       this.pending.set(id, {
+        command,
         resolve: (value) => resolve(value as T),
         reject,
         timer,
       });
-      child.stdin.write(
-        `${JSON.stringify({ ...payload, id, command })}\n`,
-        (error) => {
-          if (error && this.child === child) this.fail(error);
-        },
-      );
+      child.stdin.write(wire, (error) => {
+        if (error && this.child === child) this.fail(error);
+      });
     });
   }
 
