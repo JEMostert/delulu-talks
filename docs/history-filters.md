@@ -35,6 +35,14 @@ that rewrite puts the record in Without rewrite even if historical rewrite model
 metadata remains. Search still includes original recognition, personalization,
 corrections, accepted rewrite text and filenames.
 
+Search treats the query as a literal phrase, with Unicode case-insensitive
+matching. A matching card shows highlighted excerpts labelled Original
+recognition, Personalized text, Your correction, Accepted rewrite, or Source
+filename. These excerpts expose matches in hidden stored layers without
+changing which text the card delivers or its copy/edit actions. Long fields
+show context around their first match, with ellipses for omitted text; each
+matching layer gets its own excerpt. Clearing search removes the excerpts.
+
 Filtering is local and read-only. It does not modify transcripts, settings,
 source audio, or model runtimes. Clear history continues to confirm deletion of
 **all** history records, including records hidden by filters. The existing
