@@ -469,11 +469,13 @@ export class DictationService {
       this.broadcastTranscript(record);
       const outputName = record.magicText ? "Magic result" : "Transcript";
       let completion = `${outputName} ready`;
+      let pasteAttempted = false;
       this.setHud({ state: "delivering" });
       if (settings.autoPaste) {
         try {
           await this.paste.paste(output);
-          completion = `${outputName} pasted`;
+          pasteAttempted = true;
+          completion = `${outputName} copied · paste shortcut sent`;
         } catch (error) {
           completion = `Copied — paste manually (${error instanceof Error ? error.message : String(error)})`;
         }
@@ -486,12 +488,16 @@ export class DictationService {
       this.setHud({
         state: "success",
         title:
-          settings.autoPaste && !completion.startsWith("Copied")
-            ? "Pasted"
+          pasteAttempted
+            ? "Paste attempted"
             : settings.copyToClipboard || completion.startsWith("Copied")
               ? "Copied"
               : "Done",
-        detail: magicFailure ? "Magic skipped" : "Ready to keep talking",
+        detail: magicFailure
+          ? "Magic skipped"
+          : pasteAttempted
+            ? "Check the destination; text is also copied"
+            : "Ready to keep talking",
       });
       this.asr.setActivity("idle", completion);
       return true;
