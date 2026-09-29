@@ -206,7 +206,8 @@ test("buffered output from a failed worker cannot fail or report progress for a 
 for line in sys.stdin:
  request = json.loads(line)
  if request['command'] == 'broken':
-  sys.stdout.write('@delulu:not-json\\n@delulu:{}\\n@delulu-progress:obsolete progress\\n')
+  stale = {'protocolVersion':1,'type':'progress','id':request['id'],'command':request['command'],'stage':'loading','detail':'obsolete progress'}
+  sys.stdout.write('@delulu:not-json\\n@delulu:{}\\n@delulu-progress:'+json.dumps(stale)+'\\n')
   sys.stdout.flush()
  else:
   print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'recovered'}),flush=True)
@@ -338,7 +339,7 @@ test("download progress does not consume the pending model response", async () =
   const path = join(dir, "worker.py");
   writeFileSync(
     path,
-    `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu-progress:Downloading weights 50%',flush=True)\n print('@delulu:'+json.dumps({'protocolVersion':1,'id':r['id'],'ok':True,'result':{'loaded':True}}),flush=True)\n`,
+    `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu-progress:'+json.dumps({'protocolVersion':1,'type':'progress','id':r['id'],'command':r['command'],'stage':'downloading','detail':'Downloading weights 50%','fraction':0.5}),flush=True)\n print('@delulu:'+json.dumps({'protocolVersion':1,'id':r['id'],'ok':True,'result':{'loaded':True}}),flush=True)\n`,
   );
   const progress: string[] = [];
   const failures: Error[] = [];
@@ -474,7 +475,8 @@ test("real subprocess response framing preserves byte-split UTF-8 and CRLF", asy
     `import sys,json,time
 for line in sys.stdin:
  request = json.loads(line)
- output = 'ordinary log\\r\\n@delulu-progress:Loading 👋\\r\\n@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'👋é'},ensure_ascii=False)+'\\r\\n'
+ progress = {'protocolVersion':1,'type':'progress','id':request['id'],'command':request['command'],'stage':'loading','detail':'Loading 👋'}
+ output = 'ordinary log\\r\\n@delulu-progress:'+json.dumps(progress,ensure_ascii=False)+'\\r\\n@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'👋é'},ensure_ascii=False)+'\\r\\n'
  for byte in output.encode('utf-8'):
   sys.stdout.buffer.write(bytes([byte]))
   sys.stdout.buffer.flush()
@@ -599,7 +601,8 @@ test("stdout overflow cannot leak buffered progress into a new generation", asyn
 for line in sys.stdin:
  request=json.loads(line)
  if request['command']=='overflow':
-  sys.stdout.write('x'*129+'\\n@delulu-progress:obsolete\\n')
+  stale = {'protocolVersion':1,'type':'progress','id':request['id'],'command':request['command'],'stage':'loading','detail':'obsolete'}
+  sys.stdout.write('x'*129+'\\n@delulu-progress:'+json.dumps(stale)+'\\n')
   sys.stdout.flush()
  else:
   print('@delulu:'+json.dumps({'protocolVersion':1,'id':request['id'],'ok':True,'result':'fresh'}),flush=True)

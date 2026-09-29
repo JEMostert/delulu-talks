@@ -11,9 +11,10 @@ from __future__ import annotations
 import contextlib
 import gc
 import os
-import sys
 import time
 from pathlib import Path
+
+from worker_protocol import emit_progress
 
 MODEL = "mlx-community/Confucius4-R2T2-bf16"
 MODEL_REVISION = "747f5fc5f84bc9976baa2f02714e2fed67ed8611"
@@ -24,9 +25,8 @@ MAX_TOKENS = 4096
 CHUNK_SECONDS = 30.0
 
 
-def progress(detail: str) -> None:
-    sys.__stdout__.write("@delulu-progress:" + detail + "\n")
-    sys.__stdout__.flush()
+def progress(detail: str, stage: str = "load") -> None:
+    emit_progress(detail, stage=stage)
 
 
 class MetalSpeech:
@@ -46,7 +46,7 @@ class MetalSpeech:
         if not mx.metal.is_available():
             raise RuntimeError("R2T2 MLX requires a native Apple Silicon Mac with Metal available.")
         cache_root = request.get("cacheDir")
-        progress("Downloading the pinned R2T2 BF16 MLX checkpoint (~4.1 GB)…")
+        progress("Downloading the pinned R2T2 BF16 MLX checkpoint (~4.1 GB)…", "download")
         model_path = snapshot_download(
             repo_id=MODEL,
             revision=MODEL_REVISION,
@@ -54,9 +54,10 @@ class MetalSpeech:
             local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1",
             allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.tiktoken"],
         )
-        progress("Loading R2T2 with MLX and warming up speech inference…")
+        progress("Loading R2T2 with MLX…", "load")
         try:
             self.model = load_model(Path(model_path), strict=True)
+            progress("Warming up R2T2 speech inference…", "warmup")
             # Exercise the full decoder before reporting Ready. Warmup output
             # is discarded and never enters transcript history or delivery.
             self.model.generate(

@@ -22,7 +22,7 @@ import traceback
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from worker_protocol import correlation_id, terminal_response, validate_request
+from worker_protocol import correlation_id, emit_progress, operation_scope, terminal_response, validate_request, validate_result
 
 if TYPE_CHECKING:
     from speech_engine import SpeechEngine
@@ -494,12 +494,17 @@ def main() -> int:
         if not line:
             continue
         request_id: Any = None
+        operation = contextlib.ExitStack()
         try:
             request = json.loads(line)
             request_id = correlation_id(request)
             request = validate_request(request)
+            operation.enter_context(operation_scope(request_id, request["command"]))
+            emit_progress("Starting worker operation", stage="dispatch")
             with contextlib.redirect_stdout(sys.stderr):
                 result = worker.dispatch(request)
+            validate_result(request["command"], result)
+            emit_progress("Worker operation completed", stage="complete")
             emit({"id": request_id, "ok": True, "result": result}, request["command"])
             if request.get("command") == "shutdown":
                 return 0
@@ -508,6 +513,8 @@ def main() -> int:
             traceback.print_tb(exc.__traceback__, file=sys.stderr)
             sys.stderr.write(f"{type(exc).__name__}: {error}\n")
             emit({"id": request_id, "ok": False, "error": error})
+        finally:
+            operation.close()
 
 
 if __name__ == "__main__":

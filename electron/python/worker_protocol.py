@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+from contextvars import ContextVar
+import json
 import math
+import sys
 from typing import Any
 
 
@@ -10,12 +14,75 @@ PROTOCOL_VERSION = 1
 MAX_ID_BYTES = 128
 MAX_COMMAND_BYTES = 64
 MAX_ERROR_BYTES = 8_000
+PROGRESS_PREFIX = "@delulu-progress:"
+MAX_PROGRESS_STAGE_BYTES = 64
+MAX_PROGRESS_DETAIL_BYTES = 4_000
+MAX_PROGRESS_LINE_BYTES = 32_768
+_active_operation: ContextVar[tuple[str, str] | None] = ContextVar("worker_operation", default=None)
 COMMANDS = frozenset({
     "ping", "status", "load", "unload", "magicStatus", "magicLoad",
     "magicUnload", "magicRewrite", "transcribe", "shutdown",
 })
 MAGIC_PRESETS = frozenset({"polish", "concise", "structured", "prompt"})
 MAGIC_MODELS = frozenset({"qwen35Small", "qwen35Medium", "qwen35Large"})
+
+
+@contextlib.contextmanager
+def operation_scope(request_id: str, command: str):
+    if not bounded_string(request_id, MAX_ID_BYTES) or not bounded_string(command, MAX_COMMAND_BYTES):
+        raise ValueError("Worker operation requires a valid request id and command")
+    token = _active_operation.set((request_id, command))
+    try:
+        yield
+    finally:
+        _active_operation.reset(token)
+
+
+def validate_progress(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("Worker progress must be an object")
+    if type(value.get("protocolVersion")) is not int or value["protocolVersion"] != PROTOCOL_VERSION:
+        raise ValueError("Worker progress protocolVersion must be integer 1")
+    if value.get("type") != "progress":
+        raise ValueError("Worker progress type must be progress")
+    for key, limit in (("id", MAX_ID_BYTES), ("command", MAX_COMMAND_BYTES),
+                       ("stage", MAX_PROGRESS_STAGE_BYTES)):
+        if not bounded_string(value.get(key), limit):
+            raise ValueError(f"Worker progress {key} must be a nonempty bounded UTF-8 string")
+    require_string(value, "detail")
+    try:
+        valid_detail = len(value["detail"].encode("utf-8")) <= MAX_PROGRESS_DETAIL_BYTES
+    except UnicodeEncodeError:
+        valid_detail = False
+    if not valid_detail:
+        raise ValueError("Worker progress detail exceeds its UTF-8 byte limit")
+    if "fraction" in value:
+        require_number(value, "fraction")
+        if value["fraction"] > 1:
+            raise ValueError("Worker progress fraction must be between 0 and 1")
+    validate_json_value(value)
+    return value
+
+
+def emit_progress(detail: str, stage: str = "load", fraction: float | None = None) -> None:
+    operation = _active_operation.get()
+    if operation is None:
+        # Direct adapter calls are diagnostics, without a desktop request owner.
+        sys.stderr.write(str(detail) + "\n")
+        sys.stderr.flush()
+        return
+    request_id, command = operation
+    payload = {"protocolVersion": PROTOCOL_VERSION, "type": "progress", "id": request_id,
+               "command": command, "stage": stage, "detail": detail}
+    if fraction is not None:
+        payload["fraction"] = fraction
+    validate_progress(payload)
+    line = PROGRESS_PREFIX + json.dumps(payload, ensure_ascii=False, allow_nan=False)
+    if len(line.encode("utf-8")) > MAX_PROGRESS_LINE_BYTES:
+        raise ValueError("Worker progress line exceeds its byte limit")
+    stream = sys.__stdout__ if sys.__stdout__ is not None else sys.stdout
+    stream.write(line + "\n")
+    stream.flush()
 
 
 def validate_json_value(value: Any, depth: int = 0) -> None:
