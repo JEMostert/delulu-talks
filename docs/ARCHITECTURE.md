@@ -64,6 +64,8 @@ App updates are explicit downloads. The updater disables automatic installation 
 
 The current boundaries are useful: sandboxed IPC, worker ownership, separate runtime environments, atomic writes, and shared transcript actions. Retain them while extracting responsibilities that have become crowded. `electron/main.ts` is approximately 987 lines and `src/App.tsx` approximately 538 lines in this pass; IPC registration and transcript commands are the first candidates for focused modules. File size alone does not justify a rewrite.
 
+The JSON-lines transport has per-worker budgets of 4 MiB request bytes, eight pending requests, 8 MiB stdout lines and 80,000 retained stderr bytes. Admission failures reject only the excess request; stdout overflow stops the generation and requires explicit recovery. Python independently bounds input and validates a complete response before emitting any prefix. See [worker protocol bounds](worker-bounds.md) for byte/delimiter rules, failure semantics and subprocess evidence.
+
 The largest functional gap is native evidence for the new Mac and Windows adapters. Capture still buffers audio until Stop, and the JSON-lines transport has no acoustic streaming session protocol. Implement that protocol before promising live R2T2 output. Platform shortcuts/paste, runtime capability metadata, and durable storage schemas deserve clearer contracts before profiles or persistent import queues expand their use. The roadmap links those changes to observed behavior and failure-path acceptance.
 
 ## Direction

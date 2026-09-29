@@ -27,6 +27,11 @@ if TYPE_CHECKING:
 
 
 PROTOCOL_PREFIX = "@delulu:"
+# JSON byte limits exclude the trailing newline and match the desktop transport.
+# Audio is passed by file path; these limits leave room for existing text inputs.
+MAX_REQUEST_BYTES = 4 * 1024 * 1024
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_ERROR_BYTES = 8_000
 SPEECH_MODEL = "netease-youdao/Confucius4-R2T2"
 MLX_SPEECH_MODEL = "mlx-community/Confucius4-R2T2-bf16"
 LANGUAGE_NAMES = {
@@ -81,8 +86,24 @@ MAGIC_PRESETS = {
 
 
 def emit(payload: dict[str, Any]) -> None:
-    sys.stdout.write(PROTOCOL_PREFIX + json.dumps(payload, ensure_ascii=False) + "\n")
+    encoded = bytearray(PROTOCOL_PREFIX, "utf-8")
+    for part in json.JSONEncoder(ensure_ascii=False).iterencode(payload):
+        chunk = part.encode("utf-8")
+        if len(encoded) + len(chunk) > MAX_RESPONSE_BYTES:
+            raise ValueError(
+                "Model worker response exceeds the 8 MiB limit. "
+                "Shorten the input and retry the operation."
+            )
+        encoded.extend(chunk)
+    # Validate the entire response before writing any prefix or partial JSON.
+    sys.stdout.write(encoded.decode("utf-8") + "\n")
     sys.stdout.flush()
+
+
+def bounded_error(exc: Exception) -> str:
+    message = str(exc)[:MAX_ERROR_BYTES]
+    encoded = message.encode("utf-8", errors="replace")
+    return encoded[:MAX_ERROR_BYTES].decode("utf-8", errors="ignore")
 
 
 class Worker:
@@ -405,7 +426,23 @@ class Worker:
 
 def main() -> int:
     worker = Worker()
-    for line in sys.stdin:
+    source = sys.stdin.buffer
+    while True:
+        # Reading a capped binary line bounds buffering even without a newline
+        # and measures multibyte input consistently with the desktop transport.
+        line = source.readline(MAX_REQUEST_BYTES + 3)
+        if not line:
+            return 0
+        content = line[:-1] if line.endswith(b"\n") else line
+        if line.endswith(b"\r\n"):
+            content = content[:-1]
+        if len(content) > MAX_REQUEST_BYTES:
+            sys.stderr.write(
+                "Model worker input exceeds the 4 MiB limit. "
+                "Shorten the input and load the model to retry.\n"
+            )
+            sys.stderr.flush()
+            return 2
         line = line.strip()
         if not line:
             continue
@@ -419,9 +456,10 @@ def main() -> int:
             if request.get("command") == "shutdown":
                 return 0
         except Exception as exc:
-            traceback.print_exc(file=sys.stderr)
-            emit({"id": request_id, "ok": False, "error": str(exc)})
-    return 0
+            error = bounded_error(exc)
+            traceback.print_tb(exc.__traceback__, file=sys.stderr)
+            sys.stderr.write(f"{type(exc).__name__}: {error}\n")
+            emit({"id": request_id, "ok": False, "error": error})
 
 
 if __name__ == "__main__":
