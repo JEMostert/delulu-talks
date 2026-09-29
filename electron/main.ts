@@ -1,3 +1,6 @@
+import { encryptHistory, decryptHistory } from "./services/encryptedHistory";
+import { openSync, closeSync, readFileSync, realpathSync, fstatSync } from "node:fs";
+import { relative, isAbsolute, dirname, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { changePersonalProfiles } from "../src/personalProfileCommands";
 import {
@@ -830,6 +833,44 @@ function registerIpc(): void {
   handle("paste:test", async () => {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 3_000));
     await paste.paste("Delulu Talks paste test");
+  });
+  let encryptedHistoryBusy = false;
+  const saveBackup = async (text: string, extension: string, title: string): Promise<string | null> => {
+    const options: Electron.SaveDialogOptions = { title, defaultPath: `delulu-history.${extension}`,
+      filters: [{ name: "History backup", extensions: [extension] }], properties: ["showOverwriteConfirmation"] };
+    const selected = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options);
+    if (selected.canceled || !selected.filePath) return null;
+    if (!selected.filePath.toLowerCase().endsWith(`.${extension}`)) throw new Error(`Choose a .${extension} filename.`);
+    const target = join(realpathSync(dirname(selected.filePath)), basename(selected.filePath));
+    const within = relative(realpathSync(storage.dataDirectory), target);
+    if (!within || (!within.startsWith(`..${sep}`) && within !== ".." && !isAbsolute(within)))
+      throw new Error("Choose a destination outside the active application profile.");
+    saveTemplateExport(target, text);
+    return selected.filePath;
+  };
+  handle("history:encryptedExport", async (_event, passphrase: unknown) => {
+    if (encryptedHistoryBusy) throw new Error("An encrypted-history operation is already running.");
+    encryptedHistoryBusy = true;
+    try { return await saveBackup(await encryptHistory(storage.getHistory(), passphrase), "delulubak", "Save encrypted history"); }
+    finally { encryptedHistoryBusy = false; }
+  });
+  handle("history:encryptedRecover", async (_event, passphrase: unknown) => {
+    if (encryptedHistoryBusy) throw new Error("An encrypted-history operation is already running.");
+    encryptedHistoryBusy = true;
+    try {
+      const options: Electron.OpenDialogOptions = { title: "Choose encrypted history backup", properties: ["openFile"],
+        filters: [{ name: "Encrypted history", extensions: ["delulubak"] }] };
+      const selected = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+      if (selected.canceled || !selected.filePaths[0]) return null;
+      const descriptor = openSync(selected.filePaths[0], "r");
+      let encoded: string;
+      try {
+        const info = fstatSync(descriptor);
+        if (!info.isFile() || info.size > 90 * 1024 * 1024) throw new Error("Choose an encrypted-history file smaller than 90 MB.");
+        encoded = readFileSync(descriptor, "utf8");
+      } finally { closeSync(descriptor); }
+      return await saveBackup(await decryptHistory(encoded, passphrase), "json", "Save decrypted history outside the active profile");
+    } finally { encryptedHistoryBusy = false; }
   });
   handle("history:get", () => {
     const records = new Map(

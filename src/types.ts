@@ -265,6 +265,8 @@ export type UpdateStatus = {
 };
 
 export type DeluluApi = {
+  exportEncryptedHistory(passphrase: string): Promise<string | null>;
+  recoverEncryptedHistory(passphrase: string): Promise<string | null>;
   getRendererRecoveryState(): Promise<RendererRecoveryState>;
   reloadWorkspace(): Promise<void>;
   rendererControllerFailed(): Promise<void>;

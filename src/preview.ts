@@ -55,6 +55,8 @@ function desktopOnly(): never {
 }
 
 export const previewApi: DeluluApi = {
+  async exportEncryptedHistory() { return desktopOnly(); },
+  async recoverEncryptedHistory() { return desktopOnly(); },
   async getRendererRecoveryState() {
     return { canReload: true, reason: null, canStopRecording: false };
   },

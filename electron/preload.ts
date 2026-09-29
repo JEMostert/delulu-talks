@@ -28,6 +28,8 @@ function listener<T>(
 }
 
 const api: DeluluApi = {
+  exportEncryptedHistory: (passphrase) => ipcRenderer.invoke("history:encryptedExport", passphrase),
+  recoverEncryptedHistory: (passphrase) => ipcRenderer.invoke("history:encryptedRecover", passphrase),
   getRendererRecoveryState: () => ipcRenderer.invoke("renderer:recoveryState"),
   reloadWorkspace: () => ipcRenderer.invoke("renderer:reload"),
   rendererControllerFailed: () =>

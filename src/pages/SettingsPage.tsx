@@ -1,6 +1,7 @@
 import { REWRITE_PRESETS } from "../rewritePresets";
 import { PersonalProfiles } from "../components/PersonalProfiles";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
+import { EncryptedHistory } from "../components/EncryptedHistory";
 import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
 import {
@@ -527,6 +528,7 @@ export function SettingsPage(props: Props) {
       )}
       {tab === "maintenance" && (
         <>
+          <EncryptedHistory />
           <section className="settings-group">
             <div className="group-heading">
               <h3>Appearance</h3>
