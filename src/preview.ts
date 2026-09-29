@@ -95,7 +95,7 @@ export const previewApi: DeluluApi = {
     return {
       phase: "idle",
       engine: "ready",
-      message: "Browser preview",
+      message: "Browser preview · Speech model status",
       model: "r2t2" as const,
     };
   },
@@ -103,7 +103,7 @@ export const previewApi: DeluluApi = {
     return {
       phase: "idle",
       engine: "ready",
-      message: "Qwen 3.5 · 2B ready",
+      message: "Browser preview · Rewrite model status (Qwen 3.5 · 2B)",
       model: "qwen35Medium",
       device: "cuda",
     };

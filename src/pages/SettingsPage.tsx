@@ -92,7 +92,7 @@ export function SettingsPage(props: Props) {
         {[
           ["general", "Capture & delivery"],
           ["personalization", "Personalization"],
-          ["writing", "Writing"],
+          ["writing", "Rewriting"],
           ["advanced", "Runtime"],
           ["maintenance", "Application"],
         ].map(([id, label]) => (
@@ -315,9 +315,9 @@ export function SettingsPage(props: Props) {
           >
             {toggle("magicEnabled", "Rewrite after dictation", busy)}
           </SettingRow>
-          <SettingRow title="Writing style">
+          <SettingRow title="Rewrite style">
             <select
-              aria-label="Writing style"
+              aria-label="Rewrite style"
               value={s.magicPreset}
               disabled={saving}
               onChange={(e) =>
@@ -334,7 +334,7 @@ export function SettingsPage(props: Props) {
           </SettingRow>
           <SettingRow
             title="Allow added assumptions"
-            description="Let Magic suggest additional detail. Review the result before sending it."
+            description="Let rewriting suggest additional detail. Review the result before sending it."
           >
             {toggle("magicAllowInferences", "Allow added assumptions")}
           </SettingRow>
@@ -351,16 +351,16 @@ export function SettingsPage(props: Props) {
             </div>
             <SettingRow
               icon={Clock3}
-              title="Keep speech ready"
-              description="Load speech at startup and keep it in GPU memory. Uses more VRAM, but avoids cold starts between recordings."
+              title="Keep speech model ready"
+              description="Load the speech model at startup and keep it in GPU memory. Uses more VRAM, but avoids cold starts between recordings."
             >
-              {toggle("preloadModel", "Keep speech ready", busy)}
+              {toggle("preloadModel", "Keep speech model ready", busy)}
             </SettingRow>
             <SettingRow
-              title="Keep Magic ready"
-              description="Keep the writing model loaded alongside speech."
+              title="Keep rewrite model ready"
+              description="Keep the rewrite model loaded alongside the speech model."
             >
-              {toggle("preloadMagicModel", "Keep Magic ready", busy)}
+              {toggle("preloadMagicModel", "Keep rewrite model ready", busy)}
             </SettingRow>
             <SettingRow title="Release idle models after">
               <select
@@ -378,9 +378,9 @@ export function SettingsPage(props: Props) {
                 ))}
               </select>
             </SettingRow>
-            <SettingRow title="Magic model">
+            <SettingRow title="Rewrite model">
               <select
-                aria-label="Magic model"
+                aria-label="Rewrite model"
                 value={s.magicModel}
                 disabled={saving || busy}
                 onChange={(e) =>
@@ -516,17 +516,17 @@ export function SettingsPage(props: Props) {
           </section>
           <section className="settings-group">
             <div className="group-heading">
-              <h3>Local engine maintenance</h3>
+              <h3>Local runtime and model maintenance</h3>
               <p>Repair uses the runtime versions included with this app.</p>
             </div>
-            <SettingRow title="Speech engine" description={status.message}>
+            <SettingRow title="Speech runtime and model" description={status.message}>
               <div className="inline-control">
                 <button
                   className="secondary-button"
                   disabled={busy}
                   onClick={props.onSetup}
                 >
-                  Install / repair
+                  Install / repair runtime
                 </button>
                 {status.engine === "ready" ? (
                   <button
@@ -534,7 +534,7 @@ export function SettingsPage(props: Props) {
                     disabled={busy}
                     onClick={props.onUnload}
                   >
-                    Unload
+                    Unload model
                   </button>
                 ) : (
                   <button
@@ -542,19 +542,19 @@ export function SettingsPage(props: Props) {
                     disabled={busy || status.engine !== "unloaded"}
                     onClick={props.onLoad}
                   >
-                    Load
+                    Load model
                   </button>
                 )}
               </div>
             </SettingRow>
-            <SettingRow title="Magic engine" description={magicStatus.message}>
+            <SettingRow title="Rewrite runtime and model" description={magicStatus.message}>
               <div className="inline-control">
                 <button
                   className="secondary-button"
                   disabled={busy}
                   onClick={props.onSetupMagic}
                 >
-                  Install / repair
+                  Install / repair runtime
                 </button>
                 {magicStatus.engine === "ready" ? (
                   <button
@@ -562,7 +562,7 @@ export function SettingsPage(props: Props) {
                     disabled={busy}
                     onClick={props.onUnloadMagic}
                   >
-                    Unload
+                    Unload model
                   </button>
                 ) : (
                   <button
@@ -570,7 +570,7 @@ export function SettingsPage(props: Props) {
                     disabled={busy || magicStatus.engine !== "unloaded"}
                     onClick={props.onLoadMagic}
                   >
-                    Load
+                    Load model
                   </button>
                 )}
               </div>
@@ -600,7 +600,7 @@ export function SettingsPage(props: Props) {
           onConfirm={props.onReset}
         >
           <p>
-            You’ll need to install the engines again before dictating. Your
+            You’ll need to install the speech runtime again before dictating. Your
             history, settings, and model cache stay on this device.
           </p>
         </ConfirmDialog>

@@ -173,15 +173,15 @@ export class DictationService {
       this.asr.setActivity(
         "error",
         status.engine === "missing"
-          ? "Set up R2T2 before your first dictation"
-          : "Repair or reload the speech engine before starting another dictation",
+          ? "Set up the speech runtime before your first dictation"
+          : "Repair the speech runtime or reload the speech model before starting another dictation",
       );
       this.setHud(
         status.engine === "missing"
           ? {
               state: "error",
               title: "Setup needed",
-              detail: "Install a speech model",
+              detail: "Set up the speech runtime",
             }
           : {
               state: "error",
@@ -357,7 +357,7 @@ export class DictationService {
       if (settings.magicEnabled) {
         this.asr.setActivity(
           "transcribing",
-          "Magic is polishing the transcript",
+          "Rewriting is polishing the transcript",
         );
         this.setHud({ state: "magic" });
         try {
@@ -388,7 +388,7 @@ export class DictationService {
       }
       this.storage.addHistory(record);
       this.broadcastTranscript(record);
-      const outputName = record.magicText ? "Magic result" : "Transcript";
+      const outputName = record.magicText ? "Rewrite result" : "Transcript";
       let completion = `${outputName} ready`;
       this.setHud({ state: "delivering" });
       if (settings.autoPaste) {
@@ -403,7 +403,7 @@ export class DictationService {
         completion = `${outputName} copied to clipboard`;
       }
       if (magicFailure)
-        completion = `${completion} · Magic unavailable: ${magicFailure}`;
+        completion = `${completion} · Rewriting unavailable: ${magicFailure}`;
       this.setHud({
         state: "success",
         title:
@@ -412,7 +412,7 @@ export class DictationService {
             : settings.copyToClipboard || completion.startsWith("Copied")
               ? "Copied"
               : "Done",
-        detail: magicFailure ? "Magic skipped" : "Ready to keep talking",
+        detail: magicFailure ? "Rewriting skipped" : "Ready to keep talking",
       });
       this.asr.setActivity("idle", completion);
     } catch (error) {
