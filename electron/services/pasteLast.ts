@@ -19,6 +19,7 @@ export class PasteLastService {
       copy(text: string): void;
       clipboardOnly(): boolean;
       changed(status: PasteLastStatus): void;
+      delivery?(id: string, state: "copied" | "paste-attempted" | "transcribed", detail?: string, method?: string): void;
     },
   ) {}
 
@@ -96,23 +97,25 @@ export class PasteLastService {
           message:
             "Attempting delivery. Cancellation is no longer available once delivery starts.",
         });
-        void this.deliver(operationId, text);
+        void this.deliver(operationId, text, recordId);
       }
     }, 100);
     return this.getStatus();
   }
 
-  private async deliver(operationId: string, text: string) {
+  private async deliver(operationId: string, text: string, recordId: string) {
     try {
       if (this.ports.clipboardOnly()) {
         this.ports.copy(text);
+        this.ports.delivery?.(recordId, "copied");
         this.publish({
           phase: "copied",
           message:
             "Copied to clipboard. Automatic paste is unavailable on this desktop; paste manually in the intended field.",
         });
       } else {
-        await this.ports.paste(text);
+        const method = await this.ports.paste(text);
+        this.ports.delivery?.(recordId, "paste-attempted", "Paste command sent; destination receipt is not confirmed", method);
         if (this.status.operationId === operationId)
           this.publish({
             phase: "attempted",
@@ -121,6 +124,7 @@ export class PasteLastService {
           });
       }
     } catch (reason) {
+      this.ports.delivery?.(recordId, this.ports.clipboardOnly() || (reason instanceof Error && reason.name === "ClipboardCopyError") ? "transcribed" : "copied", (reason instanceof Error ? reason.message : String(reason)).slice(0, 500));
       if (this.status.operationId === operationId)
         this.publish({
           phase: "error",

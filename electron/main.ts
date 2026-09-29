@@ -11,7 +11,7 @@ import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { ModelCacheService } from "./services/modelCache";
 import { DictationService } from "./services/dictation";
-import { ClipboardCopyError, PasteService } from "./services/paste";
+import { PasteService } from "./services/paste";
 import { RuleUsageService } from "./services/ruleUsage";
 import { PasteLastService } from "./services/pasteLast";
 import { PillService } from "./services/pill";
@@ -350,17 +350,6 @@ function recordDelivery(
   if (lastTranscript?.id === record.id) lastTranscript = updated;
   broadcast("history:added", updated);
   rebuildTrayMenu();
-}
-
-async function pasteRecord(record: TranscriptRecord): Promise<void> {
-  try {
-    const method = await paste.paste(deliveredText(record));
-    recordDelivery(record, "paste-attempted", "Paste command sent; destination receipt is not confirmed", method);
-  } catch (error) {
-    recordDelivery(record, error instanceof ClipboardCopyError ? "transcribed" : "copied",
-      (error instanceof Error ? error.message : String(error)).slice(0, 500));
-    throw error;
-  }
 }
 
 function schedulePasteLast() {
@@ -789,6 +778,10 @@ async function start(): Promise<void> {
     paste: (text) => paste.paste(text),
     copy: (text) => paste.copy(text),
     clipboardOnly: () => paste.capabilities().pasteMethod === "clipboard-only",
+    delivery: (id, state, detail, method) => {
+      const record = storage.findHistory(id) ?? sessionTranscripts.get(id);
+      if (record) recordDelivery(record, state, detail, method);
+    },
     changed: (status) => {
       broadcast("dictation:pasteLastChanged", status);
       rebuildTrayMenu();
