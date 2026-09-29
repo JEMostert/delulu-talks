@@ -212,6 +212,7 @@ export type DeluluApi = {
   rendererControllerFailed(): Promise<void>;
   getSettings(): Promise<AppSettings>;
   getDiagnostics(): Promise<RuntimeDiagnostics>;
+  getLocalDataOverview(): Promise<LocalDataOverview>;
   pasteLastTranscript(): Promise<void>;
   retryRecording(): Promise<void>;
   discardFailedRecording(): Promise<void>;
@@ -284,4 +285,24 @@ export type RuntimeDiagnostics = {
   runtimeInstalled: boolean;
   packages: Record<string, string>;
   checkedAt: number;
+};
+
+export type LocalDataLocation = {
+  path: string;
+  status: "present" | "missing" | "partial";
+  bytes: number;
+  files: number;
+  skippedLinks: number;
+  problems: string[];
+};
+
+export type LocalDataOverview = {
+  dataDirectory: string;
+  checkedAt: number;
+  categories: {
+    id: "history" | "settings" | "models" | "runtimes" | "audio";
+    label: string;
+    description: string;
+    locations: LocalDataLocation[];
+  }[];
 };

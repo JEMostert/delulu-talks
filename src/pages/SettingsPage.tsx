@@ -15,6 +15,7 @@ import {
 import { MAGIC_MODELS } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
+import { LocalData } from "../components/LocalData";
 import { Diagnostics } from "../components/Diagnostics";
 import type {
   AppSettings,
@@ -95,6 +96,7 @@ export function SettingsPage(props: Props) {
           ["writing", "Writing"],
           ["advanced", "Runtime"],
           ["maintenance", "Application"],
+          ["data", "Local data"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -110,6 +112,7 @@ export function SettingsPage(props: Props) {
           {saving ? "Saving…" : "Changes save automatically"}
         </span>
       </div>
+      {tab === "data" && <LocalData />}
       {tab === "personalization" && (
         <VocabularyPage
           words={s.customWords}

@@ -37,6 +37,7 @@ import {
   normalizeSettings,
   StorageService,
 } from "./services/storage";
+import { localDataOverview } from "./services/localData";
 import { exportRecord } from "./services/transcripts";
 import { UpdateService } from "./services/updates";
 import {
@@ -624,6 +625,7 @@ function registerIpc(): void {
   });
   handle("renderer:controllerFailed", () => dictation.recorderUnavailable());
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
+  handle("storage:overview", () => localDataOverview(storage));
   handle("dictation:pasteLast", async () => {
     const record = lastTranscript
       ? (storage.findHistory(lastTranscript.id) ?? lastTranscript)
