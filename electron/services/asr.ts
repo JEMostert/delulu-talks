@@ -9,6 +9,8 @@ import type {
   MagicRewriteRequest,
   MagicRewriteResult,
   MagicStatus,
+  RuntimeSetupKind,
+  RuntimeSetupLog,
   RetryAudioState,
 } from "../../src/types";
 import type { StorageService } from "./storage";
@@ -17,6 +19,18 @@ import { WorkerClient, transcriptionTimeout } from "../runtime/workerClient";
 import { SerialQueue } from "../runtime/serialQueue";
 import { RuntimeInstaller } from "../runtime/installer";
 import { speechModelForPlatform } from "../runtime/platform";
+
+function setupCause(error: unknown, depth = 0): string {
+  if (depth > 4) return "Additional nested causes omitted";
+  const message = error instanceof Error
+    ? `${error.name}: ${error.message.slice(0, 2048)}`
+    : String(error).slice(0, 2048);
+  if (error instanceof AggregateError)
+    return `${message}\n${error.errors.slice(0, 4).map((cause) => setupCause(cause, depth + 1)).join("\n")}`;
+  if (error instanceof Error && error.cause !== undefined)
+    return `${message}\nCaused by: ${setupCause(error.cause, depth + 1)}`;
+  return message;
+}
 
 function conciseError(value: string): string {
   const lines = value
@@ -161,6 +175,11 @@ export class AsrService {
     return () => this.statusListeners.delete(listener);
   }
 
+  getSetupLog(kind: RuntimeSetupKind): RuntimeSetupLog {
+    return (kind === "speech" ? this.speechInstaller : this.magicInstaller)
+      .setupLog.snapshot(kind);
+  }
+
   getStatus(): DictationStatus {
     return structuredClone(this.status);
   }
@@ -287,7 +306,20 @@ export class AsrService {
     this.shuttingDown = false;
     this.setupPromise = this.maintenance
       .run(() => this.performSetup(settings))
+      .then(() => {
+        this.speechInstaller.recordSetupOutcome("Model preparation completed");
+        this.speechInstaller.setupLog.finish(
+          this.speechInstaller.setupLog.activeId, "success",
+          "Runtime packages and model load/warmup completed",
+        );
+      })
       .catch(async (error) => {
+        this.speechInstaller.recordSetupOutcome("Setup failed before completion");
+        this.speechInstaller.setupLog.finish(
+          this.speechInstaller.setupLog.activeId,
+          this.speechInstaller.isCancelled ? "cancelled" : "error",
+          setupCause(error),
+        );
         this.fail(error);
         if (
           !(error instanceof SetupRollbackError) &&
@@ -310,6 +342,8 @@ export class AsrService {
   }
 
   private async performSetup(settings: AppSettings): Promise<void> {
+    this.speechInstaller.setupLog.begin("speech");
+    this.speechInstaller.recordSetupStage("Preparing speech setup");
     const reloadMagic =
       settings.preloadMagicModel && (await this.isMagicEnvironmentReady());
     await this.speechWorker.stopAndWait();
@@ -326,9 +360,11 @@ export class AsrService {
       message: "Downloading and loading the selected model",
       progress: 0.82,
     });
+    this.speechInstaller.recordSetupStage("Downloading, loading and warming up the speech model");
     try {
       await this.loadModel(settings, true);
       if (reloadMagic && this.magicStatus.engine !== "ready") {
+        this.speechInstaller.recordSetupStage("Restoring preloaded rewrite model");
         await this.loadMagic(settings, true);
       }
     } catch (error) {
@@ -347,7 +383,20 @@ export class AsrService {
     this.shuttingDown = false;
     this.magicSetupPromise = this.maintenance
       .run(() => this.performMagicSetup(settings))
+      .then(() => {
+        this.magicInstaller.recordSetupOutcome("Rewrite model preparation completed");
+        this.magicInstaller.setupLog.finish(
+          this.magicInstaller.setupLog.activeId, "success",
+          "Runtime packages and rewrite model load/warmup completed",
+        );
+      })
       .catch(async (error) => {
+        this.magicInstaller.recordSetupOutcome("Setup failed before completion");
+        this.magicInstaller.setupLog.finish(
+          this.magicInstaller.setupLog.activeId,
+          this.magicInstaller.isCancelled ? "cancelled" : "error",
+          setupCause(error),
+        );
         this.failMagic(error);
         if (
           !(error instanceof SetupRollbackError) &&
@@ -370,6 +419,8 @@ export class AsrService {
   }
 
   private async performMagicSetup(settings: AppSettings): Promise<void> {
+    this.magicInstaller.setupLog.begin("rewrite");
+    this.magicInstaller.recordSetupStage("Preparing rewrite setup");
     const reloadSpeech =
       settings.preloadModel && (await this.isEnvironmentReady());
     await this.magicWorker.stopAndWait();
@@ -387,10 +438,13 @@ export class AsrService {
       message: `Downloading and loading ${model.name}`,
       progress: 0.82,
     });
+    this.magicInstaller.recordSetupStage("Downloading, loading and warming up the rewrite model");
     try {
       await this.loadMagic(settings, true);
-      if (reloadSpeech && this.status.engine !== "ready")
+      if (reloadSpeech && this.status.engine !== "ready") {
+        this.magicInstaller.recordSetupStage("Restoring preloaded speech model");
         await this.loadModel(settings, true);
+      }
     } catch (error) {
       await this.magicWorker.stopAndWait();
       try {

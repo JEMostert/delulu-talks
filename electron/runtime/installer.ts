@@ -1,3 +1,4 @@
+import { SetupLog } from "./setupLog";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,6 +43,44 @@ const WINDOWS_READINESS =
 
 /** Owns interpreter discovery and package installation; model loading is separate. */
 export class RuntimeInstaller {
+  readonly setupLog = new SetupLog();
+  private setupStage = "Runtime preflight";
+  private stageStarted: { attemptId: string; at: number } | null = null;
+
+  recordSetupStage(message: string): void {
+    const attemptId = this.setupLog.activeId;
+    const now = performance.now();
+    if (attemptId && this.stageStarted?.attemptId === attemptId)
+      this.setupLog.record(attemptId, {
+        type: "stage",
+        stage: this.setupStage,
+        message: "Stage ended",
+        durationMs: Math.round(now - this.stageStarted.at),
+      });
+    this.setupStage = message;
+    this.stageStarted = attemptId ? { attemptId, at: now } : null;
+    this.setupLog.record(attemptId, {
+      type: "stage",
+      stage: message,
+      message,
+    });
+  }
+
+  recordSetupOutcome(message: string): void {
+    const attemptId = this.setupLog.activeId;
+    this.setupLog.record(attemptId, {
+      type: "stage",
+      stage: this.setupStage,
+      message,
+      ...(attemptId && this.stageStarted?.attemptId === attemptId
+        ? { durationMs: Math.round(performance.now() - this.stageStarted.at) }
+        : {}),
+    });
+  }
+
+  get isCancelled(): boolean {
+    return this.cancelled;
+  }
   private processes = new Set<ReturnType<typeof spawn>>();
   private cancelled = false;
   private validatedPython: string | null = null;
@@ -69,8 +108,10 @@ export class RuntimeInstaller {
     return runtimePython(this.paths.venvDirectory);
   }
   rollback(): void {
+    this.recordSetupStage("Restoring the previous active runtime");
     this.validatedPython = null;
     rollbackRuntime(this.paths.venvDirectory);
+    this.recordSetupStage("Previous runtime activation restored");
   }
 
   private run(
@@ -85,6 +126,15 @@ export class RuntimeInstaller {
           "Runtime setup cancelled. The previous environment is unchanged.",
         ),
       );
+    const attemptId = this.setupLog.activeId;
+    const stage = this.setupStage;
+    const started = performance.now();
+    this.setupLog.record(attemptId, {
+      type: "command",
+      stage,
+      message: "Starting runtime command",
+      command: { program, args: [...args] },
+    });
     return new Promise((resolve, reject) => {
       const child = spawn(program, args, {
         windowsHide: true,
@@ -94,6 +144,12 @@ export class RuntimeInstaller {
       let output = "";
       let diagnostic = "";
       const timer = setTimeout(() => {
+        this.setupLog.record(attemptId, {
+          type: "error",
+          stage,
+          message: "Runtime command timed out; termination requested",
+          durationMs: Math.round(performance.now() - started),
+        });
         child.kill();
         reject(
           new Error(
@@ -103,10 +159,16 @@ export class RuntimeInstaller {
       }, timeoutMs);
       child.stdout.on("data", (chunk) => {
         output = `${output}${chunk}`.slice(-256_000);
+        this.setupLog.record(attemptId, {
+          type: "stdout", stage, message: String(chunk),
+        });
         onOutput?.(String(chunk));
       });
       child.stderr.on("data", (chunk) => {
         diagnostic = `${diagnostic}${chunk}`.slice(-16_000);
+        this.setupLog.record(attemptId, {
+          type: "stderr", stage, message: String(chunk),
+        });
         onOutput?.(String(chunk));
       });
       const finish = () => {
@@ -114,10 +176,19 @@ export class RuntimeInstaller {
         this.processes.delete(child);
       };
       child.once("error", (error) => {
+        this.setupLog.record(attemptId, {
+          type: "error", stage, message: error.message,
+          durationMs: Math.round(performance.now() - started),
+        });
         finish();
         reject(error);
       });
-      child.once("close", (code) => {
+      child.once("close", (code, signal) => {
+        this.setupLog.record(attemptId, {
+          type: "exit", stage, message: "Runtime command closed",
+          durationMs: Math.round(performance.now() - started),
+          exitCode: code, signal,
+        });
         finish();
         if (code === 0) resolve(output.trim());
         else
@@ -128,6 +199,10 @@ export class RuntimeInstaller {
     });
   }
   stop(): void {
+    this.setupLog.record(this.setupLog.activeId, {
+      type: "stage", stage: this.setupStage,
+      message: "Setup cancellation requested; terminating installer processes",
+    });
     this.cancelled = true;
     for (const child of this.processes) child.kill();
     this.processes.clear();
@@ -220,12 +295,14 @@ export class RuntimeInstaller {
       message: string,
       progress: number,
     ) => {
+      this.recordSetupStage(message);
       publish({ message, progress });
       return this.run(program, args, (output) => {
         const detail = output.trim().split(/\r?\n/).at(-1)?.slice(-350);
         if (detail) publish({ message, progress, detail });
       });
     };
+    this.recordSetupStage("Checking your Python environment");
     publish({ message: "Checking your Python environment", progress: 0.05 });
     mkdirSync(this.paths.dataDirectory, { recursive: true });
     const generation = randomUUID();
@@ -330,6 +407,7 @@ export class RuntimeInstaller {
       "Validating the new runtime before switching",
       0.76,
     );
+    this.recordSetupStage("Recording installed package versions");
     const versions = await this.run(
       candidatePython,
       ["-m", "pip", "freeze"],
@@ -341,6 +419,7 @@ export class RuntimeInstaller {
       `# Delulu runtime ${RUNTIME_REVISION}\n${versions}\n`,
       { mode: 0o600 },
     );
+    this.recordSetupStage("Recording the runtime dependency inventory");
     publish({
       message: "Recording the runtime dependency inventory",
       progress: 0.78,
@@ -376,6 +455,7 @@ export class RuntimeInstaller {
       throw new Error(
         "Runtime setup cancelled. The previous environment is unchanged.",
       );
+    this.recordSetupStage("Activating the validated runtime generation");
     activateRuntime(this.paths.venvDirectory, generation);
     publish({
       message: "Runtime installed. Preparing your model…",

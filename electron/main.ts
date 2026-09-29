@@ -721,6 +721,11 @@ function registerIpc(): void {
     dictation.recorderUnavailable();
   });
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
+  handle("runtime:setupLog", (_event, kind: unknown) => {
+    if (kind !== "speech" && kind !== "rewrite")
+      throw new Error("Choose speech or rewriting setup logs");
+    return asr.getSetupLog(kind);
+  });
   handle("storage:overview", () => localDataOverview(storage));
   handle("dictation:pasteLast", () => schedulePasteLast());
   handle("dictation:pasteLastStatus", () => pasteLast.getStatus());

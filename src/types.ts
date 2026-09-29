@@ -283,6 +283,7 @@ export type DeluluApi = {
   rendererControllerFailed(): Promise<void>;
   getSettings(): Promise<AppSettings>;
   getDiagnostics(): Promise<RuntimeDiagnostics>;
+  getSetupLog(kind: RuntimeSetupKind): Promise<RuntimeSetupLog>;
   getPasteRecovery(): Promise<PasteRecovery | null>;
   copyInstead(id: string): Promise<void>;
   dismissPasteRecovery(id: string): Promise<void>;
@@ -358,6 +359,29 @@ export type RendererRecoveryState = {
   canReload: boolean;
   reason: string | null;
   canStopRecording: boolean;
+};
+
+export type RuntimeSetupKind = "speech" | "rewrite";
+export type RuntimeSetupLogEntry = {
+  at: number;
+  type: "stage" | "command" | "stdout" | "stderr" | "exit" | "error";
+  stage: string;
+  message: string;
+  command?: { program: string; args: string[] };
+  durationMs?: number;
+  exitCode?: number | null;
+  signal?: string | null;
+};
+export type RuntimeSetupLog = {
+  kind: RuntimeSetupKind;
+  attemptId: string | null;
+  startedAt: number | null;
+  finishedAt: number | null;
+  outcome: "idle" | "running" | "success" | "error" | "cancelled";
+  entries: RuntimeSetupLogEntry[];
+  truncated: boolean;
+  maxEntries: number;
+  maxCharacters: number;
 };
 
 export type AccessibilityPermission = {
