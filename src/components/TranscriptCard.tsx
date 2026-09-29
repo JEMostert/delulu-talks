@@ -1,3 +1,5 @@
+import { ExportTemplateDialog } from "./ExportTemplateDialog";
+import type { ExportTemplateRequest } from "../exportTemplates";
 import { RewriteDialog } from "./RewriteDialog";
 import { TranscriptTitleDialog } from "./TranscriptTitleDialog";
 import { SuggestedRulePreview } from "./SuggestedRulePreview";
@@ -44,6 +46,10 @@ export type TranscriptActions = {
   onSetTitle?: (id: string, title: string | null) => Promise<boolean>;
   onDelete?: (id: string) => void;
   onExport?: (id: string, format: ExportFormat) => void;
+  onExportTemplate?: (
+    id: string,
+    request: ExportTemplateRequest,
+  ) => Promise<string | null>;
   onRemember?: (word: CustomWord) => Promise<boolean>;
   ruleExamples?: TranscriptRecord[];
 };
@@ -56,6 +62,7 @@ export function TranscriptCard({
   onSetTitle,
   onDelete,
   onExport,
+  onExportTemplate,
   onRemember,
   ruleExamples,
   onRewrite,
@@ -67,6 +74,7 @@ export function TranscriptCard({
   defaultOpen?: boolean;
   inspector?: boolean;
 }) {
+  const [templateExport, setTemplateExport] = useState(false);
   const [open, setOpen] = useState(defaultOpen || inspector);
   const [showSource, setShowSource] = useState(false);
   const [rewriting, setRewriting] = useState(false);
@@ -457,9 +465,24 @@ export function TranscriptCard({
                   {format === "md" ? "Markdown" : format.toUpperCase()}
                 </button>
               ))}
+              {onExportTemplate && (
+                <button
+                  className="tool-button"
+                  onClick={() => setTemplateExport(true)}
+                >
+                  <Download /> Template…
+                </button>
+              )}
             </div>
           )}
         </div>
+      )}
+      {templateExport && onExportTemplate && (
+        <ExportTemplateDialog
+          record={record}
+          onClose={() => setTemplateExport(false)}
+          onExport={(request) => onExportTemplate(record.id, request)}
+        />
       )}
       {rewriting && onRewrite && onSetRewrite && (
         <RewriteDialog

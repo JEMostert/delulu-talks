@@ -83,6 +83,8 @@ const api: DeluluApi = {
   runLab: (request: LabRequest) => ipcRenderer.invoke("lab:run", request),
   exportTranscript: (id: string, format: ExportFormat) =>
     ipcRenderer.invoke("history:export", id, format),
+  exportTranscriptTemplate: (id, request) =>
+    ipcRenderer.invoke("history:exportTemplate", id, request),
   recordingStarted: (sessionId: string) =>
     ipcRenderer.invoke("recorder:started", sessionId),
   recordingLimitReached: (sessionId: string) =>

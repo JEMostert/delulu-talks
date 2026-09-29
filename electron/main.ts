@@ -42,8 +42,12 @@ import {
   normalizeSettings,
   StorageService,
 } from "./services/storage";
+import { exportRecord, saveTemplateExport } from "./services/transcripts";
+import {
+  renderExportTemplate,
+  validateExportTemplateRequest,
+} from "../src/exportTemplates";
 import { localDataOverview } from "./services/localData";
-import { exportRecord } from "./services/transcripts";
 import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { UpdateService } from "./services/updates";
 import {
@@ -943,6 +947,47 @@ function registerIpc(): void {
       throw new Error("Choose the source file through Audio files first");
     return dictation.runLab({ path });
   });
+  handle(
+    "history:exportTemplate",
+    async (_event, id: unknown, input: unknown) => {
+      const key = validateText(id, 128);
+      const request = validateExportTemplateRequest(input);
+      const findRecord = () =>
+        sessionTranscripts.get(key) ?? storage.findHistory(key);
+      const renderCurrent = () => {
+        const record = findRecord();
+        if (!record) throw new Error("Transcript no longer exists");
+        const text = renderExportTemplate(record, request);
+        if (text !== request.expectedOutput)
+          throw new Error(
+            "The transcript changed. Reopen the export preview before saving.",
+          );
+        return { record, text };
+      };
+      const { record } = renderCurrent();
+      const stem = (record.sourceName ?? `delulu-${record.createdAt}`)
+        .replace(/[/\\]/g, "-")
+        .replace(/\.[^.]+$/, "");
+      const extension = request.extension;
+      const options: Electron.SaveDialogOptions = {
+        title: "Save transcript template",
+        defaultPath: `${stem}.${extension}`,
+        filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
+        properties: ["showOverwriteConfirmation"],
+      };
+      const result = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) return null;
+      // The native dialog confirms the actual destination, including its suffix.
+      // Do not silently append a suffix after its overwrite confirmation.
+      if (extname(result.filePath).toLowerCase() !== `.${extension}`)
+        throw new Error(`Choose a filename ending in .${extension}.`);
+      const { text } = renderCurrent();
+      saveTemplateExport(result.filePath, text);
+      return result.filePath;
+    },
+  );
   handle(
     "history:export",
     async (_event, id: unknown, requestedFormat: ExportFormat) => {

@@ -1,3 +1,4 @@
+import type { ExportTemplateRequest } from "./exportTemplates";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
 
@@ -292,6 +293,10 @@ export type DeluluApi = {
   chooseAudioFile(): Promise<AudioFileSelection | null>;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
+  exportTranscriptTemplate(
+    id: string,
+    request: ExportTemplateRequest,
+  ): Promise<string | null>;
   recordingStarted(sessionId: string): Promise<void>;
   recordingLimitReached(sessionId: string): Promise<void>;
   recorderReady(): Promise<void>;
