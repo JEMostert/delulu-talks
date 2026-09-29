@@ -66,6 +66,7 @@ export type AppSettings = {
   preloadMagicModel: boolean;
   modelIdleMinutes: number;
   launchAtLogin: boolean;
+  menuBarOnly: boolean;
   customWords: CustomWord[];
   /** Stored contract only; no active profile or automatic behavior change. */
   personalProfiles?: PersonalProfileDocument;
