@@ -1,4 +1,5 @@
 import { CaptureDiagnostics } from "../components/CaptureDiagnostics";
+import { InputLevel } from "../components/InputLevel";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
@@ -285,6 +286,7 @@ export function HomePage({
                 )}
               </div>
             </div>
+            <InputLevel />
             <CaptureDiagnostics value={captureDiagnostics} />
             {!shortcutStatus.registered && (
               <p className="control-warning">{shortcutStatus.message}</p>
