@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { changePersonalProfiles } from "../src/personalProfileCommands";
 import {
   app,
   BrowserWindow,
@@ -13,23 +15,34 @@ import type { MenuItemConstructorOptions } from "electron";
 import electronUpdater from "electron-updater";
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import type {
   AppSettings,
   ExportFormat,
+  HistoryRetentionPreview,
   LabRequest,
   MagicPreset,
   MagicRewriteRequest,
   Page,
+  PasteRecovery,
   RecordingSubmission,
   TranscriptRecord,
 } from "../src/types";
+import { isMagicPreset, REWRITE_PRESETS } from "../src/rewritePresets";
+import { validateRewriteInstructions } from "../src/rewriteInstructions";
+import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
 import { modelById } from "../src/data";
-import { deliveredText } from "../src/transcriptText";
+import { runtimeSetupSnapshot } from "./runtime/setupSnapshot";
+import { deliveredText, transcriptSourceRevision } from "../src/transcriptText";
+import { normalizeTranscriptTitle } from "../src/transcriptTitle";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
+import { ModelCacheService } from "./services/modelCache";
 import { DictationService } from "./services/dictation";
+import { RuleUsageService } from "./services/ruleUsage";
 import { PasteService } from "./services/paste";
+import { PasteLastService } from "./services/pasteLast";
 import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
 import {
@@ -37,7 +50,14 @@ import {
   normalizeSettings,
   StorageService,
 } from "./services/storage";
-import { exportRecord } from "./services/transcripts";
+import { affectedByRetention, historyFingerprint, validateRetentionPolicy } from "./services/historyRetention";
+import { exportRecord, saveTemplateExport } from "./services/transcripts";
+import {
+  renderExportTemplate,
+  validateExportTemplateRequest,
+} from "../src/exportTemplates";
+import { localDataOverview } from "./services/localData";
+import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { UpdateService } from "./services/updates";
 import {
   rendererRecoveryState,
@@ -75,15 +95,33 @@ let tray: Tray | null = null;
 let quitting = false;
 let storage: StorageService;
 let asr: AsrService;
+let modelCache: ModelCacheService;
 let paste: PasteService;
+let pasteLast: PasteLastService;
 let pill: PillService;
 let dictation: DictationService;
+let ruleUsage: RuleUsageService;
 let shortcut: ShortcutService;
 let updates: UpdateService;
 const settingsQueue = new SerialQueue();
 let lastTranscript: TranscriptRecord | null = null;
 const sessionTranscripts = new Map<string, TranscriptRecord>();
+let pasteRecovery: PasteRecovery | null = null;
+
+function setPasteRecovery(recovery: PasteRecovery | null): void {
+  pasteRecovery = recovery;
+  broadcast("paste:recoveryChanged", recovery);
+}
 const selectedAudioFiles = new Set<string>();
+let retentionPreview: {
+  preview: HistoryRetentionPreview;
+  savedFingerprint: string;
+  fullFingerprint: string;
+} | null = null;
+
+function retentionHistoryFingerprint(saved: TranscriptRecord[]): string {
+  return historyFingerprint({ saved, session: [...sessionTranscripts.values()] });
+}
 
 function preloadPath(): string {
   return join(__dirname, "../preload/preload.cjs");
@@ -108,6 +146,27 @@ function broadcast(channel: string, value: unknown): void {
     mainWindow.webContents.send(channel, value);
 }
 
+function menuBarOnlyActive(): boolean {
+  return (
+    process.platform === "darwin" &&
+    !smokeTest &&
+    !!tray &&
+    storage.getSettings().menuBarOnly
+  );
+}
+
+function syncMacDock(): void {
+  if (process.platform !== "darwin" || smokeTest || !app.dock) return;
+  if (menuBarOnlyActive()) app.dock.hide();
+  else
+    void app.dock.show().catch(() => {
+      broadcast(
+        "app:message",
+        "Could not show the Dock icon. Use the menu bar to reopen Delulu Talks.",
+      );
+    });
+}
+
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
     title: "Delulu Talks",
@@ -129,6 +188,9 @@ function createMainWindow(): BrowserWindow {
     },
   });
   const reveal = () => {
+    // Keep the renderer alive for capture, but require an installed tray before
+    // suppressing startup visibility. Explicit reopen actions still show it.
+    if (menuBarOnlyActive()) return;
     if (!window.isDestroyed() && !window.isVisible()) window.show();
   };
   window.once("ready-to-show", reveal);
@@ -180,10 +242,10 @@ function engineLabel(status: {
   migrationRequired?: boolean;
 }): string {
   if (status.engine === "missing" && status.migrationRequired)
-    return "Update setup";
+    return "Update runtime";
   return {
     missing: "Setup needed",
-    unloaded: "Sleeping",
+    unloaded: "Model not loaded",
     settingUp: "Installing…",
     loading: "Loading…",
     ready: "Ready",
@@ -233,27 +295,27 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
           }
         : {
             label: speech.migrationRequired
-              ? "Update speech setup…"
-              : "Set up speech model…",
+              ? "Update speech runtime…"
+              : "Set up speech runtime…",
             enabled: !speechBusy,
             click: () => showMainWindow("models"),
           };
   const magicAction: MenuItemConstructorOptions =
     magic.engine === "ready"
       ? {
-          label: "Unload Magic model",
+          label: "Unload rewrite model",
           enabled: !magicBusy,
           click: () => runTrayAction(() => asr.unloadMagic(), true),
         }
       : magic.engine === "unloaded"
         ? {
-            label: "Load Magic model now",
+            label: "Load rewrite model now",
             enabled: !magicBusy,
             click: () =>
               runTrayAction(() => asr.loadMagic(storage.getSettings()), true),
           }
         : {
-            label: "Set up Magic model…",
+            label: "Set up rewrite runtime…",
             enabled: !magicBusy,
             click: () => showMainWindow("models"),
           };
@@ -273,19 +335,32 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
     },
     { type: "separator" },
     {
-      label: `Writing · ${engineLabel(magic)}`,
+      label: `Rewriting · ${engineLabel(magic)}`,
       sublabel: magic.message,
       enabled: false,
     },
     magicAction,
     {
       type: "checkbox",
-      label: "Keep writing model ready",
+      label: "Keep rewrite model ready",
       checked: settings.preloadMagicModel,
       click: () =>
         patchTraySettings({ preloadMagicModel: !settings.preloadMagicModel }),
     },
   ];
+}
+
+function schedulePasteLast() {
+  const record = lastTranscript
+    ? (storage.findHistory(lastTranscript.id) ??
+      sessionTranscripts.get(lastTranscript.id))
+    : storage.getHistory()[0];
+  if (!record) throw new Error("Record something first");
+  return pasteLast.start(
+    record.id,
+    deliveredText(record),
+    storage.getSettings().pasteLastDelaySeconds,
+  );
 }
 
 function rebuildTrayMenu(): void {
@@ -303,12 +378,9 @@ function rebuildTrayMenu(): void {
   const update = updates?.getStatus();
   const speechUnavailable =
     status.engine === "missing" || status.engine === "error";
-  const presets: Array<[MagicPreset, string]> = [
-    ["polish", "Polish naturally"],
-    ["concise", "Make it concise"],
-    ["structured", "Structure the details"],
-    ["prompt", "Build an actionable prompt"],
-  ];
+  const presets: Array<[MagicPreset, string]> = REWRITE_PRESETS.map(
+    ({ id, label }) => [id, label],
+  );
   const template: MenuItemConstructorOptions[] = [
     { label: "DELULU TALKS", enabled: false },
     {
@@ -329,11 +401,25 @@ function rebuildTrayMenu(): void {
     { label: "Open Delulu Talks", click: () => showMainWindow("home") },
     {
       label: "Paste latest result",
-      enabled: Boolean(latest) && !dictation.isActive,
+      enabled:
+        Boolean(latest) &&
+        !dictation.isActive &&
+        !["pending", "delivering"].includes(
+          pasteLast?.getStatus().phase ?? "idle",
+        ),
       click: () =>
         runTrayAction(async () => {
-          if (latest) await paste.paste(deliveredText(latest));
+          schedulePasteLast();
         }),
+    },
+    {
+      label:
+        pasteLast?.getStatus().phase === "pending"
+          ? `Cancel scheduled paste (${pasteLast.getStatus().remainingSeconds}s)`
+          : "Cancel scheduled paste",
+      enabled: pasteLast?.getStatus().phase === "pending",
+      click: () =>
+        pasteLast.cancelPending("Scheduled paste cancelled from the tray."),
     },
     {
       label: "Copy latest result",
@@ -348,12 +434,12 @@ function rebuildTrayMenu(): void {
     { type: "separator" },
     {
       type: "checkbox",
-      label: "✦  Magic after dictation",
+      label: "✦  Rewrite after dictation",
       checked: settings.magicEnabled,
       click: () => patchTraySettings({ magicEnabled: !settings.magicEnabled }),
     },
     {
-      label: "Magic style",
+      label: "Rewrite style",
       enabled: settings.magicEnabled,
       submenu: presets.map(([preset, label]) => ({
         type: "radio",
@@ -405,12 +491,12 @@ function rebuildTrayMenu(): void {
         },
       ],
     },
-    { label: "Local engines", submenu: runtimeMenu(settings) },
+    { label: "Models & runtimes", submenu: runtimeMenu(settings) },
     {
       label: "Open workspace",
       submenu: [
         { label: "History", click: () => showMainWindow("history") },
-        { label: "Models & runtime", click: () => showMainWindow("models") },
+        { label: "Models & runtimes", click: () => showMainWindow("models") },
         { label: "Settings", click: () => showMainWindow("settings") },
       ],
     },
@@ -422,6 +508,17 @@ function rebuildTrayMenu(): void {
       click: () =>
         patchTraySettings({ launchAtLogin: !settings.launchAtLogin }),
     },
+    ...(process.platform === "darwin"
+      ? [
+          {
+            type: "checkbox" as const,
+            label: "Menu bar only (hide Dock icon)",
+            checked: settings.menuBarOnly,
+            click: () =>
+              patchTraySettings({ menuBarOnly: !settings.menuBarOnly }),
+          },
+        ]
+      : []),
     update
       ? {
           label:
@@ -464,7 +561,7 @@ function rebuildTrayMenu(): void {
         ? "Ready"
         : engineLabel(status);
   tray.setToolTip(
-    `Delulu Talks — ${state}${settings.magicEnabled ? ` · Magic ${engineLabel(magic)}` : " · Magic off"}`,
+    `Delulu Talks — ${state}${settings.magicEnabled ? ` · Rewriting ${engineLabel(magic)}` : " · Rewriting off"}`,
   );
 }
 
@@ -483,6 +580,7 @@ function installTray(): void {
   tray = new Tray(trayIcon);
   rebuildTrayMenu();
   tray.on("click", () => showMainWindow("home"));
+  syncMacDock();
 }
 
 function ensureDevelopmentDesktopEntry(): void {
@@ -539,29 +637,38 @@ async function applySettings(value: unknown): Promise<AppSettings> {
   const previous = storage.getSettings();
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Expected a settings object");
+  assertPersonalProfilesUpdate(
+    previous.personalProfiles,
+    Object.prototype.hasOwnProperty.call(value, "personalProfiles")
+      ? (value as Record<string, unknown>).personalProfiles
+      : previous.personalProfiles,
+  );
   const next = normalizeSettings({ ...previous, ...value });
-  if (next.shortcut !== previous.shortcut) {
-    try {
-      await shortcut.register(next.shortcut);
-    } catch {
-      await shortcut.register(previous.shortcut).catch(() => undefined);
-      throw new Error(
-        `Global shortcut '${next.shortcut}' is unavailable. ${previous.shortcut} remains active.`,
-      );
-    }
-  }
   const runtimeChanged = next.model !== previous.model;
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
-  if (
-    (runtimeChanged ||
-      magicRuntimeChanged ||
-      next.magicEnabled !== previous.magicEnabled) &&
-    (dictation.isActive || asr.isBusy)
-  )
-    throw new Error(
-      "Finish the current recording or model operation before changing engines",
-    );
-  const saved = storage.updateSettings(next);
+  const assertEngineChangeIdle = () => {
+    if (
+      (runtimeChanged ||
+        magicRuntimeChanged ||
+        next.magicEnabled !== previous.magicEnabled) &&
+      (dictation.isActive || asr.isBusy)
+    )
+      throw new Error(
+        "Finish the current recording or model operation before changing models",
+      );
+  };
+  assertEngineChangeIdle();
+  const persist = () => {
+    // Portal registration can await permission while capture/inference starts.
+    // Revalidate before the write, so the transaction restores the old shortcut.
+    assertEngineChangeIdle();
+    return storage.updateSettings(next);
+  };
+  const saved =
+    next.shortcut !== previous.shortcut
+      ? await shortcut.change(next.shortcut, previous.shortcut, persist)
+      : persist();
+  if (saved.menuBarOnly !== previous.menuBarOnly) syncMacDock();
   if (
     !smokeTest &&
     app.isPackaged &&
@@ -617,33 +724,101 @@ function registerIpc(): void {
   );
   handle("renderer:reload", (event) => {
     reloadRenderer(recoveryInput(), () => {
+      pasteLast.cancelPending(
+      "Scheduled paste cancelled because the workspace reloaded.",
+    );
       // Close the shortcut start race until the new controller calls ready.
       dictation.recorderUnavailable();
       event.sender.reload();
     });
   });
-  handle("renderer:controllerFailed", () => dictation.recorderUnavailable());
+  handle("renderer:controllerFailed", () => {
+    pasteLast.cancelPending(
+      "Scheduled paste cancelled because the workspace controller failed.",
+    );
+    dictation.recorderUnavailable();
+  });
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
-  handle("dictation:pasteLast", async () => {
-    const record = lastTranscript
-      ? (storage.findHistory(lastTranscript.id) ?? lastTranscript)
-      : storage.getHistory()[0];
-    if (!record) throw new Error("Record something first");
-    if (dictation.isActive)
-      throw new Error("Finish the current recording first");
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
-    if (dictation.isActive)
-      throw new Error("Paste cancelled because a recording started");
-    const current =
-      storage.findHistory(record.id) ?? sessionTranscripts.get(record.id);
-    if (!current)
-      throw new Error("Paste cancelled because the transcript was removed");
-    await paste.paste(deliveredText(current));
+  handle("cache:preview", () => modelCache.preview());
+  handle("cache:cleanup", (_event, token: unknown, ids: unknown) => {
+    assertRuntimeIdle();
+    if (settingsQueue.busy)
+      throw new Error("Wait for settings to finish saving before cleaning the cache");
+    const unloaded = new Set(["unloaded", "missing"]);
+    if (
+      !unloaded.has(asr.getStatus().engine) ||
+      !unloaded.has(asr.getMagicStatus().engine)
+    )
+      throw new Error("Explicitly unload speech and rewriting before deleting cached models");
+    if (
+      typeof token !== "string" || token.length > 128 ||
+      !Array.isArray(ids) || ids.length === 0 || ids.length > 100 ||
+      ids.some((id) => typeof id !== "string" || id.length > 512)
+    )
+      throw new Error("Select cached models from a fresh preview");
+    // Stay synchronous after the authoritative idle/residency checks: another
+    // IPC request cannot start loading a model between the guard and deletion.
+    return modelCache.cleanup(token, ids as string[]);
+  });
+  handle("runtime:setupSnapshot", () => runtimeSetupSnapshot(storage));
+  handle("runtime:setupLog", (_event, kind: unknown) => {
+    if (kind !== "speech" && kind !== "rewrite")
+      throw new Error("Choose speech or rewriting setup logs");
+    return asr.getSetupLog(kind);
+  });
+  handle("storage:overview", () => localDataOverview(storage));
+  handle("dictation:pasteLast", () => schedulePasteLast());
+  handle("dictation:pasteLastStatus", () => pasteLast.getStatus());
+  handle("dictation:cancelPasteLast", (_event, operationId: unknown) => {
+    if (typeof operationId !== "string")
+      throw new Error("Invalid paste operation");
+    return pasteLast.cancel(operationId);
+  });
+  handle("paste:recovery", () => pasteRecovery);
+  handle("paste:dismissRecovery", (_event, id: unknown) => {
+    const key = validateText(id, 128);
+    if (pasteRecovery?.transcriptId === key) setPasteRecovery(null);
+  });
+  handle("paste:copyInstead", (_event, id: unknown) => {
+    const key = validateText(id, 128);
+    if (pasteRecovery?.transcriptId !== key)
+      throw new Error("This paste recovery is no longer available. Open History to copy a retained transcript.");
+    // Resolve at the moment of the action: edits apply, deleted records never fall back to cached text.
+    const record = storage.findHistory(key) ?? sessionTranscripts.get(key);
+    if (!record) {
+      setPasteRecovery(null);
+      throw new Error("The transcript was removed. Nothing was copied.");
+    }
+    try {
+      paste.copy(deliveredText(record));
+    } catch (error) {
+      const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+      setPasteRecovery({ transcriptId: key, detail: `Copy failed: ${detail}. Try Copy instead again, or open History to select the text manually.` });
+      throw new Error("Copy failed. Try again or select the text in History.");
+    }
+    setPasteRecovery(null);
   });
   handle("dictation:discardFailed", () => dictation.discardFailure());
   handle("dictation:retry", () => dictation.retry());
   handle("settings:get", () => storage.getSettings());
+  const ruleIds = () => storage.getSettings().customWords.map((rule) => rule.id);
+  handle("rules:usage", () => ruleUsage.get(ruleIds()));
+  handle("rules:resetUsage", () => {
+    ruleUsage.reset();
+    return ruleUsage.get(ruleIds());
+  });
   handle("settings:update", (_event, value: unknown) => persistSettings(value));
+  handle("profiles:manage", (_event, command: unknown) =>
+    settingsQueue.run(() =>
+      applySettings({
+        personalProfiles: changePersonalProfiles(
+          storage.getSettings(),
+          command,
+          randomUUID,
+        ),
+      }),
+    ),
+  );
   handle("runtime:status", () => asr.getStatus());
   handle("shortcut:status", () => shortcut.getStatus());
   handle("shortcut:configure", () => shortcut.configure());
@@ -678,21 +853,22 @@ function registerIpc(): void {
   });
   handle("magic:rewrite", (_event, value: unknown) => {
     if (!value || typeof value !== "object")
-      throw new Error("Expected a Magic rewrite request");
+      throw new Error("Expected a rewriting request");
     const source = value as Record<string, unknown>;
-    const preset = ["polish", "concise", "structured", "prompt"].includes(
-      String(source.preset),
-    )
+    const preset = isMagicPreset(source.preset)
       ? (source.preset as MagicRewriteRequest["preset"])
       : "polish";
     const request: MagicRewriteRequest = {
-      text: validateText(source.text, 50_000).trim(),
+      text: validateText(source.text, 50_000),
       preset,
-      instructions: validateText(source.instructions ?? "", 4_000).trim(),
+      instructions: validateRewriteInstructions(source.instructions),
+      sourceLanguage: source.sourceLanguage == null
+        ? undefined
+        : validateText(source.sourceLanguage, 64).trim(),
       allowInferences: source.allowInferences === true,
     };
-    if (!request.text)
-      throw new Error("Add a transcript or draft before using Magic");
+    if (!request.text.trim())
+      throw new Error("Add a transcript or draft before rewriting");
     assertRuntimeIdle();
     return asr.rewriteMagic(request, storage.getSettings());
   });
@@ -709,6 +885,9 @@ function registerIpc(): void {
   handle("dictation:cancel", () => dictation.cancel());
   handle("recorder:started", (_event, sessionId: unknown) =>
     dictation.recordingStarted(validateText(sessionId, 128)),
+  );
+  handle("recorder:limit", (_event, sessionId: unknown) =>
+    dictation.recordingLimitReached(validateText(sessionId, 128)),
   );
   handle("recorder:ready", () => dictation.recorderAvailable());
   handle(
@@ -761,6 +940,48 @@ function registerIpc(): void {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 500);
   });
+  handle("history:retentionPreview", (_event, value: unknown) => {
+    const policy = validateRetentionPolicy(value);
+    const saved = storage.getHistory();
+    // Show the same current text as History for saved records also held in this session.
+    const current = saved.map((record) => sessionTranscripts.get(record.id) ?? record);
+    const previewedAt = Date.now();
+    const affected = affectedByRetention(current, policy, previewedAt);
+    const preview: HistoryRetentionPreview = {
+      token: randomUUID(), policy, previewedAt,
+      totalSaved: saved.length,
+      retainedCount: saved.length - affected.length,
+      affected,
+    };
+    retentionPreview = {
+      preview,
+      savedFingerprint: historyFingerprint(saved),
+      fullFingerprint: retentionHistoryFingerprint(saved),
+    };
+    return preview;
+  });
+  handle("history:retentionApply", (_event, value: unknown) => {
+    const token = validateText(value, 128);
+    const pending = retentionPreview;
+    if (!pending || pending.preview.token !== token)
+      throw new Error("This retention preview is no longer available. Preview the records again.");
+    const saved = storage.getHistory();
+    if (retentionHistoryFingerprint(saved) !== pending.fullFingerprint) {
+      retentionPreview = null;
+      throw new Error("History changed since the preview. Preview the affected records again; nothing was removed.");
+    }
+    const removedIds = pending.preview.affected.map(({ record }) => record.id);
+    if (removedIds.length) {
+      // No await between snapshot comparison, durable write and session invalidation.
+      storage.applyHistoryRetention(pending.savedFingerprint, removedIds);
+      for (const id of removedIds) sessionTranscripts.delete(id);
+      if (lastTranscript && removedIds.includes(lastTranscript.id)) lastTranscript = null;
+    }
+    retentionPreview = null;
+    broadcast("history:retentionApplied", removedIds);
+    rebuildTrayMenu();
+    return removedIds;
+  });
   handle("history:updateTranscript", (_event, id: unknown, text: unknown) => {
     const key = validateText(id, 128);
     const correction = text === null ? null : validateText(text, 500_000);
@@ -776,13 +997,32 @@ function registerIpc(): void {
     rebuildTrayMenu();
     return updated;
   });
+  handle("history:setTitle", (_event, id: unknown, title: unknown) => {
+    const key = validateText(id, 128);
+    const normalized = normalizeTranscriptTitle(title);
+    const sessionRecord = sessionTranscripts.get(key);
+    const updated = storage.findHistory(key)
+      ? storage.setTranscriptTitle(key, normalized)
+      : sessionRecord
+        ? { ...sessionRecord, title: normalized }
+        : null;
+    if (!updated) throw new Error("Transcript not found");
+    // A rejected saved-history write leaves session and last-record state intact.
+    sessionTranscripts.set(key, updated);
+    if (lastTranscript?.id === key) lastTranscript = updated;
+    rebuildTrayMenu();
+    return updated;
+  });
   handle(
     "history:setRewrite",
-    (_event, id: unknown, value: unknown, expected: unknown) => {
+    (_event, id: unknown, value: unknown, expected: unknown, expectedRevision: unknown = 0) => {
       const key = validateText(id, 128);
       const record = storage.findHistory(key) ?? sessionTranscripts.get(key);
       if (!record) throw new Error("Transcript not found");
-      if (deliveredText(record) !== validateText(expected, 500_000))
+      if (!Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0)
+        throw new Error("Invalid transcript source revision");
+      if (transcriptSourceRevision(record) !== expectedRevision ||
+          deliveredText(record) !== validateText(expected, 500_000))
         throw new Error(
           "This transcript changed while rewriting. Review the current text and try again.",
         );
@@ -791,6 +1031,7 @@ function registerIpc(): void {
         updated = {
           ...record,
           magicText: null,
+          rewriteSourceRevision: null,
           magicModel: null,
           magicPreset: null,
           magicIncludedInferences: false,
@@ -800,14 +1041,13 @@ function registerIpc(): void {
         if (!value || typeof value !== "object")
           throw new Error("Invalid rewrite");
         const rewrite = value as Record<string, unknown>;
-        const text = validateText(rewrite.text, 500_000).trim();
-        if (!text) throw new Error("A rewrite cannot be empty");
+        const text = validateText(rewrite.text, 500_000);
+        if (!text.trim()) throw new Error("A rewrite cannot be empty");
         updated = {
           ...record,
           magicText: text,
-          magicPreset: ["polish", "concise", "structured", "prompt"].includes(
-            String(rewrite.preset),
-          )
+          rewriteSourceRevision: transcriptSourceRevision(record),
+          magicPreset: isMagicPreset(rewrite.preset)
             ? (rewrite.preset as MagicPreset)
             : null,
           magicModel: ["qwen35Small", "qwen35Medium", "qwen35Large"].includes(
@@ -832,12 +1072,14 @@ function registerIpc(): void {
     const key = validateText(id, 128);
     storage.deleteHistory(key);
     sessionTranscripts.delete(key);
+    if (pasteRecovery?.transcriptId === key) setPasteRecovery(null);
     if (lastTranscript?.id === key) lastTranscript = null;
     rebuildTrayMenu();
   });
   handle("history:clear", () => {
     storage.clearHistory();
     sessionTranscripts.clear();
+    setPasteRecovery(null);
     lastTranscript = null;
     rebuildTrayMenu();
   });
@@ -883,19 +1125,60 @@ function registerIpc(): void {
     return dictation.runLab({ path });
   });
   handle(
+    "history:exportTemplate",
+    async (_event, id: unknown, input: unknown) => {
+      const key = validateText(id, 128);
+      const request = validateExportTemplateRequest(input);
+      const findRecord = () =>
+        sessionTranscripts.get(key) ?? storage.findHistory(key);
+      const renderCurrent = () => {
+        const record = findRecord();
+        if (!record) throw new Error("Transcript no longer exists");
+        const text = renderExportTemplate(record, request);
+        if (text !== request.expectedOutput)
+          throw new Error(
+            "The transcript changed. Reopen the export preview before saving.",
+          );
+        return { record, text };
+      };
+      const { record } = renderCurrent();
+      const stem = (record.sourceName ?? `delulu-${record.createdAt}`)
+        .replace(/[/\\]/g, "-")
+        .replace(/\.[^.]+$/, "");
+      const extension = request.extension;
+      const options: Electron.SaveDialogOptions = {
+        title: "Save transcript template",
+        defaultPath: `${stem}.${extension}`,
+        filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
+        properties: ["showOverwriteConfirmation"],
+      };
+      const result = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) return null;
+      // The native dialog confirms the actual destination, including its suffix.
+      // Do not silently append a suffix after its overwrite confirmation.
+      if (extname(result.filePath).toLowerCase() !== `.${extension}`)
+        throw new Error(`Choose a filename ending in .${extension}.`);
+      const { text } = renderCurrent();
+      saveTemplateExport(result.filePath, text);
+      return result.filePath;
+    },
+  );
+  handle(
     "history:export",
     async (_event, id: unknown, requestedFormat: ExportFormat) => {
       const key = validateText(id, 128);
       const record = sessionTranscripts.get(key) ?? storage.findHistory(key);
       if (!record) throw new Error("Transcript not found");
-      const format = ["txt", "json"].includes(requestedFormat)
+      const format = ["txt", "json", "md"].includes(requestedFormat)
         ? requestedFormat
         : "txt";
       const defaultName = `${(record.sourceName ?? `delulu-${record.createdAt}`).replace(/\.[^.]+$/, "")}.${format}`;
       const options: Electron.SaveDialogOptions = {
-        title: `Export ${format.toUpperCase()}`,
+        title: format === "md" ? "Export Markdown note" : `Export ${format.toUpperCase()}`,
         defaultPath: defaultName,
-        filters: [{ name: format.toUpperCase(), extensions: [format] }],
+        filters: [{ name: format === "md" ? "Markdown notes" : format.toUpperCase(), extensions: [format] }],
       };
       const result = mainWindow
         ? await dialog.showSaveDialog(mainWindow, options)
@@ -904,7 +1187,24 @@ function registerIpc(): void {
       const outputPath = extname(result.filePath)
         ? result.filePath
         : `${result.filePath}.${format}`;
-      writeFileSync(outputPath, exportRecord(record, format), "utf8");
+      if (format === "md") {
+        try {
+          // A note export creates a new destination. Exclusive creation also
+          // protects against a file appearing after the native picker closes.
+          writeFileSync(outputPath, exportRecord(record, format), {
+            encoding: "utf8", mode: 0o600, flag: "wx",
+          });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "EEXIST")
+            throw new Error(
+              "A note already exists at this destination. Export again with a different filename; the existing note was preserved.",
+              { cause: error },
+            );
+          throw error;
+        }
+      } else {
+        writeFileSync(outputPath, exportRecord(record, format), "utf8");
+      }
       return outputPath;
     },
   );
@@ -913,6 +1213,16 @@ function registerIpc(): void {
 async function start(): Promise<void> {
   if (!smokeTest) ensureDevelopmentDesktopEntry();
   storage = new StorageService();
+  ruleUsage = new RuleUsageService(storage.dataDirectory);
+  modelCache = new ModelCacheService(storage.modelCacheDirectory);
+  // start() is entered only by the instance holding the user-data singleton lock.
+  // No new worker/capture/import exists while prior-session generated WAVs are inspected.
+  const audioRecovery = await recoverTemporaryAudio(storage.cacheDirectory);
+  if (audioRecovery.failureCount) {
+    const detail = `${audioRecovery.failureCount} temporary-audio cleanup failure(s). Some prior-session audio may remain on disk.\n\n${audioRecovery.failures.join("\n")}\n\nClose Delulu before inspecting the audio-cache directory in its local data folder. Only remove generated dictation/import WAVs you recognise. Your saved history, settings, source media, models and runtimes were not removed by this cleanup.`;
+    console.error("Temporary audio cleanup incomplete:", detail);
+    dialog.showErrorBox("Temporary audio cleanup needs attention", detail);
+  }
   paste = new PasteService(
     () => storage.getSettings().pastePortalToken || null,
     (pastePortalToken) => {
@@ -922,6 +1232,7 @@ async function start(): Promise<void> {
       });
       broadcast("settings:changed", saved);
     },
+    { getShortcut: () => storage.getSettings().pasteShortcut },
   );
   pill = new PillService(
     smokeTest ? { env: { ...process.env, XDG_SESSION_TYPE: "" } } : {},
@@ -959,10 +1270,32 @@ async function start(): Promise<void> {
       broadcast("history:added", record);
       rebuildTrayMenu();
     },
+    (transcriptId, detail) => {
+      if (storage.findHistory(transcriptId) || sessionTranscripts.has(transcriptId))
+        setPasteRecovery({ transcriptId, detail });
+    },
+    (counts) => ruleUsage.record(counts, storage.getSettings().customWords.map((rule) => rule.id)),
   );
-  mainWindow.webContents.on("did-start-loading", () =>
-    dictation.recorderUnavailable(),
-  );
+  pasteLast = new PasteLastService({
+    captureActive: () => dictation.isActive,
+    currentText: (id) => {
+      const record = storage.findHistory(id) ?? sessionTranscripts.get(id);
+      return record ? deliveredText(record) : null;
+    },
+    paste: (text) => paste.paste(text),
+    copy: (text) => paste.copy(text),
+    clipboardOnly: () => paste.capabilities().pasteMethod === "clipboard-only",
+    changed: (status) => {
+      broadcast("dictation:pasteLastChanged", status);
+      rebuildTrayMenu();
+    },
+  });
+  mainWindow.webContents.on("did-start-loading", () => {
+    pasteLast.cancelPending(
+      "Scheduled paste cancelled because the workspace reloaded.",
+    );
+    dictation.recorderUnavailable();
+  });
   shortcut = new ShortcutService(() => storage.getSettings().shortcutMode, {
     start: () => dictation.start(),
     stop: () => dictation.stop(),
@@ -970,6 +1303,8 @@ async function start(): Promise<void> {
   });
   asr.onStatus((status) => {
     dictation.runtimeChanged();
+    if (dictation.isActive)
+      pasteLast.cancelPending("Paste cancelled because a recording started.");
     broadcast("runtime:statusChanged", status);
     rebuildTrayMenu();
   });
@@ -1020,7 +1355,9 @@ if (!hasLock) {
 app.on("activate", () => showMainWindow());
 app.on("before-quit", () => {
   quitting = true;
+  dictation?.releaseRetryAudio();
   pill?.shutdown();
+  pasteLast?.shutdown();
   paste?.shutdown();
   void shortcut?.shutdown();
   void asr?.shutdown();
