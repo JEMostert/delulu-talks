@@ -16,6 +16,7 @@ export type EnginePhase =
 export type MagicPhase =
   "idle" | "preparing" | "loading" | "rewriting" | "error";
 export type TranscriptSource = "dictation" | "file";
+export type PasteShortcut = "standard" | "terminal";
 export type ExportFormat = "txt" | "json" | "md";
 
 export type CustomWord = {
@@ -39,6 +40,7 @@ export type AppSettings = {
   inputDeviceId: string;
   inputDeviceLabel: string;
   autoPaste: boolean;
+  pasteShortcut: PasteShortcut;
   pasteLastDelaySeconds: number;
   copyToClipboard: boolean;
   spokenFormattingCommands: boolean;

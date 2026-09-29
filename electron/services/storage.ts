@@ -203,6 +203,10 @@ export function normalizeSettings(value: unknown): AppSettings {
       512,
     ),
     autoPaste: boolean(source.autoPaste, DEFAULT_SETTINGS.autoPaste),
+    pasteShortcut:
+      source.pasteShortcut === "terminal"
+        ? "terminal"
+        : DEFAULT_SETTINGS.pasteShortcut,
     pasteLastDelaySeconds:
       typeof source.pasteLastDelaySeconds === "number" &&
       Number.isInteger(source.pasteLastDelaySeconds) &&
