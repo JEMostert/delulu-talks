@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
+import { RewriteDiff } from "./RewriteDiff";
+import { RewriteWarnings } from "./RewriteWarnings";
 import type {
   MagicPreset,
   MagicRewriteRequest,
@@ -27,14 +29,15 @@ export function RewriteDialog({
   onRewrite: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
   onApply: (result: MagicRewriteResult, source: string) => Promise<boolean>;
 }) {
-  const [source] = useState(text);
-  const [expectedOutput] = useState(baseline);
+  const [source, setSource] = useState(text);
+  const [expectedOutput, setExpectedOutput] = useState(baseline);
   const [preset, setPreset] = useState<MagicPreset>("concise");
   const [instructions, setInstructions] = useState("");
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const missing = status?.engine === "missing" || status?.engine === "error";
+  const stale = source !== text || expectedOutput !== baseline;
   return (
     <Modal
       title="Rewrite transcript"
@@ -52,15 +55,19 @@ export function RewriteDialog({
           {result && (
             <button
               className="primary-button"
-              disabled={busy || !result.text.trim()}
+              disabled={busy || stale || !result.text.trim()}
               onClick={async () => {
+                if (stale || busy) return;
                 setBusy(true);
+                setError(null);
                 try {
                   if (await onApply(result, expectedOutput)) onClose();
                   else
                     setError(
                       "Could not apply this rewrite. The transcript may have changed; close this preview and review the current result.",
                     );
+                } catch (reason) {
+                  setError(reason instanceof Error ? reason.message : String(reason));
                 } finally {
                   setBusy(false);
                 }
@@ -76,6 +83,17 @@ export function RewriteDialog({
         Preview a change before using it. Original speech stays available and
         text shortcuts stay exactly as saved.
       </p>
+      {stale && (
+        <div className="rewrite-setup my-3 rounded-panel border border-line p-3" role="alert">
+          <p>The transcript changed after this preview opened. This preview cannot be applied. Refresh to use the current text and generate a new preview.</p>
+          <button className="secondary-button" disabled={busy} onClick={() => {
+            setSource(text);
+            setExpectedOutput(baseline);
+            setResult(null);
+            setError(null);
+          }}>Refresh rewrite source</button>
+        </div>
+      )}
       {missing ? (
         <div className="rewrite-setup my-3 rounded-panel border border-line p-3">
           <p>
@@ -159,6 +177,12 @@ export function RewriteDialog({
           />
         </label>
       </div>
+      {result && (
+        <>
+          <RewriteWarnings source={source} preview={result.text} />
+          <RewriteDiff source={source} preview={result.text} />
+        </>
+      )}
       {error && (
         <p className="field-error" role="alert">
           {error}
@@ -166,8 +190,9 @@ export function RewriteDialog({
       )}
       <button
         className="secondary-button"
-        disabled={busy || missing || source.length > 50_000}
+        disabled={busy || stale || missing || source.length > 50_000}
         onClick={async () => {
+          if (busy || stale) return;
           setBusy(true);
           setError(null);
           try {
