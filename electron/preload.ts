@@ -31,6 +31,7 @@ const api: DeluluApi = {
   rendererControllerFailed: () =>
     ipcRenderer.invoke("renderer:controllerFailed"),
   getDiagnostics: () => ipcRenderer.invoke("runtime:diagnostics"),
+  getRuntimeSetupSnapshot: () => ipcRenderer.invoke("runtime:setupSnapshot"),
   pasteLastTranscript: () => ipcRenderer.invoke("dictation:pasteLast"),
   discardFailedRecording: () => ipcRenderer.invoke("dictation:discardFailed"),
   retryRecording: () => ipcRenderer.invoke("dictation:retry"),

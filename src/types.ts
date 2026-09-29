@@ -212,6 +212,7 @@ export type DeluluApi = {
   rendererControllerFailed(): Promise<void>;
   getSettings(): Promise<AppSettings>;
   getDiagnostics(): Promise<RuntimeDiagnostics>;
+  getRuntimeSetupSnapshot(): Promise<RuntimeSetupSnapshot>;
   pasteLastTranscript(): Promise<void>;
   retryRecording(): Promise<void>;
   discardFailedRecording(): Promise<void>;
@@ -284,4 +285,42 @@ export type RuntimeDiagnostics = {
   runtimeInstalled: boolean;
   packages: Record<string, string>;
   checkedAt: number;
+};
+
+
+export type SetupRuntimeObservation = {
+  kind: "speech" | "magic";
+  root: string;
+  directory: string | null;
+  runtimeState: "present" | "missing" | "unknown";
+  expectedRevision: string;
+  backend: string;
+  devicePreference: string;
+  deviceObservation: string;
+  interpreter: {
+    command: string;
+    status: "observed" | "missing" | "unknown" | "unsupported";
+    executable: string | null;
+    version: string | null;
+    machine: string | null;
+    modules: Array<{ name: string; status: "located" | "missing" | "unknown"; location: string | null }>;
+    detail: string;
+  };
+  bootstrap: SetupRuntimeObservation["interpreter"][];
+  importProbe: string;
+  cachedInventory: {
+    status: "cached" | "missing" | "unreadable";
+    createdAt: string | null;
+    revision: string | null;
+    interpreter: string | null;
+    detail: string;
+  };
+};
+
+export type RuntimeSetupSnapshot = {
+  checkedAt: number;
+  platform: string;
+  arch: string;
+  source: "desktop" | "preview";
+  runtimes: SetupRuntimeObservation[];
 };

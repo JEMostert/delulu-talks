@@ -25,6 +25,7 @@ import type {
 } from "../src/types";
 import { modelById } from "../src/data";
 import { deliveredText } from "../src/transcriptText";
+import { runtimeSetupSnapshot } from "./runtime/setupSnapshot";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
@@ -624,6 +625,7 @@ function registerIpc(): void {
   });
   handle("renderer:controllerFailed", () => dictation.recorderUnavailable());
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
+  handle("runtime:setupSnapshot", () => runtimeSetupSnapshot(storage));
   handle("dictation:pasteLast", async () => {
     const record = lastTranscript
       ? (storage.findHistory(lastTranscript.id) ?? lastTranscript)
