@@ -273,6 +273,12 @@ export type RendererRecoveryState = {
   canStopRecording: boolean;
 };
 
+export type AccessibilityPermission = {
+  state: "granted" | "denied" | "unknown" | "not-applicable";
+  canAttemptPaste: boolean;
+  detail: string;
+};
+
 export type RuntimeDiagnostics = {
   platform: string;
   arch: string;
@@ -283,5 +289,6 @@ export type RuntimeDiagnostics = {
   dataDirectory: string;
   runtimeInstalled: boolean;
   packages: Record<string, string>;
+  accessibility?: AccessibilityPermission;
   checkedAt: number;
 };

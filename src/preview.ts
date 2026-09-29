@@ -70,6 +70,11 @@ export const previewApi: DeluluApi = {
       ffmpeg: "Not available",
       dataDirectory: "Desktop app required",
       runtimeInstalled: false,
+      accessibility: {
+        state: "not-applicable",
+        canAttemptPaste: false,
+        detail: "Native Accessibility permission is available in the desktop app. Browser preview cannot attempt native paste.",
+      },
       packages: {},
       checkedAt: Date.now(),
     };
