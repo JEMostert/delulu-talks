@@ -30,6 +30,15 @@ A corrupted settings/history file now stops loading with an explicit preserved-f
 
 The historical [v0.9.4 validation](mac-release-validation.md) concerns the previous Qwen/vLLM Metal route. Its successful inference does **not** validate this adapter.
 
+| Evidence                                      | What it establishes                                                                                                   | What remains unverified                                                                   |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Historical Qwen3-ASR-0.6B / vLLM Metal record | The older backend executed fixture inference and package replacement on its recorded Mac                              | Current R2T2 checkpoint, direct MLX Audio loader, current decoder and memory behavior     |
+| Current dependency-free contracts             | R2T2 routing, language hints, chunk/token guards, failure cleanup and source preservation with synthetic dependencies | Native Metal execution, recognition quality and actual allocator release                  |
+| Recorded BF16 key/shape audit                 | Checkpoint layout matched the pinned loader                                                                           | Loading/warmup/inference on an actual Apple Silicon machine                               |
+| Package check without runtime                 | Package replacement, persistent fixtures and manual-update guidance                                                   | Speech inference, live microphone, Accessibility and focus/paste into another application |
+
+No tested RAM minimum, sustained latency target or thermal budget is established for this R2T2 route. Chunk requests and token guards bound the adapter's behavior but are not measurements of peak memory or recognition quality. R2T2-only speech selection does not remove optional Qwen 3.5 rewriting; it uses its separate Python environment and may compete for the same physical memory.
+
 On a real Apple Silicon Mac:
 
 1. Verify clean runtime installation and `pip check`; record OS, chip, RAM, Python, and package versions.
@@ -44,14 +53,16 @@ After Models finishes setup, close the ordinary app before sharing its runtime w
 
 ```sh
 bun run build
-node scripts/desktop-smoke.mjs "$DELULU_TEST_DATA_DIR" --lifecycle
-node scripts/mac-package-smoke.mjs "release/mac-arm64/Delulu Talks.app" "$DELULU_TEST_DATA_DIR"
+bun run test:desktop -- --metadata /path/to/mac-native-metadata.json "$DELULU_TEST_DATA_DIR" --lifecycle
+bun run test:mac-package -- "release/mac-arm64/Delulu Talks.app"
 ```
 
 For offline worker-only inference, use the **active speech generation's Python**, not a rewriting-only environment:
 
 ```sh
-/path/to/speech-venv/generations/active-generation/bin/python scripts/runtime-smoke.py --cache /path/to/models
+bun run test:native -- --metadata /path/to/mac-native-metadata.json --python /path/to/speech-venv/generations/active-generation/bin/python --cache /path/to/models
 ```
 
-The linked-profile Electron checks use temporary settings/history and the existing runtime/cache. They do not repair or install that runtime. The real-inference scripts require already-cached weights. Mocked test success is not a substitute for these runs.
+Supply actual Mac hardware, installed checkpoint and runtime revisions in the metadata file, with `modelId: "r2t2"` and `backend: "mlx"`; [verification reporting](VERIFICATION.md#opt-in-native-checks) documents the full shape and separate manual observations. Here the model id identifies R2T2 independently of the application's `r2t2Mlx` backend choice. The wrapper requires an actual nonempty R2T2 result and matching backend, so a historical Qwen result cannot become current native evidence. Metadata itself is supplied provenance, not independently discovered hardware evidence.
+
+The linked-profile Electron inference check uses temporary settings/history and the existing runtime/cache. It does not repair or install that runtime. The real-inference commands require already-cached weights. The package command intentionally accepts no runtime argument and reports fixture-only evidence. Its successful replacement/relaunch does not establish Metal inference. Keep reports from a clean tested revision, and record microphone, permissions and paste into actual applications separately as manual evidence. Mocked test success is not a substitute for these runs.
