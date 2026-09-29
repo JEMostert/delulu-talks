@@ -66,6 +66,35 @@ describe("evidence boundaries", () => {
       ).toThrow("not R2T2");
   });
 
+  test("package content reporting cannot claim native inference or complete an empty/help invocation", () => {
+    const plan = planSuite("package-resources", [
+      "release/linux-unpacked",
+      "linux",
+    ]);
+    expect(plan.command).toEqual([
+      "bun",
+      "scripts/package-resources.mjs",
+      "release/linux-unpacked",
+      "linux",
+    ]);
+    expect(
+      makeReport("package-resources", plan, "passed", {}).evidence,
+    ).toEqual({
+      "fixture-only": "passed",
+      mocked: "not-run",
+      "native-inference": "not-run",
+      "manual-desktop": "not-run",
+    });
+    for (const args of [
+      [],
+      ["--help", "linux"],
+      ["release/linux-unpacked", "unknown"],
+    ])
+      expect(() => planSuite("package-resources", args)).toThrow(
+        "requires an unpacked",
+      );
+  });
+
   test("native success requires observed R2T2 transcription and the selected backend", () => {
     const observation = {
       model: "netease-youdao/Confucius4-R2T2",
