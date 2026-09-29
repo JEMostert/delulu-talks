@@ -6,6 +6,7 @@ import {
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { app } from "electron";
+import { MacPill } from "./macPill";
 
 export type PillState =
   | "hidden"
@@ -71,6 +72,7 @@ export function layerShellCandidates(pkgConfigDirectory: string): string[] {
 
 export class PillService {
   private child: ChildProcessWithoutNullStreams | null = null;
+  private mac: MacPill | null = null;
   private ready = false;
   private desired: PillCommand = { state: "hidden" };
   private unavailableReason: string | null = null;
@@ -95,7 +97,8 @@ export class PillService {
     this.env = io.env ?? process.env;
   }
 
-  get method(): "layer-shell" | "unavailable" {
+  get method(): "layer-shell" | "mac-panel" | "unavailable" {
+    if (this.platform === "darwin") return this.unavailableReason ? "unavailable" : "mac-panel";
     return this.supportedEnvironment() &&
       this.layerShellLibrary() &&
       !this.unavailableReason
@@ -104,6 +107,8 @@ export class PillService {
   }
 
   get detail(): string {
+    if (this.platform === "darwin")
+      return this.unavailableReason ?? "Nonactivating click-through Mac recording panel";
     if (!this.supportedEnvironment())
       return "Native pill requires a Wayland layer-shell compositor";
     if (!this.layerShellLibrary())
@@ -145,6 +150,14 @@ export class PillService {
             title: command.title,
             detail: command.detail,
           };
+    if (this.platform === "darwin") {
+      if (!this.mac && command.state !== "hidden") {
+        this.unavailableReason = null;
+        this.mac = new MacPill((message) => { this.unavailableReason = message; this.mac = null; });
+      }
+      this.mac?.send(command);
+      return;
+    }
     if (!this.supportedEnvironment()) return;
     if (!this.child && command.state !== "hidden") this.start();
     if (this.ready) this.write(command);
@@ -291,6 +304,8 @@ export class PillService {
   }
 
   shutdown(): void {
+    this.mac?.shutdown();
+    this.mac = null;
     const child = this.child;
     this.child = null;
     this.ready = false;

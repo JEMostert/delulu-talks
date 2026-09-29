@@ -1,3 +1,4 @@
+import { SetupLog } from "./setupLog";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -6,6 +7,15 @@ import { homedir, release } from "node:os";
 import { usesMetal } from "./platform";
 import { activateRuntime, runtimePython, rollbackRuntime } from "./location";
 import type { AppSettings } from "../../src/types";
+import { resolveRuntimeArtifacts } from "./artifacts";
+import {
+  parseRuntimePrerequisiteError,
+  PYTHON_INTERPRETER_PROBE,
+  RuntimePrerequisiteCode,
+  RuntimePrerequisiteError,
+  runtimeReadinessScript,
+  validatePythonInterpreter,
+} from "./prerequisites";
 import {
   createRuntimeInventory,
   inventoryBackend,
@@ -30,18 +40,46 @@ export type InstallProgress = {
   detail?: string;
 };
 type Paths = { dataDirectory: string; venvDirectory: string };
-const READINESS = {
-  speech: "from qwen_asr import Qwen3ASRModel",
-  magic:
-    "import torch, torchvision, transformers; from transformers import AutoModelForMultimodalLM, AutoProcessor; assert int(transformers.__version__.split('.')[0]) >= 5",
-};
-const METAL_READINESS =
-  "import sys, platform; assert sys.version_info[:2] == (3,12) and platform.machine() == 'arm64'; import mlx.core as mx; from mlx_audio.stt.utils import load_model, load_audio; assert mx.metal.is_available()";
-const WINDOWS_READINESS =
-  "import sys; assert sys.version_info[:2] == (3,12); import torch, soundfile, soxr; from transformers import Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor; assert torch.version.cuda is not None and torch.cuda.is_available(), 'R2T2 requires a working NVIDIA CUDA GPU and driver'";
-
 /** Owns interpreter discovery and package installation; model loading is separate. */
 export class RuntimeInstaller {
+  readonly setupLog = new SetupLog();
+  private setupStage = "Runtime preflight";
+  private stageStarted: { attemptId: string; at: number } | null = null;
+
+  recordSetupStage(message: string): void {
+    const attemptId = this.setupLog.activeId;
+    const now = performance.now();
+    if (attemptId && this.stageStarted?.attemptId === attemptId)
+      this.setupLog.record(attemptId, {
+        type: "stage",
+        stage: this.setupStage,
+        message: "Stage ended",
+        durationMs: Math.round(now - this.stageStarted.at),
+      });
+    this.setupStage = message;
+    this.stageStarted = attemptId ? { attemptId, at: now } : null;
+    this.setupLog.record(attemptId, {
+      type: "stage",
+      stage: message,
+      message,
+    });
+  }
+
+  recordSetupOutcome(message: string): void {
+    const attemptId = this.setupLog.activeId;
+    this.setupLog.record(attemptId, {
+      type: "stage",
+      stage: this.setupStage,
+      message,
+      ...(attemptId && this.stageStarted?.attemptId === attemptId
+        ? { durationMs: Math.round(performance.now() - this.stageStarted.at) }
+        : {}),
+    });
+  }
+
+  get isCancelled(): boolean {
+    return this.cancelled;
+  }
   private processes = new Set<ReturnType<typeof spawn>>();
   private cancelled = false;
   private validatedPython: string | null = null;
@@ -57,20 +95,20 @@ export class RuntimeInstaller {
     },
   ) {}
   private readiness(kind: "speech" | "magic"): string {
-    return kind === "speech"
-      ? this.metal
-        ? METAL_READINESS
-        : this.windows
-          ? WINDOWS_READINESS
-          : READINESS.speech
-      : READINESS.magic;
+    return runtimeReadinessScript(
+      kind,
+      this.target,
+      kind === "speech" && this.metal,
+    );
   }
   get python(): string {
     return runtimePython(this.paths.venvDirectory);
   }
   rollback(): void {
+    this.recordSetupStage("Restoring the previous active runtime");
     this.validatedPython = null;
     rollbackRuntime(this.paths.venvDirectory);
+    this.recordSetupStage("Previous runtime activation restored");
   }
 
   private run(
@@ -85,6 +123,15 @@ export class RuntimeInstaller {
           "Runtime setup cancelled. The previous environment is unchanged.",
         ),
       );
+    const attemptId = this.setupLog.activeId;
+    const stage = this.setupStage;
+    const started = performance.now();
+    this.setupLog.record(attemptId, {
+      type: "command",
+      stage,
+      message: "Starting runtime command",
+      command: { program, args: [...args] },
+    });
     return new Promise((resolve, reject) => {
       const child = spawn(program, args, {
         windowsHide: true,
@@ -94,6 +141,12 @@ export class RuntimeInstaller {
       let output = "";
       let diagnostic = "";
       const timer = setTimeout(() => {
+        this.setupLog.record(attemptId, {
+          type: "error",
+          stage,
+          message: "Runtime command timed out; termination requested",
+          durationMs: Math.round(performance.now() - started),
+        });
         child.kill();
         reject(
           new Error(
@@ -103,10 +156,16 @@ export class RuntimeInstaller {
       }, timeoutMs);
       child.stdout.on("data", (chunk) => {
         output = `${output}${chunk}`.slice(-256_000);
+        this.setupLog.record(attemptId, {
+          type: "stdout", stage, message: String(chunk),
+        });
         onOutput?.(String(chunk));
       });
       child.stderr.on("data", (chunk) => {
         diagnostic = `${diagnostic}${chunk}`.slice(-16_000);
+        this.setupLog.record(attemptId, {
+          type: "stderr", stage, message: String(chunk),
+        });
         onOutput?.(String(chunk));
       });
       const finish = () => {
@@ -114,20 +173,41 @@ export class RuntimeInstaller {
         this.processes.delete(child);
       };
       child.once("error", (error) => {
+        this.setupLog.record(attemptId, {
+          type: "error", stage, message: error.message,
+          durationMs: Math.round(performance.now() - started),
+        });
         finish();
         reject(error);
       });
-      child.once("close", (code) => {
+      child.once("close", (code, signal) => {
+        this.setupLog.record(attemptId, {
+          type: "exit", stage, message: "Runtime command closed",
+          durationMs: Math.round(performance.now() - started),
+          exitCode: code, signal,
+        });
         finish();
-        if (code === 0) resolve(output.trim());
-        else
+        if (this.cancelled)
           reject(
-            new Error(diagnostic.trim() || `Runtime command failed (${code})`),
+            new Error(
+              "Runtime setup cancelled. The previous environment is unchanged.",
+            ),
           );
+        else if (code === 0) resolve(output.trim());
+        else {
+          const cause = new Error(
+            diagnostic.trim() || `Runtime command failed (${code})`,
+          );
+          reject(parseRuntimePrerequisiteError(diagnostic, cause) ?? cause);
+        }
       });
     });
   }
   stop(): void {
+    this.setupLog.record(this.setupLog.activeId, {
+      type: "stage", stage: this.setupStage,
+      message: "Setup cancellation requested; terminating installer processes",
+    });
     this.cancelled = true;
     for (const child of this.processes) child.kill();
     this.processes.clear();
@@ -145,7 +225,8 @@ export class RuntimeInstaller {
       );
       this.validatedPython = `${kind}:${this.python}`;
       return true;
-    } catch {
+    } catch (error) {
+      if (this.cancelled) throw error;
       return false;
     }
   }
@@ -163,40 +244,46 @@ export class RuntimeInstaller {
       : this.windows
         ? [["py", "-3.12"], ["python3.12"]]
         : [["python3.13"], ["python3.12"], ["python3.11"]];
-    const candidates = ["python", "python3"].includes(configured[0] ?? "")
+    const automatic =
+      configured.length === 0 ||
+      (configured.length === 1 &&
+        ["python", "python3"].includes(configured[0]));
+    const candidates = automatic
       ? [...fallbacks, configured]
       : [configured];
+    const failures: RuntimePrerequisiteError[] = [];
     for (const candidate of candidates) {
       if (!candidate.length) continue;
       try {
-        const version = await this.run(
+        const probe = await this.run(
           candidate[0],
           [
             ...candidate.slice(1),
             "-c",
-            metal
-              ? "import sys, platform; assert platform.machine() == 'arm64'; print('.'.join(map(str, sys.version_info[:2])))"
-              : "import sys; print('.'.join(map(str, sys.version_info[:2])))",
+            PYTHON_INTERPRETER_PROBE,
           ],
           undefined,
           5000,
         );
-        const [major, minor] = version.split(".").map(Number);
-        if (
-          major === 3 &&
-          (metal || this.windows ? minor === 12 : minor >= 11 && minor <= 13)
-        )
-          return candidate;
-      } catch {
-        /* Try the next supported interpreter. */
+        validatePythonInterpreter(probe, this.target, metal);
+        return candidate;
+      } catch (cause) {
+        if (this.cancelled) throw cause;
+        const failure = new RuntimePrerequisiteError(
+          cause instanceof RuntimePrerequisiteError
+            ? cause.code
+            : RuntimePrerequisiteCode.PYTHON_VERSION,
+          `${candidate.join(" ")}: ${cause instanceof RuntimePrerequisiteError ? cause.details : cause instanceof Error ? cause.message : String(cause)}`,
+          { cause },
+        );
+        if (!automatic) throw failure;
+        failures.push(failure);
       }
     }
-    throw new Error(
-      metal
-        ? "Install native arm64 Python 3.12, then set its full path in Settings → Advanced. Rosetta Python is not supported."
-        : this.windows
-          ? "Install Python 3.12, then try again. You can set its full path in Settings → Advanced."
-          : "Install Python 3.11–3.13, then try again. You can set its full path in Settings → Advanced.",
+    throw new RuntimePrerequisiteError(
+      failures.at(-1)?.code ?? RuntimePrerequisiteCode.PYTHON_VERSION,
+      `No supported interpreter was found. ${failures.map((failure) => `[${failure.code}] ${failure.details}`).join("; ")}`,
+      { cause: new AggregateError(failures, "Automatic Python discovery failed") },
     );
   }
 
@@ -213,19 +300,24 @@ export class RuntimeInstaller {
       process.platform === "darwin" &&
       Number(release().split(".")[0]) < 24
     )
-      throw new Error("R2T2 MLX requires macOS 15 or later.");
+      throw new RuntimePrerequisiteError(
+        RuntimePrerequisiteCode.METAL_UNAVAILABLE,
+        `Found Darwin ${release()}; R2T2 MLX requires macOS 15 or later (Darwin 24+).`,
+      );
     const stage = async (
       program: string,
       args: string[],
       message: string,
       progress: number,
     ) => {
+      this.recordSetupStage(message);
       publish({ message, progress });
       return this.run(program, args, (output) => {
         const detail = output.trim().split(/\r?\n/).at(-1)?.slice(-350);
         if (detail) publish({ message, progress, detail });
       });
     };
+    this.recordSetupStage("Checking your Python environment");
     publish({ message: "Checking your Python environment", progress: 0.05 });
     mkdirSync(this.paths.dataDirectory, { recursive: true });
     const generation = randomUUID();
@@ -255,18 +347,42 @@ export class RuntimeInstaller {
       progress: number,
       constraint: RequestedInstallStage["constraint"] = null,
     ) => {
-      const pipArguments = [
+      const reportPath = join(candidate, `runtime-${kind}-${name}-artifacts.json`);
+      const requirementsPath = join(candidate, `runtime-${kind}-${name}-artifacts.txt`);
+      const resolverArguments = [
         "install",
         "--disable-pip-version-check",
+        "--dry-run",
+        "--report", reportPath,
         ...options,
         ...requirements,
+      ];
+      await stage(
+        candidatePython,
+        ["-m", "pip", ...resolverArguments],
+        `Resolving artifacts: ${message.toLowerCase()}`,
+        progress,
+      );
+      const resolved = resolveRuntimeArtifacts(readFileSync(reportPath, "utf8"));
+      writeFileSync(requirementsPath, resolved.requirements, { mode: 0o600 });
+      const pipArguments = [
+        "install", "--disable-pip-version-check", "--no-deps",
+        // Retain stage policy for installation/build hooks as well as resolution
+        // (indexes, constraints, and any future build-isolation/binary options).
+        ...options,
+        "--requirement", requirementsPath,
       ];
       requested.push({
         name,
         requirements: [...requirements],
         pipArguments,
         constraint,
+        artifacts: resolved.artifacts,
+        resolverArguments,
+        artifactRequirements: resolved.requirements,
       });
+      // An empty resolver report means the requested packages are already present.
+      if (!resolved.artifacts.length) return;
       return stage(
         candidatePython,
         ["-m", "pip", ...pipArguments],
@@ -309,7 +425,7 @@ export class RuntimeInstaller {
       constraints,
       kind === "speech"
         ? "Installing the speech runtime"
-        : "Installing the Magic runtime",
+        : "Installing the rewrite runtime",
       0.45,
       constraints.length
         ? {
@@ -330,6 +446,7 @@ export class RuntimeInstaller {
       "Validating the new runtime before switching",
       0.76,
     );
+    this.recordSetupStage("Recording installed package versions");
     const versions = await this.run(
       candidatePython,
       ["-m", "pip", "freeze"],
@@ -341,6 +458,7 @@ export class RuntimeInstaller {
       `# Delulu runtime ${RUNTIME_REVISION}\n${versions}\n`,
       { mode: 0o600 },
     );
+    this.recordSetupStage("Recording the runtime dependency inventory");
     publish({
       message: "Recording the runtime dependency inventory",
       progress: 0.78,
@@ -354,6 +472,7 @@ export class RuntimeInstaller {
         15_000,
       );
     } catch (error) {
+      if (this.cancelled) throw error;
       throw new Error(
         `Could not inspect runtime dependencies: ${error instanceof Error ? error.message : String(error)}. The previous environment is unchanged.`,
       );
@@ -376,6 +495,7 @@ export class RuntimeInstaller {
       throw new Error(
         "Runtime setup cancelled. The previous environment is unchanged.",
       );
+    this.recordSetupStage("Activating the validated runtime generation");
     activateRuntime(this.paths.venvDirectory, generation);
     publish({
       message: "Runtime installed. Preparing your model…",

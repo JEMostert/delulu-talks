@@ -53,6 +53,7 @@ export class ShortcutService {
     lastTriggeredAt: null,
   };
   private listeners = new Set<(status: ShortcutStatus) => void>();
+  private publicationDepth = 0;
   private bus: MessageBus | null = null;
   private session: string | null = null;
   private shortcuts: PortalInterface | null = null;
@@ -73,6 +74,10 @@ export class ShortcutService {
 
   private update(patch: Partial<ShortcutStatus>): void {
     this.status = { ...this.status, ...patch };
+    if (!this.publicationDepth) this.publish();
+  }
+
+  private publish(): void {
     for (const listener of this.listeners) listener(this.getStatus());
   }
 
@@ -93,6 +98,41 @@ export class ShortcutService {
   async register(accelerator: string): Promise<void> {
     if (this.portal) await this.registerPortal(accelerator);
     else this.registerNative(accelerator);
+  }
+
+  // Settings coordination serializes callers. Hold status notifications until
+  // persistence succeeds, or the previous binding has been restored.
+  async change<T>(
+    accelerator: string,
+    previousAccelerator: string,
+    persist: () => T,
+  ): Promise<T> {
+    this.publicationDepth++;
+    try {
+      await this.register(accelerator);
+      return await persist();
+    } catch (error) {
+      try {
+        // Portal status contains a localized trigger description, not the
+        // canonical accelerator used for registration. The caller supplies
+        // the previous saved preference explicitly.
+        await this.register(previousAccelerator);
+      } catch (restoreError) {
+        this.update({
+          accelerator: previousAccelerator,
+          registered: false,
+          message: `Previous shortcut could not be restored: ${concise(restoreError)}`,
+        });
+        throw new AggregateError(
+          [error, restoreError],
+          `${concise(error)}. Previous shortcut could not be restored: ${concise(restoreError)}`,
+        );
+      }
+      throw error;
+    } finally {
+      this.publicationDepth--;
+      if (!this.publicationDepth) this.publish();
+    }
   }
 
   private registerNative(accelerator: string): void {
