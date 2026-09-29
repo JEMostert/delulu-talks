@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { RuntimeSetupSnapshot } from "../components/RuntimeSetupSnapshot";
 import { Diagnostics } from "../components/Diagnostics";
 import {
   SpeechSetup,
@@ -9,10 +11,12 @@ import {
 } from "../components/models/RewriteSetup";
 
 export function ModelsPage(props: SpeechSetupProps & RewriteSetupProps) {
+  const [snapshotPending, setSnapshotPending] = useState(true);
   return (
     <div className="content-stack">
-      <SpeechSetup {...props} />
-      <RewriteSetup {...props} />
+      <RuntimeSetupSnapshot pythonCommand={props.settings.pythonCommand} busy={props.busy} onPending={setSnapshotPending} />
+      <SpeechSetup {...props} setupPending={snapshotPending} />
+      <RewriteSetup {...props} setupPending={snapshotPending} />
       <Diagnostics />
     </div>
   );
