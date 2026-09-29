@@ -1,4 +1,5 @@
 import type { ModelId, TranscriptRecord, TranscriptSource } from "./types";
+import { createHistorySearch } from "./historySearch";
 
 export type HistoryFilters = {
   query: string;
@@ -55,7 +56,7 @@ export function filterHistory(
   const endDate = filters.through ? calendarDate(filters.through)! : null;
   if (endDate) endDate.setDate(endDate.getDate() + 1);
   const end = endDate?.getTime() ?? null;
-  const needle = filters.query.trim().toLowerCase();
+  const matchesSearch = createHistorySearch(filters.query);
   return history.filter((item) => {
     const rewritten = !!item.magicText?.trim();
     return (
@@ -66,16 +67,7 @@ export function filterHistory(
       (filters.source === "all" || item.source === filters.source) &&
       (filters.rewritten === "all" ||
         rewritten === (filters.rewritten === "yes")) &&
-      [
-        item.text,
-        item.personalizedText,
-        item.editedText,
-        item.magicText,
-        item.sourceName,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(needle)
+      matchesSearch(item)
     );
   });
 }

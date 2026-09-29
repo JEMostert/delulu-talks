@@ -5,6 +5,7 @@ import {
   type TranscriptActions,
 } from "../components/TranscriptCard";
 import { ConfirmDialog, EmptyState } from "../components/ui";
+import { HistorySearchMatches } from "../components/HistorySearchMatches";
 import type { TranscriptRecord } from "../types";
 import { LANGUAGES } from "../data";
 import {
@@ -202,7 +203,10 @@ export function HistoryPage({
             </span>
           </div>
           {records.map((record) => (
-            <TranscriptCard key={record.id} record={record} {...actions} />
+            <div key={record.id}>
+              <TranscriptCard record={record} {...actions} />
+              <HistorySearchMatches record={record} query={filters.query} />
+            </div>
           ))}
         </section>
       ))}
