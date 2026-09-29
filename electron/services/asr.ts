@@ -804,11 +804,13 @@ export class AsrService {
   fail(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
     try {
-      writeFileSync(
-        join(this.storage.dataDirectory, "last-asr-error.log"),
-        `${this.speechWorker.stderr}\n${message}\n`,
-        "utf8",
-      );
+      if (this.storage.getSettings().keepHistory) {
+        writeFileSync(
+          join(this.storage.dataDirectory, "last-asr-error.log"),
+          `${this.speechWorker.stderr}\n${message}\n`,
+          "utf8",
+        );
+      }
     } catch {
       /* diagnostics are best-effort */
     }
@@ -824,11 +826,13 @@ export class AsrService {
   failMagic(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
     try {
-      writeFileSync(
-        join(this.storage.dataDirectory, "last-magic-error.log"),
-        `${this.magicWorker.stderr}\n${message}\n`,
-        "utf8",
-      );
+      if (this.storage.getSettings().keepHistory) {
+        writeFileSync(
+          join(this.storage.dataDirectory, "last-magic-error.log"),
+          `${this.magicWorker.stderr}\n${message}\n`,
+          "utf8",
+        );
+      }
     } catch {
       /* diagnostics are best-effort */
     }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
+import { retainSessionTranscripts } from "../sessionTranscriptRetention";
 import { DEFAULT_SETTINGS } from "../data";
 import { PcmRecorder, listMicrophones } from "../recorder";
 import { readStartupService } from "../startupServices";
@@ -63,7 +64,10 @@ export function useWorkspace() {
   };
   const receiveTranscript = (record: TranscriptRecord) =>
     setHistory((items) =>
-      [record, ...items.filter((item) => item.id !== record.id)].slice(0, 500),
+      retainSessionTranscripts([
+        record,
+        ...items.filter((item) => item.id !== record.id),
+      ]).slice(0, 500),
     );
 
   useEffect(() => {
@@ -118,7 +122,7 @@ export function useWorkspace() {
           return;
         }
         if (!received.has("settings")) receiveSettings(next.value);
-        setHistory(records.value);
+        setHistory(retainSessionTranscripts(records.value));
         if (!received.has("speech status")) {
           if (speech.status === "fulfilled") setStatus(speech.value);
           else
@@ -247,7 +251,9 @@ export function useWorkspace() {
           throw new Error("A correction cannot be empty");
         const updated = await bridge.updateTranscript(id, text);
         setHistory((items) =>
-          items.map((item) => (item.id === id ? updated : item)),
+          retainSessionTranscripts(
+            items.map((item) => (item.id === id ? updated : item)),
+          ),
         );
       },
       text === null ? "Original restored" : "Correction saved",

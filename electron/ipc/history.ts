@@ -3,6 +3,10 @@ import { writeFileSync } from "node:fs";
 import { extname } from "node:path";
 import type { ExportFormat, MagicPreset, TranscriptRecord } from "../../src/types";
 import { deliveredText } from "../../src/transcriptText";
+import {
+  rememberSessionTranscript,
+  retainSessionTranscripts,
+} from "../../src/sessionTranscriptRetention";
 import { applyTranscriptEdit } from "../services/storage";
 import { exportRecord } from "../services/transcripts";
 import { validateText } from "./validation";
@@ -32,7 +36,7 @@ export function registerHistoryIpc(
       storage.getHistory().map((record) => [record.id, record]),
     );
     for (const [id, record] of sessionTranscripts) records.set(id, record);
-    return [...records.values()]
+    return retainSessionTranscripts([...records.values()])
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 500);
   });
@@ -46,7 +50,7 @@ export function registerHistoryIpc(
         ? applyTranscriptEdit(sessionRecord, correction)
         : null;
     if (!updated) throw new Error("Transcript not found");
-    sessionTranscripts.set(key, updated);
+    rememberSessionTranscript(sessionTranscripts, updated);
     if (getLastTranscript()?.id === key) setLastTranscript(updated);
     rebuildTrayMenu();
     return updated;
@@ -97,7 +101,7 @@ export function registerHistoryIpc(
         };
       }
       if (storage.findHistory(key)) storage.replaceHistory(updated);
-      sessionTranscripts.set(key, updated);
+      rememberSessionTranscript(sessionTranscripts, updated);
       if (getLastTranscript()?.id === key) setLastTranscript(updated);
       rebuildTrayMenu();
       return updated;

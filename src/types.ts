@@ -91,6 +91,8 @@ export type DictationStatus = {
 };
 
 export type TranscriptRecord = {
+  /** Never automatically persisted, even if history is enabled later. */
+  sessionOnly?: boolean;
   id: string;
   createdAt: number;
   durationMs: number;

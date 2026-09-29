@@ -292,7 +292,7 @@ export function SettingsPage(props: Props) {
             <SettingRow
               icon={ShieldCheck}
               title="Keep local history"
-              description="Save transcript text on this device. Turning this off stops new saves; existing history stays until you clear it."
+              description="Save transcript text on this device. When off, keep only the newest 20 session results within 8 MiB of text; the newest oversized result is kept whole. Session edits and rewrites stay in memory until exit. Existing saved history stays until cleared."
             >
               {toggle("keepHistory", "Keep local history")}
             </SettingRow>

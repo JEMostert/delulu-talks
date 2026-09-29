@@ -15,6 +15,7 @@ import { join, resolve } from "node:path";
 import type { AppSettings, Page, TranscriptRecord } from "../src/types";
 import { modelById } from "../src/data";
 import { deliveredText } from "../src/transcriptText";
+import { rememberSessionTranscript } from "../src/sessionTranscriptRetention";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
@@ -604,9 +605,7 @@ async function start(): Promise<void> {
     { main: () => mainWindow, pill },
     (record: TranscriptRecord) => {
       lastTranscript = record;
-      sessionTranscripts.set(record.id, record);
-      if (sessionTranscripts.size > 500)
-        sessionTranscripts.delete(sessionTranscripts.keys().next().value!);
+      rememberSessionTranscript(sessionTranscripts, record);
       broadcast("history:added", record);
       rebuildTrayMenu();
     },
