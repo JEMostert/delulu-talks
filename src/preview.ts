@@ -231,6 +231,8 @@ export const previewApi: DeluluApi = {
   async chooseAudioFile(): Promise<AudioFileSelection | null> {
     return desktopOnly();
   },
+  async getAudioJobs() { return desktopOnly(); },
+  async removeAudioJob(_path: string) { return desktopOnly(); },
   async chooseAudioFiles(): Promise<AudioFileSelection[]> {
     return desktopOnly();
   },

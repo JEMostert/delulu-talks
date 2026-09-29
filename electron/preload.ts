@@ -72,6 +72,8 @@ const api: DeluluApi = {
   clearHistory: () => ipcRenderer.invoke("history:clear"),
   chooseAudioFile: () => ipcRenderer.invoke("lab:chooseAudio"),
   chooseAudioFiles: () => ipcRenderer.invoke("lab:chooseAudioFiles"),
+  getAudioJobs: () => ipcRenderer.invoke("lab:getJobs"),
+  removeAudioJob: (path: string) => ipcRenderer.invoke("lab:removeJob", path),
   resolveAudioFiles: async (files: File[]) => {
     if (!Array.isArray(files) || files.length > MAX_AUDIO_BATCH_FILES)
       throw new Error(`Choose at most ${MAX_AUDIO_BATCH_FILES} files at once`);

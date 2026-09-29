@@ -28,7 +28,19 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
   const stop = useRef(false);
   const active = useRef(false);
   const selectionActive = useRef(false);
-  useEffect(() => () => { stop.current = true; }, []);
+  useEffect(() => {
+    let alive = true;
+    selectionActive.current = true;
+    setSelecting(true);
+    void bridge.getAudioJobs().then((jobs) => {
+      if (alive) setFiles(jobs);
+    }).catch((reason) => {
+      if (alive) setError(reason instanceof Error ? reason.message : String(reason));
+    }).finally(() => {
+      if (alive) { selectionActive.current = false; setSelecting(false); }
+    });
+    return () => { alive = false; stop.current = true; };
+  }, []);
   const result = history.find((record) => record.id === resultId);
   const pending = files.filter((file) => file.state === "pending").length;
 
@@ -69,6 +81,16 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
 
   function update(path: string, change: Partial<SelectedFile>) {
     setFiles((items) => items.map((item) => item.path === path ? { ...item, ...change } : item));
+  }
+
+  async function remove(path: string) {
+    if (active.current || selectionActive.current) return;
+    try {
+      await bridge.removeAudioJob(path);
+      setFiles((items) => items.filter((item) => item.path !== path));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
   }
 
   async function run() {
@@ -131,7 +153,7 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
                   <div className="flex gap-3 mt-1">
                     {file.resultId && <button className="text-accent" onClick={() => setResultId(file.resultId!)}>Show transcript</button>}
                     {file.state === "failed" && <button disabled={running} className="text-accent" onClick={() => update(file.path, { state: "pending", error: undefined })}>Retry</button>}
-                    <button disabled={running || selecting} className="text-muted" onClick={() => setFiles((items) => items.filter((item) => item.path !== file.path))}>Remove</button>
+                    <button disabled={running || selecting} className="text-muted" onClick={() => void remove(file.path)}>Remove</button>
                   </div>
                 </li>
               ))}
@@ -141,7 +163,7 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
             {running ? <LoaderCircle className="spin" /> : <Sparkles />}{" "}{running ? "Working locally…" : `Transcribe${pending > 1 ? ` ${pending} files` : ""}`}
           </button>
           {running && <button className="text-[12px] text-muted" onClick={() => { stop.current = true; }}>Stop after current file</button>}
-          {files.length > 1 && <p className="text-[10px] text-muted">Files are processed one at a time. This selection is kept while this page is open.</p>}
+          {files.length > 1 && <p className="text-[10px] text-muted">Files are processed one at a time. Job metadata is saved locally; source audio stays in place. Replacing this list removes its previous job metadata.</p>}
         </section>
         <section className="lab-result border border-line bg-surface rounded-panel shadow-panel backdrop-blur-xl overflow-hidden min-w-0 px-[18px] py-4">
           {!result ? (

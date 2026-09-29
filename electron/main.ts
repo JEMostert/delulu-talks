@@ -36,6 +36,7 @@ import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
+import { AudioJobsService } from "./services/audioJobs";
 import { PasteService } from "./services/paste";
 import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
@@ -81,6 +82,10 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
 let storage: StorageService;
+let audioJobs: AudioJobsService | null = null;
+function importJobs(): AudioJobsService {
+  return audioJobs ??= new AudioJobsService(storage.dataDirectory);
+}
 let asr: AsrService;
 let paste: PasteService;
 let pill: PillService;
@@ -558,6 +563,7 @@ function selectAudioFiles(value: unknown): AudioFileSelection[] {
     throw new Error(`Choose at most ${MAX_AUDIO_BATCH_FILES} files at once`);
   const files = Array.from(value, validateAudioFile);
   // Register only after every file passes, so invalid batches are rejected whole.
+  importJobs().replaceSelection(files);
   for (const file of files) selectedAudioFiles.add(file.path);
   return files;
 }
@@ -880,7 +886,35 @@ function registerIpc(): void {
     const file = validateAudioFile(request?.path);
     if (!selectedAudioFiles.has(file.path))
       throw new Error("Choose or drop the source file through Audio files first");
-    return dictation.runLab({ path: file.path });
+    importJobs().update(file.path, { state: "running", error: undefined });
+    let record: TranscriptRecord;
+    try {
+      record = await dictation.runLab({ path: file.path });
+    } catch (reason) {
+      importJobs().update(file.path, { state: "failed", error: reason instanceof Error ? reason.message : String(reason) });
+      throw reason;
+    }
+    try {
+      importJobs().update(file.path, { state: "done", resultId: record.id, error: undefined });
+    } catch (reason) {
+      throw new Error(`Transcription completed (${record.id}), but job metadata could not be saved. Check History before retrying: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+    return record;
+  });
+  handle("lab:getJobs", () => importJobs().getJobs().map((job) => {
+    try {
+      const file = validateAudioFile(job.path);
+      selectedAudioFiles.add(file.path);
+      return job;
+    } catch (reason) {
+      return { ...job, state: "failed", error: reason instanceof Error ? reason.message : String(reason) };
+    }
+  }));
+  handle("lab:removeJob", (_event, path: unknown) => {
+    if (dictation.isActive) throw new Error("Finish the current recording or import first");
+    const key = resolve(validateText(path, 4096));
+    importJobs().remove(key);
+    selectedAudioFiles.delete(key);
   });
   handle(
     "history:export",
