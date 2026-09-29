@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { freemem, totalmem } from "node:os";
 import type { RuntimeDiagnostics } from "../../src/types";
 import type { StorageService } from "../services/storage";
+import { getAccessibilityPermission } from "../services/accessibilityPermission";
 import { runtimePython } from "./location";
 
 function probe(program: string, args: string[]): Promise<string> {
@@ -53,6 +54,7 @@ export async function runtimeDiagnostics(
     dataDirectory: storage.dataDirectory,
     runtimeInstalled: installed,
     packages,
+    accessibility: getAccessibilityPermission(),
     checkedAt: Date.now(),
   };
 }
