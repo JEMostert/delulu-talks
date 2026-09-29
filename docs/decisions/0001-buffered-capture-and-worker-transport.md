@@ -18,4 +18,4 @@ This keeps one completed transcript as the history/delivery boundary and avoids 
 
 True streaming requires an explicit session protocol, ordering/cancellation rules, stable-prefix semantics, native backend evidence, and a visible partial-versus-committed distinction before clipboard or paste. Those are separate implementation issues, not an outcome of this record. Protocol versioning, frame/queue bounds, and shutdown semantics also remain separate roadmap work.
 
-Owners: [microphone controller](../../src/MicrophoneController.tsx), [dictation service](../../electron/services/dictation.ts), [worker client](../../electron/runtime/workerClient.ts), [Python worker](../../electron/python/transcription_engine.py). See [capture verification](../capture-verification.md) for fixture boundaries.
+Owners: [microphone controller](../../src/WorkspaceRoot.tsx), [dictation service](../../electron/services/dictation.ts), [worker client](../../electron/runtime/workerClient.ts), [Python worker](../../electron/python/transcription_engine.py). See [capture verification](../capture-verification.md) for fixture boundaries.
