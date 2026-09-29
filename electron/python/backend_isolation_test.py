@@ -43,6 +43,8 @@ def forbid_imports(names):
 # Only the dependencies needed by the synthetic writing workflow are provided.
 PROTOCOL_BOOTSTRAP = r'''
 import builtins,contextlib,importlib.util,platform,sys,types
+from pathlib import Path
+sys.path.insert(0,str(Path(sys.argv[1]).parent))
 spec=importlib.util.spec_from_file_location('engine',sys.argv[1])
 engine=importlib.util.module_from_spec(spec);spec.loader.exec_module(engine)
 sys.platform=sys.argv[2];platform.machine=lambda:sys.argv[3]
@@ -78,7 +80,7 @@ raise SystemExit(engine.main())
 
 class BackendIsolation(unittest.TestCase):
     def protocol(self, system, arch, blocked, commands, device="cpu"):
-        requests = [{"id": str(index), **request} for index, request in enumerate(commands)]
+        requests = [{"protocolVersion": 1, "id": str(index), **request} for index, request in enumerate(commands)]
         result = subprocess.run(
             [sys.executable, "-c", PROTOCOL_BOOTSTRAP, str(Path(engine.__file__)),
              system, arch, ",".join(blocked), device],
@@ -90,6 +92,7 @@ class BackendIsolation(unittest.TestCase):
                      for line in result.stdout.splitlines()]
         self.assertEqual([response["id"] for response in responses],
                          [request["id"] for request in requests], result.stderr)
+        self.assertTrue(all(response["protocolVersion"] == 1 for response in responses))
         return responses
 
     def test_idle_commands_do_not_import_unused_backends(self):
@@ -193,6 +196,10 @@ class BackendIsolation(unittest.TestCase):
                 worker.magic_processor = object()
                 worker.magic_model_name = "qwen35Small"
                 worker.magic_device = "cuda"
+                # Observe these unloads separately from failed-transcribe
+                # cleanup performed while acquiring the unloaded adapter.
+                clears.clear()
+                collect.reset_mock()
                 worker.dispatch({"command": "unload"})
                 worker.dispatch({"command": "magicUnload"})
                 if system == "win32":

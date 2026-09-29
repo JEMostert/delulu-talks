@@ -2,7 +2,7 @@
 
 > This record covers the previous **Qwen3-ASR-0.6B / vLLM Metal** implementation. The current R2T2 MLX adapter has not yet passed native validation. See [current Mac support and acceptance steps](MAC_SUPPORT.md).
 
-Validated on an arm64 Mac running macOS 26.6.2 on 2026-09-21. Mac support requires macOS 15+ and native arm64 Python 3.12. CUDA retains the existing R2T2 engine.
+This historical record reports validation on an arm64 Mac running macOS 26.6.2 on 2026-09-21. Its requirements were macOS 15+ and native arm64 Python 3.12. Its model, server dependencies, language behavior and test counts describe that older implementation. They are not acceptance results for the current direct R2T2 MLX adapter.
 
 ## Results
 
@@ -22,7 +22,9 @@ This hobby release is **not Developer ID signed or notarized**. Mac automatic up
 
 Live microphone permission and pasting into other Mac applications still depend on the user's Microphone and Accessibility permissions. The shared correction/clipboard/paste pipeline has automated tests, but this validation did not type into the user's other applications. NVIDIA hardware was not available on this Mac; CUDA behavior has regression coverage, not a new hardware inference run.
 
-## Reproduce
+## Historical reproduction commands
+
+The commands below are preserved as part of the old record. Run them only against the historical implementation that produced it, not as proof of current R2T2 support. Current commands, evidence classification and pending native acceptance checks are in [Mac support](MAC_SUPPORT.md#native-release-acceptance). In particular, current package reporting deliberately separates fixture-only replacement checks from runtime-backed inference.
 
 After installing the speech engine in Models, build the app:
 
