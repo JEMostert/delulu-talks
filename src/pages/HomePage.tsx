@@ -211,7 +211,7 @@ export function HomePage({
                 </select>
                 <MicrophoneNotice settings={s} devices={devices} />
               </ControlField>
-              <ControlField label="Language">
+              <ControlField label="Language hint">
                 <select
                   aria-label="Dictation language"
                   className="w-full min-h-[34px] px-[9px] py-[7px] pr-[23px] text-[12px] bg-input"

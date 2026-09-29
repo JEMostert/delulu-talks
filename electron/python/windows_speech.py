@@ -146,6 +146,8 @@ class WindowsSpeech:
         return parsed
 
     def transcribe(self, request):
+        from transcription_engine import LANGUAGE_NAMES, language_hint
+        code, language = language_hint(request)
         if self.model is None:
             raise RuntimeError("R2T2 is not loaded. Load the model to try again.")
         audio = Path(request["audioPath"])
@@ -166,8 +168,6 @@ class WindowsSpeech:
             samples = soxr.resample(samples, rate, SAMPLE_RATE)
         if not len(samples):
             raise ValueError("The selected audio file contains no samples")
-        code = str(request.get("language", "en")).lower()
-        language = LANGUAGE_NAMES.get(code)
         inference_started = time.perf_counter()
         results = []
         try:
