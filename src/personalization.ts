@@ -26,7 +26,7 @@ function phrasePattern(groups: string[][]): RegExp {
   );
 }
 
-function* phraseMatches(text: string, rules: Map<string, string>) {
+function* phraseMatches<T>(text: string, rules: Map<string, T>) {
   const phrases = [...rules.keys()].sort((a, b) => b.length - a.length);
   const groups: string[][] = [];
   for (let index = 0; index < phrases.length; index += phrasesPerCapture)
@@ -35,7 +35,7 @@ function* phraseMatches(text: string, rules: Map<string, string>) {
   // Group sorted alternatives, then resolve within at most 256 phrases using
   // the same Unicode folding; cache repeated matches for long transcripts.
   const pattern = phrasePattern(groups);
-  const outputs = new Map<string, string>();
+  const outputs = new Map<string, { trigger: string; output: T }>();
   for (const match of text.matchAll(pattern)) {
     let output = outputs.get(match[0]);
     if (output === undefined) {
@@ -46,10 +46,15 @@ function* phraseMatches(text: string, rules: Map<string, string>) {
         samePhrase(phrase, match[0]),
       );
       if (phrase === undefined) continue;
-      output = rules.get(phrase)!;
+      output = { trigger: phrase, output: rules.get(phrase)! };
       outputs.set(match[0], output);
     }
-    yield { index: match.index, length: match[0].length, output };
+    yield {
+      index: match.index,
+      length: match[0].length,
+      matchedText: match[0],
+      ...output,
+    };
   }
 }
 
@@ -94,18 +99,61 @@ export function ruleConflict(
   return null;
 }
 
-export function personalize(text: string, words: CustomWord[]): string {
-  const rules = new Map<string, string>();
+function* enabledRules(words: CustomWord[]) {
   for (const word of words) {
     if (!word.enabled) continue;
     const output = ruleKind(word) === "shortcut" ? word.replacement : word.term;
     if (!output.trim()) continue;
     for (const trigger of ruleTriggers(word)) {
-      // Stable first-rule priority for legacy conflicts. Never cascade replacements.
-      if (!rules.has(trigger)) rules.set(trigger, output);
+      yield { trigger, output, rule: word };
     }
   }
+}
+
+export function personalize(text: string, words: CustomWord[]): string {
+  const rules = new Map<string, string>();
+  for (const { trigger, output } of enabledRules(words)) {
+    // Stable first-rule priority for legacy conflicts. Never cascade replacements.
+    if (!rules.has(trigger)) rules.set(trigger, output);
+  }
   return replacePhrases(text, rules);
+}
+
+export type RuleMatch = {
+  ruleId: string;
+  term: string;
+  kind: "correction" | "shortcut";
+  trigger: string;
+  matchedText: string;
+  replacement: string;
+  index: number;
+};
+
+/** Explain the same matching pass used for clean output; never save or cascade. */
+export function previewPersonalization(text: string, words: CustomWord[]) {
+  const rules = new Map<string, { output: string; rule: CustomWord }>();
+  for (const { trigger, output, rule } of enabledRules(words)) {
+    if (!rules.has(trigger)) rules.set(trigger, { output, rule });
+  }
+  const matches: RuleMatch[] = [];
+  let result = "";
+  let cursor = 0;
+  if (rules.size) {
+    for (const match of phraseMatches(text, rules)) {
+      result += text.slice(cursor, match.index) + match.output.output;
+      cursor = match.index + match.length;
+      matches.push({
+        ruleId: match.output.rule.id,
+        term: match.output.rule.term,
+        kind: ruleKind(match.output.rule),
+        trigger: match.trigger,
+        matchedText: match.matchedText,
+        replacement: match.output.output,
+        index: match.index,
+      });
+    }
+  }
+  return { original: text, result: result + text.slice(cursor), matches };
 }
 
 /** Keep saved blocks outside the language model. Rewrite only the surrounding text. */
