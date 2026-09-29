@@ -1,3 +1,4 @@
+import { changePersonalProfiles } from "./personalProfileCommands";
 import { DEFAULT_SETTINGS } from "./data";
 import { deliveredText, originalTranscriptText } from "./transcriptText";
 import type {
@@ -70,10 +71,28 @@ export const previewApi: DeluluApi = {
       ffmpeg: "Not available",
       dataDirectory: "Desktop app required",
       runtimeInstalled: false,
+      accessibility: {
+        state: "not-applicable",
+        canAttemptPaste: false,
+        detail: "Native Accessibility permission is available in the desktop app. Browser preview cannot attempt native paste.",
+      },
       packages: {},
       checkedAt: Date.now(),
     };
   },
+  async getPasteLastStatus() {
+    return {
+      phase: "idle" as const,
+      operationId: null,
+      dueAt: null,
+      remainingSeconds: 0,
+      message: "",
+    };
+  },
+  async cancelPasteLast() {
+    desktopOnly();
+  },
+  onPasteLastStatus: () => () => {},
   async pasteLastTranscript() {
     desktopOnly();
   },
@@ -88,6 +107,15 @@ export const previewApi: DeluluApi = {
   },
   async updateSettings(settings) {
     const next = { ...mockSettings(), ...settings };
+    localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
+    return next;
+  },
+  async managePersonalProfile(command) {
+    const current = mockSettings();
+    const next = {
+      ...current,
+      personalProfiles: changePersonalProfiles(current, command, () => crypto.randomUUID()),
+    };
     localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
     return next;
   },
@@ -238,6 +266,7 @@ export const previewApi: DeluluApi = {
     return desktopOnly();
   },
   async recordingStarted() {},
+  async recordingLimitReached() {},
   async recorderReady() {},
   async recordingFailed() {},
   recordingLevel(_level: number) {},
