@@ -20,14 +20,25 @@ test("interactive operations do not inherit download deadlines", () => {
   expect(transcriptionTimeout(1_000_000)).toBe(900_000);
 });
 
-function harness(script: string) {
+// Real subprocess transport, synthetic protocol only: no model downloads or inference.
+function harness(
+  script: string,
+  options: {
+    onFailure?: (error: Error) => void;
+    onProgress?: (detail: string) => void;
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), "delulu-worker-"));
   const path = join(dir, "worker.py");
   writeFileSync(path, script);
   const failures: Error[] = [];
   const client = new WorkerClient(
     () => ({ python: "python3", script: path, env: process.env }),
-    (error) => failures.push(error),
+    (error) => {
+      failures.push(error);
+      options.onFailure?.(error);
+    },
+    options.onProgress,
   );
   return {
     client,
@@ -38,6 +49,176 @@ function harness(script: string) {
     },
   };
 }
+
+test.each([
+  "not-json",
+  "null",
+  "[]",
+  '{"id":4,"ok":true}',
+  '{"id":"x","ok":"yes"}',
+])(
+  "malformed worker response %s rejects all pending requests once",
+  async (response) => {
+    const h = harness(`import sys
+sys.stdin.readline()
+sys.stdout.write(${JSON.stringify(`@delulu:${response}\n@delulu:${response}\n`)})
+sys.stdout.flush()
+`);
+    try {
+      const results = await Promise.allSettled([
+        h.client.request("first", {}, 3000),
+        h.client.request("second", {}, 3000),
+      ]);
+      expect(results.map((result) => result.status)).toEqual([
+        "rejected",
+        "rejected",
+      ]);
+      expect(h.client.running).toBe(false);
+      expect(h.client.busy).toBe(false);
+      expect(h.failures).toHaveLength(1);
+    } finally {
+      h.cleanup();
+    }
+  },
+);
+
+test("responses complete by ID even when the worker finishes in reverse order", async () => {
+  const h = harness(`import sys,json
+requests = [json.loads(sys.stdin.readline()) for _ in range(2)]
+for request in reversed(requests):
+ print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':request['command']}),flush=True)
+`);
+  try {
+    expect(
+      await Promise.all([
+        h.client.request<string>("first", {}, 3000),
+        h.client.request<string>("second", {}, 3000),
+      ]),
+    ).toEqual(["first", "second"]);
+    expect(h.client.busy).toBe(false);
+    expect(h.failures).toHaveLength(0);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("duplicate and unknown response IDs cannot complete a different request", async () => {
+  const h = harness(`import sys,json
+first,second = [json.loads(sys.stdin.readline()) for _ in range(2)]
+for response in [
+ {'id':first['id'],'ok':True,'result':'first'},
+ {'id':first['id'],'ok':True,'result':'duplicate'},
+ {'id':'unknown','ok':True,'result':'unrelated'},
+ {'id':second['id'],'ok':True,'result':'second'},
+]:
+ print('@delulu:'+json.dumps(response),flush=True)
+`);
+  try {
+    expect(
+      await Promise.all([
+        h.client.request<string>("first", {}, 3000),
+        h.client.request<string>("second", {}, 3000),
+      ]),
+    ).toEqual(["first", "second"]);
+    expect(h.client.busy).toBe(false);
+    expect(h.failures).toHaveLength(0);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("an operation error rejects its request while another request still succeeds", async () => {
+  const h = harness(`import sys,json
+for line in sys.stdin:
+ request = json.loads(line)
+ if request['command'] == 'broken':
+  response = {'id':request['id'],'ok':False,'error':'Fixture operation failed'}
+ else:
+  response = {'id':request['id'],'ok':True,'result':'healthy'}
+ print('@delulu:'+json.dumps(response),flush=True)
+`);
+  try {
+    const [broken, healthy] = await Promise.allSettled([
+      h.client.request("broken", {}, 3000),
+      h.client.request<string>("ping", {}, 3000),
+    ]);
+    expect(broken.status).toBe("rejected");
+    if (broken.status === "rejected")
+      expect(broken.reason.message).toBe("Fixture operation failed");
+    expect(healthy).toEqual({ status: "fulfilled", value: "healthy" });
+    expect(h.client.running).toBe(true);
+    expect(h.client.busy).toBe(false);
+    expect(h.failures).toHaveLength(0);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test.each([0, 7])(
+  "worker exit %i rejects every pending request",
+  async (code) => {
+    const h = harness(`import sys
+sys.stdin.readline()
+raise SystemExit(${code})
+`);
+    try {
+      const results = await Promise.allSettled([
+        h.client.request("first", {}, 3000),
+        h.client.request("second", {}, 3000),
+      ]);
+      for (const result of results) {
+        expect(result.status).toBe("rejected");
+        if (result.status === "rejected")
+          expect(result.reason.message).toBe(
+            code === 0
+              ? "Model worker closed"
+              : `Model worker exited (${code})`,
+          );
+      }
+      expect(h.client.running).toBe(false);
+      expect(h.client.busy).toBe(false);
+      expect(h.failures).toHaveLength(1);
+    } finally {
+      h.cleanup();
+    }
+  },
+);
+
+test("buffered output from a failed worker cannot fail or report progress for a retry", async () => {
+  const retry: { promise?: Promise<string> } = {};
+  const progress: string[] = [];
+  const h = harness(
+    `import sys,json
+for line in sys.stdin:
+ request = json.loads(line)
+ if request['command'] == 'broken':
+  sys.stdout.write('@delulu:not-json\\n@delulu:{}\\n@delulu-progress:obsolete progress\\n')
+  sys.stdout.flush()
+ else:
+  print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':'recovered'}),flush=True)
+`,
+    {
+      onFailure: () => {
+        if (!retry.promise) {
+          retry.promise = h.client.request<string>("ping", {}, 3000);
+          void retry.promise.catch(() => undefined);
+        }
+      },
+      onProgress: (detail) => progress.push(detail),
+    },
+  );
+  try {
+    await expect(h.client.request("broken", {}, 3000)).rejects.toThrow();
+    expect(retry.promise).toBeDefined();
+    expect(await retry.promise).toBe("recovered");
+    expect(progress).toEqual([]);
+    expect(h.failures).toHaveLength(1);
+    expect(h.client.running).toBe(true);
+    expect(h.client.busy).toBe(false);
+  } finally {
+    h.cleanup();
+  }
+});
 
 test("independent speech/writing clients survive repeated stop and restart cycles", async () => {
   const script = `import sys,json\nfor line in sys.stdin:\n r=json.loads(line)\n print('@delulu:'+json.dumps({'id':r['id'],'ok':True,'result':r['command']}),flush=True)\n`;
@@ -76,7 +257,14 @@ test("worker separates logging from protocol responses", async () => {
 });
 
 test("timeout terminates the stalled worker and rejects every queued request", async () => {
-  const h = harness("import time\ntime.sleep(60)\n");
+  const h = harness(`import sys,json,time
+for line in sys.stdin:
+ request = json.loads(line)
+ if request['command'] == 'slow':
+  time.sleep(60)
+ else:
+  print('@delulu:'+json.dumps({'id':request['id'],'ok':True,'result':'recovered'}),flush=True)
+`);
   try {
     const results = await Promise.allSettled([
       h.client.request("slow", {}, 80),
@@ -84,6 +272,10 @@ test("timeout terminates the stalled worker and rejects every queued request", a
     ]);
     expect(results.every((result) => result.status === "rejected")).toBe(true);
     expect(h.client.running).toBe(false);
+    expect(h.client.busy).toBe(false);
+    expect(h.failures).toHaveLength(1);
+    expect(await h.client.request<string>("ping", {}, 3000)).toBe("recovered");
+    expect(h.client.running).toBe(true);
     expect(h.client.busy).toBe(false);
     expect(h.failures).toHaveLength(1);
   } finally {
