@@ -483,7 +483,7 @@ with patch.dict(sys.modules,fixture.modules):
         ]:
             with self.subTest(stage=stage):
                 commands = [load, status, load, infer, "shutdown"]
-                requests = [{"id": str(i), "command": command, "model": "qwen35Small",
+                requests = [{"protocolVersion": 1, "id": str(i), "command": command, "model": "qwen35Small",
                              "text": "Original fixture.", "preset": "polish", "audioPath": str(self.audio)}
                             for i, command in enumerate(commands)]
                 result = subprocess.run(
@@ -494,6 +494,7 @@ with patch.dict(sys.modules,fixture.modules):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 responses = [json.loads(line.removeprefix("@delulu:")) for line in result.stdout.splitlines()]
                 self.assertEqual([response["id"] for response in responses], [str(i) for i in range(5)])
+                self.assertTrue(all(response["protocolVersion"] == 1 for response in responses))
                 self.assertFalse(responses[0]["ok"])
                 self.assertFalse(responses[1]["result"]["loaded"])
                 self.assertTrue(responses[2]["ok"])

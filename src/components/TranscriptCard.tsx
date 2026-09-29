@@ -1,5 +1,6 @@
 import { RewriteDialog } from "./RewriteDialog";
 import { TranscriptTitleDialog } from "./TranscriptTitleDialog";
+import { SuggestedRulePreview } from "./SuggestedRulePreview";
 import { useState } from "react";
 import {
   BookPlus,
@@ -44,6 +45,7 @@ export type TranscriptActions = {
   onDelete?: (id: string) => void;
   onExport?: (id: string, format: ExportFormat) => void;
   onRemember?: (word: CustomWord) => Promise<boolean>;
+  ruleExamples?: TranscriptRecord[];
 };
 export function TranscriptCard({
   record,
@@ -55,6 +57,7 @@ export function TranscriptCard({
   onDelete,
   onExport,
   onRemember,
+  ruleExamples,
   onRewrite,
   onSetRewrite,
   onRewriteSetup,
@@ -156,6 +159,22 @@ export function TranscriptCard({
               <>
                 · <WandSparkles className="size-[11px]" /> Rewritten
               </>
+            )}
+          </span>
+          <span
+            className="mt-1 block text-[10px] text-muted break-words"
+            aria-label="Transcript language metadata"
+            title="The backend language label may reflect a forced decoder hint; it is not an independent language detection result."
+          >
+            {record.recognizedLanguage !== undefined ||
+            record.requestedLanguage !== undefined ? (
+              <>
+                Backend language: {record.recognizedLanguage || "Unknown"}
+                {" · "}Requested hint:{" "}
+                {record.requestedLanguage || "Not recorded"}
+              </>
+            ) : (
+              <>Legacy language: {record.language || "Unknown"}</>
             )}
           </span>
         </div>
@@ -424,14 +443,14 @@ export function TranscriptCard({
           {onExport && (
             <div className="export-row mt-3.5 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted [&_.tool-button]:min-h-[28px] [&_.tool-button]:px-2 [&_.tool-button]:py-[5px] [&_svg]:size-3">
               <span>Export</span>
-              {(["txt", "json"] as ExportFormat[]).map((format) => (
+              {(["txt", "json", "md"] as ExportFormat[]).map((format) => (
                 <button
                   className="tool-button"
                   key={format}
                   onClick={() => onExport(record.id, format)}
                 >
                   <Download />
-                  {format.toUpperCase()}
+                  {format === "md" ? "Markdown" : format.toUpperCase()}
                 </button>
               ))}
             </div>
@@ -531,7 +550,7 @@ export function TranscriptCard({
           }
         >
           {rememberError && (
-            <p className="field-error" role="alert">
+            <p className="field-error break-words" role="alert">
               {rememberError}
             </p>
           )}
@@ -558,6 +577,7 @@ export function TranscriptCard({
               placeholder="e.g. Delulu"
             />
           </label>
+          <SuggestedRulePreview source={record} examples={ruleExamples} heard={heard} correct={correct} />
         </Modal>
       )}
     </article>

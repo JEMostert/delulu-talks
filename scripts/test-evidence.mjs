@@ -106,6 +106,16 @@ export function planSuite(suite, input = []) {
       scope =
         "Real Chromium and synthetic microphone capture, with preview/mock backend IPC; no native model or system paste.";
       break;
+    case "settings-write":
+      if (args.length || metadataPath)
+        throw new Error(
+          "Settings-write reporting accepts no runtime, metadata or filters",
+        );
+      command = ["node", "scripts/settings-write-smoke.mjs"];
+      kinds = ["fixture-only"];
+      scope =
+        "Real isolated Electron/preload/main IPC, temporary settings write failure and native shortcut rollback/retry. No inference, real microphone or manual delivery.";
+      break;
     case "data-deletion":
       if (args.length)
         throw new Error(

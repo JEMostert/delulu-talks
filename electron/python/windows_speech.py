@@ -14,6 +14,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from worker_protocol import emit_progress
+
 MODEL = "netease-youdao/Confucius4-R2T2"
 MODEL_REVISION = "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9"
 SAMPLE_RATE = 16000
@@ -46,8 +48,7 @@ class WindowsSpeech:
                                         clean_config, convert_state_dict)
 
         cache_root = request.get("cacheDir")
-        sys.__stdout__.write("@delulu-progress:Downloading the pinned R2T2 checkpoint…\n")
-        sys.__stdout__.flush()
+        emit_progress("Downloading the pinned R2T2 checkpoint…", stage="download")
         source = Path(snapshot_download(
             repo_id=MODEL, revision=MODEL_REVISION,
             cache_dir=str(Path(cache_root) / "hub") if cache_root else None,
@@ -64,8 +65,7 @@ class WindowsSpeech:
                 ).eval()
                 self._warmup()
                 return self.status()
-            sys.__stdout__.write("@delulu-progress:Converting R2T2 for native Windows CUDA (first load only)…\n")
-            sys.__stdout__.flush()
+            emit_progress("Converting R2T2 for native Windows CUDA (first load only)…", stage="conversion")
             self.processor = Qwen3ASRProcessor(
                 feature_extractor=Qwen3ASRFeatureExtractor(),
                 tokenizer=AutoTokenizer.from_pretrained(source), chat_template=ASR_CHAT_TEMPLATE,
@@ -142,7 +142,7 @@ class WindowsSpeech:
         audio = Path(request["audioPath"])
         if not audio.is_file():
             raise FileNotFoundError("The selected audio file no longer exists")
-        from transcription_engine import LANGUAGE_NAMES
+        from transcription_engine import LANGUAGE_NAMES, normalize_recognized_language
         import soundfile as sf
         started = time.perf_counter()
         try:
@@ -171,10 +171,13 @@ class WindowsSpeech:
                     torch.cuda.empty_cache()
             raise
         finished = time.perf_counter()
-        languages = {str(result.get("language") or language or "und").lower() for result in results}
-        detected = next(iter(languages)) if len(languages) == 1 else "und"
-        detected = {name.lower(): key for key, name in LANGUAGE_NAMES.items()}.get(detected, "und")
-        return {"text": " ".join(result["transcription"].strip() for result in results).strip(), "language": detected,
+        # These are labels from the parsed model output, not a separate detector;
+        # a forced prompt can influence them. Never substitute the prompt hint.
+        recognized_language = normalize_recognized_language([result.get("language") for result in results])
+        return {"text": " ".join(result["transcription"].strip() for result in results).strip(),
+                "language": recognized_language or "und",
+                "requestedLanguage": code,
+                "recognizedLanguage": recognized_language,
                 "duration": len(samples) / SAMPLE_RATE,
                 "processingTime": finished - started,
                 "inferenceTime": finished - inference_started}

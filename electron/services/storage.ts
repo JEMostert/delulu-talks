@@ -1,6 +1,9 @@
+import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { app } from "electron";
+import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
 import { speechModelForPlatform } from "../runtime/platform";
 import { normalizeTranscriptTitle } from "../../src/transcriptTitle";
+import { normalizeReportedLanguage } from "../../src/transcriptLanguage";
 import {
   existsSync,
   mkdirSync,
@@ -101,9 +104,14 @@ function safeString(value: unknown, fallback: string, max = 512): string {
     : fallback;
 }
 
-function optionalText(value: unknown, max: number): string | null {
+function optionalText(
+  value: unknown,
+  max: number,
+  preserveWhitespace = false,
+): string | null {
   if (typeof value !== "string") return null;
-  return value.trim().slice(0, max) || null;
+  const text = preserveWhitespace ? value : value.trim();
+  return text.trim() ? text.slice(0, max) : null;
 }
 
 function normalizeWords(value: unknown): CustomWord[] {
@@ -122,7 +130,11 @@ function normalizeWords(value: unknown): CustomWord[] {
         id: safeString(source.id, `word-${Date.now()}-${index}`, 128),
         term,
         soundsLike: safeString(source.soundsLike, "", 1024),
-        replacement: safeString(source.replacement, "", 4096),
+        // Shortcut indentation and trailing whitespace are literal user text.
+        replacement:
+          typeof source.replacement === "string" && source.replacement.trim()
+            ? source.replacement.slice(0, 4096)
+            : "",
         enabled: source.enabled !== false,
       },
     ];
@@ -191,9 +203,20 @@ export function normalizeSettings(value: unknown): AppSettings {
       512,
     ),
     autoPaste: boolean(source.autoPaste, DEFAULT_SETTINGS.autoPaste),
+    pasteLastDelaySeconds:
+      typeof source.pasteLastDelaySeconds === "number" &&
+      Number.isInteger(source.pasteLastDelaySeconds) &&
+      source.pasteLastDelaySeconds >= 1 &&
+      source.pasteLastDelaySeconds <= 30
+        ? source.pasteLastDelaySeconds
+        : DEFAULT_SETTINGS.pasteLastDelaySeconds,
     copyToClipboard: boolean(
       source.copyToClipboard,
       DEFAULT_SETTINGS.copyToClipboard,
+    ),
+    spokenFormattingCommands: boolean(
+      source.spokenFormattingCommands,
+      DEFAULT_SETTINGS.spokenFormattingCommands,
     ),
     pastePortalToken: safeString(
       source.pastePortalToken,
@@ -224,6 +247,7 @@ export function normalizeSettings(value: unknown): AppSettings {
       DEFAULT_SETTINGS.launchAtLogin,
     ),
     customWords: normalizeWords(source.customWords),
+    personalProfiles: readPersonalProfiles(source.personalProfiles).document as AppSettings["personalProfiles"],
   };
 }
 
@@ -253,12 +277,12 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     createdAt: Number(source.createdAt) || Date.now(),
     durationMs: Math.max(0, Number(source.durationMs) || 0),
     text,
-    personalizedText: optionalText(source.personalizedText, 500_000),
+    personalizedText: optionalText(source.personalizedText, 500_000, true),
     editedText: optionalText(
       source.editedText ?? source.editedIntendedText,
       500_000,
     ),
-    magicText: optionalText(source.magicText, 500_000),
+    magicText: optionalText(source.magicText, 500_000, true),
     magicModel: validMagicModels.has(source.magicModel as MagicModelId)
       ? (source.magicModel as MagicModelId)
       : null,
@@ -274,6 +298,16 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     ),
     model,
     language: safeString(source.language, "en", 12),
+    ...(source.requestedLanguage === undefined
+      ? {}
+      : {
+          requestedLanguage: normalizeReportedLanguage(source.requestedLanguage),
+        }),
+    ...(source.recognizedLanguage === undefined
+      ? {}
+      : {
+          recognizedLanguage: normalizeReportedLanguage(source.recognizedLanguage),
+        }),
     source: ["dictation", "file"].includes(String(source.source))
       ? (source.source as TranscriptRecord["source"])
       : "dictation",
@@ -362,6 +396,16 @@ export class StorageService {
           .flatMap((item) => migrateRecord(item) ?? [])
           .slice(0, MAX_HISTORY)
       : [];
+    const settingsChanged = rawSettings !== undefined &&
+      JSON.stringify(rawSettings) !== JSON.stringify(this.settings);
+    const historyChanged = rawHistory !== undefined &&
+      (JSON.stringify(rawHistory) !== JSON.stringify(this.history) || !existsSync(historyPath));
+    if (settingsChanged || historyChanged || (rawSettings !== undefined && !existsSync(settingsPath))) {
+      backupProfileMigration(this.dataDirectory, {
+        "settings.json": existsSync(settingsPath) ? settingsPath : legacy ? join(legacy, SETTINGS_FILE) : undefined,
+        "history.json": existsSync(historyPath) ? historyPath : legacy ? join(legacy, HISTORY_FILE) : undefined,
+      });
+    }
     if (!existsSync(historyPath) && this.history.length) {
       // Stage both migration outputs before replacing either destination.
       // Publish the previously absent history first: if the settings rename
@@ -418,7 +462,15 @@ export class StorageService {
   }
 
   updateSettings(value: unknown): AppSettings {
-    const next = normalizeSettings(value);
+    const source = value && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
+    // Older settings callers may omit the new field. Preserve existing documents.
+    const document = Object.prototype.hasOwnProperty.call(source, "personalProfiles")
+      ? source.personalProfiles
+      : this.settings.personalProfiles;
+    assertPersonalProfilesUpdate(this.settings.personalProfiles, document);
+    const next = normalizeSettings({ ...source, personalProfiles: document });
     writeJson(join(this.dataDirectory, SETTINGS_FILE), next);
     this.settings = next;
     return this.getSettings();
@@ -481,11 +533,13 @@ export class StorageService {
   deleteHistory(id: string): void {
     const next = this.history.filter((item) => item.id !== id);
     writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    removeMigrationHistoryBackups(this.dataDirectory);
     this.history = next;
   }
 
   clearHistory(): void {
     writeJson(join(this.dataDirectory, HISTORY_FILE), []);
+    removeMigrationHistoryBackups(this.dataDirectory);
     this.history = [];
   }
 }
