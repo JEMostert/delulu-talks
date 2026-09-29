@@ -1,3 +1,4 @@
+import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
 import { DEFAULT_SETTINGS } from "../data";
@@ -237,6 +238,13 @@ export function useWorkspace() {
     return run;
   }
 
+  function managePersonalProfile(command: PersonalProfileCommand): Promise<boolean> {
+    const verb = command.action === "delete" ? "deleted" : command.action === "rename" ? "renamed" : "saved";
+    return action(async () => {
+      receiveSettings(await bridge.managePersonalProfile(command));
+    }, `Profile ${verb} · active settings unchanged`);
+  }
+
   async function updateTranscript(
     id: string,
     text: string | null,
@@ -288,6 +296,7 @@ export function useWorkspace() {
     setError,
     action,
     saveSettings,
+    managePersonalProfile,
     updateTranscript,
     finishOnboarding,
     copy,

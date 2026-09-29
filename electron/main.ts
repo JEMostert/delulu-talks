@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { changePersonalProfiles } from "../src/personalProfileCommands";
 import {
   app,
   BrowserWindow,
@@ -651,6 +653,17 @@ function registerIpc(): void {
   handle("dictation:retry", () => dictation.retry());
   handle("settings:get", () => storage.getSettings());
   handle("settings:update", (_event, value: unknown) => persistSettings(value));
+  handle("profiles:manage", (_event, command: unknown) =>
+    settingsQueue.run(() =>
+      applySettings({
+        personalProfiles: changePersonalProfiles(
+          storage.getSettings(),
+          command,
+          randomUUID,
+        ),
+      }),
+    ),
+  );
   handle("runtime:status", () => asr.getStatus());
   handle("shortcut:status", () => shortcut.getStatus());
   handle("shortcut:configure", () => shortcut.configure());
