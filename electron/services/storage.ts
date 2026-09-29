@@ -1,5 +1,6 @@
 import { app } from "electron";
 import { speechModelForPlatform } from "../runtime/platform";
+import { normalizeAliases } from "../../src/personalization";
 import {
   existsSync,
   mkdirSync,
@@ -121,6 +122,9 @@ function normalizeWords(value: unknown): CustomWord[] {
         id: safeString(source.id, `word-${Date.now()}-${index}`, 128),
         term,
         soundsLike: safeString(source.soundsLike, "", 1024),
+        ...(source.aliases !== undefined
+          ? { aliases: normalizeAliases(source.aliases) }
+          : {}),
         replacement: safeString(source.replacement, "", 4096),
         enabled: source.enabled !== false,
       },

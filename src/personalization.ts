@@ -2,6 +2,34 @@ import type { CustomWord } from "./types";
 
 export const ruleKind = (rule: CustomWord) =>
   rule.kind ?? (rule.replacement ? "shortcut" : "correction");
+export const MAX_RULE_ALIASES = 32;
+export const MAX_ALIAS_LENGTH = 256;
+
+/** Bound persisted aliases without interpreting commas as separators. */
+export function normalizeAliases(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const aliases: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const phrase = item.trim().slice(0, MAX_ALIAS_LENGTH);
+    if (!phrase || /[\r\n]/u.test(phrase)) continue;
+    if (!aliases.some((alias) => samePhrase(alias, phrase))) aliases.push(phrase);
+    if (aliases.length === MAX_RULE_ALIASES) break;
+  }
+  return aliases;
+}
+
+export function aliasError(aliases: readonly string[] = []): string | null {
+  const phrases = aliases.map((alias) => alias.trim()).filter(Boolean);
+  if (phrases.length > MAX_RULE_ALIASES)
+    return `Use at most ${MAX_RULE_ALIASES} aliases per rule.`;
+  if (phrases.some((phrase) => phrase.length > MAX_ALIAS_LENGTH))
+    return `Each alias must be ${MAX_ALIAS_LENGTH} characters or fewer.`;
+  if (phrases.some((phrase) => /[\r\n]/u.test(phrase)))
+    return "Use one alias per line.";
+  return null;
+}
+
 export const ruleTriggers = (rule: CustomWord): string[] => [
   ...new Set(
     [
@@ -9,6 +37,7 @@ export const ruleTriggers = (rule: CustomWord): string[] => [
         .split(",")
         .map((word) => word.trim())
         .filter(Boolean),
+      ...normalizeAliases(rule.aliases),
       ...(ruleKind(rule) === "shortcut" ? [rule.term.trim()] : []),
     ].filter(Boolean),
   ),

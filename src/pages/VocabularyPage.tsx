@@ -2,6 +2,8 @@ import { useState } from "react";
 import { BookOpenText, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { ConfirmDialog, EmptyState, Modal, Toggle } from "../components/ui";
 import {
+  aliasError,
+  normalizeAliases,
   personalize,
   ruleConflict,
   ruleKind,
@@ -26,18 +28,19 @@ export function VocabularyPage({
   const filtered = words.filter(
     (word) =>
       ruleKind(word) === kind &&
-      `${word.term} ${word.soundsLike} ${word.replacement}`
+      `${word.term} ${word.soundsLike} ${(word.aliases ?? []).join(" ")} ${word.replacement}`
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
   const conflict = draft ? ruleConflict(draft, words) : null;
   const shortcut = draft && ruleKind(draft) === "shortcut";
+  const aliasesError = draft ? aliasError(draft.aliases) : null;
   const invalid =
     !draft?.term.trim() ||
     (shortcut
       ? !draft.replacement.trim()
-      : !draft.soundsLike.trim() ||
-        draft.soundsLike.trim() === draft.term.trim());
+      : !ruleTriggers(draft).length ||
+        ruleTriggers(draft).every((phrase) => phrase === draft.term.trim()));
   return (
     <div className="content-stack">
       <div
@@ -71,7 +74,7 @@ export function VocabularyPage({
           </h2>
           <p className="text-muted max-w-[480px] text-[13px] mt-3">
             {kind === "correction"
-              ? "Replace recognized phrases in clean results. You can also remember a correction directly from a transcript."
+              ? "Replace recognized phrases and pronunciation variants in clean results. Aliases match the original text once; replacements never trigger another rule."
               : "Say a trigger phrase to insert an exact address, signature, or reusable block of text."}
           </p>
         </div>
@@ -133,6 +136,11 @@ export function VocabularyPage({
                 <blockquote className="text-[12px] text-muted break-words my-3 mx-0 px-3.5 py-2.5 border-l-2 border-line-strong whitespace-pre-wrap">
                   {word.replacement}
                 </blockquote>
+              )}
+              {!!word.aliases?.length && (
+                <p className="text-[12px] text-muted mt-[5px] break-words">
+                  Aliases: {word.aliases.map((alias) => `“${alias}”`).join(" · ")}
+                </p>
               )}
             </div>
             <div className="panel-actions max-[700px]:ml-auto">
@@ -217,13 +225,14 @@ export function VocabularyPage({
               </button>
               <button
                 className="primary-button"
-                disabled={saving || !!invalid || !!conflict}
+                disabled={saving || !!invalid || !!conflict || !!aliasesError}
                 onClick={async () => {
                   const normalized = {
                     ...draft,
                     term: draft.term.trim(),
                     soundsLike: draft.soundsLike.trim(),
                     replacement: draft.replacement.trim(),
+                    aliases: normalizeAliases(draft.aliases),
                   };
                   if (
                     await onChange(
@@ -296,6 +305,22 @@ export function VocabularyPage({
               </label>
             </>
           )}
+          <label className="field">
+            Pronunciation & recognition aliases
+            <small>Optional · one exact phrase per line, up to 32. Commas stay literal.</small>
+            <textarea
+              aria-label="Pronunciation and recognition aliases"
+              maxLength={16_384}
+              value={(draft.aliases ?? []).join("\n")}
+              onChange={(e) =>
+                setDraft({ ...draft, aliases: e.target.value.split("\n") })
+              }
+              placeholder={shortcut ? "my sign off\nmy closing text" : "de loo loo\ndel loo loo"}
+            />
+          </label>
+          {aliasesError && (
+            <p className="field-error" role="alert">{aliasesError}</p>
+          )}
           {conflict && (
             <p className="field-error" role="alert">
               {conflict}
@@ -311,7 +336,7 @@ export function VocabularyPage({
                 placeholder={
                   shortcut
                     ? `Please insert ${draft.term || "my signature"}`
-                    : draft.soundsLike.split(",")[0] ||
+                    : ruleTriggers(draft)[0] ||
                       "Type a recognized phrase"
                 }
               />

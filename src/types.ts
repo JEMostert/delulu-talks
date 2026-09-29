@@ -20,6 +20,8 @@ export type CustomWord = {
   id: string;
   term: string;
   soundsLike: string;
+  /** Literal pronunciation/recognition variants; legacy soundsLike stays supported. */
+  aliases?: string[];
   replacement: string;
   enabled: boolean;
 };
