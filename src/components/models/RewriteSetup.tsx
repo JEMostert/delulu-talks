@@ -2,6 +2,7 @@ import { Download, LoaderCircle, Play, WandSparkles } from "lucide-react";
 import { MAGIC_MODELS, magicModelById } from "../../data";
 import type { AppSettings, MagicStatus } from "../../types";
 import { ModelSetupStatus } from "./ModelSetupStatus";
+import { ModelProvenance } from "./ModelProvenance";
 
 export type RewriteSetupProps = {
   magicStatus: MagicStatus;
@@ -91,6 +92,7 @@ export function RewriteSetup({
         </div>
       </div>
       <p className="mt-3 text-xs text-muted">{writingModel.description}</p>
+      <ModelProvenance {...writingModel} />
       <p className="mt-2 text-xs text-muted" role="status">
         {magicStatus.message}
       </p>

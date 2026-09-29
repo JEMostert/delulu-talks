@@ -218,3 +218,111 @@ test("rewrite inference locks model operations without showing setup-stage progr
     page.getByText("Rewriting a transcript", { exact: true }),
   ).toBeVisible();
 });
+
+test("speech provenance distinguishes Windows pins from Linux defaults and links the weight license", async ({
+  page,
+}) => {
+  await openModels(page);
+  const details = page.locator("details").filter({
+    has: page.getByText("R2T2: source, revision & license", { exact: true }),
+  });
+  await details.locator("summary").click();
+  await expect(details.getByText("Linux CUDA", { exact: true })).toBeVisible();
+  await expect(
+    details.getByText("Download revision: Upstream default (not pinned)", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    details.getByRole("link", {
+      name: "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9 ↗",
+      exact: true,
+    }),
+  ).toHaveAttribute(
+    "href",
+    "https://huggingface.co/netease-youdao/Confucius4-R2T2/tree/185ce639118ad1362d049ca0d8ed04b6ec5cd6c9",
+  );
+  const license = details.getByRole("link", {
+    name: "NetEase Youdao Model Use License Agreement ↗",
+    exact: true,
+  });
+  await expect(license).toHaveAttribute(
+    "href",
+    "https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE",
+  );
+  await expect(license).toHaveAttribute("target", "_blank");
+  await expect(license).toHaveAttribute("rel", "noreferrer");
+});
+
+test("MLX provenance names the published BF16 conversion without claiming native validation", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 760, height: 1000 });
+  await openModels(page, { ...unloaded, speechModel: "r2t2Mlx" });
+  const details = page.locator("details").filter({
+    has: page.getByText("R2T2: source, revision & license", { exact: true }),
+  });
+  await details.locator("summary").click();
+  await expect(
+    details.getByRole("link", {
+      name: "747f5fc5f84bc9976baa2f02714e2fed67ed8611 ↗",
+      exact: true,
+    }),
+  ).toHaveAttribute(
+    "href",
+    "https://huggingface.co/mlx-community/Confucius4-R2T2-bf16/tree/747f5fc5f84bc9976baa2f02714e2fed67ed8611",
+  );
+  await expect(details.getByText(/Unquantized BF16 conversion/)).toContainText(
+    "1792021",
+  );
+  await expect(
+    details.getByRole("link", { name: "Conversion source ↗", exact: true }),
+  ).toHaveAttribute(
+    "href",
+    /747f5fc5f84bc9976baa2f02714e2fed67ed8611\/README.md$/,
+  );
+  await expect(
+    page.getByText(/Mac hardware validation is pending/),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("optional rewrite provenance follows the selected model and remains honestly unpinned", async ({
+  page,
+}) => {
+  await openModels(page);
+  const section = page.getByRole("region", {
+    name: "Rewrite where your text is",
+  });
+  await section.locator("details summary").click();
+  for (const [id, size] of [
+    ["qwen35Small", "0.8B"],
+    ["qwen35Medium", "2B"],
+    ["qwen35Large", "4B"],
+  ]) {
+    await page
+      .getByRole("combobox", { name: "Local rewrite model" })
+      .selectOption(id);
+    await expect(
+      section.getByRole("link", {
+        name: `Qwen/Qwen3.5-${size} ↗`,
+        exact: true,
+      }),
+    ).toHaveAttribute("href", `https://huggingface.co/Qwen/Qwen3.5-${size}`);
+    await expect(
+      section.getByRole("link", { name: "Apache 2.0 ↗", exact: true }),
+    ).toHaveAttribute(
+      "href",
+      `https://huggingface.co/Qwen/Qwen3.5-${size}/blob/main/LICENSE`,
+    );
+    await expect(
+      section.getByText("Download revision: Upstream default (not pinned)", {
+        exact: true,
+      }),
+    ).toBeVisible();
+  }
+});
