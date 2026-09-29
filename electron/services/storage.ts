@@ -5,6 +5,7 @@ import { app } from "electron";
 import { isMagicPreset } from "../../src/rewritePresets";
 import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
 import { speechModelForPlatform } from "../runtime/platform";
+import { normalizeAliases } from "../../src/personalization";
 import { historyFingerprint, savedRetentionPolicy } from "./historyRetention";
 import {
   normalizeLanguageMetadata,
@@ -141,6 +142,9 @@ function normalizeWords(value: unknown): CustomWord[] {
           ? source.language.trim().toLowerCase().slice(0, 64)
           : undefined,
         soundsLike: safeString(source.soundsLike, "", 1024),
+        ...(source.aliases !== undefined
+          ? { aliases: normalizeAliases(source.aliases) }
+          : {}),
         // Shortcut indentation and trailing whitespace are literal user text.
         replacement:
           typeof source.replacement === "string" && source.replacement.trim()
