@@ -2,7 +2,6 @@ import {
   app,
   BrowserWindow,
   dialog,
-  ipcMain,
   Menu,
   nativeImage,
   session,
@@ -11,38 +10,20 @@ import {
 } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import electronUpdater from "electron-updater";
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
-import { basename, extname, join, resolve } from "node:path";
-import type {
-  AppSettings,
-  ExportFormat,
-  LabRequest,
-  MagicPreset,
-  MagicRewriteRequest,
-  Page,
-  RecordingSubmission,
-  TranscriptRecord,
-} from "../src/types";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import type { AppSettings, Page, TranscriptRecord } from "../src/types";
 import { modelById } from "../src/data";
 import { deliveredText } from "../src/transcriptText";
-import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
 import { PasteService } from "./services/paste";
 import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
-import {
-  applyTranscriptEdit,
-  normalizeSettings,
-  StorageService,
-} from "./services/storage";
-import { exportRecord } from "./services/transcripts";
+import { normalizeSettings, StorageService } from "./services/storage";
 import { UpdateService } from "./services/updates";
-import {
-  rendererRecoveryState,
-  reloadRenderer,
-} from "./services/rendererRecovery";
+import { registerMainIpc } from "./ipc";
 
 const { autoUpdater } = electronUpdater;
 
@@ -83,7 +64,6 @@ let updates: UpdateService;
 const settingsQueue = new SerialQueue();
 let lastTranscript: TranscriptRecord | null = null;
 const sessionTranscripts = new Map<string, TranscriptRecord>();
-const selectedAudioFiles = new Set<string>();
 
 function preloadPath(): string {
   return join(__dirname, "../preload/preload.cjs");
@@ -526,11 +506,6 @@ function setupPermissions(): void {
   );
 }
 
-function validateText(value: unknown, max: number): string {
-  if (typeof value !== "string") throw new Error("Expected text input");
-  return value.slice(0, max);
-}
-
 function persistSettings(value: unknown): Promise<AppSettings> {
   return settingsQueue.run(() => applySettings(value));
 }
@@ -584,313 +559,6 @@ async function applySettings(value: unknown): Promise<AppSettings> {
   broadcast("settings:changed", saved);
   rebuildTrayMenu();
   return saved;
-}
-
-function assertRuntimeIdle(): void {
-  if (dictation.isActive || asr.isBusy)
-    throw new Error("Finish the current recording or model operation first");
-}
-
-function registerIpc(): void {
-  const handle = <Args extends unknown[]>(
-    channel: string,
-    listener: (event: Electron.IpcMainInvokeEvent, ...args: Args) => unknown,
-  ) => {
-    ipcMain.handle(channel, (event, ...args) => {
-      if (
-        event.sender !== mainWindow?.webContents ||
-        event.senderFrame !== event.sender.mainFrame
-      )
-        throw new Error("Untrusted IPC sender");
-      return listener(event, ...(args as Args));
-    });
-  };
-  const recoveryInput = () => ({
-    captureActive: dictation.isActive,
-    canStopRecording: dictation.canStopRecording,
-    runtimeBusy: asr.isBusy,
-    settingsBusy: settingsQueue.busy,
-    updateBusy: ["checking", "downloading"].includes(updates.getStatus().phase),
-  });
-  handle("renderer:recoveryState", () =>
-    rendererRecoveryState(recoveryInput()),
-  );
-  handle("renderer:reload", (event) => {
-    reloadRenderer(recoveryInput(), () => {
-      // Close the shortcut start race until the new controller calls ready.
-      dictation.recorderUnavailable();
-      event.sender.reload();
-    });
-  });
-  handle("renderer:controllerFailed", () => dictation.recorderUnavailable());
-  handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
-  handle("dictation:pasteLast", async () => {
-    const record = lastTranscript
-      ? (storage.findHistory(lastTranscript.id) ?? lastTranscript)
-      : storage.getHistory()[0];
-    if (!record) throw new Error("Record something first");
-    if (dictation.isActive)
-      throw new Error("Finish the current recording first");
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
-    if (dictation.isActive)
-      throw new Error("Paste cancelled because a recording started");
-    const current =
-      storage.findHistory(record.id) ?? sessionTranscripts.get(record.id);
-    if (!current)
-      throw new Error("Paste cancelled because the transcript was removed");
-    await paste.paste(deliveredText(current));
-  });
-  handle("dictation:discardFailed", () => dictation.discardFailure());
-  handle("dictation:retry", () => dictation.retry());
-  handle("settings:get", () => storage.getSettings());
-  handle("settings:update", (_event, value: unknown) => persistSettings(value));
-  handle("runtime:status", () => asr.getStatus());
-  handle("shortcut:status", () => shortcut.getStatus());
-  handle("shortcut:configure", () => shortcut.configure());
-  handle("runtime:setup", () => {
-    assertRuntimeIdle();
-    return asr.setup(storage.getSettings());
-  });
-  handle("runtime:load", () => {
-    assertRuntimeIdle();
-    return asr.loadModel(storage.getSettings());
-  });
-  handle("runtime:unload", () => {
-    assertRuntimeIdle();
-    return asr.unload();
-  });
-  handle("runtime:reset", () => {
-    assertRuntimeIdle();
-    return asr.reset();
-  });
-  handle("magic:status", () => asr.getMagicStatus());
-  handle("magic:setup", () => {
-    assertRuntimeIdle();
-    return asr.setupMagic(storage.getSettings());
-  });
-  handle("magic:load", () => {
-    assertRuntimeIdle();
-    return asr.loadMagic(storage.getSettings());
-  });
-  handle("magic:unload", () => {
-    assertRuntimeIdle();
-    return asr.unloadMagic();
-  });
-  handle("magic:rewrite", (_event, value: unknown) => {
-    if (!value || typeof value !== "object")
-      throw new Error("Expected a Magic rewrite request");
-    const source = value as Record<string, unknown>;
-    const preset = ["polish", "concise", "structured", "prompt"].includes(
-      String(source.preset),
-    )
-      ? (source.preset as MagicRewriteRequest["preset"])
-      : "polish";
-    const request: MagicRewriteRequest = {
-      text: validateText(source.text, 50_000).trim(),
-      preset,
-      instructions: validateText(source.instructions ?? "", 4_000).trim(),
-      allowInferences: source.allowInferences === true,
-    };
-    if (!request.text)
-      throw new Error("Add a transcript or draft before using Magic");
-    assertRuntimeIdle();
-    return asr.rewriteMagic(request, storage.getSettings());
-  });
-  handle("platform:capabilities", () =>
-    paste.capabilities(pill.method, pill.detail),
-  );
-  handle("updates:get", () => updates.getStatus());
-  handle("updates:check", () => updates.check());
-  handle("updates:download", () => updates.download());
-  handle("updates:install", () => updates.install());
-  handle("dictation:start", () => dictation.start());
-  handle("dictation:stop", () => dictation.stop());
-  handle("dictation:toggle", () => dictation.toggle());
-  handle("dictation:cancel", () => dictation.cancel());
-  handle("recorder:started", () => dictation.recordingStarted());
-  handle("recorder:ready", () => dictation.recorderAvailable());
-  handle("recorder:failed", (_event, message: unknown) =>
-    dictation.recordingFailed(validateText(message, 1000)),
-  );
-  handle("recorder:submit", (_event, submission: RecordingSubmission) =>
-    dictation.submitRecording(submission),
-  );
-  ipcMain.on("recorder:level", (event, value: unknown) => {
-    if (
-      event.sender !== mainWindow?.webContents ||
-      event.senderFrame !== event.sender.mainFrame
-    )
-      return;
-    const level =
-      typeof value === "number" && Number.isFinite(value)
-        ? Math.min(1, Math.max(0, value))
-        : 0;
-    dictation.recordingLevel(level);
-  });
-  handle("clipboard:copy", (_event, text: unknown) =>
-    paste.copy(validateText(text, 500_000)),
-  );
-  handle("paste:authorize", () => paste.authorize());
-  handle("paste:test", async () => {
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 3_000));
-    await paste.paste("Delulu Talks paste test");
-  });
-  handle("history:get", () => {
-    const records = new Map(
-      storage.getHistory().map((record) => [record.id, record]),
-    );
-    for (const [id, record] of sessionTranscripts) records.set(id, record);
-    return [...records.values()]
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, 500);
-  });
-  handle("history:updateTranscript", (_event, id: unknown, text: unknown) => {
-    const key = validateText(id, 128);
-    const correction = text === null ? null : validateText(text, 500_000);
-    const sessionRecord = sessionTranscripts.get(key);
-    const updated = storage.findHistory(key)
-      ? storage.updateTranscript(key, correction)
-      : sessionRecord
-        ? applyTranscriptEdit(sessionRecord, correction)
-        : null;
-    if (!updated) throw new Error("Transcript not found");
-    sessionTranscripts.set(key, updated);
-    if (lastTranscript?.id === key) lastTranscript = updated;
-    rebuildTrayMenu();
-    return updated;
-  });
-  handle(
-    "history:setRewrite",
-    (_event, id: unknown, value: unknown, expected: unknown) => {
-      const key = validateText(id, 128);
-      const record = storage.findHistory(key) ?? sessionTranscripts.get(key);
-      if (!record) throw new Error("Transcript not found");
-      if (deliveredText(record) !== validateText(expected, 500_000))
-        throw new Error(
-          "This transcript changed while rewriting. Review the current text and try again.",
-        );
-      let updated: TranscriptRecord;
-      if (value === null) {
-        updated = {
-          ...record,
-          magicText: null,
-          magicModel: null,
-          magicPreset: null,
-          magicIncludedInferences: false,
-          magicProcessingTimeMs: 0,
-        };
-      } else {
-        if (!value || typeof value !== "object")
-          throw new Error("Invalid rewrite");
-        const rewrite = value as Record<string, unknown>;
-        const text = validateText(rewrite.text, 500_000).trim();
-        if (!text) throw new Error("A rewrite cannot be empty");
-        updated = {
-          ...record,
-          magicText: text,
-          magicPreset: ["polish", "concise", "structured", "prompt"].includes(
-            String(rewrite.preset),
-          )
-            ? (rewrite.preset as MagicPreset)
-            : null,
-          magicModel: ["qwen35Small", "qwen35Medium", "qwen35Large"].includes(
-            String(rewrite.model),
-          )
-            ? (rewrite.model as TranscriptRecord["magicModel"])
-            : null,
-          magicIncludedInferences: rewrite.includedInferences === true,
-          magicProcessingTimeMs: Number.isFinite(rewrite.processingTimeMs)
-            ? Math.max(0, Number(rewrite.processingTimeMs))
-            : 0,
-        };
-      }
-      if (storage.findHistory(key)) storage.replaceHistory(updated);
-      sessionTranscripts.set(key, updated);
-      if (lastTranscript?.id === key) lastTranscript = updated;
-      rebuildTrayMenu();
-      return updated;
-    },
-  );
-  handle("history:delete", (_event, id: unknown) => {
-    const key = validateText(id, 128);
-    storage.deleteHistory(key);
-    sessionTranscripts.delete(key);
-    if (lastTranscript?.id === key) lastTranscript = null;
-    rebuildTrayMenu();
-  });
-  handle("history:clear", () => {
-    storage.clearHistory();
-    sessionTranscripts.clear();
-    lastTranscript = null;
-    rebuildTrayMenu();
-  });
-  handle("lab:chooseAudio", async () => {
-    const options: Electron.OpenDialogOptions = {
-      title: "Choose audio or video",
-      properties: ["openFile"],
-      filters: [
-        {
-          name: "Audio and video",
-          extensions: [
-            "wav",
-            "mp3",
-            "m4a",
-            "flac",
-            "ogg",
-            "opus",
-            "webm",
-            "mp4",
-            "mov",
-            "mkv",
-          ],
-        },
-      ],
-    };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
-      : await dialog.showOpenDialog(options);
-    const path = result.canceled ? undefined : result.filePaths[0];
-    if (!path) return null;
-    const resolved = resolve(path);
-    selectedAudioFiles.add(resolved);
-    return {
-      path: resolved,
-      name: basename(resolved),
-      size: statSync(resolved).size,
-    };
-  });
-  handle("lab:run", async (_event, request: LabRequest) => {
-    const path = resolve(validateText(request.path, 4096));
-    if (!selectedAudioFiles.has(path) || !existsSync(path))
-      throw new Error("Choose the source file through Audio files first");
-    return dictation.runLab({ path });
-  });
-  handle(
-    "history:export",
-    async (_event, id: unknown, requestedFormat: ExportFormat) => {
-      const key = validateText(id, 128);
-      const record = sessionTranscripts.get(key) ?? storage.findHistory(key);
-      if (!record) throw new Error("Transcript not found");
-      const format = ["txt", "json"].includes(requestedFormat)
-        ? requestedFormat
-        : "txt";
-      const defaultName = `${(record.sourceName ?? `delulu-${record.createdAt}`).replace(/\.[^.]+$/, "")}.${format}`;
-      const options: Electron.SaveDialogOptions = {
-        title: `Export ${format.toUpperCase()}`,
-        defaultPath: defaultName,
-        filters: [{ name: format.toUpperCase(), extensions: [format] }],
-      };
-      const result = mainWindow
-        ? await dialog.showSaveDialog(mainWindow, options)
-        : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) return null;
-      const outputPath = extname(result.filePath)
-        ? result.filePath
-        : `${result.filePath}.${format}`;
-      writeFileSync(outputPath, exportRecord(record, format), "utf8");
-      return outputPath;
-    },
-  );
 }
 
 async function start(): Promise<void> {
@@ -963,7 +631,24 @@ async function start(): Promise<void> {
   });
   shortcut.onStatus((status) => broadcast("shortcut:statusChanged", status));
   setupPermissions();
-  registerIpc();
+  registerMainIpc({
+    getMainWindow: () => mainWindow,
+    storage,
+    asr,
+    paste,
+    pill,
+    dictation,
+    shortcut,
+    updates,
+    persistSettings,
+    settingsBusy: () => settingsQueue.busy,
+    getLastTranscript: () => lastTranscript,
+    setLastTranscript: (record) => {
+      lastTranscript = record;
+    },
+    sessionTranscripts,
+    rebuildTrayMenu,
+  });
   if (!smokeTest) {
     if (app.isPackaged)
       void shortcut
