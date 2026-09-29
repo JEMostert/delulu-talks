@@ -81,6 +81,8 @@ export class AsrService {
   private magicOperations = 0;
   private shuttingDown = false;
   private residencyPending = false;
+  private speechFailureGeneration = 0;
+  private magicFailureGeneration = 0;
   private speechIdleTimer: NodeJS.Timeout | null = null;
   private magicIdleTimer: NodeJS.Timeout | null = null;
 
@@ -398,7 +400,12 @@ export class AsrService {
     return worker.request<T>(command, payload, timeoutMs);
   }
 
-  async loadModel(settings: AppSettings, fromSetup = false): Promise<void> {
+  async loadModel(
+    settings: AppSettings,
+    fromSetup = false,
+    eligible: () => boolean = () => true,
+  ): Promise<void> {
+    if (!eligible()) return;
     if (this.shuttingDown)
       throw new Error("The speech engine is shutting down");
     if (!fromSetup && this.maintenance.busy)
@@ -407,10 +414,12 @@ export class AsrService {
     this.clearSpeechIdle();
     this.loadPromise = (async () => {
       await this.speechUnloadPromise;
+      if (!eligible()) return;
       if (!fromSetup && !(await this.isEnvironmentReady()))
         throw new Error(
           "Local engine setup is required before loading a model",
         );
+      if (!eligible()) return;
       const model = modelById(settings.model);
       this.updateStatus({
         phase: "loading",
@@ -419,9 +428,11 @@ export class AsrService {
         model: settings.model,
         progress: 0.85,
       });
+      if (!eligible()) return;
       await this.request("speech", "load", {
         cacheDir: this.storage.modelCacheDirectory,
       });
+      if (!eligible()) return;
       this.updateStatus({
         phase: "idle",
         engine: "ready",
@@ -445,15 +456,20 @@ export class AsrService {
     return this.loadPromise;
   }
 
-  async ensureLoaded(settings: AppSettings): Promise<void> {
+  async ensureLoaded(
+    settings: AppSettings,
+    eligible: () => boolean = () => true,
+  ): Promise<void> {
+    if (!eligible()) return;
     if (this.shuttingDown)
       throw new Error("The speech engine is shutting down");
     await this.speechUnloadPromise;
+    if (!eligible()) return;
     if (this.shuttingDown)
       throw new Error("The speech engine is shutting down");
     if (this.status.engine === "ready" && this.status.model === settings.model)
       return;
-    await this.loadModel(settings);
+    await this.loadModel(settings, false, eligible);
   }
 
   async transcribe(
@@ -512,7 +528,12 @@ export class AsrService {
     return this.speechUnloadPromise;
   }
 
-  async loadMagic(settings: AppSettings, fromSetup = false): Promise<void> {
+  async loadMagic(
+    settings: AppSettings,
+    fromSetup = false,
+    eligible: () => boolean = () => true,
+  ): Promise<void> {
+    if (!eligible()) return;
     if (this.shuttingDown)
       throw new Error("The writing engine is shutting down");
     if (!fromSetup && this.maintenance.busy)
@@ -521,8 +542,10 @@ export class AsrService {
     this.clearMagicIdle();
     this.magicLoadPromise = (async () => {
       await this.magicUnloadPromise;
+      if (!eligible()) return;
       if (!fromSetup && !(await this.isMagicEnvironmentReady()))
         throw new Error("Install the Magic runtime before loading a model");
+      if (!eligible()) return;
       const model = magicModelById(settings.magicModel);
       this.updateMagicStatus({
         phase: "loading",
@@ -531,6 +554,7 @@ export class AsrService {
         model: settings.magicModel,
         progress: 0.86,
       });
+      if (!eligible()) return;
       const runtime = await this.request<{ device: string }>(
         "magic",
         "magicLoad",
@@ -539,6 +563,7 @@ export class AsrService {
           cacheDir: this.storage.modelCacheDirectory,
         },
       );
+      if (!eligible()) return;
       this.updateMagicStatus({
         phase: "idle",
         engine: "ready",
@@ -560,10 +585,15 @@ export class AsrService {
     return this.magicLoadPromise;
   }
 
-  async ensureMagicLoaded(settings: AppSettings): Promise<void> {
+  async ensureMagicLoaded(
+    settings: AppSettings,
+    eligible: () => boolean = () => true,
+  ): Promise<void> {
+    if (!eligible()) return;
     if (this.shuttingDown)
       throw new Error("The writing engine is shutting down");
     await this.magicUnloadPromise;
+    if (!eligible()) return;
     if (this.shuttingDown)
       throw new Error("The writing engine is shutting down");
     if (
@@ -571,7 +601,7 @@ export class AsrService {
       this.magicStatus.model === settings.magicModel
     )
       return;
-    await this.loadMagic(settings);
+    await this.loadMagic(settings, false, eligible);
   }
 
   async rewriteMagic(
@@ -684,33 +714,34 @@ export class AsrService {
     this.residencyPending = false;
     if (settings.preloadModel && this.status.engine !== "error") {
       this.clearSpeechIdle();
+      const generation = this.speechFailureGeneration;
+      const eligible = () =>
+        !this.shuttingDown &&
+        generation === this.speechFailureGeneration &&
+        this.status.engine !== "error";
       void this.isEnvironmentReady().then((ready) => {
         const current = this.storage.getSettings();
-        if (
-          !ready ||
-          !current.preloadModel ||
-          this.shuttingDown ||
-          this.status.engine === "error"
-        )
-          return;
+        if (!ready || !current.preloadModel || !eligible()) return;
         if (this.isBusy) this.residencyPending = true;
-        else void this.ensureLoaded(current).catch((error) => this.fail(error));
+        else
+          void this.ensureLoaded(current, eligible).catch((error) =>
+            this.fail(error),
+          );
       });
     }
     if (settings.preloadMagicModel && this.magicStatus.engine !== "error") {
       this.clearMagicIdle();
+      const generation = this.magicFailureGeneration;
+      const eligible = () =>
+        !this.shuttingDown &&
+        generation === this.magicFailureGeneration &&
+        this.magicStatus.engine !== "error";
       void this.isMagicEnvironmentReady().then((ready) => {
         const current = this.storage.getSettings();
-        if (
-          !ready ||
-          !current.preloadMagicModel ||
-          this.shuttingDown ||
-          this.magicStatus.engine === "error"
-        )
-          return;
+        if (!ready || !current.preloadMagicModel || !eligible()) return;
         if (this.isBusy) this.residencyPending = true;
         else
-          void this.ensureMagicLoaded(current).catch((error) =>
+          void this.ensureMagicLoaded(current, eligible).catch((error) =>
             this.failMagic(error),
           );
       });
@@ -814,6 +845,7 @@ export class AsrService {
   }
 
   fail(error: unknown): void {
+    this.speechFailureGeneration += 1;
     const message = error instanceof Error ? error.message : String(error);
     try {
       writeFileSync(
@@ -834,6 +866,7 @@ export class AsrService {
   }
 
   failMagic(error: unknown): void {
+    this.magicFailureGeneration += 1;
     const message = error instanceof Error ? error.message : String(error);
     try {
       writeFileSync(

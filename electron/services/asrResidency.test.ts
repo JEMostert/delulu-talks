@@ -375,6 +375,81 @@ for (const kind of ["speech", "magic"]) {
 }
 
 for (const kind of ["speech", "magic"]) {
+  const preload = kind === "speech" ? "preloadModel" : "preloadMagicModel";
+  const readiness =
+    kind === "speech" ? "isEnvironmentReady" : "isMagicEnvironmentReady";
+  const prime = kind === "speech" ? "primeSpeech" : "primeMagic";
+  const fail = kind === "speech" ? "fail" : "failMagic";
+  const status = kind === "speech" ? "getStatus" : "getMagicStatus";
+  const load = kind === "speech" ? "load" : "magicLoad";
+
+  test(`${kind} automatic preload cannot recover a failure after its policy callback`, () =>
+    verify(`
+      settings = { ...settings, ${preload}: true };
+      await ${prime}();
+      ${kind}.requests.length = 0;
+      const ready = deferred();
+      service.${readiness} = () => ready.promise;
+      service.configureResidency(settings);
+      ready.resolve(true);
+      // The policy callback enters ensureLoaded before its unload await resumes.
+      await Promise.resolve();
+      service.${fail}(new Error("Fixture callback boundary failure"));
+      await ticks();
+      assert.deepEqual(${kind}.requests, [], "automatic recovery must recheck failure after the callback's awaits");
+      assert.equal(service.${status}().engine, "error");
+      assert.equal(service.isBusy, false);
+      assert.equal(deadlines().length, 0);
+      await ${prime}();
+      assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}], "explicit loading must still recover the failed engine");
+      assert.equal(service.${status}().engine, "ready");
+    `));
+
+  test(`${kind} automatic preload cannot dispatch after failure during load readiness`, () =>
+    verify(`
+      await service.initialize(settings);
+      settings = { ...settings, ${preload}: true };
+      const loadReady = deferred();
+      let probes = 0;
+      service.${readiness} = () => ++probes === 1 ? Promise.resolve(true) : loadReady.promise;
+      service.configureResidency(settings);
+      await ticks();
+      assert.equal(probes, 2, "the initial policy probe must have entered the load readiness check");
+      assert.deepEqual(${kind}.requests, []);
+      service.${fail}(new Error("Fixture load readiness failure"));
+      loadReady.resolve(true);
+      await ticks();
+      assert.deepEqual(${kind}.requests, [], "late load readiness must not dispatch automatic recovery");
+      assert.equal(service.${status}().engine, "error");
+      assert.equal(service.isBusy, false);
+      assert.equal(deadlines().length, 0);
+      await ${prime}();
+      assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}]);
+      assert.equal(service.${status}().engine, "ready");
+    `));
+
+  test(`${kind} automatic load completion cannot overwrite a newer failure with Ready`, () =>
+    verify(`
+      await service.initialize(settings);
+      settings = { ...settings, ${preload}: true };
+      ${kind}.gate = deferred();
+      service.configureResidency(settings);
+      await ticks();
+      assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}]);
+      assert.equal(service.${status}().engine, "loading");
+      service.${fail}(new Error("Fixture pending load failure"));
+      ${kind}.gate.resolve();
+      await ticks();
+      assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}], "load completion must not start another automatic recovery");
+      assert.equal(service.${status}().engine, "error", "a late load result must preserve the newer failure");
+      assert.equal(service.isBusy, false);
+      assert.equal(deadlines().length, 0);
+      ${kind}.gate = null;
+      await ${prime}();
+      assert.deepEqual(${kind}.requests, ${JSON.stringify([load, load])});
+      assert.equal(service.${status}().engine, "ready");
+    `));
+
   for (const deferredPolicy of [false, true]) {
     test(`${kind} pinned worker failure requires deliberate recovery${deferredPolicy ? " even with deferred residency changes" : ""}`, () =>
       verify(`
