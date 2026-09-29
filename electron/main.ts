@@ -29,6 +29,7 @@ import type {
   TranscriptRecord,
 } from "../src/types";
 import { isMagicPreset, REWRITE_PRESETS } from "../src/rewritePresets";
+import { validateRewriteInstructions } from "../src/rewriteInstructions";
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
 import { modelById } from "../src/data";
 import { runtimeSetupSnapshot } from "./runtime/setupSnapshot";
@@ -860,7 +861,7 @@ function registerIpc(): void {
     const request: MagicRewriteRequest = {
       text: validateText(source.text, 50_000),
       preset,
-      instructions: validateText(source.instructions ?? "", 4_000).trim(),
+      instructions: validateRewriteInstructions(source.instructions),
       sourceLanguage: source.sourceLanguage == null
         ? undefined
         : validateText(source.sourceLanguage, 64).trim(),
