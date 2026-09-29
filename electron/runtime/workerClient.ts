@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { backendFailure } from "./privateDiagnostics";
 import {
   BoundedWorkerLines,
   WorkerDiagnosticTail,
@@ -93,13 +94,11 @@ export class WorkerClient {
         else
           request.reject(
             new Error(
-              typeof response.error === "string"
-                ? response.error
-                : "Model operation failed",
+              backendFailure(response.error).message,
             ),
           );
       } catch (reason) {
-        this.fail(reason instanceof Error ? reason : new Error(String(reason)));
+        this.fail(new Error(backendFailure(reason).message));
       }
       return this.child === child;
     };
@@ -110,7 +109,7 @@ export class WorkerClient {
       } catch (reason) {
         if (this.child === child)
           this.fail(
-            reason instanceof Error ? reason : new Error(String(reason)),
+            new Error(backendFailure(reason).message),
           );
       }
     });
@@ -122,7 +121,7 @@ export class WorkerClient {
       this.diagnostics.push(chunk);
     });
     child.once("error", (error) => {
-      if (this.child === child) this.fail(error);
+      if (this.child === child) this.fail(new Error(backendFailure(error).message));
     });
     child.once("close", (code) => {
       if (this.child !== child) return;
@@ -130,8 +129,7 @@ export class WorkerClient {
         new Error(
           code === 0
             ? "Model worker closed"
-            : this.stderr.trim().split("\n").at(-1) ||
-                `Model worker exited (${code})`,
+            : `${backendFailure(this.stderr).message} (worker exit ${code ?? "signal"})`,
         ),
       );
     });
