@@ -146,6 +146,21 @@ export function planSuite(suite, input = []) {
         : "Real isolated Electron, preload/IPC and settings/history fixtures. No speech inference, real microphone or manual focus/delivery verification.";
       break;
     }
+    case "package-resources":
+      if (
+        metadataPath ||
+        args.length !== 2 ||
+        args[0].startsWith("-") ||
+        !["linux", "mac", "win"].includes(args[1])
+      )
+        throw new Error(
+          "Package resource reporting requires an unpacked directory and linux/mac/win; no runtime or filters",
+        );
+      command = ["bun", "scripts/package-resources.mjs", ...args];
+      kinds = ["fixture-only"];
+      scope =
+        "Actual unpacked resource hashes and configured native icon payloads. No application launch, native model inference or manual desktop verification.";
+      break;
     case "mac-package":
       if (args.length > 1 || args.some((arg) => arg.startsWith("-")))
         throw new Error(

@@ -66,6 +66,35 @@ describe("evidence boundaries", () => {
       ).toThrow("not R2T2");
   });
 
+  test("package content reporting cannot claim native inference or complete an empty/help invocation", () => {
+    const plan = planSuite("package-resources", [
+      "release/linux-unpacked",
+      "linux",
+    ]);
+    expect(plan.command).toEqual([
+      "bun",
+      "scripts/package-resources.mjs",
+      "release/linux-unpacked",
+      "linux",
+    ]);
+    expect(
+      makeReport("package-resources", plan, "passed", {}).evidence,
+    ).toEqual({
+      "fixture-only": "passed",
+      mocked: "not-run",
+      "native-inference": "not-run",
+      "manual-desktop": "not-run",
+    });
+    for (const args of [
+      [],
+      ["--help", "linux"],
+      ["release/linux-unpacked", "unknown"],
+    ])
+      expect(() => planSuite("package-resources", args)).toThrow(
+        "requires an unpacked",
+      );
+  });
+
   test("settings failure smoke reports native registration as fixture-only, never inference or manual evidence", () => {
     const plan = planSuite("settings-write");
     expect(plan.command).toEqual(["node", "scripts/settings-write-smoke.mjs"]);
