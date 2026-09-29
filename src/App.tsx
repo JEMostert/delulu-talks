@@ -19,6 +19,7 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { Alert } from "./components/ui";
 import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
+import { TechnicalPage } from "./pages/TechnicalPage";
 import { ModelsPage } from "./pages/ModelsPage";
 import { VocabularyPage } from "./pages/VocabularyPage";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -40,6 +41,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
     subtitle: "Transcribe imported recordings",
   },
   models: { title: "Models", subtitle: "Speech engine and device resources" },
+  technical: { title: "Technical text", subtitle: "Literal editing · undo · explicit copy" },
   settings: {
     title: "Settings",
     subtitle: "Capture, output, runtime and application",
@@ -346,6 +348,11 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     onResult={w.receiveTranscript}
                     onToast={w.setToast}
                   />
+                </div>
+              )}
+              {(visited.has("technical") || w.page === "technical") && (
+                <div hidden={w.page !== "technical"} className="mx-auto max-w-[1440px]">
+                  <TechnicalPage history={w.history} />
                 </div>
               )}
               {(visited.has("models") || w.page === "models") && (
