@@ -1084,6 +1084,7 @@ if (!hasLock) {
 app.on("activate", () => showMainWindow());
 app.on("before-quit", () => {
   quitting = true;
+  dictation?.releaseRetryAudio();
   pill?.shutdown();
   pasteLast?.shutdown();
   paste?.shutdown();
