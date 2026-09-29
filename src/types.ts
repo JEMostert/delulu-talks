@@ -21,6 +21,7 @@ export type PasteShortcut = "standard" | "terminal";
 export type ExportFormat = "txt" | "json" | "md";
 
 export type CustomWord = {
+  schemaVersion?: 1;
   kind?: "correction" | "shortcut";
   id: string;
   term: string;
@@ -30,6 +31,7 @@ export type CustomWord = {
 };
 
 export type AppSettings = {
+  schemaVersion?: 1;
   workflowVersion: 1;
   onboardingComplete: boolean;
   theme: "system" | "light" | "dark";
@@ -121,6 +123,7 @@ export type DictationStatus = {
  * Add score/uncertainty UI only with a backend calibration contract.
  */
 export type TranscriptRecord = {
+  schemaVersion?: 1;
   id: string;
   title?: string | null;
   createdAt: number;
