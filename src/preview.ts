@@ -55,6 +55,12 @@ function desktopOnly(): never {
 }
 
 export const previewApi: DeluluApi = {
+  async getRuleUsage() {
+    return desktopOnly();
+  },
+  async resetRuleUsage() {
+    return desktopOnly();
+  },
   async previewModelCache() {
     return desktopOnly();
   },

@@ -312,6 +312,11 @@ export type UpdateStatus = {
   bytesPerSecond?: number;
 };
 
+export type RuleUsage = {
+  counts: Record<string, number>;
+  error: string | null;
+};
+
 export type ModelCacheEntry = {
   id: string;
   label: string;
@@ -332,6 +337,8 @@ export type ModelCacheCleanupResult = {
 export type DeluluApi = {
   previewModelCache(): Promise<ModelCachePreview>;
   cleanupModelCache(token: string, ids: string[]): Promise<ModelCacheCleanupResult>;
+  getRuleUsage(): Promise<RuleUsage>;
+  resetRuleUsage(): Promise<RuleUsage>;
   getRendererRecoveryState(): Promise<RendererRecoveryState>;
   reloadWorkspace(): Promise<void>;
   rendererControllerFailed(): Promise<void>;

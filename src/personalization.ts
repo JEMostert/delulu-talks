@@ -226,3 +226,11 @@ export function splitForRewrite(
     part.protected ? [part] : splitTechnicalText(part.text),
   );
 }
+
+/** Count selected source matches without retaining transcript text. */
+export function personalizeWithUsage(text: string, words: CustomWord[], language?: string): { text: string; counts: Record<string, number> } {
+  const preview = previewPersonalization(text, words, language);
+  const counts: Record<string, number> = Object.create(null);
+  for (const match of preview.matches) counts[match.ruleId] = (counts[match.ruleId] ?? 0) + 1;
+  return { text: preview.result, counts };
+}

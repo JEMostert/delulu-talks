@@ -39,6 +39,7 @@ import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { ModelCacheService } from "./services/modelCache";
 import { DictationService } from "./services/dictation";
+import { RuleUsageService } from "./services/ruleUsage";
 import { PasteService } from "./services/paste";
 import { PasteLastService } from "./services/pasteLast";
 import { PillService } from "./services/pill";
@@ -98,6 +99,7 @@ let paste: PasteService;
 let pasteLast: PasteLastService;
 let pill: PillService;
 let dictation: DictationService;
+let ruleUsage: RuleUsageService;
 let shortcut: ShortcutService;
 let updates: UpdateService;
 const settingsQueue = new SerialQueue();
@@ -798,6 +800,12 @@ function registerIpc(): void {
   handle("dictation:discardFailed", () => dictation.discardFailure());
   handle("dictation:retry", () => dictation.retry());
   handle("settings:get", () => storage.getSettings());
+  const ruleIds = () => storage.getSettings().customWords.map((rule) => rule.id);
+  handle("rules:usage", () => ruleUsage.get(ruleIds()));
+  handle("rules:resetUsage", () => {
+    ruleUsage.reset();
+    return ruleUsage.get(ruleIds());
+  });
   handle("settings:update", (_event, value: unknown) => persistSettings(value));
   handle("profiles:manage", (_event, command: unknown) =>
     settingsQueue.run(() =>
@@ -1192,6 +1200,7 @@ function registerIpc(): void {
 async function start(): Promise<void> {
   if (!smokeTest) ensureDevelopmentDesktopEntry();
   storage = new StorageService();
+  ruleUsage = new RuleUsageService(storage.dataDirectory);
   modelCache = new ModelCacheService(storage.modelCacheDirectory);
   // start() is entered only by the instance holding the user-data singleton lock.
   // No new worker/capture/import exists while prior-session generated WAVs are inspected.
@@ -1252,6 +1261,7 @@ async function start(): Promise<void> {
       if (storage.findHistory(transcriptId) || sessionTranscripts.has(transcriptId))
         setPasteRecovery({ transcriptId, detail });
     },
+    (counts) => ruleUsage.record(counts, storage.getSettings().customWords.map((rule) => rule.id)),
   );
   pasteLast = new PasteLastService({
     captureActive: () => dictation.isActive,

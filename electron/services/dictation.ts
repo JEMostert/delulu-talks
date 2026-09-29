@@ -1,8 +1,8 @@
+import { personalizeWithUsage } from "../../src/personalization";
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
-import { personalize } from "../../src/personalization";
 import { formatSpokenCommands } from "../../src/spokenFormatting";
 import { deliveredText } from "../../src/transcriptText";
-import { normalizeLanguageMetadata } from "../../src/transcriptLanguage";
+import { normalizeLanguageMetadata, normalizeReportedLanguage } from "../../src/transcriptLanguage";
 import type { BrowserWindow } from "electron";
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -93,6 +93,7 @@ export class DictationService {
     private readonly windows: WindowProvider,
     private readonly broadcastTranscript: (record: TranscriptRecord) => void,
     private readonly reportPasteFailure: (id: string, detail: string) => void = () => undefined,
+    private readonly recordRuleUsage: (counts: Record<string, number>) => void = () => {},
   ) {}
 
   private settings(): AppSettings {
@@ -652,6 +653,8 @@ export class DictationService {
     const formatted = settings.spokenFormattingCommands
       ? formatSpokenCommands(text, settings.language)
       : text;
+    const personalized = personalizeWithUsage(formatted, settings.customWords, language);
+    this.recordRuleUsage(personalized.counts);
     const durationMs =
       durationOverride ?? Math.round(numeric(result.duration) * 1000);
     const languageMetadata = normalizeLanguageMetadata(result);
@@ -662,7 +665,7 @@ export class DictationService {
       text,
       sourceRevision: 0,
       rewriteSourceRevision: null,
-      personalizedText: personalize(formatted, settings.customWords, language),
+      personalizedText: personalized.text,
       model: settings.model,
       language: languageMetadata.recognizedLanguage ?? "und",
       ...languageMetadata,
