@@ -12,9 +12,11 @@ import {
 import type { MenuItemConstructorOptions } from "electron";
 import electronUpdater from "electron-updater";
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import type { Stats } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import type {
   AppSettings,
+  AudioFileSelection,
   ExportFormat,
   LabRequest,
   MagicPreset,
@@ -24,6 +26,11 @@ import type {
   TranscriptRecord,
 } from "../src/types";
 import { modelById } from "../src/data";
+import {
+  MAX_AUDIO_BATCH_FILES,
+  MAX_AUDIO_FILE_BYTES,
+  SUPPORTED_AUDIO_EXTENSIONS,
+} from "../src/audioFormats";
 import { deliveredText } from "../src/transcriptText";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
@@ -526,6 +533,35 @@ function setupPermissions(): void {
   );
 }
 
+function validateAudioFile(value: unknown): AudioFileSelection {
+  if (typeof value !== "string" || !value.trim() || value.length > 4096)
+    throw new Error("Invalid audio file path");
+  const path = resolve(value);
+  const name = basename(path);
+  const extension = extname(path).slice(1).toLowerCase();
+  if (!SUPPORTED_AUDIO_EXTENSIONS.includes(extension))
+    throw new Error(`${name}: unsupported audio or video format`);
+  let info: Stats;
+  try {
+    info = statSync(path);
+  } catch {
+    throw new Error(`${name}: file does not exist or cannot be accessed`);
+  }
+  if (!info.isFile()) throw new Error(`${name}: choose a regular file`);
+  if (info.size > MAX_AUDIO_FILE_BYTES)
+    throw new Error(`${name}: file exceeds the 500 MiB limit`);
+  return { path, name, size: info.size };
+}
+
+function selectAudioFiles(value: unknown): AudioFileSelection[] {
+  if (!Array.isArray(value) || value.length > MAX_AUDIO_BATCH_FILES)
+    throw new Error(`Choose at most ${MAX_AUDIO_BATCH_FILES} files at once`);
+  const files = Array.from(value, validateAudioFile);
+  // Register only after every file passes, so invalid batches are rejected whole.
+  for (const file of files) selectedAudioFiles.add(file.path);
+  return files;
+}
+
 function validateText(value: unknown, max: number): string {
   if (typeof value !== "string") throw new Error("Expected text input");
   return value.slice(0, max);
@@ -824,46 +860,27 @@ function registerIpc(): void {
     lastTranscript = null;
     rebuildTrayMenu();
   });
-  handle("lab:chooseAudio", async () => {
+  const chooseAudioFiles = async (multiple: boolean): Promise<AudioFileSelection[]> => {
     const options: Electron.OpenDialogOptions = {
       title: "Choose audio or video",
-      properties: ["openFile"],
+      properties: multiple ? ["openFile", "multiSelections"] : ["openFile"],
       filters: [
-        {
-          name: "Audio and video",
-          extensions: [
-            "wav",
-            "mp3",
-            "m4a",
-            "flac",
-            "ogg",
-            "opus",
-            "webm",
-            "mp4",
-            "mov",
-            "mkv",
-          ],
-        },
+        { name: "Audio and video", extensions: SUPPORTED_AUDIO_EXTENSIONS },
       ],
     };
     const result = mainWindow
       ? await dialog.showOpenDialog(mainWindow, options)
       : await dialog.showOpenDialog(options);
-    const path = result.canceled ? undefined : result.filePaths[0];
-    if (!path) return null;
-    const resolved = resolve(path);
-    selectedAudioFiles.add(resolved);
-    return {
-      path: resolved,
-      name: basename(resolved),
-      size: statSync(resolved).size,
-    };
-  });
+    return result.canceled ? [] : selectAudioFiles(result.filePaths);
+  };
+  handle("lab:chooseAudio", async () => (await chooseAudioFiles(false))[0] ?? null);
+  handle("lab:chooseAudioFiles", () => chooseAudioFiles(true));
+  handle("lab:resolveAudioFiles", (_event, paths: unknown) => selectAudioFiles(paths));
   handle("lab:run", async (_event, request: LabRequest) => {
-    const path = resolve(validateText(request.path, 4096));
-    if (!selectedAudioFiles.has(path) || !existsSync(path))
-      throw new Error("Choose the source file through Audio files first");
-    return dictation.runLab({ path });
+    const file = validateAudioFile(request?.path);
+    if (!selectedAudioFiles.has(file.path))
+      throw new Error("Choose or drop the source file through Audio files first");
+    return dictation.runLab({ path: file.path });
   });
   handle(
     "history:export",

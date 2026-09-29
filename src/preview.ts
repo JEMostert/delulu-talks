@@ -231,6 +231,12 @@ export const previewApi: DeluluApi = {
   async chooseAudioFile(): Promise<AudioFileSelection | null> {
     return desktopOnly();
   },
+  async chooseAudioFiles(): Promise<AudioFileSelection[]> {
+    return desktopOnly();
+  },
+  async resolveAudioFiles(_files: File[]): Promise<AudioFileSelection[]> {
+    return desktopOnly();
+  },
   async runLab(_request: LabRequest) {
     throw new Error("Audio file transcription requires Electron");
   },

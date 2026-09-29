@@ -1,31 +1,18 @@
-import {
-  TranscriptCard,
-  type TranscriptActions,
-} from "../components/TranscriptCard";
-import { useState } from "react";
-import {
-  FileAudio,
-  LoaderCircle,
-  ScanText,
-  Sparkles,
-  Upload,
-} from "lucide-react";
+import { TranscriptCard, type TranscriptActions } from "../components/TranscriptCard";
+import { useEffect, useRef, useState, type DragEvent } from "react";
+import { FileAudio, LoaderCircle, ScanText, Sparkles, Upload } from "lucide-react";
 import { Alert } from "../components/ui";
 import { bridge } from "../bridge";
-import type {
-  AppSettings,
-  AudioFileSelection,
-  TranscriptRecord,
-} from "../types";
+import { MAX_AUDIO_BATCH_FILES, SUPPORTED_AUDIO_EXTENSIONS } from "../audioFormats";
+import type { AppSettings, AudioFileSelection, TranscriptRecord } from "../types";
 
-export function LabPage({
-  settings,
-  busy,
-  onResult,
-  onToast,
-  history,
-  ...actions
-}: TranscriptActions & {
+type SelectedFile = AudioFileSelection & {
+  state: "pending" | "running" | "done" | "failed";
+  error?: string;
+  resultId?: string;
+};
+
+export function LabPage({ settings, busy, onResult, onToast, history, ...actions }: TranscriptActions & {
   history: TranscriptRecord[];
   settings: AppSettings;
   busy: boolean;
@@ -33,119 +20,136 @@ export function LabPage({
   onToast: (message: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const [file, setFile] = useState<AudioFileSelection | null>(null);
+  const [files, setFiles] = useState<SelectedFile[]>([]);
   const [running, setRunning] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [resultId, setResultId] = useState<string | null>(null);
+  const stop = useRef(false);
+  const active = useRef(false);
+  const selectionActive = useRef(false);
+  useEffect(() => () => { stop.current = true; }, []);
   const result = history.find((record) => record.id === resultId);
+  const pending = files.filter((file) => file.state === "pending").length;
 
-  async function choose() {
+  function select(selected: AudioFileSelection[]) {
+    if (!selected.length) return;
+    // Resolve the complete batch before replacing the previous selection.
+    const unique = [...new Map(selected.map((file) => [file.path, file])).values()];
+    setFiles(unique.map((file) => ({ ...file, state: "pending" })));
+    setResultId(null);
+    setError(null);
+  }
+
+  async function choose(dropped?: File[]) {
+    if (active.current || selectionActive.current) return;
+    selectionActive.current = true;
+    setSelecting(true);
     try {
-      const selected = await bridge.chooseAudioFile();
-      if (selected) {
-        setFile(selected);
-        setResultId(null);
-        setError(null);
-      }
+      select(dropped ? await bridge.resolveAudioFiles(dropped) : await bridge.chooseAudioFiles());
     } catch (reason) {
-      setError(String(reason));
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      selectionActive.current = false;
+      setSelecting(false);
     }
   }
 
+  function drop(event: DragEvent) {
+    event.preventDefault();
+    setDragging(false);
+    if (active.current || selectionActive.current) return;
+    const dropped = Array.from(event.dataTransfer.files);
+    if (!dropped.length) {
+      setError("Drop local audio or video files; links and folders are not supported.");
+      return;
+    }
+    void choose(dropped);
+  }
+
+  function update(path: string, change: Partial<SelectedFile>) {
+    setFiles((items) => items.map((item) => item.path === path ? { ...item, ...change } : item));
+  }
+
   async function run() {
-    if (!file || busy) return;
+    if (!pending || busy || active.current || selectionActive.current) return;
+    active.current = true;
+    stop.current = false;
     setError(null);
     setRunning(true);
+    let completed = 0;
     try {
-      const record = await bridge.runLab({ path: file.path });
-      setResultId(record.id);
-      onResult(record);
-      onToast(
-        settings.keepHistory
-          ? "Transcript saved to history"
-          : "Transcript ready for this session",
-      );
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
+      for (const file of files.filter((item) => item.state === "pending")) {
+        if (stop.current) break;
+        update(file.path, { state: "running", error: undefined });
+        try {
+          const record = await bridge.runLab({ path: file.path });
+          update(file.path, { state: "done", resultId: record.id });
+          setResultId(record.id);
+          onResult(record);
+          completed += 1;
+        } catch (reason) {
+          update(file.path, { state: "failed", error: reason instanceof Error ? reason.message : String(reason) });
+        }
+      }
+      if (completed) onToast(`${completed} transcript${completed === 1 ? "" : "s"} ${settings.keepHistory ? "saved to history" : "ready for this session"}`);
     } finally {
+      active.current = false;
       setRunning(false);
     }
   }
 
   return (
-    <div className="content-stack">
+    <div className="content-stack" onDragOver={(event) => event.preventDefault()} onDrop={drop}>
       {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
       <section className="view-toolbar">
-        <div>
-          <strong>File transcription</strong>
-          <span>
-            The original media stays in place; processing and temporary
-            conversion remain local.
-          </span>
-        </div>
+        <div><strong>File transcription</strong><span>The original media stays in place; processing and temporary conversion remain local.</span></div>
       </section>
-
       <div className="grid grid-cols-[330px_minmax(0,1fr)] gap-4 max-[1150px]:grid-cols-[260px_minmax(0,1fr)] max-[700px]:grid-cols-1">
         <section className="border border-line bg-surface rounded-panel shadow-panel backdrop-blur-xl overflow-hidden min-w-0 p-5 flex flex-col gap-4">
           <button
-            disabled={running}
-            className="file-drop w-full flex items-center gap-2.5 px-3.5 py-5 bg-surface border border-dashed border-line-strong rounded-xl backdrop-blur-md text-left"
+            disabled={running || selecting}
+            className={`file-drop w-full flex items-center gap-2.5 px-3.5 py-5 bg-surface border border-dashed ${dragging ? "border-accent" : "border-line-strong"} rounded-xl backdrop-blur-md text-left`}
             onClick={() => void choose()}
+            onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = running || selecting ? "none" : "copy"; setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
           >
-            <span>
-              <FileAudio />
-            </span>
+            <FileAudio />
             <div className="min-w-0 flex-1">
-              {file ? (
-                <>
-                  <strong className="block text-[12px] break-words">
-                    {file.name}
-                  </strong>
-                  <small className="block text-[10px] mt-1">
-                    {(file.size / 1024 / 1024).toFixed(1)} MB · click to replace
-                  </small>
-                </>
-              ) : (
-                <>
-                  <strong className="block text-[12px] break-words">
-                    Choose audio or video
-                  </strong>
-                  <small className="block text-[10px] mt-1">
-                    WAV, MP3, M4A, FLAC, WebM, MP4, MOV, or MKV
-                  </small>
-                </>
-              )}
+              <strong className="block text-[12px] break-words">{selecting ? "Checking files…" : "Choose or drop audio and video"}</strong>
+              <small className="block text-[10px] mt-1">{SUPPORTED_AUDIO_EXTENSIONS.join(", ").toUpperCase()} · up to {MAX_AUDIO_BATCH_FILES} files</small>
             </div>
             <Upload className="w-[15px] h-[15px] text-muted" />
           </button>
-
-          <button
-            className="primary-button lab-run"
-            disabled={!file || busy || running}
-            onClick={() => void run()}
-          >
-            {running ? <LoaderCircle className="spin" /> : <Sparkles />}{" "}
-            {running ? "Working locally…" : "Transcribe"}
+          {files.length > 0 && (
+            <ul className="flex flex-col gap-3 max-h-[340px] overflow-auto" aria-label="Selected files" aria-live="polite">
+              {files.map((file) => (
+                <li key={file.path} className="text-[12px] break-words">
+                  <strong>{file.name}</strong>
+                  <div className="text-[10px] text-muted">{(file.size / 1024 / 1024).toFixed(1)} MB · {file.state === "running" ? "Transcribing locally" : file.state === "done" ? "Complete" : file.state === "failed" ? "Failed" : "Ready"}</div>
+                  {file.error && <p role="alert" className="text-[11px]">{file.error}</p>}
+                  <div className="flex gap-3 mt-1">
+                    {file.resultId && <button className="text-accent" onClick={() => setResultId(file.resultId!)}>Show transcript</button>}
+                    {file.state === "failed" && <button disabled={running} className="text-accent" onClick={() => update(file.path, { state: "pending", error: undefined })}>Retry</button>}
+                    <button disabled={running || selecting} className="text-muted" onClick={() => setFiles((items) => items.filter((item) => item.path !== file.path))}>Remove</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button className="primary-button lab-run" disabled={!pending || busy || running || selecting} onClick={() => void run()}>
+            {running ? <LoaderCircle className="spin" /> : <Sparkles />}{" "}{running ? "Working locally…" : `Transcribe${pending > 1 ? ` ${pending} files` : ""}`}
           </button>
+          {running && <button className="text-[12px] text-muted" onClick={() => { stop.current = true; }}>Stop after current file</button>}
+          {files.length > 1 && <p className="text-[10px] text-muted">Files are processed one at a time. This selection is kept while this page is open.</p>}
         </section>
-
         <section className="lab-result border border-line bg-surface rounded-panel shadow-panel backdrop-blur-xl overflow-hidden min-w-0 px-[18px] py-4">
           {!result ? (
             <div className="min-h-[380px] flex flex-col items-center justify-center text-center">
               <ScanText className="w-[38px] h-[38px] text-accent [stroke-width:1] mb-[22px]" />
-              <h3>No file processed</h3>
-              <p className="max-w-[290px] text-[12px] text-muted mt-3">
-                Choose a recording to transcribe. Everything is processed
-                locally.
-              </p>
+              <h3>No file processed</h3><p className="max-w-[290px] text-[12px] text-muted mt-3">Choose recordings to transcribe. Everything is processed locally.</p>
             </div>
-          ) : (
-            <TranscriptCard
-              key={result.id}
-              record={result}
-              inspector
-              {...actions}
-            />
-          )}
+          ) : <TranscriptCard key={result.id} record={result} inspector {...actions} />}
         </section>
       </div>
     </div>

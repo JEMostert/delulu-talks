@@ -1,4 +1,5 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { MAX_AUDIO_BATCH_FILES } from "../src/audioFormats";
 import type {
   AppSettings,
   DeluluApi,
@@ -70,6 +71,23 @@ const api: DeluluApi = {
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),
   clearHistory: () => ipcRenderer.invoke("history:clear"),
   chooseAudioFile: () => ipcRenderer.invoke("lab:chooseAudio"),
+  chooseAudioFiles: () => ipcRenderer.invoke("lab:chooseAudioFiles"),
+  resolveAudioFiles: async (files: File[]) => {
+    if (!Array.isArray(files) || files.length > MAX_AUDIO_BATCH_FILES)
+      throw new Error(`Choose at most ${MAX_AUDIO_BATCH_FILES} files at once`);
+    const paths = files.map((file) => {
+      let path: string;
+      try {
+        path = webUtils.getPathForFile(file);
+      } catch {
+        throw new Error(`${file?.name || "Dropped item"}: this is not a local file`);
+      }
+      if (!path)
+        throw new Error(`${file.name}: this file has no local path`);
+      return path;
+    });
+    return ipcRenderer.invoke("lab:resolveAudioFiles", paths);
+  },
   runLab: (request: LabRequest) => ipcRenderer.invoke("lab:run", request),
   exportTranscript: (id: string, format: ExportFormat) =>
     ipcRenderer.invoke("history:export", id, format),

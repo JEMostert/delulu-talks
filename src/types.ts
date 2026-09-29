@@ -250,6 +250,8 @@ export type DeluluApi = {
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
   chooseAudioFile(): Promise<AudioFileSelection | null>;
+  chooseAudioFiles(): Promise<AudioFileSelection[]>;
+  resolveAudioFiles(files: File[]): Promise<AudioFileSelection[]>;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   recordingStarted(): Promise<void>;
