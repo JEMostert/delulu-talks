@@ -73,6 +73,7 @@ const api: DeluluApi = {
   chooseAudioFile: () => ipcRenderer.invoke("lab:chooseAudio"),
   chooseAudioFiles: () => ipcRenderer.invoke("lab:chooseAudioFiles"),
   getAudioJobs: () => ipcRenderer.invoke("lab:getJobs"),
+  loadAudioSource: (path: string) => ipcRenderer.invoke("lab:loadSource", path),
   removeAudioJob: (path: string) => ipcRenderer.invoke("lab:removeJob", path),
   relinkAudioJob: (path: string) => ipcRenderer.invoke("lab:relinkJob", path),
   resolveAudioFiles: async (files: File[]) => {

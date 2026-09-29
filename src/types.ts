@@ -263,6 +263,7 @@ export type DeluluApi = {
   chooseAudioFiles(): Promise<AudioFileSelection[]>;
   resolveAudioFiles(files: File[]): Promise<AudioFileSelection[]>;
   getAudioJobs(): Promise<AudioImportJob[]>;
+  loadAudioSource(path: string): Promise<{ bytes: Uint8Array; mime: string }>;
   removeAudioJob(path: string): Promise<void>;
   relinkAudioJob(path: string): Promise<AudioImportJob | null>;
   runLab(request: LabRequest): Promise<TranscriptRecord>;

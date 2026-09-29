@@ -4,6 +4,7 @@ import { FileAudio, LoaderCircle, ScanText, Sparkles, Upload } from "lucide-reac
 import { Alert } from "../components/ui";
 import { bridge } from "../bridge";
 import { MAX_AUDIO_BATCH_FILES, SUPPORTED_AUDIO_EXTENSIONS } from "../audioFormats";
+import { AudioSourceReview } from "../components/AudioSourceReview";
 import type { AppSettings, AudioFileSelection, TranscriptRecord } from "../types";
 
 type SelectedFile = AudioFileSelection & {
@@ -27,6 +28,7 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
   const [selecting, setSelecting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [resultId, setResultId] = useState<string | null>(null);
+  const [review, setReview] = useState<AudioFileSelection | null>(null);
   const stop = useRef(false);
   const active = useRef(false);
   const selectionActive = useRef(false);
@@ -52,6 +54,7 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
     const unique = [...new Map(selected.map((file) => [file.path, file])).values()];
     setFiles(unique.map((file) => ({ ...file, state: "pending" })));
     setResultId(null);
+    setReview(null);
     setError(null);
   }
 
@@ -90,6 +93,7 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
     try {
       await bridge.removeAudioJob(path);
       setFiles((items) => items.filter((item) => item.path !== path));
+      if (review?.path === path) setReview(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -101,7 +105,10 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
     setSelecting(true);
     try {
       const job = await bridge.relinkAudioJob(path);
-      if (job) setFiles((items) => items.map((item) => item.path === path ? job : item));
+      if (job) {
+        setFiles((items) => items.map((item) => item.path === path ? job : item));
+        if (review?.path === path) setReview(null);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -148,6 +155,7 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
       <section className="view-toolbar">
         <div><strong>File transcription</strong><span>The original media stays in place; processing and temporary conversion remain local.</span></div>
       </section>
+      {review && <AudioSourceReview key={review.path} path={review.path} name={review.name} onClose={() => setReview(null)} />}
       <div className="grid grid-cols-[330px_minmax(0,1fr)] gap-4 max-[1150px]:grid-cols-[260px_minmax(0,1fr)] max-[700px]:grid-cols-1">
         <section className="border border-line bg-surface rounded-panel shadow-panel backdrop-blur-xl overflow-hidden min-w-0 p-5 flex flex-col gap-4">
           <button
@@ -173,6 +181,7 @@ export function LabPage({ settings, busy, onResult, onToast, history, ...actions
                   {file.error && <p role="alert" className="text-[11px]">{file.error}</p>}
                   {file.sourceError && <p role="alert" className="text-[11px]">Source unavailable: {file.sourceError}. Relink explicitly to process this job.</p>}
                   <div className="flex flex-wrap gap-3 mt-1">
+                    {file.sourceAvailable !== false && <button className="text-accent" disabled={running || selecting} onClick={() => setReview(file)}>Review linked audio</button>}
                     {file.resultId && <button className="text-accent" onClick={() => setResultId(file.resultId!)}>Show transcript</button>}
                     {file.state === "failed" && <button disabled={running || selecting || file.sourceAvailable === false} className="text-accent" onClick={() => update(file.path, { state: "pending", error: undefined })}>Retry</button>}
                     {(file.sourceAvailable === false || file.state === "failed") && <button disabled={running || selecting || busy} className="text-accent" onClick={() => void relink(file.path)}>Relink source</button>}

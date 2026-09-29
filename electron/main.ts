@@ -37,6 +37,7 @@ import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
 import { AudioJobsService } from "./services/audioJobs";
+import { loadLinkedAudio } from "./services/audioSource";
 import { PasteService } from "./services/paste";
 import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
@@ -910,6 +911,13 @@ function registerIpc(): void {
       return { ...job, state: job.state === "done" ? "done" : "failed", sourceAvailable: false, sourceError: reason instanceof Error ? reason.message : String(reason) };
     }
   }));
+  handle("lab:loadSource", async (_event, path: unknown) => {
+    const key = resolve(validateText(path, 4096));
+    if (!importJobs().getJobs().some((job) => job.path === key))
+      throw new Error("Link this source through Audio files before reviewing it");
+    validateAudioFile(key);
+    return loadLinkedAudio(key);
+  });
   handle("lab:relinkJob", async (_event, path: unknown) => {
     if (dictation.isActive || asr.isBusy) throw new Error("Finish the current operation before relinking a source");
     const key = resolve(validateText(path, 4096));
