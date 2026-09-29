@@ -259,6 +259,7 @@ export async function runSuite(suite, args) {
       shell: false,
       env: {
         ...process.env,
+        ...(suite === "browser" ? { CI: "1" } : {}),
         HF_HUB_OFFLINE: "1",
         HF_HUB_DISABLE_TELEMETRY: "1",
         DELULU_EVIDENCE_NATIVE_RESULT: observationPath ?? "",
