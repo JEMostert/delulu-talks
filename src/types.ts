@@ -139,6 +139,7 @@ export type RetryAudioState = {
 export type DictationStatus = RuntimeLifecycle & {
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
+  captureInputNotice?: string | null;
   retryAudio?: RetryAudioState;
   migrationRequired?: boolean;
   phase: DictationPhase;
@@ -408,6 +409,11 @@ export type DeluluApi = {
   recordingLimitReached(sessionId: string): Promise<void>;
   recorderReady(): Promise<void>;
   recordingFailed(message: string, sessionId: string): Promise<void>;
+  recordingInputChanged(
+    sessionId: string,
+    message: string,
+    inputLost: boolean,
+  ): Promise<void>;
   recordingLevel(level: number): void;
   submitRecording(recording: RecordingSubmission): Promise<void>;
   onPasteLastStatus(callback: (status: PasteLastStatus) => void): () => void;

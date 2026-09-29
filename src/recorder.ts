@@ -1,5 +1,6 @@
 import captureWorkletUrl from "./captureWorklet.js?url&no-inline";
 import { bridge } from "./bridge";
+import { acquireCaptureInput, watchCaptureInput } from "./captureInput";
 import { CaptureCuePlayer, type CaptureCue } from "./captureCues";
 import { microphoneSelection } from "./microphoneSelection";
 import { MAX_CAPTURE_DURATION_MS, MAX_CAPTURE_SAMPLES } from "./captureLimits";
@@ -101,6 +102,7 @@ export class PcmRecorder {
   private readonly cuePlayer = new CaptureCuePlayer();
   private cueEpoch = 0;
   private commands: Promise<void> = Promise.resolve();
+  private stopWatchingInput: (() => void) | null = null;
 
   async cancel(): Promise<void> {
     await this.handle({ action: "cancel", inputDeviceId: "default" });
@@ -178,17 +180,8 @@ export class PcmRecorder {
         );
         if (selection.state === "missing") throw new Error(selection.message!);
       }
-      const exactDevice =
-        deviceId && deviceId !== "default" ? { exact: deviceId } : undefined;
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: exactDevice,
-          channelCount: 1,
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-      });
+      const input = await acquireCaptureInput(deviceId);
+      const stream = input.stream;
       if (generation !== this.generation) {
         stream.getTracks().forEach((track) => track.stop());
         this.finishSession(sessionId);
@@ -238,6 +231,48 @@ export class PcmRecorder {
         MAX_CAPTURE_DURATION_MS,
       );
       await bridge.recordingStarted(sessionId);
+      if (generation !== this.generation || this.sessionId !== sessionId)
+        return;
+      this.stopWatchingInput = watchCaptureInput(input, (event) => {
+        if (
+          generation !== this.generation ||
+          this.sessionId !== sessionId ||
+          this.stopping
+        )
+          return;
+        const inputLost = event.kind === "input-lost";
+        if (inputLost) {
+          // Stop accepting packets before queuing the existing flush/submit
+          // path. The audio captured from the original input is retained.
+          this.source?.disconnect();
+          this.stopWatchingInput?.();
+          this.stopWatchingInput = null;
+        }
+        void bridge
+          .recordingInputChanged(sessionId, event.message, inputLost)
+          .then(() => {
+            if (inputLost && generation === this.generation)
+              return this.handle({
+                action: "stop",
+                inputDeviceId: deviceId,
+                sessionId,
+              });
+          })
+          .catch((error) => {
+            // IPC failure must not leave a disconnected capture running.
+            if (inputLost && generation === this.generation) {
+              void this.handle({
+                action: "cancel",
+                inputDeviceId: deviceId,
+                sessionId,
+              }).catch(() => undefined);
+              void bridge.recordingFailed(
+                `Could not finish capture after microphone loss: ${error instanceof Error ? error.message : String(error)}`,
+                sessionId,
+              ).catch(() => undefined);
+            }
+          });
+      });
       void this.playCue("start", sessionId, generation, cueEpoch);
     } catch (error) {
       await this.dispose();
@@ -361,6 +396,8 @@ export class PcmRecorder {
     if (!this.stream || !this.context || this.stopping) return;
     const sessionId = this.sessionId!;
     this.stopping = true;
+    this.stopWatchingInput?.();
+    this.stopWatchingInput = null;
     this.cueEpoch += 1;
     void this.cuePlayer.dispose().catch(() => undefined);
     this.clearCaptureLimitTimer();
@@ -429,6 +466,8 @@ export class PcmRecorder {
   }
 
   private async dispose(): Promise<void> {
+    this.stopWatchingInput?.();
+    this.stopWatchingInput = null;
     this.liveLevel?.stop();
     this.liveLevel = null;
     this.clearCaptureLimitTimer();

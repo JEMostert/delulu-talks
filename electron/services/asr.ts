@@ -236,6 +236,10 @@ export class AsrService {
     this.updateStatus({ retryAvailable: available, retryAudio });
   }
 
+  setCaptureInputNotice(message: string | null): void {
+    this.updateStatus({ captureInputNotice: message });
+  }
+
   setActivity(
     phase: DictationStatus["phase"],
     message: string,
