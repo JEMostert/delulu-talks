@@ -81,3 +81,46 @@ use `external-benchmark-control`; this records benchmark context and never
 changes the app model catalog. Resource claims belong to actual measured
 artifacts, not an inference from text accuracy. This comparison implementation
 is **UNVERIFIED — checks not run per user instruction**.
+
+## Retaining raw resource benchmarks
+
+`scripts/benchmark_artifact.py` packages already-collected measurements and raw
+files in a new directory. It does not invoke a runner, install models, measure
+hardware or synthesize benchmark evidence. Its manifest requires the same
+`provenance` object shown above, plus these fields:
+
+```json
+{
+  "measurement_method": "Describe the actual clock, memory sampler and execution order.",
+  "limitations": "Describe noise, missing samples and native evidence limitations.",
+  "runs": [
+    {"run_id": "warm-1", "case_id": "nl-short-001", "phase": "warm",
+     "measurements": {"wall_time": {"value": 1.2, "unit": "seconds"}}},
+    {"run_id": "warm-2", "case_id": "nl-short-001", "phase": "warm",
+     "measurements": {"wall_time": {"value": 1.3, "unit": "seconds"}}}
+  ],
+  "artifacts": [{"role": "runner-log", "path": "runner-log.jsonl"}]
+}
+```
+
+The numbers above illustrate syntax only; they are not measured Delulu results.
+Add the required provenance object before using this manifest. Artifact paths
+resolve against the manifest directory. Listed raw files can contain private
+transcripts: retain them locally and share only after inspecting their contents.
+
+```sh
+python scripts/benchmark_artifact.py --manifest benchmark.json --output-directory retained-benchmark
+```
+
+Bundles retain the original manifest and exact raw file bytes with hashes. Runs
+remain individually available. Summaries group by case, phase, metric and unit;
+cold, load, warmup and warm measurements remain separate. Each group records its
+sample count, mean, median, range, sample deviation and conditional standard
+error. One observation has unknown spread. Conditional standard error assumes
+independent observations; the tool does not assert that assumption or produce a
+confidence interval. Missing resource measurements stay missing.
+
+The destination must not exist; an interrupted copy removes only the newly
+created incomplete bundle. Reports retain producing revisions, hardware and
+decode metadata as user-supplied facts. **UNVERIFIED — checks not run per user
+instruction**; no native benchmark evidence was generated for this change.
