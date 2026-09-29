@@ -1,7 +1,33 @@
-import type { AppSettings, MagicModelInfo, ModelInfo } from "./types";
+import type {
+  AppSettings,
+  MagicModelInfo,
+  ModelInfo,
+  ModelProvenance,
+} from "./types";
 
 export const DEFAULT_SHORTCUT = "Super+Z";
 export const LEGACY_DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
+
+const R2T2_LICENSE = {
+  licenseName: "NetEase Youdao Model Use License Agreement",
+  licenseUrl:
+    "https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE",
+};
+
+function rewriteProvenance(repo: string): ModelProvenance {
+  return {
+    licenseName: "Apache 2.0",
+    licenseUrl: `https://huggingface.co/${repo}/blob/main/LICENSE`,
+    variants: [
+      {
+        label: "Optional rewriting",
+        revision: null,
+        conversion:
+          "Original Qwen checkpoint loaded through Transformers; no Delulu format conversion.",
+      },
+    ],
+  };
+}
 
 export const DEFAULT_SETTINGS: AppSettings = {
   workflowVersion: 1,
@@ -40,6 +66,25 @@ export const MODELS: ModelInfo[] = [
     description:
       "R2T2 speech recognition on NVIDIA GPUs. Linux uses vLLM; Windows uses native PyTorch with CUDA. Speech is currently processed after recording stops. Windows hardware validation is pending.",
     recommended: true,
+    provenance: {
+      ...R2T2_LICENSE,
+      variants: [
+        {
+          label: "Linux CUDA",
+          revision: null,
+          conversion:
+            "Original R2T2 fine-tune of Qwen3-ASR-1.7B, loaded through qwen-asr and vLLM.",
+        },
+        {
+          label: "Windows CUDA",
+          revision: "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9",
+          conversion:
+            "Delulu converts original R2T2 keys in memory using the official Transformers mappings, with strict weight loading. Conversion cache: transformers-5.15.0-v1.",
+          attributionUrl:
+            "https://github.com/JEMostert/delulu-talks/blob/master/electron/python/windows_checkpoint.py",
+        },
+      ],
+    },
   },
   {
     id: "r2t2Mlx",
@@ -50,6 +95,19 @@ export const MODELS: ModelInfo[] = [
     description:
       "The Confucius4-R2T2 fine-tune runs directly through MLX on Apple Silicon. Uses an unquantized BF16 conversion, with selectable language. Requires macOS 15+ and native Python 3.12. Mac hardware validation is pending.",
     recommended: true,
+    provenance: {
+      ...R2T2_LICENSE,
+      variants: [
+        {
+          label: "Apple Silicon MLX",
+          revision: "747f5fc5f84bc9976baa2f02714e2fed67ed8611",
+          conversion:
+            "Unquantized BF16 conversion of netease-youdao/Confucius4-R2T2. The publisher records mlx_audio.convert from the xocialize/mlx-audio fork at 1792021, MLX 0.32.2, on an Apple M5 Max. These are the conversion tools, not the app runtime versions.",
+          attributionUrl:
+            "https://huggingface.co/mlx-community/Confucius4-R2T2-bf16/blob/747f5fc5f84bc9976baa2f02714e2fed67ed8611/README.md",
+        },
+      ],
+    },
   },
 ];
 
@@ -64,6 +122,7 @@ export const MAGIC_MODELS: MagicModelInfo[] = [
     parameters: "0.8B",
     memory: "~2 GB",
     speed: "Fastest",
+    provenance: rewriteProvenance("Qwen/Qwen3.5-0.8B"),
   },
   {
     id: "qwen35Medium",
@@ -75,6 +134,7 @@ export const MAGIC_MODELS: MagicModelInfo[] = [
     parameters: "2B",
     memory: "~4.5 GB",
     speed: "Balanced",
+    provenance: rewriteProvenance("Qwen/Qwen3.5-2B"),
     recommended: true,
   },
   {
@@ -87,6 +147,7 @@ export const MAGIC_MODELS: MagicModelInfo[] = [
     parameters: "4B",
     memory: "~8.5 GB",
     speed: "Deliberate",
+    provenance: rewriteProvenance("Qwen/Qwen3.5-4B"),
   },
 ];
 
