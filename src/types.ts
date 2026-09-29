@@ -37,6 +37,7 @@ export type AppSettings = {
   inputDeviceLabel: string;
   autoPaste: boolean;
   copyToClipboard: boolean;
+  restoreClipboardAfterPaste: boolean;
   pastePortalToken: string;
   keepHistory: boolean;
   showOverlay: boolean;

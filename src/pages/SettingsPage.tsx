@@ -290,6 +290,16 @@ export function SettingsPage(props: Props) {
               {toggle("copyToClipboard", "Copy results to clipboard")}
             </SettingRow>
             <SettingRow
+              title="Restore clipboard after paste"
+              description="Restore previous plain text two seconds after a successful automatic paste, if the clipboard hasn't changed. Rich content is not restored."
+            >
+              {toggle(
+                "restoreClipboardAfterPaste",
+                "Restore clipboard after paste",
+                !settings.autoPaste,
+              )}
+            </SettingRow>
+            <SettingRow
               icon={ShieldCheck}
               title="Keep local history"
               description="Save transcript text on this device. Turning this off stops new saves; existing history stays until you clear it."

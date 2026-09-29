@@ -194,6 +194,10 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.copyToClipboard,
       DEFAULT_SETTINGS.copyToClipboard,
     ),
+    restoreClipboardAfterPaste: boolean(
+      source.restoreClipboardAfterPaste,
+      DEFAULT_SETTINGS.restoreClipboardAfterPaste,
+    ),
     pastePortalToken: safeString(
       source.pastePortalToken,
       DEFAULT_SETTINGS.pastePortalToken,
