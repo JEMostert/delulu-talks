@@ -256,6 +256,7 @@ export type DeluluApi = {
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   recordingStarted(sessionId: string): Promise<void>;
+  recordingLimitReached(sessionId: string): Promise<void>;
   recorderReady(): Promise<void>;
   recordingFailed(message: string, sessionId: string): Promise<void>;
   recordingLevel(level: number): void;

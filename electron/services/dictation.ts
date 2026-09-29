@@ -258,6 +258,23 @@ export class DictationService {
     this.asr.setActivity("idle", "Recording cancelled");
   }
 
+  recordingLimitReached(sessionId: string): void {
+    if (
+      sessionId !== this.captureSessionId ||
+      !["opening", "listening"].includes(this.captureState)
+    )
+      return;
+    // Use the same ownership transition as a user Stop so bounded audio is
+    // accepted by the normal transcript/rewrite/delivery pipeline.
+    this.stop();
+    this.asr.setActivity("listening", "Recording limit reached — finishing capture");
+    this.setHud({
+      state: "transcribing",
+      title: "Finishing capture",
+      detail: "Recording limit reached",
+    });
+  }
+
   recordingStarted(sessionId: string): void {
     if (sessionId !== this.captureSessionId) return;
     if (this.captureState === "stopping") {

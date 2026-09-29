@@ -10,6 +10,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { speechLanguageCapability } from "../speechCapabilities";
+import { MAX_CAPTURE_DURATION_MS } from "../captureLimits";
 import {
   TranscriptCard,
   type TranscriptActions,
@@ -169,6 +170,11 @@ export function HomePage({
                 </span>
               </div>
             </div>
+            <p className="px-3.5 pt-2.5 text-[11px] text-muted">
+              Recordings finish automatically at {MAX_CAPTURE_DURATION_MS / 60_000}{" "}
+              minutes. High sample-rate inputs may finish sooner to limit memory
+              use. Captured audio is transcribed.
+            </p>
             <div className="grid grid-cols-3 gap-2.5 px-3.5 pt-2.5 pb-1.5 max-[700px]:grid-cols-1">
               <ControlField label="Microphone">
                 <select
