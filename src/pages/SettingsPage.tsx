@@ -172,6 +172,16 @@ export function SettingsPage(props: Props) {
               </select>
             </SettingRow>
             <SettingRow
+              title="Spoken formatting commands"
+              description="Opt in to explicit line commands: English ‘command new line/paragraph’ or Dutch ‘commando nieuwe regel/alinea’. Original speech stays available. Other language hints keep text unchanged."
+            >
+              {toggle(
+                "spokenFormattingCommands",
+                "Interpret spoken formatting commands",
+                busy,
+              )}
+            </SettingRow>
+            <SettingRow
               icon={Keyboard}
               title="Dictation shortcut"
               description={shortcutStatus.message}
