@@ -74,6 +74,19 @@ export const previewApi: DeluluApi = {
       checkedAt: Date.now(),
     };
   },
+  async getSetupLog(kind) {
+    return {
+      kind,
+      attemptId: null,
+      startedAt: null,
+      finishedAt: null,
+      outcome: "idle",
+      entries: [],
+      truncated: false,
+      maxEntries: 128,
+      maxCharacters: 64000,
+    };
+  },
   async pasteLastTranscript() {
     desktopOnly();
   },
