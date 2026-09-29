@@ -267,7 +267,10 @@ export class DictationService {
     // Use the same ownership transition as a user Stop so bounded audio is
     // accepted by the normal transcript/rewrite/delivery pipeline.
     this.stop();
-    this.asr.setActivity("listening", "Recording limit reached — finishing capture");
+    this.asr.setActivity(
+      "listening",
+      "Recording limit reached — finishing capture",
+    );
     this.setHud({
       state: "transcribing",
       title: "Finishing capture",
