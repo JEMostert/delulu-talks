@@ -436,7 +436,10 @@ for (const target of [
         );
         expect(inventory.runtime.backend).toEqual(
           kind === "magic"
-            ? { engine: "transformers", devicePreference: ["cuda", "mps"] }
+            ? {
+                engine: "transformers",
+                devicePreference: ["cuda", "mps", "cpu"],
+              }
             : target.metal
               ? { engine: "mlx-audio", devicePreference: ["metal"] }
               : {

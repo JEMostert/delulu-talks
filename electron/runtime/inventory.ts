@@ -41,7 +41,7 @@ export type TargetPlatform = { platform: string; arch: string };
 export type InventoryBackend = {
   engine: "mlx-audio" | "qwen-asr-vllm" | "transformers";
   // Selection policy, not an observed GPU capability or inference result.
-  devicePreference: ("metal" | "cuda" | "mps")[];
+  devicePreference: ("metal" | "cuda" | "mps" | "cpu")[];
 };
 export type RequestedInstallStage = {
   name: "installer" | "windows-cuda" | "runtime";
@@ -87,7 +87,7 @@ export function inventoryBackend(
   windows: boolean,
 ): InventoryBackend {
   if (kind === "magic")
-    return { engine: "transformers", devicePreference: ["cuda", "mps"] };
+    return { engine: "transformers", devicePreference: ["cuda", "mps", "cpu"] };
   return metal
     ? { engine: "mlx-audio", devicePreference: ["metal"] }
     : {
