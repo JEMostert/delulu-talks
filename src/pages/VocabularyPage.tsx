@@ -308,7 +308,7 @@ export function VocabularyPage({
                     ...draft,
                     term: draft.term.trim(),
                     soundsLike: draft.soundsLike.trim(),
-                    replacement: draft.replacement.trim(),
+                    replacement: draft.replacement,
                   };
                   if (
                     await onChange(
