@@ -270,6 +270,7 @@ export type DeluluApi = {
   rendererControllerFailed(): Promise<void>;
   getSettings(): Promise<AppSettings>;
   getDiagnostics(): Promise<RuntimeDiagnostics>;
+  getOverlayDiagnostics(refresh?: boolean): Promise<OverlayDiagnostics>;
   getPasteRecovery(): Promise<PasteRecovery | null>;
   copyInstead(id: string): Promise<void>;
   dismissPasteRecovery(id: string): Promise<void>;
@@ -400,4 +401,17 @@ export type PasteLastStatus = {
   dueAt: number | null;
   remainingSeconds: number;
   message: string;
+};
+
+
+export type OverlayDiagnostics = {
+  platform: string;
+  session: string;
+  checkedAt: number | null;
+  status: "not-checked" | "available" | "unavailable" | "unsupported" | "unknown";
+  interpreter: string | null;
+  library: string | null;
+  helperReady: boolean;
+  detail: string;
+  checks: Array<{ name: string; state: "passed" | "failed" | "unknown"; detail: string }>;
 };

@@ -8,6 +8,52 @@ import sys
 import threading
 import time
 
+
+def probe_dependencies():
+    """Explicit diagnostics: import HUD dependencies and query the compositor.
+
+    No windows are created and no microphone/model packages are touched.
+    """
+    checks = []
+    modules = {}
+    def check(name, action):
+        try:
+            modules[name] = action()
+            checks.append({"name": name, "state": "passed", "detail": "Import succeeded in the overlay interpreter."})
+            return True
+        except Exception as error:
+            checks.append({"name": name, "state": "failed", "detail": str(error)[:320]})
+            return False
+    check("PyCairo", lambda: __import__("cairo"))
+    if check("PyGObject", lambda: __import__("gi")):
+        gi_module = modules["PyGObject"]
+        for namespace, version in [("Gtk", "4.0"), ("Gdk", "4.0"), ("Gtk4LayerShell", "1.0"), ("Pango", "1.0")]:
+            def load_namespace(name=namespace, required=version):
+                gi_module.require_version(name, required)
+                repository = __import__("gi.repository", fromlist=[name])
+                return getattr(repository, name)
+            check(namespace, load_namespace)
+    else:
+        for name in ["Gtk", "Gdk", "Gtk4LayerShell", "Pango"]:
+            checks.append({"name": name, "state": "unknown", "detail": "PyGObject is missing; namespace import was not attempted."})
+    if all(name in modules for name in ["Gtk", "Gdk", "Gtk4LayerShell"]):
+        try:
+            if not modules["Gtk"].init_check():
+                raise RuntimeError("GTK could not connect to the Wayland display. Check WAYLAND_DISPLAY/session permissions.")
+            if not modules["Gtk4LayerShell"].is_supported():
+                raise RuntimeError("This display/compositor does not expose the required layer-shell protocol.")
+            checks.append({"name": "Wayland layer-shell protocol", "state": "passed", "detail": "GTK connected and the layer-shell library reports compositor support. No overlay window was shown."})
+        except Exception as error:
+            checks.append({"name": "Wayland layer-shell protocol", "state": "failed", "detail": str(error)[:320]})
+    else:
+        checks.append({"name": "Wayland layer-shell protocol", "state": "unknown", "detail": "Required GTK namespaces were not imported; display support was not queried."})
+    print(json.dumps({"checks": checks, "available": all(item["state"] == "passed" for item in checks)}), flush=True)
+
+
+if "--probe" in sys.argv[1:]:
+    probe_dependencies()
+    sys.exit(0)
+
 import cairo
 import gi
 

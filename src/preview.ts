@@ -65,6 +65,9 @@ export const previewApi: DeluluApi = {
   async getLocalDataOverview() {
     desktopOnly();
   },
+  async getOverlayDiagnostics() {
+    return { platform: "Browser preview", session: "unknown", checkedAt: null, status: "unsupported" as const, interpreter: null, library: null, helperReady: false, detail: "Desktop app required. Browser preview cannot inspect native overlay dependencies or compositor support.", checks: [] };
+  },
   async getDiagnostics() {
     return {
       platform: "Browser preview",

@@ -784,6 +784,11 @@ function registerIpc(): void {
     assertRuntimeIdle();
     return asr.rewriteMagic(request, storage.getSettings());
   });
+  handle("platform:overlayDiagnostics", (_event, refresh: unknown) => {
+    if (refresh !== undefined && typeof refresh !== "boolean")
+      throw new Error("Expected a boolean overlay refresh flag");
+    return pill.diagnostics(refresh === true);
+  });
   handle("platform:capabilities", () =>
     paste.capabilities(pill.method, pill.detail),
   );

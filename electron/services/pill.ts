@@ -1,4 +1,5 @@
 import {
+  execFile,
   spawn,
   spawnSync,
   type ChildProcessWithoutNullStreams,
@@ -6,6 +7,7 @@ import {
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { app } from "electron";
+import type { OverlayDiagnostics } from "../../src/types";
 
 export type PillState =
   | "hidden"
@@ -51,6 +53,8 @@ export function resolveSystemPython(
       encoding: "utf8",
       env,
       windowsHide: true,
+      timeout: 2000,
+      maxBuffer: 64 * 1024,
     },
   );
   const located =
@@ -65,6 +69,7 @@ export function resolveSystemPython(
 export function layerShellCandidates(pkgConfigDirectory: string): string[] {
   return [
     pkgConfigDirectory && join(pkgConfigDirectory, "libgtk4-layer-shell.so"),
+    pkgConfigDirectory && join(pkgConfigDirectory, "libgtk4-layer-shell.so.0"),
     ...LAYER_SHELL_CANDIDATES,
   ].filter(Boolean);
 }
@@ -77,6 +82,8 @@ export class PillService {
   private retryAfter = 0;
   private resolvedLibrary: string | null | undefined;
   private resolvedPython: string | undefined;
+  private probeResult: OverlayDiagnostics | null = null;
+  private probePending: Promise<OverlayDiagnostics> | null = null;
   private usePreload = false;
   private preloadAttempted = false;
   private readonly spawn: typeof spawn;
@@ -96,25 +103,26 @@ export class PillService {
   }
 
   get method(): "layer-shell" | "unavailable" {
-    return this.supportedEnvironment() &&
-      this.layerShellLibrary() &&
-      !this.unavailableReason
-      ? "layer-shell"
-      : "unavailable";
+    try {
+      return this.supportedEnvironment() && this.layerShellLibrary() && !this.unavailableReason
+        ? "layer-shell" : "unavailable";
+    } catch { return "unavailable"; }
   }
 
   get detail(): string {
-    if (!this.supportedEnvironment())
-      return "Native pill requires a Wayland layer-shell compositor";
-    if (!this.layerShellLibrary())
-      return "Install gtk4-layer-shell to enable the native pill";
-    return this.unavailableReason ?? "Native click-through layer-shell pill";
+    try {
+      if (!this.supportedEnvironment()) return "Native pill requires a Wayland layer-shell compositor";
+      if (!this.layerShellLibrary()) return "Install gtk4-layer-shell to enable the native pill";
+      return this.unavailableReason ?? (this.ready
+        ? "Native layer-shell helper reported ready"
+        : "Layer-shell library found; helper readiness not yet reported. Check optional overlay dependencies in Models → Diagnostics.");
+    } catch { return "Could not inspect optional overlay dependencies. Capture remains available through Controls."; }
   }
 
   prepare(): void {
     if (!this.supportedEnvironment() || this.child) return;
     this.desired = { state: "hidden" };
-    this.start();
+    this.safeStart();
   }
 
   show(command: {
@@ -146,8 +154,76 @@ export class PillService {
             detail: command.detail,
           };
     if (!this.supportedEnvironment()) return;
-    if (!this.child && command.state !== "hidden") this.start();
+    if (!this.child && command.state !== "hidden") this.safeStart();
     if (this.ready) this.write(command);
+  }
+
+  private markUnavailable(error: unknown): void {
+    this.unavailableReason = `Optional overlay unavailable: ${error instanceof Error ? error.message : String(error)}`.slice(0, 320);
+    this.ready = false;
+    this.retryAfter = this.now() + 10_000;
+    const child = this.child;
+    this.child = null;
+    try { child?.kill(); } catch { /* Optional helper failure never aborts capture. */ }
+  }
+
+  private safeStart(): void {
+    try { this.start(); } catch (error) { this.markUnavailable(error); }
+  }
+
+  async diagnostics(refresh = false): Promise<OverlayDiagnostics> {
+    const base: OverlayDiagnostics = {
+      platform: this.platform, session: this.env.XDG_SESSION_TYPE ?? "unknown", checkedAt: null,
+      status: "not-checked", interpreter: null, library: null, helperReady: this.ready,
+      detail: "Dependencies have not been checked. The optional overlay does not control capture; use Controls when unavailable.", checks: [],
+    };
+    if (!this.supportedEnvironment()) return { ...base, status: "unsupported", detail: "This dependency check is for Linux Wayland layer-shell overlays. Capture remains available through Controls." };
+    if (!refresh) return this.probeResult ? { ...this.probeResult, helperReady: this.ready } : base;
+    if (this.probePending) return this.probePending;
+    this.probePending = this.performProbe(base).finally(() => { this.probePending = null; });
+    return this.probePending;
+  }
+
+  private async performProbe(base: OverlayDiagnostics): Promise<OverlayDiagnostics> {
+    const finish = (patch: Partial<OverlayDiagnostics>) => {
+      this.probeResult = { ...base, ...patch, helperReady: this.ready, checkedAt: this.now() };
+      return this.probeResult;
+    };
+    try {
+      this.resolvedLibrary = undefined;
+      this.resolvedPython = undefined;
+      const script = this.scriptPath();
+      if (!this.existsSync(script)) return finish({ status: "unavailable", detail: "Overlay helper is missing. Reinstall the app to restore it; capture does not depend on the helper." });
+      const python = this.pythonPath();
+      const library = this.layerShellLibrary();
+      const env: NodeJS.ProcessEnv = { ...this.env, GDK_BACKEND: "wayland", PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1" };
+      if (this.usePreload && library) env.LD_PRELOAD = this.env.LD_PRELOAD ? `${library}:${this.env.LD_PRELOAD}` : library;
+      return await new Promise<OverlayDiagnostics>((resolveProbe) => {
+        execFile(python, ["-B", script, "--probe"], { env, timeout: 5000, maxBuffer: 64 * 1024, windowsHide: true }, (error, stdout) => {
+          if (error) {
+            resolveProbe(finish({ status: "unknown", interpreter: python, library, detail: "Dependency probe failed, timed out or exited unexpectedly. Check the system Python, PyGObject/GTK4 bindings and Wayland display permissions. Capture remains independent." }));
+            return;
+          }
+          try {
+            const report = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "");
+            if (!Array.isArray(report.checks) || report.checks.length > 12 || !report.checks.length) throw new Error("Invalid report");
+            const checks: OverlayDiagnostics["checks"] = report.checks.map((item: unknown) => {
+              const entry = item as Record<string, unknown>;
+              if (!entry || typeof entry.name !== "string" || typeof entry.detail !== "string" || !["passed", "failed", "unknown"].includes(String(entry.state))) throw new Error("Invalid check");
+              return { name: entry.name.slice(0, 80), state: entry.state as "passed" | "failed" | "unknown", detail: entry.detail.slice(0, 320) };
+            });
+            const expected = ["PyCairo", "PyGObject", "Gtk", "Gdk", "Gtk4LayerShell", "Pango", "Wayland layer-shell protocol"];
+            if (checks.length !== expected.length || !expected.every((name) => checks.filter((item) => item.name === name).length === 1)) throw new Error("Incomplete dependency report");
+            const available = checks.every((item) => item.state === "passed");
+            resolveProbe(finish({ status: available ? "available" : "unavailable", interpreter: python, library, checks, detail: available ? "Dependency imports and compositor protocol check passed at this timestamp. This does not verify visible placement or microphone capture." : "Overlay dependencies or compositor support are unavailable. Install the missing system bindings/library or check the Wayland session. Capture remains available through Controls." }));
+          } catch {
+            resolveProbe(finish({ status: "unknown", interpreter: python, library, detail: "Dependency probe returned an invalid report. Reinstall the helper or check its Python dependencies; no availability was assumed." }));
+          }
+        });
+      });
+    } catch {
+      return finish({ status: "unknown", detail: "Could not inspect the optional overlay interpreter/library. Check system permissions; capture is independent." });
+    }
   }
 
   private supportedEnvironment(): boolean {
@@ -207,8 +283,16 @@ export class PillService {
     this.child = child;
     let stdout = "";
     let stderr = "";
+    child.stdin.on("error", (error) => {
+      if (this.child === child) this.markUnavailable(error);
+    });
     child.stdout.on("data", (chunk: Buffer) => {
+      if (this.child !== child) return;
       stdout += chunk.toString();
+      if (stdout.length > 64 * 1024) {
+        this.markUnavailable(new Error("Overlay helper output exceeded its bound"));
+        return;
+      }
       const lines = stdout.split(/\r?\n/);
       stdout = lines.pop() ?? "";
       for (const line of lines) {
@@ -222,6 +306,7 @@ export class PillService {
             this.unavailableReason = null;
             this.write(this.desired);
           } else if (message.type === "error") {
+            this.ready = false;
             this.unavailableReason =
               message.message ?? "Native pill could not start";
           }
@@ -250,7 +335,7 @@ export class PillService {
         this.preloadAttempted = true;
         this.usePreload = true;
         this.retryAfter = 0;
-        this.start();
+        this.safeStart();
         return;
       }
       this.retryAfter = this.now() + 10_000;
@@ -275,7 +360,7 @@ export class PillService {
     const result = this.spawnSync(
       "pkg-config",
       ["--variable=libdir", "gtk4-layer-shell-0"],
-      { encoding: "utf8", windowsHide: true },
+      { encoding: "utf8", windowsHide: true, env: this.env, timeout: 2000, maxBuffer: 64 * 1024 },
     );
     const directory = result.status === 0 ? result.stdout.trim() : "";
     this.resolvedLibrary =
@@ -287,7 +372,11 @@ export class PillService {
 
   private write(command: PillCommand): void {
     if (!this.child || !this.ready || !this.child.stdin.writable) return;
-    this.child.stdin.write(`${JSON.stringify(command)}\n`);
+    try {
+      this.child.stdin.write(`${JSON.stringify(command)}\n`);
+    } catch (error) {
+      this.markUnavailable(error);
+    }
   }
 
   shutdown(): void {
@@ -295,8 +384,8 @@ export class PillService {
     this.child = null;
     this.ready = false;
     if (!child) return;
-    child.stdin.end();
+    try { child.stdin.end(); } catch { /* Optional helper may already have exited. */ }
     // Electron can exit before a delayed cleanup timer runs.
-    child.kill("SIGTERM");
+    try { child.kill("SIGTERM"); } catch { /* Best-effort optional HUD shutdown. */ }
   }
 }

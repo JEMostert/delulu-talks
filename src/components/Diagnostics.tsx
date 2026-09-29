@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy, HardDrive, RefreshCw, Terminal } from "lucide-react";
 import { bridge } from "../bridge";
 import type { RuntimeDiagnostics } from "../types";
+import { OverlayDiagnostics } from "./OverlayDiagnostics";
 import { Alert } from "./ui";
 
 export function Diagnostics() {
@@ -39,6 +40,7 @@ export function Diagnostics() {
           {busy ? "Checking…" : "Refresh"}
         </button>
       </div>
+      <OverlayDiagnostics />
       {error && <Alert>{error}</Alert>}
       {data && (
         <>
