@@ -13,6 +13,13 @@ from unittest.mock import patch
 import transcription_engine as engine
 
 
+def fake_cuda_preflight(torch):
+    # These fixtures exercise model contracts, not a native CUDA probe.
+    if not torch.cuda.is_available():
+        raise RuntimeError("Synthetic CUDA unavailable")
+    return {"probe": "synthetic-no-hardware"}
+
+
 class Audio:
     ndim = 1
 
@@ -113,6 +120,8 @@ class BackendFixture:
             inference_mode=contextlib.nullcontext,
         )
         self.modules = {
+            "cuda_preflight": types.SimpleNamespace(
+                ensure_cuda_compatible=fake_cuda_preflight),
             "torch": self.torch,
             "numpy": types.SimpleNamespace(zeros=lambda *a, **kw: Audio(), float32="float32"),
             "qwen_asr": types.SimpleNamespace(Qwen3ASRModel=types.SimpleNamespace(LLM=speech_model)),

@@ -65,7 +65,7 @@ describe("application updates", () => {
   });
 });
 
-test("blocks restart while dictating and allows it when idle", () => {
+test("blocks restart while dictating and allows it when idle", async () => {
   const updater = new FakeUpdater();
   let busy = true;
   const service = new UpdateService(
@@ -75,6 +75,8 @@ test("blocks restart while dictating and allows it when idle", () => {
     () => !busy,
   );
   service.start();
+  updater.emit("update-available", { version: "0.6.0" });
+  await service.download();
   updater.emit("update-downloaded", { version: "0.6.0" });
   expect(() => service.install()).toThrow("Finish recording");
   expect(updater.installs).toBe(0);
@@ -86,6 +88,8 @@ test("preserves a ready download when another update check is requested", async 
   const updater = new FakeUpdater();
   const service = new UpdateService(updater, "0.5.0", () => undefined);
   service.start();
+  updater.emit("update-available", { version: "0.6.0" });
+  await service.download();
   updater.emit("update-downloaded", { version: "0.6.0" });
   expect((await service.check()).phase).toBe("downloaded");
   expect(updater.checks).toBe(0);

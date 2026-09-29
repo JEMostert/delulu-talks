@@ -81,6 +81,8 @@ class MetalSpeech:
             raise
 
     def transcribe(self, request):
+        from transcription_engine import LANGUAGE_NAMES, language_hint
+        language_code, language = language_hint(request)
         if self.model is None:
             raise RuntimeError("R2T2 is not loaded. Load the model to try again.")
         audio = Path(request["audioPath"])
@@ -88,7 +90,7 @@ class MetalSpeech:
             raise FileNotFoundError("The selected audio file no longer exists")
         from mlx_audio.stt.utils import load_audio
         import mlx.core as mx
-        from transcription_engine import LANGUAGE_NAMES
+        from transcription_engine import LANGUAGE_NAMES, recognized_language_metadata
 
         started = time.perf_counter()
         # MLX Audio decodes and mixes/resamples locally. FLAC imports no longer
@@ -96,8 +98,6 @@ class MetalSpeech:
         samples = load_audio(str(audio), sr=SAMPLE_RATE)
         if not len(samples):
             raise ValueError("The selected audio file contains no samples")
-        language_code = str(request.get("language", "en")).lower()
-        language = LANGUAGE_NAMES.get(language_code)
         inference_started = time.perf_counter()
         try:
             result = self.model.generate(
@@ -118,15 +118,12 @@ class MetalSpeech:
                 "R2T2 reached its transcription length limit. Split the audio into shorter files and try again."
             )
         # MLX Audio returns one language label per decoded segment (the prompt
-        # language when forced). Mixed labels stay unknown; this is not an
+        # language when forced). Mixed labels have no single code; this is not an
         # independent code-switching detector.
-        detected = getattr(result, "language", None)
-        if isinstance(detected, list):
-            languages = {item.strip().lower() for item in detected if isinstance(item, str) and item.strip()}
-            detected = next(iter(languages)) if len(languages) == 1 else None
-        detected = detected.strip().lower() if isinstance(detected, str) else "und"
-        code = {name.lower(): code for code, name in LANGUAGE_NAMES.items()}.get(detected, detected)
-        return {"text": result.text.strip(), "language": code or "und",
+        language_metadata = recognized_language_metadata(getattr(result, "language", None))
+        return {"text": result.text.strip(), "language": language_metadata["recognizedLanguage"] or "und",
+                "requestedLanguage": language_code,
+                **language_metadata,
                 "duration": len(samples) / SAMPLE_RATE,
                 "processingTime": finished - started,
                 "inferenceTime": finished - inference_started}

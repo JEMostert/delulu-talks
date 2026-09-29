@@ -247,11 +247,26 @@ export class WorkerClient {
       );
       killer.once("error", () => child.kill());
     } else {
+      const pid = child.pid;
       try {
-        process.kill(-child.pid, "SIGTERM");
+        process.kill(-pid, "SIGTERM");
       } catch (reason) {
         if ((reason as NodeJS.ErrnoException).code !== "ESRCH") child.kill();
       }
+      // Reject active requests immediately, then give this generation five seconds
+      // to release resources. stop() is also used by timeout/failure paths that
+      // never call stopAndWait(); their GPU descendants must not survive forever.
+      // Keep the timer even if the parent exits: children can outlive it. Capture
+      // the old group rather than this.child, which may already be a new worker.
+      const escalation = setTimeout(() => {
+        try {
+          process.kill(-pid, "SIGKILL");
+        } catch (reason) {
+          if ((reason as NodeJS.ErrnoException).code !== "ESRCH")
+            child.kill("SIGKILL");
+        }
+      }, 5000);
+      escalation.unref();
     }
   }
 }
