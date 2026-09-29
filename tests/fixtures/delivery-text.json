@@ -1,0 +1,70 @@
+[
+  {
+    "id": "multiline-crlf",
+    "tags": [
+      "multiline",
+      "CRLF",
+      "indentation"
+    ],
+    "text": "First line\r\n\r\n  indented line\r\n\tfinal line\r\n"
+  },
+  {
+    "id": "emoji-sequences",
+    "tags": [
+      "emoji",
+      "ZWJ",
+      "variation-selectors"
+    ],
+    "text": "Hello 👋🏽 — family 👩‍👩‍👧‍👦, developer 👨🏾‍💻, heart ❤️, flag 🇳🇱."
+  },
+  {
+    "id": "combining-nfc-nfd",
+    "tags": [
+      "combining",
+      "NFC",
+      "NFD"
+    ],
+    "text": "NFC café; NFD café. Zoë / Zoë; Å / Å."
+  },
+  {
+    "id": "cjk",
+    "tags": [
+      "CJK"
+    ],
+    "text": "日本語の文章です。\n中文：你好，世界！\n한국어: 안녕하세요."
+  },
+  {
+    "id": "rtl",
+    "tags": [
+      "RTL",
+      "mixed-direction"
+    ],
+    "text": "العربية: مرحبًا بالعالم\nעברית: שלום עולם\nOrder 42: مرحبًا — hello."
+  },
+  {
+    "id": "directional-marks",
+    "tags": [
+      "RTL",
+      "directional-marks"
+    ],
+    "text": "English ⁧שלום 123⁩ end.\n‏العربية‏ / ‎English‎"
+  },
+  {
+    "id": "non-ascii-spaces",
+    "tags": [
+      "whitespace",
+      "NBSP",
+      "narrow-NBSP"
+    ],
+    "text": "€ 12,50 / 1 234,56\n　全角スペース\ntrailing spaces  \n"
+  },
+  {
+    "id": "literal-command-text",
+    "tags": [
+      "Unicode",
+      "literal-command",
+      "no-execution"
+    ],
+    "text": "printf \"%s\\n\" \"café 👋\"\n$(echo НЕ ВЫПОЛНЯТЬ); {ENTER} ^+v\nC:\\My Files\\日本語.txt\n"
+  }
+]

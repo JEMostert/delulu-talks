@@ -276,3 +276,137 @@ trace file in the raw artifact bundle for reproducibility.
 
 **UNVERIFIED — checks not run per user instruction**. No startup, request or
 speech-to-delivery timings were collected for this implementation.
+
+## Opt-in identical-audio native benchmark
+
+`scripts/native_audio_benchmark.py` runs in each platform's existing speech
+Python environment. It requires `--execute-native`, recorded consent per case,
+and pre-cached pinned weights. It never installs dependencies, downloads models,
+or changes app settings/history. Run each native adapter separately on its
+actual hardware; copy the same corpus files unchanged between machines.
+
+```json
+{"cases": [
+  {"case_id": "nl-001", "audio": "nl-001.wav", "reference": "nl-001.txt",
+   "language": "nl", "consent_recorded": true},
+  {"case_id": "mixed-001", "audio": "mixed-001.wav", "reference": "mixed-001.txt",
+   "language": "auto", "consent_recorded": true}
+]}
+```
+
+Inputs must already be nonempty 16 kHz mono PCM16 WAV. No runner-specific
+preprocessing is applied by this harness; hashes identify exact identical audio.
+Explicit provenance must identify the selected adapter's actual pinned model
+revision. Language comes from each case, including `auto` for mixed speech.
+
+```sh
+python scripts/native_audio_benchmark.py --execute-native --backend mlx \
+  --manifest corpus.json --provenance mlx-provenance.json --cache-dir /path/to/models \
+  --output-directory mlx-run --repetitions 3
+```
+
+Use `cuda-windows` on native Windows or `cuda-linux` on Linux CUDA. An external
+base-Qwen fine-tune control uses `--backend external-qwen3-asr` on Linux CUDA,
+with explicit `--control-repository Qwen/Qwen3-ASR-...` and immutable
+`--control-revision`. Its cached snapshot is used only inside the standalone
+runner process; it never becomes an app speech option. Its result is labeled
+`external-benchmark-control`. All environments must already contain their
+matching runtime dependencies. Missing cached weights or unsupported native
+hardware fail instead of falling back to another backend.
+
+The runner retains raw hypotheses, provenance-bound text reports, individual
+first/warm request timings, load-and-warmup duration, source/dependency versions,
+audio hashes and completion status. Warmup is separate from the first evaluated
+request. Text-evaluator `native_inference_run: false` refers to the offline
+metric computation; actual successful native calls are recorded separately in
+`native_runner` and `run.json`. Interrupted runs remain marked incomplete. Raw
+hypotheses may contain private speech; keep artifacts local until inspected.
+No destination-delivery timing is inferred from this offline speech benchmark.
+
+**UNVERIFIED — checks not run per user instruction**. This runner has not been
+executed; no Mac/Windows/Linux inference or external-control comparison is
+claimed for this PR.
+
+## Building a consent-declared Dutch/English corpus
+
+`scripts/evaluation_corpus.py` packages supplied recordings and human references
+into a new local directory. It requires per-recording unrevoked local-evaluation
+consent metadata, pseudonymous speaker IDs, timezone-qualified consent dates,
+and declared acoustic/language categories. It does not create recordings,
+obtain consent, upload files, or certify the truth of acoustic annotations.
+
+Each source case uses this shape (paths relative to the manifest):
+
+```json
+{
+  "case_id": "nl-quiet-001", "audio": "recording.wav", "reference": "reference.txt",
+  "speaker_id": "speaker-01", "languages": ["nl"], "categories": ["quiet", "names"],
+  "named_entities": ["Amsterdam"],
+  "consent": {"record_id": "local-consent-01", "recorded_at": "2026-09-30T12:00:00Z",
+              "local_evaluation_allowed": true, "revoked": false}
+}
+```
+
+Place cases in a `{"cases": [...]}` manifest. Recordings must already be 16 kHz
+mono PCM16 WAV; references preserve original UTF-8 bytes. Speech cases need
+nonempty human references and `silence` cases need empty ones. Supported labels
+are `quiet`, `noise`, `accents`, `names`, `code-switching`, `silence`, `technical`.
+Accent cases require a speaker/operator `accent_description`. Code-switching
+cases require `languages: ["nl", "en"]` and route to automatic language selection.
+Named-entity annotations must occur exactly in the actual reference.
+
+```sh
+python scripts/evaluation_corpus.py --manifest source-corpus.json --output-directory local-corpus
+```
+
+By default, missing Dutch/English or any of quiet, noise, accents, names and code
+switching fails packaging. `--allow-incomplete` explicitly packages a draft
+whose missing coverage remains recorded. Counts establish declared coverage,
+not statistical representativeness or true acoustic conditions. Output retains
+exact recordings/references, consent records and input hashes; `corpus.json`
+feeds the native same-audio runner and exposes the reference annotations for
+quality reports. Existing directories are never overwritten. Keep recordings
+and references outside Git and inspect consent/speech before any separate sharing;
+this builder grants no sharing authorization. Revoke/remove cases before future
+evaluations when their consent changes.
+
+**UNVERIFIED — checks not run per user instruction**. No recordings or actual
+consent were collected, no corpus was built, and no native accuracy is claimed.
+
+## External Parakeet multilingual reference
+
+`scripts/external_parakeet_benchmark.py` uses the publisher's documented
+Transformers `AutoModelForTDT`/`AutoProcessor` interface in a separate existing
+observer environment. [NVIDIA's model card](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
+identifies Parakeet TDT 0.6B v3 as multilingual and lists CC-BY-4.0. The runner
+retains NVIDIA attribution, model-card URL and the actual immutable checkpoint
+revision. Runtime compatibility still depends on the installed Transformers
+version supporting that interface; missing APIs fail, with no runtime repair or
+package installation performed by the runner.
+
+```sh
+python scripts/external_parakeet_benchmark.py --execute-native --revision FULL_COMMIT_SHA \
+  --manifest local-corpus/corpus.json --provenance parakeet-provenance.json \
+  --cache-dir /path/to/external-cache --output-directory parakeet-run
+```
+
+The explicit execution flag, cached full-commit snapshot and consent-declared
+identical WAV corpus are mandatory. The model remains an
+`external-benchmark-control` outside the Delulu catalog. Use actual dtype in
+provenance; default CUDA BF16 requires a supported GPU. Explicit CPU references
+use `--device cpu --precision float32`, are labeled accordingly and should not
+be compared to CUDA resource figures without disclosing that difference.
+
+Parakeet uses automatic language identification; reports retain `auto` as its
+actual decode language and the expected corpus language separately. Compare
+quality on the same audio hashes and references; the language-conditioning
+tradeoff against forced-language R2T2 must remain disclosed. Load/warmup is
+separate, and external request timings cover predecoded PCM to output text with
+CUDA synchronization. App-adapter timings also include their input decoding,
+so these scopes are deliberately recorded instead of silently equated. Raw
+hypotheses, exact reports, dependency versions and incomplete status remain
+available for the comparison/artifact tools.
+
+**UNVERIFIED — checks not run per user instruction**. The external runner has
+not been executed, and no Parakeet/R2T2 quality or native compatibility is
+claimed. License attribution is metadata, not approval to publish private speech.
