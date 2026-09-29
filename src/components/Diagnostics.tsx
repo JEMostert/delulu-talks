@@ -73,6 +73,14 @@ export function Diagnostics() {
               </span>
             </div>
           </div>
+          {data.microphone && (
+            <div className="mb-[18px] rounded-xl bg-soft p-[15px]" role="status">
+              <strong className="text-xs text-ink">
+                Microphone permission: {data.microphone.state.replaceAll("-", " ")}
+              </strong>
+              <p className="caption mt-2">{data.microphone.detail}</p>
+            </div>
+          )}
           <p className="caption">
             {data.platform === "darwin" && data.arch === "arm64"
               ? "R2T2 runs directly through MLX on Apple Silicon. The speech runtime needs native arm64 Python 3.12."

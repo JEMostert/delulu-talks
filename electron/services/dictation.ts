@@ -16,6 +16,7 @@ import type { AsrService } from "./asr";
 import type { PasteService } from "./paste";
 import type { PillService } from "./pill";
 import type { StorageService } from "./storage";
+import { getMicrophonePermission } from "./microphonePermission";
 
 type WindowProvider = {
   main(): BrowserWindow | null;
@@ -189,6 +190,16 @@ export class DictationService {
               detail: "Open Delulu Talks",
             },
       );
+      return;
+    }
+    const microphone = getMicrophonePermission();
+    if (!microphone.canRequestCapture) {
+      this.asr.setActivity("error", microphone.detail);
+      this.setHud({
+        state: "error",
+        title: "Microphone access blocked",
+        detail: microphone.detail,
+      });
       return;
     }
     if (!this.recorderReady) {

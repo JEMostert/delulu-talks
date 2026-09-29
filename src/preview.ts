@@ -70,6 +70,11 @@ export const previewApi: DeluluApi = {
       ffmpeg: "Not available",
       dataDirectory: "Desktop app required",
       runtimeInstalled: false,
+      microphone: {
+        state: "not-applicable",
+        canRequestCapture: false,
+        detail: "Native microphone permission is available in the desktop app. Browser preview does not inspect macOS permissions.",
+      },
       packages: {},
       checkedAt: Date.now(),
     };

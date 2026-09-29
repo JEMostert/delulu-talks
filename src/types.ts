@@ -273,6 +273,18 @@ export type RendererRecoveryState = {
   canStopRecording: boolean;
 };
 
+export type MicrophonePermission = {
+  state:
+    | "not-determined"
+    | "granted"
+    | "denied"
+    | "restricted"
+    | "unknown"
+    | "not-applicable";
+  canRequestCapture: boolean;
+  detail: string;
+};
+
 export type RuntimeDiagnostics = {
   platform: string;
   arch: string;
@@ -283,5 +295,6 @@ export type RuntimeDiagnostics = {
   dataDirectory: string;
   runtimeInstalled: boolean;
   packages: Record<string, string>;
+  microphone?: MicrophonePermission;
   checkedAt: number;
 };
