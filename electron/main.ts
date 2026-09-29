@@ -871,14 +871,14 @@ function registerIpc(): void {
       const key = validateText(id, 128);
       const record = sessionTranscripts.get(key) ?? storage.findHistory(key);
       if (!record) throw new Error("Transcript not found");
-      const format = ["txt", "json"].includes(requestedFormat)
+      const format = ["txt", "json", "md"].includes(requestedFormat)
         ? requestedFormat
         : "txt";
       const defaultName = `${(record.sourceName ?? `delulu-${record.createdAt}`).replace(/\.[^.]+$/, "")}.${format}`;
       const options: Electron.SaveDialogOptions = {
-        title: `Export ${format.toUpperCase()}`,
+        title: format === "md" ? "Export Markdown note" : `Export ${format.toUpperCase()}`,
         defaultPath: defaultName,
-        filters: [{ name: format.toUpperCase(), extensions: [format] }],
+        filters: [{ name: format === "md" ? "Markdown notes" : format.toUpperCase(), extensions: [format] }],
       };
       const result = mainWindow
         ? await dialog.showSaveDialog(mainWindow, options)
@@ -887,7 +887,24 @@ function registerIpc(): void {
       const outputPath = extname(result.filePath)
         ? result.filePath
         : `${result.filePath}.${format}`;
-      writeFileSync(outputPath, exportRecord(record, format), "utf8");
+      if (format === "md") {
+        try {
+          // A note export creates a new destination. Exclusive creation also
+          // protects against a file appearing after the native picker closes.
+          writeFileSync(outputPath, exportRecord(record, format), {
+            encoding: "utf8", mode: 0o600, flag: "wx",
+          });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "EEXIST")
+            throw new Error(
+              "A note already exists at this destination. Export again with a different filename; the existing note was preserved.",
+              { cause: error },
+            );
+          throw error;
+        }
+      } else {
+        writeFileSync(outputPath, exportRecord(record, format), "utf8");
+      }
       return outputPath;
     },
   );
