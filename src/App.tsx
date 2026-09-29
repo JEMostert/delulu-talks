@@ -352,7 +352,8 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
               )}
               {(visited.has("technical") || w.page === "technical") && (
                 <div hidden={w.page !== "technical"} className="mx-auto max-w-[1440px]">
-                  <TechnicalPage history={w.history} />
+                  <TechnicalPage history={w.history} settings={w.settings} busy={busy || w.saving}
+                    onUpdateSettings={(patch) => w.saveSettings(patch, null)} />
                 </div>
               )}
               {(visited.has("models") || w.page === "models") && (

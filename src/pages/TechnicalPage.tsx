@@ -2,10 +2,16 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { Copy, Download, Redo2, Undo2 } from "lucide-react";
 import { bridge } from "../bridge";
 import { TechnicalBuffer, type TechnicalEditTarget } from "../technicalBuffer";
-import type { TranscriptRecord } from "../types";
-import { Alert, ConfirmDialog } from "../components/ui";
+import { correctionWordRange, previousIdentifierRange } from "../technicalEditingCommands";
+import type { AppSettings, TranscriptRecord } from "../types";
+import { Alert, ConfirmDialog, Modal } from "../components/ui";
 
-export function TechnicalPage({ history }: { history: TranscriptRecord[] }) {
+export function TechnicalPage({ history, settings, busy, onUpdateSettings }: {
+  history: TranscriptRecord[];
+  settings: AppSettings;
+  busy: boolean;
+  onUpdateSettings: (patch: Partial<AppSettings>) => Promise<boolean>;
+}) {
   const [buffer] = useState(() => new TechnicalBuffer());
   const [snapshot, setSnapshot] = useState(() => buffer.snapshot);
   const [sourceId, setSourceId] = useState("");
@@ -14,6 +20,15 @@ export function TechnicalPage({ history }: { history: TranscriptRecord[] }) {
     text: string;
     label: string;
   } | null>(null);
+  const [replacement, setReplacement] = useState<{
+    kind: "identifier" | "word";
+    target: TechnicalEditTarget;
+    original: string;
+    text: string;
+  } | null>(null);
+  const [replacementError, setReplacementError] = useState("");
+  const [switchingMode, setSwitchingMode] = useState(false);
+  const switchingModeRef = useRef(false);
   const [clear, setClear] = useState(false);
   const [copying, setCopying] = useState(false);
   const [error, setError] = useState("");
@@ -67,6 +82,50 @@ export function TechnicalPage({ history }: { history: TranscriptRecord[] }) {
     captureSelection();
     buffer.insert(text);
     publish(true);
+  }
+  function replaceToken(kind: "identifier" | "word") {
+    if (composing.current) return;
+    captureSelection();
+    const current = buffer.snapshot;
+    const displayed = buffer.displayText;
+    const range = kind === "identifier"
+      ? previousIdentifierRange(displayed, current.selectionStart)
+      : correctionWordRange(displayed, current.selectionStart, current.selectionEnd);
+    if (!range) { setError(`No ${kind} found at this caret or selection.`); return; }
+    buffer.select(range.start, range.end);
+    editor.current?.setSelectionRange(range.start, range.end);
+    const original = displayed.slice(range.start, range.end);
+    setReplacement({ kind, target: buffer.captureTarget(), original, text: original });
+    setReplacementError("");
+    publish();
+  }
+  function applyReplacement() {
+    if (!replacement || composing.current) return;
+    if (replacement.kind === "identifier" &&
+        !/^[\p{L}_$][\p{L}\p{M}\p{N}_$]*(?:-[\p{L}\p{N}_$][\p{L}\p{M}\p{N}_$]*)*$/u.test(replacement.text)) {
+      setReplacementError("Enter one identifier, without spaces or punctuation.");
+      return;
+    }
+    try {
+      buffer.applyInsert(replacement.target, replacement.text);
+      setReplacement(null);
+      setError("");
+      publish(true);
+    } catch (reason) { setReplacementError(String(reason)); }
+  }
+  function insertNewline() {
+    insert(buffer.snapshot.text.match(/\r\n|\r|\n/)?.[0] ?? "\n");
+  }
+  async function returnToProse() {
+    if (busy || switchingModeRef.current || composing.current) return;
+    switchingModeRef.current = true;
+    setSwitchingMode(true);
+    try {
+      if (await onUpdateSettings({ dictationMode: "prose" }))
+        setMessage("Prose dictation mode active. Technical draft preserved.");
+      else setError("Could not switch dictation mode. Try again when idle.");
+    } catch (reason) { setError(String(reason)); }
+    finally { switchingModeRef.current = false; setSwitchingMode(false); }
   }
   useLayoutEffect(() => {
     if (!focusEditor.current) return;
@@ -154,6 +213,21 @@ export function TechnicalPage({ history }: { history: TranscriptRecord[] }) {
           <button className="tool-button" disabled={composing.current} onClick={() => insert("\t")}>Insert tab</button>
           <button className="tool-button" disabled={!snapshot.text || composing.current} onClick={() => setClear(true)}>Clear draft…</button>
         </div>
+        <div className="runtime-actions mt-3">
+          <button className="tool-button" disabled={composing.current} aria-keyshortcuts="Control+Alt+I Meta+Alt+I"
+            onClick={() => replaceToken("identifier")}>Replace last identifier</button>
+          <button className="tool-button" disabled={composing.current} aria-keyshortcuts="Control+Alt+W Meta+Alt+W"
+            onClick={() => replaceToken("word")}>Correct word</button>
+          <button className="tool-button" disabled={composing.current} aria-keyshortcuts="Control+Alt+Enter Meta+Alt+Enter"
+            onClick={insertNewline}>Insert newline</button>
+          <button className="tool-button" disabled={busy || switchingMode || composing.current}
+            aria-keyshortcuts="Control+Alt+P Meta+Alt+P" onClick={() => void returnToProse()}>
+            {switchingMode ? "Switching…" : "Return to prose"}
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-muted">Dictation mode: {settings.dictationMode ?? "prose"}. In the editor, use Ctrl/⌘+Alt+I
+          for the last identifier, +W for a word, +Enter for a newline, +P for prose.
+          Replacement previews require confirmation and remain undoable.</p>
         <label className="field mt-4">
           Literal technical draft
           <textarea ref={editor} rows={16} wrap="off" spellCheck={false} autoCapitalize="off" autoCorrect="off"
@@ -176,6 +250,19 @@ export function TechnicalPage({ history }: { history: TranscriptRecord[] }) {
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing || composing.current) return;
               captureSelection();
+              if ((event.ctrlKey || event.metaKey) && event.altKey && !event.shiftKey &&
+                  !event.getModifierState("AltGraph")) {
+                const key = event.key.toLowerCase();
+                if (["i", "w", "enter", "p"].includes(key)) {
+                  event.preventDefault();
+                  if (event.repeat) return;
+                  if (key === "i") replaceToken("identifier");
+                  else if (key === "w") replaceToken("word");
+                  else if (key === "enter") insertNewline();
+                  else void returnToProse();
+                  return;
+                }
+              }
               if ((event.ctrlKey || event.metaKey) && !event.altKey) {
                 const key = event.key.toLowerCase();
                 if (key === "z" || key === "y") {
@@ -201,6 +288,21 @@ export function TechnicalPage({ history }: { history: TranscriptRecord[] }) {
         {message && <p className="mt-3 text-sm" role="status">{message}</p>}
         {error && <Alert>{error}</Alert>}
       </section>
+      {replacement && <Modal title={replacement.kind === "identifier" ? "Replace last identifier" : "Correct word"}
+        onClose={() => setReplacement(null)} footer={<>
+          <button className="secondary-button" onClick={() => setReplacement(null)}>Cancel</button>
+          <button className="primary-button" disabled={!replacement.text.trim() || !buffer.isTargetCurrent(replacement.target)}
+            onClick={applyReplacement}>Replace in draft</button>
+        </>}>
+        <p>Replace only this captured range. The original transcript is preserved.</p>
+        <pre className="my-3 whitespace-pre-wrap font-mono">{replacement.original}</pre>
+        <label className="field">Replacement
+          <input autoFocus maxLength={1024} value={replacement.text}
+            onChange={(event) => setReplacement({ ...replacement, text: event.target.value })} />
+        </label>
+        {!buffer.isTargetCurrent(replacement.target) && <p role="alert">The draft or selection changed. Cancel and prepare again.</p>}
+        {replacementError && <p className="field-error" role="alert">{replacementError}</p>}
+      </Modal>}
       {clear && <ConfirmDialog title="Clear the technical draft?" confirmLabel="Clear draft"
         onClose={() => setClear(false)} onConfirm={() => { buffer.clear(); publish(true); }}>
         <p>This clears only the buffer. Source transcripts remain unchanged. You can undo this during this session.</p>
