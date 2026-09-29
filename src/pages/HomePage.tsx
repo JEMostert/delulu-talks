@@ -11,11 +11,13 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { speechLanguageCapability } from "../speechCapabilities";
+import { MAX_CAPTURE_DURATION_MS } from "../captureLimits";
 import {
   TranscriptCard,
   type TranscriptActions,
 } from "../components/TranscriptCard";
 import { Toggle } from "../components/ui";
+import { MicrophoneNotice } from "../components/MicrophoneNotice";
 import type {
   AppSettings,
   CaptureDiagnostics as CaptureStats,
@@ -63,6 +65,7 @@ export function HomePage({
   onUpdateSettings: save,
   onConfigureShortcut,
   onPasteLast,
+  pasteLastBusy,
   onToggleRecord,
   ...actions
 }: TranscriptActions & {
@@ -79,6 +82,7 @@ export function HomePage({
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onConfigureShortcut: () => void;
   onPasteLast: () => void;
+  pasteLastBusy: boolean;
   onToggleRecord: () => void;
 }) {
   const [shortcut, setShortcut] = useState(s.shortcut);
@@ -173,6 +177,11 @@ export function HomePage({
                 </span>
               </div>
             </div>
+            <p className="px-3.5 pt-2.5 text-[11px] text-muted">
+              Recordings finish automatically at {MAX_CAPTURE_DURATION_MS / 60_000}{" "}
+              minutes. High sample-rate inputs may finish sooner to limit memory
+              use. Captured audio is transcribed.
+            </p>
             <div className="grid grid-cols-3 gap-2.5 px-3.5 pt-2.5 pb-1.5 max-[700px]:grid-cols-1">
               <ControlField label="Microphone">
                 <select
@@ -191,7 +200,7 @@ export function HomePage({
                 >
                   {!devices.some((d) => d.deviceId === s.inputDeviceId) && (
                     <option value={s.inputDeviceId}>
-                      {s.inputDeviceLabel} (disconnected)
+                      {s.inputDeviceLabel} (not listed)
                     </option>
                   )}
                   {devices.map((device) => (
@@ -200,6 +209,7 @@ export function HomePage({
                     </option>
                   ))}
                 </select>
+                <MicrophoneNotice settings={s} devices={devices} />
               </ControlField>
               <ControlField label="Language">
                 <select
@@ -425,6 +435,7 @@ export function HomePage({
                 <button
                   className="secondary-button text-[11px] min-h-[31px] px-[9px] py-1.5"
                   onClick={onPasteLast}
+                  disabled={pasteLastBusy || busy}
                 >
                   <ClipboardPaste /> Paste last
                 </button>

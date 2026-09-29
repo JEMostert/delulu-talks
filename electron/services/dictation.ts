@@ -1,9 +1,11 @@
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { personalize } from "../../src/personalization";
+import { formatSpokenCommands } from "../../src/spokenFormatting";
 import { deliveredText } from "../../src/transcriptText";
+import { normalizeLanguageMetadata } from "../../src/transcriptLanguage";
 import type { BrowserWindow } from "electron";
 import { spawn } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
@@ -17,6 +19,7 @@ import type { AsrService } from "./asr";
 import type { PasteService } from "./paste";
 import type { PillService } from "./pill";
 import type { StorageService } from "./storage";
+import { RetryAudioStore, type RetryAudioLease } from "./retryAudio";
 
 type WindowProvider = {
   main(): BrowserWindow | null;
@@ -32,7 +35,7 @@ function numeric(value: unknown, fallback = 0): number {
 }
 
 export class DictationService {
-  private failedRecording: RecordingSubmission | null = null;
+  private readonly retryAudio = new RetryAudioStore();
   get isActive(): boolean {
     return this.captureState !== "idle";
   }
@@ -44,18 +47,38 @@ export class DictationService {
     );
   }
   discardFailure(): void {
-    this.failedRecording = null;
-    this.asr.setRecovery?.(false);
-    this.asr.setActivity("idle", "Failed recording discarded");
+    this.retryAudio.discard();
+    this.publishRetryAudio();
+    if (!this.isActive)
+      this.asr.setActivity("idle", "Failed recording discarded");
+  }
+
+  releaseRetryAudio(): void {
+    this.retryAudio.dispose();
+    this.publishRetryAudio();
+  }
+
+  private publishRetryAudio(): void {
+    this.asr.setRecovery?.(this.retryAudio.available, this.retryAudio.state);
   }
 
   async retry(): Promise<void> {
-    if (this.isActive || !this.failedRecording)
+    if (this.isActive || !this.retryAudio.available)
       throw new Error("No failed recording is available to retry");
-    await this.submitRecording(this.failedRecording);
+    const lease = this.retryAudio.beginRetry();
+    if (!lease) throw new Error("No failed recording is available to retry");
+    this.publishRetryAudio();
+    let failed = true;
+    try {
+      failed = !(await this.processRecording(lease.recording, lease));
+    } finally {
+      this.retryAudio.finishRetry(lease, failed);
+      this.publishRetryAudio();
+    }
   }
 
   private captureState: CaptureState = "idle";
+  private captureSessionId: string | null = null;
   private recorderReady = false;
   private busyNoticeTimer: NodeJS.Timeout | null = null;
   private busyNotice = false;
@@ -69,6 +92,7 @@ export class DictationService {
     private readonly paste: PasteService,
     private readonly windows: WindowProvider,
     private readonly broadcastTranscript: (record: TranscriptRecord) => void,
+    private readonly reportPasteFailure: (id: string, detail: string) => void = () => undefined,
   ) {}
 
   private settings(): AppSettings {
@@ -79,6 +103,7 @@ export class DictationService {
     const window = this.windows.main();
     if (!window || window.isDestroyed() || !this.recorderReady) {
       this.captureState = "idle";
+      this.captureSessionId = null;
       this.asr.setActivity(
         "error",
         "The microphone controller is still starting — try again in a moment",
@@ -152,6 +177,7 @@ export class DictationService {
     this.recorderReady = false;
     if (this.captureState !== "idle" && this.captureState !== "processing") {
       this.captureState = "idle";
+      this.captureSessionId = null;
       this.setHud({ state: "hidden" });
       this.asr.setActivity(
         "error",
@@ -205,11 +231,13 @@ export class DictationService {
       return;
     }
     const settings = this.settings();
+    this.captureSessionId = randomUUID();
     this.captureState = "opening";
     this.asr.setActivity("idle", "Opening microphone");
     this.sendRecorder({
       action: "start",
       inputDeviceId: settings.inputDeviceId,
+      sessionId: this.captureSessionId,
     });
   }
 
@@ -228,6 +256,7 @@ export class DictationService {
     this.sendRecorder({
       action: "stop",
       inputDeviceId: this.settings().inputDeviceId,
+      sessionId: this.captureSessionId!,
     });
   }
 
@@ -241,21 +270,46 @@ export class DictationService {
     if (this.busyNotice) this.setHud({ state: "hidden" });
     if (this.captureState === "idle" || this.captureState === "processing")
       return;
+    const sessionId = this.captureSessionId!;
     this.captureState = "idle";
+    this.captureSessionId = null;
     this.sendRecorder({
       action: "cancel",
       inputDeviceId: this.settings().inputDeviceId,
+      sessionId,
     });
     this.setHud({ state: "hidden" });
     this.asr.setActivity("idle", "Recording cancelled");
   }
 
-  recordingStarted(): void {
+  recordingLimitReached(sessionId: string): void {
+    if (
+      sessionId !== this.captureSessionId ||
+      !["opening", "listening"].includes(this.captureState)
+    )
+      return;
+    // Use the same ownership transition as a user Stop so bounded audio is
+    // accepted by the normal transcript/rewrite/delivery pipeline.
+    this.stop();
+    this.asr.setActivity(
+      "listening",
+      "Recording limit reached — finishing capture",
+    );
+    this.setHud({
+      state: "transcribing",
+      title: "Finishing capture",
+      detail: "Recording limit reached",
+    });
+  }
+
+  recordingStarted(sessionId: string): void {
+    if (sessionId !== this.captureSessionId) return;
     if (this.captureState === "stopping") {
       this.asr.setActivity("listening", "Finishing capture");
       this.sendRecorder({
         action: "stop",
         inputDeviceId: this.settings().inputDeviceId,
+        sessionId,
       });
       return;
     }
@@ -274,8 +328,18 @@ export class DictationService {
     });
   }
 
-  recordingFailed(message: string): void {
+  recordingFailed(message: string, sessionId: string): void {
+    if (
+      sessionId !== this.captureSessionId ||
+      this.captureState === "processing"
+    )
+      return;
+    this.failCapture(message);
+  }
+
+  private failCapture(message: string): void {
     this.captureState = "idle";
+    this.captureSessionId = null;
     this.setHud({
       state: "error",
       title: "Could not finish",
@@ -285,28 +349,44 @@ export class DictationService {
   }
 
   async submitRecording(submission: RecordingSubmission): Promise<void> {
-    if (this.captureState === "processing")
-      throw new Error("A recording is already being processed");
     if (
       !submission ||
       !Number.isFinite(submission.durationMs) ||
       submission.durationMs < 0
     )
       throw new Error("Invalid recording duration");
+    // Cancellation/reload consumes the identity. A late callback cannot commit
+    // audio into an idle or newer session, and duplicate submissions stay inert.
+    if (
+      this.captureState !== "stopping" ||
+      !this.captureSessionId ||
+      submission.sessionId !== this.captureSessionId
+    )
+      return;
+    this.captureSessionId = null;
+    await this.processRecording(submission);
+  }
+
+  private async processRecording(
+    submission: RecordingSubmission,
+    retryLease?: RetryAudioLease,
+  ): Promise<boolean> {
+    if (this.captureState === "processing")
+      throw new Error("A recording is already being processed");
     this.captureState = "processing";
     const settings = this.settings();
     if (
       !(submission.wav instanceof Uint8Array) ||
       submission.wav.byteLength < 44
     ) {
-      this.recordingFailed("The microphone returned an empty recording");
-      return;
+      this.failCapture("The microphone returned an empty recording");
+      return false;
     }
     if (submission.wav.byteLength > 500 * 1024 * 1024) {
-      this.recordingFailed(
+      this.failCapture(
         "Recording is too large; keep dictation captures below 500 MB",
       );
-      return;
+      return false;
     }
     if (submission.durationMs < 180) {
       this.captureState = "idle";
@@ -316,7 +396,7 @@ export class DictationService {
         detail: "Hold a little longer",
       });
       this.asr.setActivity("idle", "Recording was too short and was discarded");
-      return;
+      return true;
     }
 
     const audioPath = join(
@@ -332,8 +412,8 @@ export class DictationService {
         { audioPath, durationMs: submission.durationMs },
         settings,
       );
-      this.failedRecording = null;
-      this.asr.setRecovery?.(false);
+      this.retryAudio.clearAvailable();
+      this.publishRetryAudio();
       let record = this.createRecord(
         result,
         "dictation",
@@ -355,7 +435,7 @@ export class DictationService {
           "idle",
           "No speech detected — nothing was copied or pasted",
         );
-        return;
+        return true;
       }
       let magicFailure: string | null = null;
       if (settings.magicEnabled) {
@@ -368,6 +448,7 @@ export class DictationService {
           const magic = await this.asr.rewriteMagic(
             {
               text: output,
+              sourceLanguage: record.language,
               preset: settings.magicPreset,
               allowInferences: settings.magicAllowInferences,
             },
@@ -377,6 +458,7 @@ export class DictationService {
           record = {
             ...record,
             magicText: magic.text,
+            rewriteSourceRevision: record.sourceRevision ?? 0,
             magicModel: magic.model,
             magicPreset: settings.magicPreset,
             magicIncludedInferences: magic.includedInferences,
@@ -394,13 +476,19 @@ export class DictationService {
       this.broadcastTranscript(record);
       const outputName = record.magicText ? "Magic result" : "Transcript";
       let completion = `${outputName} ready`;
+      let pasteFailed = false;
+      let pasteAttempted = false;
       this.setHud({ state: "delivering" });
       if (settings.autoPaste) {
         try {
           await this.paste.paste(output);
-          completion = `${outputName} pasted`;
+          pasteAttempted = true;
+          completion = `${outputName} copied · paste shortcut sent`;
         } catch (error) {
-          completion = `Copied — paste manually (${error instanceof Error ? error.message : String(error)})`;
+          pasteFailed = true;
+          const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+          completion = "Automatic paste failed — use Copy instead or open History";
+          this.reportPasteFailure(record.id, detail);
         }
       } else if (settings.copyToClipboard) {
         this.paste.copy(output);
@@ -408,25 +496,38 @@ export class DictationService {
       }
       if (magicFailure)
         completion = `${completion} · Magic unavailable: ${magicFailure}`;
-      this.setHud({
+      this.setHud(pasteFailed ? {
+        state: "error",
+        title: "Paste failed",
+        detail: "Open Delulu — Copy instead",
+      } : {
         state: "success",
         title:
-          settings.autoPaste && !completion.startsWith("Copied")
-            ? "Pasted"
+          pasteAttempted
+            ? "Paste attempted"
             : settings.copyToClipboard || completion.startsWith("Copied")
               ? "Copied"
               : "Done",
-        detail: magicFailure ? "Magic skipped" : "Ready to keep talking",
+        detail: magicFailure
+          ? "Magic skipped"
+          : pasteAttempted
+            ? "Check the destination; text is also copied"
+            : "Ready to keep talking",
       });
       this.asr.setActivity("idle", completion);
+      return true;
     } catch (error) {
-      this.failedRecording = submission;
-      this.asr.setRecovery?.(true);
+      const retained = retryLease || this.retryAudio.retain(submission);
+      this.publishRetryAudio();
       this.setHud({ state: "error" });
+      const cause = error instanceof Error ? error.message : String(error);
       this.asr.setActivity(
         "error",
-        error instanceof Error ? error.message : String(error),
+        retained
+          ? cause
+          : `${cause} — This recording could not be retained for retry.`,
       );
+      return false;
     } finally {
       this.captureState = "idle";
       rmSync(audioPath, { force: true });
@@ -439,7 +540,8 @@ export class DictationService {
     this.captureState = "processing";
     const settings = this.settings();
     this.asr.setActivity("transcribing", "Transcribing imported audio");
-    let preparedAudio: { path: string; temporary: boolean } | null = null;
+    let preparedAudio: { path: string; directory?: string } | null = null;
+    let failure: unknown;
     try {
       preparedAudio = await this.prepareAudio(request.path);
       const payload = await this.asr.transcribe(
@@ -458,6 +560,7 @@ export class DictationService {
       this.asr.setActivity("idle", "Speech Lab result ready");
       return record;
     } catch (error) {
+      failure = error;
       this.asr.setActivity(
         "error",
         error instanceof Error ? error.message : String(error),
@@ -465,73 +568,81 @@ export class DictationService {
       throw error;
     } finally {
       this.captureState = "idle";
-      if (preparedAudio?.temporary) rmSync(preparedAudio.path, { force: true });
+      if (preparedAudio?.directory) {
+        try {
+          this.removeImportDirectory(preparedAudio.directory, failure);
+        } catch (error) {
+          this.asr.setActivity("error", error instanceof Error ? error.message : String(error));
+          throw error;
+        }
+      }
+    }
+  }
+
+  private removeImportDirectory(directory: string, failure?: unknown): void {
+    try {
+      rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    } catch (cleanupError) {
+      const message = "Could not remove temporary converted audio after import";
+      if (failure !== undefined)
+        throw new AggregateError([failure, cleanupError], message, { cause: failure });
+      throw new Error(message, { cause: cleanupError });
     }
   }
 
   private async prepareAudio(
     sourcePath: string,
-  ): Promise<{ path: string; temporary: boolean }> {
+  ): Promise<{ path: string; directory?: string }> {
     if (
       [".wav", ".flac", ".ogg", ".opus"].includes(
         extname(sourcePath).toLowerCase(),
       )
     ) {
-      return { path: sourcePath, temporary: false };
+      // Source files are read-only inference inputs, never cleanup targets.
+      return { path: sourcePath };
     }
 
     mkdirSync(this.storage.cacheDirectory, { recursive: true });
-    const outputPath = join(
-      this.storage.cacheDirectory,
-      `import-${Date.now()}-${randomUUID()}.wav`,
-    );
-    await new Promise<void>((resolveConversion, reject) => {
-      const child = spawn(
-        "ffmpeg",
-        [
-          "-nostdin",
-          "-hide_banner",
-          "-loglevel",
-          "error",
-          "-y",
-          "-i",
-          sourcePath,
-          "-vn",
-          "-ac",
-          "1",
-          "-ar",
-          "16000",
-          "-c:a",
-          "pcm_s16le",
-          outputPath,
-        ],
-        { windowsHide: true },
-      );
-      let stderr = "";
-      child.stderr.on("data", (chunk: Buffer) => {
-        stderr = `${stderr}${chunk.toString()}`.slice(-16_000);
-      });
-      child.once("error", (error) => {
-        rmSync(outputPath, { force: true });
-        reject(
-          new Error(
-            `This format needs FFmpeg. Install ffmpeg and try again (${error.message})`,
-          ),
+    // mkdtemp creates an exclusively owned directory with owner-only access.
+    const directory = mkdtempSync(join(this.storage.cacheDirectory, "import-"));
+    const outputPath = join(directory, "audio.wav");
+    try {
+      await new Promise<void>((resolveConversion, reject) => {
+        const child = spawn(
+          "ffmpeg",
+          [
+            "-nostdin", "-hide_banner", "-loglevel", "error", "-n",
+            "-i", sourcePath, "-vn", "-ac", "1", "-ar", "16000",
+            "-c:a", "pcm_s16le", outputPath,
+          ],
+          { windowsHide: true },
         );
+        let stderr = "";
+        let spawnError: Error | null = null;
+        child.stderr.on("data", (chunk: Buffer) => {
+          stderr = `${stderr}${chunk.toString()}`.slice(-16_000);
+        });
+        child.once("error", (error) => {
+          spawnError = error;
+        });
+        // Wait for stdio/file handles to close before removing partial output.
+        child.once("close", (code) => {
+          if (spawnError) {
+            reject(new Error(
+              `This format needs FFmpeg. Install ffmpeg and try again (${spawnError.message})`,
+              { cause: spawnError },
+            ));
+          } else if (code === 0) resolveConversion();
+          else reject(new Error(
+            `FFmpeg could not decode this media file: ${stderr.trim() || `exit code ${code}`}`,
+          ));
+        });
       });
-      child.once("exit", (code) => {
-        if (code === 0) resolveConversion();
-        else {
-          rmSync(outputPath, { force: true });
-          reject(
-            new Error(
-              `FFmpeg could not decode this media file: ${stderr.trim() || `exit code ${code}`}`,
-            ),
-          );
-        }
-      });
-    });
-    return { path: outputPath, temporary: true };
+      return { path: outputPath, directory };
+    } catch (error) {
+      this.removeImportDirectory(directory, error);
+      throw error;
+    }
   }
 
   private createRecord(
@@ -542,16 +653,25 @@ export class DictationService {
     settings: AppSettings,
   ): TranscriptRecord {
     const text = String(result.text ?? "").trim();
+    const language = normalizeReportedLanguage(result.recognizedLanguage) ?? settings.language;
+    const formatted = settings.spokenFormattingCommands
+      ? formatSpokenCommands(text, settings.language)
+      : text;
     const durationMs =
       durationOverride ?? Math.round(numeric(result.duration) * 1000);
+    const languageMetadata = normalizeLanguageMetadata(result);
     return {
       id: randomUUID(),
       createdAt: Date.now(),
       durationMs,
       text,
-      personalizedText: personalize(text, settings.customWords),
+      sourceRevision: 0,
+      rewriteSourceRevision: null,
+      personalizedText: personalize(formatted, settings.customWords, language),
       model: settings.model,
-      language: String(result.language ?? settings.language),
+      language: languageMetadata.recognizedLanguage ?? "und",
+      ...languageMetadata,
+      requestedLanguage: settings.language,
       source,
       sourceName,
       processingTimeMs: Math.round(numeric(result.processingTime) * 1000),
