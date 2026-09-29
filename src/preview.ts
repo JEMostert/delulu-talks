@@ -1,5 +1,7 @@
+import { changePersonalProfiles } from "./personalProfileCommands";
 import { DEFAULT_SETTINGS } from "./data";
-import { deliveredText, originalTranscriptText } from "./transcriptText";
+import { deliveredText, originalTranscriptText, transcriptSourceRevision } from "./transcriptText";
+import { normalizeTranscriptTitle } from "./transcriptTitle";
 import type {
   AppSettings,
   AudioFileSelection,
@@ -60,6 +62,12 @@ export const previewApi: DeluluApi = {
     window.location.reload();
   },
   async rendererControllerFailed() {},
+  async getRuntimeSetupSnapshot() {
+    return { checkedAt: Date.now(), platform: "Browser preview", arch: "Unknown", source: "preview" as const, runtimes: [] };
+  },
+  async getLocalDataOverview() {
+    desktopOnly();
+  },
   async getDiagnostics() {
     return {
       platform: "Browser preview",
@@ -70,10 +78,45 @@ export const previewApi: DeluluApi = {
       ffmpeg: "Not available",
       dataDirectory: "Desktop app required",
       runtimeInstalled: false,
+      accessibility: {
+        state: "not-applicable",
+        canAttemptPaste: false,
+        detail: "Native Accessibility permission is available in the desktop app. Browser preview cannot attempt native paste.",
+      },
       packages: {},
       checkedAt: Date.now(),
     };
   },
+  async getSetupLog(kind) {
+    return {
+      kind,
+      attemptId: null,
+      startedAt: null,
+      finishedAt: null,
+      outcome: "idle",
+      entries: [],
+      truncated: false,
+      maxEntries: 128,
+      maxCharacters: 64000,
+    };
+  },
+  async getPasteRecovery() { return null; },
+  async copyInstead(_id: string) { desktopOnly(); },
+  async dismissPasteRecovery(_id: string) {},
+  onPasteRecovery(_callback) { return () => undefined; },
+  async getPasteLastStatus() {
+    return {
+      phase: "idle" as const,
+      operationId: null,
+      dueAt: null,
+      remainingSeconds: 0,
+      message: "",
+    };
+  },
+  async cancelPasteLast() {
+    desktopOnly();
+  },
+  onPasteLastStatus: () => () => {},
   async pasteLastTranscript() {
     desktopOnly();
   },
@@ -88,6 +131,15 @@ export const previewApi: DeluluApi = {
   },
   async updateSettings(settings) {
     const next = { ...mockSettings(), ...settings };
+    localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
+    return next;
+  },
+  async managePersonalProfile(command) {
+    const current = mockSettings();
+    const next = {
+      ...current,
+      personalProfiles: changePersonalProfiles(current, command, () => crypto.randomUUID()),
+    };
     localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
     return next;
   },
@@ -203,28 +255,45 @@ export const previewApi: DeluluApi = {
       normalized && normalized !== originalTranscriptText(record)
         ? normalized
         : null;
-    record.magicText = null;
-    const updated = { ...record, editedText: correction };
+    const revision = transcriptSourceRevision(record);
+    if (revision >= Number.MAX_SAFE_INTEGER)
+      throw new Error("This transcript has reached its revision limit");
+    const updated = { ...record, editedText: correction, sourceRevision: revision + 1,
+      rewriteSourceRevision: null, magicText: null, magicModel: null, magicPreset: null,
+      magicIncludedInferences: false, magicProcessingTimeMs: 0 };
     demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
     return updated;
   },
-  async setTranscriptRewrite(id, result, sourceText) {
+  async setTranscriptRewrite(id, result, sourceText, expectedSourceRevision = 0) {
     const record = demoHistory.find((item) => item.id === id);
     if (!record) throw new Error("Transcript not found");
-    if (deliveredText(record) !== sourceText)
+    if (!Number.isSafeInteger(expectedSourceRevision) || expectedSourceRevision < 0 ||
+        transcriptSourceRevision(record) !== expectedSourceRevision || deliveredText(record) !== sourceText)
       throw new Error("Transcript changed while rewriting");
     const updated = {
       ...record,
       magicText: result?.text ?? null,
+      rewriteSourceRevision: result ? transcriptSourceRevision(record) : null,
       magicModel: result?.model ?? null,
       magicIncludedInferences: result?.includedInferences ?? false,
     };
     demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
     return updated;
   },
+  async setTranscriptTitle(id, title) {
+    const normalized = normalizeTranscriptTitle(title);
+    const record = demoHistory.find((item) => item.id === id);
+    if (!record) throw new Error("Transcript not found");
+    const updated = { ...record, title: normalized };
+    demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
+    return updated;
+  },
   async deleteHistory(id) {
     demoHistory = demoHistory.filter((item) => item.id !== id);
   },
+  async previewHistoryRetention(_policy) { return desktopOnly(); },
+  async applyHistoryRetention(_token) { return desktopOnly(); },
+  onHistoryRetentionApplied(_callback) { return () => undefined; },
   async clearHistory() {
     demoHistory = [];
   },
@@ -237,7 +306,11 @@ export const previewApi: DeluluApi = {
   async exportTranscript(_id: string, _format: ExportFormat) {
     return desktopOnly();
   },
+  async exportTranscriptTemplate() {
+    return desktopOnly();
+  },
   async recordingStarted() {},
+  async recordingLimitReached() {},
   async recorderReady() {},
   async recordingFailed() {},
   recordingLevel(_level: number) {},

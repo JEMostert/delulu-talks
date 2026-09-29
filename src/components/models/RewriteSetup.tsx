@@ -8,6 +8,7 @@ export type RewriteSetupProps = {
   magicStatus: MagicStatus;
   settings: AppSettings;
   busy: boolean;
+  setupPending?: boolean;
   saving: boolean;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onSetupMagic: () => void;
@@ -18,6 +19,7 @@ export function RewriteSetup({
   magicStatus,
   settings,
   busy,
+  setupPending = false,
   saving,
   onUpdateSettings,
   onSetupMagic,
@@ -38,7 +40,7 @@ export function RewriteSetup({
         <WandSparkles className="h-5 w-5 text-accent-ink" />
       </div>
       <p className="mt-3 text-sm text-muted">
-        Use Rewrite beside any transcript to shorten, polish, organize, or build
+        Use Rewrite beside any transcript to shorten, polish, make bullet points, write a professional message, organize, or build
         a prompt. Compare the preview before applying it, and undo at any time.
       </p>
       <div className="mt-4 flex flex-wrap items-end gap-4">
@@ -73,7 +75,7 @@ export function RewriteSetup({
           ) : magicStatus.engine === "unloaded" ? (
             <button
               className="secondary-button"
-              disabled={busy}
+              disabled={busy || setupPending}
               onClick={onLoadMagic}
             >
               <Play /> Load rewrite model
@@ -81,7 +83,7 @@ export function RewriteSetup({
           ) : null}
           <button
             className="primary-button"
-            disabled={busy}
+            disabled={busy || setupPending}
             onClick={onSetupMagic}
           >
             {writingBusy ? <LoaderCircle className="spin" /> : <Download />}
@@ -99,7 +101,7 @@ export function RewriteSetup({
       <ModelSetupStatus
         status={magicStatus}
         kind="rewrite"
-        busy={busy}
+        busy={busy || setupPending}
         onRepair={onSetupMagic}
       />
     </section>

@@ -1,5 +1,6 @@
 import { Alert } from "../ui";
 import type { DictationStatus, MagicStatus } from "../../types";
+import { RuntimeSetupLog } from "./RuntimeSetupLog";
 
 export function ModelSetupStatus({
   status,
@@ -65,6 +66,7 @@ export function ModelSetupStatus({
           {status.message}
         </Alert>
       )}
+      <RuntimeSetupLog kind={kind} />
     </>
   );
 }
