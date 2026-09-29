@@ -1,13 +1,27 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import { speechModelForPlatform } from "../runtime/platform";
 import type { TranscriptRecord } from "../../src/types";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 let testDirectory = "";
+let testHome = "";
+let testPackaged = false;
 mock.module("electron", () => ({
-  app: { getPath: () => testDirectory, isPackaged: false },
+  app: {
+    getPath: (name: string) => (name === "home" ? testHome : testDirectory),
+    get isPackaged() {
+      return testPackaged;
+    },
+  },
 }));
 
 let normalizeSettings: (typeof import("./storage"))["normalizeSettings"];
@@ -20,6 +34,120 @@ beforeAll(async () => {
 });
 
 describe("local data recovery", () => {
+  test.skipIf(process.platform !== "linux")(
+    "validates legacy fallback data and never replaces a present null profile with legacy settings",
+    () => {
+      const root = mkdtempSync(join(tmpdir(), "delulu-legacy-shape-"));
+      testDirectory = join(root, "current");
+      testHome = join(root, "home");
+      const legacy = join(
+        testHome,
+        ".local",
+        "share",
+        "com.joran.delulu-talks",
+      );
+      mkdirSync(legacy, { recursive: true });
+      const legacySettings = '{"language":"nl"}';
+      writeFileSync(join(legacy, "settings.json"), legacySettings);
+      writeFileSync(join(legacy, "history.json"), "null");
+      testPackaged = true;
+      try {
+        expect(() => new StorageService()).toThrow(
+          `Unsupported local data at ${join(legacy, "history.json")}`,
+        );
+        expect(existsSync(join(testDirectory, "settings.json"))).toBe(false);
+        expect(readFileSync(join(legacy, "settings.json"), "utf8")).toBe(
+          legacySettings,
+        );
+        expect(readFileSync(join(legacy, "history.json"), "utf8")).toBe("null");
+
+        writeFileSync(join(testDirectory, "settings.json"), "null");
+        writeFileSync(join(legacy, "history.json"), "[]");
+        expect(() => new StorageService()).toThrow(
+          `Unsupported local data at ${join(testDirectory, "settings.json")}`,
+        );
+        expect(readFileSync(join(testDirectory, "settings.json"), "utf8")).toBe(
+          "null",
+        );
+      } finally {
+        testPackaged = false;
+        testHome = "";
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test("accepts missing first-run files and explicit empty supported profiles", () => {
+    for (const emptyFiles of [false, true]) {
+      testDirectory = mkdtempSync(join(tmpdir(), "delulu-first-run-"));
+      try {
+        if (emptyFiles) {
+          writeFileSync(join(testDirectory, "settings.json"), "{}");
+          writeFileSync(join(testDirectory, "history.json"), "[]");
+        }
+        const storage = new StorageService();
+        expect(storage.getSettings().workflowVersion).toBe(1);
+        expect(storage.getSettings().onboardingComplete).toBe(false);
+        expect(storage.getHistory()).toEqual([]);
+        expect(existsSync(join(testDirectory, "history.json"))).toBe(
+          emptyFiles,
+        );
+      } finally {
+        rmSync(testDirectory, { recursive: true, force: true });
+      }
+    }
+  });
+
+  for (const [filename, values] of [
+    ["settings.json", [null, [], false, 12, "settings"]],
+    ["history.json", [null, {}, false, 12, "history"]],
+  ] as const) {
+    for (const value of values) {
+      test(`rejects ${filename} top-level ${JSON.stringify(value)} without replacing either data file`, () => {
+        testDirectory = mkdtempSync(join(tmpdir(), "delulu-shape-"));
+        try {
+          const settingsPath = join(testDirectory, "settings.json");
+          const historyPath = join(testDirectory, "history.json");
+          const settings = '{"language":"nl","workflowVersion":1}';
+          const history = '[{"id":"retained","text":"Original speech"}]';
+          writeFileSync(settingsPath, settings);
+          writeFileSync(historyPath, history);
+          const invalid = JSON.stringify(value);
+          writeFileSync(join(testDirectory, filename), invalid);
+          expect(() => new StorageService()).toThrow(
+            `Unsupported local data at ${join(testDirectory, filename)}`,
+          );
+          expect(readFileSync(settingsPath, "utf8")).toBe(
+            filename === "settings.json" ? invalid : settings,
+          );
+          expect(readFileSync(historyPath, "utf8")).toBe(
+            filename === "history.json" ? invalid : history,
+          );
+        } finally {
+          rmSync(testDirectory, { recursive: true, force: true });
+        }
+      });
+    }
+  }
+
+  for (const workflowVersion of [2, "1", null, 0, false, {}, []]) {
+    test(`preserves unsupported workflowVersion ${JSON.stringify(workflowVersion)}`, () => {
+      testDirectory = mkdtempSync(join(tmpdir(), "delulu-version-"));
+      try {
+        const path = join(testDirectory, "settings.json");
+        const original = JSON.stringify({ workflowVersion, language: "nl" });
+        writeFileSync(path, original);
+        expect(() => new StorageService()).toThrow(
+          "unsupported workflowVersion",
+        );
+        expect(readFileSync(path, "utf8")).toBe(original);
+        expect(existsSync(join(testDirectory, "history.json"))).toBe(false);
+      } finally {
+        rmSync(testDirectory, { recursive: true, force: true });
+      }
+    });
+  }
+
   test("migrates old Qwen speech settings without relabeling historical output or removing rewriting", () => {
     testDirectory = mkdtempSync(join(tmpdir(), "delulu-migration-"));
     try {
