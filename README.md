@@ -235,8 +235,7 @@ bun run test:native -- --metadata /path/to/native-metadata.json --python /path/t
 To exercise the full Electron transcription, correction and export path with the same existing runtime:
 
 ```bash
-bun run build
-node scripts/desktop-smoke.mjs "/path/to/Delulu Talks user data"
+bun run test:desktop -- --metadata /path/to/native-metadata.json "/path/to/Delulu Talks user data"
 ```
 
 Add `--lifecycle --writing` to test three real speech unload/reload/transcribe cycles, Writing, and a return to speech. Close the everyday app first so the test has enough GPU memory. The test uses temporary settings/history and the existing cached models; it does not install or repair the linked runtimes.

@@ -214,13 +214,58 @@ test.skipIf(process.platform === "win32")(
       expect(report.status).toBe("failed");
       expect(report.evidence.mocked).toBe("failed");
       expect(report.evidence["native-inference"]).toBe("not-run");
+      const fakePython = join(bin, "fake-python");
+      writeFileSync(fakePython, "#!/usr/bin/env node\nprocess.exit(0);\n", {
+        mode: 0o700,
+      });
+      const metadata = join(root, "native.json");
+      writeFileSync(
+        metadata,
+        JSON.stringify({
+          modelId: "r2t2",
+          backend: "cuda-vllm",
+          hardware: "fake test fixture",
+          modelRevision: "fixture",
+          runtimeRevision: "fixture",
+        }),
+      );
+      const native = spawnSync(
+        "node",
+        [
+          runner,
+          "native",
+          "--metadata",
+          metadata,
+          "--python",
+          fakePython,
+          "--cache",
+          "fixture-cache",
+        ],
+        { cwd: root, encoding: "utf8" },
+      );
+      expect(native.status, native.stderr).toBe(1);
+      expect(native.stdout).toContain('"native-inference":"failed"');
+      const nativeReports = readdirSync(
+        join(root, "artifacts/verification"),
+      ).filter((file) => file.startsWith("native-"));
+      const nativeReport = JSON.parse(
+        readFileSync(
+          join(root, "artifacts/verification", nativeReports[0]),
+          "utf8",
+        ),
+      );
+      expect(nativeReport.exitCode).toBe(0);
+      expect(nativeReport.error).toContain("Native evidence");
+      expect(nativeReport.nativeObservation).toBeNull();
       const summary = spawnSync("node", [runner, "summary"], {
         cwd: root,
         encoding: "utf8",
       });
       expect(summary.status).toBe(0);
       expect(summary.stdout).toContain('"status":"failed"');
-      expect(summary.stdout).toContain("native-inference: not-run");
+      expect(summary.stdout).toContain(
+        'native-inference: [{"suite":"native","status":"failed"',
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
