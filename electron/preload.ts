@@ -80,6 +80,7 @@ const api: DeluluApi = {
   deleteHistory: (id: string) => invoke("history:delete", id),
   clearHistory: () => invoke("history:clear"),
   chooseAudioFile: () => invoke("lab:chooseAudio"),
+  inspectAudioFile: (path: string) => invoke("lab:inspectAudio", path),
   runLab: (request: LabRequest) => invoke("lab:run", request),
   exportTranscript: (id: string, format: ExportFormat) =>
     invoke("history:export", id, format),

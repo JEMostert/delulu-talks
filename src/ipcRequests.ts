@@ -244,6 +244,7 @@ export const ipcRequestSchemas = {
   "history:delete": schema(1, ([id]) => [requestText(id, 128)]),
   "history:clear": noArguments,
   "lab:chooseAudio": noArguments,
+  "lab:inspectAudio": schema(1, ([path]) => [requestText(path, 4096)]),
   "lab:run": schema(1, ([value]) => [
     { path: requestText(object(value, "audio file request").path, 4096) },
   ]),

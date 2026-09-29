@@ -3,16 +3,19 @@ import { existsSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type { LabRequest } from "../../src/types";
 import { validateText } from "./validation";
+import { inspectMedia } from "../services/mediaInspection";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
 export function registerLabIpc(
   { handle }: IpcRegistrar,
   {
     dictation,
+    storage,
     getMainWindow,
   }: Pick<
     IpcDependencies,
     | "dictation"
+    | "storage"
     | "getMainWindow"
   >,
 ): void {
@@ -52,6 +55,12 @@ export function registerLabIpc(
       name: basename(resolved),
       size: statSync(resolved).size,
     };
+  });
+  handle("lab:inspectAudio", async (_event, value: unknown) => {
+    const path = resolve(validateText(value, 4096));
+    if (!selectedAudioFiles.has(path) || !existsSync(path))
+      throw new Error("Choose the source file through Audio files first");
+    return inspectMedia(path, storage);
   });
   handle("lab:run", async (_event, request: LabRequest) => {
     const path = resolve(validateText(request.path, 4096));
