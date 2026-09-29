@@ -45,6 +45,7 @@ export class RuntimeInstaller {
   private processes = new Set<ReturnType<typeof spawn>>();
   private cancelled = false;
   private validatedPython: string | null = null;
+  private pendingGeneration: string | null = null;
   constructor(
     private readonly paths: Paths,
     private readonly constraintsPath: string | null,
@@ -66,7 +67,25 @@ export class RuntimeInstaller {
       : READINESS.magic;
   }
   get python(): string {
+    if (this.pendingGeneration)
+      return join(this.paths.venvDirectory, "generations", this.pendingGeneration,
+        this.windows ? "Scripts/python.exe" : "bin/python");
     return runtimePython(this.paths.venvDirectory);
+  }
+  commit(): void {
+    if (this.cancelled) throw new Error("Runtime setup cancelled");
+    if (!this.pendingGeneration) throw new Error("No validated runtime is prepared");
+    activateRuntime(this.paths.venvDirectory, this.pendingGeneration);
+    this.pendingGeneration = null;
+  }
+  discard(): void {
+    // Candidates stay ignored on disk; never remove an environment that a
+    // terminating child may still be writing to, or change the active pointer.
+    this.pendingGeneration = null;
+    this.validatedPython = null;
+  }
+  resetCancellation(): void {
+    this.cancelled = false;
   }
   rollback(): void {
     this.validatedPython = null;
@@ -88,6 +107,7 @@ export class RuntimeInstaller {
     return new Promise((resolve, reject) => {
       const child = spawn(program, args, {
         windowsHide: true,
+        detached: process.platform !== "win32",
         env: this.environment(),
       });
       this.processes.add(child);
@@ -103,11 +123,11 @@ export class RuntimeInstaller {
       }, timeoutMs);
       child.stdout.on("data", (chunk) => {
         output = `${output}${chunk}`.slice(-256_000);
-        onOutput?.(String(chunk));
+        if (!this.cancelled) onOutput?.(String(chunk));
       });
       child.stderr.on("data", (chunk) => {
         diagnostic = `${diagnostic}${chunk}`.slice(-16_000);
-        onOutput?.(String(chunk));
+        if (!this.cancelled) onOutput?.(String(chunk));
       });
       const finish = () => {
         clearTimeout(timer);
@@ -119,7 +139,9 @@ export class RuntimeInstaller {
       });
       child.once("close", (code) => {
         finish();
-        if (code === 0) resolve(output.trim());
+        if (this.cancelled)
+          reject(new Error("Runtime setup cancelled. The previous environment is unchanged."));
+        else if (code === 0) resolve(output.trim());
         else
           reject(
             new Error(diagnostic.trim() || `Runtime command failed (${code})`),
@@ -127,10 +149,39 @@ export class RuntimeInstaller {
       });
     });
   }
+  private terminate(child: ReturnType<typeof spawn>): void {
+    if (!child.pid) return;
+    if (process.platform === "win32") {
+      const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        windowsHide: true, stdio: "ignore",
+      });
+      killer.once("error", () => child.kill());
+    } else {
+      const pid = child.pid;
+      try { process.kill(-pid, "SIGTERM"); }
+      catch { child.kill(); }
+      const escalation = setTimeout(() => {
+        try { process.kill(-pid, "SIGKILL"); }
+        catch { /* this generation has exited */ }
+      }, 5000);
+      escalation.unref();
+    }
+  }
   stop(): void {
     this.cancelled = true;
-    for (const child of this.processes) child.kill();
-    this.processes.clear();
+    for (const child of this.processes) this.terminate(child);
+  }
+  async stopAndWait(): Promise<void> {
+    const children = [...this.processes];
+    const exited = Promise.all(children.map((child) =>
+      new Promise<void>((resolve) => child.once("close", () => resolve()))));
+    this.stop();
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      exited,
+      new Promise<void>((resolve) => { timer = setTimeout(resolve, 6000); }),
+    ]);
+    clearTimeout(timer);
   }
 
   async ready(kind: "speech" | "magic"): Promise<boolean> {
@@ -204,182 +255,193 @@ export class RuntimeInstaller {
     kind: "speech" | "magic",
     settings: AppSettings,
     publish: (progress: InstallProgress) => void,
+    options: { signal?: AbortSignal; deferActivation?: boolean } = {},
   ): Promise<void> {
-    this.cancelled = false;
-    this.validatedPython = null;
-    const metal = kind === "speech" && this.metal;
-    if (
-      metal &&
-      process.platform === "darwin" &&
-      Number(release().split(".")[0]) < 24
-    )
-      throw new Error("R2T2 MLX requires macOS 15 or later.");
-    const stage = async (
-      program: string,
-      args: string[],
-      message: string,
-      progress: number,
-    ) => {
-      publish({ message, progress });
-      return this.run(program, args, (output) => {
-        const detail = output.trim().split(/\r?\n/).at(-1)?.slice(-350);
-        if (detail) publish({ message, progress, detail });
-      });
-    };
-    publish({ message: "Checking your Python environment", progress: 0.05 });
-    mkdirSync(this.paths.dataDirectory, { recursive: true });
-    const generation = randomUUID();
-    const candidate = join(this.paths.venvDirectory, "generations", generation);
-    mkdirSync(candidate, { recursive: true });
-    const candidatePython = join(
-      candidate,
-      this.windows ? "Scripts/python.exe" : "bin/python",
-    );
-    // Never modify the active environment. Interrupted candidates are ignored,
-    // and the previous generation stays on disk for recovery.
-    {
-      const python = await this.basePython(settings.pythonCommand, metal);
-      await stage(
-        python[0],
-        [...python.slice(1), "-m", "venv", candidate],
-        "Creating your local runtime",
-        0.12,
-      );
-    }
-    const requested: RequestedInstallStage[] = [];
-    const installPackages = async (
-      name: RequestedInstallStage["name"],
-      requirements: string[],
-      options: string[],
-      message: string,
-      progress: number,
-      constraint: RequestedInstallStage["constraint"] = null,
-    ) => {
-      const pipArguments = [
-        "install",
-        "--disable-pip-version-check",
-        ...options,
-        ...requirements,
-      ];
-      requested.push({
-        name,
-        requirements: [...requirements],
-        pipArguments,
-        constraint,
-      });
-      return stage(
-        candidatePython,
-        ["-m", "pip", ...pipArguments],
-        message,
-        progress,
-      );
-    };
-    await installPackages(
-      "installer",
-      INSTALLER_PACKAGES,
-      [],
-      "Preparing the package installer",
-      0.22,
-    );
-    const constraints =
-      this.constraintsPath &&
-      !this.windows &&
-      this.target.platform === "linux" &&
-      this.target.arch === "x64"
-        ? ["--constraint", this.constraintsPath]
-        : [];
-    if (this.windows) {
-      await installPackages(
-        "windows-cuda",
-        WINDOWS_CUDA_PACKAGES,
-        ["--index-url", "https://download.pytorch.org/whl/cu130"],
-        "Installing the native Windows CUDA runtime",
-        0.32,
-      );
-    }
-    await installPackages(
-      "runtime",
-      kind === "speech"
-        ? metal
-          ? METAL_PACKAGES
-          : this.windows
-            ? WINDOWS_SPEECH_PACKAGES
-            : SPEECH_PACKAGES
-        : MAGIC_PACKAGES,
-      constraints,
-      kind === "speech"
-        ? "Installing the speech runtime"
-        : "Installing the Magic runtime",
-      0.45,
-      constraints.length
-        ? {
-            path: this.constraintsPath!,
-            contents: readFileSync(this.constraintsPath!, "utf8"),
-          }
-        : null,
-    );
-    await stage(
-      candidatePython,
-      ["-m", "pip", "check"],
-      "Checking package compatibility",
-      0.72,
-    );
-    await stage(
-      candidatePython,
-      ["-c", this.readiness(kind)],
-      "Validating the new runtime before switching",
-      0.76,
-    );
-    const versions = await this.run(
-      candidatePython,
-      ["-m", "pip", "freeze"],
-      undefined,
-      15_000,
-    );
-    writeFileSync(
-      join(candidate, `runtime-${kind}-installed.txt`),
-      `# Delulu runtime ${RUNTIME_REVISION}\n${versions}\n`,
-      { mode: 0o600 },
-    );
-    publish({
-      message: "Recording the runtime dependency inventory",
-      progress: 0.78,
-    });
-    let observation: string;
+    options.signal?.throwIfAborted();
+    const cancel = () => this.stop();
+    options.signal?.addEventListener("abort", cancel, { once: true });
     try {
-      observation = await this.run(
+      this.cancelled = false;
+      this.validatedPython = null;
+      const metal = kind === "speech" && this.metal;
+      if (
+        metal &&
+        process.platform === "darwin" &&
+        Number(release().split(".")[0]) < 24
+      )
+        throw new Error("R2T2 MLX requires macOS 15 or later.");
+      const stage = async (
+        program: string,
+        args: string[],
+        message: string,
+        progress: number,
+      ) => {
+        options.signal?.throwIfAborted();
+        publish({ message, progress });
+        return this.run(program, args, (output) => {
+          const detail = output.trim().split(/\r?\n/).at(-1)?.slice(-350);
+          if (detail) publish({ message, progress, detail });
+        });
+      };
+      publish({ message: "Checking your Python environment", progress: 0.05 });
+      mkdirSync(this.paths.dataDirectory, { recursive: true });
+      const generation = randomUUID();
+      const candidate = join(this.paths.venvDirectory, "generations", generation);
+      mkdirSync(candidate, { recursive: true });
+      const candidatePython = join(
+        candidate,
+        this.windows ? "Scripts/python.exe" : "bin/python",
+      );
+      // Never modify the active environment. Interrupted candidates are ignored,
+      // and the previous generation stays on disk for recovery.
+      {
+        const python = await this.basePython(settings.pythonCommand, metal);
+        await stage(
+          python[0],
+          [...python.slice(1), "-m", "venv", candidate],
+          "Creating your local runtime",
+          0.12,
+        );
+      }
+      const requested: RequestedInstallStage[] = [];
+      const installPackages = async (
+        name: RequestedInstallStage["name"],
+        requirements: string[],
+        options: string[],
+        message: string,
+        progress: number,
+        constraint: RequestedInstallStage["constraint"] = null,
+      ) => {
+        const pipArguments = [
+          "install",
+          "--disable-pip-version-check",
+          ...options,
+          ...requirements,
+        ];
+        requested.push({
+          name,
+          requirements: [...requirements],
+          pipArguments,
+          constraint,
+        });
+        return stage(
+          candidatePython,
+          ["-m", "pip", ...pipArguments],
+          message,
+          progress,
+        );
+      };
+      await installPackages(
+        "installer",
+        INSTALLER_PACKAGES,
+        [],
+        "Preparing the package installer",
+        0.22,
+      );
+      const constraints =
+        this.constraintsPath &&
+        !this.windows &&
+        this.target.platform === "linux" &&
+        this.target.arch === "x64"
+          ? ["--constraint", this.constraintsPath]
+          : [];
+      if (this.windows) {
+        await installPackages(
+          "windows-cuda",
+          WINDOWS_CUDA_PACKAGES,
+          ["--index-url", "https://download.pytorch.org/whl/cu130"],
+          "Installing the native Windows CUDA runtime",
+          0.32,
+        );
+      }
+      await installPackages(
+        "runtime",
+        kind === "speech"
+          ? metal
+            ? METAL_PACKAGES
+            : this.windows
+              ? WINDOWS_SPEECH_PACKAGES
+              : SPEECH_PACKAGES
+          : MAGIC_PACKAGES,
+        constraints,
+        kind === "speech"
+          ? "Installing the speech runtime"
+          : "Installing the Magic runtime",
+        0.45,
+        constraints.length
+          ? {
+              path: this.constraintsPath!,
+              contents: readFileSync(this.constraintsPath!, "utf8"),
+            }
+          : null,
+      );
+      await stage(
         candidatePython,
-        ["-B", "-c", PYTHON_INVENTORY_PROBE],
+        ["-m", "pip", "check"],
+        "Checking package compatibility",
+        0.72,
+      );
+      await stage(
+        candidatePython,
+        ["-c", this.readiness(kind)],
+        "Validating the new runtime before switching",
+        0.76,
+      );
+      const versions = await this.run(
+        candidatePython,
+        ["-m", "pip", "freeze"],
         undefined,
         15_000,
       );
-    } catch (error) {
-      throw new Error(
-        `Could not inspect runtime dependencies: ${error instanceof Error ? error.message : String(error)}. The previous environment is unchanged.`,
+      writeFileSync(
+        join(candidate, `runtime-${kind}-installed.txt`),
+        `# Delulu runtime ${RUNTIME_REVISION}\n${versions}\n`,
+        { mode: 0o600 },
       );
+      publish({
+        message: "Recording the runtime dependency inventory",
+        progress: 0.78,
+      });
+      let observation: string;
+      try {
+        observation = await this.run(
+          candidatePython,
+          ["-B", "-c", PYTHON_INVENTORY_PROBE],
+          undefined,
+          15_000,
+        );
+      } catch (error) {
+        throw new Error(
+          `Could not inspect runtime dependencies: ${error instanceof Error ? error.message : String(error)}. The previous environment is unchanged.`,
+        );
+      }
+      const inventory = createRuntimeInventory(
+        {
+          revision: RUNTIME_REVISION,
+          kind,
+          generation,
+          backend: inventoryBackend(kind, metal, this.windows),
+          target: this.target,
+          python: candidatePython,
+          directory: candidate,
+          requested,
+        },
+        observation,
+      );
+      writeRuntimeInventory(candidate, inventory);
+      if (this.cancelled)
+        throw new Error(
+          "Runtime setup cancelled. The previous environment is unchanged.",
+        );
+      options.signal?.throwIfAborted();
+      this.pendingGeneration = generation;
+      if (!options.deferActivation) this.commit();
+      publish({
+        message: "Runtime installed. Preparing your model…",
+        progress: 0.8,
+      });
+    } finally {
+      options.signal?.removeEventListener("abort", cancel);
     }
-    const inventory = createRuntimeInventory(
-      {
-        revision: RUNTIME_REVISION,
-        kind,
-        generation,
-        backend: inventoryBackend(kind, metal, this.windows),
-        target: this.target,
-        python: candidatePython,
-        directory: candidate,
-        requested,
-      },
-      observation,
-    );
-    writeRuntimeInventory(candidate, inventory);
-    if (this.cancelled)
-      throw new Error(
-        "Runtime setup cancelled. The previous environment is unchanged.",
-      );
-    activateRuntime(this.paths.venvDirectory, generation);
-    publish({
-      message: "Runtime installed. Preparing your model…",
-      progress: 0.8,
-    });
   }
 }

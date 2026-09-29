@@ -61,7 +61,10 @@ export type AppSettings = {
   personalProfiles?: PersonalProfileDocument;
 };
 
+export type SetupState = "running" | "cancelling" | "cancelled" | "complete" | "failed";
+
 export type MagicStatus = {
+  setupState?: SetupState;
   phase: MagicPhase;
   engine: EnginePhase;
   message: string;
@@ -98,6 +101,7 @@ export type RetryAudioState = {
 };
 
 export type DictationStatus = {
+  setupState?: SetupState;
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   retryAudio?: RetryAudioState;
@@ -271,10 +275,12 @@ export type DeluluApi = {
   stopDictation(): Promise<void>;
   cancelDictation(): Promise<void>;
   setupModel(): Promise<void>;
+  cancelModelSetup(): Promise<void>;
   loadModel(): Promise<void>;
   unloadModel(): Promise<void>;
   resetPythonEnvironment(): Promise<void>;
   setupMagic(): Promise<void>;
+  cancelMagicSetup(): Promise<void>;
   loadMagic(): Promise<void>;
   unloadMagic(): Promise<void>;
   rewriteMagic(request: MagicRewriteRequest): Promise<MagicRewriteResult>;

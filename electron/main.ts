@@ -709,6 +709,7 @@ function registerIpc(): void {
     assertRuntimeIdle();
     return asr.setup(storage.getSettings());
   });
+  handle("runtime:cancelSetup", () => asr.cancelSetup("speech"));
   handle("runtime:load", () => {
     assertRuntimeIdle();
     return asr.loadModel(storage.getSettings());
@@ -726,6 +727,7 @@ function registerIpc(): void {
     assertRuntimeIdle();
     return asr.setupMagic(storage.getSettings());
   });
+  handle("magic:cancelSetup", () => asr.cancelSetup("magic"));
   handle("magic:load", () => {
     assertRuntimeIdle();
     return asr.loadMagic(storage.getSettings());

@@ -197,6 +197,9 @@ export const previewApi: DeluluApi = {
   async setupModel() {
     desktopOnly();
   },
+  async cancelModelSetup() {
+    desktopOnly();
+  },
   async loadModel() {
     desktopOnly();
   },
@@ -207,6 +210,9 @@ export const previewApi: DeluluApi = {
     desktopOnly();
   },
   async setupMagic() {
+    desktopOnly();
+  },
+  async cancelMagicSetup() {
     desktopOnly();
   },
   async loadMagic() {

@@ -11,6 +11,7 @@ export type RewriteSetupProps = {
   saving: boolean;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onSetupMagic: () => void;
+  onCancelSetupMagic?: () => void;
   onLoadMagic: () => void;
   onUnloadMagic: () => void;
 };
@@ -21,6 +22,7 @@ export function RewriteSetup({
   saving,
   onUpdateSettings,
   onSetupMagic,
+  onCancelSetupMagic,
   onLoadMagic,
   onUnloadMagic,
 }: RewriteSetupProps) {
@@ -62,6 +64,15 @@ export function RewriteSetup({
           </select>
         </label>
         <div className="runtime-actions">
+          {onCancelSetupMagic && ["running", "cancelling"].includes(magicStatus.setupState ?? "") && (
+            <button
+              className="secondary-button"
+              disabled={magicStatus.setupState === "cancelling"}
+              onClick={onCancelSetupMagic}
+            >
+              {magicStatus.setupState === "cancelling" ? "Cancelling…" : "Cancel rewriting setup"}
+            </button>
+          )}
           {magicStatus.engine === "ready" ? (
             <button
               className="secondary-button"
