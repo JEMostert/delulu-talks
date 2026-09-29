@@ -6,6 +6,7 @@ import { homedir, release } from "node:os";
 import { usesMetal } from "./platform";
 import { activateRuntime, runtimePython, rollbackRuntime } from "./location";
 import type { AppSettings } from "../../src/types";
+import { DomainError, domainError } from "../../src/domainErrors";
 import {
   createRuntimeInventory,
   inventoryBackend,
@@ -45,6 +46,7 @@ export class RuntimeInstaller {
   private processes = new Set<ReturnType<typeof spawn>>();
   private cancelled = false;
   private validatedPython: string | null = null;
+  private operationId = randomUUID();
   constructor(
     private readonly paths: Paths,
     private readonly constraintsPath: string | null,
@@ -81,8 +83,9 @@ export class RuntimeInstaller {
   ): Promise<string> {
     if (this.cancelled)
       return Promise.reject(
-        new Error(
+        new DomainError("CANCELLED",
           "Runtime setup cancelled. The previous environment is unchanged.",
+          { operationId: this.operationId, operation: "runtime:setup" },
         ),
       );
     return new Promise((resolve, reject) => {
@@ -96,8 +99,9 @@ export class RuntimeInstaller {
       const timer = setTimeout(() => {
         child.kill();
         reject(
-          new Error(
+          new DomainError("RUNTIME_SETUP_TIMEOUT",
             "Runtime operation timed out. Check your connection and try Repair.",
+            { operationId: this.operationId, operation: "runtime:setup" },
           ),
         );
       }, timeoutMs);
@@ -115,14 +119,21 @@ export class RuntimeInstaller {
       };
       child.once("error", (error) => {
         finish();
-        reject(error);
+        reject(domainError(error, {
+          code: "WORKER_UNAVAILABLE", operationId: this.operationId, operation: "runtime:setup",
+          message: "Could not start the runtime setup command. Check Python and try Repair.",
+        }));
       });
       child.once("close", (code) => {
         finish();
-        if (code === 0) resolve(output.trim());
+        if (code === 0 && !this.cancelled) resolve(output.trim());
         else
           reject(
-            new Error(diagnostic.trim() || `Runtime command failed (${code})`),
+            new DomainError(this.cancelled ? "CANCELLED" : "RUNTIME_SETUP_FAILED",
+              this.cancelled ? "Runtime setup cancelled. The previous environment is unchanged." : `Runtime setup command failed (${code}). Check runtime diagnostics and try Repair.`, {
+                operationId: this.operationId, operation: "runtime:setup",
+                cause: new Error(diagnostic.trim() || `Runtime command failed (${code})`),
+              }),
           );
       });
     });
@@ -201,6 +212,19 @@ export class RuntimeInstaller {
   }
 
   async install(
+    kind: "speech" | "magic",
+    settings: AppSettings,
+    publish: (progress: InstallProgress) => void,
+  ): Promise<void> {
+    this.operationId = randomUUID();
+    try {
+      await this.installCandidate(kind, settings, publish);
+    } catch (reason) {
+      throw domainError(reason, { operationId: this.operationId, operation: `runtime:setup:${kind}` });
+    }
+  }
+
+  private async installCandidate(
     kind: "speech" | "magic",
     settings: AppSettings,
     publish: (progress: InstallProgress) => void,
@@ -373,8 +397,9 @@ export class RuntimeInstaller {
     );
     writeRuntimeInventory(candidate, inventory);
     if (this.cancelled)
-      throw new Error(
+      throw new DomainError("CANCELLED",
         "Runtime setup cancelled. The previous environment is unchanged.",
+        { operationId: this.operationId, operation: "runtime:setup" },
       );
     activateRuntime(this.paths.venvDirectory, generation);
     publish({

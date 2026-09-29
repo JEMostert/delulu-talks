@@ -1,3 +1,6 @@
+import type { DomainFailure } from "./domainErrors";
+export type { DomainErrorCode, DomainFailure, RetryPolicy } from "./domainErrors";
+
 export type Page =
   "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
 
@@ -53,6 +56,7 @@ export type AppSettings = {
 };
 
 export type MagicStatus = {
+  failure?: DomainFailure | null;
   phase: MagicPhase;
   engine: EnginePhase;
   message: string;
@@ -80,6 +84,7 @@ export type MagicRewriteResult = {
 };
 
 export type DictationStatus = {
+  failure?: DomainFailure | null;
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   migrationRequired?: boolean;

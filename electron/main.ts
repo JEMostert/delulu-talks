@@ -13,6 +13,8 @@ import type { MenuItemConstructorOptions } from "electron";
 import electronUpdater from "electron-updater";
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { DomainError, domainError, serializeDomainError, type OperationResult } from "../src/domainErrors";
 import type {
   AppSettings,
   ExportFormat,
@@ -619,7 +621,9 @@ async function applySettings(value: unknown): Promise<AppSettings> {
 
 function assertRuntimeIdle(): void {
   if (dictation.isActive || asr.isBusy)
-    throw new Error("Finish the current recording or model operation first");
+    throw new DomainError("BUSY", "Finish the current recording or model operation first", {
+      operationId: randomUUID(), operation: "runtime:idle",
+    });
 }
 
 function registerIpc(): void {
@@ -627,13 +631,21 @@ function registerIpc(): void {
     channel: string,
     listener: (event: Electron.IpcMainInvokeEvent, ...args: Args) => unknown,
   ) => {
-    ipcMain.handle(channel, (event, ...args) => {
-      if (
-        event.sender !== mainWindow?.webContents ||
-        event.senderFrame !== event.sender.mainFrame
-      )
-        throw new Error("Untrusted IPC sender");
-      return listener(event, ...(args as Args));
+    ipcMain.handle(channel, async (event, ...args): Promise<OperationResult<unknown>> => {
+      const operationId = randomUUID();
+      try {
+        if (
+          event.sender !== mainWindow?.webContents ||
+          event.senderFrame !== event.sender.mainFrame
+        )
+          throw new DomainError("UNTRUSTED_SENDER", "Untrusted IPC sender", { operationId, operation: channel });
+        return { transport: "delulu-operation-v1", ok: true, value: await listener(event, ...(args as Args)) };
+      } catch (reason) {
+        return {
+          transport: "delulu-operation-v1", ok: false,
+          error: serializeDomainError(domainError(reason, { operationId, operation: channel })),
+        };
+      }
     });
   };
   const recoveryInput = () => ({
