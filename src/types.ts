@@ -81,6 +81,7 @@ export type MagicRewriteResult = {
 export type DictationStatus = {
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
+  captureInputNotice?: string | null;
   migrationRequired?: boolean;
   phase: DictationPhase;
   engine: EnginePhase;
@@ -258,6 +259,11 @@ export type DeluluApi = {
   recordingStarted(sessionId: string): Promise<void>;
   recorderReady(): Promise<void>;
   recordingFailed(message: string, sessionId: string): Promise<void>;
+  recordingInputChanged(
+    sessionId: string,
+    message: string,
+    inputLost: boolean,
+  ): Promise<void>;
   recordingLevel(level: number): void;
   submitRecording(recording: RecordingSubmission): Promise<void>;
   onStatus(callback: (status: DictationStatus) => void): () => void;

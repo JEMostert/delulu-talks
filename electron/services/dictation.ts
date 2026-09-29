@@ -209,6 +209,7 @@ export class DictationService {
     const settings = this.settings();
     this.captureSessionId = randomUUID();
     this.captureState = "opening";
+    this.asr.setCaptureInputNotice?.(null);
     this.asr.setActivity("idle", "Opening microphone");
     this.sendRecorder({
       action: "start",
@@ -282,6 +283,20 @@ export class DictationService {
       state: "listening",
       detail: hold ? "Release to send" : "Press shortcut to send",
     });
+  }
+
+  recordingInputChanged(
+    sessionId: string,
+    message: string,
+    inputLost: boolean,
+  ): void {
+    if (
+      sessionId !== this.captureSessionId ||
+      (this.captureState !== "opening" && this.captureState !== "listening")
+    )
+      return;
+    this.asr.setCaptureInputNotice?.(message);
+    if (inputLost) this.stop();
   }
 
   recordingFailed(message: string, sessionId: string): void {

@@ -1,5 +1,6 @@
 import captureWorkletUrl from "./captureWorklet.js?url&no-inline";
 import { bridge } from "./bridge";
+import { acquireCaptureInput, watchCaptureInput } from "./captureInput";
 import type { MicrophoneDevice, RecorderCommand } from "./types";
 
 function merge(chunks: Float32Array[]): Float32Array {
@@ -82,6 +83,7 @@ export class PcmRecorder {
   private sessionId: string | null = null;
   private requestedSessionId: string | null = null;
   private commands: Promise<void> = Promise.resolve();
+  private stopWatchingInput: (() => void) | null = null;
 
   async cancel(): Promise<void> {
     await this.handle({ action: "cancel", inputDeviceId: "default" });
@@ -138,17 +140,8 @@ export class PcmRecorder {
     if (this.stream || this.stopping || generation !== this.generation) return;
     this.sessionId = sessionId;
     try {
-      const exactDevice =
-        deviceId && deviceId !== "default" ? { exact: deviceId } : undefined;
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: exactDevice,
-          channelCount: 1,
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-      });
+      const input = await acquireCaptureInput(deviceId);
+      const stream = input.stream;
       if (generation !== this.generation) {
         stream.getTracks().forEach((track) => track.stop());
         this.finishSession(sessionId);
@@ -180,6 +173,48 @@ export class PcmRecorder {
       this.sink.connect(this.context.destination);
       this.startedAt = performance.now();
       await bridge.recordingStarted(sessionId);
+      if (generation !== this.generation || this.sessionId !== sessionId)
+        return;
+      this.stopWatchingInput = watchCaptureInput(input, (event) => {
+        if (
+          generation !== this.generation ||
+          this.sessionId !== sessionId ||
+          this.stopping
+        )
+          return;
+        const inputLost = event.kind === "input-lost";
+        if (inputLost) {
+          // Stop accepting packets before queuing the existing flush/submit
+          // path. The audio captured from the original input is retained.
+          this.source?.disconnect();
+          this.stopWatchingInput?.();
+          this.stopWatchingInput = null;
+        }
+        void bridge
+          .recordingInputChanged(sessionId, event.message, inputLost)
+          .then(() => {
+            if (inputLost && generation === this.generation)
+              return this.handle({
+                action: "stop",
+                inputDeviceId: deviceId,
+                sessionId,
+              });
+          })
+          .catch((error) => {
+            // IPC failure must not leave a disconnected capture running.
+            if (inputLost && generation === this.generation) {
+              void this.handle({
+                action: "cancel",
+                inputDeviceId: deviceId,
+                sessionId,
+              }).catch(() => undefined);
+              void bridge.recordingFailed(
+                `Could not finish capture after microphone loss: ${error instanceof Error ? error.message : String(error)}`,
+                sessionId,
+              ).catch(() => undefined);
+            }
+          });
+      });
     } catch (error) {
       await this.dispose();
       this.finishSession(sessionId);
@@ -227,6 +262,8 @@ export class PcmRecorder {
     if (!this.stream || !this.context || this.stopping) return;
     const sessionId = this.sessionId!;
     this.stopping = true;
+    this.stopWatchingInput?.();
+    this.stopWatchingInput = null;
     try {
       const durationMs = Math.round(performance.now() - this.startedAt);
       const sampleRate = this.context.sampleRate;
@@ -279,6 +316,8 @@ export class PcmRecorder {
   }
 
   private async dispose(): Promise<void> {
+    this.stopWatchingInput?.();
+    this.stopWatchingInput = null;
     if (this.worklet) this.worklet.port.onmessage = null;
     if (this.processor) this.processor.onaudioprocess = null;
     this.source?.disconnect();

@@ -711,6 +711,18 @@ function registerIpc(): void {
     dictation.recordingStarted(validateText(sessionId, 128)),
   );
   handle("recorder:ready", () => dictation.recorderAvailable());
+  handle(
+    "recorder:inputChanged",
+    (_event, sessionId: unknown, message: unknown, inputLost: unknown) => {
+      if (typeof inputLost !== "boolean")
+        throw new Error("Invalid microphone change event");
+      dictation.recordingInputChanged(
+        validateText(sessionId, 128),
+        validateText(message, 1000),
+        inputLost,
+      );
+    },
+  );
   handle("recorder:failed", (_event, message: unknown, sessionId: unknown) =>
     dictation.recordingFailed(
       validateText(message, 1000),

@@ -227,6 +227,17 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             Runtime to avoid loading it again between recordings.
           </div>
         )}
+        {w.status.captureInputNotice && (
+          <div className="px-6 pt-3 max-[900px]:px-4">
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-xl border border-line bg-soft px-3.5 py-2.5 text-sm text-muted"
+            >
+              {w.status.captureInputNotice}
+            </div>
+          </div>
+        )}
         {w.error && (
           <div className="px-6 pt-3 max-[900px]:px-4">
             <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>

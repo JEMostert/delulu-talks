@@ -281,6 +281,13 @@ export function HomePage({
                 )}
               </div>
             </div>
+            {s.inputDeviceId === "default" && (
+              <p className="px-3.5 pb-2.5 text-[11px] text-muted">
+                System default is chosen when recording starts. Changing it during
+                capture keeps the original microphone; if that input disconnects,
+                capture stops and keeps the recorded audio.
+              </p>
+            )}
             {!shortcutStatus.registered && (
               <p className="control-warning">{shortcutStatus.message}</p>
             )}

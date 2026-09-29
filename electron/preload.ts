@@ -78,6 +78,8 @@ const api: DeluluApi = {
   recorderReady: () => ipcRenderer.invoke("recorder:ready"),
   recordingFailed: (message: string, sessionId: string) =>
     ipcRenderer.invoke("recorder:failed", message, sessionId),
+  recordingInputChanged: (sessionId, message, inputLost) =>
+    ipcRenderer.invoke("recorder:inputChanged", sessionId, message, inputLost),
   recordingLevel: (level: number) => ipcRenderer.send("recorder:level", level),
   submitRecording: (recording: RecordingSubmission) =>
     ipcRenderer.invoke("recorder:submit", recording),
