@@ -206,7 +206,14 @@ export type UpdateStatus = {
   bytesPerSecond?: number;
 };
 
+export type RuleUsage = {
+  counts: Record<string, number>;
+  error: string | null;
+};
+
 export type DeluluApi = {
+  getRuleUsage(): Promise<RuleUsage>;
+  resetRuleUsage(): Promise<RuleUsage>;
   getRendererRecoveryState(): Promise<RendererRecoveryState>;
   reloadWorkspace(): Promise<void>;
   rendererControllerFailed(): Promise<void>;

@@ -1,4 +1,4 @@
-import { personalize } from "../../src/personalization";
+import { personalizeWithUsage } from "../../src/personalization";
 import { deliveredText } from "../../src/transcriptText";
 import type { BrowserWindow } from "electron";
 import { spawn } from "node:child_process";
@@ -68,6 +68,7 @@ export class DictationService {
     private readonly paste: PasteService,
     private readonly windows: WindowProvider,
     private readonly broadcastTranscript: (record: TranscriptRecord) => void,
+    private readonly recordRuleUsage: (counts: Record<string, number>) => void = () => {},
   ) {}
 
   private settings(): AppSettings {
@@ -538,6 +539,8 @@ export class DictationService {
     settings: AppSettings,
   ): TranscriptRecord {
     const text = String(result.text ?? "").trim();
+    const personalized = personalizeWithUsage(text, settings.customWords);
+    this.recordRuleUsage(personalized.counts);
     const durationMs =
       durationOverride ?? Math.round(numeric(result.duration) * 1000);
     return {
@@ -545,7 +548,7 @@ export class DictationService {
       createdAt: Date.now(),
       durationMs,
       text,
-      personalizedText: personalize(text, settings.customWords),
+      personalizedText: personalized.text,
       model: settings.model,
       language: String(result.language ?? settings.language),
       source,

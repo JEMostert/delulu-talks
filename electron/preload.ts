@@ -26,6 +26,8 @@ function listener<T>(
 }
 
 const api: DeluluApi = {
+  getRuleUsage: () => ipcRenderer.invoke("rules:usage"),
+  resetRuleUsage: () => ipcRenderer.invoke("rules:resetUsage"),
   getRendererRecoveryState: () => ipcRenderer.invoke("renderer:recoveryState"),
   reloadWorkspace: () => ipcRenderer.invoke("renderer:reload"),
   rendererControllerFailed: () =>

@@ -29,6 +29,7 @@ import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
+import { RuleUsageService } from "./services/ruleUsage";
 import { PasteService } from "./services/paste";
 import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
@@ -78,6 +79,7 @@ let asr: AsrService;
 let paste: PasteService;
 let pill: PillService;
 let dictation: DictationService;
+let ruleUsage: RuleUsageService;
 let shortcut: ShortcutService;
 let updates: UpdateService;
 const settingsQueue = new SerialQueue();
@@ -643,6 +645,12 @@ function registerIpc(): void {
   handle("dictation:discardFailed", () => dictation.discardFailure());
   handle("dictation:retry", () => dictation.retry());
   handle("settings:get", () => storage.getSettings());
+  const ruleIds = () => storage.getSettings().customWords.map((rule) => rule.id);
+  handle("rules:usage", () => ruleUsage.get(ruleIds()));
+  handle("rules:resetUsage", () => {
+    ruleUsage.reset();
+    return ruleUsage.get(ruleIds());
+  });
   handle("settings:update", (_event, value: unknown) => persistSettings(value));
   handle("runtime:status", () => asr.getStatus());
   handle("shortcut:status", () => shortcut.getStatus());
@@ -896,6 +904,7 @@ function registerIpc(): void {
 async function start(): Promise<void> {
   if (!smokeTest) ensureDevelopmentDesktopEntry();
   storage = new StorageService();
+  ruleUsage = new RuleUsageService(storage.dataDirectory);
   paste = new PasteService(
     () => storage.getSettings().pastePortalToken || null,
     (pastePortalToken) => {
@@ -942,6 +951,7 @@ async function start(): Promise<void> {
       broadcast("history:added", record);
       rebuildTrayMenu();
     },
+    (counts) => ruleUsage.record(counts, storage.getSettings().customWords.map((rule) => rule.id)),
   );
   mainWindow.webContents.on("did-start-loading", () =>
     dictation.recorderUnavailable(),

@@ -53,6 +53,12 @@ function desktopOnly(): never {
 }
 
 export const previewApi: DeluluApi = {
+  async getRuleUsage() {
+    return desktopOnly();
+  },
+  async resetRuleUsage() {
+    return desktopOnly();
+  },
   async getRendererRecoveryState() {
     return { canReload: true, reason: null, canStopRecording: false };
   },

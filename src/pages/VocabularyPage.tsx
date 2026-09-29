@@ -8,6 +8,7 @@ import {
   ruleTriggers,
 } from "../personalization";
 import type { CustomWord } from "../types";
+import { RuleUsagePanel } from "../components/RuleUsagePanel";
 
 export function VocabularyPage({
   words,
@@ -106,6 +107,7 @@ export function VocabularyPage({
         </label>
         <span className="caption">{words.length} / 500 rules</span>
       </div>
+      <RuleUsagePanel words={words} />
       <section className="border border-line rounded-panel bg-surface shadow-panel backdrop-blur-xl overflow-hidden">
         {filtered.map((word) => (
           <article

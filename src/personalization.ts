@@ -35,10 +35,10 @@ function* phraseMatches(text: string, rules: Map<string, string>) {
   // Group sorted alternatives, then resolve within at most 256 phrases using
   // the same Unicode folding; cache repeated matches for long transcripts.
   const pattern = phrasePattern(groups);
-  const outputs = new Map<string, string>();
+  const outputs = new Map<string, { trigger: string; output: string }>();
   for (const match of text.matchAll(pattern)) {
-    let output = outputs.get(match[0]);
-    if (output === undefined) {
+    let resolved = outputs.get(match[0]);
+    if (resolved === undefined) {
       const selected = match
         .slice(1)
         .findIndex((phrase) => phrase !== undefined);
@@ -46,23 +46,28 @@ function* phraseMatches(text: string, rules: Map<string, string>) {
         samePhrase(phrase, match[0]),
       );
       if (phrase === undefined) continue;
-      output = rules.get(phrase)!;
-      outputs.set(match[0], output);
+      resolved = { trigger: phrase, output: rules.get(phrase)! };
+      outputs.set(match[0], resolved);
     }
-    yield { index: match.index, length: match[0].length, output };
+    yield { index: match.index, length: match[0].length, ...resolved };
   }
 }
 
 const samePhrase = (phrase: string, other: string) =>
   new RegExp(`^(?:${escape(phrase)})$`, "iu").test(other);
 
-function replacePhrases(text: string, rules: Map<string, string>): string {
+function replacePhrases(
+  text: string,
+  rules: Map<string, string>,
+  onMatch?: (trigger: string) => void,
+): string {
   if (!rules.size) return text;
   let cursor = 0;
   let result = "";
   for (const match of phraseMatches(text, rules)) {
     result += text.slice(cursor, match.index) + match.output;
     cursor = match.index + match.length;
+    onMatch?.(match.trigger);
   }
   return result + text.slice(cursor);
 }
@@ -85,17 +90,34 @@ export function ruleConflict(
 }
 
 export function personalize(text: string, words: CustomWord[]): string {
+  return personalizeWithUsage(text, words).text;
+}
+
+/** Pure occurrence counts from selected source matches, before replacements. */
+export function personalizeWithUsage(
+  text: string,
+  words: CustomWord[],
+): { text: string; counts: Record<string, number> } {
   const rules = new Map<string, string>();
+  const owners = new Map<string, string>();
+  const counts: Record<string, number> = Object.create(null);
   for (const word of words) {
     if (!word.enabled) continue;
     const output = ruleKind(word) === "shortcut" ? word.replacement : word.term;
     if (!output.trim()) continue;
     for (const trigger of ruleTriggers(word)) {
       // Stable first-rule priority for legacy conflicts. Never cascade replacements.
-      if (!rules.has(trigger)) rules.set(trigger, output);
+      if (!rules.has(trigger)) {
+        rules.set(trigger, output);
+        owners.set(trigger, word.id);
+      }
     }
   }
-  return replacePhrases(text, rules);
+  const personalized = replacePhrases(text, rules, (trigger) => {
+    const id = owners.get(trigger)!;
+    counts[id] = (counts[id] ?? 0) + 1;
+  });
+  return { text: personalized, counts };
 }
 
 /** Keep saved blocks outside the language model. Rewrite only the surrounding text. */
