@@ -85,6 +85,7 @@ function harness(
   );
   return {
     service,
+    asr,
     copied,
     pasted,
     records,
@@ -149,9 +150,8 @@ test("a controller disconnect during submitted inference cannot admit another ca
     magicEnabled: false,
     autoPaste: false,
   });
-  const asr = (h.service as unknown as { asr: AsrService }).asr;
   let finish!: (result: Record<string, unknown>) => void;
-  asr.transcribe = () =>
+  h.asr.transcribe = () =>
     new Promise((resolve) => {
       finish = resolve;
     });

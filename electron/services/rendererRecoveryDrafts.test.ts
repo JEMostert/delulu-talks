@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { RecoveryDrafts } from "./rendererRecovery";
+import { RecoveryDrafts } from "../../src/rendererRecovery";
 
 test("recent edits preserve Unicode, whitespace and deliberately emptied drafts", () => {
   const drafts = new RecoveryDrafts();
