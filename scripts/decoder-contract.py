@@ -44,9 +44,10 @@ def make_probe(backend):
     else:
         from transcription_engine import Worker
         # Select the Linux buffered adapter without altering platform globals.
-        # Constructor backend routing is unrelated to these decoder contracts.
-        engine = Worker.__new__(Worker)
-        engine.speech = None
+        # Construction is lazy and imports no inference dependencies. Preserve
+        # all worker invariants before explicitly choosing this decoder path.
+        engine = Worker()
+        engine.speech_backend = "linux"
         def transcribe(**kwargs):
             samples, rate = kwargs["audio"][0]
             if rate != RATE:

@@ -8,6 +8,7 @@ R2T2's acoustic streaming/committed-prefix protocol.
 """
 from __future__ import annotations
 
+import contextlib
 import gc
 import os
 import sys
@@ -68,7 +69,8 @@ class MetalSpeech:
             # load_model returns an object that we can assign to self.model.
             self.model = None
             gc.collect()
-            mx.clear_cache()
+            with contextlib.suppress(Exception):
+                mx.clear_cache()
             raise
 
     def transcribe(self, request):
@@ -99,7 +101,8 @@ class MetalSpeech:
         finally:
             # Upstream clears its decode cache on successful chunks only.
             # Release allocator buffers after failed generations as well.
-            mx.clear_cache()
+            with contextlib.suppress(Exception):
+                mx.clear_cache()
         finished = time.perf_counter()
         if not isinstance(getattr(result, "text", None), str):
             raise RuntimeError("R2T2 returned an invalid transcription response")
@@ -127,5 +130,6 @@ class MetalSpeech:
         gc.collect()
         if loaded:
             import mlx.core as mx
-            mx.clear_cache()
+            with contextlib.suppress(Exception):
+                mx.clear_cache()
         return {"loaded": False}

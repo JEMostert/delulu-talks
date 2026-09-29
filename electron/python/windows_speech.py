@@ -5,6 +5,7 @@ HuggingFace mappings. Native Windows hardware inference still needs validation.
 """
 from __future__ import annotations
 
+import contextlib
 import gc
 import os
 import shutil
@@ -164,8 +165,10 @@ class WindowsSpeech:
             for offset in range(0, len(samples), CHUNK_SAMPLES):
                 results.append(self._generate(samples[offset:offset + CHUNK_SAMPLES], language, 4096))
         except BaseException:
-            import torch
-            torch.cuda.empty_cache()
+            with contextlib.suppress(Exception):
+                torch = sys.modules.get("torch")
+                if torch is not None:
+                    torch.cuda.empty_cache()
             raise
         finished = time.perf_counter()
         languages = {str(result.get("language") or language or "und").lower() for result in results}
@@ -181,6 +184,7 @@ class WindowsSpeech:
         self.processor = None
         gc.collect()
         torch = sys.modules.get("torch")
-        if torch is not None and torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        with contextlib.suppress(Exception):
+            if torch is not None and torch.cuda.is_available():
+                torch.cuda.empty_cache()
         return {"loaded": False}
