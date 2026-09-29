@@ -21,7 +21,7 @@ def number(value: object, name: str) -> float:
 def memory_evidence(paths: object, directory: Path, repetitions: int) -> dict:
     if not isinstance(paths, list) or len(paths) < repetitions:
         raise ValueError("Memory evidence requires the configured number of independent sessions")
-    peaks, hashes, configurations = [], [], []
+    peaks, hashes, configurations, models = [], [], [], []
     for supplied in paths:
         content = (directory / require_text(supplied, "memory summary path")).read_bytes()
         digest = hashlib.sha256(content).hexdigest()
@@ -38,6 +38,7 @@ def memory_evidence(paths: object, directory: Path, repetitions: int) -> dict:
             raise ValueError("Memory evidence needs positive sampled peaks")
         peaks.append(peak)
         provenance = summary["provenance"]
+        models.append({"model": provenance["model"], "precision": provenance["decode"]["precision"]})
         configurations.append({
             "hardware": provenance["hardware"], "runtime": provenance["runtime"],
             "decode_settings": provenance["decode"]["settings"],
@@ -49,7 +50,9 @@ def memory_evidence(paths: object, directory: Path, repetitions: int) -> dict:
         })
     if any(config != configurations[0] for config in configurations):
         raise ValueError("Repeated memory sessions must have matching declared configurations")
-    return {"session_count": len(peaks), "median_sampled_peak_rss_bytes": statistics.median(peaks),
+    if any(model != models[0] for model in models):
+        raise ValueError("Repeated memory sessions must use the same conversion and precision")
+    return {"model_identity": models[0], "session_count": len(peaks), "median_sampled_peak_rss_bytes": statistics.median(peaks),
             "session_peak_rss_bytes": peaks, "summary_sha256": hashes, "configuration": configurations[0]}
 
 
@@ -96,8 +99,17 @@ def gate(manifest: dict, directory: Path) -> dict:
     after_memory = memory_evidence(manifest.get("candidate_memory"), directory, repetitions)
     if before_memory["configuration"] != after_memory["configuration"]:
         raise ValueError("Baseline/candidate memory sessions must have matching declared configurations")
-    if before_memory["configuration"]["hardware"] != baseline["cases"][0]["provenance"]["hardware"]:
-        raise ValueError("Memory and accuracy evidence must use matching declared hardware")
+    for participant, memory in ((baseline, before_memory), (candidate, after_memory)):
+        for case in participant["cases"]:
+            provenance = case["provenance"]
+            identity = {"model": provenance["model"], "precision": provenance["decode"]["precision"]}
+            if memory["model_identity"] != identity:
+                raise ValueError("Memory and accuracy evidence must identify the same conversion and precision")
+            for section in ("hardware", "runtime"):
+                if memory["configuration"][section] != provenance[section]:
+                    raise ValueError("Memory and accuracy evidence must use matching hardware and runtime")
+            if memory["configuration"]["decode_settings"] != provenance["decode"]["settings"] or memory["configuration"]["language"] != provenance["decode"]["language"]:
+                raise ValueError("Memory and accuracy evidence must use matching decode settings")
     saving = 1 - after_memory["median_sampled_peak_rss_bytes"] / before_memory["median_sampled_peak_rss_bytes"]
     quality_passed = all(case["wer_passed"] and case["baseline_exact_fidelity_retained"] for case in case_results)
     return {
