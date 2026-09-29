@@ -52,6 +52,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   magicAllowInferences: false,
   preloadMagicModel: false,
   modelIdleMinutes: 15,
+  memoryPolicy: "independent",
   launchAtLogin: false,
   customWords: [],
 };

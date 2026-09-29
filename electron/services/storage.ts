@@ -213,6 +213,8 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.preloadMagicModel,
       DEFAULT_SETTINGS.preloadMagicModel,
     ),
+    memoryPolicy:
+      source.memoryPolicy === "balanced" ? "balanced" : "independent",
     modelIdleMinutes: [1, 5, 15, 30, 60].includes(
       Number(source.modelIdleMinutes),
     )

@@ -41,11 +41,13 @@ export class AsrService {
   private readonly speechInstaller: RuntimeInstaller;
   private readonly magicInstaller: RuntimeInstaller;
   private readonly maintenance = new SerialQueue();
+  private readonly modelOperations = new SerialQueue();
   private initializing = false;
   get isBusy(): boolean {
     return (
       this.initializing ||
       this.maintenance.busy ||
+      this.modelOperations.busy ||
       this.speechWorker.busy ||
       this.magicWorker.busy ||
       !!this.loadPromise ||
@@ -240,7 +242,10 @@ export class AsrService {
     if (ready && settings.preloadModel) {
       void this.loadModel(settings).catch((error) => this.fail(error));
     }
-    if (magicReady && settings.preloadMagicModel) {
+    if (
+      magicReady && settings.preloadMagicModel &&
+      settings.memoryPolicy !== "balanced"
+    ) {
       void this.loadMagic(settings).catch((error) => this.failMagic(error));
     }
   }
@@ -278,6 +283,7 @@ export class AsrService {
 
   private async performSetup(settings: AppSettings): Promise<void> {
     const reloadMagic =
+      settings.memoryPolicy !== "balanced" &&
       settings.preloadMagicModel && (await this.isMagicEnvironmentReady());
     await this.speechWorker.stopAndWait();
     await this.speechInstaller.install("speech", settings, (progress) =>
@@ -398,7 +404,42 @@ export class AsrService {
     return worker.request<T>(command, payload, timeoutMs);
   }
 
+  private runModelOperation<T>(
+    settings: AppSettings,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    if (settings.memoryPolicy !== "balanced") return operation();
+    return this.modelOperations
+      .run(operation)
+      .finally(() => this.applyDeferredResidency());
+  }
+
+  private async releaseMagicForSpeech(settings: AppSettings): Promise<void> {
+    if (settings.memoryPolicy !== "balanced") return;
+    await this.magicUnloadPromise;
+    if (
+      this.magicStatus.engine === "missing" ||
+      this.magicStatus.engine === "unloaded"
+    ) return;
+    // Called inside the balanced operation queue: rewriting has finished and
+    // its result is already returned. Stopping only the worker leaves raw
+    // transcripts, buffered audio and settings in their owning services.
+    await this.performUnloadMagic(true);
+    this.updateMagicStatus({
+      message: "Magic released for speech by balanced memory policy",
+    });
+  }
+
   async loadModel(settings: AppSettings, fromSetup = false): Promise<void> {
+    return this.runModelOperation(settings, () =>
+      this.performLoadModel(settings, fromSetup),
+    );
+  }
+
+  private async performLoadModel(
+    settings: AppSettings,
+    fromSetup = false,
+  ): Promise<void> {
     if (this.shuttingDown)
       throw new Error("The speech engine is shutting down");
     if (!fromSetup && this.maintenance.busy)
@@ -407,6 +448,7 @@ export class AsrService {
     this.clearSpeechIdle();
     this.loadPromise = (async () => {
       await this.speechUnloadPromise;
+      await this.releaseMagicForSpeech(settings);
       if (!fromSetup && !(await this.isEnvironmentReady()))
         throw new Error(
           "Local engine setup is required before loading a model",
@@ -453,10 +495,19 @@ export class AsrService {
       throw new Error("The speech engine is shutting down");
     if (this.status.engine === "ready" && this.status.model === settings.model)
       return;
-    await this.loadModel(settings);
+    await this.performLoadModel(settings);
   }
 
   async transcribe(
+    payload: Record<string, unknown>,
+    settings: AppSettings,
+  ): Promise<Record<string, unknown>> {
+    return this.runModelOperation(settings, () =>
+      this.performTranscription(payload, settings),
+    );
+  }
+
+  private async performTranscription(
     payload: Record<string, unknown>,
     settings: AppSettings,
   ): Promise<Record<string, unknown>> {
@@ -464,6 +515,7 @@ export class AsrService {
     this.speechOperations += 1;
     this.clearSpeechIdle();
     try {
+      await this.releaseMagicForSpeech(settings);
       await this.ensureLoaded(settings);
       this.clearSpeechIdle();
       const result = await this.request<Record<string, unknown>>(
@@ -487,6 +539,8 @@ export class AsrService {
   }
 
   async unload(): Promise<void> {
+    if (this.modelOperations.busy)
+      throw new Error("Wait for the current model operation before unloading");
     if (this.speechUnloadPromise) return this.speechUnloadPromise;
     if (
       this.speechWorker.busy ||
@@ -513,6 +567,15 @@ export class AsrService {
   }
 
   async loadMagic(settings: AppSettings, fromSetup = false): Promise<void> {
+    return this.runModelOperation(settings, () =>
+      this.performLoadMagic(settings, fromSetup),
+    );
+  }
+
+  private async performLoadMagic(
+    settings: AppSettings,
+    fromSetup = false,
+  ): Promise<void> {
     if (this.shuttingDown)
       throw new Error("The writing engine is shutting down");
     if (!fromSetup && this.maintenance.busy)
@@ -571,10 +634,19 @@ export class AsrService {
       this.magicStatus.model === settings.magicModel
     )
       return;
-    await this.loadMagic(settings);
+    await this.performLoadMagic(settings);
   }
 
   async rewriteMagic(
+    request: MagicRewriteRequest,
+    settings: AppSettings,
+  ): Promise<MagicRewriteResult> {
+    return this.runModelOperation(settings, () =>
+      this.performRewrite(request, settings),
+    );
+  }
+
+  private async performRewrite(
     request: MagicRewriteRequest,
     settings: AppSettings,
   ): Promise<MagicRewriteResult> {
@@ -645,12 +717,18 @@ export class AsrService {
   }
 
   async unloadMagic(): Promise<void> {
+    if (this.modelOperations.busy)
+      throw new Error("Wait for the current model operation before unloading");
+    return this.performUnloadMagic();
+  }
+
+  private async performUnloadMagic(forSpeech = false): Promise<void> {
     if (this.magicUnloadPromise) return this.magicUnloadPromise;
     if (
       this.magicWorker.busy ||
       this.magicLoadPromise ||
       this.magicOperations > 0 ||
-      !this.canIdleUnload()
+      (!forSpeech && !this.canIdleUnload())
     )
       throw new Error("Wait for Writing to finish before unloading");
     this.clearMagicIdle();
@@ -688,17 +766,22 @@ export class AsrService {
         const current = this.storage.getSettings();
         if (!ready || !current.preloadModel || this.shuttingDown) return;
         if (this.isBusy) this.residencyPending = true;
-        else void this.ensureLoaded(current).catch((error) => this.fail(error));
+        else
+          void this.runModelOperation(current, () => this.ensureLoaded(current))
+            .catch((error) => this.fail(error));
       });
     }
-    if (settings.preloadMagicModel) {
+    if (settings.preloadMagicModel && settings.memoryPolicy !== "balanced") {
       this.clearMagicIdle();
       void this.isMagicEnvironmentReady().then((ready) => {
         const current = this.storage.getSettings();
-        if (!ready || !current.preloadMagicModel || this.shuttingDown) return;
+        if (
+          !ready || !current.preloadMagicModel ||
+          current.memoryPolicy === "balanced" || this.shuttingDown
+        ) return;
         if (this.isBusy) this.residencyPending = true;
         else
-          void this.ensureMagicLoaded(current).catch((error) =>
+          void this.runModelOperation(current, () => this.ensureMagicLoaded(current)).catch((error) =>
             this.failMagic(error),
           );
       });
@@ -747,7 +830,7 @@ export class AsrService {
     const settings = this.storage.getSettings();
     if (
       this.shuttingDown ||
-      settings.preloadMagicModel ||
+      (settings.preloadMagicModel && settings.memoryPolicy !== "balanced") ||
       this.magicStatus.engine !== "ready"
     )
       return;
@@ -755,7 +838,7 @@ export class AsrService {
       this.magicIdleTimer = null;
       if (
         this.shuttingDown ||
-        this.storage.getSettings().preloadMagicModel ||
+        (this.storage.getSettings().preloadMagicModel && this.storage.getSettings().memoryPolicy !== "balanced") ||
         this.magicStatus.engine !== "ready"
       )
         return;

@@ -47,6 +47,7 @@ export type AppSettings = {
   magicAllowInferences: boolean;
   preloadMagicModel: boolean;
   modelIdleMinutes: number;
+  memoryPolicy: "independent" | "balanced";
   launchAtLogin: boolean;
   customWords: CustomWord[];
 };

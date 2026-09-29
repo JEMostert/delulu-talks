@@ -555,6 +555,7 @@ async function applySettings(value: unknown): Promise<AppSettings> {
   if (
     (runtimeChanged ||
       magicRuntimeChanged ||
+      next.memoryPolicy !== previous.memoryPolicy ||
       next.magicEnabled !== previous.magicEnabled) &&
     (dictation.isActive || asr.isBusy)
   )
@@ -574,7 +575,8 @@ async function applySettings(value: unknown): Promise<AppSettings> {
     next.preloadModel !== previous.preloadModel ||
     next.preloadMagicModel !== previous.preloadMagicModel ||
     next.magicEnabled !== previous.magicEnabled ||
-    next.modelIdleMinutes !== previous.modelIdleMinutes;
+    next.modelIdleMinutes !== previous.modelIdleMinutes ||
+    next.memoryPolicy !== previous.memoryPolicy;
   if (runtimeChanged || magicRuntimeChanged || residencyChanged)
     asr.configureResidency(saved);
   if (saved.showOverlay !== previous.showOverlay) {
