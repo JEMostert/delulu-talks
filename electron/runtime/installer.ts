@@ -9,6 +9,14 @@ import { activateRuntime, runtimePython, rollbackRuntime } from "./location";
 import type { AppSettings } from "../../src/types";
 import { resolveRuntimeArtifacts } from "./artifacts";
 import {
+  parseRuntimePrerequisiteError,
+  PYTHON_INTERPRETER_PROBE,
+  RuntimePrerequisiteCode,
+  RuntimePrerequisiteError,
+  runtimeReadinessScript,
+  validatePythonInterpreter,
+} from "./prerequisites";
+import {
   createRuntimeInventory,
   inventoryBackend,
   PYTHON_INVENTORY_PROBE,
@@ -32,16 +40,6 @@ export type InstallProgress = {
   detail?: string;
 };
 type Paths = { dataDirectory: string; venvDirectory: string };
-const READINESS = {
-  speech: "from qwen_asr import Qwen3ASRModel",
-  magic:
-    "import torch, torchvision, transformers; from transformers import AutoModelForMultimodalLM, AutoProcessor; assert int(transformers.__version__.split('.')[0]) >= 5",
-};
-const METAL_READINESS =
-  "import sys, platform; assert sys.version_info[:2] == (3,12) and platform.machine() == 'arm64'; import mlx.core as mx; from mlx_audio.stt.utils import load_model, load_audio; assert mx.metal.is_available()";
-const WINDOWS_READINESS =
-  "import sys; assert sys.version_info[:2] == (3,12); import torch, soundfile, soxr; from transformers import Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor; assert torch.version.cuda is not None and torch.cuda.is_available(), 'R2T2 requires a working NVIDIA CUDA GPU and driver'";
-
 /** Owns interpreter discovery and package installation; model loading is separate. */
 export class RuntimeInstaller {
   readonly setupLog = new SetupLog();
@@ -97,13 +95,11 @@ export class RuntimeInstaller {
     },
   ) {}
   private readiness(kind: "speech" | "magic"): string {
-    return kind === "speech"
-      ? this.metal
-        ? METAL_READINESS
-        : this.windows
-          ? WINDOWS_READINESS
-          : READINESS.speech
-      : READINESS.magic;
+    return runtimeReadinessScript(
+      kind,
+      this.target,
+      kind === "speech" && this.metal,
+    );
   }
   get python(): string {
     return runtimePython(this.paths.venvDirectory);
@@ -191,11 +187,19 @@ export class RuntimeInstaller {
           exitCode: code, signal,
         });
         finish();
-        if (code === 0) resolve(output.trim());
-        else
+        if (this.cancelled)
           reject(
-            new Error(diagnostic.trim() || `Runtime command failed (${code})`),
+            new Error(
+              "Runtime setup cancelled. The previous environment is unchanged.",
+            ),
           );
+        else if (code === 0) resolve(output.trim());
+        else {
+          const cause = new Error(
+            diagnostic.trim() || `Runtime command failed (${code})`,
+          );
+          reject(parseRuntimePrerequisiteError(diagnostic, cause) ?? cause);
+        }
       });
     });
   }
@@ -221,7 +225,8 @@ export class RuntimeInstaller {
       );
       this.validatedPython = `${kind}:${this.python}`;
       return true;
-    } catch {
+    } catch (error) {
+      if (this.cancelled) throw error;
       return false;
     }
   }
@@ -239,40 +244,46 @@ export class RuntimeInstaller {
       : this.windows
         ? [["py", "-3.12"], ["python3.12"]]
         : [["python3.13"], ["python3.12"], ["python3.11"]];
-    const candidates = ["python", "python3"].includes(configured[0] ?? "")
+    const automatic =
+      configured.length === 0 ||
+      (configured.length === 1 &&
+        ["python", "python3"].includes(configured[0]));
+    const candidates = automatic
       ? [...fallbacks, configured]
       : [configured];
+    const failures: RuntimePrerequisiteError[] = [];
     for (const candidate of candidates) {
       if (!candidate.length) continue;
       try {
-        const version = await this.run(
+        const probe = await this.run(
           candidate[0],
           [
             ...candidate.slice(1),
             "-c",
-            metal
-              ? "import sys, platform; assert platform.machine() == 'arm64'; print('.'.join(map(str, sys.version_info[:2])))"
-              : "import sys; print('.'.join(map(str, sys.version_info[:2])))",
+            PYTHON_INTERPRETER_PROBE,
           ],
           undefined,
           5000,
         );
-        const [major, minor] = version.split(".").map(Number);
-        if (
-          major === 3 &&
-          (metal || this.windows ? minor === 12 : minor >= 11 && minor <= 13)
-        )
-          return candidate;
-      } catch {
-        /* Try the next supported interpreter. */
+        validatePythonInterpreter(probe, this.target, metal);
+        return candidate;
+      } catch (cause) {
+        if (this.cancelled) throw cause;
+        const failure = new RuntimePrerequisiteError(
+          cause instanceof RuntimePrerequisiteError
+            ? cause.code
+            : RuntimePrerequisiteCode.PYTHON_VERSION,
+          `${candidate.join(" ")}: ${cause instanceof RuntimePrerequisiteError ? cause.details : cause instanceof Error ? cause.message : String(cause)}`,
+          { cause },
+        );
+        if (!automatic) throw failure;
+        failures.push(failure);
       }
     }
-    throw new Error(
-      metal
-        ? "Install native arm64 Python 3.12, then set its full path in Settings → Advanced. Rosetta Python is not supported."
-        : this.windows
-          ? "Install Python 3.12, then try again. You can set its full path in Settings → Advanced."
-          : "Install Python 3.11–3.13, then try again. You can set its full path in Settings → Advanced.",
+    throw new RuntimePrerequisiteError(
+      failures.at(-1)?.code ?? RuntimePrerequisiteCode.PYTHON_VERSION,
+      `No supported interpreter was found. ${failures.map((failure) => `[${failure.code}] ${failure.details}`).join("; ")}`,
+      { cause: new AggregateError(failures, "Automatic Python discovery failed") },
     );
   }
 
@@ -289,7 +300,10 @@ export class RuntimeInstaller {
       process.platform === "darwin" &&
       Number(release().split(".")[0]) < 24
     )
-      throw new Error("R2T2 MLX requires macOS 15 or later.");
+      throw new RuntimePrerequisiteError(
+        RuntimePrerequisiteCode.METAL_UNAVAILABLE,
+        `Found Darwin ${release()}; R2T2 MLX requires macOS 15 or later (Darwin 24+).`,
+      );
     const stage = async (
       program: string,
       args: string[],
@@ -458,6 +472,7 @@ export class RuntimeInstaller {
         15_000,
       );
     } catch (error) {
+      if (this.cancelled) throw error;
       throw new Error(
         `Could not inspect runtime dependencies: ${error instanceof Error ? error.message : String(error)}. The previous environment is unchanged.`,
       );
