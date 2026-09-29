@@ -31,6 +31,10 @@ export function RewriteDialog({
   const [expectedOutput] = useState(baseline);
   const [preset, setPreset] = useState<MagicPreset>("concise");
   const [instructions, setInstructions] = useState("");
+  const [contextEnabled, setContextEnabled] = useState(false);
+  const [language, setLanguage] = useState("");
+  const [fileType, setFileType] = useState("");
+  const [selection, setSelection] = useState("");
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +131,33 @@ export function RewriteDialog({
           />
         </label>
       </div>
+      <details className="my-3">
+        <summary>Optional language and editor context</summary>
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={contextEnabled} disabled={busy}
+            onChange={(event) => { setContextEnabled(event.target.checked); setResult(null); }} />
+          Include the context below for this local rewrite
+        </label>
+        <p className="caption mt-2">Only context you enter is used. It is not saved with the transcript.
+          Fenced code/terminal blocks and indented code in the source stay exact.</p>
+        {contextEnabled && <div className="grid gap-3 mt-3">
+          <label className="field">Language
+            <input aria-label="Rewrite context language" maxLength={80} disabled={busy} value={language}
+              placeholder="For example: Dutch prose, TypeScript identifiers"
+              onChange={(event) => { setLanguage(event.target.value); setResult(null); }} />
+          </label>
+          <label className="field">File type
+            <input aria-label="Rewrite context file type" maxLength={80} disabled={busy} value={fileType}
+              placeholder="For example: Markdown"
+              onChange={(event) => { setFileType(event.target.value); setResult(null); }} />
+          </label>
+          <label className="field">Selection context <small>Read-only reference</small>
+            <textarea aria-label="Rewrite selection context" maxLength={4000} disabled={busy} value={selection}
+              className="w-full min-h-[90px] font-mono"
+              onChange={(event) => { setSelection(event.target.value); setResult(null); }} />
+          </label>
+        </div>}
+      </details>
       <div className="rewrite-comparison mb-4 mt-3 grid grid-cols-2 gap-4">
         <label className="field">
           Current text
@@ -182,6 +213,7 @@ export function RewriteDialog({
                 text: source,
                 preset,
                 instructions,
+                context: contextEnabled ? { language, fileType, selection } : undefined,
                 allowInferences: false,
               }),
             );

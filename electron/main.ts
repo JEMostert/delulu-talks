@@ -1,3 +1,4 @@
+import { normalizeRewriteContext } from "../src/rewriteContext";
 import {
   app,
   BrowserWindow,
@@ -719,6 +720,7 @@ function registerIpc(): void {
       text: validateText(source.text, 50_000),
       preset,
       instructions: validateText(source.instructions ?? "", 4_000).trim(),
+      context: normalizeRewriteContext(source.context),
       allowInferences: source.allowInferences === true,
     };
     if (!request.text.trim())

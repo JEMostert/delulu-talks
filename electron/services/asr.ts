@@ -1,3 +1,4 @@
+import { normalizeRewriteContext, splitTechnicalBlocks } from "../../src/rewriteContext";
 import { splitForRewrite } from "../../src/personalization";
 import { app } from "electron";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
@@ -646,10 +647,13 @@ export class AsrService {
     request: MagicRewriteRequest,
     settings: AppSettings,
   ): Promise<MagicRewriteResult> {
-    const parts = splitForRewrite(request.text, settings.customWords);
+    const context = normalizeRewriteContext(request.context);
+    const parts = splitTechnicalBlocks(request.text).flatMap((part) =>
+      part.protected ? [part] : splitForRewrite(part.text, settings.customWords),
+    );
     if (parts.filter((part) => !part.protected && part.text.trim()).length > 16)
       throw new Error(
-        "This text contains too many separate shortcut blocks to rewrite at once. Rewrite a shorter selection.",
+        "This text contains too many separate protected blocks to rewrite at once. Rewrite a shorter selection.",
       );
     this.magicOperations += 1;
     this.clearMagicIdle();
@@ -675,6 +679,7 @@ export class AsrService {
           "magicRewrite",
           {
             ...request,
+            context,
             text: part.text.trim(),
           } as unknown as Record<string, unknown>,
         );

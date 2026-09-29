@@ -62,10 +62,17 @@ export type MagicStatus = {
   progress?: number | null;
 };
 
+export type MagicRewriteContext = {
+  language?: string;
+  fileType?: string;
+  selection?: string;
+};
+
 export type MagicRewriteRequest = {
   text: string;
   preset: MagicPreset;
   instructions?: string;
+  context?: MagicRewriteContext;
   allowInferences: boolean;
 };
 
