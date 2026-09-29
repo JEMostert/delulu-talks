@@ -39,6 +39,10 @@ import {
 } from "./services/storage";
 import { exportRecord } from "./services/transcripts";
 import { UpdateService } from "./services/updates";
+import {
+  rendererRecoveryState,
+  reloadRenderer,
+} from "./services/rendererRecovery";
 
 const { autoUpdater } = electronUpdater;
 
@@ -601,6 +605,24 @@ function registerIpc(): void {
       return listener(event, ...(args as Args));
     });
   };
+  const recoveryInput = () => ({
+    captureActive: dictation.isActive,
+    canStopRecording: dictation.canStopRecording,
+    runtimeBusy: asr.isBusy,
+    settingsBusy: settingsQueue.busy,
+    updateBusy: ["checking", "downloading"].includes(updates.getStatus().phase),
+  });
+  handle("renderer:recoveryState", () =>
+    rendererRecoveryState(recoveryInput()),
+  );
+  handle("renderer:reload", (event) => {
+    reloadRenderer(recoveryInput(), () => {
+      // Close the shortcut start race until the new controller calls ready.
+      dictation.recorderUnavailable();
+      event.sender.reload();
+    });
+  });
+  handle("renderer:controllerFailed", () => dictation.recorderUnavailable());
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
   handle("dictation:pasteLast", async () => {
     const record = lastTranscript
