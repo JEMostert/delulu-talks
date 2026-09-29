@@ -15,6 +15,7 @@ import type { useWorkspace } from "./hooks/useWorkspace";
 import { useTheme } from "./hooks/useTheme";
 import { Sidebar } from "./components/Sidebar";
 import { Onboarding } from "./components/Onboarding";
+import { ServiceRecovery } from "./components/ServiceRecovery";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { Alert } from "./components/ui";
 import { HomePage } from "./pages/HomePage";
@@ -217,6 +218,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           onDownload={download}
           onInstall={install}
         />
+        {w.ready && <ServiceRecovery recovery={w.serviceRecovery} />}
         {w.status.phase === "loading" && (
           <div
             role="status"
