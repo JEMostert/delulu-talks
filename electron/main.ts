@@ -82,6 +82,7 @@ let shortcut: ShortcutService;
 let updates: UpdateService;
 const settingsQueue = new SerialQueue();
 let lastTranscript: TranscriptRecord | null = null;
+let pasteLastPending: Promise<void> | null = null;
 const sessionTranscripts = new Map<string, TranscriptRecord>();
 const selectedAudioFiles = new Set<string>();
 
@@ -624,7 +625,12 @@ function registerIpc(): void {
   });
   handle("renderer:controllerFailed", () => dictation.recorderUnavailable());
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
-  handle("dictation:pasteLast", async () => {
+  handle("dictation:pasteLast", () => {
+    if (pasteLastPending) return pasteLastPending;
+    pasteLastPending = pasteLatest().finally(() => { pasteLastPending = null; });
+    return pasteLastPending;
+  });
+  async function pasteLatest(): Promise<void> {
     const record = lastTranscript
       ? (storage.findHistory(lastTranscript.id) ?? lastTranscript)
       : storage.getHistory()[0];
@@ -639,7 +645,7 @@ function registerIpc(): void {
     if (!current)
       throw new Error("Paste cancelled because the transcript was removed");
     await paste.paste(deliveredText(current));
-  });
+  }
   handle("dictation:discardFailed", () => dictation.discardFailure());
   handle("dictation:retry", () => dictation.retry());
   handle("settings:get", () => storage.getSettings());
@@ -712,9 +718,11 @@ function registerIpc(): void {
   handle("recorder:failed", (_event, message: unknown) =>
     dictation.recordingFailed(validateText(message, 1000)),
   );
-  handle("recorder:submit", (_event, submission: RecordingSubmission) =>
-    dictation.submitRecording(submission),
-  );
+  handle("recorder:submit", (_event, submission: RecordingSubmission) => {
+    if (typeof submission?.sessionId !== "string" || !submission.sessionId)
+      throw new Error("Recording submission requires a capture session ID");
+    return dictation.submitRecording(submission);
+  });
   ipcMain.on("recorder:level", (event, value: unknown) => {
     if (
       event.sender !== mainWindow?.webContents ||

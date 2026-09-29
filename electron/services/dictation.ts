@@ -32,6 +32,7 @@ function numeric(value: unknown, fallback = 0): number {
 
 export class DictationService {
   private failedRecording: RecordingSubmission | null = null;
+  private pendingSessionId: string | null = null;
   get isActive(): boolean {
     return this.captureState !== "idle";
   }
@@ -51,7 +52,7 @@ export class DictationService {
   async retry(): Promise<void> {
     if (this.isActive || !this.failedRecording)
       throw new Error("No failed recording is available to retry");
-    await this.submitRecording(this.failedRecording);
+    await this.processRecording(this.failedRecording);
   }
 
   private captureState: CaptureState = "idle";
@@ -78,6 +79,7 @@ export class DictationService {
     const window = this.windows.main();
     if (!window || window.isDestroyed() || !this.recorderReady) {
       this.captureState = "idle";
+      this.pendingSessionId = null;
       this.asr.setActivity(
         "error",
         "The microphone controller is still starting — try again in a moment",
@@ -151,6 +153,7 @@ export class DictationService {
     this.recorderReady = false;
     if (this.captureState !== "idle" && this.captureState !== "processing") {
       this.captureState = "idle";
+      this.pendingSessionId = null;
       this.setHud({ state: "hidden" });
       this.asr.setActivity(
         "error",
@@ -205,9 +208,11 @@ export class DictationService {
     }
     const settings = this.settings();
     this.captureState = "opening";
+    this.pendingSessionId = randomUUID();
     this.asr.setActivity("idle", "Opening microphone");
     this.sendRecorder({
       action: "start",
+      sessionId: this.pendingSessionId,
       inputDeviceId: settings.inputDeviceId,
     });
   }
@@ -241,6 +246,7 @@ export class DictationService {
     if (this.captureState === "idle" || this.captureState === "processing")
       return;
     this.captureState = "idle";
+    this.pendingSessionId = null;
     this.sendRecorder({
       action: "cancel",
       inputDeviceId: this.settings().inputDeviceId,
@@ -274,6 +280,7 @@ export class DictationService {
   }
 
   recordingFailed(message: string): void {
+    this.pendingSessionId = null;
     this.captureState = "idle";
     this.setHud({
       state: "error",
@@ -284,6 +291,16 @@ export class DictationService {
   }
 
   async submitRecording(submission: RecordingSubmission): Promise<void> {
+    if (submission?.sessionId !== undefined) {
+      // Consume before the first await. Repeated IPC submissions, stale sessions,
+      // and cancelled captures cannot trigger another inference or delivery.
+      if (submission.sessionId !== this.pendingSessionId) return;
+      this.pendingSessionId = null;
+    }
+    await this.processRecording(submission);
+  }
+
+  private async processRecording(submission: RecordingSubmission): Promise<void> {
     if (this.captureState === "processing")
       throw new Error("A recording is already being processed");
     if (
@@ -322,6 +339,7 @@ export class DictationService {
       this.storage.cacheDirectory,
       `dictation-${Date.now()}-${randomUUID()}.wav`,
     );
+    let deliveryStarted = false;
     try {
       mkdirSync(this.storage.cacheDirectory, { recursive: true });
       writeFileSync(audioPath, submission.wav, { mode: 0o600 });
@@ -391,6 +409,7 @@ export class DictationService {
       const outputName = record.magicText ? "Magic result" : "Transcript";
       let completion = `${outputName} ready`;
       this.setHud({ state: "delivering" });
+      deliveryStarted = true;
       if (settings.autoPaste) {
         try {
           await this.paste.paste(output);
@@ -416,8 +435,10 @@ export class DictationService {
       });
       this.asr.setActivity("idle", completion);
     } catch (error) {
-      this.failedRecording = submission;
-      this.asr.setRecovery?.(true);
+      // Once clipboard/paste delivery starts, its outcome can be uncertain.
+      // Never offer an automatic audio retry that could deliver the text twice.
+      this.failedRecording = deliveryStarted ? null : submission;
+      this.asr.setRecovery?.(!deliveryStarted);
       this.setHud({ state: "error" });
       this.asr.setActivity(
         "error",

@@ -76,6 +76,7 @@ export class PcmRecorder {
   private sink: GainNode | null = null;
   private chunks: Float32Array[] = [];
   private startedAt = 0;
+  private sessionId: string | undefined;
   private stopping = false;
   private lastLevelAt = 0;
   private generation = 0;
@@ -90,7 +91,7 @@ export class PcmRecorder {
     const generation = this.generation;
     const operation = this.commands.then(async () => {
       if (command.action === "start")
-        await this.start(command.inputDeviceId, generation);
+        await this.start(command.inputDeviceId, generation, command.sessionId);
       if (command.action === "stop") await this.stop(true);
       if (command.action === "cancel") await this.stop(false);
     });
@@ -98,7 +99,7 @@ export class PcmRecorder {
     return operation;
   }
 
-  private async start(deviceId: string, generation: number): Promise<void> {
+  private async start(deviceId: string, generation: number, sessionId?: string): Promise<void> {
     if (this.stream || this.stopping || generation !== this.generation) return;
     try {
       const exactDevice =
@@ -117,6 +118,7 @@ export class PcmRecorder {
         return;
       }
       this.stream = stream;
+      this.sessionId = sessionId;
       this.context = new AudioContext({ latencyHint: "interactive" });
       this.source = this.context.createMediaStreamSource(this.stream);
       this.sink = this.context.createGain();
@@ -185,6 +187,7 @@ export class PcmRecorder {
     this.stopping = true;
     const durationMs = Math.round(performance.now() - this.startedAt);
     const sampleRate = this.context.sampleRate;
+    const sessionId = this.sessionId;
     this.source?.disconnect();
     if (this.worklet && submit) {
       const port = this.worklet.port;
@@ -214,6 +217,7 @@ export class PcmRecorder {
         return;
       }
       await bridge.submitRecording({
+        sessionId,
         wav: wav(resample(captured, sampleRate)),
         durationMs,
       });
@@ -232,6 +236,7 @@ export class PcmRecorder {
       await this.context.close();
     this.context = null;
     this.stream = null;
+    this.sessionId = undefined;
     this.worklet = null;
     this.processor = null;
     this.source = null;

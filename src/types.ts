@@ -157,9 +157,11 @@ export type LabRequest = {
 export type RecorderCommand = {
   action: "start" | "stop" | "cancel";
   inputDeviceId: string;
+  sessionId?: string;
 };
 
 export type RecordingSubmission = {
+  sessionId?: string;
   wav: Uint8Array;
   durationMs: number;
 };

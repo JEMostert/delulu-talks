@@ -42,6 +42,7 @@ export class PasteService {
   private remoteDesktop: PortalInterface | null = null;
   private portalSession: string | null = null;
   private portalReady: Promise<void> | null = null;
+  private deliveryInFlight = false;
 
   constructor(
     private readonly getRestoreToken: () => string | null = () => null,
@@ -132,6 +133,17 @@ export class PasteService {
   }
 
   async paste(text: string): Promise<string> {
+    if (this.deliveryInFlight)
+      throw new Error("A paste is already in progress; wait before pasting again");
+    this.deliveryInFlight = true;
+    try {
+      return await this.performPaste(text);
+    } finally {
+      this.deliveryInFlight = false;
+    }
+  }
+
+  private async performPaste(text: string): Promise<string> {
     this.copy(text);
     if (this.waylandPortal) {
       await this.pasteThroughPortal();
