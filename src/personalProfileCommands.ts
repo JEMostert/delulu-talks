@@ -19,7 +19,8 @@ export type ProfileStarterId = (typeof PROFILE_STARTERS)[number]["id"];
 export type PersonalProfileCommand =
   | { action: "create"; name: string; starter: ProfileStarterId }
   | { action: "rename"; id: string; name: string }
-  | { action: "delete"; id: string };
+  | { action: "delete"; id: string }
+  | { action: "import"; document: PersonalProfileDocument; includeVocabulary: boolean };
 
 function profileName(value: unknown): string {
   if (typeof value !== "string" || !value.trim() || value.trim().length > 128) {
@@ -57,7 +58,27 @@ export function changePersonalProfiles(settings: AppSettings, input: unknown, ne
   if (current.status !== "supported") throw new Error("These profiles use a newer schema and are read-only in this app.");
   const document = current.document;
   const profiles = document.profiles;
-  if (command.action === "create") {
+  if (command.action === "import") {
+    if (typeof command.includeVocabulary !== "boolean") throw new Error("Choose whether to import personal vocabulary.");
+    const imported = readPersonalProfiles(command.document);
+    if (imported.status !== "supported") throw new Error("This export needs a newer compatible app version.");
+    if (!imported.document.profiles.length) throw new Error("This export contains no profiles.");
+    if (profiles.length + imported.document.profiles.length > 128) throw new Error("Import would exceed the 128-profile limit.");
+    const names = new Set(profiles.map((profile) => nameKey(profile.name)));
+    for (const entry of imported.document.profiles) {
+      const name = profileName(entry.name);
+      if (names.has(nameKey(name))) throw new Error(`A profile named “${name}” already exists or appears twice in this import. Rename it before importing.`);
+      names.add(nameKey(name));
+    }
+    // Validate the entire batch before adding anything; never overwrite IDs.
+    for (const entry of imported.document.profiles) {
+      const importedProfile = structuredClone(entry);
+      importedProfile.id = newId();
+      importedProfile.name = profileName(importedProfile.name);
+      if (!command.includeVocabulary) importedProfile.vocabulary.rules = [];
+      profiles.push(importedProfile);
+    }
+  } else if (command.action === "create") {
     const name = profileName(command.name);
     if (profiles.some((profile) => nameKey(profile.name) === nameKey(name))) throw new Error("A profile with this name already exists. Choose another name.");
     if (profiles.length >= 128) throw new Error("The profile limit (128) has been reached.");
