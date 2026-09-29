@@ -147,6 +147,7 @@ class PillApplication(Gtk.Application):
         self.spinner: Gtk.Spinner | None = None
         self.title: Gtk.Label | None = None
         self.detail: Gtk.Label | None = None
+        self.profile: Gtk.Label | None = None
         self.clock: Gtk.Label | None = None
         self.wave: Gtk.Box | None = None
         self.bars: list[Gtk.Box] = []
@@ -246,7 +247,13 @@ class PillApplication(Gtk.Application):
         footer.append(detail)
         footer.append(wave)
 
+        profile = Gtk.Label(xalign=0)
+        profile.add_css_class("detail")
+        profile.set_ellipsize(Pango.EllipsizeMode.END)
+        profile.set_max_width_chars(40)
+        profile.set_visible(False)
         body.append(header)
+        body.append(profile)
         body.append(footer)
         hud.append(rail)
         hud.append(body)
@@ -260,6 +267,7 @@ class PillApplication(Gtk.Application):
         self.spinner = spinner
         self.title = title
         self.detail = detail
+        self.profile = profile
         self.clock = clock
         self.wave = wave
         self.bars = bars
@@ -335,6 +343,10 @@ class PillApplication(Gtk.Application):
         self.glyph.set_label(symbol)
         self.title.set_label(str(custom_title)[:28].upper() if custom_title else title)
         self.detail.set_label(str(custom_detail)[:36] if custom_detail else detail)
+        profile = payload.get("profile")
+        self.profile.set_visible(bool(profile))
+        self.profile.set_label(f"Profile: {str(profile)[:256]}" if profile else "")
+        self.profile.set_tooltip_text(str(profile)[:256] if profile else None)
         for name in STATES:
             self.hud.remove_css_class(name)
         self.hud.add_css_class(state)

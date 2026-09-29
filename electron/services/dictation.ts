@@ -1,3 +1,4 @@
+import { captureProfileSnapshot } from "../../src/activePersonalProfile";
 import { personalize } from "../../src/personalization";
 import { deliveredText } from "../../src/transcriptText";
 import type { BrowserWindow } from "electron";
@@ -32,6 +33,8 @@ function numeric(value: unknown, fallback = 0): number {
 
 export class DictationService {
   private failedRecording: RecordingSubmission | null = null;
+  private captureSettings: AppSettings | null = null;
+  private failedRecordingSettings: AppSettings | null = null;
   get isActive(): boolean {
     return this.captureState !== "idle";
   }
@@ -44,6 +47,7 @@ export class DictationService {
   }
   discardFailure(): void {
     this.failedRecording = null;
+    this.failedRecordingSettings = null;
     this.asr.setRecovery?.(false);
     this.asr.setActivity("idle", "Failed recording discarded");
   }
@@ -78,6 +82,7 @@ export class DictationService {
     const window = this.windows.main();
     if (!window || window.isDestroyed() || !this.recorderReady) {
       this.captureState = "idle";
+      this.captureSettings = null;
       this.asr.setActivity(
         "error",
         "The microphone controller is still starting — try again in a moment",
@@ -107,7 +112,9 @@ export class DictationService {
     if (this.busyNoticeTimer) clearTimeout(this.busyNoticeTimer);
     this.busyNoticeTimer = null;
     this.busyNotice = false;
-    this.hud = command;
+    this.hud = command.state !== "hidden" && this.captureSettings
+      ? { ...command, profile: captureProfileSnapshot(this.captureSettings).label }
+      : command;
     this.applyHud();
   }
 
@@ -151,6 +158,7 @@ export class DictationService {
     this.recorderReady = false;
     if (this.captureState !== "idle" && this.captureState !== "processing") {
       this.captureState = "idle";
+      this.captureSettings = null;
       this.setHud({ state: "hidden" });
       this.asr.setActivity(
         "error",
@@ -203,12 +211,14 @@ export class DictationService {
       });
       return;
     }
-    const settings = this.settings();
+    const settings = structuredClone(this.settings());
+    this.captureSettings = settings;
     this.captureState = "opening";
     this.asr.setActivity("idle", "Opening microphone");
     this.sendRecorder({
       action: "start",
       inputDeviceId: settings.inputDeviceId,
+      captureProfile: captureProfileSnapshot(settings),
     });
   }
 
@@ -241,6 +251,7 @@ export class DictationService {
     if (this.captureState === "idle" || this.captureState === "processing")
       return;
     this.captureState = "idle";
+    this.captureSettings = null;
     this.sendRecorder({
       action: "cancel",
       inputDeviceId: this.settings().inputDeviceId,
@@ -260,7 +271,7 @@ export class DictationService {
     }
     if (this.captureState !== "opening") return;
     this.captureState = "listening";
-    const hold = this.settings().shortcutMode === "hold";
+    const hold = (this.captureSettings ?? this.settings()).shortcutMode === "hold";
     this.asr.setActivity(
       "listening",
       hold
@@ -275,6 +286,7 @@ export class DictationService {
 
   recordingFailed(message: string): void {
     this.captureState = "idle";
+    this.captureSettings = null;
     this.setHud({
       state: "error",
       title: "Could not finish",
@@ -293,7 +305,9 @@ export class DictationService {
     )
       throw new Error("Invalid recording duration");
     this.captureState = "processing";
-    const settings = this.settings();
+    const settings = this.captureSettings ??
+      (submission === this.failedRecording ? this.failedRecordingSettings : null) ?? this.settings();
+    this.captureSettings = structuredClone(settings);
     if (
       !(submission.wav instanceof Uint8Array) ||
       submission.wav.byteLength < 44
@@ -315,6 +329,7 @@ export class DictationService {
         detail: "Hold a little longer",
       });
       this.asr.setActivity("idle", "Recording was too short and was discarded");
+      this.captureSettings = null;
       return;
     }
 
@@ -332,6 +347,7 @@ export class DictationService {
         settings,
       );
       this.failedRecording = null;
+      this.failedRecordingSettings = null;
       this.asr.setRecovery?.(false);
       let record = this.createRecord(
         result,
@@ -417,6 +433,7 @@ export class DictationService {
       this.asr.setActivity("idle", completion);
     } catch (error) {
       this.failedRecording = submission;
+      this.failedRecordingSettings = structuredClone(settings);
       this.asr.setRecovery?.(true);
       this.setHud({ state: "error" });
       this.asr.setActivity(
@@ -425,6 +442,7 @@ export class DictationService {
       );
     } finally {
       this.captureState = "idle";
+      this.captureSettings = null;
       rmSync(audioPath, { force: true });
     }
   }

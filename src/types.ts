@@ -1,3 +1,4 @@
+import type { ActivePersonalProfile, CaptureProfileSnapshot, ProfileActivationCommand } from "./activePersonalProfile";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
 
@@ -54,6 +55,7 @@ export type AppSettings = {
   customWords: CustomWord[];
   /** Stored contract only; no active profile or automatic behavior change. */
   personalProfiles?: PersonalProfileDocument;
+  activePersonalProfile?: ActivePersonalProfile | null;
 };
 
 export type MagicStatus = {
@@ -162,6 +164,7 @@ export type LabRequest = {
 export type RecorderCommand = {
   action: "start" | "stop" | "cancel";
   inputDeviceId: string;
+  captureProfile?: CaptureProfileSnapshot;
 };
 
 export type RecordingSubmission = {
@@ -222,6 +225,7 @@ export type DeluluApi = {
   discardFailedRecording(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
   managePersonalProfile(command: PersonalProfileCommand): Promise<AppSettings>;
+  activatePersonalProfile(command: ProfileActivationCommand): Promise<AppSettings>;
   getStatus(): Promise<DictationStatus>;
   getMagicStatus(): Promise<MagicStatus>;
   getShortcutStatus(): Promise<ShortcutStatus>;

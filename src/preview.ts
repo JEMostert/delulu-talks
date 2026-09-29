@@ -1,3 +1,4 @@
+import { activatePersonalProfile } from "./activePersonalProfile";
 import { changePersonalProfiles } from "./personalProfileCommands";
 import { DEFAULT_SETTINGS } from "./data";
 import { deliveredText, originalTranscriptText } from "./transcriptText";
@@ -88,7 +89,15 @@ export const previewApi: DeluluApi = {
     return mockSettings();
   },
   async updateSettings(settings) {
-    const next = { ...mockSettings(), ...settings };
+    const current = mockSettings();
+    if (Object.prototype.hasOwnProperty.call(settings, "activePersonalProfile") && JSON.stringify(settings.activePersonalProfile) !== JSON.stringify(current.activePersonalProfile)) throw new Error("Switch profiles using the explicit activation preview.");
+    const next = { ...current, ...settings };
+    localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
+    return next;
+  },
+  async activatePersonalProfile(command) {
+    const current = mockSettings();
+    const next = { ...current, ...activatePersonalProfile(current, command) };
     localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
     return next;
   },

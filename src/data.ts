@@ -55,6 +55,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchAtLogin: false,
   customWords: [],
   personalProfiles: { schemaVersion: 1, profiles: [] },
+  activePersonalProfile: null;
 };
 
 export const MODELS: ModelInfo[] = [

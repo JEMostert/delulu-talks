@@ -1,3 +1,4 @@
+import type { CaptureProfileSnapshot, ProfileActivationCommand } from "../activePersonalProfile";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
@@ -38,6 +39,7 @@ export function useWorkspace() {
     method: "native",
     message: "Checking shortcut",
   });
+  const [captureProfile, setCaptureProfile] = useState<CaptureProfileSnapshot | null>(null);
   const [history, setHistory] = useState<TranscriptRecord[]>([]);
   const [devices, setDevices] = useState<MicrophoneDevice[]>([
     { deviceId: "default", label: "System default" },
@@ -83,13 +85,18 @@ export function useWorkspace() {
     setStartupError(null);
     const recorder = new PcmRecorder();
     const subscriptions = [
-      bridge.onStatus(subscribe("speech status", setStatus)),
+      bridge.onStatus(subscribe("speech status", (next: DictationStatus) => {
+        setStatus(next);
+        if (next.phase === "idle" || next.phase === "error") setCaptureProfile(null);
+      })),
       bridge.onMagicStatus(subscribe("rewriting status", setMagicStatus)),
       bridge.onSettingsChanged(subscribe("settings", receiveSettings)),
       bridge.onNavigate(setPage),
       bridge.onShortcutStatus(subscribe("shortcut status", setShortcutStatus)),
       bridge.onUpdateStatus(subscribe("update status", setUpdateStatus)),
       bridge.onRecorderCommand((command) => {
+        if (command.action === "start") setCaptureProfile(command.captureProfile ?? null);
+        if (command.action === "cancel") setCaptureProfile(null);
         void recorder.handle(command).catch(report);
       }),
       bridge.onTranscript(receiveTranscript),
@@ -245,6 +252,10 @@ export function useWorkspace() {
     }, `Profile ${verb} · active settings unchanged`);
   }
 
+  function activateProfile(command: ProfileActivationCommand): Promise<boolean> {
+    return action(async () => receiveSettings(await bridge.activatePersonalProfile(command)), "Profile switched");
+  }
+
   async function updateTranscript(
     id: string,
     text: string | null,
@@ -285,6 +296,7 @@ export function useWorkspace() {
     magicStatus,
     shortcutStatus,
     history,
+    captureProfile,
     setHistory,
     devices,
     capabilities,
@@ -297,6 +309,7 @@ export function useWorkspace() {
     action,
     saveSettings,
     managePersonalProfile,
+    activateProfile,
     updateTranscript,
     finishOnboarding,
     copy,

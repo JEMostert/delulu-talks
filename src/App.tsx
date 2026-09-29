@@ -311,6 +311,8 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   onConfigureShortcut={run(() => bridge.configureShortcut())}
                   shortcutStatus={w.shortcutStatus}
                   history={w.history}
+                  captureProfile={w.captureProfile}
+                  onActivateProfile={w.activateProfile}
                   saving={w.saving}
                   onNavigate={w.setPage}
                   onUpdateSettings={(patch) => {
@@ -401,6 +403,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     saving={w.saving}
                     onSave={w.saveSettings}
                     onManagePersonalProfile={w.managePersonalProfile}
+                    onActivateProfile={w.activateProfile}
                     onConfigureShortcut={run(() => bridge.configureShortcut())}
                     onAuthorizePaste={run(
                       () => bridge.authorizePaste(),

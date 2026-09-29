@@ -1,3 +1,5 @@
+import { ProfileActivationControls } from "../components/ProfileActivationControls";
+import type { CaptureProfileSnapshot, ProfileActivationCommand } from "../activePersonalProfile";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
@@ -54,6 +56,8 @@ export function HomePage({
   shortcutStatus,
   devices,
   history,
+  captureProfile,
+  onActivateProfile,
   saving,
   busy,
   onNavigate,
@@ -69,6 +73,8 @@ export function HomePage({
   shortcutStatus: ShortcutStatus;
   devices: MicrophoneDevice[];
   history: TranscriptRecord[];
+  captureProfile?: CaptureProfileSnapshot | null;
+  onActivateProfile: (command: ProfileActivationCommand) => Promise<boolean>;
   saving: boolean;
   busy: boolean;
   onNavigate: (page: Page) => void;
@@ -281,6 +287,12 @@ export function HomePage({
                 )}
               </div>
             </div>
+            <ProfileActivationControls
+              settings={s}
+              busy={busy || saving}
+              captureProfile={captureProfile}
+              onActivate={onActivateProfile}
+            />
             {!shortcutStatus.registered && (
               <p className="control-warning">{shortcutStatus.message}</p>
             )}
