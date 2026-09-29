@@ -13,6 +13,13 @@ from unittest.mock import patch
 import transcription_engine as engine
 
 
+def fake_cuda_preflight(torch):
+    # These fixtures exercise model contracts, not a native CUDA probe.
+    if not torch.cuda.is_available():
+        raise RuntimeError("Synthetic CUDA unavailable")
+    return {"probe": "synthetic-no-hardware"}
+
+
 class Audio:
     ndim = 1
 
@@ -113,6 +120,8 @@ class BackendFixture:
             inference_mode=contextlib.nullcontext,
         )
         self.modules = {
+            "cuda_preflight": types.SimpleNamespace(
+                ensure_cuda_compatible=fake_cuda_preflight),
             "torch": self.torch,
             "numpy": types.SimpleNamespace(zeros=lambda *a, **kw: Audio(), float32="float32"),
             "qwen_asr": types.SimpleNamespace(Qwen3ASRModel=types.SimpleNamespace(LLM=speech_model)),
@@ -483,7 +492,7 @@ with patch.dict(sys.modules,fixture.modules):
         ]:
             with self.subTest(stage=stage):
                 commands = [load, status, load, infer, "shutdown"]
-                requests = [{"id": str(i), "command": command, "model": "qwen35Small",
+                requests = [{"protocolVersion": 1, "id": str(i), "command": command, "model": "qwen35Small",
                              "text": "Original fixture.", "preset": "polish", "audioPath": str(self.audio)}
                             for i, command in enumerate(commands)]
                 result = subprocess.run(
@@ -494,6 +503,7 @@ with patch.dict(sys.modules,fixture.modules):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 responses = [json.loads(line.removeprefix("@delulu:")) for line in result.stdout.splitlines()]
                 self.assertEqual([response["id"] for response in responses], [str(i) for i in range(5)])
+                self.assertTrue(all(response["protocolVersion"] == 1 for response in responses))
                 self.assertFalse(responses[0]["ok"])
                 self.assertFalse(responses[1]["result"]["loaded"])
                 self.assertTrue(responses[2]["ok"])
