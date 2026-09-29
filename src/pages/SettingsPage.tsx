@@ -12,7 +12,8 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { LANGUAGES, MAGIC_MODELS } from "../data";
+import { MAGIC_MODELS } from "../data";
+import { speechLanguageCapability } from "../speechCapabilities";
 import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
 import { Diagnostics } from "../components/Diagnostics";
 import type {
@@ -65,6 +66,7 @@ export function SettingsPage(props: Props) {
   const [remove, setRemove] = useState(false);
   const [python, setPython] = useState(s.pythonCommand);
   const [shortcut, setShortcut] = useState(s.shortcut);
+  const languageCapability = speechLanguageCapability(s.model);
   const busy =
     ["preparing", "loading", "listening", "transcribing"].includes(
       status.phase,
@@ -157,10 +159,12 @@ export function SettingsPage(props: Props) {
               <select
                 aria-label="Language"
                 value={s.language}
-                disabled={saving || busy}
+                disabled={
+                  saving || busy || !languageCapability.canSelectLanguage
+                }
                 onChange={(e) => save({ language: e.target.value })}
               >
-                {LANGUAGES.map(([code, label]) => (
+                {languageCapability.languages.map(([code, label]) => (
                   <option key={code} value={code}>
                     {label}
                   </option>
