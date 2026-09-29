@@ -102,19 +102,30 @@ export class ShortcutService {
 
   // Settings coordination serializes callers. Hold status notifications until
   // persistence succeeds, or the previous binding has been restored.
-  async change<T>(accelerator: string, persist: () => T): Promise<T> {
-    const previous = this.getStatus();
+  async change<T>(
+    accelerator: string,
+    previousAccelerator: string,
+    persist: () => T,
+  ): Promise<T> {
     this.publicationDepth++;
     try {
       await this.register(accelerator);
       return await persist();
     } catch (error) {
       try {
-        await this.register(previous.accelerator);
+        // Portal status contains a localized trigger description, not the
+        // canonical accelerator used for registration. The caller supplies
+        // the previous saved preference explicitly.
+        await this.register(previousAccelerator);
       } catch (restoreError) {
-        throw new Error(
+        this.update({
+          accelerator: previousAccelerator,
+          registered: false,
+          message: `Previous shortcut could not be restored: ${concise(restoreError)}`,
+        });
+        throw new AggregateError(
+          [error, restoreError],
           `${concise(error)}. Previous shortcut could not be restored: ${concise(restoreError)}`,
-          { cause: error },
         );
       }
       throw error;

@@ -553,7 +553,9 @@ async function applySettings(value: unknown): Promise<AppSettings> {
     );
   const saved =
     next.shortcut !== previous.shortcut
-      ? await shortcut.change(next.shortcut, () => storage.updateSettings(next))
+      ? await shortcut.change(next.shortcut, previous.shortcut, () =>
+          storage.updateSettings(next),
+        )
       : storage.updateSettings(next);
   if (
     !smokeTest &&
