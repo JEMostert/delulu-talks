@@ -5,6 +5,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { magicModelById, modelById } from "../../src/data";
 import type {
   AppSettings,
+  BackendCapabilities,
   DictationStatus,
   MagicRewriteRequest,
   MagicRewriteResult,
@@ -30,6 +31,7 @@ const UNLOADED_LIFECYCLE: RuntimeLifecycle = {
   warmup: "not-started",
   device: null,
   idleUnloadAt: null,
+  capabilities: null,
 };
 
 function reportedLifecycle(runtime: Partial<WorkerRuntime>): RuntimeLifecycle {
@@ -42,7 +44,7 @@ function reportedLifecycle(runtime: Partial<WorkerRuntime>): RuntimeLifecycle {
 
 function failedLifecycle(running: boolean): RuntimeLifecycle {
   return running
-    ? { residency: "unknown", warmup: "unknown", device: null, idleUnloadAt: null }
+    ? { residency: "unknown", warmup: "unknown", device: null, idleUnloadAt: null, capabilities: null }
     : UNLOADED_LIFECYCLE;
 }
 
@@ -449,6 +451,23 @@ export class AsrService {
     return worker.request<T>(command, payload, timeoutMs);
   }
 
+  private async negotiateCapabilities(kind: "speech" | "magic"): Promise<BackendCapabilities> {
+    const engine = kind === "speech" ? "speech" : "writing";
+    const capabilities = await this.request<BackendCapabilities>(kind, "capabilities", { engine });
+    const backend = kind === "magic"
+      ? "transformers"
+      : speechModelForPlatform() === "r2t2Mlx"
+        ? "mlx"
+        : process.platform === "win32" ? "cuda-transformers" : "cuda-vllm";
+    const modelFamily = kind === "speech" ? "r2t2" : "qwen3.5";
+    if (capabilities.engine !== engine || capabilities.modelFamily !== modelFamily || capabilities.backend !== backend) {
+      throw new Error(
+        `The ${engine} runtime reported an incompatible adapter. Expected ${backend} for ${modelFamily}; repair the local runtime before loading a model.`,
+      );
+    }
+    return capabilities;
+  }
+
   async loadModel(settings: AppSettings, fromSetup = false): Promise<void> {
     if (this.shuttingDown)
       throw new Error("The speech engine is shutting down");
@@ -469,10 +488,14 @@ export class AsrService {
         residency: "loading",
         warmup: "unknown",
         device: null,
+        detail: null,
+        capabilities: null,
         message: `Loading and warming up ${model.name}. Ready means speech inference has been exercised, not just the weights loaded.`,
         model: settings.model,
         progress: 0.85,
       });
+      const capabilities = await this.negotiateCapabilities("speech");
+      this.updateStatus({ capabilities });
       const runtime = await this.request<WorkerRuntime>("speech", "load", {
         cacheDir: this.storage.modelCacheDirectory,
       });
@@ -522,6 +545,18 @@ export class AsrService {
     try {
       await this.ensureLoaded(settings);
       this.clearSpeechIdle();
+      const capabilities = this.status.capabilities;
+      if (!capabilities) {
+        throw new Error("Speech capabilities are unavailable. Reload the speech model before recording again.");
+      }
+      if (!capabilities.languageHints.supported || !capabilities.languageHints.languages.includes(settings.language)) {
+        const choices = capabilities.languageHints.languages.join(", ");
+        throw new Error(
+          `The speech adapter does not support language ${settings.language}. ${choices
+            ? `Choose a supported language in Settings: ${choices}.`
+            : "This adapter advertises no language hints; repair the local speech runtime."}`,
+        );
+      }
       const result = await this.request<Record<string, unknown>>(
         "speech",
         "transcribe",
@@ -592,10 +627,14 @@ export class AsrService {
         residency: "loading",
         warmup: "unknown",
         device: null,
+        detail: null,
+        capabilities: null,
         message: `Loading ${model.name}`,
         model: settings.magicModel,
         progress: 0.86,
       });
+      const capabilities = await this.negotiateCapabilities("magic");
+      this.updateMagicStatus({ capabilities });
       const runtime = await this.request<WorkerRuntime>(
         "magic",
         "magicLoad",

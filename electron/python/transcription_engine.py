@@ -462,8 +462,29 @@ class Worker:
             "inferenceTime": finished - inference_started,
         }
 
+    def capabilities(self, engine: str) -> dict[str, Any]:
+        """Describe this pipeline without importing adapters or probing hardware."""
+        if engine not in ("speech", "writing"):
+            raise ValueError("Worker capabilities engine must be speech or writing")
+        speech = engine == "speech"
+        backend = {
+            "mlx": "mlx", "windows": "cuda-transformers", "linux": "cuda-vllm",
+        }[self.speech_backend] if speech else "transformers"
+        return {
+            "schemaVersion": 1,
+            "engine": engine,
+            "backend": backend,
+            "modelFamily": "r2t2" if speech else "qwen3.5",
+            "timestamps": False,
+            "languageHints": {"supported": speech, "languages": list(LANGUAGE_NAMES) if speech else []},
+            "streaming": False,
+            "vocabularyBiasing": False,
+        }
+
     def dispatch(self, request: dict[str, Any]) -> Any:
         command = request.get("command")
+        if command == "capabilities":
+            return self.capabilities(request["engine"])
         if command == "ping":
             return {"python": sys.version.split()[0], **self.status()}
         if command == "load":

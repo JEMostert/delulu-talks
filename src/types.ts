@@ -53,11 +53,22 @@ export type AppSettings = {
 
 export type ModelResidency = "unknown" | "unloaded" | "loading" | "resident" | "unloading";
 export type WarmupState = "unknown" | "not-started" | "warming" | "complete";
+export type BackendCapabilities = {
+  schemaVersion: 1;
+  engine: "speech" | "writing";
+  backend: "mlx" | "cuda-vllm" | "cuda-transformers" | "transformers";
+  modelFamily: "r2t2" | "qwen3.5";
+  timestamps: boolean;
+  languageHints: { supported: boolean; languages: string[] };
+  streaming: boolean;
+  vocabularyBiasing: boolean;
+};
 export type RuntimeLifecycle = {
   residency?: ModelResidency;
   warmup?: WarmupState;
   device?: string | null;
   idleUnloadAt?: number | null;
+  capabilities?: BackendCapabilities | null;
 };
 
 export type MagicStatus = RuntimeLifecycle & {
