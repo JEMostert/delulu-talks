@@ -1,6 +1,7 @@
 import { changePersonalProfiles } from "./personalProfileCommands";
 import { DEFAULT_SETTINGS } from "./data";
 import { deliveredText, originalTranscriptText } from "./transcriptText";
+import { normalizeTranscriptTitle } from "./transcriptTitle";
 import type {
   AppSettings,
   AudioFileSelection,
@@ -247,6 +248,14 @@ export const previewApi: DeluluApi = {
       magicModel: result?.model ?? null,
       magicIncludedInferences: result?.includedInferences ?? false,
     };
+    demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
+    return updated;
+  },
+  async setTranscriptTitle(id, title) {
+    const normalized = normalizeTranscriptTitle(title);
+    const record = demoHistory.find((item) => item.id === id);
+    if (!record) throw new Error("Transcript not found");
+    const updated = { ...record, title: normalized };
     demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
     return updated;
   },

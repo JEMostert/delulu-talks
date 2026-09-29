@@ -114,6 +114,7 @@ export type DictationStatus = {
  */
 export type TranscriptRecord = {
   id: string;
+  title?: string | null;
   createdAt: number;
   durationMs: number;
   text: string;
@@ -275,6 +276,7 @@ export type DeluluApi = {
   authorizePaste(): Promise<void>;
   testPaste(): Promise<void>;
   updateTranscript(id: string, text: string | null): Promise<TranscriptRecord>;
+  setTranscriptTitle(id: string, title: string | null): Promise<TranscriptRecord>;
   setTranscriptRewrite(
     id: string,
     result: MagicRewriteResult | null,

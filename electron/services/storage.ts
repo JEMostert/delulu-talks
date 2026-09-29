@@ -2,6 +2,7 @@ import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/pe
 import { app } from "electron";
 import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
 import { speechModelForPlatform } from "../runtime/platform";
+import { normalizeTranscriptTitle } from "../../src/transcriptTitle";
 import { normalizeReportedLanguage } from "../../src/transcriptLanguage";
 import {
   existsSync,
@@ -262,8 +263,17 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
   const model = validHistoryModels.has(source.model as ModelId)
     ? (source.model as ModelId)
     : DEFAULT_SETTINGS.model;
+  let title: string | null = null;
+  if (source.title !== undefined) {
+    try {
+      title = normalizeTranscriptTitle(source.title);
+    } catch {
+      // Invalid optional metadata must not discard original transcript content.
+    }
+  }
   return {
     id: safeString(source.id, `legacy-${Date.now()}-${Math.random()}`, 128),
+    ...(source.title === undefined ? {} : { title }),
     createdAt: Number(source.createdAt) || Date.now(),
     durationMs: Math.max(0, Number(source.durationMs) || 0),
     text,
@@ -488,6 +498,21 @@ export class StorageService {
     const index = this.history.findIndex((item) => item.id === id);
     if (index < 0) throw new Error("Transcript not found");
     const updated = applyTranscriptEdit(this.history[index], text);
+    const next = this.history.map((item, itemIndex) =>
+      itemIndex === index ? updated : item,
+    );
+    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.history = next;
+    return structuredClone(updated);
+  }
+
+  setTranscriptTitle(id: string, title: string | null): TranscriptRecord {
+    const index = this.history.findIndex((item) => item.id === id);
+    if (index < 0) throw new Error("Transcript not found");
+    const updated = {
+      ...this.history[index],
+      title: normalizeTranscriptTitle(title),
+    };
     const next = this.history.map((item, itemIndex) =>
       itemIndex === index ? updated : item,
     );

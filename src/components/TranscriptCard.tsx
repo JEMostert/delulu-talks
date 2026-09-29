@@ -1,4 +1,5 @@
 import { RewriteDialog } from "./RewriteDialog";
+import { TranscriptTitleDialog } from "./TranscriptTitleDialog";
 import { SuggestedRulePreview } from "./SuggestedRulePreview";
 import { useState } from "react";
 import {
@@ -40,6 +41,7 @@ export type TranscriptActions = {
   rewriteStatus?: MagicStatus;
   onCopy: (text: string) => void;
   onUpdateTranscript: (id: string, text: string | null) => Promise<boolean>;
+  onSetTitle?: (id: string, title: string | null) => Promise<boolean>;
   onDelete?: (id: string) => void;
   onExport?: (id: string, format: ExportFormat) => void;
   onRemember?: (word: CustomWord) => Promise<boolean>;
@@ -51,6 +53,7 @@ export function TranscriptCard({
   inspector = false,
   onCopy,
   onUpdateTranscript,
+  onSetTitle,
   onDelete,
   onExport,
   onRemember,
@@ -76,6 +79,7 @@ export function TranscriptCard({
   const [remember, setRemember] = useState(false);
   const [heard, setHeard] = useState("");
   const [correct, setCorrect] = useState("");
+  const [naming, setNaming] = useState(false);
   const delivered = deliveredText(record);
   const edited = transcriptIsEdited(record);
   const text = showSource ? transcriptText(record) : delivered;
@@ -138,10 +142,17 @@ export function TranscriptCard({
         <span className="transcript-icon grid size-8 place-items-center rounded-md bg-soft text-muted [&_svg]:size-[15px]">
           {record.source === "dictation" ? <Mic /> : <FileAudio />}
         </span>
-        <div className="transcript-meta flex-1">
-          <strong className="block text-[12px]">
-            {record.sourceName ?? "Dictation"}
+        <div className="transcript-meta flex-1 min-w-0">
+          <strong className="block text-[12px] wrap-anywhere">
+            {record.title || record.sourceName || "Dictation"}
           </strong>
+          {record.title &&
+            record.sourceName &&
+            record.title !== record.sourceName && (
+              <span className="block text-[10px] text-muted wrap-anywhere">
+                {record.sourceName}
+              </span>
+            )}
           <span className="mt-[3px] flex items-center gap-1 text-[10px] text-muted">
             {date} · {Math.max(1, Math.round(record.durationMs / 1000))}s{" "}
             {record.magicText && (
@@ -168,6 +179,21 @@ export function TranscriptCard({
           </span>
         </div>
         <div className="panel-actions">
+          {onSetTitle && (
+            <button
+              className="icon-button"
+              aria-label={
+                record.title ? "Edit transcript title" : "Add transcript title"
+              }
+              title={
+                record.title ? "Edit transcript title" : "Add transcript title"
+              }
+              disabled={saving}
+              onClick={() => setNaming(true)}
+            >
+              <Pencil />
+            </button>
+          )}
           <button
             className="icon-button"
             aria-label="Copy delivered text"
@@ -448,6 +474,13 @@ export function TranscriptCard({
             if (applied) setShowSource(false);
             return applied;
           }}
+        />
+      )}
+      {naming && onSetTitle && (
+        <TranscriptTitleDialog
+          title={record.title ?? null}
+          onClose={() => setNaming(false)}
+          onSave={(title) => onSetTitle(record.id, title)}
         />
       )}
       {deleting && (
