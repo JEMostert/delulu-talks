@@ -160,3 +160,38 @@ independent benchmark repetitions.
 
 **UNVERIFIED — checks not run per user instruction.** No memory sampler or
 native inference was executed, and there are no measured memory results here.
+
+## Experimental MLX conversion gates
+
+`scripts/mlx_conversion_gate.py` evaluates supplied BF16 and quantized R2T2
+reports with explicit per-case WER/fidelity and repeated sampled-RSS thresholds.
+It does not execute a conversion or enable an app model. Its manifest contains:
+
+- `comparison`: the full comparison manifest described above, with exactly two
+  participants: a supported BF16 MLX baseline and an external quantized control.
+- `baseline` and `candidate`: those participants' labels.
+- `candidate_source_repository`: `netease-youdao/Confucius4-R2T2`, as an explicit
+  operator declaration requiring later verification against actual weights.
+- `max_case_wer_increase`: maximum absolute WER increase per case, within 0–1.
+- `min_sampled_peak_memory_saving_fraction`: required fractional sampled RSS
+  savings, greater than zero and less than one.
+- `minimum_memory_sessions`: at least two independently collected sessions.
+- `baseline_memory` and `candidate_memory`: arrays of memory summary paths.
+
+```sh
+python scripts/mlx_conversion_gate.py --manifest conversion-gate.json --output conversion-gate-report.json
+```
+
+Precision must identify BF16 for the baseline and 4-/8-bit quantization for the
+candidate. Matching reference hashes, normalization, hardware, runtime and
+decode settings are required. Each case must meet the WER threshold and retain
+exact raw fidelity when the baseline has it. Undefined empty-reference WER
+cannot pass automatically. Complete repeated memory sessions must use matching
+sampling and rewrite-residency configurations; duplicate summaries are rejected.
+
+A passed supplied-evidence gate remains provisional. Conversion lineage,
+native compatibility, independent repetition and metadata correctness require
+verification; sampled RSS is not accelerator allocation. The app continues to
+offer its existing BF16 R2T2 adapter only. **UNVERIFIED — checks not run per user
+instruction**; no conversion, quantized inference or quality evaluation has
+been run for this implementation.
