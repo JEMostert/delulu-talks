@@ -1,5 +1,11 @@
 import { RewriteDialog } from "./RewriteDialog";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  discardCorrectionDraft,
+  failCorrectionDraft,
+  useCorrectionDraft,
+  writeCorrectionDraft,
+} from "../correctionDrafts";
 import {
   BookPlus,
   Check,
@@ -61,13 +67,19 @@ export function TranscriptCard({
   defaultOpen?: boolean;
   inspector?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen || inspector);
+  const pendingDraft = useCorrectionDraft(record.id);
+  const [open, setOpen] = useState(defaultOpen || inspector || !!pendingDraft);
   const [showSource, setShowSource] = useState(false);
   const [rewriting, setRewriting] = useState(false);
   const [correctionSuggested, setCorrectionSuggested] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(!!pendingDraft);
+  const draft = pendingDraft?.text ?? "";
+  const setDraft = (value: string) =>
+    writeCorrectionDraft(record.id, value, transcriptText(record));
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const recordIdRef = useRef(record.id);
+  recordIdRef.current = record.id;
   const [deleting, setDeleting] = useState(false);
   const [rememberError, setRememberError] = useState<string | null>(null);
   const [remember, setRemember] = useState(false);
@@ -76,14 +88,23 @@ export function TranscriptCard({
   const delivered = deliveredText(record);
   const edited = transcriptIsEdited(record);
   const text = showSource ? transcriptText(record) : delivered;
+  useEffect(() => {
+    setEditing(!!pendingDraft);
+    setOpen(defaultOpen || inspector || !!pendingDraft);
+    setShowSource(!!pendingDraft);
+  }, [record.id]);
   const date = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
   }).format(record.createdAt);
   const save = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       if (await onUpdateTranscript(record.id, draft)) {
+        discardCorrectionDraft(record.id);
+        if (recordIdRef.current !== record.id) return;
         setEditing(false);
         const before = text.trim().split(/\s+/),
           after = draft.trim().split(/\s+/);
@@ -118,8 +139,19 @@ export function TranscriptCard({
           setCorrect(to);
           setCorrectionSuggested(true);
         }
+      } else {
+        failCorrectionDraft(
+          record.id,
+          "The correction was not saved. Your draft is kept in this session; retry saving or discard it.",
+        );
       }
+    } catch (reason) {
+      failCorrectionDraft(
+        record.id,
+        reason instanceof Error ? reason.message : String(reason),
+      );
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -139,6 +171,12 @@ export function TranscriptCard({
           <strong className="block text-[12px]">
             {record.sourceName ?? "Dictation"}
           </strong>
+          {pendingDraft &&
+            (pendingDraft.error || pendingDraft.text.trim() !== transcriptText(record)) && (
+              <span className="text-[10px] text-muted">
+                Unsaved correction · session only
+              </span>
+            )}
           <span className="mt-[3px] flex items-center gap-1 text-[10px] text-muted">
             {date} · {Math.max(1, Math.round(record.durationMs / 1000))}s{" "}
             {record.magicText && (
@@ -243,6 +281,17 @@ export function TranscriptCard({
                   : "Corrections & shortcuts applied"}
             </span>
           </div>
+          {pendingDraft?.error && (
+            <p className="field-error" role="alert">
+              {pendingDraft.error}
+            </p>
+          )}
+          {pendingDraft && pendingDraft.savedText !== transcriptText(record) && (
+            <p className="caption">
+              The saved transcript changed while this draft was open. Review
+              the current speech before replacing it.
+            </p>
+          )}
           {editing ? (
             <textarea
               aria-label="Correct transcript"
@@ -253,9 +302,11 @@ export function TranscriptCard({
               }`}
               maxLength={500_000}
               value={draft}
+              disabled={saving}
               autoFocus
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
+                if (savingRef.current) return;
                 if (event.key === "Escape") setEditing(false);
                 if (
                   event.key === "Enter" &&
@@ -288,17 +339,29 @@ export function TranscriptCard({
                 <button
                   className="secondary-button"
                   disabled={saving}
-                  onClick={() => setEditing(false)}
+                  onClick={() => {
+                    discardCorrectionDraft(record.id);
+                    setEditing(false);
+                  }}
                 >
-                  Cancel
+                  Discard draft
                 </button>
                 <button
                   className="primary-button"
-                  disabled={saving || !draft.trim() || draft.trim() === text}
+                  disabled={
+                    saving ||
+                    !draft.trim() ||
+                    (!pendingDraft?.error &&
+                      draft.trim() === transcriptText(record))
+                  }
                   onClick={() => void save()}
                 >
                   <Check />
-                  {saving ? "Saving…" : "Save correction"}
+                  {saving
+                    ? "Saving…"
+                    : pendingDraft?.error
+                      ? "Retry saving"
+                      : "Save correction"}
                 </button>
               </>
             ) : (
@@ -307,11 +370,11 @@ export function TranscriptCard({
                   className="tool-button"
                   onClick={() => {
                     setShowSource(true);
-                    setDraft(transcriptText(record));
+                    if (!pendingDraft) setDraft(transcriptText(record));
                     setEditing(true);
                   }}
                 >
-                  <Pencil /> Edit
+                  <Pencil /> {pendingDraft ? "Resume correction" : "Edit"}
                 </button>
                 <button className="tool-button" onClick={() => onCopy(text)}>
                   <Copy /> Copy {showSource ? "speech" : "result"}

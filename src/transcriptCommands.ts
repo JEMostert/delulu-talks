@@ -1,4 +1,8 @@
 import { bridge } from "./bridge";
+import {
+  clearCorrectionDrafts,
+  discardCorrectionDraft,
+} from "./correctionDrafts";
 import { ruleConflict, ruleKind } from "./personalization";
 import type { TranscriptActions } from "./components/TranscriptCard";
 import type { useWorkspace } from "./hooks/useWorkspace";
@@ -92,6 +96,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     onDelete: (id: string) => {
       void w.action(async () => {
         await bridge.deleteHistory(id);
+        discardCorrectionDraft(id);
         w.setHistory((items) => items.filter((item) => item.id !== id));
       }, "Transcript deleted");
     },
@@ -106,6 +111,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
   const onClearHistory = () => {
     void w.action(async () => {
       await bridge.clearHistory();
+      clearCorrectionDrafts();
       w.setHistory([]);
     }, "History cleared");
   };
