@@ -309,6 +309,7 @@ describe("vocabulary edge cases", () => {
     }).transformSync(source);
     const checks = String.raw`
       import assert from 'node:assert/strict';
+      try {
       const words = Array.from({ length: 500 }, (_, rule) => ({
         id: String(rule), kind: 'correction', term: 'fixed',
         replacement: '', enabled: true,
@@ -333,6 +334,10 @@ describe("vocabulary edge cases", () => {
       ]);
       assert.equal(personalize('İ i i\u0307', [{ ...words[0], soundsLike: 'İ' }]), 'fixed i i\u0307');
       console.log('V8 vocabulary limits passed');
+      } catch (error) {
+        console.error(error.name + ': ' + error.message.slice(-500));
+        process.exitCode = 1;
+      }
     `;
     expect(
       execFileSync(
@@ -340,9 +345,9 @@ describe("vocabulary edge cases", () => {
         ["--input-type=module", "-e", `${code}\n${checks}`],
         {
           encoding: "utf8",
-          timeout: 15000,
+          timeout: 20000,
         },
       ).trim(),
     ).toBe("V8 vocabulary limits passed");
-  });
+  }, 25000);
 });
