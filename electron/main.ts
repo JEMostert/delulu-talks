@@ -40,6 +40,7 @@ import {
   StorageService,
 } from "./services/storage";
 import { exportRecord } from "./services/transcripts";
+import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { UpdateService } from "./services/updates";
 import {
   rendererRecoveryState,
@@ -958,6 +959,14 @@ function registerIpc(): void {
 async function start(): Promise<void> {
   if (!smokeTest) ensureDevelopmentDesktopEntry();
   storage = new StorageService();
+  // start() is entered only by the instance holding the user-data singleton lock.
+  // No new worker/capture/import exists while prior-session generated WAVs are inspected.
+  const audioRecovery = await recoverTemporaryAudio(storage.cacheDirectory);
+  if (audioRecovery.failureCount) {
+    const detail = `${audioRecovery.failureCount} temporary-audio cleanup failure(s). Some prior-session audio may remain on disk.\n\n${audioRecovery.failures.join("\n")}\n\nClose Delulu before inspecting the audio-cache directory in its local data folder. Only remove generated dictation/import WAVs you recognise. Your saved history, settings, source media, models and runtimes were not removed by this cleanup.`;
+    console.error("Temporary audio cleanup incomplete:", detail);
+    dialog.showErrorBox("Temporary audio cleanup needs attention", detail);
+  }
   paste = new PasteService(
     () => storage.getSettings().pastePortalToken || null,
     (pastePortalToken) => {
