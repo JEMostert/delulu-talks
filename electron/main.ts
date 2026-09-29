@@ -40,7 +40,7 @@ import {
   StorageService,
 } from "./services/storage";
 import { exportRecord } from "./services/transcripts";
-import { affectedByRetention, historyFingerprint, validateRetentionPolicy } from "./services/historyRetention";
+import { affectedByRetention, historyFingerprint, retentionEffects, validateRetentionPolicy } from "./services/historyRetention";
 import { UpdateService } from "./services/updates";
 import {
   rendererRecoveryState,
@@ -767,6 +767,7 @@ function registerIpc(): void {
       token: randomUUID(), policy, previewedAt,
       totalSaved: saved.length,
       retainedCount: saved.length - affected.length,
+      effects: retentionEffects(affected.map(({ record }) => record)),
       affected,
     };
     retentionPreview = {

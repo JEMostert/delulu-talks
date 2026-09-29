@@ -96,12 +96,23 @@ export type HistoryRetentionPolicy = {
   maxCount: number | null;
 };
 
+export type HistoryRetentionEffects = {
+  originals: number;
+  personalized: number;
+  corrections: number;
+  rewrites: number;
+  importedReferences: number;
+  /** Retention removes transcript records only, never source audio files. */
+  audioFilesDeleted: 0;
+};
+
 export type HistoryRetentionPreview = {
   token: string;
   policy: HistoryRetentionPolicy;
   previewedAt: number;
   totalSaved: number;
   retainedCount: number;
+  effects: HistoryRetentionEffects;
   affected: { record: TranscriptRecord; reason: "age" | "count" | "ageAndCount" }[];
 };
 
