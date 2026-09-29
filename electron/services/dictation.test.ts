@@ -3,7 +3,12 @@ import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_SETTINGS } from "../../src/data";
-import type { AppSettings, TranscriptRecord } from "../../src/types";
+import type {
+  AppSettings,
+  DictationStatus,
+  RecorderCommand,
+  TranscriptRecord,
+} from "../../src/types";
 import { DictationService } from "./dictation";
 import type { AsrService } from "./asr";
 import type { PasteService } from "./paste";
@@ -34,6 +39,15 @@ function harness(
   const copied: string[] = [];
   const pasted: string[] = [];
   const records: TranscriptRecord[] = [];
+  const broadcasts: TranscriptRecord[] = [];
+  const commands: RecorderCommand[] = [];
+  const activities: { phase: string; message: string }[] = [];
+  let status: DictationStatus = {
+    phase: "idle",
+    engine: "ready",
+    message: "Ready",
+  };
+  let transcriptionCalls = 0;
   let magicCalls = 0;
   let failOnce = false;
   let rewriteFailure = false;
@@ -44,9 +58,13 @@ function harness(
     addHistory: (record: TranscriptRecord) => records.push(record),
   } as unknown as StorageService;
   const asr = {
-    getStatus: () => ({ phase: "idle", engine: "ready", message: "Ready" }),
-    setActivity: () => undefined,
+    getStatus: () => status,
+    setActivity: (phase: DictationStatus["phase"], message: string) => {
+      status = { ...status, phase, message };
+      activities.push({ phase, message });
+    },
     transcribe: async () => {
+      transcriptionCalls += 1;
       if (failOnce) {
         failOnce = false;
         throw new Error("Temporary inference failure");
@@ -80,15 +98,40 @@ function harness(
     storage,
     asr,
     paste,
-    { main: () => null, pill: pill.service },
-    (record) => records.push(record),
+    {
+      main: () =>
+        ({
+          isDestroyed: () => false,
+          webContents: {
+            send: (_channel: string, command: RecorderCommand) =>
+              commands.push(command),
+          },
+        }) as never,
+      pill: pill.service,
+    },
+    (record) => broadcasts.push(record),
   );
+  service.recorderAvailable();
   return {
     service,
     asr,
     copied,
     pasted,
     records,
+    broadcasts,
+    commands,
+    activities,
+    status: () => ({ ...status }),
+    transcriptionCalls: () => transcriptionCalls,
+    prepareCapture: () => {
+      service.start();
+      const command = commands.at(-1);
+      if (command?.action !== "start" || !command.sessionId)
+        throw new Error("The public Start path did not open a capture session");
+      service.recordingStarted(command.sessionId);
+      service.stop();
+      return command.sessionId;
+    },
     hud: pill.commands,
     magicCalls: () => magicCalls,
     failRewrite: () => {
@@ -104,7 +147,7 @@ function harness(
 }
 
 function captureHarness(settings: AppSettings = { ...DEFAULT_SETTINGS }) {
-  const commands: unknown[] = [];
+  const commands: RecorderCommand[] = [];
   let current = settings;
   let status = { phase: "idle", engine: "ready", message: "Ready" };
   const pill = fakePill();
@@ -122,7 +165,7 @@ function captureHarness(settings: AppSettings = { ...DEFAULT_SETTINGS }) {
         ({
           isDestroyed: () => false,
           webContents: {
-            send: (_channel: string, command: unknown) =>
+            send: (_channel: string, command: RecorderCommand) =>
               commands.push(command),
           },
         }) as never,
@@ -134,6 +177,13 @@ function captureHarness(settings: AppSettings = { ...DEFAULT_SETTINGS }) {
   return {
     service,
     commands,
+    sessionId: () => {
+      const id = commands.findLast(
+        (command) => command.action === "start",
+      )?.sessionId;
+      if (!id) throw new Error("No public capture session was opened");
+      return id;
+    },
     hud: pill.commands,
     setPhase: (phase: string) => {
       status = { ...status, phase };
@@ -157,6 +207,7 @@ test("a controller disconnect during submitted inference cannot admit another ca
     });
   try {
     const pending = h.service.submitRecording({
+      sessionId: h.prepareCapture(),
       wav: new Uint8Array(128),
       durationMs: 1000,
     });
@@ -204,7 +255,7 @@ describe("dictation delivery pipeline", () => {
     h.service.start();
     h.setPhase("idle");
     h.service.start();
-    h.service.recordingStarted();
+    h.service.recordingStarted(h.sessionId());
     await new Promise((resolve) => setTimeout(resolve, 2100));
     expect((h.hud.at(-1) as { state: string }).state).toBe("listening");
     h.service.cancel();
@@ -214,12 +265,24 @@ describe("dictation delivery pipeline", () => {
     testHarness.service.start();
     testHarness.service.stop();
     expect(testHarness.commands).toEqual([
-      { action: "start", inputDeviceId: "default" },
+      {
+        action: "start",
+        inputDeviceId: "default",
+        sessionId: testHarness.sessionId(),
+      },
     ]);
-    testHarness.service.recordingStarted();
+    testHarness.service.recordingStarted(testHarness.sessionId());
     expect(testHarness.commands).toEqual([
-      { action: "start", inputDeviceId: "default" },
-      { action: "stop", inputDeviceId: "default" },
+      {
+        action: "start",
+        inputDeviceId: "default",
+        sessionId: testHarness.sessionId(),
+      },
+      {
+        action: "stop",
+        inputDeviceId: "default",
+        sessionId: testHarness.sessionId(),
+      },
     ]);
   });
 
@@ -227,10 +290,11 @@ describe("dictation delivery pipeline", () => {
     const testHarness = captureHarness();
     testHarness.service.toggle();
     testHarness.service.toggle();
-    testHarness.service.recordingStarted();
+    testHarness.service.recordingStarted(testHarness.sessionId());
     expect(testHarness.commands.at(-1)).toEqual({
       action: "stop",
       inputDeviceId: "default",
+      sessionId: testHarness.sessionId(),
     });
   });
 
@@ -245,6 +309,7 @@ describe("dictation delivery pipeline", () => {
     });
     try {
       await testHarness.service.submitRecording({
+        sessionId: testHarness.prepareCapture(),
         wav: new Uint8Array(64),
         durationMs: 1_000,
       });
@@ -266,6 +331,7 @@ describe("dictation delivery pipeline", () => {
     });
     try {
       await testHarness.service.submitRecording({
+        sessionId: testHarness.prepareCapture(),
         wav: new Uint8Array(64),
         durationMs: 1_000,
       });
@@ -286,6 +352,7 @@ describe("dictation delivery pipeline", () => {
     });
     try {
       await testHarness.service.submitRecording({
+        sessionId: testHarness.prepareCapture(),
         wav: new Uint8Array(64),
         durationMs: 1_000,
       });
@@ -293,7 +360,7 @@ describe("dictation delivery pipeline", () => {
       expect(testHarness.pasted).toEqual(["Ship the release."]);
       expect(testHarness.hud.at(-1)).toEqual({
         state: "success",
-        title: "Pasted",
+        title: "Paste attempted",
         detail: "Ready to keep talking",
       });
     } finally {
@@ -313,6 +380,7 @@ describe("dictation delivery pipeline", () => {
     );
     try {
       await testHarness.service.submitRecording({
+        sessionId: testHarness.prepareCapture(),
         wav: new Uint8Array(64),
         durationMs: 1_000,
       });
@@ -338,6 +406,7 @@ describe("dictation delivery pipeline", () => {
     });
     try {
       await testHarness.service.submitRecording({
+        sessionId: testHarness.prepareCapture(),
         wav: new Uint8Array(64),
         durationMs: 1_000,
       });
@@ -358,6 +427,7 @@ describe("dictation delivery pipeline", () => {
     });
     try {
       await testHarness.service.submitRecording({
+        sessionId: testHarness.prepareCapture(),
         wav: new Uint8Array(64),
         durationMs: 80,
       });
@@ -375,7 +445,7 @@ describe("dictation delivery pipeline", () => {
   test("reapplies the current HUD when the overlay setting flips", () => {
     const testHarness = captureHarness();
     testHarness.service.start();
-    testHarness.service.recordingStarted();
+    testHarness.service.recordingStarted(testHarness.sessionId());
     expect(testHarness.hud.at(-1)).toEqual({
       state: "listening",
       detail: "Release to send",
@@ -403,6 +473,7 @@ test("failed inference can retry from memory while temporary audio is deleted", 
   try {
     h.failNext();
     await h.service.submitRecording({
+      sessionId: h.prepareCapture(),
       wav: new Uint8Array(100),
       durationMs: 1000,
     });
@@ -442,6 +513,7 @@ test("personalization changes delivery without corrupting source speech or timin
   );
   try {
     await h.service.submitRecording({
+      sessionId: h.prepareCapture(),
       wav: new Uint8Array(128),
       durationMs: 1000,
     });
@@ -473,6 +545,7 @@ test("failed automatic writing delivers the personalized transcript once", async
   h.failRewrite();
   try {
     await h.service.submitRecording({
+      sessionId: h.prepareCapture(),
       wav: new Uint8Array(128),
       durationMs: 1000,
     });
@@ -482,4 +555,234 @@ test("failed automatic writing delivers the personalized transcript once", async
   } finally {
     h.cleanup();
   }
+});
+
+describe("capture session ownership", () => {
+  for (const newerCapture of [false, true]) {
+    test(`cancelled audio is inert ${newerCapture ? "while a new microphone is opening" : "while idle"}`, async () => {
+      const h = harness({ ...DEFAULT_SETTINGS, magicEnabled: true });
+      try {
+        const abandoned = h.prepareCapture();
+        h.service.cancel();
+        if (newerCapture) h.service.start();
+        const current = h.commands.at(-1)?.sessionId;
+        const commands = h.commands.length;
+        const activities = h.activities.length;
+        const hud = h.hud.length;
+        await h.service.submitRecording({
+          sessionId: abandoned,
+          wav: new Uint8Array(128),
+          durationMs: 1000,
+        });
+        expect(h.transcriptionCalls()).toBe(0);
+        expect(h.magicCalls()).toBe(0);
+        expect(h.records).toEqual([]);
+        expect(h.broadcasts).toEqual([]);
+        expect(h.copied).toEqual([]);
+        expect(h.pasted).toEqual([]);
+        expect(readdirSync(h.cacheDirectory)).toEqual([]);
+        expect(h.commands).toHaveLength(commands);
+        expect(h.activities).toHaveLength(activities);
+        expect(h.hud).toHaveLength(hud);
+        expect(h.service.isActive).toBe(newerCapture);
+        expect(h.service.canStopRecording).toBe(newerCapture);
+        if (newerCapture) {
+          expect(current).not.toBe(abandoned);
+          h.service.recordingStarted(current!);
+          h.service.stop();
+          await h.service.submitRecording({
+            sessionId: current!,
+            wav: new Uint8Array(128),
+            durationMs: 1000,
+          });
+          expect(h.transcriptionCalls()).toBe(1);
+          expect(h.records).toHaveLength(1);
+          expect(h.broadcasts).toHaveLength(1);
+          expect(h.pasted).toHaveLength(1);
+        }
+      } finally {
+        h.cleanup();
+      }
+    });
+  }
+
+  test("old Started and Failed callbacks do not change a newer opening session", () => {
+    const h = harness({ ...DEFAULT_SETTINGS });
+    try {
+      const abandoned = h.prepareCapture();
+      h.service.cancel();
+      h.service.start();
+      const current = h.commands.at(-1)!.sessionId!;
+      expect(current).not.toBe(abandoned);
+      const before = h.status();
+      const commands = h.commands.length;
+      const activities = h.activities.length;
+      const hud = h.hud.length;
+      h.service.recordingStarted(abandoned);
+      h.service.recordingFailed("A previous microphone failed", abandoned);
+      expect(h.status()).toEqual(before);
+      expect(h.commands).toHaveLength(commands);
+      expect(h.activities).toHaveLength(activities);
+      expect(h.hud).toHaveLength(hud);
+      expect(h.service.canStopRecording).toBe(true);
+      h.service.recordingStarted(current);
+      expect(h.status().phase).toBe("listening");
+      h.service.recordingFailed("Current microphone failed", current);
+      expect(h.status().message).toBe("Current microphone failed");
+      expect(h.service.isActive).toBe(false);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  test("duplicate audio and late callbacks cannot clobber processing or duplicate delivery", async () => {
+    const h = harness({ ...DEFAULT_SETTINGS, magicEnabled: true });
+    let finish!: (result: Record<string, unknown>) => void;
+    let inferenceCalls = 0;
+    h.asr.transcribe = () => {
+      inferenceCalls += 1;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    };
+    try {
+      const sessionId = h.prepareCapture();
+      const audio = { sessionId, wav: new Uint8Array(128), durationMs: 1000 };
+      const pending = h.service.submitRecording(audio);
+      expect(inferenceCalls).toBe(1);
+      expect(h.service.isActive).toBe(true);
+      expect(h.service.canStopRecording).toBe(false);
+      const before = h.status();
+      const activities = h.activities.length;
+      const hud = h.hud.length;
+      const commands = h.commands.length;
+      const files = readdirSync(h.cacheDirectory);
+      expect(files).toHaveLength(1);
+      expect(files[0]).toMatch(/^dictation-.*\.wav$/);
+      await h.service.submitRecording(audio);
+      h.service.recordingStarted(sessionId);
+      h.service.recordingFailed(
+        "Late failure after audio was submitted",
+        sessionId,
+      );
+      h.service.cancel();
+      h.service.stop();
+      h.service.start();
+      expect(inferenceCalls).toBe(1);
+      expect(h.status()).toEqual(before);
+      expect(h.activities).toHaveLength(activities);
+      expect(h.hud).toHaveLength(hud);
+      expect(h.commands).toHaveLength(commands);
+      expect(readdirSync(h.cacheDirectory)).toEqual(files);
+      expect(h.records).toEqual([]);
+      expect(h.broadcasts).toEqual([]);
+      expect(h.pasted).toEqual([]);
+      finish({ text: "Ship the release.", language: "en" });
+      await pending;
+      expect(h.magicCalls()).toBe(1);
+      expect(h.records).toHaveLength(1);
+      expect(h.broadcasts).toHaveLength(1);
+      expect(h.pasted).toEqual(["Ship the release today."]);
+      expect(readdirSync(h.cacheDirectory)).toEqual([]);
+      expect(h.service.isActive).toBe(false);
+      const complete = h.status();
+      await h.service.submitRecording(audio);
+      h.service.recordingStarted(sessionId);
+      h.service.recordingFailed("Late failure after delivery", sessionId);
+      expect(h.status()).toEqual(complete);
+      expect(inferenceCalls).toBe(1);
+      expect(h.records).toHaveLength(1);
+      expect(h.broadcasts).toHaveLength(1);
+      expect(h.pasted).toHaveLength(1);
+      expect(readdirSync(h.cacheDirectory)).toEqual([]);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  test("mismatched audio cannot consume the stopping session's valid submission", async () => {
+    const h = harness({ ...DEFAULT_SETTINGS, magicEnabled: false });
+    try {
+      const sessionId = h.prepareCapture();
+      await h.service.submitRecording({
+        sessionId: "unrelated-session",
+        wav: new Uint8Array(128),
+        durationMs: 1000,
+      });
+      expect(h.transcriptionCalls()).toBe(0);
+      expect(h.service.isActive).toBe(true);
+      expect(h.service.canStopRecording).toBe(false);
+      expect(readdirSync(h.cacheDirectory)).toEqual([]);
+      await h.service.submitRecording({
+        sessionId,
+        wav: new Uint8Array(128),
+        durationMs: 1000,
+      });
+      expect(h.transcriptionCalls()).toBe(1);
+      expect(h.records).toHaveLength(1);
+      expect(h.broadcasts).toHaveLength(1);
+      expect(h.pasted).toHaveLength(1);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  test("interleaved shared UI, tray and shortcut actions preserve one hold-release session", async () => {
+    const h = harness({
+      ...DEFAULT_SETTINGS,
+      shortcutMode: "hold",
+      magicEnabled: false,
+    });
+    try {
+      h.service.start(); // UI Record.
+      h.service.start(); // Tray Record while microphone permission is pending.
+      const sessionId = h.commands[0].sessionId!;
+      expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
+      h.service.stop(); // Held shortcut release while opening.
+      h.service.toggle(); // UI toggle while closing.
+      h.service.stop(); // Tray Stop while closing.
+      expect(h.commands).toEqual([
+        { action: "start", inputDeviceId: "default", sessionId },
+      ]);
+      h.service.recordingStarted(sessionId);
+      h.service.stop(); // Repeated shortcut release.
+      h.service.toggle(); // Repeated toggle cannot restart stopping capture.
+      expect(h.commands).toEqual([
+        { action: "start", inputDeviceId: "default", sessionId },
+        { action: "stop", inputDeviceId: "default", sessionId },
+      ]);
+      await h.service.submitRecording({
+        sessionId,
+        wav: new Uint8Array(128),
+        durationMs: 1000,
+      });
+      expect(h.transcriptionCalls()).toBe(1);
+      expect(h.records).toHaveLength(1);
+      expect(h.broadcasts).toHaveLength(1);
+      expect(h.pasted).toHaveLength(1);
+      h.service.toggle(); // Tray toggle opens another capture.
+      const nextId = h.commands.at(-1)!.sessionId!;
+      expect(nextId).not.toBe(sessionId);
+      h.service.cancel(); // UI Cancel before input opens.
+      h.service.stop(); // Shortcut release after cancellation.
+      h.service.recordingStarted(nextId);
+      await h.service.submitRecording({
+        sessionId: nextId,
+        wav: new Uint8Array(128),
+        durationMs: 1000,
+      });
+      expect(h.commands.slice(-2)).toEqual([
+        { action: "start", inputDeviceId: "default", sessionId: nextId },
+        { action: "cancel", inputDeviceId: "default", sessionId: nextId },
+      ]);
+      expect(h.transcriptionCalls()).toBe(1);
+      expect(h.records).toHaveLength(1);
+      expect(h.broadcasts).toHaveLength(1);
+      expect(h.pasted).toHaveLength(1);
+      expect(h.service.isActive).toBe(false);
+      expect(readdirSync(h.cacheDirectory)).toEqual([]);
+    } finally {
+      h.cleanup();
+    }
+  });
 });
