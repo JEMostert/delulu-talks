@@ -12,6 +12,7 @@ for (const scenario of [
   "restore",
   "restore-throw",
   "portal",
+  "late-busy",
 ]) {
   test(`settings coordination preserves effective state on ${scenario} rejection`, async () => {
     const child = Bun.spawn(
@@ -27,7 +28,8 @@ for (const scenario of [
         import { join } from "node:path";
         const root = mkdtempSync(join(tmpdir(), "delulu-settings-transaction-"));
         const bindings = new Set();
-        let rejectNew = false, rejectOld = false, throwOld = false;
+        let rejectNew = false, rejectOld = false, throwOld = false, becomeBusy = false;
+        let markBusy = () => {};
         let registrations = 0;
         const old = "Control+Alt+F7", next = "Control+Alt+F8";
         mock.module("electron", () => ({
@@ -38,7 +40,7 @@ for (const scenario of [
               registrations++;
               if (key === old && throwOld) throw new Error("Native restore threw");
               if ((key === next && rejectNew) || (key === old && rejectOld)) return false;
-              bindings.add(key); return true;
+              bindings.add(key); if (key === next && becomeBusy) markBusy(); return true;
             },
           },
         }));
@@ -91,6 +93,7 @@ for (const scenario of [
           shortcut.onStatus(status => statuses.push(status));
           const asr = { isBusy: false, unload: async () => {}, unloadMagic: async () => {}, configureResidency() {} };
           const dictation = { isActive: false, syncOverlay() {} };
+          markBusy = () => { asr.isBusy = true; };
           // Execute the actual production coordinator without booting main/app.
           // Service/file writes are real; native shortcut and runtime ports are fixtures.
           const source = readFileSync(fileURLToPath(${JSON.stringify(mainUrl)}), "utf8");
@@ -106,11 +109,12 @@ for (const scenario of [
           const bytes = readFileSync(path, "utf8"), before = storage.getSettings();
           if (["write", "restore", "restore-throw", "portal"].includes(scenario)) mkdirSync(path + ".tmp");
           if (scenario === "busy") asr.isBusy = true;
+          if (scenario === "late-busy") becomeBusy = true;
           if (scenario === "registration") rejectNew = true;
           if (scenario === "restore") rejectOld = true;
           if (scenario === "restore-throw") throwOld = true;
-          await assert.rejects(apply({ shortcut: next, ...(scenario === "busy" ? { magicEnabled: true } : {}) }),
-            scenario === "busy" ? /Finish the current/ : scenario.startsWith("restore") ? /could not be restored/ : undefined);
+          await assert.rejects(apply({ shortcut: next, ...(["busy", "late-busy"].includes(scenario) ? { magicEnabled: true } : {}) }),
+            ["busy", "late-busy"].includes(scenario) ? /Finish the current/ : scenario.startsWith("restore") ? /could not be restored/ : undefined);
           assert.equal(readFileSync(path, "utf8"), bytes);
           assert.deepEqual(storage.getSettings(), before);
           assert.equal(settingsEvents.length, 0);
@@ -128,7 +132,7 @@ for (const scenario of [
           }
           // An intentional retry commits disk, memory, binding and final events.
           rmSync(path + ".tmp", { recursive: true, force: true });
-          rejectNew = rejectOld = throwOld = false; asr.isBusy = false;
+          rejectNew = rejectOld = throwOld = becomeBusy = false; asr.isBusy = false;
           statuses.length = 0;
           const saved = await apply({ shortcut: next });
           assert.equal(saved.shortcut, next);

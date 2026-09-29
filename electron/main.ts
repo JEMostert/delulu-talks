@@ -542,21 +542,28 @@ async function applySettings(value: unknown): Promise<AppSettings> {
   const next = normalizeSettings({ ...previous, ...value });
   const runtimeChanged = next.model !== previous.model;
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
-  if (
-    (runtimeChanged ||
-      magicRuntimeChanged ||
-      next.magicEnabled !== previous.magicEnabled) &&
-    (dictation.isActive || asr.isBusy)
-  )
-    throw new Error(
-      "Finish the current recording or model operation before changing engines",
-    );
+  const assertEngineChangeIdle = () => {
+    if (
+      (runtimeChanged ||
+        magicRuntimeChanged ||
+        next.magicEnabled !== previous.magicEnabled) &&
+      (dictation.isActive || asr.isBusy)
+    )
+      throw new Error(
+        "Finish the current recording or model operation before changing engines",
+      );
+  };
+  assertEngineChangeIdle();
+  const persist = () => {
+    // Portal registration can await permission while capture/inference starts.
+    // Revalidate before the write, so the transaction restores the old shortcut.
+    assertEngineChangeIdle();
+    return storage.updateSettings(next);
+  };
   const saved =
     next.shortcut !== previous.shortcut
-      ? await shortcut.change(next.shortcut, previous.shortcut, () =>
-          storage.updateSettings(next),
-        )
-      : storage.updateSettings(next);
+      ? await shortcut.change(next.shortcut, previous.shortcut, persist)
+      : persist();
   if (
     !smokeTest &&
     app.isPackaged &&
