@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { homedir, release } from "node:os";
 import { usesMetal } from "./platform";
-import { activateRuntime, runtimePython, rollbackRuntime } from "./location";
+import { activateRuntime, runtimePython } from "./location";
 import type { AppSettings } from "../../src/types";
 import {
   createRuntimeInventory,
@@ -84,6 +84,7 @@ export class RuntimeInstaller {
   private processes = new Set<ReturnType<typeof spawn>>();
   private cancelled = false;
   private validatedPython: string | null = null;
+  private candidate: { generation: string; python: string } | null = null;
   constructor(
     private readonly paths: Paths,
     private readonly constraintsPath: string | null,
@@ -105,13 +106,24 @@ export class RuntimeInstaller {
       : READINESS.magic;
   }
   get python(): string {
-    return runtimePython(this.paths.venvDirectory);
+    return this.candidate?.python ?? runtimePython(this.paths.venvDirectory);
   }
+  /** Call only after the candidate worker has completed real model warmup. */
+  commit(): void {
+    if (!this.candidate) throw new Error("No prepared runtime is available to activate");
+    if (this.cancelled) throw new Error("Runtime setup cancelled before activation. Previous runtime remains selected.");
+    this.recordSetupStage("Activating runtime after model load and warmup");
+    activateRuntime(this.paths.venvDirectory, this.candidate.generation);
+    this.candidate = null;
+    this.recordSetupStage("Validated runtime activation committed");
+  }
+
   rollback(): void {
-    this.recordSetupStage("Restoring the previous active runtime");
+    // Setup has not changed the durable pointer. Discard only this candidate;
+    // do not roll back an unrelated already-active generation after a failure.
+    this.recordSetupStage("Discarding candidate; previous runtime remains selected");
+    this.candidate = null;
     this.validatedPython = null;
-    rollbackRuntime(this.paths.venvDirectory);
-    this.recordSetupStage("Previous runtime activation restored");
   }
 
   private run(
@@ -281,6 +293,8 @@ export class RuntimeInstaller {
     publish: (progress: InstallProgress) => void,
   ): Promise<void> {
     this.cancelled = false;
+    this.candidate = null;
+    this.validatedPython = null;
     this.validatedPython = null;
     const metal = kind === "speech" && this.metal;
     if (
@@ -455,10 +469,10 @@ export class RuntimeInstaller {
       throw new Error(
         "Runtime setup cancelled. The previous environment is unchanged.",
       );
-    this.recordSetupStage("Activating the validated runtime generation");
-    activateRuntime(this.paths.venvDirectory, generation);
+    this.recordSetupStage("Candidate imports validated; awaiting model load and warmup");
+    this.candidate = { generation, python: candidatePython };
     publish({
-      message: "Runtime installed. Preparing your model…",
+      message: "Runtime candidate prepared. Previous runtime stays selected until model warmup succeeds…",
       progress: 0.8,
     });
   }

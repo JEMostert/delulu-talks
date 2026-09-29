@@ -347,6 +347,7 @@ export class AsrService {
     const reloadMagic =
       settings.preloadMagicModel && (await this.isMagicEnvironmentReady());
     await this.speechWorker.stopAndWait();
+    try {
     await this.speechInstaller.install("speech", settings, (progress) =>
       this.updateStatus({
         phase: "preparing",
@@ -361,12 +362,12 @@ export class AsrService {
       progress: 0.82,
     });
     this.speechInstaller.recordSetupStage("Downloading, loading and warming up the speech model");
-    try {
       await this.loadModel(settings, true);
       if (reloadMagic && this.magicStatus.engine !== "ready") {
         this.speechInstaller.recordSetupStage("Restoring preloaded rewrite model");
         await this.loadMagic(settings, true);
       }
+      this.speechInstaller.commit();
     } catch (error) {
       await this.speechWorker.stopAndWait();
       try {
@@ -424,6 +425,7 @@ export class AsrService {
     const reloadSpeech =
       settings.preloadModel && (await this.isEnvironmentReady());
     await this.magicWorker.stopAndWait();
+    try {
     await this.magicInstaller.install("magic", settings, (progress) =>
       this.updateMagicStatus({
         phase: "preparing",
@@ -439,12 +441,12 @@ export class AsrService {
       progress: 0.82,
     });
     this.magicInstaller.recordSetupStage("Downloading, loading and warming up the rewrite model");
-    try {
       await this.loadMagic(settings, true);
       if (reloadSpeech && this.status.engine !== "ready") {
         this.magicInstaller.recordSetupStage("Restoring preloaded speech model");
         await this.loadModel(settings, true);
       }
+      this.magicInstaller.commit();
     } catch (error) {
       await this.magicWorker.stopAndWait();
       try {
