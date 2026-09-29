@@ -1,4 +1,5 @@
 import { app } from "electron";
+import { backupProfileMigration } from "./migrationBackups";
 import { speechModelForPlatform } from "../runtime/platform";
 import {
   existsSync,
@@ -352,6 +353,16 @@ export class StorageService {
           .flatMap((item) => migrateRecord(item) ?? [])
           .slice(0, MAX_HISTORY)
       : [];
+    const settingsChanged = rawSettings !== undefined &&
+      JSON.stringify(rawSettings) !== JSON.stringify(this.settings);
+    const historyChanged = rawHistory !== undefined &&
+      (JSON.stringify(rawHistory) !== JSON.stringify(this.history) || !existsSync(historyPath));
+    if (settingsChanged || historyChanged || (rawSettings !== undefined && !existsSync(settingsPath))) {
+      backupProfileMigration(this.dataDirectory, {
+        "settings.json": existsSync(settingsPath) ? settingsPath : legacy ? join(legacy, SETTINGS_FILE) : undefined,
+        "history.json": existsSync(historyPath) ? historyPath : legacy ? join(legacy, HISTORY_FILE) : undefined,
+      });
+    }
     if (!existsSync(historyPath) && this.history.length) {
       // Stage both migration outputs before replacing either destination.
       // Publish the previously absent history first: if the settings rename
