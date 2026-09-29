@@ -33,22 +33,22 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export const MODELS: ModelInfo[] = [
   {
     id: "r2t2",
-    runtime: "Streaming ASR · vLLM · CUDA",
+    runtime: "CUDA · vLLM / PyTorch",
     downloadSize: "~4 GB",
     hfId: "netease-youdao/Confucius4-R2T2",
     name: "R2T2",
     description:
-      "Low-latency streaming ASR built on Qwen3-ASR, running through vLLM on your CUDA GPU.",
+      "R2T2 speech recognition on NVIDIA GPUs. Linux uses vLLM; Windows uses native PyTorch with CUDA. Speech is currently processed after recording stops. Windows hardware validation is pending.",
     recommended: true,
   },
   {
-    id: "qwen3Asr",
-    hfId: "Qwen/Qwen3-ASR-0.6B",
-    name: "Qwen3-ASR",
-    runtime: "vLLM Metal · MLX · Apple Silicon",
-    downloadSize: "~1.9 GB",
+    id: "r2t2Mlx",
+    hfId: "mlx-community/Confucius4-R2T2-bf16",
+    name: "R2T2",
+    runtime: "MLX Audio · BF16 · Apple Silicon",
+    downloadSize: "~4.1 GB",
     description:
-      "Local speech recognition on Apple Silicon. Automatically detects Dutch, English, and other supported languages. Requires macOS 15+ and native Python 3.12. Runtime packages require additional disk space.",
+      "The Confucius4-R2T2 fine-tune runs directly through MLX on Apple Silicon. Uses an unquantized BF16 conversion, with selectable language. Requires macOS 15+ and native Python 3.12. Mac hardware validation is pending.",
     recommended: true,
   },
 ];

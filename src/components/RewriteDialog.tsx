@@ -88,7 +88,7 @@ export function RewriteDialog({
               onSetup();
             }}
           >
-            Writing model setup
+            Set up rewriting in Models
           </button>
         </div>
       ) : null}
@@ -193,8 +193,8 @@ export function RewriteDialog({
       </button>
       {source.length > 50_000 && (
         <p className="field-error">
-          This transcript exceeds the 50,000-character rewrite limit. Use a
-          shorter excerpt in Writing.
+          This transcript exceeds the 50,000-character rewrite limit. Shorten
+          the transcript before rewriting it.
         </p>
       )}
     </Modal>
