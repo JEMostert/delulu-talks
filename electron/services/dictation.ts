@@ -342,16 +342,7 @@ export class DictationService {
       );
       let output = this.outputText(record, settings);
       if (!output.trim()) {
-        this.setHud({
-          state: "error",
-          title: "Nothing heard",
-          detail: "Try closer to the mic",
-        });
-        this.asr.setActivity(
-          "idle",
-          "No speech detected — nothing was copied or pasted",
-        );
-        return;
+        throw new Error("Personalization returned no text. Review your saved rules and retry.");
       }
       let magicFailure: string | null = null;
       if (settings.magicEnabled) {
@@ -537,7 +528,11 @@ export class DictationService {
     sourceName: string | null,
     settings: AppSettings,
   ): TranscriptRecord {
-    const text = String(result.text ?? "").trim();
+    if (typeof result.text !== "string")
+      throw new Error("The speech worker returned an invalid text result.");
+    const text = result.text.trim();
+    if (!text)
+      throw new Error("The speech model returned no text. Check the recording and retry.");
     const durationMs =
       durationOverride ?? Math.round(numeric(result.duration) * 1000);
     return {
