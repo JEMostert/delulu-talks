@@ -295,13 +295,13 @@ export class AsrService {
     });
     try {
       await this.loadModel(settings, true);
+      if (reloadMagic && this.magicStatus.engine !== "ready") {
+        await this.loadMagic(settings, true);
+      }
     } catch (error) {
       await this.speechWorker.stopAndWait();
       this.speechInstaller.rollback();
       throw error;
-    }
-    if (reloadMagic && this.magicStatus.engine !== "ready") {
-      await this.loadMagic(settings, true);
     }
   }
 
@@ -349,13 +349,13 @@ export class AsrService {
     });
     try {
       await this.loadMagic(settings, true);
+      if (reloadSpeech && this.status.engine !== "ready")
+        await this.loadModel(settings, true);
     } catch (error) {
       await this.magicWorker.stopAndWait();
       this.magicInstaller.rollback();
       throw error;
     }
-    if (reloadSpeech && this.status.engine !== "ready")
-      await this.loadModel(settings, true);
   }
 
   private workerEnvironment(kind: "speech" | "magic"): NodeJS.ProcessEnv {
