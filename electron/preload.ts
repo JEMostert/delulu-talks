@@ -69,6 +69,7 @@ const api: DeluluApi = {
     ipcRenderer.invoke("history:setRewrite", id, result, sourceText),
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),
   clearHistory: () => ipcRenderer.invoke("history:clear"),
+  chooseProjectIdentifier: (input) => ipcRenderer.invoke("projectVocabulary:choose", input),
   getProjectVocabulary: () => ipcRenderer.invoke("projectVocabulary:get"),
   selectProjectVocabulary: () => ipcRenderer.invoke("projectVocabulary:select"),
   refreshProjectVocabulary: () => ipcRenderer.invoke("projectVocabulary:refresh"),

@@ -229,6 +229,7 @@ export const previewApi: DeluluApi = {
   async clearHistory() {
     demoHistory = [];
   },
+  async chooseProjectIdentifier() { return desktopOnly(); },
   async getProjectVocabulary() { return emptyProjectVocabulary(); },
   async selectProjectVocabulary() { return desktopOnly(); },
   async refreshProjectVocabulary() { return desktopOnly(); },

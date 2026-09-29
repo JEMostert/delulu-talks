@@ -826,6 +826,7 @@ function registerIpc(): void {
     lastTranscript = null;
     rebuildTrayMenu();
   });
+  handle("projectVocabulary:choose", (_event, input: unknown) => projectVocabulary.choose(input));
   handle("projectVocabulary:get", () => projectVocabulary.get());
   handle("projectVocabulary:refresh", () => projectVocabulary.refresh());
   handle("projectVocabulary:clear", () => projectVocabulary.clear());

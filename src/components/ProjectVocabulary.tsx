@@ -1,3 +1,4 @@
+import { IdentifierCorrection } from "./IdentifierCorrection";
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
 import { emptyProjectVocabulary, type ProjectVocabularySnapshot } from "../projectVocabulary";
@@ -65,6 +66,13 @@ export function ProjectVocabulary() {
               }}>{symbol}</button>
             ))}
           </div>
+          <IdentifierCorrection
+            key={scope.repository}
+            scope={scope}
+            disabled={busy}
+            onChoose={(rawSpeech, symbol) => void run(() => bridge.chooseProjectIdentifier({ repository: scope.repository!, rawSpeech, symbol }))}
+            onCopy={(symbol) => { void bridge.copyText(symbol).then(() => setMessage(`Copied ${symbol}`)).catch(() => setMessage("Could not copy the identifier.")); }}
+          />
           <p className="mt-2 text-[11px] text-muted">Showing {Math.min(matches.length, 100)} of {matches.length} matching names. Choose a name to copy it; dictation is unchanged.</p>
         </>
       )}

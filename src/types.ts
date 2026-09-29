@@ -250,6 +250,7 @@ export type DeluluApi = {
   ): Promise<TranscriptRecord>;
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
+  chooseProjectIdentifier(input: {repository: string; rawSpeech: string; symbol: string}): Promise<ProjectVocabularySnapshot>;
   getProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
   selectProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
   refreshProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
