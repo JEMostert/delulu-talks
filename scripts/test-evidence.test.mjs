@@ -125,6 +125,20 @@ describe("evidence boundaries", () => {
     }
   });
 
+  test("data deletion fixtures cannot claim inference or manual delivery", () => {
+    const plan = planSuite("data-deletion");
+    expect(plan.command).toEqual(["node", "scripts/data-deletion-smoke.mjs"]);
+    expect(makeReport("data-deletion", plan, "passed", {}).evidence).toEqual({
+      "fixture-only": "passed",
+      mocked: "not-run",
+      "native-inference": "not-run",
+      "manual-desktop": "not-run",
+    });
+    expect(() => planSuite("data-deletion", ["--help"])).toThrow(
+      "complete fixture suite",
+    );
+  });
+
   test("native runs require provenance and an explicit existing-runtime interpreter/cache", () => {
     expect(() => planSuite("native")).toThrow("--python");
     expect(() => planSuite("native", ["--python", "runtime-python"])).toThrow(

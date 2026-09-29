@@ -634,7 +634,11 @@ function registerIpc(): void {
     await new Promise((resolve) => setTimeout(resolve, 3_000));
     if (dictation.isActive)
       throw new Error("Paste cancelled because a recording started");
-    await paste.paste(deliveredText(record));
+    const current =
+      storage.findHistory(record.id) ?? sessionTranscripts.get(record.id);
+    if (!current)
+      throw new Error("Paste cancelled because the transcript was removed");
+    await paste.paste(deliveredText(current));
   });
   handle("dictation:discardFailed", () => dictation.discardFailure());
   handle("dictation:retry", () => dictation.retry());

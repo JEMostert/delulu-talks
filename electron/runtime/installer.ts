@@ -1,11 +1,19 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { homedir, release } from "node:os";
 import { usesMetal } from "./platform";
 import { activateRuntime, runtimePython, rollbackRuntime } from "./location";
 import type { AppSettings } from "../../src/types";
+import {
+  createRuntimeInventory,
+  inventoryBackend,
+  PYTHON_INVENTORY_PROBE,
+  writeRuntimeInventory,
+  type RequestedInstallStage,
+  type TargetPlatform,
+} from "./inventory";
 import {
   INSTALLER_PACKAGES,
   MAGIC_PACKAGES,
@@ -43,6 +51,10 @@ export class RuntimeInstaller {
     private readonly environment: () => NodeJS.ProcessEnv,
     private readonly metal = usesMetal(),
     private readonly windows = process.platform === "win32",
+    private readonly target: TargetPlatform = {
+      platform: process.platform,
+      arch: process.arch,
+    },
   ) {}
   private readiness(kind: "speech" | "magic"): string {
     return kind === "speech"
@@ -234,61 +246,77 @@ export class RuntimeInstaller {
         0.12,
       );
     }
-    await stage(
-      candidatePython,
-      [
-        "-m",
-        "pip",
+    const requested: RequestedInstallStage[] = [];
+    const installPackages = async (
+      name: RequestedInstallStage["name"],
+      requirements: string[],
+      options: string[],
+      message: string,
+      progress: number,
+      constraint: RequestedInstallStage["constraint"] = null,
+    ) => {
+      const pipArguments = [
         "install",
         "--disable-pip-version-check",
-        ...INSTALLER_PACKAGES,
-      ],
+        ...options,
+        ...requirements,
+      ];
+      requested.push({
+        name,
+        requirements: [...requirements],
+        pipArguments,
+        constraint,
+      });
+      return stage(
+        candidatePython,
+        ["-m", "pip", ...pipArguments],
+        message,
+        progress,
+      );
+    };
+    await installPackages(
+      "installer",
+      INSTALLER_PACKAGES,
+      [],
       "Preparing the package installer",
       0.22,
     );
     const constraints =
       this.constraintsPath &&
       !this.windows &&
-      process.platform === "linux" &&
-      process.arch === "x64"
+      this.target.platform === "linux" &&
+      this.target.arch === "x64"
         ? ["--constraint", this.constraintsPath]
         : [];
     if (this.windows) {
-      await stage(
-        candidatePython,
-        [
-          "-m",
-          "pip",
-          "install",
-          "--disable-pip-version-check",
-          "--index-url",
-          "https://download.pytorch.org/whl/cu130",
-          ...WINDOWS_CUDA_PACKAGES,
-        ],
+      await installPackages(
+        "windows-cuda",
+        WINDOWS_CUDA_PACKAGES,
+        ["--index-url", "https://download.pytorch.org/whl/cu130"],
         "Installing the native Windows CUDA runtime",
         0.32,
       );
     }
-    await stage(
-      candidatePython,
-      [
-        "-m",
-        "pip",
-        "install",
-        "--disable-pip-version-check",
-        ...constraints,
-        ...(kind === "speech"
-          ? metal
-            ? METAL_PACKAGES
-            : this.windows
-              ? WINDOWS_SPEECH_PACKAGES
-              : SPEECH_PACKAGES
-          : MAGIC_PACKAGES),
-      ],
+    await installPackages(
+      "runtime",
+      kind === "speech"
+        ? metal
+          ? METAL_PACKAGES
+          : this.windows
+            ? WINDOWS_SPEECH_PACKAGES
+            : SPEECH_PACKAGES
+        : MAGIC_PACKAGES,
+      constraints,
       kind === "speech"
         ? "Installing the speech runtime"
         : "Installing the Magic runtime",
       0.45,
+      constraints.length
+        ? {
+            path: this.constraintsPath!,
+            contents: readFileSync(this.constraintsPath!, "utf8"),
+          }
+        : null,
     );
     await stage(
       candidatePython,
@@ -313,6 +341,37 @@ export class RuntimeInstaller {
       `# Delulu runtime ${RUNTIME_REVISION}\n${versions}\n`,
       { mode: 0o600 },
     );
+    publish({
+      message: "Recording the runtime dependency inventory",
+      progress: 0.78,
+    });
+    let observation: string;
+    try {
+      observation = await this.run(
+        candidatePython,
+        ["-B", "-c", PYTHON_INVENTORY_PROBE],
+        undefined,
+        15_000,
+      );
+    } catch (error) {
+      throw new Error(
+        `Could not inspect runtime dependencies: ${error instanceof Error ? error.message : String(error)}. The previous environment is unchanged.`,
+      );
+    }
+    const inventory = createRuntimeInventory(
+      {
+        revision: RUNTIME_REVISION,
+        kind,
+        generation,
+        backend: inventoryBackend(kind, metal, this.windows),
+        target: this.target,
+        python: candidatePython,
+        directory: candidate,
+        requested,
+      },
+      observation,
+    );
+    writeRuntimeInventory(candidate, inventory);
     if (this.cancelled)
       throw new Error(
         "Runtime setup cancelled. The previous environment is unchanged.",
