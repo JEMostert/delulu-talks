@@ -56,6 +56,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   modelIdleMinutes: 15,
   launchAtLogin: false,
   customWords: [],
+  personalProfiles: { schemaVersion: 1, profiles: [] },
 };
 
 export const MODELS: ModelInfo[] = [

@@ -1,3 +1,5 @@
+import type { PersonalProfileDocument } from "./personalProfiles";
+
 export type Page =
   "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
 
@@ -51,6 +53,8 @@ export type AppSettings = {
   modelIdleMinutes: number;
   launchAtLogin: boolean;
   customWords: CustomWord[];
+  /** Stored contract only; no active profile or automatic behavior change. */
+  personalProfiles?: PersonalProfileDocument;
 };
 
 export type MagicStatus = {

@@ -1,3 +1,4 @@
+import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { app } from "electron";
 import { speechModelForPlatform } from "../runtime/platform";
 import { normalizeReportedLanguage } from "../../src/transcriptLanguage";
@@ -244,6 +245,7 @@ export function normalizeSettings(value: unknown): AppSettings {
       DEFAULT_SETTINGS.launchAtLogin,
     ),
     customWords: normalizeWords(source.customWords),
+    personalProfiles: readPersonalProfiles(source.personalProfiles).document as AppSettings["personalProfiles"],
   };
 }
 
@@ -439,7 +441,15 @@ export class StorageService {
   }
 
   updateSettings(value: unknown): AppSettings {
-    const next = normalizeSettings(value);
+    const source = value && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
+    // Older settings callers may omit the new field. Preserve existing documents.
+    const document = Object.prototype.hasOwnProperty.call(source, "personalProfiles")
+      ? source.personalProfiles
+      : this.settings.personalProfiles;
+    assertPersonalProfilesUpdate(this.settings.personalProfiles, document);
+    const next = normalizeSettings({ ...source, personalProfiles: document });
     writeJson(join(this.dataDirectory, SETTINGS_FILE), next);
     this.settings = next;
     return this.getSettings();

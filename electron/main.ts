@@ -23,6 +23,7 @@ import type {
   RecordingSubmission,
   TranscriptRecord,
 } from "../src/types";
+import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
 import { modelById } from "../src/data";
 import { deliveredText } from "../src/transcriptText";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
@@ -568,6 +569,12 @@ async function applySettings(value: unknown): Promise<AppSettings> {
   const previous = storage.getSettings();
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Expected a settings object");
+  assertPersonalProfilesUpdate(
+    previous.personalProfiles,
+    Object.prototype.hasOwnProperty.call(value, "personalProfiles")
+      ? (value as Record<string, unknown>).personalProfiles
+      : previous.personalProfiles,
+  );
   const next = normalizeSettings({ ...previous, ...value });
   const runtimeChanged = next.model !== previous.model;
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
