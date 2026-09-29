@@ -1,5 +1,6 @@
 import { personalize } from "../../src/personalization";
 import { deliveredText } from "../../src/transcriptText";
+import { normalizeReportedLanguage } from "../../src/transcriptLanguage";
 import type { BrowserWindow } from "electron";
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -603,7 +604,9 @@ export class DictationService {
       text,
       personalizedText: personalize(text, settings.customWords),
       model: settings.model,
-      language: String(result.language ?? settings.language),
+      language: normalizeReportedLanguage(result.recognizedLanguage) ?? "und",
+      recognizedLanguage: normalizeReportedLanguage(result.recognizedLanguage),
+      requestedLanguage: settings.language,
       source,
       sourceName,
       processingTimeMs: Math.round(numeric(result.processingTime) * 1000),

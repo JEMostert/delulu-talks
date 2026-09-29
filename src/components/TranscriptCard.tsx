@@ -150,6 +150,22 @@ export function TranscriptCard({
               </>
             )}
           </span>
+          <span
+            className="mt-1 block text-[10px] text-muted break-words"
+            aria-label="Transcript language metadata"
+            title="The backend language label may reflect a forced decoder hint; it is not an independent language detection result."
+          >
+            {record.recognizedLanguage !== undefined ||
+            record.requestedLanguage !== undefined ? (
+              <>
+                Backend language: {record.recognizedLanguage || "Unknown"}
+                {" · "}Requested hint:{" "}
+                {record.requestedLanguage || "Not recorded"}
+              </>
+            ) : (
+              <>Legacy language: {record.language || "Unknown"}</>
+            )}
+          </span>
         </div>
         <div className="panel-actions">
           <button

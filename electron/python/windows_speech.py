@@ -142,7 +142,7 @@ class WindowsSpeech:
         audio = Path(request["audioPath"])
         if not audio.is_file():
             raise FileNotFoundError("The selected audio file no longer exists")
-        from transcription_engine import LANGUAGE_NAMES
+        from transcription_engine import LANGUAGE_NAMES, normalize_recognized_language
         import soundfile as sf
         started = time.perf_counter()
         try:
@@ -171,10 +171,13 @@ class WindowsSpeech:
                     torch.cuda.empty_cache()
             raise
         finished = time.perf_counter()
-        languages = {str(result.get("language") or language or "und").lower() for result in results}
-        detected = next(iter(languages)) if len(languages) == 1 else "und"
-        detected = {name.lower(): key for key, name in LANGUAGE_NAMES.items()}.get(detected, "und")
-        return {"text": " ".join(result["transcription"].strip() for result in results).strip(), "language": detected,
+        # These are labels from the parsed model output, not a separate detector;
+        # a forced prompt can influence them. Never substitute the prompt hint.
+        recognized_language = normalize_recognized_language([result.get("language") for result in results])
+        return {"text": " ".join(result["transcription"].strip() for result in results).strip(),
+                "language": recognized_language or "und",
+                "requestedLanguage": code,
+                "recognizedLanguage": recognized_language,
                 "duration": len(samples) / SAMPLE_RATE,
                 "processingTime": finished - started,
                 "inferenceTime": finished - inference_started}

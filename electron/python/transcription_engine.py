@@ -62,6 +62,29 @@ LANGUAGE_NAMES = {
     "ko": "Korean",
     "vi": "Vietnamese",
 }
+
+
+def normalize_recognized_language(value: Any) -> str | None:
+    """Normalize only labels explicitly returned by the speech model.
+
+    A missing/unknown segment or differing segment languages leaves the whole
+    result unknown. Requested prompt hints must never fill a missing label.
+    """
+    if isinstance(value, list):
+        if not value:
+            return None
+        languages = {normalize_recognized_language(item) for item in value}
+        if len(languages) == 1 and None not in languages:
+            return next(iter(languages))
+        return None
+    if not isinstance(value, str):
+        return None
+    label = value.strip().lower()
+    if label in LANGUAGE_NAMES:
+        return label
+    return {name.lower(): code for code, name in LANGUAGE_NAMES.items()}.get(label)
+
+
 MAGIC_MODELS = {
     "qwen35Small": "Qwen/Qwen3.5-0.8B",
     "qwen35Medium": "Qwen/Qwen3.5-2B",
@@ -436,9 +459,14 @@ class Worker:
             return_time_stamps=False,
         )
         finished = time.perf_counter()
+        # A returned label may reflect a forced prompt; it is not an independent
+        # detector. Missing model metadata remains unknown even with a hint.
+        recognized_language = normalize_recognized_language(getattr(results[0], "language", None))
         return {
             "text": str(results[0].text).strip(),
-            "language": language_code,
+            "language": recognized_language or "und",
+            "requestedLanguage": language_code,
+            "recognizedLanguage": recognized_language,
             "duration": len(wav) / 16000.0,
             "processingTime": finished - started,
             "inferenceTime": finished - inference_started,

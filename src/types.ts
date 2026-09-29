@@ -105,6 +105,10 @@ export type TranscriptRecord = {
   magicProcessingTimeMs?: number;
   model: ModelId;
   language: string;
+  /** Decoder hint, not a detected-language claim. Absent on legacy records. */
+  requestedLanguage?: string | null;
+  /** Language reported by the backend; forced prompts may influence it. */
+  recognizedLanguage?: string | null;
   source: TranscriptSource;
   sourceName?: string | null;
   processingTimeMs: number;
