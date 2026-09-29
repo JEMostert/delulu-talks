@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 from datetime import datetime, timezone
 import hashlib
 import importlib.metadata
@@ -38,11 +39,14 @@ def run(args) -> None:
     if args.device == "cuda" and args.precision == "bfloat16" and not torch.cuda.is_bf16_supported():
         raise ValueError("Selected CUDA GPU does not support bfloat16")
     snapshot = snapshot_download(repo_id=MODEL, revision=args.revision, cache_dir=str(args.cache_dir / "hub"), local_files_only=True)
+    card_bytes = (Path(snapshot) / "README.md").read_bytes()
+    if not re.search(r"(?m)^license:\s*cc-by-4\.0\s*$", card_bytes.decode("utf-8")):
+        raise ValueError("Cached revision must include its CC-BY-4.0 model-card declaration")
     args.output_directory.mkdir()
     (args.output_directory / "audio-manifest.json").write_bytes(manifest_bytes)
     metadata = {"schema": "delulu-external-parakeet-run-v1", "created_utc": datetime.now(timezone.utc).isoformat(),
                 "role": "external-benchmark-control", "model_repository": MODEL, "model_revision": args.revision,
-                "license": "CC-BY-4.0", "attribution": "NVIDIA, Parakeet TDT 0.6B v3", "model_card": MODEL_CARD,
+                "model_card_sha256": hashlib.sha256(card_bytes).hexdigest(), "license": "CC-BY-4.0", "attribution": "NVIDIA, Parakeet TDT 0.6B v3", "model_card": MODEL_CARD,
                 "device": args.device, "precision": args.precision, "native_inference_run": False,
                 "repetitions": args.repetitions, "status": "running", "provenance_supplied": provenance,
                 "installed_dependencies": {name: importlib.metadata.version(name) for name in ("torch", "transformers", "numpy", "huggingface-hub")},
@@ -113,7 +117,8 @@ def run(args) -> None:
     finally:
         model = None
         if args.device == "cuda":
-            torch.cuda.empty_cache()
+            with contextlib.suppress(Exception):
+                torch.cuda.empty_cache()
         (args.output_directory / "run.json").write_text(json.dumps(metadata, ensure_ascii=False, allow_nan=False, indent=2) + "\n", encoding="utf-8")
 
 
