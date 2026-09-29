@@ -69,6 +69,8 @@ def transcribe(**kwargs):
     assert kwargs['language']==['English']
     return []
 model.transcribe=transcribe
+# Model warmup fixture deliberately stubs native CUDA preflight.
+sys.modules['cuda_preflight']=types.SimpleNamespace(ensure_cuda_compatible=lambda _: {'probe':'synthetic-no-hardware'})
 sys.modules['torch']=types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda:True,empty_cache=lambda:None))
 sys.modules['numpy']=types.SimpleNamespace(zeros=lambda *a,**k:'synthetic',float32='float32')
 sys.modules['qwen_asr']=types.SimpleNamespace(Qwen3ASRModel=types.SimpleNamespace(LLM=lambda **kw:model))

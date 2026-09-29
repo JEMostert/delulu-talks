@@ -24,6 +24,8 @@ extraResources:
     to: python/windows_speech.py
   - from: electron/python/windows_checkpoint.py
     to: python/windows_checkpoint.py
+  - from: electron/python/cuda_preflight.py
+    to: python/cuda_preflight.py
   - from: docs/THIRD_PARTY_NOTICES.md
     to: python/THIRD_PARTY_NOTICES.md
   - from: docs/licenses/transformers-Apache-2.0.txt

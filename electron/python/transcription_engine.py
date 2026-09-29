@@ -98,6 +98,7 @@ class Worker:
         self.model: Any | None = None
         self.model_name: str | None = None
         self.device: str | None = None
+        self.cuda_preflight: dict[str, Any] | None = None
         self.magic_model: Any | None = None
         self.magic_processor: Any | None = None
         self.magic_model_name: str | None = None
@@ -119,6 +120,7 @@ class Worker:
         self.model = None
         self.model_name = None
         self.device = None
+        self.cuda_preflight = None
         self.clear_allocator(speech=True)
         return {"loaded": False}
 
@@ -176,10 +178,9 @@ class Worker:
         try:
             import torch
 
-            if not torch.cuda.is_available():
-                raise RuntimeError(
-                    "R2T2 needs a CUDA GPU. No usable CUDA device was found."
-                )
+            from cuda_preflight import ensure_cuda_compatible
+            self.cuda_preflight = None
+            self.cuda_preflight = ensure_cuda_compatible(torch)
         except ImportError as exc:
             raise RuntimeError(
                 "The speech runtime is incomplete. Run Repair in Models."
@@ -236,6 +237,8 @@ class Worker:
             "loaded": self.model is not None,
             "model": self.model_name,
             "device": self.device,
+            **({"cudaPreflight": self.cuda_preflight}
+               if getattr(self, "cuda_preflight", None) is not None else {}),
         }
 
     def magic_status(self) -> dict[str, Any]:
