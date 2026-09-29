@@ -3,6 +3,7 @@ import { bridge } from "../bridge";
 import { DEFAULT_SETTINGS } from "../data";
 import { PcmRecorder, listMicrophones } from "../recorder";
 import { readStartupService } from "../startupServices";
+import { useWorkspaceOperations } from "./useWorkspaceOperations";
 import type {
   AppSettings,
   DictationStatus,
@@ -65,6 +66,8 @@ export function useWorkspace() {
     setHistory((items) =>
       [record, ...items.filter((item) => item.id !== record.id)].slice(0, 500),
     );
+
+  const operations = useWorkspaceOperations(receiveTranscript);
 
   useEffect(() => {
     let alive = true;
@@ -267,6 +270,7 @@ export function useWorkspace() {
     void action(() => bridge.pasteLastTranscript(), "Last result pasted");
   };
   return {
+    operations,
     page,
     setPage,
     settings,

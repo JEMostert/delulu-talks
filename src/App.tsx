@@ -16,6 +16,8 @@ import { useTheme } from "./hooks/useTheme";
 import { Sidebar } from "./components/Sidebar";
 import { Onboarding } from "./components/Onboarding";
 import { UpdateNotice } from "./components/UpdateNotice";
+import { OperationResumeNotice } from "./components/OperationResumeNotice";
+import { RewriteDialog } from "./components/RewriteDialog";
 import { Alert } from "./components/ui";
 import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
@@ -53,6 +55,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
     document
       .getElementById("page-content")
       ?.scrollTo({ top: 0, behavior: "instant" });
+    w.operations.hideRewrite();
   }, [w.page]);
   const recording = w.status.phase === "listening";
   const needsSetup =
@@ -68,8 +71,13 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
     void w.action(operation, message);
   };
   const onRecord = run(() => bridge.toggleDictation());
-  const { actions: transcriptActions, onClearHistory } =
+  const { actions: baseTranscriptActions, onClearHistory } =
     createTranscriptCommands(w);
+  const transcriptActions = {
+    ...baseTranscriptActions,
+    onOpenRewrite: (record: Parameters<typeof w.operations.openRewrite>[0]) => w.operations.openRewrite(record, w.page),
+  };
+  const rewrite = w.operations.rewriteOperation;
   const download = run(() => bridge.downloadUpdate());
   const install = run(() => bridge.installUpdate());
   const setup = run(() => bridge.setupModel());
@@ -227,6 +235,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             Runtime to avoid loading it again between recordings.
           </div>
         )}
+        <OperationResumeNotice operations={w.operations} onImport={() => w.setPage("lab")} />
         {w.error && (
           <div className="px-6 pt-3 max-[900px]:px-4">
             <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>
@@ -341,10 +350,11 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   <LabPage
                     {...transcriptActions}
                     history={w.history}
-                    settings={w.settings}
                     busy={busy}
-                    onResult={w.receiveTranscript}
-                    onToast={w.setToast}
+                    operation={w.operations.importOperation}
+                    onChoose={w.operations.chooseImport}
+                    onRun={() => w.operations.runImport(busy)}
+                    onClearError={w.operations.clearImportError}
                   />
                 </div>
               )}
@@ -431,6 +441,23 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           )}
         </div>
       </main>
+      {rewrite && (
+        <RewriteDialog
+          key={rewrite.key}
+          contextLabel={rewrite.label}
+          text={rewrite.source}
+          baseline={rewrite.baseline}
+          status={w.magicStatus}
+          visible={rewrite.visible}
+          onBackground={w.operations.hideRewrite}
+          onOperationState={(phase) => w.operations.rewriteState(rewrite.key, phase)}
+          onClose={() => w.operations.closeRewrite(rewrite.key)}
+          onSetup={() => w.setPage("models")}
+          onRewrite={(request) => w.operations.runRewrite(rewrite.key, request)}
+          onApply={(result, source) => w.operations.applyRewrite(rewrite.key, () =>
+            baseTranscriptActions.onSetRewrite!(rewrite.transcriptId, result, source))}
+        />
+      )}
       {w.toast && (
         <div
           className="toast fixed bottom-[22px] left-[calc(50%+92px)] z-[90] flex max-w-[calc(100vw-40px)] -translate-x-1/2 items-center gap-3 rounded-[14px] border border-line-strong bg-surface px-4 py-3 text-[13px] shadow-pop backdrop-blur-xl max-[900px]:left-[calc(50%+77px)] max-[700px]:left-[calc(50%+32px)] max-[700px]:w-[calc(100vw-90px)]"

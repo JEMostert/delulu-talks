@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
 import type {
@@ -16,10 +16,18 @@ export function RewriteDialog({
   onSetup,
   onRewrite,
   onApply,
+  visible = true,
+  onBackground,
+  onOperationState,
+  contextLabel,
 }: {
   text: string;
   baseline: string;
   status?: MagicStatus;
+  visible?: boolean;
+  contextLabel?: string;
+  onBackground?: () => void;
+  onOperationState?: (phase: "draft" | "working" | "ready" | "error") => void;
   onClose: () => void;
   onSetup: () => void;
   onRewrite: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
@@ -32,14 +40,19 @@ export function RewriteDialog({
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    onOperationState?.(busy ? "working" : error ? "error" : result ? "ready" : "draft");
+  }, [busy, error, result, onOperationState]);
   const missing = status?.engine === "missing" || status?.engine === "error";
   return (
     <Modal
       title="Rewrite transcript"
+      visible={visible}
       busy={busy}
       onClose={onClose}
       footer={
         <>
+          {onBackground && <button className="secondary-button" onClick={onBackground}>Continue in background</button>}
           <button
             className="secondary-button"
             disabled={busy}
@@ -74,6 +87,7 @@ export function RewriteDialog({
         Preview a change before using it. Original speech stays available and
         text shortcuts stay exactly as saved.
       </p>
+      {contextLabel && <p className="caption">Rewriting: {contextLabel}. This session stays attached to this transcript when you navigate or open another card.</p>}
       {missing ? (
         <div className="rewrite-setup my-3 rounded-panel border border-line p-3">
           <p>
@@ -84,7 +98,8 @@ export function RewriteDialog({
           <button
             className="secondary-button"
             onClick={() => {
-              onClose();
+              if (onBackground) onBackground();
+              else onClose();
               onSetup();
             }}
           >
