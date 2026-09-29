@@ -1,20 +1,29 @@
+import { randomUUID } from "node:crypto";
+import { changePersonalProfiles } from "../../src/personalProfileCommands";
+import { randomUUID } from "node:crypto";
+import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
-export function registerSettingsIpc(
-  { handle }: IpcRegistrar,
-  {
-    storage,
-    persistSettings,
-    shortcut,
-  }: Pick<
-    IpcDependencies,
-    | "storage"
-    | "persistSettings"
-    | "shortcut"
-  >,
-): void {
-  handle("settings:get", () => storage.getSettings());
-  handle("settings:update", (_event, value: unknown) => persistSettings(value));
-  handle("shortcut:status", () => shortcut.getStatus());
-  handle("shortcut:configure", () => shortcut.configure());
+export function registerSettingsIpc({ handle }: IpcRegistrar, { storage, shortcut, persistSettings, ruleUsage, applySettings, settingsQueue }: Pick<IpcDependencies, "storage" | "shortcut" | "persistSettings" | "ruleUsage" | "applySettings" | "settingsQueue">): void {
+const ruleIds = () => storage.getSettings().customWords.map((rule) => rule.id);
+handle("settings:get", () => storage.getSettings());
+handle("rules:usage", () => ruleUsage.get(ruleIds()));
+handle("rules:resetUsage", () => {
+    ruleUsage.reset();
+    return ruleUsage.get(ruleIds());
+  });
+handle("settings:update", (_event, value: unknown) => persistSettings(value));
+handle("profiles:manage", (_event, command: unknown) =>
+    settingsQueue.run(() =>
+      applySettings({
+        personalProfiles: changePersonalProfiles(
+          storage.getSettings(),
+          command,
+          randomUUID,
+        ),
+      }),
+    ),
+  );
+handle("shortcut:status", () => shortcut.getStatus());
+handle("shortcut:configure", () => shortcut.configure());
 }

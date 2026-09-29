@@ -8,6 +8,13 @@ from typing import Any, Protocol, TypedDict
 
 
 class Transcription(TypedDict):
+    """Recognition output; timings are not calibrated confidence evidence.
+
+    No supported backend currently supplies a calibrated score or uncertain
+    spans. Keep those absent rather than inventing percentages or deriving
+    certainty from output length, speed, raw token scores, or model identity.
+    """
+
     text: str
     language: str
     duration: float

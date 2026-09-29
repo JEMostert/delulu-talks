@@ -1,33 +1,23 @@
-import { dialog } from "electron";
+import { randomUUID } from "node:crypto";
+import { dialog, session } from "electron";
 import { writeFileSync } from "node:fs";
 import { extname } from "node:path";
-import type { ExportFormat, MagicPreset, TranscriptRecord } from "../../src/types";
-import { deliveredText } from "../../src/transcriptText";
+import { randomUUID } from "node:crypto";
+import type { ExportFormat, HistoryRetentionPreview, MagicPreset, TranscriptRecord } from "../../src/types";
+import { isMagicPreset } from "../../src/rewritePresets";
+import { deliveredText, transcriptSourceRevision } from "../../src/transcriptText";
+import { normalizeTranscriptTitle } from "../../src/transcriptTitle";
 import { applyTranscriptEdit } from "../services/storage";
-import { exportRecord } from "../services/transcripts";
+import { affectedByRetention, historyFingerprint, validateRetentionPolicy } from "../services/historyRetention";
+import { exportRecord, saveTemplateExport } from "../services/transcripts";
+import { renderExportTemplate, validateExportTemplateRequest } from "../../src/exportTemplates";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
-export function registerHistoryIpc(
-  { handle }: IpcRegistrar,
-  {
-    storage,
-    sessionTranscripts,
-    getLastTranscript,
-    setLastTranscript,
-    rebuildTrayMenu,
-    getMainWindow,
-  }: Pick<
-    IpcDependencies,
-    | "storage"
-    | "sessionTranscripts"
-    | "getLastTranscript"
-    | "setLastTranscript"
-    | "rebuildTrayMenu"
-    | "getMainWindow"
-  >,
-): void {
-  handle("history:get", () => {
+export function registerHistoryIpc({ handle }: IpcRegistrar, { getMainWindow, storage, getLastTranscript, setLastTranscript, sessionTranscripts, rebuildTrayMenu, getPasteRecovery, setPasteRecovery, broadcast }: Pick<IpcDependencies, "getMainWindow" | "storage" | "getLastTranscript" | "setLastTranscript" | "sessionTranscripts" | "rebuildTrayMenu" | "getPasteRecovery" | "setPasteRecovery" | "broadcast">): void {
+let retentionPreview: { preview: HistoryRetentionPreview; savedFingerprint: string; fullFingerprint: string } | null = null;
+const retentionHistoryFingerprint = (saved: TranscriptRecord[]) => historyFingerprint({ saved, session: [...sessionTranscripts.values()] });
+handle("history:get", () => {
     const records = new Map(
       storage.getHistory().map((record) => [record.id, record]),
     );
@@ -36,7 +26,49 @@ export function registerHistoryIpc(
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 500);
   });
-  handle("history:updateTranscript", (_event, id: unknown, text: unknown) => {
+handle("history:retentionPreview", (_event, value: unknown) => {
+    const policy = validateRetentionPolicy(value);
+    const saved = storage.getHistory();
+    // Show the same current text as History for saved records also held in this session.
+    const current = saved.map((record) => sessionTranscripts.get(record.id) ?? record);
+    const previewedAt = Date.now();
+    const affected = affectedByRetention(current, policy, previewedAt);
+    const preview: HistoryRetentionPreview = {
+      token: randomUUID(), policy, previewedAt,
+      totalSaved: saved.length,
+      retainedCount: saved.length - affected.length,
+      affected,
+    };
+    retentionPreview = {
+      preview,
+      savedFingerprint: historyFingerprint(saved),
+      fullFingerprint: retentionHistoryFingerprint(saved),
+    };
+    return preview;
+  });
+handle("history:retentionApply", (_event, value: unknown) => {
+    const token = validateText(value, 128);
+    const pending = retentionPreview;
+    if (!pending || pending.preview.token !== token)
+      throw new Error("This retention preview is no longer available. Preview the records again.");
+    const saved = storage.getHistory();
+    if (retentionHistoryFingerprint(saved) !== pending.fullFingerprint) {
+      retentionPreview = null;
+      throw new Error("History changed since the preview. Preview the affected records again; nothing was removed.");
+    }
+    const removedIds = pending.preview.affected.map(({ record }) => record.id);
+    if (removedIds.length) {
+      // No await between snapshot comparison, durable write and session invalidation.
+      storage.applyHistoryRetention(pending.savedFingerprint, removedIds);
+      for (const id of removedIds) sessionTranscripts.delete(id);
+      if (getLastTranscript() && removedIds.includes(getLastTranscript()!.id)) setLastTranscript(null);
+    }
+    retentionPreview = null;
+    broadcast("history:retentionApplied", removedIds);
+    rebuildTrayMenu();
+    return removedIds;
+  });
+handle("history:updateTranscript", (_event, id: unknown, text: unknown) => {
     const key = validateText(id, 128);
     const correction = text === null ? null : validateText(text, 500_000);
     const sessionRecord = sessionTranscripts.get(key);
@@ -51,13 +83,32 @@ export function registerHistoryIpc(
     rebuildTrayMenu();
     return updated;
   });
-  handle(
+handle("history:setTitle", (_event, id: unknown, title: unknown) => {
+    const key = validateText(id, 128);
+    const normalized = normalizeTranscriptTitle(title);
+    const sessionRecord = sessionTranscripts.get(key);
+    const updated = storage.findHistory(key)
+      ? storage.setTranscriptTitle(key, normalized)
+      : sessionRecord
+        ? { ...sessionRecord, title: normalized }
+        : null;
+    if (!updated) throw new Error("Transcript not found");
+    // A rejected saved-history write leaves session and last-record state intact.
+    sessionTranscripts.set(key, updated);
+    if (getLastTranscript()?.id === key) setLastTranscript(updated);
+    rebuildTrayMenu();
+    return updated;
+  });
+handle(
     "history:setRewrite",
-    (_event, id: unknown, value: unknown, expected: unknown) => {
+    (_event, id: unknown, value: unknown, expected: unknown, expectedRevision: unknown = 0) => {
       const key = validateText(id, 128);
       const record = storage.findHistory(key) ?? sessionTranscripts.get(key);
       if (!record) throw new Error("Transcript not found");
-      if (deliveredText(record) !== validateText(expected, 500_000))
+      if (!Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0)
+        throw new Error("Invalid transcript source revision");
+      if (transcriptSourceRevision(record) !== expectedRevision ||
+          deliveredText(record) !== validateText(expected, 500_000))
         throw new Error(
           "This transcript changed while rewriting. Review the current text and try again.",
         );
@@ -66,6 +117,7 @@ export function registerHistoryIpc(
         updated = {
           ...record,
           magicText: null,
+          rewriteSourceRevision: null,
           magicModel: null,
           magicPreset: null,
           magicIncludedInferences: false,
@@ -75,14 +127,13 @@ export function registerHistoryIpc(
         if (!value || typeof value !== "object")
           throw new Error("Invalid rewrite");
         const rewrite = value as Record<string, unknown>;
-        const text = validateText(rewrite.text, 500_000).trim();
-        if (!text) throw new Error("A rewrite cannot be empty");
+        const text = validateText(rewrite.text, 500_000);
+        if (!text.trim()) throw new Error("A rewrite cannot be empty");
         updated = {
           ...record,
           magicText: text,
-          magicPreset: ["polish", "concise", "structured", "prompt"].includes(
-            String(rewrite.preset),
-          )
+          rewriteSourceRevision: transcriptSourceRevision(record),
+          magicPreset: isMagicPreset(rewrite.preset)
             ? (rewrite.preset as MagicPreset)
             : null,
           magicModel: ["qwen35Small", "qwen35Medium", "qwen35Large"].includes(
@@ -103,43 +154,102 @@ export function registerHistoryIpc(
       return updated;
     },
   );
-  handle("history:delete", (_event, id: unknown) => {
+handle("history:delete", (_event, id: unknown) => {
     const key = validateText(id, 128);
     storage.deleteHistory(key);
     sessionTranscripts.delete(key);
+    if (getPasteRecovery()?.transcriptId === key) setPasteRecovery(null);
     if (getLastTranscript()?.id === key) setLastTranscript(null);
     rebuildTrayMenu();
   });
-  handle("history:clear", () => {
+handle("history:clear", () => {
     storage.clearHistory();
     sessionTranscripts.clear();
+    setPasteRecovery(null);
     setLastTranscript(null);
     rebuildTrayMenu();
   });
-  handle(
+handle(
+    "history:exportTemplate",
+    async (_event, id: unknown, input: unknown) => {
+      const key = validateText(id, 128);
+      const request = validateExportTemplateRequest(input);
+      const findRecord = () =>
+        sessionTranscripts.get(key) ?? storage.findHistory(key);
+      const renderCurrent = () => {
+        const record = findRecord();
+        if (!record) throw new Error("Transcript no longer exists");
+        const text = renderExportTemplate(record, request);
+        if (text !== request.expectedOutput)
+          throw new Error(
+            "The transcript changed. Reopen the export preview before saving.",
+          );
+        return { record, text };
+      };
+      const { record } = renderCurrent();
+      const stem = (record.sourceName ?? `delulu-${record.createdAt}`)
+        .replace(/[/\\]/g, "-")
+        .replace(/\.[^.]+$/, "");
+      const extension = request.extension;
+      const options: Electron.SaveDialogOptions = {
+        title: "Save transcript template",
+        defaultPath: `${stem}.${extension}`,
+        filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
+        properties: ["showOverwriteConfirmation"],
+      };
+      const result = getMainWindow()
+        ? await dialog.showSaveDialog(getMainWindow(), options)
+        : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) return null;
+      // The native dialog confirms the actual destination, including its suffix.
+      // Do not silently append a suffix after its overwrite confirmation.
+      if (extname(result.filePath).toLowerCase() !== `.${extension}`)
+        throw new Error(`Choose a filename ending in .${extension}.`);
+      const { text } = renderCurrent();
+      saveTemplateExport(result.filePath, text);
+      return result.filePath;
+    },
+  );
+handle(
     "history:export",
     async (_event, id: unknown, requestedFormat: ExportFormat) => {
       const key = validateText(id, 128);
       const record = sessionTranscripts.get(key) ?? storage.findHistory(key);
       if (!record) throw new Error("Transcript not found");
-      const format = ["txt", "json"].includes(requestedFormat)
+      const format = ["txt", "json", "md"].includes(requestedFormat)
         ? requestedFormat
         : "txt";
       const defaultName = `${(record.sourceName ?? `delulu-${record.createdAt}`).replace(/\.[^.]+$/, "")}.${format}`;
       const options: Electron.SaveDialogOptions = {
-        title: `Export ${format.toUpperCase()}`,
+        title: format === "md" ? "Export Markdown note" : `Export ${format.toUpperCase()}`,
         defaultPath: defaultName,
-        filters: [{ name: format.toUpperCase(), extensions: [format] }],
+        filters: [{ name: format === "md" ? "Markdown notes" : format.toUpperCase(), extensions: [format] }],
       };
-      const mainWindow = getMainWindow();
-      const result = mainWindow
-        ? await dialog.showSaveDialog(mainWindow, options)
+      const result = getMainWindow()
+        ? await dialog.showSaveDialog(getMainWindow(), options)
         : await dialog.showSaveDialog(options);
       if (result.canceled || !result.filePath) return null;
       const outputPath = extname(result.filePath)
         ? result.filePath
         : `${result.filePath}.${format}`;
-      writeFileSync(outputPath, exportRecord(record, format), "utf8");
+      if (format === "md") {
+        try {
+          // A note export creates a new destination. Exclusive creation also
+          // protects against a file appearing after the native picker closes.
+          writeFileSync(outputPath, exportRecord(record, format), {
+            encoding: "utf8", mode: 0o600, flag: "wx",
+          });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "EEXIST")
+            throw new Error(
+              "A note already exists at this destination. Export again with a different filename; the existing note was preserved.",
+              { cause: error },
+            );
+          throw error;
+        }
+      } else {
+        writeFileSync(outputPath, exportRecord(record, format), "utf8");
+      }
       return outputPath;
     },
   );

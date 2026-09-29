@@ -5,19 +5,9 @@ import type { LabRequest } from "../../src/types";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
-export function registerLabIpc(
-  { handle }: IpcRegistrar,
-  {
-    dictation,
-    getMainWindow,
-  }: Pick<
-    IpcDependencies,
-    | "dictation"
-    | "getMainWindow"
-  >,
-): void {
-  const selectedAudioFiles = new Set<string>();
-  handle("lab:chooseAudio", async () => {
+export function registerLabIpc({ handle }: IpcRegistrar, { getMainWindow, dictation, selectedAudioFiles }: Pick<IpcDependencies, "getMainWindow" | "dictation" | "selectedAudioFiles">): void {
+
+handle("lab:chooseAudio", async () => {
     const options: Electron.OpenDialogOptions = {
       title: "Choose audio or video",
       properties: ["openFile"],
@@ -39,9 +29,8 @@ export function registerLabIpc(
         },
       ],
     };
-    const mainWindow = getMainWindow();
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
+    const result = getMainWindow()
+      ? await dialog.showOpenDialog(getMainWindow(), options)
       : await dialog.showOpenDialog(options);
     const path = result.canceled ? undefined : result.filePaths[0];
     if (!path) return null;
@@ -53,7 +42,7 @@ export function registerLabIpc(
       size: statSync(resolved).size,
     };
   });
-  handle("lab:run", async (_event, request: LabRequest) => {
+handle("lab:run", async (_event, request: LabRequest) => {
     const path = resolve(validateText(request.path, 4096));
     if (!selectedAudioFiles.has(path) || !existsSync(path))
       throw new Error("Choose the source file through Audio files first");

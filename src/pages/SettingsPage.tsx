@@ -1,3 +1,6 @@
+import { REWRITE_PRESETS } from "../rewritePresets";
+import { PersonalProfiles } from "../components/PersonalProfiles";
+import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
 import {
@@ -15,7 +18,10 @@ import {
 import { MAGIC_MODELS } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
+import { LocalData } from "../components/LocalData";
 import { Diagnostics } from "../components/Diagnostics";
+import { HistoryRetention } from "../components/HistoryRetention";
+import { MicrophoneNotice } from "../components/MicrophoneNotice";
 import type {
   AppSettings,
   DictationStatus,
@@ -36,6 +42,7 @@ type Props = {
   magicStatus: MagicStatus;
   saving: boolean;
   onSave: (patch: Partial<AppSettings>) => Promise<boolean>;
+  onManagePersonalProfile: (command: PersonalProfileCommand) => Promise<boolean>;
   onConfigureShortcut: () => void;
   onAuthorizePaste: () => void;
   onTestPaste: () => void;
@@ -92,9 +99,11 @@ export function SettingsPage(props: Props) {
         {[
           ["general", "Capture & delivery"],
           ["personalization", "Personalization"],
-          ["writing", "Writing"],
+          ["profiles", "Profiles"],
+          ["writing", "Rewriting"],
           ["advanced", "Runtime"],
           ["maintenance", "Application"],
+          ["data", "Local data"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -110,6 +119,14 @@ export function SettingsPage(props: Props) {
           {saving ? "Saving…" : "Changes save automatically"}
         </span>
       </div>
+      {tab === "data" && <LocalData />}
+      {tab === "profiles" && (
+        <PersonalProfiles
+          settings={s}
+          saving={saving}
+          onManage={props.onManagePersonalProfile}
+        />
+      )}
       {tab === "personalization" && (
         <VocabularyPage
           words={s.customWords}
@@ -145,7 +162,7 @@ export function SettingsPage(props: Props) {
               >
                 {!devices.some((d) => d.deviceId === s.inputDeviceId) && (
                   <option value={s.inputDeviceId}>
-                    {s.inputDeviceLabel} (disconnected)
+                    {s.inputDeviceLabel} (not listed)
                   </option>
                 )}
                 {devices.map((device) => (
@@ -154,8 +171,12 @@ export function SettingsPage(props: Props) {
                   </option>
                 ))}
               </select>
+              <MicrophoneNotice settings={s} devices={devices} />
             </SettingRow>
-            <SettingRow title="Language">
+            <SettingRow
+              title="Language hint"
+              description="Choose a hint supported by the speech adapter. This guides recognition; it is not a detected-language report. Automatic language selection is not offered."
+            >
               <select
                 aria-label="Language"
                 value={s.language}
@@ -170,6 +191,16 @@ export function SettingsPage(props: Props) {
                   </option>
                 ))}
               </select>
+            </SettingRow>
+            <SettingRow
+              title="Spoken formatting commands"
+              description="Opt in to explicit line commands: English ‘command new line/paragraph’ or Dutch ‘commando nieuwe regel/alinea’. Original speech stays available. Other language hints keep text unchanged."
+            >
+              {toggle(
+                "spokenFormattingCommands",
+                "Interpret spoken formatting commands",
+                busy,
+              )}
             </SettingRow>
             <SettingRow
               icon={Keyboard}
@@ -245,6 +276,33 @@ export function SettingsPage(props: Props) {
               )}
             </SettingRow>
             <SettingRow
+              title="Mute capture sounds"
+              description="Silence the cues when recording starts and stops."
+            >
+              {toggle("captureSoundsMuted", "Mute capture sounds")}
+            </SettingRow>
+            <SettingRow
+              title="Capture sound volume"
+              description="Adjust the start and stop cues, even while muted."
+            >
+              <div className="inline-control">
+                <input
+                  type="range"
+                  aria-label="Capture sound volume"
+                  aria-valuetext={`${Math.round(s.captureSoundVolume * 100)}%`}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={s.captureSoundVolume}
+                  disabled={saving}
+                  onChange={(e) =>
+                    save({ captureSoundVolume: Number(e.target.value) })
+                  }
+                />
+                <span>{Math.round(s.captureSoundVolume * 100)}%</span>
+              </div>
+            </SettingRow>
+            <SettingRow
               title="Launch at login"
               description="Have your shortcut ready when you sign in."
             >
@@ -257,12 +315,57 @@ export function SettingsPage(props: Props) {
             </div>
             <SettingRow
               icon={Clipboard}
+              title="Clipboard-only mode"
+              description="Copy each result, then switch to your destination and use its Paste command. No input injector or keyboard permission is needed."
+            >
+              <button
+                className="secondary-button"
+                aria-pressed={!s.autoPaste && s.copyToClipboard}
+                disabled={saving || busy}
+                onClick={() =>
+                  save({ autoPaste: false, copyToClipboard: true })
+                }
+              >
+                {!s.autoPaste && s.copyToClipboard
+                  ? "Clipboard only enabled"
+                  : "Use clipboard only"}
+              </button>
+            </SettingRow>
+            <SettingRow
+              icon={Clipboard}
               title="Paste automatically"
               description="Deliver the finished text to the app you were using."
             >
               {toggle("autoPaste", "Paste automatically")}
             </SettingRow>
-            {capabilities?.wayland && (
+            <SettingRow
+              icon={Keyboard}
+              title="Paste shortcut"
+              description="Applies to automatic paste and Paste last; terminals are not detected automatically. Choose a shortcut supported by the focused app, or turn off automatic paste and copy to clipboard. Delulu only sends the paste shortcut, never Enter; pasted newlines may execute commands depending on the terminal."
+            >
+              <select
+                aria-label="Paste shortcut"
+                value={s.pasteShortcut}
+                disabled={saving}
+                onChange={(e) =>
+                  save({
+                    pasteShortcut: e.target.value as AppSettings["pasteShortcut"],
+                  })
+                }
+              >
+                <option value="standard">
+                  Standard ({capabilities?.platform === "darwin"
+                    ? "Cmd+V"
+                    : "Ctrl+V"})
+                </option>
+                <option value="terminal">
+                  Terminal ({capabilities?.platform === "darwin"
+                    ? "Cmd+V"
+                    : "Ctrl+Shift+V"})
+                </option>
+              </select>
+            </SettingRow>
+            {s.autoPaste && capabilities?.wayland && (
               <SettingRow
                 title="Keyboard permission"
                 description="Allow your desktop to paste for you. For a test, focus another text field within three seconds."
@@ -284,10 +387,41 @@ export function SettingsPage(props: Props) {
               </SettingRow>
             )}
             <SettingRow
+              title="Paste-last delay"
+              description="Wait before sending paste keystrokes so you can focus the intended field. Cancel from the countdown or tray. Destination insertion cannot be confirmed."
+            >
+              <select
+                aria-label="Paste-last delay"
+                value={s.pasteLastDelaySeconds}
+                disabled={saving}
+                onChange={(e) =>
+                  save({ pasteLastDelaySeconds: Number(e.target.value) })
+                }
+              >
+                {Array.from({ length: 30 }, (_, index) => index + 1).map(
+                  (seconds) => (
+                    <option key={seconds} value={seconds}>
+                      {seconds} seconds
+                    </option>
+                  ),
+                )}
+              </select>
+            </SettingRow>
+            <SettingRow
               title="Copy results to clipboard"
               description="Keep text ready for a manual paste."
             >
               {toggle("copyToClipboard", "Copy results to clipboard")}
+            </SettingRow>
+            <SettingRow
+              title="Restore clipboard after paste"
+              description="Restore previous plain text two seconds after a successful automatic paste, if the clipboard hasn't changed. Rich content is not restored."
+            >
+              {toggle(
+                "restoreClipboardAfterPaste",
+                "Restore clipboard after paste",
+                !settings.autoPaste,
+              )}
             </SettingRow>
             <SettingRow
               icon={ShieldCheck}
@@ -315,9 +449,9 @@ export function SettingsPage(props: Props) {
           >
             {toggle("magicEnabled", "Rewrite after dictation", busy)}
           </SettingRow>
-          <SettingRow title="Writing style">
+          <SettingRow title="Rewrite style">
             <select
-              aria-label="Writing style"
+              aria-label="Rewrite style"
               value={s.magicPreset}
               disabled={saving}
               onChange={(e) =>
@@ -326,15 +460,14 @@ export function SettingsPage(props: Props) {
                 })
               }
             >
-              <option value="polish">Polished</option>
-              <option value="concise">Concise</option>
-              <option value="structured">Structured</option>
-              <option value="prompt">Prompt builder</option>
+              {REWRITE_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.label}</option>
+              ))}
             </select>
           </SettingRow>
           <SettingRow
             title="Allow added assumptions"
-            description="Let Magic suggest additional detail. Review the result before sending it."
+            description="Let rewriting suggest additional detail. Review the result before sending it."
           >
             {toggle("magicAllowInferences", "Allow added assumptions")}
           </SettingRow>
@@ -351,16 +484,16 @@ export function SettingsPage(props: Props) {
             </div>
             <SettingRow
               icon={Clock3}
-              title="Keep speech ready"
-              description="Load speech at startup and keep it in GPU memory. Uses more VRAM, but avoids cold starts between recordings."
+              title="Keep speech model ready"
+              description="Load the speech model at startup and keep it in GPU memory. Uses more VRAM, but avoids cold starts between recordings."
             >
-              {toggle("preloadModel", "Keep speech ready", busy)}
+              {toggle("preloadModel", "Keep speech model ready", busy)}
             </SettingRow>
             <SettingRow
-              title="Keep Magic ready"
-              description="Keep the writing model loaded alongside speech."
+              title="Keep rewrite model ready"
+              description="Keep the rewrite model loaded alongside the speech model."
             >
-              {toggle("preloadMagicModel", "Keep Magic ready", busy)}
+              {toggle("preloadMagicModel", "Keep rewrite model ready", busy)}
             </SettingRow>
             <SettingRow title="Release idle models after">
               <select
@@ -378,9 +511,9 @@ export function SettingsPage(props: Props) {
                 ))}
               </select>
             </SettingRow>
-            <SettingRow title="Magic model">
+            <SettingRow title="Rewrite model">
               <select
-                aria-label="Magic model"
+                aria-label="Rewrite model"
                 value={s.magicModel}
                 disabled={saving || busy}
                 onChange={(e) =>
@@ -421,6 +554,7 @@ export function SettingsPage(props: Props) {
               </div>
             </SettingRow>
           </section>
+          <HistoryRetention policy={s.historyRetention} saving={saving} onSave={onSave} />
           <Diagnostics />
         </>
       )}
@@ -430,6 +564,15 @@ export function SettingsPage(props: Props) {
             <div className="group-heading">
               <h3>Appearance</h3>
             </div>
+            {capabilities?.platform === "darwin" && (
+              <SettingRow
+                icon={Monitor}
+                title="Menu bar only"
+                description="Hide the Dock icon and start with Controls closed. Reopen Controls, view status or quit from the menu bar. This window stays open when you enable the setting."
+              >
+                {toggle("menuBarOnly", "Menu bar only")}
+              </SettingRow>
+            )}
             <SettingRow
               icon={Monitor}
               title="Appearance"
@@ -516,17 +659,17 @@ export function SettingsPage(props: Props) {
           </section>
           <section className="settings-group">
             <div className="group-heading">
-              <h3>Local engine maintenance</h3>
+              <h3>Local runtime and model maintenance</h3>
               <p>Repair uses the runtime versions included with this app.</p>
             </div>
-            <SettingRow title="Speech engine" description={status.message}>
+            <SettingRow title="Speech runtime and model" description={status.message}>
               <div className="inline-control">
                 <button
                   className="secondary-button"
                   disabled={busy}
                   onClick={props.onSetup}
                 >
-                  Install / repair
+                  Install / repair runtime
                 </button>
                 {status.engine === "ready" ? (
                   <button
@@ -534,7 +677,7 @@ export function SettingsPage(props: Props) {
                     disabled={busy}
                     onClick={props.onUnload}
                   >
-                    Unload
+                    Unload model
                   </button>
                 ) : (
                   <button
@@ -542,19 +685,19 @@ export function SettingsPage(props: Props) {
                     disabled={busy || status.engine !== "unloaded"}
                     onClick={props.onLoad}
                   >
-                    Load
+                    Load model
                   </button>
                 )}
               </div>
             </SettingRow>
-            <SettingRow title="Magic engine" description={magicStatus.message}>
+            <SettingRow title="Rewrite runtime and model" description={magicStatus.message}>
               <div className="inline-control">
                 <button
                   className="secondary-button"
                   disabled={busy}
                   onClick={props.onSetupMagic}
                 >
-                  Install / repair
+                  Install / repair runtime
                 </button>
                 {magicStatus.engine === "ready" ? (
                   <button
@@ -562,7 +705,7 @@ export function SettingsPage(props: Props) {
                     disabled={busy}
                     onClick={props.onUnloadMagic}
                   >
-                    Unload
+                    Unload model
                   </button>
                 ) : (
                   <button
@@ -570,7 +713,7 @@ export function SettingsPage(props: Props) {
                     disabled={busy || magicStatus.engine !== "unloaded"}
                     onClick={props.onLoadMagic}
                   >
-                    Load
+                    Load model
                   </button>
                 )}
               </div>
@@ -589,6 +732,7 @@ export function SettingsPage(props: Props) {
               </button>
             </SettingRow>
           </section>
+          <HistoryRetention policy={s.historyRetention} saving={saving} onSave={onSave} />
           <Diagnostics />
         </>
       )}
@@ -600,7 +744,7 @@ export function SettingsPage(props: Props) {
           onConfirm={props.onReset}
         >
           <p>
-            You’ll need to install the engines again before dictating. Your
+            You’ll need to install the speech runtime again before dictating. Your
             history, settings, and model cache stay on this device.
           </p>
         </ConfirmDialog>

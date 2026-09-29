@@ -1,13 +1,17 @@
+import { validateRewriteInstructions } from "../src/rewriteInstructions";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AppSettings,
   DeluluApi,
   DictationStatus,
   ExportFormat,
+  HistoryRetentionPolicy,
   LabRequest,
   MagicRewriteRequest,
   MagicStatus,
   Page,
+  PasteRecovery,
+  PasteLastStatus,
   RecorderCommand,
   RecordingSubmission,
   ShortcutStatus,
@@ -26,17 +30,35 @@ function listener<T>(
 }
 
 const api: DeluluApi = {
+  getRuleUsage: () => ipcRenderer.invoke("rules:usage"),
+  resetRuleUsage: () => ipcRenderer.invoke("rules:resetUsage"),
+  previewModelCache: () => ipcRenderer.invoke("cache:preview"),
+  cleanupModelCache: (token, ids) => ipcRenderer.invoke("cache:cleanup", token, ids),
   getRendererRecoveryState: () => ipcRenderer.invoke("renderer:recoveryState"),
   reloadWorkspace: () => ipcRenderer.invoke("renderer:reload"),
   rendererControllerFailed: () =>
     ipcRenderer.invoke("renderer:controllerFailed"),
   getDiagnostics: () => ipcRenderer.invoke("runtime:diagnostics"),
+  getRuntimeSetupSnapshot: () => ipcRenderer.invoke("runtime:setupSnapshot"),
+  getSetupLog: (kind) => ipcRenderer.invoke("runtime:setupLog", kind),
+  getLocalDataOverview: () => ipcRenderer.invoke("storage:overview"),
   pasteLastTranscript: () => ipcRenderer.invoke("dictation:pasteLast"),
+  getPasteRecovery: () => ipcRenderer.invoke("paste:recovery"),
+  copyInstead: (id: string) => ipcRenderer.invoke("paste:copyInstead", id),
+  dismissPasteRecovery: (id: string) => ipcRenderer.invoke("paste:dismissRecovery", id),
+  onPasteRecovery: (callback: (recovery: PasteRecovery | null) => void) =>
+    listener("paste:recoveryChanged", callback),
+  getPasteLastStatus: () => ipcRenderer.invoke("dictation:pasteLastStatus"),
+  cancelPasteLast: (operationId: string) =>
+    ipcRenderer.invoke("dictation:cancelPasteLast", operationId),
+  onPasteLastStatus: (callback: (status: PasteLastStatus) => void) =>
+    listener("dictation:pasteLastChanged", callback),
   discardFailedRecording: () => ipcRenderer.invoke("dictation:discardFailed"),
   retryRecording: () => ipcRenderer.invoke("dictation:retry"),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   updateSettings: (settings: Partial<AppSettings>) =>
     ipcRenderer.invoke("settings:update", settings),
+  managePersonalProfile: (command) => ipcRenderer.invoke("profiles:manage", command),
   getStatus: () => ipcRenderer.invoke("runtime:status"),
   getMagicStatus: () => ipcRenderer.invoke("magic:status"),
   getShortcutStatus: () => ipcRenderer.invoke("shortcut:status"),
@@ -59,24 +81,40 @@ const api: DeluluApi = {
   loadMagic: () => ipcRenderer.invoke("magic:load"),
   unloadMagic: () => ipcRenderer.invoke("magic:unload"),
   rewriteMagic: (request: MagicRewriteRequest) =>
-    ipcRenderer.invoke("magic:rewrite", request),
+    ipcRenderer.invoke("magic:rewrite", {
+      ...request,
+      instructions: validateRewriteInstructions(request.instructions),
+    }),
   copyText: (text: string) => ipcRenderer.invoke("clipboard:copy", text),
   authorizePaste: () => ipcRenderer.invoke("paste:authorize"),
   testPaste: () => ipcRenderer.invoke("paste:test"),
   updateTranscript: (id: string, text: string | null) =>
     ipcRenderer.invoke("history:updateTranscript", id, text),
-  setTranscriptRewrite: (id, result, sourceText) =>
-    ipcRenderer.invoke("history:setRewrite", id, result, sourceText),
+  setTranscriptRewrite: (id, result, sourceText, expectedSourceRevision) =>
+    ipcRenderer.invoke("history:setRewrite", id, result, sourceText, expectedSourceRevision),
+  setTranscriptTitle: (id: string, title: string | null) =>
+    ipcRenderer.invoke("history:setTitle", id, title),
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),
   clearHistory: () => ipcRenderer.invoke("history:clear"),
+  previewHistoryRetention: (policy: HistoryRetentionPolicy) => ipcRenderer.invoke("history:retentionPreview", policy),
+  applyHistoryRetention: (token: string) => ipcRenderer.invoke("history:retentionApply", token),
+  onHistoryRetentionApplied: (callback: (removedIds: string[]) => void) =>
+    listener("history:retentionApplied", callback),
   chooseAudioFile: () => ipcRenderer.invoke("lab:chooseAudio"),
   runLab: (request: LabRequest) => ipcRenderer.invoke("lab:run", request),
   exportTranscript: (id: string, format: ExportFormat) =>
     ipcRenderer.invoke("history:export", id, format),
-  recordingStarted: () => ipcRenderer.invoke("recorder:started"),
+  exportTranscriptTemplate: (id, request) =>
+    ipcRenderer.invoke("history:exportTemplate", id, request),
+  recordingStarted: (sessionId: string) =>
+    ipcRenderer.invoke("recorder:started", sessionId),
+  recordingLimitReached: (sessionId: string) =>
+    ipcRenderer.invoke("recorder:limit", sessionId),
   recorderReady: () => ipcRenderer.invoke("recorder:ready"),
-  recordingFailed: (message: string) =>
-    ipcRenderer.invoke("recorder:failed", message),
+  recordingFailed: (message: string, sessionId: string) =>
+    ipcRenderer.invoke("recorder:failed", message, sessionId),
+  recordingInputChanged: (sessionId, message, inputLost) =>
+    ipcRenderer.invoke("recorder:inputChanged", sessionId, message, inputLost),
   recordingLevel: (level: number) => ipcRenderer.send("recorder:level", level),
   submitRecording: (recording: RecordingSubmission) =>
     ipcRenderer.invoke("recorder:submit", recording),

@@ -1,3 +1,7 @@
+import type { PasteRecovery } from "../../src/types";
+import type { ModelCacheService } from "../services/modelCache";
+import type { RuleUsageService } from "../services/ruleUsage";
+import type { SerialQueue } from "../runtime/serialQueue";
 import type {
   BrowserWindow,
   IpcMainEvent,
@@ -38,4 +42,13 @@ export interface IpcDependencies {
   setLastTranscript: (record: TranscriptRecord | null) => void;
   sessionTranscripts: Map<string, TranscriptRecord>;
   rebuildTrayMenu: () => void;
+  modelCache: ModelCacheService;
+  ruleUsage: RuleUsageService;
+  schedulePasteLast: () => unknown;
+  getPasteRecovery: () => PasteRecovery | null;
+  setPasteRecovery: (recovery: PasteRecovery | null) => void;
+  applySettings: (value: unknown) => Promise<AppSettings>;
+  settingsQueue: SerialQueue;
+  broadcast: (channel: string, payload: unknown) => void;
+  selectedAudioFiles: Set<string>;
 }
