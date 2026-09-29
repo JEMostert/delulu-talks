@@ -581,7 +581,7 @@ export class AsrService {
     const parts = splitForRewrite(request.text, settings.customWords);
     if (parts.filter((part) => !part.protected && part.text.trim()).length > 16)
       throw new Error(
-        "This text contains too many separate shortcut blocks to rewrite at once. Rewrite a shorter selection.",
+        "This text contains too many separate protected blocks or identifiers to rewrite at once. Rewrite a shorter selection.",
       );
     this.magicOperations += 1;
     this.clearMagicIdle();
