@@ -60,6 +60,9 @@ export class WorkerClient {
     this.diagnostics = "";
     const lines = createInterface({ input: child.stdout });
     lines.on("line", (line) => {
+      // stop() can leave buffered lines until this process exits. They belong
+      // to its generation, even if a failure callback has already retried.
+      if (this.child !== child) return;
       if (line.startsWith("@delulu-progress:")) {
         this.onProgress?.(line.slice("@delulu-progress:".length).slice(-350));
         return;
@@ -87,6 +90,7 @@ export class WorkerClient {
       }
     });
     child.stderr.on("data", (chunk: Buffer) => {
+      if (this.child !== child) return;
       this.diagnostics = `${this.diagnostics}${chunk}`.slice(-80_000);
     });
     child.once("error", (error) => {
