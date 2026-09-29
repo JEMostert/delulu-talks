@@ -9,6 +9,9 @@ const fixtureUrl = new URL(
 ).href;
 const locationUrl = new URL("../runtime/location.ts", import.meta.url).href;
 const processTest = test.skipIf(process.platform === "win32");
+const permissionTest = test.skipIf(
+  process.platform === "win32" || process.geteuid?.() === 0,
+);
 
 // Actual AsrService, RuntimeInstaller, spawned installer fixtures and activation
 // files. Only Electron and the model-worker boundary are mocked, in a child so
@@ -50,6 +53,7 @@ class ModelWorkerFixture {
   loadGate = null;
   loadEntered = null;
   nextFailure = null;
+  denyRollback = false;
   constructor(paths) {
     this.paths = paths;
     this.kind = workers.length === 0 ? "speech" : "magic";
@@ -68,6 +72,7 @@ class ModelWorkerFixture {
         const error = this.nextFailure;
         this.nextFailure = null;
         writeFileSync(join(cache, this.kind + "-download.partial"), "synthetic interrupted weights");
+        if (this.denyRollback) chmodSync(this.kind === "speech" ? speechRoot : magicRoot, 0o500);
         throw error;
       }
       return { device: "fixture", text: "fixture" };
@@ -124,7 +129,11 @@ async function verify(body: string) {
       process.execPath,
       "-e",
       `${harness}\n${body}\nprocess.stdout.write("verified");
-      } finally { await service.shutdown(); rmSync(root, { recursive: true, force: true }); }`,
+      } finally {
+        await service.shutdown();
+        for (const directory of [speechRoot, magicRoot]) if (existsSync(directory)) chmodSync(directory, 0o700);
+        rmSync(root, { recursive: true, force: true });
+      }`,
     ],
     { stdout: "pipe", stderr: "pipe" },
   );
@@ -273,5 +282,40 @@ for (const kind of ["speech", "magic"] as const) {
         originalProfileIntact();
       `),
     30_000,
+  );
+}
+
+for (const kind of ["speech", "magic"] as const) {
+  permissionTest(
+    `${kind} rollback write failure reports incomplete recovery and retains both causes`,
+    () =>
+      verify(`
+        const kind = ${JSON.stringify(kind)};
+        const old = seed(runtimeRoot(kind), "generation");
+        worker(kind).denyRollback = true;
+        worker(kind).nextFailure = new Error("Fixture primary model load failed");
+        let error;
+        try { await runSetup(kind); } catch (reason) { error = reason; }
+        assert.ok(error, "failed rollback must reject setup");
+        assert.match(error.message, /previous runtime could not be restored/);
+        assert.ok(error.cause instanceof AggregateError);
+        assert.match(error.cause.errors[0].message, /primary model load failed/);
+        assert.equal(error.cause.errors[1].code, "EACCES");
+        assert.equal(getStatus(kind).engine, "error", "incomplete rollback must not advertise preserved-runtime recovery");
+        assert.match(getStatus(kind).message, /previous runtime could not be restored/);
+        assert.notEqual(runtimePython(runtimeRoot(kind)), old.python, "report the actual incomplete pointer recovery honestly");
+        assert.deepEqual(readFileSync(old.python), old.bytes);
+        assert.equal(readFileSync(old.report, "utf8"), "original dependency report");
+        assert.equal(statuses[kind].some(status => status.engine === "ready"), false);
+        assert.ok(worker(kind).stopped >= 2);
+        originalProfileIntact();
+        chmodSync(runtimeRoot(kind), 0o700);
+        worker(kind).denyRollback = false;
+        await runSetup(kind);
+        assert.equal(getStatus(kind).engine, "ready");
+        assert.deepEqual(readFileSync(old.python), old.bytes);
+        originalProfileIntact();
+      `),
+    30000,
   );
 }

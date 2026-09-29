@@ -20,6 +20,9 @@ import { createSetupFixture, type SetupStage } from "./fixtures/setupPython";
 // The executable fixture uses POSIX shebangs. Windows/MLX backend selection
 // below runs on the host and is synthetic, not native platform evidence.
 const processTest = test.skipIf(process.platform === "win32");
+const permissionTest = test.skipIf(
+  process.platform === "win32" || process.geteuid?.() === 0,
+);
 type Kind = "speech" | "magic";
 const oldGeneration = "12345678-1234-1234-1234-123456789abc";
 const platforms = {
@@ -162,6 +165,7 @@ function scenario(kind: Kind, platform: keyof typeof platforms = "linux") {
     },
     cleanup() {
       installer.stop();
+      if (existsSync(root)) chmodSync(root, 0o700);
       for (const entry of fixture.readLog()) {
         if (entry.event === "paused" && alive(entry.pid))
           process.kill(entry.pid, "SIGKILL");
@@ -233,6 +237,44 @@ async function retry(
   ];
   expect(stages).toEqual(expectedStages);
   context.assertPreserved(false);
+}
+
+for (const kind of ["speech", "magic"] as const) {
+  permissionTest(
+    `activation write denied after reports complete preserves prior runtime: ${kind}`,
+    async () => {
+      const context = scenario(kind);
+      const progress: InstallProgress[] = [];
+      context.fixture.writeControl({ blockActivationWrite: true });
+      try {
+        await expect(
+          bounded(
+            context.installer.install(kind, context.settings, (event) =>
+              progress.push(event),
+            ),
+          ),
+        ).rejects.toThrow("EACCES");
+        context.assertPreserved();
+        expect(
+          progress.some((event) =>
+            event.message.startsWith("Runtime installed."),
+          ),
+        ).toBe(false);
+        const candidate = context.inactiveCandidate();
+        expect(
+          existsSync(join(candidate, `runtime-${kind}-inventory.json`)),
+        ).toBe(true);
+        expect(
+          readdirSync(context.root).some((name) => name.endsWith(".tmp")),
+        ).toBe(false);
+        expect(context.fixture.readLog().at(-1)?.event).toBe("finished");
+        chmodSync(context.root, 0o700);
+        await retry(context, kind, candidate);
+      } finally {
+        context.cleanup();
+      }
+    },
+  );
 }
 
 for (const kind of ["speech", "magic"] as const) {

@@ -20,6 +20,7 @@ export type SetupStage =
 export type SetupControl = {
   failStage?: SetupStage;
   pauseStage?: SetupStage;
+  blockActivationWrite?: boolean;
   blockReportWrite?: "freeze" | "inventory";
 };
 export type SetupLogEntry = {
@@ -38,7 +39,7 @@ export function createSetupFixture(root: string) {
   const logPath = join(root, "fixture-commands.jsonl");
   const script = `#!${process.execPath}
 import {
-  appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync,
+  appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -108,6 +109,8 @@ if (controlled && (control.pauseStage === stage || control.failStage === stage))
   if (stage === "runtime") writeFileSync(join(candidate, "download.complete"), "complete synthetic download");
   if (stage === "freeze") console.log("setup-fixture-package==1.0.0");
   if (stage === "inventory") {
+    if (controlled && control.blockActivationWrite)
+      chmodSync(dirname(dirname(candidate)), 0o500);
     // Explicit simulated interpreter/package data, never native Python evidence.
     console.log(JSON.stringify({
       interpreter: {

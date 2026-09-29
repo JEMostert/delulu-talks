@@ -35,6 +35,23 @@ function conciseError(value: string): string {
   ).slice(0, 800);
 }
 
+class SetupRollbackError extends Error {
+  constructor(setupError: unknown, rollbackError: unknown) {
+    const message = (error: unknown) =>
+      conciseError(error instanceof Error ? error.message : String(error));
+    super(
+      `Setup failed: ${message(setupError)}. The previous runtime could not be restored: ${message(rollbackError)}. Fix the filesystem error, then retry Repair.`,
+      {
+        cause: new AggregateError(
+          [setupError, rollbackError],
+          "Setup and rollback failed",
+        ),
+      },
+    );
+    this.name = "SetupRollbackError";
+  }
+}
+
 export class AsrService {
   private readonly speechWorker: WorkerClient;
   private readonly magicWorker: WorkerClient;
@@ -259,7 +276,10 @@ export class AsrService {
       .run(() => this.performSetup(settings))
       .catch(async (error) => {
         this.fail(error);
-        if (await this.isEnvironmentReady())
+        if (
+          !(error instanceof SetupRollbackError) &&
+          (await this.isEnvironmentReady())
+        )
           this.updateStatus({
             phase: "idle",
             engine: "unloaded",
@@ -300,7 +320,11 @@ export class AsrService {
       }
     } catch (error) {
       await this.speechWorker.stopAndWait();
-      this.speechInstaller.rollback();
+      try {
+        this.speechInstaller.rollback();
+      } catch (rollbackError) {
+        throw new SetupRollbackError(error, rollbackError);
+      }
       throw error;
     }
   }
@@ -312,7 +336,10 @@ export class AsrService {
       .run(() => this.performMagicSetup(settings))
       .catch(async (error) => {
         this.failMagic(error);
-        if (await this.isMagicEnvironmentReady())
+        if (
+          !(error instanceof SetupRollbackError) &&
+          (await this.isMagicEnvironmentReady())
+        )
           this.updateMagicStatus({
             phase: "idle",
             engine: "unloaded",
@@ -353,7 +380,11 @@ export class AsrService {
         await this.loadModel(settings, true);
     } catch (error) {
       await this.magicWorker.stopAndWait();
-      this.magicInstaller.rollback();
+      try {
+        this.magicInstaller.rollback();
+      } catch (rollbackError) {
+        throw new SetupRollbackError(error, rollbackError);
+      }
       throw error;
     }
   }
