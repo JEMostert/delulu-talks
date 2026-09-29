@@ -124,3 +124,39 @@ The destination must not exist; an interrupted copy removes only the newly
 created incomplete bundle. Reports retain producing revisions, hardware and
 decode metadata as user-supplied facts. **UNVERIFIED — checks not run per user
 instruction**; no native benchmark evidence was generated for this change.
+
+## Optional rewrite memory comparison
+
+`scripts/sample_process_memory.py` observes an existing application's process
+tree using `psutil` installed in a separate observer environment. It performs
+read-only OS queries. It does not launch inference or alter the application's
+settings, model residency, worker lifecycle, clipboard or history.
+
+Run the application in the desired state first. Record producing hardware and
+runtime provenance, including the optional rewrite model's actual revision in
+runtime dependencies or decode settings. Supply the root application PID to
+include both speech and rewrite descendants; using a speech-only PID misses a
+separate rewrite worker. Collect separate sessions with rewriting unloaded and
+loaded, using matching workloads, sampling intervals and steady windows:
+
+```sh
+python scripts/sample_process_memory.py --pid 12345 --provenance provenance.json \
+  --rewrite-loaded no --duration 60 --steady-after 10 --output-directory speech-only-memory
+python scripts/sample_process_memory.py --pid 12345 --provenance provenance.json \
+  --rewrite-loaded yes --duration 60 --steady-after 10 --output-directory speech-rewrite-memory
+```
+
+PID `12345` is illustrative. The rewrite state is an operator declaration,
+not automatically verified. Raw timestamped per-process RSS samples and summary
+hashes remain available. Peak is the largest sampled process-tree RSS, not an
+instantaneous OS high-water mark; steady resident memory is the mean/median
+and range after the explicit steady-window start. Shared pages may be counted
+multiple times, short-lived workers may be missed, and accelerator allocations
+are not measured. Permission failures stop collection rather than silently
+report a partial process tree. Interruptions retain partial evidence and their
+termination reason. Repeat independent sessions and retain these raw files with
+the benchmark artifact builder; do not equate correlated time samples with
+independent benchmark repetitions.
+
+**UNVERIFIED — checks not run per user instruction.** No memory sampler or
+native inference was executed, and there are no measured memory results here.
