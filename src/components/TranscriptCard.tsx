@@ -1,3 +1,5 @@
+import { ExportTemplateDialog } from "./ExportTemplateDialog";
+import type { ExportTemplateRequest } from "../exportTemplates";
 import { RewriteDialog } from "./RewriteDialog";
 import { useState } from "react";
 import {
@@ -41,6 +43,10 @@ export type TranscriptActions = {
   onUpdateTranscript: (id: string, text: string | null) => Promise<boolean>;
   onDelete?: (id: string) => void;
   onExport?: (id: string, format: ExportFormat) => void;
+  onExportTemplate?: (
+    id: string,
+    request: ExportTemplateRequest,
+  ) => Promise<string | null>;
   onRemember?: (word: CustomWord) => Promise<boolean>;
 };
 export function TranscriptCard({
@@ -51,6 +57,7 @@ export function TranscriptCard({
   onUpdateTranscript,
   onDelete,
   onExport,
+  onExportTemplate,
   onRemember,
   onRewrite,
   onSetRewrite,
@@ -61,6 +68,7 @@ export function TranscriptCard({
   defaultOpen?: boolean;
   inspector?: boolean;
 }) {
+  const [templateExport, setTemplateExport] = useState(false);
   const [open, setOpen] = useState(defaultOpen || inspector);
   const [showSource, setShowSource] = useState(false);
   const [rewriting, setRewriting] = useState(false);
@@ -408,9 +416,24 @@ export function TranscriptCard({
                   {format.toUpperCase()}
                 </button>
               ))}
+              {onExportTemplate && (
+                <button
+                  className="tool-button"
+                  onClick={() => setTemplateExport(true)}
+                >
+                  <Download /> Template…
+                </button>
+              )}
             </div>
           )}
         </div>
+      )}
+      {templateExport && onExportTemplate && (
+        <ExportTemplateDialog
+          record={record}
+          onClose={() => setTemplateExport(false)}
+          onExport={(request) => onExportTemplate(record.id, request)}
+        />
       )}
       {rewriting && onRewrite && onSetRewrite && (
         <RewriteDialog

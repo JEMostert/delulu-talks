@@ -95,6 +95,11 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
         w.setHistory((items) => items.filter((item) => item.id !== id));
       }, "Transcript deleted");
     },
+    onExportTemplate: async (id, request) => {
+      const path = await bridge.exportTranscriptTemplate(id, request);
+      if (path) w.setToast("Transcript exported");
+      return path;
+    },
     onExport: (id: string, format: ExportFormat) => {
       void w.action(async () => {
         const path = await bridge.exportTranscript(id, format);

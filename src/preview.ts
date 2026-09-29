@@ -237,6 +237,9 @@ export const previewApi: DeluluApi = {
   async exportTranscript(_id: string, _format: ExportFormat) {
     return desktopOnly();
   },
+  async exportTranscriptTemplate() {
+    return desktopOnly();
+  },
   async recordingStarted() {},
   async recorderReady() {},
   async recordingFailed() {},
