@@ -297,7 +297,7 @@ export function VocabularyPage({
             </>
           )}
           {conflict && (
-            <p className="field-error" role="alert">
+            <p className="field-error break-words" role="alert">
               {conflict}
             </p>
           )}

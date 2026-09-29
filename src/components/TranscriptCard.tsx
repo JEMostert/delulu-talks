@@ -498,7 +498,7 @@ export function TranscriptCard({
           }
         >
           {rememberError && (
-            <p className="field-error" role="alert">
+            <p className="field-error break-words" role="alert">
               {rememberError}
             </p>
           )}
