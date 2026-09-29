@@ -1,11 +1,12 @@
 """Opt-in real inference smoke check. Run with the app's venv Python and --cache.
 Uses only pre-downloaded models; never prints transcript contents or modifies source audio.
-Requires a CUDA GPU for the R2T2 speech engine.
+Requires Apple Silicon for MLX or an NVIDIA CUDA GPU for Linux vLLM / Windows PyTorch.
 """
 import argparse
 import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
 import subprocess
 import tempfile
@@ -17,6 +18,7 @@ parser.add_argument("--magic", action="store_true")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 os.environ.update({"HF_HUB_OFFLINE": "1", "HF_HOME": args.cache, "HF_HUB_CACHE": str(Path(args.cache) / "hub")})
+sys.path.insert(0, str(root / "electron/python"))
 spec = importlib.util.spec_from_file_location("engine", root / "electron/python/transcription_engine.py")
 engine = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(engine)

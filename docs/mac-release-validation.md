@@ -1,4 +1,6 @@
-# Apple Silicon validation — v0.9.4
+# Historical Apple Silicon validation — v0.9.4
+
+> This record covers the previous **Qwen3-ASR-0.6B / vLLM Metal** implementation. The current R2T2 MLX adapter has not yet passed native validation. See [current Mac support and acceptance steps](MAC_SUPPORT.md).
 
 Validated on an arm64 Mac running macOS 26.6.2 on 2026-09-21. Mac support requires macOS 15+ and native arm64 Python 3.12. CUDA retains the existing R2T2 engine.
 

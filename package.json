@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.9.4",
   "type": "module",
-  "description": "Private, local-first system-wide dictation powered by Qwen3-ASR on Apple Silicon and R2T2 on CUDA",
+  "description": "Private, local-first system-wide R2T2 dictation with MLX and CUDA acceleration",
   "author": {
     "name": "JoranEMostert",
     "email": "92588849+JoranEMostert@users.noreply.github.com"

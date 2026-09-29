@@ -18,6 +18,8 @@ export function useWorkspace() {
   const [page, setPage] = useState<Page>("home");
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [ready, setReady] = useState(false);
+  const [startupError, setStartupError] = useState<string | null>(null);
+  const [startupAttempt, setStartupAttempt] = useState(0);
   const [status, setStatus] = useState<DictationStatus>({
     phase: "idle",
     engine: "unloaded",
@@ -65,6 +67,7 @@ export function useWorkspace() {
 
   useEffect(() => {
     let alive = true;
+    setStartupError(null);
     const recorder = new PcmRecorder();
     const subscriptions = [
       bridge.onStatus(setStatus),
@@ -79,7 +82,7 @@ export function useWorkspace() {
       bridge.onTranscript(receiveTranscript),
     ];
     void bridge.recorderReady().catch(report);
-    void Promise.all([
+    void Promise.allSettled([
       bridge.getSettings(),
       bridge.getStatus(),
       bridge.getMagicStatus(),
@@ -90,22 +93,64 @@ export function useWorkspace() {
     ])
       .then(([next, speech, magic, shortcut, records, platform, update]) => {
         if (!alive) return;
-        receiveSettings(next);
-        setStatus(speech);
-        setMagicStatus(magic);
-        setShortcutStatus(shortcut);
-        setHistory(records);
-        setCapabilities(platform);
-        setUpdateStatus(update);
+        if (next.status === "rejected" || records.status === "rejected") {
+          const reason =
+            next.status === "rejected"
+              ? next.reason
+              : records.status === "rejected"
+                ? records.reason
+                : "Workspace unavailable";
+          setStartupError(
+            reason instanceof Error ? reason.message : String(reason),
+          );
+          return;
+        }
+        receiveSettings(next.value);
+        setHistory(records.value);
+        if (speech.status === "fulfilled") setStatus(speech.value);
+        else
+          setStatus({
+            phase: "error",
+            engine: "error",
+            message:
+              "Could not read speech engine status. Retry loading it in Models.",
+          });
+        if (magic.status === "fulfilled") setMagicStatus(magic.value);
+        else
+          setMagicStatus({
+            phase: "error",
+            engine: "error",
+            message: "Rewriting is unavailable. Dictation can still be used.",
+          });
+        if (shortcut.status === "fulfilled") setShortcutStatus(shortcut.value);
+        else
+          setShortcutStatus((previous) => ({
+            ...previous,
+            registered: false,
+            message: "Shortcut status is unavailable. Use the Record button.",
+          }));
+        if (platform.status === "fulfilled") setCapabilities(platform.value);
+        if (update.status === "fulfilled") setUpdateStatus(update.value);
+        else
+          setUpdateStatus((previous) => ({
+            ...previous,
+            phase: "error",
+            message: "Could not read update status",
+          }));
         setReady(true);
       })
-      .catch(report);
+      .catch((reason: unknown) => {
+        if (alive)
+          setStartupError(
+            reason instanceof Error ? reason.message : String(reason),
+          );
+      });
     return () => {
       alive = false;
       subscriptions.forEach((remove) => remove());
       void recorder.cancel();
     };
-  }, []);
+  }, [startupAttempt]);
 
   useEffect(() => {
     if (page !== "settings" && page !== "home") return;
@@ -204,6 +249,8 @@ export function useWorkspace() {
     setPage,
     settings,
     ready,
+    startupError,
+    retryStartup: () => setStartupAttempt((attempt) => attempt + 1),
     status,
     magicStatus,
     shortcutStatus,

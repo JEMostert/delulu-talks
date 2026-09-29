@@ -40,7 +40,13 @@ export function HistoryPage({
             (filter === "dictation"
               ? item.source === "dictation"
               : item.source !== "dictation")) &&
-          [item.text, item.editedText, item.magicText, item.sourceName]
+          [
+            item.text,
+            item.personalizedText,
+            item.editedText,
+            item.magicText,
+            item.sourceName,
+          ]
             .join(" ")
             .toLowerCase()
             .includes(needle),

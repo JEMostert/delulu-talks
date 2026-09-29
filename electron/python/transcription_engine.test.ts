@@ -4,6 +4,54 @@ import { join } from "node:path";
 
 const enginePath = join(import.meta.dir, "transcription_engine.py");
 
+test("Windows worker routes all speech commands to native CUDA without importing vLLM", () => {
+  const result = spawnSync(
+    "python3",
+    [
+      "-c",
+      `
+import importlib.util,sys,types
+spec=importlib.util.spec_from_file_location('engine',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+calls=[]
+class Speech:
+    def load(self,r):calls.append('load');return {'loaded':True}
+    def status(self):calls.append('status');return {'loaded':True}
+    def transcribe(self,r):calls.append('transcribe');return {'text':'r2t2'}
+    def unload(self):calls.append('unload');return {'loaded':False}
+sys.modules['windows_speech']=types.SimpleNamespace(WindowsSpeech=Speech)
+sys.modules['qwen_asr']=None;sys.modules['vllm']=None
+m.sys.platform='win32'
+w=m.Worker()
+assert w.dispatch({'command':'load'})['loaded']
+assert w.dispatch({'command':'status'})['loaded']
+assert w.dispatch({'command':'transcribe'})['text']=='r2t2'
+assert not w.dispatch({'command':'unload'})['loaded']
+assert calls==['load','status','transcribe','unload']
+`,
+      enginePath,
+    ],
+    { encoding: "utf8" },
+  );
+  expect(result.status, result.stderr).toBe(0);
+});
+
+test("Windows adapter conversion, decoder, CUDA and failure recovery contracts", () => {
+  const result = spawnSync(
+    "python3",
+    [
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      import.meta.dir,
+      "-p",
+      "windows_speech_test.py",
+    ],
+    { encoding: "utf8" },
+  );
+  expect(result.status, result.stderr).toBe(0);
+});
+
 test("speech load warms bounded inference before reporting ready and restores normal sampling", () => {
   const result = spawnSync(
     "python3",
