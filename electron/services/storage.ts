@@ -4,6 +4,8 @@ import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/pe
 import { app } from "electron";
 import { isMagicPreset } from "../../src/rewritePresets";
 import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
+import { randomUUID } from "node:crypto";
+import { validateProfileWrite } from "./profileWriteValidation";
 import { speechModelForPlatform } from "../runtime/platform";
 import { normalizeAliases } from "../../src/personalization";
 import { historyFingerprint, savedRetentionPolicy } from "./historyRetention";
@@ -14,13 +16,16 @@ import {
 import { normalizeTranscriptTitle } from "../../src/transcriptTitle";
 import {
   existsSync,
+  closeSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   DEFAULT_SETTINGS,
   LANGUAGES,
@@ -94,17 +99,55 @@ function readProfileJson(
 }
 
 function stageJson(path: string, value: unknown): string {
+  const kind = basename(path) === SETTINGS_FILE ? "settings" : "history";
+  validateProfileWrite(kind, value);
+  const serialized = `${JSON.stringify(value, null, 2)}\n`;
+  // Validate the exact JSON bytes that will become durable, not just the
+  // in-memory object, before creating or replacing any profile file.
+  validateProfileWrite(kind, JSON.parse(serialized));
   mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  return temporary;
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  let descriptor: number | undefined;
+  let created = false;
+  try {
+    descriptor = openSync(temporary, "wx", 0o600);
+    created = true;
+    writeFileSync(descriptor, serialized, "utf8");
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+    return temporary;
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try {
+        closeSync(descriptor);
+      } catch {
+        /* Preserve the write error. */
+      }
+    }
+    if (created) {
+      try {
+        rmSync(temporary, { force: true });
+      } catch {
+        /* Preserve the write error. */
+      }
+    }
+    throw error;
+  }
 }
 
 function writeJson(path: string, value: unknown): void {
-  renameSync(stageJson(path, value), path);
+  const temporary = stageJson(path, value);
+  try {
+    renameSync(temporary, path);
+  } catch (error) {
+    try {
+      rmSync(temporary, { force: true });
+    } catch {
+      /* Preserve the replacement error. */
+    }
+    throw error;
+  }
 }
 
 function safeString(value: unknown, fallback: string, max = 512): string {
