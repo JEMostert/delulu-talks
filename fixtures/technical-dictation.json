@@ -1,0 +1,231 @@
+{
+  "schemaVersion": 1,
+  "id": "technical-dictation-v1",
+  "description": "Synthetic Dutch and English technical dictation references. Expected strings are reference text, not measured recognition output. Literal instructions disambiguate symbols and formatting; no personal recordings or transcripts are included.",
+  "cases": [
+    {
+      "id": "en-prose-01",
+      "language": "en",
+      "categories": ["prose", "guard"],
+      "spoken": "Please open the window and let some fresh air into the room.",
+      "expected": "Please open the window and let some fresh air into the room."
+    },
+    {
+      "id": "nl-prose-01",
+      "language": "nl",
+      "categories": ["prose", "guard"],
+      "spoken": "Ik ga morgen met de trein naar Amsterdam.",
+      "expected": "Ik ga morgen met de trein naar Amsterdam."
+    },
+    {
+      "id": "en-prose-02",
+      "language": "en",
+      "categories": ["prose", "guard", "ambiguity"],
+      "spoken": "The dash across the square took less than a minute.",
+      "expected": "The dash across the square took less than a minute."
+    },
+    {
+      "id": "nl-prose-02",
+      "language": "nl",
+      "categories": ["prose", "guard", "ambiguity"],
+      "spoken": "Het punt is dat we de afspraak moeten onthouden.",
+      "expected": "Het punt is dat we de afspraak moeten onthouden."
+    },
+    {
+      "id": "en-package-01",
+      "language": "en",
+      "categories": ["packages", "prose"],
+      "spoken": "Install the package named literally at sign tanstack slash react hyphen query.",
+      "expected": "Install the package named @tanstack/react-query."
+    },
+    {
+      "id": "nl-package-01",
+      "language": "nl",
+      "categories": ["packages", "prose"],
+      "spoken": "Installeer het pakket met de letterlijke naam react koppelteken dom.",
+      "expected": "Installeer het pakket met de naam react-dom."
+    },
+    {
+      "id": "en-package-02",
+      "language": "en",
+      "categories": ["packages", "case", "symbols"],
+      "spoken": "Write only the literal package name PyQt6, with uppercase P and Q and the digit six.",
+      "expected": "PyQt6"
+    },
+    {
+      "id": "nl-package-02",
+      "language": "nl",
+      "categories": ["packages", "symbols"],
+      "spoken": "Schrijf alleen de letterlijke pakketnaam at teken types slash node.",
+      "expected": "@types/node"
+    },
+    {
+      "id": "en-shell-01",
+      "language": "en",
+      "categories": ["shell", "flags", "symbols"],
+      "spoken": "Write the literal command git status, a space, two hyphens, short.",
+      "expected": "git status --short"
+    },
+    {
+      "id": "nl-shell-01",
+      "language": "nl",
+      "categories": ["shell", "flags", "symbols"],
+      "spoken": "Schrijf het letterlijke commando npm install spatie twee koppeltekens save koppelteken dev spatie typescript.",
+      "expected": "npm install --save-dev typescript"
+    },
+    {
+      "id": "en-shell-02",
+      "language": "en",
+      "categories": ["shell", "flags", "case"],
+      "spoken": "Write the literal command curl space hyphen uppercase I space https colon slash slash example dot com.",
+      "expected": "curl -I https://example.com"
+    },
+    {
+      "id": "nl-shell-02",
+      "language": "nl",
+      "categories": ["shell", "flags", "numbers"],
+      "spoken": "Schrijf letterlijk python3 spatie twee koppeltekens version.",
+      "expected": "python3 --version"
+    },
+    {
+      "id": "en-path-01",
+      "language": "en",
+      "categories": ["paths", "symbols", "case"],
+      "spoken": "Write only the literal relative path dot slash src slash App dot tsx, with uppercase A.",
+      "expected": "./src/App.tsx"
+    },
+    {
+      "id": "nl-path-01",
+      "language": "nl",
+      "categories": ["paths", "symbols"],
+      "spoken": "Schrijf alleen het letterlijke pad slash tmp slash delulu koppelteken talks slash config punt json.",
+      "expected": "/tmp/delulu-talks/config.json"
+    },
+    {
+      "id": "en-path-02",
+      "language": "en",
+      "categories": ["paths", "symbols", "whitespace", "case"],
+      "spoken": "Write only the literal Windows path uppercase C colon backslash Users backslash Demo backslash My space Files backslash notes dot txt.",
+      "expected": "C:\\Users\\Demo\\My Files\\notes.txt"
+    },
+    {
+      "id": "nl-path-02",
+      "language": "nl",
+      "categories": ["paths", "symbols"],
+      "spoken": "Schrijf letterlijk twee punten slash assets slash logo punt svg.",
+      "expected": "../assets/logo.svg"
+    },
+    {
+      "id": "en-number-01",
+      "language": "en",
+      "categories": ["numbers", "symbols", "prose"],
+      "spoken": "Write the sentence literally: Set the timeout to the digits one five zero zero followed immediately by lowercase ms and a period.",
+      "expected": "Set the timeout to 1500ms."
+    },
+    {
+      "id": "nl-number-01",
+      "language": "nl",
+      "categories": ["numbers", "symbols", "prose"],
+      "spoken": "Schrijf de zin letterlijk: De versie is twee punt nul punt één, in cijfers, gevolgd door een punt.",
+      "expected": "De versie is 2.0.1."
+    },
+    {
+      "id": "en-number-02",
+      "language": "en",
+      "categories": ["numbers", "symbols"],
+      "spoken": "Write only the literal hexadecimal number zero lowercase x uppercase F uppercase F.",
+      "expected": "0xFF"
+    },
+    {
+      "id": "nl-number-02",
+      "language": "nl",
+      "categories": ["numbers", "symbols"],
+      "spoken": "Schrijf alleen letterlijk minteken twaalf punt vijf procentteken, met cijfers en zonder spaties.",
+      "expected": "-12.5%"
+    },
+    {
+      "id": "en-code-01",
+      "language": "en",
+      "categories": ["code", "symbols", "whitespace"],
+      "spoken": "Write literal code: const space count space equals space zero semicolon.",
+      "expected": "const count = 0;"
+    },
+    {
+      "id": "nl-code-01",
+      "language": "nl",
+      "categories": ["code", "symbols", "whitespace"],
+      "spoken": "Schrijf letterlijke code: x spatie uitroepteken isgelijk isgelijk spatie null.",
+      "expected": "x !== null"
+    },
+    {
+      "id": "en-code-02",
+      "language": "en",
+      "categories": ["code", "symbols", "case"],
+      "spoken": "Write literal code without spaces: getUser, with uppercase U, opening parenthesis, id, closing parenthesis, question mark, dot, name.",
+      "expected": "getUser(id)?.name"
+    },
+    {
+      "id": "nl-code-02",
+      "language": "nl",
+      "categories": ["code", "symbols", "whitespace"],
+      "spoken": "Schrijf letterlijke code: een openende ronde haak, een sluitende ronde haak, spatie, isgelijk groterdan, spatie, een openende accolade, een sluitende accolade.",
+      "expected": "() => {}"
+    },
+    {
+      "id": "en-whitespace-01",
+      "language": "en",
+      "categories": ["whitespace", "exact"],
+      "spoken": "Write only the literal text alpha, two spaces, beta.",
+      "expected": "alpha  beta"
+    },
+    {
+      "id": "nl-whitespace-01",
+      "language": "nl",
+      "categories": ["whitespace", "exact"],
+      "spoken": "Schrijf alleen letterlijk eerste, een nieuwe regel, tweede.",
+      "expected": "eerste\ntweede"
+    },
+    {
+      "id": "en-whitespace-02",
+      "language": "en",
+      "categories": ["whitespace", "exact", "code"],
+      "spoken": "Write only literal text: one tab character, return space true semicolon, one newline character.",
+      "expected": "\treturn true;\n"
+    },
+    {
+      "id": "nl-whitespace-02",
+      "language": "nl",
+      "categories": ["whitespace", "exact"],
+      "spoken": "Schrijf alleen letterlijk één spatie, klaar, één spatie.",
+      "expected": " klaar "
+    },
+    {
+      "id": "en-unicode-01",
+      "language": "en",
+      "categories": ["unicode", "symbols", "prose"],
+      "spoken": "Write the literal phrase café space right arrow symbol space résumé, using precomposed accented characters.",
+      "expected": "café → résumé"
+    },
+    {
+      "id": "nl-unicode-01",
+      "language": "nl",
+      "categories": ["unicode", "prose", "guard"],
+      "spoken": "De patiënt drinkt één kop koffie in het café.",
+      "expected": "De patiënt drinkt één kop koffie in het café."
+    },
+    {
+      "id": "en-mixed-01",
+      "language": "en",
+      "categories": ["prose", "paths", "flags", "symbols"],
+      "spoken": "Write this sentence with the following literal technical tokens: Run space backtick npm test space two hyphens space two hyphens runInBand backtick space before editing space backtick src slash index dot ts backtick period. Preserve the uppercase I and B in runInBand.",
+      "expected": "Run `npm test -- --runInBand` before editing `src/index.ts`."
+    },
+    {
+      "id": "nl-mixed-01",
+      "language": "nl",
+      "categories": ["prose", "packages", "numbers", "symbols"],
+      "spoken": "Schrijf deze zin met letterlijke technische tokens: Gebruik backtick react koppelteken dom backtick versie één acht punt twee punt nul in cijfers, gevolgd door een punt.",
+      "expected": "Gebruik `react-dom` versie 18.2.0."
+    }
+  ]
+}
