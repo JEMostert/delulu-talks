@@ -69,6 +69,10 @@ const api: DeluluApi = {
     ipcRenderer.invoke("history:setRewrite", id, result, sourceText),
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),
   clearHistory: () => ipcRenderer.invoke("history:clear"),
+  getProjectVocabulary: () => ipcRenderer.invoke("projectVocabulary:get"),
+  selectProjectVocabulary: () => ipcRenderer.invoke("projectVocabulary:select"),
+  refreshProjectVocabulary: () => ipcRenderer.invoke("projectVocabulary:refresh"),
+  clearProjectVocabulary: () => ipcRenderer.invoke("projectVocabulary:clear"),
   chooseAudioFile: () => ipcRenderer.invoke("lab:chooseAudio"),
   runLab: (request: LabRequest) => ipcRenderer.invoke("lab:run", request),
   exportTranscript: (id: string, format: ExportFormat) =>

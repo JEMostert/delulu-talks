@@ -1,3 +1,4 @@
+import { ProjectVocabularyScope } from "./services/projectVocabularyScope";
 import {
   app,
   BrowserWindow,
@@ -592,6 +593,7 @@ function assertRuntimeIdle(): void {
 }
 
 function registerIpc(): void {
+  const projectVocabulary = new ProjectVocabularyScope();
   const handle = <Args extends unknown[]>(
     channel: string,
     listener: (event: Electron.IpcMainInvokeEvent, ...args: Args) => unknown,
@@ -823,6 +825,20 @@ function registerIpc(): void {
     sessionTranscripts.clear();
     lastTranscript = null;
     rebuildTrayMenu();
+  });
+  handle("projectVocabulary:get", () => projectVocabulary.get());
+  handle("projectVocabulary:refresh", () => projectVocabulary.refresh());
+  handle("projectVocabulary:clear", () => projectVocabulary.clear());
+  handle("projectVocabulary:select", async () => {
+    const options: Electron.OpenDialogOptions = {
+      title: "Select a repository for project vocabulary",
+      properties: ["openDirectory"],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || !result.filePaths[0]) return projectVocabulary.get();
+    return projectVocabulary.select(result.filePaths[0]);
   });
   handle("lab:chooseAudio", async () => {
     const options: Electron.OpenDialogOptions = {
