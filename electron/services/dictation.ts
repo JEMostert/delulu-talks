@@ -498,7 +498,7 @@ export class DictationService {
       this.setHud({ state: "delivering" });
       if (settings.autoPaste) {
         try {
-          await this.paste.paste(output);
+          await this.paste.paste(output, settings.restoreClipboardAfterPaste);
           delivery = "pasted";
           completion = `${outputName} copied · paste shortcut sent`;
         } catch (error) {

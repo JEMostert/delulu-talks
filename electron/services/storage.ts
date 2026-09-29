@@ -228,6 +228,10 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.copyToClipboard,
       DEFAULT_SETTINGS.copyToClipboard,
     ),
+    restoreClipboardAfterPaste: boolean(
+      source.restoreClipboardAfterPaste,
+      DEFAULT_SETTINGS.restoreClipboardAfterPaste,
+    ),
     spokenFormattingCommands: boolean(
       source.spokenFormattingCommands,
       DEFAULT_SETTINGS.spokenFormattingCommands,

@@ -52,6 +52,7 @@ export type AppSettings = {
   pasteShortcut: PasteShortcut;
   pasteLastDelaySeconds: number;
   copyToClipboard: boolean;
+  restoreClipboardAfterPaste: boolean;
   spokenFormattingCommands: boolean;
   pastePortalToken: string;
   keepHistory: boolean;

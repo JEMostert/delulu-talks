@@ -44,6 +44,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pasteShortcut: "standard",
   pasteLastDelaySeconds: 3,
   copyToClipboard: true,
+  restoreClipboardAfterPaste: false,
   spokenFormattingCommands: false,
   pastePortalToken: "",
   keepHistory: true,

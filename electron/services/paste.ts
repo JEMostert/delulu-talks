@@ -1,4 +1,5 @@
 import { clipboard } from "electron";
+import { ClipboardRestore } from "./clipboardRestore";
 import { spawn, spawnSync } from "node:child_process";
 import {
   sessionBus,
@@ -41,6 +42,7 @@ export class PasteService {
   private readonly kdeWayland: boolean;
   private readonly qdbus: string | null;
   private readonly command: PasteCommand | null;
+  private readonly clipboardRestore = new ClipboardRestore();
   private bus: ConnectedBus | null = null;
   private remoteDesktop: PortalInterface | null = null;
   private portalSession: string | null = null;
@@ -114,6 +116,11 @@ export class PasteService {
   }
 
   copy(text: string): void {
+    this.clipboardRestore.cancel();
+    this.publishClipboard(text);
+  }
+
+  private publishClipboard(text: string): void {
     clipboard.writeText(text);
     // Native-Wayland Electron can retain clipboard ownership without Klipper
     // observing the new text, causing Ctrl+V in another app to paste the
@@ -140,9 +147,13 @@ export class PasteService {
     await this.ensurePortalSession();
   }
 
-  async paste(text: string): Promise<string> {
+  async paste(text: string, restoreClipboard = false): Promise<string> {
     const shortcut = this.io.getShortcut?.() ?? "standard";
-    this.copy(text);
+    const prepareRestore = this.clipboardRestore.begin(restoreClipboard, (previous) => this.copy(previous));
+    const generation = this.clipboardRestore.generation;
+    this.publishClipboard(text);
+    const finishRestore = prepareRestore?.();
+    try {
     if (this.platform === "darwin") {
       const accessibility = getAccessibilityPermission(this.platform);
       if (!accessibility.canAttemptPaste)
@@ -150,6 +161,7 @@ export class PasteService {
     }
     if (this.waylandPortal) {
       await this.pasteThroughPortal(shortcut);
+      finishRestore?.();
       return "wayland-portal";
     }
     const command = this.resolveCommand(shortcut);
@@ -179,7 +191,12 @@ export class PasteService {
             ),
       );
     });
+    finishRestore?.();
     return command.program;
+    } catch (error) {
+      if (generation === this.clipboardRestore.generation) this.clipboardRestore.cancel();
+      throw error;
+    }
   }
 
   private async pasteThroughPortal(shortcut: PasteShortcut): Promise<void> {
@@ -342,6 +359,7 @@ export class PasteService {
   }
 
   shutdown(): void {
+    this.clipboardRestore.cancel();
     void this.closePortal();
   }
 
