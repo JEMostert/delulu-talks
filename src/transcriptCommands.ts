@@ -2,7 +2,7 @@ import { bridge } from "./bridge";
 import { ruleConflict, ruleKind } from "./personalization";
 import type { TranscriptActions } from "./components/TranscriptCard";
 import type { useWorkspace } from "./hooks/useWorkspace";
-import type { CustomWord, ExportFormat, MagicRewriteResult } from "./types";
+import type { CustomWord, ExportFormat, MagicRewriteResult, TranscriptRecord } from "./types";
 
 type TranscriptWorkspace = Pick<
   ReturnType<typeof useWorkspace>,
@@ -15,7 +15,7 @@ type TranscriptWorkspace = Pick<
   | "setHistory"
   | "setPage"
   | "setToast"
->;
+> & { history?: TranscriptRecord[] };
 
 /** Shared record commands; workspace and main IPC retain state/persistence ownership. */
 export function createTranscriptCommands(w: TranscriptWorkspace) {
@@ -65,6 +65,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     );
   };
   const actions: TranscriptActions = {
+    ruleExamples: w.settings.keepHistory ? (w.history ?? []) : [],
     onCopy: w.copy,
     onRewrite: bridge.rewriteMagic,
     onRewriteSetup: () => w.setPage("models"),
