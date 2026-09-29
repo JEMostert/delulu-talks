@@ -1,3 +1,4 @@
+import { normalizeSpeechExecution } from "../../src/speechModels";
 import { app } from "electron";
 import { speechModelForPlatform } from "../runtime/platform";
 import {
@@ -254,6 +255,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
   const model = validHistoryModels.has(source.model as ModelId)
     ? (source.model as ModelId)
     : DEFAULT_SETTINGS.model;
+  const execution = model === "qwen3Asr" ? undefined : normalizeSpeechExecution(source.speechExecution);
   return {
     id: safeString(source.id, `legacy-${Date.now()}-${Math.random()}`, 128),
     createdAt: Number(source.createdAt) || Date.now(),
@@ -279,6 +281,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
       Number(source.magicProcessingTimeMs) || 0,
     ),
     model,
+    ...(execution ? { speechExecution: execution } : {}),
     language: safeString(source.language, "en", 12),
     source: ["dictation", "file"].includes(String(source.source))
       ? (source.source as TranscriptRecord["source"])

@@ -32,9 +32,20 @@ def progress(detail: str) -> None:
 class MetalSpeech:
     def __init__(self):
         self.model = None
+        self.precision = None
 
     def status(self):
-        return {"loaded": self.model is not None, "model": MODEL, "device": "mlx"}
+        status = {"loaded": self.model is not None, "model": MODEL, "device": "mlx"}
+        if self.model is not None:
+            status["speechExecution"] = {
+                "modelId": "r2t2",
+                "backendId": "mlx-audio",
+                "precision": self.precision,
+                "checkpoint": {"repository": MODEL, "revision": MODEL_REVISION},
+                "platform": "darwin",
+                "device": "mlx",
+            }
+        return status
 
     def load(self, request):
         if self.model is not None:
@@ -63,11 +74,14 @@ class MetalSpeech:
                 mx.zeros(SAMPLE_RATE, dtype=mx.float32),
                 language="English", max_tokens=8, verbose=False,
             )
+            # The pinned, unquantized MLX conversion retains BF16 weights.
+            self.precision = "bf16"
             return self.status()
         except BaseException:
             # Loading itself can fail after allocating Metal buffers, before
             # load_model returns an object that we can assign to self.model.
             self.model = None
+            self.precision = None
             gc.collect()
             with contextlib.suppress(Exception):
                 mx.clear_cache()
@@ -127,6 +141,7 @@ class MetalSpeech:
     def unload(self):
         loaded = self.model is not None
         self.model = None
+        self.precision = None
         gc.collect()
         if loaded:
             import mlx.core as mx

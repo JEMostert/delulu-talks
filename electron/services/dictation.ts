@@ -1,3 +1,4 @@
+import { normalizeSpeechExecution } from "../../src/speechModels";
 import { personalize } from "../../src/personalization";
 import { deliveredText } from "../../src/transcriptText";
 import type { BrowserWindow } from "electron";
@@ -603,6 +604,7 @@ export class DictationService {
       text,
       personalizedText: personalize(text, settings.customWords),
       model: settings.model,
+      speechExecution: normalizeSpeechExecution(result.speechExecution),
       language: String(result.language ?? settings.language),
       source,
       sourceName,

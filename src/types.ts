@@ -1,3 +1,5 @@
+import type { SpeechBackendId, SpeechExecution, SpeechIdentity } from "./speechModels";
+
 export type Page =
   "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
 
@@ -80,6 +82,7 @@ export type MagicRewriteResult = {
 };
 
 export type DictationStatus = {
+  speechExecution?: SpeechExecution | null;
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   migrationRequired?: boolean;
@@ -104,6 +107,8 @@ export type TranscriptRecord = {
   magicIncludedInferences?: boolean;
   magicProcessingTimeMs?: number;
   model: ModelId;
+  /** Observed at recognition time; absent on legacy records, never inferred. */
+  speechExecution?: SpeechExecution;
   language: string;
   source: TranscriptSource;
   sourceName?: string | null;
@@ -122,6 +127,8 @@ export type ModelProvenance = {
 };
 
 export type ModelInfo = {
+  identity: SpeechIdentity;
+  backendIds: SpeechBackendId[];
   runtime: string;
   downloadSize: string;
   id: SpeechModelId;

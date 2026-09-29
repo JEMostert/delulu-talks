@@ -25,9 +25,20 @@ class WindowsSpeech:
     def __init__(self):
         self.model = None
         self.processor = None
+        self.precision = None
 
     def status(self):
-        return {"loaded": self.model is not None, "model": MODEL, "device": "cuda"}
+        status = {"loaded": self.model is not None, "model": MODEL, "device": "cuda"}
+        if self.model is not None:
+            status["speechExecution"] = {
+                "modelId": "r2t2",
+                "backendId": "transformers-cuda",
+                "precision": self.precision,
+                "checkpoint": {"repository": MODEL, "revision": MODEL_REVISION},
+                "platform": "win32",
+                "device": "cuda",
+            }
+        return status
 
     def load(self, request):
         if self.model is not None:
@@ -63,6 +74,7 @@ class WindowsSpeech:
                     converted_root, dtype=dtype, device_map={"": "cuda"},
                 ).eval()
                 self._warmup()
+                self.precision = "bf16" if dtype == torch.bfloat16 else "fp16"
                 return self.status()
             sys.__stdout__.write("@delulu-progress:Converting R2T2 for native Windows CUDA (first load only)…\n")
             sys.__stdout__.flush()
@@ -107,6 +119,7 @@ class WindowsSpeech:
             # Cache the original BF16 weights before selecting this GPU's dtype.
             self.model.to(device="cuda", dtype=dtype).eval()
             self._warmup()
+            self.precision = "bf16" if dtype == torch.bfloat16 else "fp16"
             return self.status()
         except BaseException:
             self.unload()
@@ -182,6 +195,7 @@ class WindowsSpeech:
     def unload(self):
         self.model = None
         self.processor = None
+        self.precision = None
         gc.collect()
         torch = sys.modules.get("torch")
         with contextlib.suppress(Exception):

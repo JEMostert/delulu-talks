@@ -1,3 +1,4 @@
+import { normalizeSpeechExecution } from "../../src/speechModels";
 import { splitForRewrite } from "../../src/personalization";
 import { app } from "electron";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
@@ -179,6 +180,7 @@ export class AsrService {
 
   private updateStatus(patch: Partial<DictationStatus>): void {
     this.status = { ...this.status, ...patch };
+    if (this.status.engine !== "ready") this.status.speechExecution = null;
     for (const listener of this.statusListeners) listener(this.getStatus());
   }
 
@@ -463,7 +465,7 @@ export class AsrService {
         progress: 0.85,
       });
       if (!eligible()) return;
-      await this.request("speech", "load", {
+      const loaded = await this.request<Record<string, unknown>>("speech", "load", {
         cacheDir: this.storage.modelCacheDirectory,
       });
       if (!eligible()) return;
@@ -471,6 +473,7 @@ export class AsrService {
         phase: "idle",
         engine: "ready",
         message: `${model.name} ready`,
+        speechExecution: normalizeSpeechExecution(loaded.speechExecution) ?? null,
         detail: null,
         model: settings.model,
         progress: 1,
@@ -518,6 +521,9 @@ export class AsrService {
     try {
       await this.ensureLoaded(settings);
       this.clearSpeechIdle();
+      // Capture this execution before the asynchronous request; future loads must
+      // never relabel the transcript produced by the current worker.
+      const execution = this.status.speechExecution;
       const result = await this.request<Record<string, unknown>>(
         "speech",
         "transcribe",
@@ -529,6 +535,7 @@ export class AsrService {
       );
       return {
         ...result,
+        speechExecution: execution ? structuredClone(execution) : undefined,
         processingTime: (performance.now() - started) / 1000,
       };
     } finally {
