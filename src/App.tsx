@@ -1,4 +1,4 @@
-import { ruleConflict, ruleKind } from "./personalization";
+import { createTranscriptCommands } from "./transcriptCommands";
 import { useEffect, useState } from "react";
 import {
   Check,
@@ -23,7 +23,7 @@ import { ModelsPage } from "./pages/ModelsPage";
 import { VocabularyPage } from "./pages/VocabularyPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import type { CustomWord, ExportFormat, Page } from "./types";
+import type { Page } from "./types";
 
 const pages: Record<Page, { title: string; subtitle: string }> = {
   home: { title: "Controls", subtitle: "Capture · transcribe · deliver" },
@@ -68,89 +68,8 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
     void w.action(operation, message);
   };
   const onRecord = run(() => bridge.toggleDictation());
-  const remember = (word: CustomWord) => {
-    if (w.settings.customWords.length >= 500) {
-      return Promise.reject(
-        new Error(
-          "You have 500 saved rules. Remove one before adding another.",
-        ),
-      );
-    }
-    const existing = w.settings.customWords.find(
-      (item) =>
-        ruleKind(item) === "correction" &&
-        item.term.toLowerCase() === word.term.toLowerCase(),
-    );
-    const conflict = ruleConflict(
-      { ...word, id: existing?.id ?? word.id },
-      w.settings.customWords,
-    );
-    if (conflict) {
-      return Promise.reject(new Error(conflict));
-    }
-    return w.saveSettings(
-      {
-        customWords: existing
-          ? w.settings.customWords.map((item) =>
-              item.id === existing.id
-                ? {
-                    ...item,
-                    soundsLike: [
-                      ...new Set([
-                        ...item.soundsLike
-                          .split(",")
-                          .map((s) => s.trim())
-                          .filter(Boolean),
-                        word.soundsLike,
-                      ]),
-                    ].join(", "),
-                    enabled: true,
-                  }
-                : item,
-            )
-          : [word, ...w.settings.customWords],
-      },
-      "Correction remembered",
-    );
-  };
-  const transcriptActions = {
-    onCopy: w.copy,
-    onRewrite: bridge.rewriteMagic,
-    onRewriteSetup: () => w.setPage("models"),
-    rewriteStatus: w.magicStatus,
-    onSetRewrite: async (
-      id: string,
-      result: import("./types").MagicRewriteResult | null,
-      sourceText: string,
-    ) =>
-      w.action(
-        async () => {
-          const record = await bridge.setTranscriptRewrite(
-            id,
-            result,
-            sourceText,
-          );
-          w.setHistory((items) =>
-            items.map((item) => (item.id === id ? record : item)),
-          );
-        },
-        result ? "Rewrite applied" : "Rewrite undone",
-      ),
-    onUpdateTranscript: w.updateTranscript,
-    onRemember: remember,
-    onDelete: (id: string) => {
-      void w.action(async () => {
-        await bridge.deleteHistory(id);
-        w.setHistory((items) => items.filter((item) => item.id !== id));
-      }, "Transcript deleted");
-    },
-    onExport: (id: string, format: ExportFormat) => {
-      void w.action(async () => {
-        const path = await bridge.exportTranscript(id, format);
-        if (path) w.setToast("Transcript exported");
-      });
-    },
-  };
+  const { actions: transcriptActions, onClearHistory } =
+    createTranscriptCommands(w);
   const download = run(() => bridge.downloadUpdate());
   const install = run(() => bridge.installUpdate());
   const setup = run(() => bridge.setupModel());
@@ -410,10 +329,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   <HistoryPage
                     history={w.history}
                     {...transcriptActions}
-                    onClear={run(async () => {
-                      await bridge.clearHistory();
-                      w.setHistory([]);
-                    }, "History cleared")}
+                    onClear={onClearHistory}
                   />
                 </div>
               )}
