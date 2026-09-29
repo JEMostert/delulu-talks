@@ -1,5 +1,6 @@
 import { LANGUAGES } from "./data";
 import type { CustomWord } from "./types";
+import { splitTechnicalText, technicalRanges } from "./technicalIdentifiers";
 
 export function normalizeRuleLanguage(language?: string): string {
   const value = (language ?? "").trim().toLowerCase();
@@ -127,7 +128,7 @@ export function personalize(text: string, words: CustomWord[], language?: string
     // Stable first-rule priority for legacy conflicts. Never cascade replacements.
     if (!rules.has(trigger)) rules.set(trigger, output);
   }
-  return replacePhrases(text, rules);
+  return splitTechnicalText(text).map((part) => part.protected ? part.text : replacePhrases(part.text, rules)).join("");
 }
 
 export type RuleMatch = {
@@ -146,11 +147,13 @@ export function previewPersonalization(text: string, words: CustomWord[], langua
   for (const { trigger, output, rule } of enabledRules(words, language)) {
     if (!rules.has(trigger)) rules.set(trigger, { output, rule });
   }
+  const literals = technicalRanges(text);
   const matches: RuleMatch[] = [];
   let result = "";
   let cursor = 0;
   if (rules.size) {
     for (const match of phraseMatches(text, rules)) {
+      if (literals.some((range) => range.start < match.index + match.length && range.end > match.index)) continue;
       result += text.slice(cursor, match.index) + match.output.output;
       cursor = match.index + match.length;
       matches.push({
@@ -189,14 +192,26 @@ export function splitForRewrite(
       if (!rules.has(phrase)) rules.set(phrase, word.replacement);
     }
   }
-  if (!rules.size) return [{ text, protected: false }];
+  if (!rules.size) return splitTechnicalText(text);
   const parts: Array<{ text: string; protected: boolean }> = [];
+  const literals = technicalRanges(text);
+  let literalIndex = 0;
   let cursor = 0;
   for (const match of phraseMatches(text, rules)) {
     const index = match.index;
+    const matchedText = text.slice(index, index + match.length);
+    while (literalIndex < literals.length && literals[literalIndex].end <= index)
+      literalIndex++;
+    // Exact saved blocks take priority. A spoken-trigger alias inside an
+    // address, path, command or version must never alter that literal.
+    if (
+      !savedBlocks.has(matchedText) &&
+      literalIndex < literals.length &&
+      literals[literalIndex].start < index + match.length
+    )
+      continue;
     if (index > cursor)
       parts.push({ text: text.slice(cursor, index), protected: false });
-    const matchedText = text.slice(index, index + match.length);
     // Triggers use case-insensitive recognition, but an already expanded block
     // must retain its bytes even when another block differs only in case.
     parts.push({
@@ -207,5 +222,7 @@ export function splitForRewrite(
   }
   if (cursor < text.length)
     parts.push({ text: text.slice(cursor), protected: false });
-  return parts;
+  return parts.flatMap((part) =>
+    part.protected ? [part] : splitTechnicalText(part.text),
+  );
 }

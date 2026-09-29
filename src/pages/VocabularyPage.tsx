@@ -85,6 +85,11 @@ export function VocabularyPage({
               ? "Replace recognized phrases in clean results. You can also remember a correction directly from a transcript."
               : "Say a trigger phrase to insert an exact address, signature, or reusable block of text."}
           </p>
+          <p className="text-muted max-w-[480px] text-[13px] mt-2">
+            Literal URLs, email addresses, paths, versions and command flags
+            stay exact during corrections and rewriting. Wrap commands in
+            backticks to keep the whole command unchanged.
+          </p>
         </div>
         <button
           className="primary-button"
