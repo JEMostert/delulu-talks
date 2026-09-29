@@ -10,6 +10,7 @@ import { modelById } from "../../data";
 import type { AppSettings, DictationStatus } from "../../types";
 import { ModelSetupStatus } from "./ModelSetupStatus";
 import { ModelProvenance } from "./ModelProvenance";
+import { ModelLifecycle } from "./ModelLifecycle";
 
 export type SpeechSetupProps = {
   status: DictationStatus;
@@ -90,6 +91,7 @@ export function SpeechSetup({
           </button>
         </div>
       </section>
+      <ModelLifecycle status={status} />
       <ModelSetupStatus
         status={status}
         kind="speech"

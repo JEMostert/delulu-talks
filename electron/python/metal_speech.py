@@ -32,9 +32,12 @@ def progress(detail: str, stage: str = "load") -> None:
 class MetalSpeech:
     def __init__(self):
         self.model = None
+        self.warmup = "not-started"
 
     def status(self):
-        return {"loaded": self.model is not None, "model": MODEL, "device": "mlx"}
+        loaded = self.model is not None
+        return {"loaded": loaded, "model": MODEL, "device": "mlx" if loaded else None,
+                "residency": "resident" if loaded else "unloaded", "warmup": self.warmup}
 
     def load(self, request):
         if self.model is not None:
@@ -57,6 +60,7 @@ class MetalSpeech:
         progress("Loading R2T2 with MLX…", "load")
         try:
             self.model = load_model(Path(model_path), strict=True)
+            self.warmup = "warming"
             progress("Warming up R2T2 speech inference…", "warmup")
             # Exercise the full decoder before reporting Ready. Warmup output
             # is discarded and never enters transcript history or delivery.
@@ -64,11 +68,13 @@ class MetalSpeech:
                 mx.zeros(SAMPLE_RATE, dtype=mx.float32),
                 language="English", max_tokens=8, verbose=False,
             )
+            self.warmup = "complete"
             return self.status()
         except BaseException:
             # Loading itself can fail after allocating Metal buffers, before
             # load_model returns an object that we can assign to self.model.
             self.model = None
+            self.warmup = "not-started"
             gc.collect()
             with contextlib.suppress(Exception):
                 mx.clear_cache()
@@ -128,9 +134,10 @@ class MetalSpeech:
     def unload(self):
         loaded = self.model is not None
         self.model = None
+        self.warmup = "not-started"
         gc.collect()
         if loaded:
             import mlx.core as mx
             with contextlib.suppress(Exception):
                 mx.clear_cache()
-        return {"loaded": False}
+        return self.status()

@@ -3,6 +3,7 @@ import { MAGIC_MODELS, magicModelById } from "../../data";
 import type { AppSettings, MagicStatus } from "../../types";
 import { ModelSetupStatus } from "./ModelSetupStatus";
 import { ModelProvenance } from "./ModelProvenance";
+import { ModelLifecycle } from "./ModelLifecycle";
 
 export type RewriteSetupProps = {
   magicStatus: MagicStatus;
@@ -93,6 +94,7 @@ export function RewriteSetup({
       </div>
       <p className="mt-3 text-xs text-muted">{writingModel.description}</p>
       <ModelProvenance {...writingModel} />
+      <ModelLifecycle status={magicStatus} />
       <p className="mt-2 text-xs text-muted" role="status">
         {magicStatus.message}
       </p>
