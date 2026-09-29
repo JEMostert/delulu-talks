@@ -74,14 +74,24 @@ export function ruleConflict(
   const triggers = ruleTriggers(draft);
   if (!triggers.length) return null;
   const pattern = new RegExp(`^(?:${triggers.map(escape).join("|")})$`, "iu");
-  const conflict = words.find(
-    (word) =>
-      word.id !== draft.id &&
-      ruleTriggers(word).some((trigger) => pattern.test(trigger)),
-  );
-  return conflict
-    ? `This phrase is already used by “${conflict.term}”. Edit that rule or choose another phrase.`
-    : null;
+  for (const word of words) {
+    if (word.id === draft.id) continue;
+    const existingTrigger = ruleTriggers(word).find((trigger) =>
+      pattern.test(trigger),
+    );
+    if (existingTrigger === undefined) continue;
+    // Keep both saved spellings: Unicode simple folding can match phrases
+    // whose characters differ, such as “ſ” and “s”.
+    const draftTrigger = triggers.find((trigger) =>
+      samePhrase(trigger, existingTrigger),
+    )!;
+    const draftKind =
+      ruleKind(draft) === "shortcut" ? "Text shortcut" : "Correction";
+    const existingKind =
+      ruleKind(word) === "shortcut" ? "text shortcut" : "correction";
+    return `${draftKind} trigger “${draftTrigger}” is already used by ${existingKind} “${word.term}” (trigger “${existingTrigger}”${word.enabled ? "" : ", disabled"}). Edit that rule or choose another phrase.`;
+  }
+  return null;
 }
 
 export function personalize(text: string, words: CustomWord[]): string {
