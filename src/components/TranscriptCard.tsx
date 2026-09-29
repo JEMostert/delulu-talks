@@ -2,6 +2,7 @@ import { CaptureDiagnostics } from "./CaptureDiagnostics";
 import { ExportTemplateDialog } from "./ExportTemplateDialog";
 import type { ExportTemplateRequest } from "../exportTemplates";
 import { RewriteDialog } from "./RewriteDialog";
+import { IdentifierPreview } from "./IdentifierPreview";
 import { FillerPreview } from "./FillerPreview";
 import { normalizeLanguageMetadata } from "../transcriptLanguage";
 import { correctionSuggestion } from "../correctionSuggestion";
@@ -14,6 +15,7 @@ import {
 } from "../correctionDrafts";
 import { TranscriptTitleDialog } from "./TranscriptTitleDialog";
 import { SuggestedRulePreview } from "./SuggestedRulePreview";
+
 import {
   BookPlus,
   Check,
@@ -94,7 +96,9 @@ export function TranscriptCard({
   const [templateExport, setTemplateExport] = useState(false);
   const [showSource, setShowSource] = useState(false);
   const [rewriting, setRewriting] = useState(false);
+  const [identifierPreview, setIdentifierPreview] = useState(false);
   const [fillerPreview, setFillerPreview] = useState(false);
+
   const [correctionSuggested, setCorrectionSuggested] = useState(false);
   const [editing, setEditing] = useState(!!pendingDraft);
   const draft = pendingDraft?.text ?? "";
@@ -435,6 +439,9 @@ export function TranscriptCard({
                 <button className="tool-button" onClick={() => onCopy(text)}>
                   <Copy /> Copy {showSource ? "speech" : "result"}
                 </button>
+                <button className="tool-button" onClick={() => setIdentifierPreview(true)}>
+                  Identifiers
+                </button>
                 {edited && (
                   <button
                     className="tool-button"
@@ -681,6 +688,13 @@ export function TranscriptCard({
           </label>
           <SuggestedRulePreview source={record} examples={ruleExamples} heard={heard} correct={correct} />
         </Modal>
+      )}
+      {identifierPreview && (
+        <IdentifierPreview
+          source={transcriptText(record)}
+          onCopy={onCopy}
+          onClose={() => setIdentifierPreview(false)}
+        />
       )}
     </article>
   );
