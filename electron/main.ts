@@ -785,7 +785,7 @@ async function start(): Promise<void> {
   });
   shortcut.onStatus((status) => broadcast("shortcut:statusChanged", status));
   setupPermissions();
-  registerMainIpc({ getMainWindow: () => mainWindow, storage, asr, paste, pill, dictation, shortcut, updates, persistSettings, settingsBusy: () => settingsQueue.busy, getLastTranscript: () => lastTranscript, setLastTranscript: (record) => { lastTranscript = record; }, sessionTranscripts, rebuildTrayMenu, modelCache, ruleUsage, schedulePasteLast, getPasteRecovery: () => pasteRecovery, setPasteRecovery, applySettings, settingsQueue, broadcast, selectedAudioFiles });
+  registerMainIpc({ getMainWindow: () => mainWindow, storage, asr, paste, pill, dictation, shortcut, updates, persistSettings, settingsBusy: () => settingsQueue.busy, getLastTranscript: () => lastTranscript, setLastTranscript: (record) => { lastTranscript = record; }, sessionTranscripts, rebuildTrayMenu, pasteLast, modelCache, ruleUsage, schedulePasteLast, getPasteRecovery: () => pasteRecovery, setPasteRecovery, applySettings, settingsQueue, broadcast, selectedAudioFiles });
   if (!smokeTest) {
     if (app.isPackaged)
       void shortcut

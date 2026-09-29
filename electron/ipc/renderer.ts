@@ -3,7 +3,7 @@ import { rendererRecoveryState, reloadRenderer } from "../services/rendererRecov
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
-export function registerRendererIpc({ handle }: IpcRegistrar, { asr, paste, dictation, shortcut, updates, settingsBusy }: Pick<IpcDependencies, "asr" | "paste" | "dictation" | "shortcut" | "updates" | "settingsBusy">): void {
+export function registerRendererIpc({ handle }: IpcRegistrar, { asr, paste, dictation, shortcut, updates, settingsBusy }: Pick<IpcDependencies, "pasteLast" | "asr" | "paste" | "dictation" | "shortcut" | "updates" | "settingsBusy">): void {
 const recoveryInput = () => ({ captureActive: dictation.isActive, canStopRecording: dictation.canStopRecording, runtimeBusy: asr.isBusy, settingsBusy: settingsBusy(), updateBusy: ["checking", "downloading"].includes(updates.getStatus().phase) });
 handle("renderer:recoveryState", () =>
     rendererRecoveryState(recoveryInput()),

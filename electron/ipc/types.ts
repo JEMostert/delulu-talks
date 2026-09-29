@@ -1,3 +1,4 @@
+import type { PasteLastService } from "../services/pasteLast";
 import type { PasteRecovery } from "../../src/types";
 import type { ModelCacheService } from "../services/modelCache";
 import type { RuleUsageService } from "../services/ruleUsage";
@@ -42,6 +43,7 @@ export interface IpcDependencies {
   setLastTranscript: (record: TranscriptRecord | null) => void;
   sessionTranscripts: Map<string, TranscriptRecord>;
   rebuildTrayMenu: () => void;
+  pasteLast: PasteLastService;
   modelCache: ModelCacheService;
   ruleUsage: RuleUsageService;
   schedulePasteLast: () => unknown;
