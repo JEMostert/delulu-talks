@@ -62,6 +62,9 @@ export const previewApi: DeluluApi = {
     window.location.reload();
   },
   async rendererControllerFailed() {},
+  async getRuntimeSetupSnapshot() {
+    return { checkedAt: Date.now(), platform: "Browser preview", arch: "Unknown", source: "preview" as const, runtimes: [] };
+  },
   async getLocalDataOverview() {
     desktopOnly();
   },

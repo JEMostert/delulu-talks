@@ -29,6 +29,7 @@ import type {
 import { isMagicPreset, REWRITE_PRESETS } from "../src/rewritePresets";
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
 import { modelById } from "../src/data";
+import { runtimeSetupSnapshot } from "./runtime/setupSnapshot";
 import { deliveredText, transcriptSourceRevision } from "../src/transcriptText";
 import { normalizeTranscriptTitle } from "../src/transcriptTitle";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
@@ -721,6 +722,7 @@ function registerIpc(): void {
     dictation.recorderUnavailable();
   });
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
+  handle("runtime:setupSnapshot", () => runtimeSetupSnapshot(storage));
   handle("runtime:setupLog", (_event, kind: unknown) => {
     if (kind !== "speech" && kind !== "rewrite")
       throw new Error("Choose speech or rewriting setup logs");
