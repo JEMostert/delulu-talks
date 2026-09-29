@@ -293,7 +293,7 @@ describe("dictation delivery pipeline", () => {
       expect(testHarness.pasted).toEqual(["Ship the release."]);
       expect(testHarness.hud.at(-1)).toEqual({
         state: "success",
-        title: "Pasted",
+        title: "Paste attempted",
         detail: "Ready to keep talking",
       });
     } finally {

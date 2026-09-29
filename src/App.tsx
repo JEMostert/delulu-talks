@@ -409,7 +409,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                       w.setToast(
                         "Focus another text field — pasting in 3 seconds…",
                       );
-                      void w.action(() => bridge.testPaste(), "Test pasted");
+                      void w.action(() => bridge.testPaste(), "Paste test shortcut sent — check your destination");
                     }}
                     onCheckForUpdates={run(() => bridge.checkForUpdates())}
                     onDownloadUpdate={download}

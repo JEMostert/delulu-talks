@@ -264,7 +264,7 @@ export function useWorkspace() {
   };
   const pasteLast = () => {
     setToast("Focus a text field — pasting in 3 seconds…");
-    void action(() => bridge.pasteLastTranscript(), "Last result pasted");
+    void action(() => bridge.pasteLastTranscript(), "Last result copied · paste shortcut sent");
   };
   return {
     page,
