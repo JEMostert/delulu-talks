@@ -2,12 +2,16 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   WorkerClient,
   operationTimeout,
   transcriptionTimeout,
 } from "./workerClient";
-import type { WorkerProtocolLimits } from "./workerProtocol";
+import {
+  DEFAULT_WORKER_PROTOCOL_LIMITS,
+  type WorkerProtocolLimits,
+} from "./workerProtocol";
 
 test("interactive operations do not inherit download deadlines", () => {
   expect(operationTimeout("transcribe")).toBe(120_000);
@@ -645,5 +649,46 @@ for line in sys.stdin:
     expect(h.failures).toHaveLength(0);
   } finally {
     h.cleanup();
+  }
+});
+
+test("desktop transport and real Python entrypoint agree at the default request byte boundary", async () => {
+  const failures: Error[] = [];
+  const client = new WorkerClient(
+    () => ({
+      python: "python3",
+      script: fileURLToPath(
+        new URL("../python/transcription_engine.py", import.meta.url),
+      ),
+      env: process.env,
+    }),
+    (error) => failures.push(error),
+  );
+  const overhead = Buffer.byteLength(
+    JSON.stringify({ text: "", id: "0".repeat(36), command: "status" }),
+  );
+  const remaining = DEFAULT_WORKER_PROTOCOL_LIMITS.requestBytes - overhead;
+  const text =
+    "👋".repeat(Math.floor(remaining / 4)) + "x".repeat(remaining % 4);
+  try {
+    expect(
+      (await client.request<{ loaded: boolean }>("status", { text }, 3000))
+        .loaded,
+    ).toBe(false);
+    await expect(
+      client.request("status", { text: text + "x" }, 3000),
+    ).rejects.toThrow("UTF-8 bytes");
+    await expect(
+      client.request("fixture-unknown-command", {}, 3000),
+    ).rejects.toThrow("Unknown worker command");
+    expect(
+      (await client.request<{ loaded: boolean }>("magicStatus", {}, 3000))
+        .loaded,
+    ).toBe(false);
+    expect(client.running).toBe(true);
+    expect(client.busy).toBe(false);
+    expect(failures).toEqual([]);
+  } finally {
+    await client.stopAndWait();
   }
 });
