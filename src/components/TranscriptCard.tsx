@@ -1,4 +1,5 @@
 import { RewriteDialog } from "./RewriteDialog";
+import { SuggestedRulePreview } from "./SuggestedRulePreview";
 import { useState } from "react";
 import {
   BookPlus,
@@ -42,6 +43,7 @@ export type TranscriptActions = {
   onDelete?: (id: string) => void;
   onExport?: (id: string, format: ExportFormat) => void;
   onRemember?: (word: CustomWord) => Promise<boolean>;
+  ruleExamples?: TranscriptRecord[];
 };
 export function TranscriptCard({
   record,
@@ -52,6 +54,7 @@ export function TranscriptCard({
   onDelete,
   onExport,
   onRemember,
+  ruleExamples,
   onRewrite,
   onSetRewrite,
   onRewriteSetup,
@@ -525,6 +528,7 @@ export function TranscriptCard({
               placeholder="e.g. Delulu"
             />
           </label>
+          <SuggestedRulePreview source={record} examples={ruleExamples} heard={heard} correct={correct} />
         </Modal>
       )}
     </article>
