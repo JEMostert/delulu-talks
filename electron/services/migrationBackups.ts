@@ -11,12 +11,14 @@ type Snapshot = {
 };
 const owner = "delulu-profile-migration";
 const snapshotName = /^migration-\d+-[0-9a-f-]{36}$/;
+const pendingName = /^\.pending-\d+-[0-9a-f-]{36}$/;
 const files: ProfileFile[] = ["settings.json", "history.json"];
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 
-function completedSnapshots(root: string): Array<{ directory: string; manifest: Snapshot }> {
+function completedSnapshots(root: string, includePending = false): Array<{ directory: string; manifest: Snapshot }> {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
-    if (!entry.isDirectory() || !snapshotName.test(entry.name)) return [];
+    if (!entry.isDirectory() || (!snapshotName.test(entry.name) &&
+        !(includePending && pendingName.test(entry.name)))) return [];
     const directory = join(root, entry.name);
     try {
       const manifest = JSON.parse(readFileSync(join(directory, "manifest.json"), "utf8")) as Snapshot;
@@ -57,10 +59,12 @@ export function backupProfileMigration(
     const destination = join(root, `migration-${id}`);
     mkdirSync(pending, { mode: 0o700 });
     try {
-      for (const { name, bytes } of contents)
-        writeFileSync(join(pending, name), bytes, { mode: 0o600, flag: "wx" });
+      // Ownership metadata precedes copied history, so explicit deletion can
+      // revoke history from an interrupted pending snapshot as well.
       const manifest: Snapshot = { owner, version: 1, createdAt: Date.now(), files: expected };
       writeFileSync(join(pending, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+      for (const { name, bytes } of contents)
+        writeFileSync(join(pending, name), bytes, { mode: 0o600, flag: "wx" });
       renameSync(pending, destination);
       keep = destination;
     } catch (error) {
@@ -83,7 +87,7 @@ export function backupProfileMigration(
 export function removeMigrationHistoryBackups(dataDirectory: string): void {
   const root = join(dataDirectory, "migration-backups");
   if (!existsSync(root)) return;
-  for (const { directory, manifest } of completedSnapshots(root)) {
+  for (const { directory, manifest } of completedSnapshots(root, true)) {
     if (!("history.json" in manifest.files)) continue;
     rmSync(join(directory, "history.json"), { force: true, maxRetries: 3, retryDelay: 100 });
     const remaining = { ...manifest.files };
