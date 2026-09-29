@@ -20,6 +20,7 @@ import { speechLanguageCapability } from "../speechCapabilities";
 import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
 import { LocalData } from "../components/LocalData";
 import { Diagnostics } from "../components/Diagnostics";
+import { HistoryRetention } from "../components/HistoryRetention";
 import { MicrophoneNotice } from "../components/MicrophoneNotice";
 import type {
   AppSettings,
@@ -522,6 +523,7 @@ export function SettingsPage(props: Props) {
               </div>
             </SettingRow>
           </section>
+          <HistoryRetention policy={s.historyRetention} saving={saving} onSave={onSave} />
           <Diagnostics />
         </>
       )}
@@ -699,6 +701,7 @@ export function SettingsPage(props: Props) {
               </button>
             </SettingRow>
           </section>
+          <HistoryRetention policy={s.historyRetention} saving={saving} onSave={onSave} />
           <Diagnostics />
         </>
       )}

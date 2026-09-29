@@ -47,6 +47,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   spokenFormattingCommands: false,
   pastePortalToken: "",
   keepHistory: true,
+  historyRetention: { maxAgeDays: null, maxCount: null },
   showOverlay: true,
   captureSoundsMuted: true,
   captureSoundVolume: 0.15,

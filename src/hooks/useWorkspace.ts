@@ -122,6 +122,11 @@ export function useWorkspace() {
         if (readingHistory) liveRecords.set(record.id, record);
         receiveTranscript(record);
       }),
+      bridge.onHistoryRetentionApplied((removedIds) => {
+        if (!isCurrent()) return;
+        const removed = new Set(removedIds);
+        setHistory((items) => items.filter((record) => !removed.has(record.id)));
+      }),
     ];
     void bridge.recorderReady().catch((reason) => { if (isCurrent()) report(reason); });
     void bridge
