@@ -157,7 +157,7 @@ export async function prepareNativeAudio(source: string, filters: string[] = [])
   const directory = await mkdtemp(join(tmpdir(), "delulu-native-"));
   const path = join(directory, "sample.wav");
   try {
-    await execute("ffmpeg", ["-nostdin", "-hide_banner", "-loglevel", "error", "-n", "-i", sourcePath,
+    await execute("ffmpeg", ["-nostdin", "-hide_banner", "-loglevel", "error", "-n", "-protocol_whitelist", "file,pipe", "-i", sourcePath,
       ...filters, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", "-t", "3601", path],
       { timeout: 120_000, maxBuffer: 80_000, windowsHide: true });
     const durationMs = await wavDuration(path);
