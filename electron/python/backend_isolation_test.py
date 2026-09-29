@@ -193,6 +193,10 @@ class BackendIsolation(unittest.TestCase):
                 worker.magic_processor = object()
                 worker.magic_model_name = "qwen35Small"
                 worker.magic_device = "cuda"
+                # Observe these unloads separately from failed-transcribe
+                # cleanup performed while acquiring the unloaded adapter.
+                clears.clear()
+                collect.reset_mock()
                 worker.dispatch({"command": "unload"})
                 worker.dispatch({"command": "magicUnload"})
                 if system == "win32":
