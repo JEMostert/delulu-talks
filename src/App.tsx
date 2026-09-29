@@ -17,6 +17,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Onboarding } from "./components/Onboarding";
 import { PasteLastNotice } from "./components/PasteLastNotice";
 import { UpdateNotice } from "./components/UpdateNotice";
+import { PasteRecoveryNotice } from "./components/PasteRecoveryNotice";
 import { Alert } from "./components/ui";
 import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
@@ -228,6 +229,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             Runtime to avoid loading it again between recordings.
           </div>
         )}
+        <PasteRecoveryNotice onCopied={() => w.setToast("Copied to clipboard — paste manually")} />
         {w.error && (
           <div className="px-6 pt-3 max-[900px]:px-4">
             <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>

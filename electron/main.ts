@@ -22,6 +22,7 @@ import type {
   MagicPreset,
   MagicRewriteRequest,
   Page,
+  PasteRecovery,
   RecordingSubmission,
   TranscriptRecord,
 } from "../src/types";
@@ -95,6 +96,12 @@ let updates: UpdateService;
 const settingsQueue = new SerialQueue();
 let lastTranscript: TranscriptRecord | null = null;
 const sessionTranscripts = new Map<string, TranscriptRecord>();
+let pasteRecovery: PasteRecovery | null = null;
+
+function setPasteRecovery(recovery: PasteRecovery | null): void {
+  pasteRecovery = recovery;
+  broadcast("paste:recoveryChanged", recovery);
+}
 const selectedAudioFiles = new Set<string>();
 
 function preloadPath(): string {
@@ -687,6 +694,30 @@ function registerIpc(): void {
       throw new Error("Invalid paste operation");
     return pasteLast.cancel(operationId);
   });
+  handle("paste:recovery", () => pasteRecovery);
+  handle("paste:dismissRecovery", (_event, id: unknown) => {
+    const key = validateText(id, 128);
+    if (pasteRecovery?.transcriptId === key) setPasteRecovery(null);
+  });
+  handle("paste:copyInstead", (_event, id: unknown) => {
+    const key = validateText(id, 128);
+    if (pasteRecovery?.transcriptId !== key)
+      throw new Error("This paste recovery is no longer available. Open History to copy a retained transcript.");
+    // Resolve at the moment of the action: edits apply, deleted records never fall back to cached text.
+    const record = storage.findHistory(key) ?? sessionTranscripts.get(key);
+    if (!record) {
+      setPasteRecovery(null);
+      throw new Error("The transcript was removed. Nothing was copied.");
+    }
+    try {
+      paste.copy(deliveredText(record));
+    } catch (error) {
+      const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+      setPasteRecovery({ transcriptId: key, detail: `Copy failed: ${detail}. Try Copy instead again, or open History to select the text manually.` });
+      throw new Error("Copy failed. Try again or select the text in History.");
+    }
+    setPasteRecovery(null);
+  });
   handle("dictation:discardFailed", () => dictation.discardFailure());
   handle("dictation:retry", () => dictation.retry());
   handle("settings:get", () => storage.getSettings());
@@ -897,12 +928,14 @@ function registerIpc(): void {
     const key = validateText(id, 128);
     storage.deleteHistory(key);
     sessionTranscripts.delete(key);
+    if (pasteRecovery?.transcriptId === key) setPasteRecovery(null);
     if (lastTranscript?.id === key) lastTranscript = null;
     rebuildTrayMenu();
   });
   handle("history:clear", () => {
     storage.clearHistory();
     sessionTranscripts.clear();
+    setPasteRecovery(null);
     lastTranscript = null;
     rebuildTrayMenu();
   });
@@ -1090,6 +1123,10 @@ async function start(): Promise<void> {
         sessionTranscripts.delete(sessionTranscripts.keys().next().value!);
       broadcast("history:added", record);
       rebuildTrayMenu();
+    },
+    (transcriptId, detail) => {
+      if (storage.findHistory(transcriptId) || sessionTranscripts.has(transcriptId))
+        setPasteRecovery({ transcriptId, detail });
     },
   );
   pasteLast = new PasteLastService({

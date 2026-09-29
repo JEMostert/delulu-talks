@@ -89,6 +89,11 @@ export type MagicRewriteResult = {
   includedInferences: boolean;
 };
 
+export type PasteRecovery = {
+  transcriptId: string;
+  detail: string;
+};
+
 export type RetryAudioState = {
   phase: "empty" | "available" | "retrying";
   byteLength: number;
@@ -248,6 +253,10 @@ export type DeluluApi = {
   rendererControllerFailed(): Promise<void>;
   getSettings(): Promise<AppSettings>;
   getDiagnostics(): Promise<RuntimeDiagnostics>;
+  getPasteRecovery(): Promise<PasteRecovery | null>;
+  copyInstead(id: string): Promise<void>;
+  dismissPasteRecovery(id: string): Promise<void>;
+  onPasteRecovery(callback: (recovery: PasteRecovery | null) => void): () => void;
   getLocalDataOverview(): Promise<LocalDataOverview>;
   pasteLastTranscript(): Promise<PasteLastStatus>;
   getPasteLastStatus(): Promise<PasteLastStatus>;

@@ -91,6 +91,7 @@ export class DictationService {
     private readonly paste: PasteService,
     private readonly windows: WindowProvider,
     private readonly broadcastTranscript: (record: TranscriptRecord) => void,
+    private readonly reportPasteFailure: (id: string, detail: string) => void = () => undefined,
   ) {}
 
   private settings(): AppSettings {
@@ -469,6 +470,7 @@ export class DictationService {
       this.broadcastTranscript(record);
       const outputName = record.magicText ? "Magic result" : "Transcript";
       let completion = `${outputName} ready`;
+      let pasteFailed = false;
       let pasteAttempted = false;
       this.setHud({ state: "delivering" });
       if (settings.autoPaste) {
@@ -477,7 +479,10 @@ export class DictationService {
           pasteAttempted = true;
           completion = `${outputName} copied · paste shortcut sent`;
         } catch (error) {
-          completion = `Copied — paste manually (${error instanceof Error ? error.message : String(error)})`;
+          pasteFailed = true;
+          const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+          completion = "Automatic paste failed — use Copy instead or open History";
+          this.reportPasteFailure(record.id, detail);
         }
       } else if (settings.copyToClipboard) {
         this.paste.copy(output);
@@ -485,7 +490,11 @@ export class DictationService {
       }
       if (magicFailure)
         completion = `${completion} · Magic unavailable: ${magicFailure}`;
-      this.setHud({
+      this.setHud(pasteFailed ? {
+        state: "error",
+        title: "Paste failed",
+        detail: "Open Delulu — Copy instead",
+      } : {
         state: "success",
         title:
           pasteAttempted
