@@ -95,7 +95,7 @@ export function Sidebar({
       </nav>
       <div className="mt-auto border-t border-[#22445e] pt-[18px] max-[700px]:hidden">
         <p className="mb-2 px-3 text-[10px] font-semibold tracking-[1.3px] uppercase text-[#87abc6] max-[700px]:hidden">
-          Local engines
+          Local models
         </p>
         <button
           className="relative mt-[3px] flex w-full items-center gap-2.5 rounded-[5px] border border-transparent bg-transparent px-3 py-2 text-left text-[11px] text-[#bed2e4] rounded-[9px] hover:bg-white/10 hover:text-white"
