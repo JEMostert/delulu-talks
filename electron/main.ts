@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { changePersonalProfiles } from "../src/personalProfileCommands";
 import {
   app,
   BrowserWindow,
@@ -23,6 +25,7 @@ import type {
   RecordingSubmission,
   TranscriptRecord,
 } from "../src/types";
+import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
 import { modelById } from "../src/data";
 import { deliveredText } from "../src/transcriptText";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
@@ -30,6 +33,7 @@ import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
 import { PasteService } from "./services/paste";
+import { PasteLastService } from "./services/pasteLast";
 import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
 import {
@@ -38,6 +42,7 @@ import {
   StorageService,
 } from "./services/storage";
 import { exportRecord } from "./services/transcripts";
+import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { UpdateService } from "./services/updates";
 import {
   rendererRecoveryState,
@@ -76,6 +81,7 @@ let quitting = false;
 let storage: StorageService;
 let asr: AsrService;
 let paste: PasteService;
+let pasteLast: PasteLastService;
 let pill: PillService;
 let dictation: DictationService;
 let shortcut: ShortcutService;
@@ -288,6 +294,19 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
   ];
 }
 
+function schedulePasteLast() {
+  const record = lastTranscript
+    ? (storage.findHistory(lastTranscript.id) ??
+      sessionTranscripts.get(lastTranscript.id))
+    : storage.getHistory()[0];
+  if (!record) throw new Error("Record something first");
+  return pasteLast.start(
+    record.id,
+    deliveredText(record),
+    storage.getSettings().pasteLastDelaySeconds,
+  );
+}
+
 function rebuildTrayMenu(): void {
   if (!tray) return;
   const settings = storage.getSettings();
@@ -329,11 +348,25 @@ function rebuildTrayMenu(): void {
     { label: "Open Delulu Talks", click: () => showMainWindow("home") },
     {
       label: "Paste latest result",
-      enabled: Boolean(latest) && !dictation.isActive,
+      enabled:
+        Boolean(latest) &&
+        !dictation.isActive &&
+        !["pending", "delivering"].includes(
+          pasteLast?.getStatus().phase ?? "idle",
+        ),
       click: () =>
         runTrayAction(async () => {
-          if (latest) await paste.paste(deliveredText(latest));
+          schedulePasteLast();
         }),
+    },
+    {
+      label:
+        pasteLast?.getStatus().phase === "pending"
+          ? `Cancel scheduled paste (${pasteLast.getStatus().remainingSeconds}s)`
+          : "Cancel scheduled paste",
+      enabled: pasteLast?.getStatus().phase === "pending",
+      click: () =>
+        pasteLast.cancelPending("Scheduled paste cancelled from the tray."),
     },
     {
       label: "Copy latest result",
@@ -539,29 +572,37 @@ async function applySettings(value: unknown): Promise<AppSettings> {
   const previous = storage.getSettings();
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Expected a settings object");
+  assertPersonalProfilesUpdate(
+    previous.personalProfiles,
+    Object.prototype.hasOwnProperty.call(value, "personalProfiles")
+      ? (value as Record<string, unknown>).personalProfiles
+      : previous.personalProfiles,
+  );
   const next = normalizeSettings({ ...previous, ...value });
-  if (next.shortcut !== previous.shortcut) {
-    try {
-      await shortcut.register(next.shortcut);
-    } catch {
-      await shortcut.register(previous.shortcut).catch(() => undefined);
-      throw new Error(
-        `Global shortcut '${next.shortcut}' is unavailable. ${previous.shortcut} remains active.`,
-      );
-    }
-  }
   const runtimeChanged = next.model !== previous.model;
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
-  if (
-    (runtimeChanged ||
-      magicRuntimeChanged ||
-      next.magicEnabled !== previous.magicEnabled) &&
-    (dictation.isActive || asr.isBusy)
-  )
-    throw new Error(
-      "Finish the current recording or model operation before changing engines",
-    );
-  const saved = storage.updateSettings(next);
+  const assertEngineChangeIdle = () => {
+    if (
+      (runtimeChanged ||
+        magicRuntimeChanged ||
+        next.magicEnabled !== previous.magicEnabled) &&
+      (dictation.isActive || asr.isBusy)
+    )
+      throw new Error(
+        "Finish the current recording or model operation before changing engines",
+      );
+  };
+  assertEngineChangeIdle();
+  const persist = () => {
+    // Portal registration can await permission while capture/inference starts.
+    // Revalidate before the write, so the transaction restores the old shortcut.
+    assertEngineChangeIdle();
+    return storage.updateSettings(next);
+  };
+  const saved =
+    next.shortcut !== previous.shortcut
+      ? await shortcut.change(next.shortcut, previous.shortcut, persist)
+      : persist();
   if (
     !smokeTest &&
     app.isPackaged &&
@@ -617,33 +658,43 @@ function registerIpc(): void {
   );
   handle("renderer:reload", (event) => {
     reloadRenderer(recoveryInput(), () => {
+      pasteLast.cancelPending(
+      "Scheduled paste cancelled because the workspace reloaded.",
+    );
       // Close the shortcut start race until the new controller calls ready.
       dictation.recorderUnavailable();
       event.sender.reload();
     });
   });
-  handle("renderer:controllerFailed", () => dictation.recorderUnavailable());
+  handle("renderer:controllerFailed", () => {
+    pasteLast.cancelPending(
+      "Scheduled paste cancelled because the workspace controller failed.",
+    );
+    dictation.recorderUnavailable();
+  });
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
-  handle("dictation:pasteLast", async () => {
-    const record = lastTranscript
-      ? (storage.findHistory(lastTranscript.id) ?? lastTranscript)
-      : storage.getHistory()[0];
-    if (!record) throw new Error("Record something first");
-    if (dictation.isActive)
-      throw new Error("Finish the current recording first");
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
-    if (dictation.isActive)
-      throw new Error("Paste cancelled because a recording started");
-    const current =
-      storage.findHistory(record.id) ?? sessionTranscripts.get(record.id);
-    if (!current)
-      throw new Error("Paste cancelled because the transcript was removed");
-    await paste.paste(deliveredText(current));
+  handle("dictation:pasteLast", () => schedulePasteLast());
+  handle("dictation:pasteLastStatus", () => pasteLast.getStatus());
+  handle("dictation:cancelPasteLast", (_event, operationId: unknown) => {
+    if (typeof operationId !== "string")
+      throw new Error("Invalid paste operation");
+    return pasteLast.cancel(operationId);
   });
   handle("dictation:discardFailed", () => dictation.discardFailure());
   handle("dictation:retry", () => dictation.retry());
   handle("settings:get", () => storage.getSettings());
   handle("settings:update", (_event, value: unknown) => persistSettings(value));
+  handle("profiles:manage", (_event, command: unknown) =>
+    settingsQueue.run(() =>
+      applySettings({
+        personalProfiles: changePersonalProfiles(
+          storage.getSettings(),
+          command,
+          randomUUID,
+        ),
+      }),
+    ),
+  );
   handle("runtime:status", () => asr.getStatus());
   handle("shortcut:status", () => shortcut.getStatus());
   handle("shortcut:configure", () => shortcut.configure());
@@ -686,12 +737,12 @@ function registerIpc(): void {
       ? (source.preset as MagicRewriteRequest["preset"])
       : "polish";
     const request: MagicRewriteRequest = {
-      text: validateText(source.text, 50_000).trim(),
+      text: validateText(source.text, 50_000),
       preset,
       instructions: validateText(source.instructions ?? "", 4_000).trim(),
       allowInferences: source.allowInferences === true,
     };
-    if (!request.text)
+    if (!request.text.trim())
       throw new Error("Add a transcript or draft before using Magic");
     assertRuntimeIdle();
     return asr.rewriteMagic(request, storage.getSettings());
@@ -707,10 +758,18 @@ function registerIpc(): void {
   handle("dictation:stop", () => dictation.stop());
   handle("dictation:toggle", () => dictation.toggle());
   handle("dictation:cancel", () => dictation.cancel());
-  handle("recorder:started", () => dictation.recordingStarted());
+  handle("recorder:started", (_event, sessionId: unknown) =>
+    dictation.recordingStarted(validateText(sessionId, 128)),
+  );
+  handle("recorder:limit", (_event, sessionId: unknown) =>
+    dictation.recordingLimitReached(validateText(sessionId, 128)),
+  );
   handle("recorder:ready", () => dictation.recorderAvailable());
-  handle("recorder:failed", (_event, message: unknown) =>
-    dictation.recordingFailed(validateText(message, 1000)),
+  handle("recorder:failed", (_event, message: unknown, sessionId: unknown) =>
+    dictation.recordingFailed(
+      validateText(message, 1000),
+      validateText(sessionId, 128),
+    ),
   );
   handle("recorder:submit", (_event, submission: RecordingSubmission) =>
     dictation.submitRecording(submission),
@@ -783,8 +842,8 @@ function registerIpc(): void {
         if (!value || typeof value !== "object")
           throw new Error("Invalid rewrite");
         const rewrite = value as Record<string, unknown>;
-        const text = validateText(rewrite.text, 500_000).trim();
-        if (!text) throw new Error("A rewrite cannot be empty");
+        const text = validateText(rewrite.text, 500_000);
+        if (!text.trim()) throw new Error("A rewrite cannot be empty");
         updated = {
           ...record,
           magicText: text,
@@ -871,14 +930,14 @@ function registerIpc(): void {
       const key = validateText(id, 128);
       const record = sessionTranscripts.get(key) ?? storage.findHistory(key);
       if (!record) throw new Error("Transcript not found");
-      const format = ["txt", "json"].includes(requestedFormat)
+      const format = ["txt", "json", "md"].includes(requestedFormat)
         ? requestedFormat
         : "txt";
       const defaultName = `${(record.sourceName ?? `delulu-${record.createdAt}`).replace(/\.[^.]+$/, "")}.${format}`;
       const options: Electron.SaveDialogOptions = {
-        title: `Export ${format.toUpperCase()}`,
+        title: format === "md" ? "Export Markdown note" : `Export ${format.toUpperCase()}`,
         defaultPath: defaultName,
-        filters: [{ name: format.toUpperCase(), extensions: [format] }],
+        filters: [{ name: format === "md" ? "Markdown notes" : format.toUpperCase(), extensions: [format] }],
       };
       const result = mainWindow
         ? await dialog.showSaveDialog(mainWindow, options)
@@ -887,7 +946,24 @@ function registerIpc(): void {
       const outputPath = extname(result.filePath)
         ? result.filePath
         : `${result.filePath}.${format}`;
-      writeFileSync(outputPath, exportRecord(record, format), "utf8");
+      if (format === "md") {
+        try {
+          // A note export creates a new destination. Exclusive creation also
+          // protects against a file appearing after the native picker closes.
+          writeFileSync(outputPath, exportRecord(record, format), {
+            encoding: "utf8", mode: 0o600, flag: "wx",
+          });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "EEXIST")
+            throw new Error(
+              "A note already exists at this destination. Export again with a different filename; the existing note was preserved.",
+              { cause: error },
+            );
+          throw error;
+        }
+      } else {
+        writeFileSync(outputPath, exportRecord(record, format), "utf8");
+      }
       return outputPath;
     },
   );
@@ -896,6 +972,14 @@ function registerIpc(): void {
 async function start(): Promise<void> {
   if (!smokeTest) ensureDevelopmentDesktopEntry();
   storage = new StorageService();
+  // start() is entered only by the instance holding the user-data singleton lock.
+  // No new worker/capture/import exists while prior-session generated WAVs are inspected.
+  const audioRecovery = await recoverTemporaryAudio(storage.cacheDirectory);
+  if (audioRecovery.failureCount) {
+    const detail = `${audioRecovery.failureCount} temporary-audio cleanup failure(s). Some prior-session audio may remain on disk.\n\n${audioRecovery.failures.join("\n")}\n\nClose Delulu before inspecting the audio-cache directory in its local data folder. Only remove generated dictation/import WAVs you recognise. Your saved history, settings, source media, models and runtimes were not removed by this cleanup.`;
+    console.error("Temporary audio cleanup incomplete:", detail);
+    dialog.showErrorBox("Temporary audio cleanup needs attention", detail);
+  }
   paste = new PasteService(
     () => storage.getSettings().pastePortalToken || null,
     (pastePortalToken) => {
@@ -944,9 +1028,26 @@ async function start(): Promise<void> {
       rebuildTrayMenu();
     },
   );
-  mainWindow.webContents.on("did-start-loading", () =>
-    dictation.recorderUnavailable(),
-  );
+  pasteLast = new PasteLastService({
+    captureActive: () => dictation.isActive,
+    currentText: (id) => {
+      const record = storage.findHistory(id) ?? sessionTranscripts.get(id);
+      return record ? deliveredText(record) : null;
+    },
+    paste: (text) => paste.paste(text),
+    copy: (text) => paste.copy(text),
+    clipboardOnly: () => paste.capabilities().pasteMethod === "clipboard-only",
+    changed: (status) => {
+      broadcast("dictation:pasteLastChanged", status);
+      rebuildTrayMenu();
+    },
+  });
+  mainWindow.webContents.on("did-start-loading", () => {
+    pasteLast.cancelPending(
+      "Scheduled paste cancelled because the workspace reloaded.",
+    );
+    dictation.recorderUnavailable();
+  });
   shortcut = new ShortcutService(() => storage.getSettings().shortcutMode, {
     start: () => dictation.start(),
     stop: () => dictation.stop(),
@@ -954,6 +1055,8 @@ async function start(): Promise<void> {
   });
   asr.onStatus((status) => {
     dictation.runtimeChanged();
+    if (dictation.isActive)
+      pasteLast.cancelPending("Paste cancelled because a recording started.");
     broadcast("runtime:statusChanged", status);
     rebuildTrayMenu();
   });
@@ -1004,7 +1107,9 @@ if (!hasLock) {
 app.on("activate", () => showMainWindow());
 app.on("before-quit", () => {
   quitting = true;
+  dictation?.releaseRetryAudio();
   pill?.shutdown();
+  pasteLast?.shutdown();
   paste?.shutdown();
   void shortcut?.shutdown();
   void asr?.shutdown();

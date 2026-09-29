@@ -1,3 +1,6 @@
+import type { PersonalProfileCommand } from "./personalProfileCommands";
+import type { PersonalProfileDocument } from "./personalProfiles";
+
 export type Page =
   "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
 
@@ -13,8 +16,8 @@ export type EnginePhase =
 export type MagicPhase =
   "idle" | "preparing" | "loading" | "rewriting" | "error";
 export type TranscriptSource = "dictation" | "file";
-export type ExportFormat = "txt" | "json";
 export type PasteShortcut = "standard" | "terminal";
+export type ExportFormat = "txt" | "json" | "md";
 
 export type CustomWord = {
   kind?: "correction" | "shortcut";
@@ -38,7 +41,9 @@ export type AppSettings = {
   inputDeviceLabel: string;
   autoPaste: boolean;
   pasteShortcut: PasteShortcut;
+  pasteLastDelaySeconds: number;
   copyToClipboard: boolean;
+  spokenFormattingCommands: boolean;
   pastePortalToken: string;
   keepHistory: boolean;
   showOverlay: boolean;
@@ -51,6 +56,8 @@ export type AppSettings = {
   modelIdleMinutes: number;
   launchAtLogin: boolean;
   customWords: CustomWord[];
+  /** Stored contract only; no active profile or automatic behavior change. */
+  personalProfiles?: PersonalProfileDocument;
 };
 
 export type MagicStatus = {
@@ -77,12 +84,22 @@ export type MagicRewriteResult = {
   processingTimeMs: number;
   inputCharacters: number;
   outputCharacters: number;
+  /** Records permission to add assumptions, not evidence that any were added. */
   includedInferences: boolean;
+};
+
+export type RetryAudioState = {
+  phase: "empty" | "available" | "retrying";
+  byteLength: number;
+  durationMs: number | null;
+  discarded: boolean;
+  sessionOnly: true;
 };
 
 export type DictationStatus = {
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
+  retryAudio?: RetryAudioState;
   migrationRequired?: boolean;
   phase: DictationPhase;
   engine: EnginePhase;
@@ -92,6 +109,11 @@ export type DictationStatus = {
   progress?: number | null;
 };
 
+/**
+ * Speech backends currently provide no calibrated confidence evidence.
+ * Do not infer confidence from timing, length, model identity, or rewrites.
+ * Add score/uncertainty UI only with a backend calibration contract.
+ */
 export type TranscriptRecord = {
   id: string;
   createdAt: number;
@@ -102,10 +124,15 @@ export type TranscriptRecord = {
   magicText?: string | null;
   magicModel?: MagicModelId | null;
   magicPreset?: MagicPreset | null;
+  /** Historical name: assumptions were allowed; their presence is not detected. */
   magicIncludedInferences?: boolean;
   magicProcessingTimeMs?: number;
   model: ModelId;
   language: string;
+  /** Decoder hint, not a detected-language claim. Absent on legacy records. */
+  requestedLanguage?: string | null;
+  /** Language reported by the backend; forced prompts may influence it. */
+  recognizedLanguage?: string | null;
   source: TranscriptSource;
   sourceName?: string | null;
   processingTimeMs: number;
@@ -159,9 +186,12 @@ export type LabRequest = {
 export type RecorderCommand = {
   action: "start" | "stop" | "cancel";
   inputDeviceId: string;
+  /** Native commands identify their capture; standalone capture can omit this. */
+  sessionId?: string;
 };
 
 export type RecordingSubmission = {
+  sessionId: string;
   wav: Uint8Array;
   durationMs: number;
 };
@@ -214,10 +244,13 @@ export type DeluluApi = {
   rendererControllerFailed(): Promise<void>;
   getSettings(): Promise<AppSettings>;
   getDiagnostics(): Promise<RuntimeDiagnostics>;
-  pasteLastTranscript(): Promise<void>;
+  pasteLastTranscript(): Promise<PasteLastStatus>;
+  getPasteLastStatus(): Promise<PasteLastStatus>;
+  cancelPasteLast(operationId: string): Promise<PasteLastStatus>;
   retryRecording(): Promise<void>;
   discardFailedRecording(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
+  managePersonalProfile(command: PersonalProfileCommand): Promise<AppSettings>;
   getStatus(): Promise<DictationStatus>;
   getMagicStatus(): Promise<MagicStatus>;
   getShortcutStatus(): Promise<ShortcutStatus>;
@@ -254,11 +287,13 @@ export type DeluluApi = {
   chooseAudioFile(): Promise<AudioFileSelection | null>;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
-  recordingStarted(): Promise<void>;
+  recordingStarted(sessionId: string): Promise<void>;
+  recordingLimitReached(sessionId: string): Promise<void>;
   recorderReady(): Promise<void>;
-  recordingFailed(message: string): Promise<void>;
+  recordingFailed(message: string, sessionId: string): Promise<void>;
   recordingLevel(level: number): void;
   submitRecording(recording: RecordingSubmission): Promise<void>;
+  onPasteLastStatus(callback: (status: PasteLastStatus) => void): () => void;
   onStatus(callback: (status: DictationStatus) => void): () => void;
   onMagicStatus(callback: (status: MagicStatus) => void): () => void;
   onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
@@ -275,6 +310,12 @@ export type RendererRecoveryState = {
   canStopRecording: boolean;
 };
 
+export type AccessibilityPermission = {
+  state: "granted" | "denied" | "unknown" | "not-applicable";
+  canAttemptPaste: boolean;
+  detail: string;
+};
+
 export type RuntimeDiagnostics = {
   platform: string;
   arch: string;
@@ -285,5 +326,21 @@ export type RuntimeDiagnostics = {
   dataDirectory: string;
   runtimeInstalled: boolean;
   packages: Record<string, string>;
+  accessibility?: AccessibilityPermission;
   checkedAt: number;
+};
+
+export type PasteLastStatus = {
+  phase:
+    | "idle"
+    | "pending"
+    | "delivering"
+    | "attempted"
+    | "copied"
+    | "cancelled"
+    | "error";
+  operationId: string | null;
+  dueAt: number | null;
+  remainingSeconds: number;
+  message: string;
 };

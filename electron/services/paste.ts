@@ -8,6 +8,7 @@ import {
 } from "dbus-next";
 import type { PasteShortcut, PlatformCapabilities } from "../../src/types";
 import { compatibleSessionBusAddress } from "../compat";
+import { getAccessibilityPermission } from "./accessibilityPermission";
 import { portalRequest, PORTAL_NAME, PORTAL_PATH } from "./shortcutPortal";
 
 type PasteCommand = { program: string; args: string[]; input?: string };
@@ -142,6 +143,11 @@ export class PasteService {
   async paste(text: string): Promise<string> {
     const shortcut = this.io.getShortcut?.() ?? "standard";
     this.copy(text);
+    if (this.platform === "darwin") {
+      const accessibility = getAccessibilityPermission(this.platform);
+      if (!accessibility.canAttemptPaste)
+        throw new Error(`The transcript was copied; ${accessibility.detail}`);
+    }
     if (this.waylandPortal) {
       await this.pasteThroughPortal(shortcut);
       return "wayland-portal";
