@@ -38,9 +38,11 @@ function conciseError(value: string): string {
 class SetupRollbackError extends Error {
   constructor(setupError: unknown, rollbackError: unknown) {
     const message = (error: unknown) =>
-      conciseError(error instanceof Error ? error.message : String(error));
+      conciseError(
+        error instanceof Error ? error.message : String(error),
+      ).slice(0, 200);
     super(
-      `Setup failed: ${message(setupError)}. The previous runtime could not be restored: ${message(rollbackError)}. Fix the filesystem error, then retry Repair.`,
+      `The previous runtime could not be restored. Fix the filesystem error, then retry Repair. Setup failure: ${message(setupError)}. Rollback failure: ${message(rollbackError)}.`,
       {
         cause: new AggregateError(
           [setupError, rollbackError],

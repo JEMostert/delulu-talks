@@ -319,3 +319,27 @@ for (const kind of ["speech", "magic"] as const) {
     30000,
   );
 }
+
+permissionTest(
+  "rollback recovery guidance remains visible after a long model error",
+  () =>
+    verify(`
+    const old = seed(speechRoot, "generation");
+    const longMessage = "Fixture primary model load failed: " + "X".repeat(1000);
+    speechWorker.denyRollback = true;
+    speechWorker.nextFailure = new Error(longMessage);
+    let error;
+    try { await service.setup(settings); } catch (reason) { error = reason; }
+    assert.ok(error);
+    assert.equal(error.cause.errors[0].message, longMessage);
+    assert.equal(error.cause.errors[1].code, "EACCES");
+    const status = service.getStatus();
+    assert.equal(status.engine, "error");
+    assert.match(status.message, /previous runtime could not be restored/);
+    assert.match(status.message, /retry Repair/);
+    assert.ok(status.message.length <= 800);
+    assert.deepEqual(readFileSync(old.python), old.bytes);
+    originalProfileIntact();
+  `),
+  30000,
+);
