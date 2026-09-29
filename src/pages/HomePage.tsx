@@ -9,6 +9,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { speechLanguageCapability } from "../speechCapabilities";
+import { DeliveryControl } from "../components/DeliveryControl";
 import {
   TranscriptCard,
   type TranscriptActions,
@@ -117,77 +118,105 @@ export function HomePage({
         </button>
       </div>
       <div className="grid gap-4 items-start grid-cols-[minmax(0,1.55fr)_minmax(300px,1fr)] max-[1150px]:grid-cols-1">
-        <div className="grid grid-cols-2 gap-3.5 max-[700px]:grid-cols-1">
-          <section
-            className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden col-span-full"
-            aria-labelledby="record-heading"
-          >
-            <header className={panelHeader}>
-              <Mic className="w-4 h-4 text-accent-ink" />
-              <h2 id="record-heading" className={panelHeading}>
-                Record
-              </h2>
-              <span className="ml-auto font-mono text-[10px] text-subtle">
-                01
+        <section
+          className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden"
+          aria-labelledby="record-heading"
+        >
+          <header className={panelHeader}>
+            <Mic className="w-4 h-4 text-accent-ink" />
+            <h2 id="record-heading" className={panelHeading}>
+              Record
+            </h2>
+            <span className="ml-auto font-mono text-[10px] text-subtle">
+              01
+            </span>
+          </header>
+          <div className="flex items-center gap-[18px] mx-3.5 mt-2.5 px-3.5 py-2.5 border border-line rounded-xl bg-[linear-gradient(115deg,var(--panel-heading),var(--surface)_70%)] backdrop-blur-md">
+            {recording ? (
+              <span
+                className="inline-flex items-center gap-2 shrink-0 text-[13px] font-[650] text-accent-ink"
+                role="status"
+              >
+                <Mic className="w-4 h-4 animate-[voice_1.2s_ease-in-out_infinite]" />
+                Listening
               </span>
-            </header>
-            <div className="flex items-center gap-[18px] mx-3.5 mt-2.5 px-3.5 py-2.5 border border-line rounded-xl bg-[linear-gradient(115deg,var(--panel-heading),var(--surface)_70%)] backdrop-blur-md">
-              {recording ? (
+            ) : (
+              <button
+                className="inline-flex items-center gap-2.5 shrink-0 min-h-11 px-[22px] py-2 rounded-[12px] border-0 text-[15px] font-[650] tracking-[0.2px] text-on-accent bg-[linear-gradient(160deg,var(--accent),var(--accent-hover))] shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_22px_rgba(10,132,255,0.35)] hover:brightness-[1.07]"
+                disabled={busy}
+                onClick={() => {
+                  if (needsSetup) {
+                    onNavigate("models");
+                  } else {
+                    startedFromHome.current = true;
+                    void onToggleRecord().then((started) => {
+                      if (!started) startedFromHome.current = false;
+                    }).catch(() => {
+                      startedFromHome.current = false;
+                    });
+                  }
+                }}
+                aria-label={needsSetup ? "Set up speech" : "Start dictation"}
+              >
+                <Mic className="w-5 h-5" />
+                <span>{needsSetup ? "Set up speech" : "Record"}</span>
+              </button>
+            )}
+            <div className="flex flex-col justify-center gap-1 flex-1 min-w-0">
+              <div className="engine-line border-0 m-0 p-0 min-h-0">
                 <span
-                  className="inline-flex items-center gap-2 shrink-0 text-[13px] font-[650] text-accent-ink"
-                  role="status"
+                  className={`engine-state ${status.engine === "ready" ? "ready" : ""}`}
                 >
-                  <Mic className="w-4 h-4 animate-[voice_1.2s_ease-in-out_infinite]" />
-                  Listening
+                  {engineText(status.engine)}
                 </span>
-              ) : (
                 <button
-                  className="inline-flex items-center gap-2.5 shrink-0 min-h-11 px-[22px] py-2 rounded-[12px] border-0 text-[15px] font-[650] tracking-[0.2px] text-on-accent bg-[linear-gradient(160deg,var(--accent),var(--accent-hover))] shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_22px_rgba(10,132,255,0.35)] hover:brightness-[1.07]"
-                  disabled={busy}
-                  onClick={() => {
-                    if (needsSetup) {
-                      onNavigate("models");
-                    } else {
-                      startedFromHome.current = true;
-                      void onToggleRecord().then((started) => {
-                        if (!started) startedFromHome.current = false;
-                      }).catch(() => {
-                        startedFromHome.current = false;
-                      });
-                    }
-                  }}
-                  aria-label={needsSetup ? "Set up speech" : "Start dictation"}
+                  className="text-button text-[10px] min-h-[26px] gap-[3px]"
+                  onClick={() => onNavigate("models")}
                 >
-                  <Mic className="w-5 h-5" />
-                  <span>{needsSetup ? "Set up speech" : "Record"}</span>
+                  Manage <ArrowUpRight className="w-3 h-3" />
                 </button>
-              )}
-              <div className="flex flex-col justify-center gap-1 flex-1 min-w-0">
-                <div className="engine-line border-0 m-0 p-0 min-h-0">
-                  <span
-                    className={`engine-state ${status.engine === "ready" ? "ready" : ""}`}
-                  >
-                    {engineText(status.engine)}
-                  </span>
-                  <button
-                    className="text-button text-[10px] min-h-[26px] gap-[3px]"
-                    onClick={() => onNavigate("models")}
-                  >
-                    Manage <ArrowUpRight className="w-3 h-3" />
-                  </button>
-                </div>
-                <span className="text-[11px] text-muted">
-                  {recording
-                    ? portal && s.shortcutMode === "hold"
-                      ? "Release the shortcut or press Stop in the header to finish."
-                      : "Press the shortcut again or press Stop in the header to finish."
-                    : portal && s.shortcutMode === "hold"
-                      ? "Hold your shortcut, or press Record, and just talk."
-                      : "Press your shortcut or Record to start; press again to finish."}
-                </span>
               </div>
+              <span className="text-[11px] text-muted">
+                {recording
+                  ? portal && s.shortcutMode === "hold"
+                    ? "Release the shortcut or press Stop in the header to finish."
+                    : "Press the shortcut again or press Stop in the header to finish."
+                  : portal && s.shortcutMode === "hold"
+                    ? "Hold your shortcut, or press Record, and just talk."
+                    : "Press your shortcut or Record to start; press again to finish."}
+              </span>
             </div>
-            <div className="grid grid-cols-3 gap-2.5 px-3.5 pt-2.5 pb-1.5 max-[700px]:grid-cols-1">
+          </div>
+          <div className="grid grid-cols-2 gap-2.5 px-3.5 pt-2.5 pb-3 max-[700px]:grid-cols-1">
+            <ControlField label="Language">
+              <select
+                aria-label="Dictation language"
+                className="w-full min-h-[34px] px-[9px] py-[7px] pr-[23px] text-[12px] bg-input"
+                value={s.language}
+                disabled={
+                  saving || busy || !languageCapability.canSelectLanguage
+                }
+                onChange={(e) => save({ language: e.target.value })}
+              >
+                {languageCapability.languages.map(([code, label]) => (
+                  <option key={code} value={code}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </ControlField>
+            <DeliveryControl
+              settings={s}
+              saving={saving}
+              busy={busy}
+              onChange={save}
+            />
+          </div>
+          <details className="border-t border-line">
+            <summary className="cursor-pointer px-3.5 py-3 text-[12px] font-[650] text-muted">
+              Microphone & shortcut
+            </summary>
+            <div className="grid grid-cols-2 gap-2.5 px-3.5 pb-3 max-[700px]:grid-cols-1">
               <ControlField label="Microphone">
                 <select
                   aria-label="Microphone"
@@ -211,23 +240,6 @@ export function HomePage({
                   {devices.map((device) => (
                     <option key={device.deviceId} value={device.deviceId}>
                       {device.label}
-                    </option>
-                  ))}
-                </select>
-              </ControlField>
-              <ControlField label="Language">
-                <select
-                  aria-label="Dictation language"
-                  className="w-full min-h-[34px] px-[9px] py-[7px] pr-[23px] text-[12px] bg-input"
-                  value={s.language}
-                  disabled={
-                    saving || busy || !languageCapability.canSelectLanguage
-                  }
-                  onChange={(e) => save({ language: e.target.value })}
-                >
-                  {languageCapability.languages.map(([code, label]) => (
-                    <option key={code} value={code}>
-                      {label}
                     </option>
                   ))}
                 </select>
@@ -302,112 +314,8 @@ export function HomePage({
             {!shortcutStatus.registered && (
               <p className="control-warning">{shortcutStatus.message}</p>
             )}
-          </section>
-          <section
-            className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden"
-            aria-labelledby="polish-heading"
-          >
-            <header className={panelHeader}>
-              <WandSparkles className="w-4 h-4 text-accent-ink" />
-              <h2 id="polish-heading" className={panelHeading}>
-                Polish
-              </h2>
-              <span className="ml-auto font-mono text-[10px] text-subtle">
-                02
-              </span>
-            </header>
-            <div className="grid gap-3 p-4">
-              <p className="text-[13px] text-muted leading-[1.5]">
-                Correct names and insert saved text in clean results.
-              </p>
-              <button
-                className="secondary-button justify-between text-[12px]"
-                onClick={() => onNavigate("vocabulary")}
-              >
-                Corrections & text shortcuts <ArrowUpRight />
-              </button>
-              <span className="caption">
-                {s.customWords.filter((word) => word.enabled).length} enabled
-                rules
-              </span>
-              <div className="quick-toggle">
-                <span>
-                  Rewrite after dictation
-                  <small>
-                    {s.magicEnabled
-                      ? "Automatic rewriting enabled"
-                      : "Off · rewrite any result on demand"}
-                  </small>
-                </span>
-                <Toggle
-                  label="Rewrite after dictation"
-                  value={s.magicEnabled}
-                  disabled={saving || busy}
-                  onChange={() => save({ magicEnabled: !s.magicEnabled })}
-                />
-              </div>
-              {s.magicEnabled && (
-                <button
-                  className="text-button"
-                  onClick={() => onNavigate("settings")}
-                >
-                  Configure automatic writing <ArrowUpRight />
-                </button>
-              )}
-            </div>
-          </section>
-          <section
-            className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden"
-            aria-labelledby="delivery-heading"
-          >
-            <header className={panelHeader}>
-              <ClipboardPaste className="w-4 h-4 text-accent-ink" />
-              <h2 id="delivery-heading" className={panelHeading}>
-                Deliver
-              </h2>
-              <span className="ml-auto font-mono text-[10px] text-subtle">
-                03
-              </span>
-            </header>
-            <div className="px-3.5 pt-[3px] pb-[5px]">
-              {(
-                [
-                  [
-                    "autoPaste",
-                    "Paste automatically",
-                    "Into the active text field",
-                  ],
-                  [
-                    "copyToClipboard",
-                    "Copy to clipboard",
-                    "Keep the result ready to paste",
-                  ],
-                  [
-                    "keepHistory",
-                    "Save history",
-                    "Store new transcripts on this device",
-                  ],
-                ] as const
-              ).map(([key, label, detail]) => (
-                <div
-                  className="quick-toggle py-2.5 border-b border-line last:border-0"
-                  key={key}
-                >
-                  <span>
-                    {label}
-                    <small>{detail}</small>
-                  </span>
-                  <Toggle
-                    label={label}
-                    value={s[key]}
-                    disabled={saving || busy}
-                    onChange={() => save({ [key]: !s[key] })}
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
+          </details>
+        </section>
         <section
           className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden"
           aria-label="Latest output"
@@ -454,6 +362,117 @@ export function HomePage({
             </div>
           )}
         </section>
+        <details className="col-span-full min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl">
+          <summary className="cursor-pointer px-3.5 py-3 text-[13px] font-[650]">
+            Corrections, rewriting & delivery options
+          </summary>
+          <div className="grid grid-cols-2 gap-3.5 p-3.5 max-[700px]:grid-cols-1">
+            <section
+              className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden"
+              aria-labelledby="polish-heading"
+            >
+              <header className={panelHeader}>
+                <WandSparkles className="w-4 h-4 text-accent-ink" />
+                <h2 id="polish-heading" className={panelHeading}>
+                  Polish
+                </h2>
+                <span className="ml-auto font-mono text-[10px] text-subtle">
+                  02
+                </span>
+              </header>
+              <div className="grid gap-3 p-4">
+                <p className="text-[13px] text-muted leading-[1.5]">
+                  Correct names and insert saved text in clean results.
+                </p>
+                <button
+                  className="secondary-button justify-between text-[12px]"
+                  onClick={() => onNavigate("vocabulary")}
+                >
+                  Corrections & text shortcuts <ArrowUpRight />
+                </button>
+                <span className="caption">
+                  {s.customWords.filter((word) => word.enabled).length} enabled
+                  rules
+                </span>
+                <div className="quick-toggle">
+                  <span>
+                    Rewrite after dictation
+                    <small>
+                      {s.magicEnabled
+                        ? "Automatic rewriting enabled"
+                        : "Off · rewrite any result on demand"}
+                    </small>
+                  </span>
+                  <Toggle
+                    label="Rewrite after dictation"
+                    value={s.magicEnabled}
+                    disabled={saving || busy}
+                    onChange={() => save({ magicEnabled: !s.magicEnabled })}
+                  />
+                </div>
+                {s.magicEnabled && (
+                  <button
+                    className="text-button"
+                    onClick={() => onNavigate("settings")}
+                  >
+                    Configure automatic writing <ArrowUpRight />
+                  </button>
+                )}
+              </div>
+            </section>
+            <section
+              className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden"
+              aria-labelledby="delivery-heading"
+            >
+              <header className={panelHeader}>
+                <ClipboardPaste className="w-4 h-4 text-accent-ink" />
+                <h2 id="delivery-heading" className={panelHeading}>
+                  Deliver
+                </h2>
+                <span className="ml-auto font-mono text-[10px] text-subtle">
+                  03
+                </span>
+              </header>
+              <div className="px-3.5 pt-[3px] pb-[5px]">
+                {(
+                  [
+                    [
+                      "autoPaste",
+                      "Paste automatically",
+                      "Into the active text field",
+                    ],
+                    [
+                      "copyToClipboard",
+                      "Copy to clipboard",
+                      "Keep the result ready to paste",
+                    ],
+                    [
+                      "keepHistory",
+                      "Save history",
+                      "Store new transcripts on this device",
+                    ],
+                  ] as const
+                ).map(([key, label, detail]) => (
+                  <div
+                    className="quick-toggle py-2.5 border-b border-line last:border-0"
+                    key={key}
+                  >
+                    <span>
+                      {label}
+                      <small>{detail}</small>
+                    </span>
+                    <Toggle
+                      label={label}
+                      value={s[key]}
+                      disabled={saving || busy}
+                      onChange={() => save({ [key]: !s[key] })}
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        </details>
       </div>
     </div>
   );
