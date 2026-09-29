@@ -1,5 +1,6 @@
 import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { app } from "electron";
+import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
 import { speechModelForPlatform } from "../runtime/platform";
 import { normalizeReportedLanguage } from "../../src/transcriptLanguage";
 import {
@@ -385,6 +386,16 @@ export class StorageService {
           .flatMap((item) => migrateRecord(item) ?? [])
           .slice(0, MAX_HISTORY)
       : [];
+    const settingsChanged = rawSettings !== undefined &&
+      JSON.stringify(rawSettings) !== JSON.stringify(this.settings);
+    const historyChanged = rawHistory !== undefined &&
+      (JSON.stringify(rawHistory) !== JSON.stringify(this.history) || !existsSync(historyPath));
+    if (settingsChanged || historyChanged || (rawSettings !== undefined && !existsSync(settingsPath))) {
+      backupProfileMigration(this.dataDirectory, {
+        "settings.json": existsSync(settingsPath) ? settingsPath : legacy ? join(legacy, SETTINGS_FILE) : undefined,
+        "history.json": existsSync(historyPath) ? historyPath : legacy ? join(legacy, HISTORY_FILE) : undefined,
+      });
+    }
     if (!existsSync(historyPath) && this.history.length) {
       // Stage both migration outputs before replacing either destination.
       // Publish the previously absent history first: if the settings rename
@@ -497,11 +508,13 @@ export class StorageService {
   deleteHistory(id: string): void {
     const next = this.history.filter((item) => item.id !== id);
     writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    removeMigrationHistoryBackups(this.dataDirectory);
     this.history = next;
   }
 
   clearHistory(): void {
     writeJson(join(this.dataDirectory, HISTORY_FILE), []);
+    removeMigrationHistoryBackups(this.dataDirectory);
     this.history = [];
   }
 }
