@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BookOpenText, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { ConfirmDialog, EmptyState, Modal, Toggle } from "../components/ui";
+import { VocabularyTransfer } from "../components/VocabularyTransfer";
 import {
   personalize,
   ruleConflict,
@@ -94,6 +95,7 @@ export function VocabularyPage({
           {kind === "correction" ? "Add correction" : "Add shortcut"}
         </button>
       </section>
+      <VocabularyTransfer words={words} saving={saving} onChange={onChange} />
       <div className="flex items-center gap-3.5 max-[700px]:flex-wrap">
         <label className="search-box max-[700px]:basis-full">
           <Search />
