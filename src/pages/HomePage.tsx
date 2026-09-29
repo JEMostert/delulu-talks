@@ -9,7 +9,7 @@ import {
   Square,
   WandSparkles,
 } from "lucide-react";
-import { LANGUAGES } from "../data";
+import { speechLanguageCapability } from "../speechCapabilities";
 import {
   TranscriptCard,
   type TranscriptActions,
@@ -82,6 +82,7 @@ export function HomePage({
   const portal = shortcutStatus.method === "portal";
   const latest = history[0];
   const recording = status.phase === "listening";
+  const languageCapability = speechLanguageCapability(s.model);
   const engineText = (engine: DictationStatus["engine"]) =>
     ({
       ready: "Ready",
@@ -201,10 +202,12 @@ export function HomePage({
                   aria-label="Dictation language"
                   className="w-full min-h-[34px] px-[9px] py-[7px] pr-[23px] text-[12px] bg-input"
                   value={s.language}
-                  disabled={saving || busy}
+                  disabled={
+                    saving || busy || !languageCapability.canSelectLanguage
+                  }
                   onChange={(e) => save({ language: e.target.value })}
                 >
-                  {LANGUAGES.map(([code, label]) => (
+                  {languageCapability.languages.map(([code, label]) => (
                     <option key={code} value={code}>
                       {label}
                     </option>

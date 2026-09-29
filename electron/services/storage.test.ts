@@ -209,6 +209,257 @@ describe("local data recovery", () => {
   }
 });
 
+describe("interrupted profile migration", () => {
+  for (const currentSettings of [
+    undefined,
+    '{"workflowVersion":1,"language":"de"}',
+  ]) {
+    test.skipIf(process.platform !== "linux")(
+      `failed legacy history staging preserves ${currentSettings ? "existing" : "absent"} settings and permits an intentional retry`,
+      () => {
+        const root = mkdtempSync(join(tmpdir(), "delulu-migration-rollback-"));
+        testDirectory = join(root, "current");
+        testHome = join(root, "home");
+        const legacy = join(
+          testHome,
+          ".local",
+          "share",
+          "com.joran.delulu-talks",
+        );
+        mkdirSync(legacy, { recursive: true });
+        mkdirSync(testDirectory);
+        if (currentSettings)
+          writeFileSync(join(testDirectory, "settings.json"), currentSettings);
+        const settings = '{"language":"nl","model":"qwen3Asr"}';
+        const history =
+          '[{"id":"legacy","text":"Origineel café 🚀","model":"qwen3Asr","editedText":"Correctie café 🚀"}]';
+        writeFileSync(join(legacy, "settings.json"), settings);
+        writeFileSync(join(legacy, "history.json"), history);
+        mkdirSync(join(testDirectory, "history.json.tmp"));
+        testPackaged = true;
+        try {
+          expect(() => new StorageService()).toThrow();
+          expect(existsSync(join(testDirectory, "settings.json"))).toBe(
+            Boolean(currentSettings),
+          );
+          if (currentSettings)
+            expect(
+              readFileSync(join(testDirectory, "settings.json"), "utf8"),
+            ).toBe(currentSettings);
+          expect(existsSync(join(testDirectory, "settings.json.tmp"))).toBe(
+            false,
+          );
+          expect(existsSync(join(testDirectory, "history.json"))).toBe(false);
+          expect(readFileSync(join(legacy, "settings.json"), "utf8")).toBe(
+            settings,
+          );
+          expect(readFileSync(join(legacy, "history.json"), "utf8")).toBe(
+            history,
+          );
+          rmSync(join(testDirectory, "history.json.tmp"), { recursive: true });
+          const restored = new StorageService();
+          expect(restored.getSettings().language).toBe(
+            currentSettings ? "de" : "nl",
+          );
+          expect(restored.getHistory()[0]).toMatchObject({
+            id: "legacy",
+            text: "Origineel café 🚀",
+            model: "qwen3Asr",
+            editedText: "Correctie café 🚀",
+          });
+        } finally {
+          testPackaged = false;
+          testHome = "";
+          rmSync(root, { recursive: true, force: true });
+        }
+      },
+    );
+  }
+});
+
+describe("migration commit rollback", () => {
+  for (const rollbackFails of [false, true]) {
+    test.skipIf(process.platform !== "linux")(
+      rollbackFails
+        ? "reports rollback failure without claiming a complete migration"
+        : "settings commit failure rolls back newly published history and allows retry",
+      () => {
+        const root = mkdtempSync(join(tmpdir(), "delulu-migration-commit-"));
+        try {
+          // Isolate fault injection from the existing Electron/module mocks.
+          // All reads, staging writes and history renames use real temp files;
+          // only the final settings rename and optional rollback are injected.
+          const script = `
+            import { mock } from "bun:test";
+            import assert from "node:assert/strict";
+            import { join } from "node:path";
+            const fs = {...await import("node:fs")};
+            const root = ${JSON.stringify(root)};
+            const profile = join(root,"current"), home = join(root,"home");
+            const legacy = join(home,".local","share","com.joran.delulu-talks");
+            fs.mkdirSync(legacy,{recursive:true});
+            const settings = '{"language":"nl"}';
+            const history = '[{"id":"legacy","text":"Original café 🚀","model":"qwen3Asr"}]';
+            fs.writeFileSync(join(legacy,"settings.json"),settings);
+            fs.writeFileSync(join(legacy,"history.json"),history);
+            let injected = false;
+            mock.module("electron",()=>({app:{isPackaged:true,getPath:name=>name === "home" ? home : profile}}));
+            mock.module("node:fs",()=>({...fs,
+              renameSync(source,target) {
+                if (target === join(profile,"settings.json") && !injected) {
+                  injected = true; throw new Error("Injected settings commit failure");
+                }
+                return fs.renameSync(source,target);
+              },
+              rmSync(target,options) {
+                if (${rollbackFails} && target === join(profile,"history.json")) throw new Error("Injected history rollback failure");
+                return fs.rmSync(target,options);
+              }
+            }));
+            const {StorageService} = await import(${JSON.stringify(new URL("./storage.ts", import.meta.url).href)});
+            let failure;
+            try {new StorageService();} catch(error) {failure=error;}
+            assert(failure,"Migration should fail");
+            assert.equal(fs.existsSync(join(profile,"settings.json")),false);
+            assert.equal(fs.existsSync(join(profile,"history.json")),${rollbackFails});
+            assert.equal(fs.readFileSync(join(legacy,"settings.json"),"utf8"),settings);
+            assert.equal(fs.readFileSync(join(legacy,"history.json"),"utf8"),history);
+            assert.equal(fs.existsSync(join(profile,"settings.json.tmp")),false);
+            if (${rollbackFails}) {
+              assert(failure instanceof AggregateError);
+              assert.equal(failure.errors.length,2);
+              assert.match(failure.message,/could not be rolled back/);
+            } else {
+              assert.match(failure.message,/settings commit failure/);
+              const retry = new StorageService();
+              assert.equal(retry.getSettings().language,"nl");
+              assert.equal(retry.getHistory()[0].text,"Original café 🚀");
+            }
+          `;
+          const result = Bun.spawnSync([process.execPath, "--eval", script]);
+          expect(result.stderr.toString()).toBe("");
+          expect(result.exitCode).toBe(0);
+        } finally {
+          rmSync(root, { recursive: true, force: true });
+        }
+      },
+    );
+  }
+});
+
+describe("backup and interrupted write recovery", () => {
+  test("ignores interrupted temporary writes instead of adopting incomplete or newer data", () => {
+    testDirectory = mkdtempSync(join(tmpdir(), "delulu-interrupted-write-"));
+    try {
+      writeFileSync(
+        join(testDirectory, "settings.json"),
+        '{"workflowVersion":1,"language":"nl"}',
+      );
+      const history = JSON.stringify([
+        { id: "committed", text: "Exact café 🚀 \nsecond line", model: "r2t2" },
+      ]);
+      writeFileSync(join(testDirectory, "history.json"), history);
+      writeFileSync(
+        join(testDirectory, "settings.json.tmp"),
+        '{"interrupted":',
+      );
+      const uncommitted = '[{"id":"uncommitted","text":"Never published"}]';
+      writeFileSync(join(testDirectory, "history.json.tmp"), uncommitted);
+      const storage = new StorageService();
+      expect(storage.getSettings().language).toBe("nl");
+      expect(storage.getHistory().map((record) => record.id)).toEqual([
+        "committed",
+      ]);
+      expect(readFileSync(join(testDirectory, "history.json"), "utf8")).toBe(
+        history,
+      );
+      expect(
+        readFileSync(join(testDirectory, "history.json.tmp"), "utf8"),
+      ).toBe(uncommitted);
+    } finally {
+      rmSync(testDirectory, { recursive: true, force: true });
+    }
+  });
+
+  for (const failure of [
+    "corrupt-settings",
+    "incompatible-schema",
+    "corrupt-history",
+  ]) {
+    test(`manual compatible backup restore recovers ${failure} without changing backup bytes`, () => {
+      testDirectory = mkdtempSync(join(tmpdir(), "delulu-backup-restore-"));
+      try {
+        const settings =
+          '{"workflowVersion":1,"language":"nl","shortcut":"Ctrl+Alt+M","magicEnabled":true}';
+        const history =
+          '[{"id":"backed-up","text":"Origineel café 🚀","model":"qwen3Asr","editedText":"Correctie café 🚀","magicText":"Opgeschoond café 🚀","magicModel":"qwen35Medium"}]';
+        const backups = join(testDirectory, "backup");
+        mkdirSync(backups);
+        writeFileSync(join(backups, "settings.json"), settings);
+        writeFileSync(join(backups, "history.json"), history);
+        writeFileSync(
+          join(testDirectory, "settings.json"),
+          failure === "corrupt-settings"
+            ? '{"truncated":'
+            : failure === "incompatible-schema"
+              ? '{"workflowVersion":99}'
+              : settings,
+        );
+        writeFileSync(
+          join(testDirectory, "history.json"),
+          failure === "corrupt-history" ? '[{"truncated":' : history,
+        );
+        const damagedSettings = readFileSync(
+          join(testDirectory, "settings.json"),
+          "utf8",
+        );
+        const damagedHistory = readFileSync(
+          join(testDirectory, "history.json"),
+          "utf8",
+        );
+        expect(() => new StorageService()).toThrow();
+        expect(readFileSync(join(testDirectory, "settings.json"), "utf8")).toBe(
+          damagedSettings,
+        );
+        expect(readFileSync(join(testDirectory, "history.json"), "utf8")).toBe(
+          damagedHistory,
+        );
+        // This is the documented external restore workflow with the app stopped.
+        writeFileSync(
+          join(testDirectory, "settings.json"),
+          readFileSync(join(backups, "settings.json")),
+        );
+        writeFileSync(
+          join(testDirectory, "history.json"),
+          readFileSync(join(backups, "history.json")),
+        );
+        const restored = new StorageService();
+        expect(restored.getSettings()).toMatchObject({
+          language: "nl",
+          shortcut: "Ctrl+Alt+M",
+          magicEnabled: true,
+        });
+        expect(restored.getHistory()[0]).toMatchObject({
+          id: "backed-up",
+          text: "Origineel café 🚀",
+          model: "qwen3Asr",
+          editedText: "Correctie café 🚀",
+          magicText: "Opgeschoond café 🚀",
+          magicModel: "qwen35Medium",
+        });
+        expect(readFileSync(join(backups, "settings.json"), "utf8")).toBe(
+          settings,
+        );
+        expect(readFileSync(join(backups, "history.json"), "utf8")).toBe(
+          history,
+        );
+      } finally {
+        rmSync(testDirectory, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 describe("settings migration", () => {
   test("shows onboarding until a first-run choice is persisted", () => {
     expect(normalizeSettings({}).onboardingComplete).toBe(false);

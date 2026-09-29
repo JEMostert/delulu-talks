@@ -26,6 +26,8 @@ Direct dependency versions and Linux constraints were taken from the reference m
 
 Pinned models stay loaded. Unpinned models stay warm until the idle delay expires; the dictation service no longer immediately unloads them after each result. Reset removes only the virtual environment. Model caches, transcript history and settings remain.
 
+Idle unloading checks actual capture ownership, runtime maintenance and pending speech/writing requests before stopping either worker. A blocked deadline defers another full idle interval without changing engine status. Requests reserve ownership before awaiting readiness, and requests arriving during an unload wait for it to finish before loading a new worker. Timer policy uses the latest saved residency settings, including changes made during inference; shutdown prevents completion callbacks from rearming idle timers. These ownership contracts are tested with controlled transports and clocks, without GPU inference or a native memory-release claim.
+
 The native GTK4 overlay keeps a dark ocean-blue palette for visibility over arbitrary apps. It is click-through and does not own recording or inference logic. Unsupported desktops use the main window and tray without the overlay.
 
 ## Data and recovery

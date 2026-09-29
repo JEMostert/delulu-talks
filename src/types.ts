@@ -109,6 +109,17 @@ export type TranscriptRecord = {
   processingTimeMs: number;
 };
 
+export type ModelProvenance = {
+  licenseName: string;
+  licenseUrl: string;
+  variants: {
+    label: string;
+    revision: string | null;
+    conversion: string;
+    attributionUrl?: string;
+  }[];
+};
+
 export type ModelInfo = {
   runtime: string;
   downloadSize: string;
@@ -116,6 +127,7 @@ export type ModelInfo = {
   hfId: string;
   name: string;
   description: string;
+  provenance: ModelProvenance;
   recommended?: boolean;
 };
 
@@ -125,6 +137,7 @@ export type MagicModelInfo = {
   name: string;
   role: string;
   description: string;
+  provenance: ModelProvenance;
   parameters: string;
   memory: string;
   speed: string;
