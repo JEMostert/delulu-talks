@@ -7,6 +7,7 @@ import { homedir, release } from "node:os";
 import { usesMetal } from "./platform";
 import { activateRuntime, runtimePython, rollbackRuntime } from "./location";
 import type { AppSettings } from "../../src/types";
+import { resolveRuntimeArtifacts } from "./artifacts";
 import {
   createRuntimeInventory,
   inventoryBackend,
@@ -332,18 +333,42 @@ export class RuntimeInstaller {
       progress: number,
       constraint: RequestedInstallStage["constraint"] = null,
     ) => {
-      const pipArguments = [
+      const reportPath = join(candidate, `runtime-${kind}-${name}-artifacts.json`);
+      const requirementsPath = join(candidate, `runtime-${kind}-${name}-artifacts.txt`);
+      const resolverArguments = [
         "install",
         "--disable-pip-version-check",
+        "--dry-run",
+        "--report", reportPath,
         ...options,
         ...requirements,
+      ];
+      await stage(
+        candidatePython,
+        ["-m", "pip", ...resolverArguments],
+        `Resolving artifacts: ${message.toLowerCase()}`,
+        progress,
+      );
+      const resolved = resolveRuntimeArtifacts(readFileSync(reportPath, "utf8"));
+      writeFileSync(requirementsPath, resolved.requirements, { mode: 0o600 });
+      const pipArguments = [
+        "install", "--disable-pip-version-check", "--no-deps",
+        // Retain stage policy for installation/build hooks as well as resolution
+        // (indexes, constraints, and any future build-isolation/binary options).
+        ...options,
+        "--requirement", requirementsPath,
       ];
       requested.push({
         name,
         requirements: [...requirements],
         pipArguments,
         constraint,
+        artifacts: resolved.artifacts,
+        resolverArguments,
+        artifactRequirements: resolved.requirements,
       });
+      // An empty resolver report means the requested packages are already present.
+      if (!resolved.artifacts.length) return;
       return stage(
         candidatePython,
         ["-m", "pip", ...pipArguments],
