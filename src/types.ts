@@ -322,5 +322,35 @@ export type RuntimeSetupSnapshot = {
   platform: string;
   arch: string;
   source: "desktop" | "preview";
+  space: SetupSpaceSnapshot | null;
   runtimes: SetupRuntimeObservation[];
+};
+
+
+export type SetupDiskCapacity = {
+  label: string;
+  requestedPath: string;
+  queriedPath: string | null;
+  availableBytes: number | null;
+  filesystem: string | null;
+  status: "observed" | "unknown";
+  detail: string;
+};
+
+export type SetupSpaceSnapshot = {
+  magicModel: MagicModelId;
+  checkedAt: number;
+  disk: SetupDiskCapacity[];
+  plans: Array<{
+    kind: "speech" | "magic";
+    modelName: string;
+    modelDownloadBytes: number;
+    modelInstalledBytes: number;
+    modelTemporaryBytes: number;
+    basis: string;
+  }>;
+  runtimeDownload: string;
+  runtimeInstalled: string;
+  runtimeTemporary: string;
+  caveat: string;
 };

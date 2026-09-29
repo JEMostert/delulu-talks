@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
-import type { RuntimeSetupSnapshot as Snapshot } from "../types";
+import { SetupSpace } from "./SetupSpace";
+import type { MagicModelId, RuntimeSetupSnapshot as Snapshot } from "../types";
 
-export function RuntimeSetupSnapshot({ pythonCommand, busy, onPending }: {
+export function RuntimeSetupSnapshot({ pythonCommand, magicModel, busy, onPending }: {
   pythonCommand: string;
+  magicModel: MagicModelId;
   busy: boolean;
   onPending: (pending: boolean) => void;
 }) {
@@ -31,7 +33,7 @@ export function RuntimeSetupSnapshot({ pythonCommand, busy, onPending }: {
       }
     });
     return () => { request.current += 1; };
-  }, [pythonCommand, refresh, onPending]);
+  }, [pythonCommand, magicModel, refresh, onPending]);
 
   return (
     <section className="card" aria-labelledby="setup-snapshot-heading" aria-busy={loading}>
@@ -49,6 +51,7 @@ export function RuntimeSetupSnapshot({ pythonCommand, busy, onPending }: {
         <>
           <p className="mt-3 text-xs text-muted">{data.platform} / {data.arch} · Observed {new Date(data.checkedAt).toLocaleString()}. Refresh after setup or changes.</p>
           {data.source === "preview" && <p className="mt-3">Desktop app required. Browser preview cannot observe interpreters, imports or devices.</p>}
+          {data.space && <SetupSpace space={data.space} />}
           {data.runtimes.map((runtime) => (
             <article key={runtime.kind} className="mt-4 rounded-panel border border-line p-4 [overflow-wrap:anywhere]">
               <h4>{runtime.kind === "speech" ? "R2T2 speech" : "Optional Qwen 3.5 rewriting"}</h4>

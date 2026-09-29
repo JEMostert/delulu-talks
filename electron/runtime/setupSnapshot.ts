@@ -7,6 +7,7 @@ import type { StorageService } from "../services/storage";
 import { runtimeDirectory, runtimePython } from "./location";
 import { RUNTIME_REVISION } from "./manifest";
 import { inventoryBackend } from "./inventory";
+import { setupSpaceSnapshot } from "./setupSpace";
 import { usesMetal } from "./platform";
 
 // -S skips site/sitecustomize; only standard-library modules execute. Discovering
@@ -128,14 +129,16 @@ async function runtime(storage: StorageService, kind: "speech" | "magic"): Promi
   return result;
 }
 
-const pending = new WeakMap<StorageService, Promise<RuntimeSetupSnapshot>>();
+const pending = new WeakMap<StorageService, { key: string; promise: Promise<RuntimeSetupSnapshot> }>();
 
 export function runtimeSetupSnapshot(storage: StorageService): Promise<RuntimeSetupSnapshot> {
+  const settings = storage.getSettings();
+  const key = JSON.stringify([settings.pythonCommand, settings.magicModel]);
   const existing = pending.get(storage);
-  if (existing) return existing;
-  const snapshot = Promise.all([runtime(storage, "speech"), runtime(storage, "magic")])
-    .then((runtimes): RuntimeSetupSnapshot => ({ checkedAt: Date.now(), platform: process.platform, arch: process.arch, source: "desktop", runtimes }))
-    .finally(() => { pending.delete(storage); });
-  pending.set(storage, snapshot);
+  if (existing?.key === key) return existing.promise;
+  const snapshot = Promise.all([runtime(storage, "speech"), runtime(storage, "magic"), setupSpaceSnapshot(storage)])
+    .then(([speech, magic, space]): RuntimeSetupSnapshot => ({ checkedAt: Date.now(), platform: process.platform, arch: process.arch, source: "desktop", runtimes: [speech, magic], space }))
+    .finally(() => { if (pending.get(storage)?.promise === snapshot) pending.delete(storage); });
+  pending.set(storage, { key, promise: snapshot });
   return snapshot;
 }
