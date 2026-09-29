@@ -1,5 +1,6 @@
 import captureWorkletUrl from "./captureWorklet.js?url&no-inline";
 import { bridge } from "./bridge";
+import { CaptureCuePlayer, type CaptureCue } from "./captureCues";
 import type { MicrophoneDevice, RecorderCommand } from "./types";
 
 function merge(chunks: Float32Array[]): Float32Array {
@@ -81,10 +82,15 @@ export class PcmRecorder {
   private generation = 0;
   private sessionId: string | null = null;
   private requestedSessionId: string | null = null;
+  private readonly cuePlayer = new CaptureCuePlayer();
+  private cueEpoch = 0;
   private commands: Promise<void> = Promise.resolve();
 
   async cancel(): Promise<void> {
     await this.handle({ action: "cancel", inputDeviceId: "default" });
+    // Public cancellation also disposes the controller during unmount/reload.
+    this.cueEpoch += 1;
+    await this.cuePlayer.dispose();
   }
 
   handle(command: RecorderCommand): Promise<void> {
@@ -97,6 +103,10 @@ export class PcmRecorder {
       )
         return Promise.resolve();
       sessionId ??= this.requestedSessionId ?? crypto.randomUUID();
+      if (sessionId !== this.requestedSessionId) {
+        this.cueEpoch += 1;
+        void this.cuePlayer.dispose().catch(() => undefined);
+      }
       this.requestedSessionId = sessionId;
     } else {
       // A queued Start already owns the next generation while the abandoned
@@ -107,6 +117,8 @@ export class PcmRecorder {
       if (sessionId && sessionId !== owner) return Promise.resolve();
       if (command.action === "cancel") {
         this.generation += 1;
+        this.cueEpoch += 1;
+        void this.cuePlayer.dispose().catch(() => undefined);
         if (!sessionId || this.requestedSessionId === sessionId)
           this.requestedSessionId = null;
       }
@@ -136,6 +148,7 @@ export class PcmRecorder {
     sessionId: string,
   ): Promise<void> {
     if (this.stream || this.stopping || generation !== this.generation) return;
+    const cueEpoch = this.cueEpoch;
     this.sessionId = sessionId;
     try {
       const exactDevice =
@@ -180,6 +193,7 @@ export class PcmRecorder {
       this.sink.connect(this.context.destination);
       this.startedAt = performance.now();
       await bridge.recordingStarted(sessionId);
+      void this.playCue("start", sessionId, generation, cueEpoch);
     } catch (error) {
       await this.dispose();
       this.finishSession(sessionId);
@@ -223,10 +237,34 @@ export class PcmRecorder {
     bridge.recordingLevel(audibleLevel(level));
   }
 
+  private async playCue(
+    cue: CaptureCue,
+    sessionId: string,
+    generation: number,
+    epoch: number,
+  ): Promise<void> {
+    try {
+      const settings = await bridge.getSettings();
+      if (
+        settings.captureSoundsMuted !== false ||
+        generation !== this.generation ||
+        epoch !== this.cueEpoch ||
+        (this.requestedSessionId && this.requestedSessionId !== sessionId)
+      )
+        return;
+      await this.cuePlayer.play(cue, settings.captureSoundVolume);
+    } catch {
+      // Optional sound/permission failures never interrupt microphone ownership,
+      // transcript processing, or delivery.
+    }
+  }
+
   private async stop(submit: boolean, generation: number): Promise<void> {
     if (!this.stream || !this.context || this.stopping) return;
     const sessionId = this.sessionId!;
     this.stopping = true;
+    this.cueEpoch += 1;
+    void this.cuePlayer.dispose().catch(() => undefined);
     try {
       const durationMs = Math.round(performance.now() - this.startedAt);
       const sampleRate = this.context.sampleRate;
@@ -250,6 +288,8 @@ export class PcmRecorder {
       }
       const captured = merge(this.chunks);
       await this.dispose();
+      // End cues use a separate output context only after microphone release.
+      void this.playCue("stop", sessionId, this.generation, this.cueEpoch);
       if (submit && generation === this.generation) {
         if (!captured.length) {
           const failure = bridge.recordingFailed(

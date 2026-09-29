@@ -45,6 +45,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pastePortalToken: "",
   keepHistory: true,
   showOverlay: true,
+  captureSoundsMuted: true,
+  captureSoundVolume: 0.15,
   preloadModel: true,
   magicEnabled: false,
   magicModel: "qwen35Medium",
