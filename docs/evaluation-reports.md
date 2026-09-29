@@ -238,3 +238,41 @@ human-effort conclusion is inferred from ordinary insertions.
 
 **UNVERIFIED — checks not run per user instruction**. No native reference
 comparison or human correction measurement was performed for this change.
+
+## Stage-specific latency reports
+
+`scripts/latency_report.py` converts supplied same-clock traces into four
+separate stage summaries. Provide the report provenance object plus a
+`measurement_method` describing the observer clock and actual endpoint meaning,
+and a `traces` array. Each trace requires a unique `trace_id`, `case_id`,
+`worker_generation`, `clock_id`, `stage` and `events` object of timestamps in
+seconds from that same clock.
+
+| Stage | Start event | End event |
+| --- | --- | --- |
+| `cold-startup` | `cold_start_started` | `speech_ready` |
+| `first-request` | `request_started` | `request_completed` |
+| `warm-request` | `request_started` | `request_completed` |
+| `speech-end-to-delivery` | `speech_ended` | `delivery_completed` |
+
+First and warm traces also require `request_ordinal` within the same worker
+generation: one for first, at least two for warm. Record cold startup before
+loading the worker and speech-ready after its load/warmup acknowledgment. Speech
+end should describe the actual capture endpoint; delivery completion should
+state whether it means copied text, shortcut dispatch or independently observed
+insertion. Shortcut dispatch alone does not establish target acceptance.
+
+```sh
+python scripts/latency_report.py --manifest latency.json --output latency-report.json
+```
+
+The evaluator rejects reversed/nonfinite endpoints, duplicate IDs and inconsistent
+first/warm ordinals. Never combine renderer and main-process monotonic timestamps
+without a measured clock mapping. Stages retain their individual observations,
+count, mean, median, nearest-rank p95, range and sample deviation. Missing stages
+remain `not-measured` with null summaries. Cold and warm latencies are never
+pooled or summed with overlapping delivery observations. Retain the original
+trace file in the raw artifact bundle for reproducibility.
+
+**UNVERIFIED — checks not run per user instruction**. No startup, request or
+speech-to-delivery timings were collected for this implementation.
