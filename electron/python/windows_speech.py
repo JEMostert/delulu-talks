@@ -27,16 +27,20 @@ class WindowsSpeech:
     def __init__(self):
         self.model = None
         self.processor = None
+        self.cuda_preflight = None
 
     def status(self):
-        return {"loaded": self.model is not None, "model": MODEL, "device": "cuda"}
+        return {"loaded": self.model is not None, "model": MODEL, "device": "cuda",
+                **({"cudaPreflight": self.cuda_preflight}
+                   if getattr(self, "cuda_preflight", None) is not None else {})}
 
     def load(self, request):
         if self.model is not None:
             return self.status()
+        self.cuda_preflight = None
         import torch
-        if not torch.cuda.is_available():
-            raise RuntimeError("R2T2 needs a CUDA GPU. No usable CUDA device was found.")
+        from cuda_preflight import ensure_cuda_compatible
+        self.cuda_preflight = ensure_cuda_compatible(torch)
         from huggingface_hub import snapshot_download
         from huggingface_hub.constants import HF_HOME
         from accelerate import init_empty_weights
@@ -185,6 +189,7 @@ class WindowsSpeech:
     def unload(self):
         self.model = None
         self.processor = None
+        self.cuda_preflight = None
         gc.collect()
         torch = sys.modules.get("torch")
         with contextlib.suppress(Exception):
