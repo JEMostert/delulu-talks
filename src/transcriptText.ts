@@ -21,7 +21,7 @@ export function deliveredText(record: TranscriptRecord): string {
   return (
     ((record.rewriteSourceRevision == null ||
       record.rewriteSourceRevision === transcriptSourceRevision(record))
-      ? record.magicText?.trim() : null) ||
+      ? (record.magicText?.trim() ? record.magicText : null) : null) ||
     (record.editedText == null ? record.personalizedText : null) ||
     transcriptText(record)
   );

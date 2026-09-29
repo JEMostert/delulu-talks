@@ -1,5 +1,7 @@
+import { changePersonalProfiles } from "./personalProfileCommands";
 import { DEFAULT_SETTINGS } from "./data";
 import { deliveredText, originalTranscriptText, transcriptSourceRevision } from "./transcriptText";
+import { normalizeTranscriptTitle } from "./transcriptTitle";
 import type {
   AppSettings,
   AudioFileSelection,
@@ -60,6 +62,9 @@ export const previewApi: DeluluApi = {
     window.location.reload();
   },
   async rendererControllerFailed() {},
+  async getLocalDataOverview() {
+    desktopOnly();
+  },
   async getDiagnostics() {
     return {
       platform: "Browser preview",
@@ -70,10 +75,32 @@ export const previewApi: DeluluApi = {
       ffmpeg: "Not available",
       dataDirectory: "Desktop app required",
       runtimeInstalled: false,
+      accessibility: {
+        state: "not-applicable",
+        canAttemptPaste: false,
+        detail: "Native Accessibility permission is available in the desktop app. Browser preview cannot attempt native paste.",
+      },
       packages: {},
       checkedAt: Date.now(),
     };
   },
+  async getPasteRecovery() { return null; },
+  async copyInstead(_id: string) { desktopOnly(); },
+  async dismissPasteRecovery(_id: string) {},
+  onPasteRecovery(_callback) { return () => undefined; },
+  async getPasteLastStatus() {
+    return {
+      phase: "idle" as const,
+      operationId: null,
+      dueAt: null,
+      remainingSeconds: 0,
+      message: "",
+    };
+  },
+  async cancelPasteLast() {
+    desktopOnly();
+  },
+  onPasteLastStatus: () => () => {},
   async pasteLastTranscript() {
     desktopOnly();
   },
@@ -88,6 +115,15 @@ export const previewApi: DeluluApi = {
   },
   async updateSettings(settings) {
     const next = { ...mockSettings(), ...settings };
+    localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
+    return next;
+  },
+  async managePersonalProfile(command) {
+    const current = mockSettings();
+    const next = {
+      ...current,
+      personalProfiles: changePersonalProfiles(current, command, () => crypto.randomUUID()),
+    };
     localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
     return next;
   },
@@ -228,6 +264,14 @@ export const previewApi: DeluluApi = {
     demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
     return updated;
   },
+  async setTranscriptTitle(id, title) {
+    const normalized = normalizeTranscriptTitle(title);
+    const record = demoHistory.find((item) => item.id === id);
+    if (!record) throw new Error("Transcript not found");
+    const updated = { ...record, title: normalized };
+    demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
+    return updated;
+  },
   async deleteHistory(id) {
     demoHistory = demoHistory.filter((item) => item.id !== id);
   },
@@ -243,7 +287,11 @@ export const previewApi: DeluluApi = {
   async exportTranscript(_id: string, _format: ExportFormat) {
     return desktopOnly();
   },
+  async exportTranscriptTemplate() {
+    return desktopOnly();
+  },
   async recordingStarted() {},
+  async recordingLimitReached() {},
   async recorderReady() {},
   async recordingFailed() {},
   recordingLevel(_level: number) {},
