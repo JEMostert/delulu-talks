@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LANGUAGES } from "../data";
 import { readPersonalProfiles, type PersonalProfileV1 } from "../personalProfiles";
 import {
@@ -72,6 +72,11 @@ export function PersonalProfiles({ settings, saving, onManage }: {
   saving: boolean;
   onManage: (command: PersonalProfileCommand) => Promise<boolean>;
 }) {
+  const [includeVocabulary, setIncludeVocabulary] = useState(false);
+  const [importDocument, setImportDocument] = useState<import("../personalProfiles").PersonalProfileDocument | null>(null);
+  const [importNames, setImportNames] = useState<string[]>([]);
+  const fileRevision = useRef(0);
+  useEffect(() => () => { fileRevision.current += 1; }, []);
   const [starter, setStarter] = useState<ProfileStarterId>("current");
   const [name, setName] = useState("");
   const [rename, setRename] = useState<{ id: string; name: string } | null>(null);
@@ -112,6 +117,22 @@ export function PersonalProfiles({ settings, saving, onManage }: {
       setPending(false);
     }
   }
+  function exportProfiles() {
+    const document = { schemaVersion: 1, profiles: structuredClone(profiles) };
+    if (!includeVocabulary) for (const profile of document.profiles) profile.vocabulary.rules = [];
+    const url = URL.createObjectURL(new Blob([JSON.stringify(document, null, 2) + "\n"], { type: "application/json" }));
+    const link = documentElement(url);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function documentElement(url: string) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `delulu-profiles-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    return link;
+  }
   return (
     <section className="settings-group">
       <div className="group-heading">
@@ -120,6 +141,36 @@ export function PersonalProfiles({ settings, saving, onManage }: {
       </div>
       {blocked ? <p role="alert" className="control-warning">{blocked}</p> : (
         <>
+          <div className="grid gap-3 p-4 border-b border-line">
+            <h4 className="text-[13px] font-semibold">Transfer profiles</h4>
+            <label className="flex gap-2 text-[12px]"><input type="checkbox" checked={includeVocabulary} disabled={busy} onChange={(event) => setIncludeVocabulary(event.target.checked)} />Include personal vocabulary in export/import</label>
+            <p className="caption">Exports contain saved profile settings and enabled context requests, including any manual context and rewrite instructions. Review the JSON before sharing. Global settings, permissions, transcripts and active identity are excluded. Import creates new saved profiles and does not activate them.</p>
+            <button className="secondary-button justify-self-start" disabled={busy || !profiles.length} onClick={exportProfiles}>Export saved profiles</button>
+            <label className="grid gap-1 text-[12px]">Import JSON file
+              <input type="file" accept=".json,application/json" disabled={busy} onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                const revision = ++fileRevision.current;
+                setImportDocument(null); setImportNames([]); setError(null);
+                if (!file) return;
+                if (file.size > 5_000_000) { setError("Profile export exceeds the 5 MB limit."); return; }
+                void file.text().then((text) => {
+                  if (fileRevision.current !== revision) return;
+                  const result = readPersonalProfiles(JSON.parse(text));
+                  if (result.status !== "supported") throw new Error("This export needs a newer compatible app version.");
+                  if (!result.document.profiles.length) throw new Error("This export contains no profiles.");
+                  setImportDocument(result.document);
+                  setImportNames(result.document.profiles.map((profile) => profile.name));
+                }).catch((reason) => {
+                  if (fileRevision.current === revision) setError(reason instanceof Error ? reason.message : String(reason));
+                });
+              }} />
+            </label>
+            {importDocument && <div className="grid gap-2">
+              <p className="caption">Ready to import {importNames.length}: {importNames.join(", ")}. Vocabulary {includeVocabulary ? "included" : "excluded"}. Existing profiles are never replaced; conflicting names reject the entire import.</p>
+              <button className="secondary-button justify-self-start" disabled={busy} onClick={() => void run({ action: "import", document: importDocument, includeVocabulary }, () => { setImportDocument(null); setImportNames([]); })}>Import as new profiles</button>
+            </div>}
+          </div>
           <form className="grid gap-3 p-4" onSubmit={(event) => {
             event.preventDefault();
             void run({ action: "create", name, starter }, () => setName(""));
