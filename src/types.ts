@@ -78,6 +78,11 @@ export type MagicRewriteResult = {
   includedInferences: boolean;
 };
 
+export type PasteRecovery = {
+  transcriptId: string;
+  detail: string;
+};
+
 export type DictationStatus = {
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
@@ -213,6 +218,10 @@ export type DeluluApi = {
   getSettings(): Promise<AppSettings>;
   getDiagnostics(): Promise<RuntimeDiagnostics>;
   pasteLastTranscript(): Promise<void>;
+  getPasteRecovery(): Promise<PasteRecovery | null>;
+  copyInstead(id: string): Promise<void>;
+  dismissPasteRecovery(id: string): Promise<void>;
+  onPasteRecovery(callback: (recovery: PasteRecovery | null) => void): () => void;
   retryRecording(): Promise<void>;
   discardFailedRecording(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;

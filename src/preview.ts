@@ -74,6 +74,10 @@ export const previewApi: DeluluApi = {
       checkedAt: Date.now(),
     };
   },
+  async getPasteRecovery() { return null; },
+  async copyInstead(_id: string) { desktopOnly(); },
+  async dismissPasteRecovery(_id: string) {},
+  onPasteRecovery(_callback) { return () => undefined; },
   async pasteLastTranscript() {
     desktopOnly();
   },
