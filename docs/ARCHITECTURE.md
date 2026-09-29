@@ -4,6 +4,8 @@
 
 A local desktop voice companion. A global shortcut records in the renderer; Electron owns transcription, optional Magic rewriting, and delivery to the previous app. The main window provides recent results, contextual transcript rewriting, personalization, file transcription, and maintenance. Linux/Wayland is the reference desktop.
 
+The [architecture decision records](decisions/README.md) explain the current transport, backend catalog, runtime packaging, and history-storage choices, including their deferred requirements.
+
 ## Boundaries
 
 - `src/pages/HomePage.tsx` is the settings-first Controls workspace. It exposes capture, transcription, writing and delivery settings alongside a latest-output inspector. Microphone enumeration runs here and on Settings.
