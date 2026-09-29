@@ -10,6 +10,13 @@ import type { PlatformCapabilities } from "../../src/types";
 import { compatibleSessionBusAddress } from "../compat";
 import { portalRequest, PORTAL_NAME, PORTAL_PATH } from "./shortcutPortal";
 
+export class ClipboardCopyError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "ClipboardCopyError";
+  }
+}
+
 type PasteCommand = { program: string; args: string[]; input?: string };
 type PortalInterface = ClientInterface &
   Record<string, (...args: unknown[]) => Promise<unknown>>;
@@ -132,7 +139,7 @@ export class PasteService {
   }
 
   async paste(text: string): Promise<string> {
-    this.copy(text);
+    try { this.copy(text); } catch (error) { throw new ClipboardCopyError(error); }
     if (this.waylandPortal) {
       await this.pasteThroughPortal();
       return "wayland-portal";

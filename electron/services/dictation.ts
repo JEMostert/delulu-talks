@@ -13,7 +13,7 @@ import type {
   TranscriptRecord,
 } from "../../src/types";
 import type { AsrService } from "./asr";
-import type { PasteService } from "./paste";
+import { ClipboardCopyError, type PasteService } from "./paste";
 import type { PillService } from "./pill";
 import type { StorageService } from "./storage";
 
@@ -393,26 +393,37 @@ export class DictationService {
       this.setHud({ state: "delivering" });
       if (settings.autoPaste) {
         try {
-          await this.paste.paste(output);
-          completion = `${outputName} pasted`;
+          const method = await this.paste.paste(output);
+          record = this.recordDelivery(record, "paste-attempted", "Paste command sent; destination receipt is not confirmed", method);
+          completion = `${outputName}: paste attempted — destination unconfirmed`;
         } catch (error) {
-          completion = `Copied — paste manually (${error instanceof Error ? error.message : String(error)})`;
+          const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+          const copied = !(error instanceof ClipboardCopyError);
+          record = this.recordDelivery(record, copied ? "copied" : "transcribed", detail);
+          completion = copied ? `Copied — paste manually (${detail})` : `Transcribed — clipboard copy failed (${detail})`;
         }
       } else if (settings.copyToClipboard) {
-        this.paste.copy(output);
-        completion = `${outputName} copied to clipboard`;
+        try {
+          this.paste.copy(output);
+          record = this.recordDelivery(record, "copied");
+          completion = `${outputName} copied to clipboard`;
+        } catch (error) {
+          const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+          record = this.recordDelivery(record, "transcribed", detail);
+          completion = `Transcribed — clipboard copy failed (${detail})`;
+        }
       }
       if (magicFailure)
         completion = `${completion} · Magic unavailable: ${magicFailure}`;
       this.setHud({
         state: "success",
         title:
-          settings.autoPaste && !completion.startsWith("Copied")
-            ? "Pasted"
-            : settings.copyToClipboard || completion.startsWith("Copied")
-              ? "Copied"
-              : "Done",
-        detail: magicFailure ? "Magic skipped" : "Ready to keep talking",
+          record.delivery?.state === "paste-attempted"
+            ? "Paste attempted"
+            : record.delivery?.state === "copied" ? "Copied" : "Transcribed",
+        detail: record.delivery?.state === "paste-attempted"
+          ? "Destination unconfirmed"
+          : magicFailure ? "Magic skipped" : "Ready to keep talking",
       });
       this.asr.setActivity("idle", completion);
     } catch (error) {
@@ -551,7 +562,21 @@ export class DictationService {
       source,
       sourceName,
       processingTimeMs: Math.round(numeric(result.processingTime) * 1000),
+      delivery: { state: "transcribed", updatedAt: Date.now() },
     };
+  }
+
+  private recordDelivery(
+    record: TranscriptRecord,
+    state: NonNullable<TranscriptRecord["delivery"]>["state"],
+    detail?: string,
+    method?: string,
+  ): TranscriptRecord {
+    const saved = this.storage.findHistory(record.id);
+    const updated = { ...(saved ?? record), delivery: { state, updatedAt: Date.now(), detail, method } };
+    if (saved) this.storage.replaceHistory(updated);
+    this.broadcastTranscript(updated);
+    return updated;
   }
 
   private outputText(record: TranscriptRecord, settings: AppSettings): string {

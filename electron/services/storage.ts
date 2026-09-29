@@ -22,6 +22,7 @@ import type {
   MagicModelId,
   MagicPreset,
   ModelId,
+  TranscriptDelivery,
   TranscriptRecord,
 } from "../../src/types";
 
@@ -226,6 +227,34 @@ export function normalizeSettings(value: unknown): AppSettings {
   };
 }
 
+function migrateDelivery(value: unknown): TranscriptDelivery | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
+  const source = value as Record<string, unknown>;
+  if (
+    typeof source.state !== "string" ||
+    !["transcribed", "copied", "paste-attempted", "confirmed"].includes(
+      source.state,
+    ) ||
+    typeof source.updatedAt !== "number" ||
+    !Number.isFinite(source.updatedAt) ||
+    source.updatedAt < 0 ||
+    (source.method !== undefined && typeof source.method !== "string") ||
+    (source.detail !== undefined && typeof source.detail !== "string")
+  )
+    return undefined;
+  return {
+    state: source.state as TranscriptDelivery["state"],
+    updatedAt: source.updatedAt,
+    ...(typeof source.method === "string"
+      ? { method: source.method.slice(0, 128) }
+      : {}),
+    ...(typeof source.detail === "string"
+      ? { detail: source.detail.slice(0, 2_000) }
+      : {}),
+  };
+}
+
 function migrateRecord(value: unknown): TranscriptRecord | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
@@ -238,6 +267,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
   const model = validHistoryModels.has(source.model as ModelId)
     ? (source.model as ModelId)
     : DEFAULT_SETTINGS.model;
+  const delivery = migrateDelivery(source.delivery);
   return {
     id: safeString(source.id, `legacy-${Date.now()}-${Math.random()}`, 128),
     createdAt: Number(source.createdAt) || Date.now(),
@@ -270,6 +300,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     sourceName:
       typeof source.sourceName === "string" ? source.sourceName : null,
     processingTimeMs: Math.max(0, Number(source.processingTimeMs) || 0),
+    ...(delivery ? { delivery } : {}),
   };
 }
 

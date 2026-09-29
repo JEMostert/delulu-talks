@@ -90,6 +90,13 @@ export type DictationStatus = {
   progress?: number | null;
 };
 
+export type TranscriptDelivery = {
+  state: "transcribed" | "copied" | "paste-attempted" | "confirmed";
+  updatedAt: number;
+  method?: string;
+  detail?: string;
+};
+
 export type TranscriptRecord = {
   id: string;
   createdAt: number;
@@ -107,6 +114,7 @@ export type TranscriptRecord = {
   source: TranscriptSource;
   sourceName?: string | null;
   processingTimeMs: number;
+  delivery?: TranscriptDelivery;
 };
 
 export type ModelProvenance = {

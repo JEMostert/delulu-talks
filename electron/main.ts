@@ -29,7 +29,7 @@ import { runtimeDiagnostics } from "./runtime/diagnostics";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { DictationService } from "./services/dictation";
-import { PasteService } from "./services/paste";
+import { ClipboardCopyError, PasteService } from "./services/paste";
 import { PillService } from "./services/pill";
 import { ShortcutService } from "./services/shortcut";
 import {
@@ -288,6 +288,37 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
   ];
 }
 
+function recordDelivery(
+  record: TranscriptRecord,
+  state: NonNullable<TranscriptRecord["delivery"]>["state"],
+  detail?: string,
+  method?: string,
+): void {
+  const saved = storage.findHistory(record.id);
+  const current = saved ?? sessionTranscripts.get(record.id);
+  if (!current) return;
+  const updated = {
+    ...current,
+    delivery: { state, updatedAt: Date.now(), detail, method },
+  };
+  if (saved) storage.replaceHistory(updated);
+  sessionTranscripts.set(record.id, updated);
+  if (lastTranscript?.id === record.id) lastTranscript = updated;
+  broadcast("history:added", updated);
+  rebuildTrayMenu();
+}
+
+async function pasteRecord(record: TranscriptRecord): Promise<void> {
+  try {
+    const method = await paste.paste(deliveredText(record));
+    recordDelivery(record, "paste-attempted", "Paste command sent; destination receipt is not confirmed", method);
+  } catch (error) {
+    recordDelivery(record, error instanceof ClipboardCopyError ? "transcribed" : "copied",
+      (error instanceof Error ? error.message : String(error)).slice(0, 500));
+    throw error;
+  }
+}
+
 function rebuildTrayMenu(): void {
   if (!tray) return;
   const settings = storage.getSettings();
@@ -332,7 +363,7 @@ function rebuildTrayMenu(): void {
       enabled: Boolean(latest) && !dictation.isActive,
       click: () =>
         runTrayAction(async () => {
-          if (latest) await paste.paste(deliveredText(latest));
+          if (latest) await pasteRecord(latest);
         }),
     },
     {
@@ -342,7 +373,10 @@ function rebuildTrayMenu(): void {
         : "Your most recent dictation appears here",
       enabled: Boolean(latest),
       click: () => {
-        if (latest) paste.copy(deliveredText(latest));
+        if (latest) {
+          paste.copy(deliveredText(latest));
+          recordDelivery(latest, "copied");
+        }
       },
     },
     { type: "separator" },
@@ -638,7 +672,7 @@ function registerIpc(): void {
       storage.findHistory(record.id) ?? sessionTranscripts.get(record.id);
     if (!current)
       throw new Error("Paste cancelled because the transcript was removed");
-    await paste.paste(deliveredText(current));
+    await pasteRecord(current);
   });
   handle("dictation:discardFailed", () => dictation.discardFailure());
   handle("dictation:retry", () => dictation.retry());
