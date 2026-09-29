@@ -14,6 +14,7 @@ import type {
 export function RewriteDialog({
   text,
   baseline,
+  sourceRevision = 0,
   sourceLanguage,
   status,
   onClose,
@@ -23,15 +24,17 @@ export function RewriteDialog({
 }: {
   text: string;
   baseline: string;
+  sourceRevision?: number;
   sourceLanguage?: string;
   status?: MagicStatus;
   onClose: () => void;
   onSetup: () => void;
   onRewrite: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
-  onApply: (result: MagicRewriteResult, source: string) => Promise<boolean>;
+  onApply: (result: MagicRewriteResult, source: string, sourceRevision: number) => Promise<boolean>;
 }) {
   const [source, setSource] = useState(text);
   const [expectedOutput, setExpectedOutput] = useState(baseline);
+  const [expectedRevision, setExpectedRevision] = useState(sourceRevision);
   const [preset, setPreset] = useState<MagicPreset>("concise");
   const [instructions, setInstructions] = useState("");
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
@@ -39,7 +42,7 @@ export function RewriteDialog({
   const [error, setError] = useState<string | null>(null);
   const presetDetails = REWRITE_PRESETS.find((item) => item.id === preset)!;
   const missing = status?.engine === "missing" || status?.engine === "error";
-  const stale = source !== text || expectedOutput !== baseline;
+  const stale = source !== text || expectedOutput !== baseline || sourceRevision !== expectedRevision;
   return (
     <Modal
       title="Rewrite transcript"
@@ -63,7 +66,7 @@ export function RewriteDialog({
                 setBusy(true);
                 setError(null);
                 try {
-                  if (await onApply(result, expectedOutput)) onClose();
+                  if (await onApply(result, expectedOutput, expectedRevision)) onClose();
                   else
                     setError(
                       "Could not apply this rewrite. The transcript may have changed; close this preview and review the current result.",
@@ -91,6 +94,7 @@ export function RewriteDialog({
           <button className="secondary-button" disabled={busy} onClick={() => {
             setSource(text);
             setExpectedOutput(baseline);
+            setExpectedRevision(sourceRevision);
             setResult(null);
             setError(null);
           }}>Refresh rewrite source</button>

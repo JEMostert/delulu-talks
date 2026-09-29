@@ -79,10 +79,10 @@ const api: DeluluApi = {
   testPaste: () => ipcRenderer.invoke("paste:test"),
   updateTranscript: (id: string, text: string | null) =>
     ipcRenderer.invoke("history:updateTranscript", id, text),
+  setTranscriptRewrite: (id, result, sourceText, expectedSourceRevision) =>
+    ipcRenderer.invoke("history:setRewrite", id, result, sourceText, expectedSourceRevision),
   setTranscriptTitle: (id: string, title: string | null) =>
     ipcRenderer.invoke("history:setTitle", id, title),
-  setTranscriptRewrite: (id, result, sourceText) =>
-    ipcRenderer.invoke("history:setRewrite", id, result, sourceText),
   deleteHistory: (id: string) => ipcRenderer.invoke("history:delete", id),
   clearHistory: () => ipcRenderer.invoke("history:clear"),
   chooseAudioFile: () => ipcRenderer.invoke("lab:chooseAudio"),

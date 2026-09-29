@@ -1,6 +1,6 @@
 import { changePersonalProfiles } from "./personalProfileCommands";
 import { DEFAULT_SETTINGS } from "./data";
-import { deliveredText, originalTranscriptText } from "./transcriptText";
+import { deliveredText, originalTranscriptText, transcriptSourceRevision } from "./transcriptText";
 import { normalizeTranscriptTitle } from "./transcriptTitle";
 import type {
   AppSettings,
@@ -239,19 +239,25 @@ export const previewApi: DeluluApi = {
       normalized && normalized !== originalTranscriptText(record)
         ? normalized
         : null;
-    record.magicText = null;
-    const updated = { ...record, editedText: correction };
+    const revision = transcriptSourceRevision(record);
+    if (revision >= Number.MAX_SAFE_INTEGER)
+      throw new Error("This transcript has reached its revision limit");
+    const updated = { ...record, editedText: correction, sourceRevision: revision + 1,
+      rewriteSourceRevision: null, magicText: null, magicModel: null, magicPreset: null,
+      magicIncludedInferences: false, magicProcessingTimeMs: 0 };
     demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
     return updated;
   },
-  async setTranscriptRewrite(id, result, sourceText) {
+  async setTranscriptRewrite(id, result, sourceText, expectedSourceRevision = 0) {
     const record = demoHistory.find((item) => item.id === id);
     if (!record) throw new Error("Transcript not found");
-    if (deliveredText(record) !== sourceText)
+    if (!Number.isSafeInteger(expectedSourceRevision) || expectedSourceRevision < 0 ||
+        transcriptSourceRevision(record) !== expectedSourceRevision || deliveredText(record) !== sourceText)
       throw new Error("Transcript changed while rewriting");
     const updated = {
       ...record,
       magicText: result?.text ?? null,
+      rewriteSourceRevision: result ? transcriptSourceRevision(record) : null,
       magicModel: result?.model ?? null,
       magicIncludedInferences: result?.includedInferences ?? false,
     };
