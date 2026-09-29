@@ -173,31 +173,34 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                 <X />
               </button>
             )}
-            <button
-              className={`record-command ${recording ? "recording" : ""}`}
-              disabled={!w.ready || speechBusy || (!recording && busy)}
-              onClick={needsSetup ? () => w.setPage("models") : onRecord}
-              aria-label={
-                needsSetup
-                  ? w.status.migrationRequired
-                    ? "Update dictation setup"
-                    : "Set up dictation"
-                  : recording
-                    ? "Stop recording"
-                    : "Start recording"
-              }
-            >
-              {recording ? <Square /> : <Mic />}
-              <span>
-                {needsSetup
-                  ? w.status.migrationRequired
-                    ? "Update"
-                    : "Set up"
-                  : recording
-                    ? "Stop"
-                    : "Record"}
-              </span>
-            </button>
+            {(w.page !== "home" || recording) && (
+              <button
+                id={recording ? "recording-stop-control" : undefined}
+                className={`record-command ${recording ? "recording" : ""}`}
+                disabled={recording ? false : !w.ready || speechBusy || busy}
+                onClick={needsSetup ? () => w.setPage("models") : onRecord}
+                aria-label={
+                  needsSetup
+                    ? w.status.migrationRequired
+                      ? "Update dictation setup"
+                      : "Set up dictation"
+                    : recording
+                      ? "Stop recording"
+                      : "Start recording"
+                }
+              >
+                {recording ? <Square /> : <Mic />}
+                <span style={recording ? { display: "inline" } : undefined}>
+                  {needsSetup
+                    ? w.status.migrationRequired
+                      ? "Update"
+                      : "Set up"
+                    : recording
+                      ? "Stop"
+                      : "Record"}
+                </span>
+              </button>
+            )}
           </div>
         </header>
         {!window.delulu && (
@@ -365,10 +368,12 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     void w.saveSettings(patch, null);
                   }}
                   onPasteLast={w.pasteLast}
+                  onToggleRecord={() =>
+                    w.action(() => bridge.toggleDictation())
+                  }
                   pasteLastBusy={["pending", "delivering"].includes(
                     w.pasteLastStatus.phase,
                   )}
-                  onToggleRecord={onRecord}
                   {...transcriptActions}
                 />
               </div>
