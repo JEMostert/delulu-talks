@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { Clock3, Search, Trash2 } from "lucide-react";
 import {
   TranscriptCard,
@@ -13,6 +13,11 @@ import {
   historyDateError,
   type HistoryFilters,
 } from "../historyFilters";
+import {
+  sortHistory,
+  type HistorySort,
+  type HistoryViewState,
+} from "../historyView";
 
 function dayLabel(timestamp: number) {
   const date = new Date(timestamp);
@@ -32,19 +37,31 @@ function dayLabel(timestamp: number) {
 export function HistoryPage({
   history,
   onClear,
+  view,
+  onViewChange,
   ...actions
-}: TranscriptActions & { history: TranscriptRecord[]; onClear: () => void }) {
-  const [filters, setFilters] = useState<HistoryFilters>(EMPTY_HISTORY_FILTERS);
+}: TranscriptActions & {
+  history: TranscriptRecord[];
+  onClear: () => void;
+  view: HistoryViewState;
+  onViewChange: Dispatch<SetStateAction<HistoryViewState>>;
+}) {
+  const { filters, sort } = view;
   const [confirm, setConfirm] = useState(false);
   const update = <K extends keyof HistoryFilters>(
     key: K,
     value: HistoryFilters[K],
-  ) => setFilters((previous) => ({ ...previous, [key]: value }));
+  ) =>
+    onViewChange((previous) => ({
+      ...previous,
+      filters: { ...previous.filters, [key]: value },
+    }));
   const dateError = historyDateError(filters);
   const filtered = useMemo(
     () => filterHistory(history, filters),
     [history, filters],
   );
+  const sorted = useMemo(() => sortHistory(filtered, sort), [filtered, sort]);
   const languages = [
     ...new Set([
       ...history.map((item) => item.language),
@@ -58,14 +75,14 @@ export function HistoryPage({
   );
   const groups = useMemo(() => {
     const result = new Map<string, TranscriptRecord[]>();
-    filtered.forEach((item) => {
+    sorted.forEach((item) => {
       const day = dayLabel(item.createdAt);
       const bucket = result.get(day);
       if (bucket) bucket.push(item);
       else result.set(day, [item]);
     });
     return [...result];
-  }, [filtered]);
+  }, [sorted]);
   return (
     <div className="content-stack">
       <div className="flex items-center gap-3.5 max-[700px]:flex-wrap">
@@ -77,6 +94,23 @@ export function HistoryPage({
             value={filters.query}
             onChange={(e) => update("query", e.target.value)}
           />
+        </label>
+        <label className="field min-w-0 max-[700px]:flex-1">
+          Sort history
+          <select
+            aria-label="Sort history"
+            value={sort}
+            onChange={(e) => {
+              const nextSort = e.target.value as HistorySort;
+              onViewChange((previous) => ({
+                ...previous,
+                sort: nextSort,
+              }));
+            }}
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
         </label>
         <button
           className="tool-button danger"
@@ -187,7 +221,12 @@ export function HistoryPage({
           <button
             className="text-button"
             disabled={!active}
-            onClick={() => setFilters(EMPTY_HISTORY_FILTERS)}
+            onClick={() =>
+              onViewChange((previous) => ({
+                ...previous,
+                filters: EMPTY_HISTORY_FILTERS,
+              }))
+            }
           >
             Reset search and filters
           </button>

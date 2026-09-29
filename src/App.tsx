@@ -328,6 +328,8 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                 >
                   <HistoryPage
                     history={w.history}
+                    view={w.historyView}
+                    onViewChange={w.setHistoryView}
                     {...transcriptActions}
                     onClear={onClearHistory}
                   />

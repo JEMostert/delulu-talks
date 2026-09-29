@@ -5,6 +5,19 @@ language, recording/import source, and current rewrite status. Reset search and
 filters restores the complete loaded history. Opening and closing a transcript's
 review keeps those controls unchanged.
 
+Sort history offers Newest first (the default) and Oldest first. Both use the
+record's original creation time; editing or applying a rewrite does not move it.
+Records with equal creation times use their stored ID in ascending, case-sensitive
+order so refresh and incoming record order do not reshuffle them. Sorting works
+on a copy of the filtered records and keeps the underlying history unchanged.
+
+Search, all filters, and sort live in workspace memory for the current session.
+They remain selected when navigating to another page and returning to History,
+or if the History page remounts during workspace recovery. Reset search and
+filters clears the query and filter controls while keeping the selected sort.
+Restarting or reloading the application returns to the default view; these
+preferences are not written to settings or transcript history.
+
 Dates use the device's local calendar days, including the whole end day across
 daylight-saving transitions. Either date may be left empty. A reversed range
 shows an accessible error and no results until corrected or reset.

@@ -3,6 +3,7 @@ import { bridge } from "../bridge";
 import { DEFAULT_SETTINGS } from "../data";
 import { PcmRecorder, listMicrophones } from "../recorder";
 import { readStartupService } from "../startupServices";
+import { DEFAULT_HISTORY_VIEW, type HistoryViewState } from "../historyView";
 import type {
   AppSettings,
   DictationStatus,
@@ -38,6 +39,9 @@ export function useWorkspace() {
     message: "Checking shortcut",
   });
   const [history, setHistory] = useState<TranscriptRecord[]>([]);
+  // Session-only view state survives History navigation and page remounts.
+  const [historyView, setHistoryView] =
+    useState<HistoryViewState>(DEFAULT_HISTORY_VIEW);
   const [devices, setDevices] = useState<MicrophoneDevice[]>([
     { deviceId: "default", label: "System default" },
   ]);
@@ -278,6 +282,8 @@ export function useWorkspace() {
     shortcutStatus,
     history,
     setHistory,
+    historyView,
+    setHistoryView,
     devices,
     capabilities,
     updateStatus,
