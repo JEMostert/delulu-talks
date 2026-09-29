@@ -1,14 +1,18 @@
+import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
 import { DEFAULT_SETTINGS } from "../data";
 import { PcmRecorder, listMicrophones } from "../recorder";
 import { readStartupService } from "../startupServices";
+import { DEFAULT_HISTORY_VIEW, type HistoryViewState } from "../historyView";
 import type {
   AppSettings,
+  CaptureDiagnostics,
   DictationStatus,
   MagicStatus,
   MicrophoneDevice,
   Page,
+  PasteLastStatus,
   PlatformCapabilities,
   ShortcutStatus,
   TranscriptRecord,
@@ -37,7 +41,19 @@ export function useWorkspace() {
     method: "native",
     message: "Checking shortcut",
   });
+  const [captureDiagnostics, setCaptureDiagnostics] =
+    useState<CaptureDiagnostics | null>(null);
+  const [pasteLastStatus, setPasteLastStatus] = useState<PasteLastStatus>({
+    phase: "idle",
+    operationId: null,
+    dueAt: null,
+    remainingSeconds: 0,
+    message: "",
+  });
   const [history, setHistory] = useState<TranscriptRecord[]>([]);
+  // Session-only view state survives History navigation and page remounts.
+  const [historyView, setHistoryView] =
+    useState<HistoryViewState>(DEFAULT_HISTORY_VIEW);
   const [devices, setDevices] = useState<MicrophoneDevice[]>([
     { deviceId: "default", label: "System default" },
   ]);
@@ -86,9 +102,12 @@ export function useWorkspace() {
     const read = <T>(name: string, request: () => Promise<T>) =>
       readStartupService(name, request, startup.signal);
     setStartupError(null);
-    const recorder = new PcmRecorder();
+    const recorder = new PcmRecorder((stats) => {
+      if (alive) setCaptureDiagnostics(stats);
+    });
     const subscriptions = [
       bridge.onStatus(subscribe("speech status", setStatus)),
+      bridge.onPasteLastStatus(subscribe("paste last", setPasteLastStatus)),
       bridge.onMagicStatus(subscribe("rewriting status", setMagicStatus)),
       bridge.onSettingsChanged(subscribe("settings", receiveSettings)),
       bridge.onNavigate((next) => { if (isCurrent()) setPage(next); }),
@@ -105,6 +124,14 @@ export function useWorkspace() {
       }),
     ];
     void bridge.recorderReady().catch((reason) => { if (isCurrent()) report(reason); });
+    void bridge
+      .getPasteLastStatus()
+      .then((state) => {
+        if (isCurrent() && !received.has("paste last")) setPasteLastStatus(state);
+      })
+      .catch((reason) => {
+        if (isCurrent()) report(reason);
+      });
     void Promise.allSettled([
       read("settings", () => bridge.getSettings()),
       read("speech status", () => bridge.getStatus()),
@@ -193,22 +220,32 @@ export function useWorkspace() {
   }, [startupAttempt]);
 
   useEffect(() => {
-    if (page !== "settings" && page !== "home") return;
     let alive = true;
+    let revision = 0;
     const refresh = () => {
+      const current = ++revision;
       void listMicrophones(false)
         .then((next) => {
-          if (alive) setDevices(next);
+          if (alive && current === revision) setDevices(next);
         })
-        .catch(report);
+        .catch((reason: unknown) => {
+          if (alive && current === revision) {
+            setDevices([
+              { deviceId: "default", label: "System default", labelKnown: false },
+            ]);
+            report(reason);
+          }
+        });
     };
     refresh();
     navigator.mediaDevices?.addEventListener("devicechange", refresh);
+    window.addEventListener("focus", refresh);
     return () => {
       alive = false;
       navigator.mediaDevices?.removeEventListener("devicechange", refresh);
+      window.removeEventListener("focus", refresh);
     };
-  }, [page]);
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -263,6 +300,13 @@ export function useWorkspace() {
     return run;
   }
 
+  function managePersonalProfile(command: PersonalProfileCommand): Promise<boolean> {
+    const verb = command.action === "delete" ? "deleted" : command.action === "rename" ? "renamed" : "saved";
+    return action(async () => {
+      receiveSettings(await bridge.managePersonalProfile(command));
+    }, `Profile ${verb} · active settings unchanged`);
+  }
+
   async function updateTranscript(
     id: string,
     text: string | null,
@@ -291,8 +335,9 @@ export function useWorkspace() {
     void action(() => bridge.copyText(text), "Copied to clipboard");
   };
   const pasteLast = () => {
-    setToast("Focus a text field — pasting in 3 seconds…");
-    void action(() => bridge.pasteLastTranscript(), "Last result pasted");
+    void action(async () => {
+      await bridge.pasteLastTranscript();
+    });
   };
   return {
     page,
@@ -309,7 +354,10 @@ export function useWorkspace() {
     magicStatus,
     shortcutStatus,
     history,
+    captureDiagnostics,
     setHistory,
+    historyView,
+    setHistoryView,
     devices,
     capabilities,
     updateStatus,
@@ -320,10 +368,18 @@ export function useWorkspace() {
     setError,
     action,
     saveSettings,
+    managePersonalProfile,
     updateTranscript,
     finishOnboarding,
     copy,
     pasteLast,
+    pasteLastStatus,
+    cancelPasteLast: () => {
+      if (pasteLastStatus.operationId)
+        void action(async () => {
+          await bridge.cancelPasteLast(pasteLastStatus.operationId!);
+        });
+    },
     receiveTranscript,
   };
 }
