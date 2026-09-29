@@ -3,6 +3,8 @@ Uses only pre-downloaded models; never prints transcript contents or modifies so
 Requires Apple Silicon for MLX or an NVIDIA CUDA GPU for Linux vLLM / Windows PyTorch.
 """
 import argparse
+import hashlib
+import importlib.metadata
 import importlib.util
 import json
 import os
@@ -40,6 +42,25 @@ try:
         assert result["text"].strip(), "Missing Magic output"
         assert "Thursday" in result["text"], "Magic lost the requested day"
         report["magic"] = {"characters": len(result["text"]), "processingTimeMs": result["processingTimeMs"]}
+    evidence_path = os.environ.get("DELULU_EVIDENCE_NATIVE_RESULT")
+    if evidence_path:
+        speech = worker.dispatch({"command": "status"})
+        versions = {}
+        for package in ("mlx", "mlx-audio", "torch", "transformers", "vllm", "qwen-asr"):
+            try:
+                versions[package] = importlib.metadata.version(package)
+            except importlib.metadata.PackageNotFoundError:
+                pass
+        observation = {
+            "model": speech["model"], "device": speech["device"],
+            "backend": "mlx" if speech["device"] == "mlx" else "cuda-transformers" if sys.platform == "win32" else "cuda-vllm",
+            "backendSource": "worker device and platform",
+            "fixtureSha256": hashlib.sha256((root / "test-audio.m4a").read_bytes()).hexdigest(),
+            "characters": report["speech"]["characters"],
+            "pythonVersion": sys.version, "packageVersions": versions,
+            "measurements": report,
+        }
+        Path(evidence_path).write_text(json.dumps(observation), encoding="utf8")
     print(json.dumps(report, indent=2))
 finally:
     worker.dispatch({"command": "shutdown"})

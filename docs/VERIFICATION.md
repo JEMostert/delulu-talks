@@ -41,7 +41,14 @@ Ordinary tests never load or download speech/rewrite models. Native checks use
 the already-installed runtime and pre-downloaded cache, with offline mode enabled.
 Provide a local metadata JSON file describing the actual hardware and installed
 checkpoint/runtime revisions; these fields are explicitly **supplied metadata**,
-not values discovered or independently validated by the reporting wrapper:
+not values discovered or independently validated by the reporting wrapper.
+The smoke scripts additionally emit a private observation containing the returned
+speech model, selected backend, fixture SHA-256 and nonempty transcript length.
+The runtime smoke records the worker's actual model/device and installed package
+versions; the desktop smoke records the returned transcript model and Electron's
+platform backend selection. The wrapper requires this observation and rejects
+non-R2T2 results or a backend mismatch, even if the command exits successfully.
+It records sizes and timings, never the transcript. Supply provenance separately:
 
 ```json
 {

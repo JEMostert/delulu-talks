@@ -1,6 +1,12 @@
 import { spawn, execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  rmSync,
+} from "node:fs";
 import { arch, platform, release } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -184,6 +190,31 @@ export function validateManual(record, sha) {
   return record;
 }
 
+export function validateNativeObservation(observation, metadata) {
+  requiredText(
+    observation,
+    ["model", "backend", "fixtureSha256"],
+    "Native observation",
+  );
+  if (
+    ![
+      "r2t2",
+      "netease-youdao/Confucius4-R2T2",
+      "mlx-community/Confucius4-R2T2-bf16",
+    ].includes(observation.model)
+  )
+    throw new Error("Observed speech model is not R2T2");
+  if (observation.backend !== metadata.backend)
+    throw new Error("Observed speech backend does not match supplied metadata");
+  if (!Number.isInteger(observation.characters) || observation.characters <= 0)
+    throw new Error(
+      "Native observation requires a nonempty actual transcription",
+    );
+  if (!/^[a-f0-9]{64}$/.test(observation.fixtureSha256))
+    throw new Error("Native observation requires a SHA-256 fixture hash");
+  return observation;
+}
+
 export function makeReport(suite, plan, status, context) {
   return {
     schemaVersion: 1,
@@ -218,6 +249,10 @@ export async function runSuite(suite, args) {
     `Evidence suite ${suite}: ${plan.kinds.join(", ")}\n${plan.scope}`,
   );
   let error;
+  const observationPath = plan.kinds.includes("native-inference")
+    ? join(reportDirectory, `.native-${randomUUID()}.tmp`)
+    : null;
+  if (observationPath) mkdirSync(reportDirectory, { recursive: true });
   const result = await new Promise((resolveResult) => {
     const child = spawn(plan.command[0], plan.command.slice(1), {
       stdio: "inherit",
@@ -226,6 +261,7 @@ export async function runSuite(suite, args) {
         ...process.env,
         HF_HUB_OFFLINE: "1",
         HF_HUB_DISABLE_TELEMETRY: "1",
+        DELULU_EVIDENCE_NATIVE_RESULT: observationPath ?? "",
       },
     });
     child.once("error", (cause) => {
@@ -233,13 +269,29 @@ export async function runSuite(suite, args) {
     });
     child.once("close", (code, signal) => resolveResult({ code, signal }));
   });
+  let nativeObservation = null;
+  if (observationPath) {
+    try {
+      if (result.code === 0)
+        nativeObservation = validateNativeObservation(
+          JSON.parse(readFileSync(observationPath, "utf8")),
+          plan.metadata,
+        );
+    } catch (cause) {
+      error = `Native evidence: ${cause.message}`;
+    } finally {
+      rmSync(observationPath, { force: true });
+    }
+  }
   const revisionAfter = revision();
   const headChanged = revisionAfter.sha !== revisionBefore.sha;
-  const status = result.code === 0 && !headChanged ? "passed" : "failed";
+  const status =
+    result.code === 0 && !headChanged && !error ? "passed" : "failed";
   saveReport(
     makeReport(suite, plan, status, {
       revision: revisionBefore,
       revisionAfter,
+      nativeObservation,
       platform: platform(),
       architecture: arch(),
       osRelease: release(),

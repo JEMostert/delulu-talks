@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 const data = await mkdtemp(join(tmpdir(), "delulu-desktop-smoke-"));
 const env = {
@@ -211,6 +212,25 @@ try {
       });
     }, audio);
     const records = await page.evaluate(() => window.delulu.getHistory());
+    if (process.env.DELULU_EVIDENCE_NATIVE_RESULT) {
+      await writeFile(
+        process.env.DELULU_EVIDENCE_NATIVE_RESULT,
+        JSON.stringify({
+          model: records[0]?.model,
+          backend: metal
+            ? "mlx"
+            : process.platform === "win32"
+              ? "cuda-transformers"
+              : "cuda-vllm",
+          backendSource:
+            "Electron platform selection and returned transcript model",
+          fixtureSha256: createHash("sha256")
+            .update(await readFile("test-audio.m4a"))
+            .digest("hex"),
+          characters: records[0]?.text.length ?? 0,
+        }),
+      );
+    }
     if (process.argv.includes("--lifecycle")) {
       for (let cycle = 0; cycle < 3; cycle++) {
         await page.evaluate(async (wav) => {

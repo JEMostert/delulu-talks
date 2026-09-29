@@ -16,6 +16,7 @@ import {
   planSuite,
   summarizeReports,
   validateManual,
+  validateNativeObservation,
 } from "./test-evidence.mjs";
 
 const sha = "a".repeat(40);
@@ -40,6 +41,33 @@ const manual = () => ({
 });
 
 describe("evidence boundaries", () => {
+  test("native success requires observed R2T2 transcription and the selected backend", () => {
+    const observation = {
+      model: "netease-youdao/Confucius4-R2T2",
+      backend: "cuda-vllm",
+      fixtureSha256: "a".repeat(64),
+      characters: 20,
+    };
+    expect(
+      validateNativeObservation(observation, { backend: "cuda-vllm" }),
+    ).toBe(observation);
+    expect(() =>
+      validateNativeObservation(
+        { ...observation, model: "Qwen3-ASR" },
+        { backend: "cuda-vllm" },
+      ),
+    ).toThrow("not R2T2");
+    expect(() =>
+      validateNativeObservation(observation, { backend: "mlx" }),
+    ).toThrow("does not match");
+    expect(() =>
+      validateNativeObservation(
+        { ...observation, characters: 0 },
+        { backend: "cuda-vllm" },
+      ),
+    ).toThrow("nonempty actual");
+  });
+
   test("listing/help/filter options cannot become completed evidence", () => {
     for (const [suite, args] of [
       ["unit", ["--help"]],
