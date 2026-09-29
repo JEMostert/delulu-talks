@@ -1,3 +1,4 @@
+import { REWRITE_PRESETS } from "../rewritePresets";
 import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
 import {
@@ -326,10 +327,9 @@ export function SettingsPage(props: Props) {
                 })
               }
             >
-              <option value="polish">Polished</option>
-              <option value="concise">Concise</option>
-              <option value="structured">Structured</option>
-              <option value="prompt">Prompt builder</option>
+              {REWRITE_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.label}</option>
+              ))}
             </select>
           </SettingRow>
           <SettingRow

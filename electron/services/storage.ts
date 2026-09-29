@@ -1,4 +1,5 @@
 import { app } from "electron";
+import { isMagicPreset } from "../../src/rewritePresets";
 import { speechModelForPlatform } from "../runtime/platform";
 import {
   existsSync,
@@ -140,9 +141,7 @@ export function normalizeSettings(value: unknown): AppSettings {
   const magicModel = validMagicModels.has(source.magicModel as MagicModelId)
     ? (source.magicModel as MagicModelId)
     : DEFAULT_SETTINGS.magicModel;
-  const magicPreset = ["polish", "concise", "structured", "prompt"].includes(
-    String(source.magicPreset),
-  )
+  const magicPreset = isMagicPreset(source.magicPreset)
     ? (source.magicPreset as MagicPreset)
     : DEFAULT_SETTINGS.magicPreset;
   const requestedLanguage = safeString(
@@ -252,9 +251,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     magicModel: validMagicModels.has(source.magicModel as MagicModelId)
       ? (source.magicModel as MagicModelId)
       : null,
-    magicPreset: ["polish", "concise", "structured", "prompt"].includes(
-      String(source.magicPreset),
-    )
+    magicPreset: isMagicPreset(source.magicPreset)
       ? (source.magicPreset as MagicPreset)
       : null,
     magicIncludedInferences: source.magicIncludedInferences === true,

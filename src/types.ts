@@ -5,7 +5,13 @@ export type SpeechModelId = "r2t2" | "r2t2Mlx";
 /** Historical Qwen speech results retain their identity; it is never an active engine. */
 export type ModelId = SpeechModelId | "qwen3Asr";
 export type MagicModelId = "qwen35Small" | "qwen35Medium" | "qwen35Large";
-export type MagicPreset = "polish" | "concise" | "structured" | "prompt";
+export type MagicPreset =
+  | "polish"
+  | "concise"
+  | "bullet-points"
+  | "professional-message"
+  | "structured"
+  | "prompt";
 export type DictationPhase =
   "idle" | "preparing" | "loading" | "listening" | "transcribing" | "error";
 export type EnginePhase =

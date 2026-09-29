@@ -23,6 +23,7 @@ import type {
   RecordingSubmission,
   TranscriptRecord,
 } from "../src/types";
+import { isMagicPreset, REWRITE_PRESETS } from "../src/rewritePresets";
 import { modelById } from "../src/data";
 import { deliveredText } from "../src/transcriptText";
 import { runtimeDiagnostics } from "./runtime/diagnostics";
@@ -303,12 +304,9 @@ function rebuildTrayMenu(): void {
   const update = updates?.getStatus();
   const speechUnavailable =
     status.engine === "missing" || status.engine === "error";
-  const presets: Array<[MagicPreset, string]> = [
-    ["polish", "Polish naturally"],
-    ["concise", "Make it concise"],
-    ["structured", "Structure the details"],
-    ["prompt", "Build an actionable prompt"],
-  ];
+  const presets: Array<[MagicPreset, string]> = REWRITE_PRESETS.map(
+    ({ id, label }) => [id, label],
+  );
   const template: MenuItemConstructorOptions[] = [
     { label: "DELULU TALKS", enabled: false },
     {
@@ -680,9 +678,7 @@ function registerIpc(): void {
     if (!value || typeof value !== "object")
       throw new Error("Expected a Magic rewrite request");
     const source = value as Record<string, unknown>;
-    const preset = ["polish", "concise", "structured", "prompt"].includes(
-      String(source.preset),
-    )
+    const preset = isMagicPreset(source.preset)
       ? (source.preset as MagicRewriteRequest["preset"])
       : "polish";
     const request: MagicRewriteRequest = {
@@ -788,9 +784,7 @@ function registerIpc(): void {
         updated = {
           ...record,
           magicText: text,
-          magicPreset: ["polish", "concise", "structured", "prompt"].includes(
-            String(rewrite.preset),
-          )
+          magicPreset: isMagicPreset(rewrite.preset)
             ? (rewrite.preset as MagicPreset)
             : null,
           magicModel: ["qwen35Small", "qwen35Medium", "qwen35Large"].includes(
