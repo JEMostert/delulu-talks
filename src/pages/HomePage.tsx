@@ -1,3 +1,4 @@
+import { technicalDictationGuide } from "../technicalDictation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
@@ -214,6 +215,19 @@ export function HomePage({
                   ))}
                 </select>
               </ControlField>
+              <ControlField label="Text mode">
+                <select
+                  aria-label="Dictation text mode"
+                  className="w-full min-h-[34px] px-[9px] py-[7px] text-[12px] bg-input"
+                  value={s.dictationMode ?? "prose"}
+                  disabled={saving || busy}
+                  onChange={(e) => save({ dictationMode: e.target.value as AppSettings["dictationMode"] })}
+                >
+                  <option value="prose">Prose</option>
+                  <option value="code">Code symbols</option>
+                  <option value="command">Command text</option>
+                </select>
+              </ControlField>
               <ControlField label="Record mode">
                 <select
                   aria-label="Recording gesture"
@@ -236,6 +250,26 @@ export function HomePage({
                   <option value="toggle">Toggle</option>
                 </select>
               </ControlField>
+              {s.dictationMode && s.dictationMode !== "prose" && (
+                <div className="col-span-full text-[11px] text-muted">
+                  Spoken symbols become text after recognition. Original speech stays in history.
+                  Vocabulary expansion and automatic rewriting are bypassed. Command text is never executed by Delulu Talks.
+                  <details className="mt-1">
+                    <summary className="cursor-pointer">Spoken symbol guide</summary>
+                    <p className="mt-1">Say “open parenthesis”, “close parenthesis”, “equals”, “semicolon”,
+                      “forward slash”, “backslash”, “new line”, “tab” or “space”.
+                      Say “literal” before a word to keep that word unchanged.
+                      Ordinary words keep their spacing; operators receive spaces.</p>
+                    <ul className="mt-2 grid gap-1">
+                      {technicalDictationGuide.map((entry) => (
+                        <li key={entry.label}>
+                          {entry.phrases.join(" / ")} → <code>{JSON.stringify(entry.output)}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                </div>
+              )}
               <div className="flex items-center gap-2 min-h-[37px] mt-0.5 border-t border-line pt-[9px] col-span-full">
                 <span className="flex items-center gap-1.5 text-[10px] text-muted">
                   <Keyboard className="w-[13px] h-[13px]" /> Shortcut

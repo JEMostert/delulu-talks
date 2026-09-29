@@ -174,6 +174,10 @@ export function normalizeSettings(value: unknown): AppSettings {
     language: validLanguages.has(requestedLanguage)
       ? requestedLanguage
       : DEFAULT_SETTINGS.language,
+    dictationMode:
+      source.dictationMode === "code" || source.dictationMode === "command"
+        ? source.dictationMode
+        : "prose",
     pythonCommand: safeString(
       source.pythonCommand,
       DEFAULT_SETTINGS.pythonCommand,
@@ -244,6 +248,14 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     durationMs: Math.max(0, Number(source.durationMs) || 0),
     text,
     personalizedText: optionalText(source.personalizedText, 500_000),
+    technicalText:
+      typeof source.technicalText === "string"
+        ? source.technicalText.slice(0, 500_000)
+        : null,
+    dictationMode:
+      source.dictationMode === "code" || source.dictationMode === "command"
+        ? source.dictationMode
+        : "prose",
     editedText: optionalText(
       source.editedText ?? source.editedIntendedText,
       500_000,

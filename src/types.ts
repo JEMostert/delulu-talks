@@ -1,3 +1,5 @@
+import type { DictationMode } from "./technicalDictation";
+
 export type Page =
   "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
 
@@ -32,6 +34,7 @@ export type AppSettings = {
   shortcutMode: "hold" | "toggle";
   model: SpeechModelId;
   language: string;
+  dictationMode: DictationMode;
   pythonCommand: string;
   inputDeviceId: string;
   inputDeviceLabel: string;
@@ -96,6 +99,8 @@ export type TranscriptRecord = {
   durationMs: number;
   text: string;
   personalizedText?: string | null;
+  technicalText?: string | null;
+  dictationMode?: DictationMode;
   editedText?: string | null;
   magicText?: string | null;
   magicModel?: MagicModelId | null;

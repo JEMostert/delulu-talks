@@ -141,6 +141,9 @@ export function TranscriptCard({
           </strong>
           <span className="mt-[3px] flex items-center gap-1 text-[10px] text-muted">
             {date} · {Math.max(1, Math.round(record.durationMs / 1000))}s{" "}
+            {record.dictationMode && record.dictationMode !== "prose" && (
+              <> · {record.dictationMode === "code" ? "Code symbols" : "Command text"}</>
+            )}
             {record.magicText && (
               <>
                 · <WandSparkles className="size-[11px]" /> Rewritten

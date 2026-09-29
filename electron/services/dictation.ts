@@ -1,3 +1,4 @@
+import { renderTechnicalDictation } from "../../src/technicalDictation";
 import { personalize } from "../../src/personalization";
 import { deliveredText } from "../../src/transcriptText";
 import type { BrowserWindow } from "electron";
@@ -354,7 +355,7 @@ export class DictationService {
         return;
       }
       let magicFailure: string | null = null;
-      if (settings.magicEnabled) {
+      if (settings.magicEnabled && (!settings.dictationMode || settings.dictationMode === "prose")) {
         this.asr.setActivity(
           "transcribing",
           "Magic is polishing the transcript",
@@ -546,6 +547,12 @@ export class DictationService {
       durationMs,
       text,
       personalizedText: personalize(text, settings.customWords),
+      dictationMode: source === "dictation" ? settings.dictationMode ?? "prose" : "prose",
+      technicalText:
+        source === "dictation" &&
+        (settings.dictationMode === "code" || settings.dictationMode === "command")
+          ? renderTechnicalDictation(text, settings.dictationMode)
+          : null,
       model: settings.model,
       language: String(result.language ?? settings.language),
       source,
