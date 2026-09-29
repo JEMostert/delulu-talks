@@ -356,4 +356,20 @@ for (const kind of ["speech", "magic"]) {
       assert.equal(service.isBusy, false);
       assert.equal(deadlines().length, 0);
     `));
+
+  test(`${kind} load readiness completing after shutdown cannot start a worker`, () =>
+    verify(`
+      const readiness = deferred();
+      service.${kind === "speech" ? "isEnvironmentReady" : "isMagicEnvironmentReady"} = () => readiness.promise;
+      const load = ${kind === "speech" ? "primeSpeech" : "primeMagic"}();
+      const rejection = assert.rejects(() => load, /shutting down/);
+      await ticks();
+      assert.deepEqual(${kind}.requests, []);
+      await service.shutdown();
+      readiness.resolve(true);
+      await rejection;
+      assert.deepEqual(${kind}.requests, [], "late readiness must not start a worker after shutdown");
+      assert.equal(service.isBusy, false);
+      assert.equal(deadlines().length, 0);
+    `));
 }
