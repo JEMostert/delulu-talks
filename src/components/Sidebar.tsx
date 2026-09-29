@@ -1,5 +1,6 @@
 import {
   AudioLines,
+  Code2,
   Clock3,
   Cpu,
   Settings2,
@@ -20,6 +21,7 @@ const groups = [
     items: [
       { id: "history", label: "History", icon: Clock3 },
       { id: "lab", label: "Audio files", icon: AudioLines },
+      { id: "technical", label: "Technical text", icon: Code2 },
     ],
   },
 ] as const;
