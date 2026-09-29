@@ -281,8 +281,14 @@ class Worker:
 
         from qwen_asr import Qwen3ASRModel
 
+        from verified_snapshot import verified_snapshot
+        checkpoint = verified_snapshot(
+            SPEECH_MODEL, "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9",
+            cache_dir=str(Path(request["cacheDir"]) / "hub") if request.get("cacheDir") else None,
+            local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1",
+        )
         self.model = Qwen3ASRModel.LLM(
-            model=SPEECH_MODEL,
+            model=checkpoint,
             # R2T2 advertises a 65k context by default, which makes vLLM reserve
             # a 7+ GiB KV cache before a single audio request is processed. A
             # 32k ASR context is ample for Delulu's bounded dictation/file flow

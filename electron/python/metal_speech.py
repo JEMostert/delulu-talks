@@ -40,14 +40,14 @@ class MetalSpeech:
         if self.model is not None:
             return self.status()
         import mlx.core as mx
-        from huggingface_hub import snapshot_download
+        from verified_snapshot import verified_snapshot
         from mlx_audio.stt.utils import load_model
 
         if not mx.metal.is_available():
             raise RuntimeError("R2T2 MLX requires a native Apple Silicon Mac with Metal available.")
         cache_root = request.get("cacheDir")
         progress("Downloading the pinned R2T2 BF16 MLX checkpoint (~4.1 GB)…", "download")
-        model_path = snapshot_download(
+        model_path = verified_snapshot(
             repo_id=MODEL,
             revision=MODEL_REVISION,
             cache_dir=str(Path(cache_root) / "hub") if cache_root else None,
