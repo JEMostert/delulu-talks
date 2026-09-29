@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Copy, Download, Redo2, Undo2 } from "lucide-react";
 import { bridge } from "../bridge";
-import { TechnicalBuffer } from "../technicalBuffer";
+import { TechnicalBuffer, type TechnicalEditTarget } from "../technicalBuffer";
 import type { TranscriptRecord } from "../types";
 import { Alert, ConfirmDialog } from "../components/ui";
 
@@ -9,6 +9,11 @@ export function TechnicalPage({ history }: { history: TranscriptRecord[] }) {
   const [buffer] = useState(() => new TechnicalBuffer());
   const [snapshot, setSnapshot] = useState(() => buffer.snapshot);
   const [sourceId, setSourceId] = useState("");
+  const [pending, setPending] = useState<{
+    target: TechnicalEditTarget;
+    text: string;
+    label: string;
+  } | null>(null);
   const [clear, setClear] = useState(false);
   const [copying, setCopying] = useState(false);
   const [error, setError] = useState("");
@@ -28,7 +33,35 @@ export function TechnicalPage({ history }: { history: TranscriptRecord[] }) {
   function captureSelection() {
     if (composing.current) return;
     const input = editor.current;
-    if (input) buffer.select(input.selectionStart, input.selectionEnd);
+    if (input) {
+      const before = buffer.snapshot;
+      buffer.select(input.selectionStart, input.selectionEnd);
+      const after = buffer.snapshot;
+      if (before.selectionStart !== after.selectionStart || before.selectionEnd !== after.selectionEnd)
+        setSnapshot(after);
+    }
+  }
+  function prepareInsertion() {
+    if (!source || composing.current) return;
+    captureSelection();
+    setPending({
+      target: buffer.captureTarget(),
+      text: source.text,
+      label: `${new Date(source.createdAt).toLocaleString()} · ${source.sourceName ?? "Dictation"}`,
+    });
+    setError("");
+  }
+  function applyInsertion() {
+    if (!pending || composing.current) return;
+    captureSelection();
+    try {
+      buffer.applyInsert(pending.target, pending.text);
+      setPending(null);
+      setError("");
+      publish(true);
+    } catch (reason) {
+      setError(String(reason));
+    }
   }
   function insert(text: string) {
     captureSelection();
@@ -89,11 +122,30 @@ export function TechnicalPage({ history }: { history: TranscriptRecord[] }) {
             </select>
           </label>
           <button className="secondary-button" disabled={!source?.text || composing.current}
-            onClick={() => source && insert(source.text)}>Insert at selection</button>
+            onClick={prepareInsertion}>Prepare insertion preview</button>
         </div>
         {source && <details className="mt-3"><summary>Preview recognition original</summary>
           <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-xs">{source.text}</pre>
         </details>}
+        {pending && (
+          <section className="mt-4 rounded-lg border border-line p-4" aria-label="Pending technical insertion">
+            <h3>Prepared insertion</h3>
+            <p className="mt-2 text-xs text-muted">{pending.label}</p>
+            <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-xs">{pending.text}</pre>
+            <p className="mt-3 text-sm">
+              {pending.target.start === pending.target.end ? "Insert at the captured caret." : "Replace the captured selection."}
+              {" "}Editing the draft or moving its selection requires a fresh preview.
+            </p>
+            {!buffer.isTargetCurrent(pending.target) && (
+              <p className="mt-3 text-sm" role="status">The buffer or selection changed. Prepare a new insertion preview; this one cannot be applied.</p>
+            )}
+            <div className="runtime-actions mt-3">
+              <button className="primary-button" disabled={composing.current || !buffer.isTargetCurrent(pending.target)}
+                onClick={applyInsertion}>Apply insertion</button>
+              <button className="secondary-button" onClick={() => setPending(null)}>Cancel preview</button>
+            </div>
+          </section>
+        )}
         <div className="runtime-actions mt-4">
           <button className="tool-button" disabled={!buffer.canUndo || composing.current}
             onClick={() => { buffer.undo(); publish(true); }}><Undo2 /> Undo</button>

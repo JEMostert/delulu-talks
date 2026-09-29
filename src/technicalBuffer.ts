@@ -4,6 +4,13 @@ export type TechnicalBufferSnapshot = {
   selectionEnd: number;
 };
 
+export type TechnicalEditTarget = {
+  documentVersion: number;
+  selectionVersion: number;
+  start: number;
+  end: number;
+};
+
 export const TECHNICAL_BUFFER_HISTORY_LIMIT = 100;
 export const TECHNICAL_BUFFER_HISTORY_CHARACTERS = 2_000_000;
 export const TECHNICAL_BUFFER_HISTORY_LIMIT_LABEL =
@@ -67,6 +74,9 @@ export class TechnicalBuffer {
   private readonly past: Transaction[] = [];
   private readonly future: Transaction[] = [];
   private retainedCharacters = 0;
+  private documentRevision = 0;
+  private selectionRevision = 0;
+  private readonly issuedTargets = new WeakSet<TechnicalEditTarget>();
 
   constructor(text = "") {
     const caret = displayText(text).length;
@@ -75,6 +85,54 @@ export class TechnicalBuffer {
 
   get snapshot(): TechnicalBufferSnapshot {
     return { ...this.current };
+  }
+
+  get documentVersion(): number {
+    return this.documentRevision;
+  }
+
+  get selectionVersion(): number {
+    return this.selectionRevision;
+  }
+
+  captureTarget(): TechnicalEditTarget {
+    const target = Object.freeze({
+      documentVersion: this.documentVersion,
+      selectionVersion: this.selectionVersion,
+      start: this.current.selectionStart,
+      end: this.current.selectionEnd,
+    });
+    this.issuedTargets.add(target);
+    return target;
+  }
+
+  isTargetCurrent(target: TechnicalEditTarget): boolean {
+    return (
+      typeof target === "object" &&
+      target !== null &&
+      this.issuedTargets.has(target) &&
+      Number.isSafeInteger(target.documentVersion) &&
+      Number.isSafeInteger(target.selectionVersion) &&
+      Number.isSafeInteger(target.start) &&
+      Number.isSafeInteger(target.end) &&
+      target.documentVersion === this.documentVersion &&
+      target.selectionVersion === this.selectionVersion &&
+      target.start >= 0 &&
+      target.end >= target.start &&
+      target.end <= this.displayText.length &&
+      target.start === this.current.selectionStart &&
+      target.end === this.current.selectionEnd
+    );
+  }
+
+  applyInsert(target: TechnicalEditTarget, rawText: string): void {
+    if (!this.isTargetCurrent(target))
+      throw new Error(
+        "The technical buffer or selection changed. Prepare the insertion again.",
+      );
+    this.insert(rawText);
+    // Consume even a successful no-op so one confirmation cannot be reused.
+    this.issuedTargets.delete(target);
   }
 
   get displayText(): string {
@@ -94,7 +152,10 @@ export class TechnicalBuffer {
   }
 
   select(start: number, end: number): void {
-    this.current = { ...this.current, ...selection(this.current.text, start, end) };
+    this.updateCurrent({
+      ...this.current,
+      ...selection(this.current.text, start, end),
+    });
   }
 
   edit(displayValue: string, start: number, end: number): void {
@@ -144,19 +205,30 @@ export class TechnicalBuffer {
     const transaction = this.past.pop();
     if (!transaction) return;
     this.future.push(transaction);
-    this.current = { ...transaction.before };
+    this.updateCurrent({ ...transaction.before });
   }
 
   redo(): void {
     const transaction = this.future.pop();
     if (!transaction) return;
     this.past.push(transaction);
-    this.current = { ...transaction.after };
+    this.updateCurrent({ ...transaction.after });
+  }
+
+  private updateCurrent(after: TechnicalBufferSnapshot): void {
+    const textChanged = after.text !== this.current.text;
+    const selectionChanged =
+      after.selectionStart !== this.current.selectionStart ||
+      after.selectionEnd !== this.current.selectionEnd;
+    if (!textChanged && !selectionChanged) return;
+    if (textChanged) this.documentRevision++;
+    if (selectionChanged) this.selectionRevision++;
+    this.current = after;
   }
 
   private commit(after: TechnicalBufferSnapshot): void {
     if (after.text === this.current.text) {
-      this.current = after;
+      this.updateCurrent(after);
       return;
     }
     // A new text transaction discards redo, while selection-only changes do not.
@@ -168,7 +240,7 @@ export class TechnicalBuffer {
     this.past.push(transaction);
     this.retainedCharacters +=
       transaction.before.text.length + transaction.after.text.length;
-    this.current = after;
+    this.updateCurrent(after);
     // Keep the newest transaction even if its snapshots exceed the budget.
     // Eviction only removes old undo states; it never truncates live text.
     while (
