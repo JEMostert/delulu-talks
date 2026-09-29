@@ -276,3 +276,53 @@ trace file in the raw artifact bundle for reproducibility.
 
 **UNVERIFIED — checks not run per user instruction**. No startup, request or
 speech-to-delivery timings were collected for this implementation.
+
+## Opt-in identical-audio native benchmark
+
+`scripts/native_audio_benchmark.py` runs in each platform's existing speech
+Python environment. It requires `--execute-native`, recorded consent per case,
+and pre-cached pinned weights. It never installs dependencies, downloads models,
+or changes app settings/history. Run each native adapter separately on its
+actual hardware; copy the same corpus files unchanged between machines.
+
+```json
+{"cases": [
+  {"case_id": "nl-001", "audio": "nl-001.wav", "reference": "nl-001.txt",
+   "language": "nl", "consent_recorded": true},
+  {"case_id": "mixed-001", "audio": "mixed-001.wav", "reference": "mixed-001.txt",
+   "language": "auto", "consent_recorded": true}
+]}
+```
+
+Inputs must already be nonempty 16 kHz mono PCM16 WAV. No runner-specific
+preprocessing is applied by this harness; hashes identify exact identical audio.
+Explicit provenance must identify the selected adapter's actual pinned model
+revision. Language comes from each case, including `auto` for mixed speech.
+
+```sh
+python scripts/native_audio_benchmark.py --execute-native --backend mlx \
+  --manifest corpus.json --provenance mlx-provenance.json --cache-dir /path/to/models \
+  --output-directory mlx-run --repetitions 3
+```
+
+Use `cuda-windows` on native Windows or `cuda-linux` on Linux CUDA. An external
+base-Qwen fine-tune control uses `--backend external-qwen3-asr` on Linux CUDA,
+with explicit `--control-repository Qwen/Qwen3-ASR-...` and immutable
+`--control-revision`. Its cached snapshot is used only inside the standalone
+runner process; it never becomes an app speech option. Its result is labeled
+`external-benchmark-control`. All environments must already contain their
+matching runtime dependencies. Missing cached weights or unsupported native
+hardware fail instead of falling back to another backend.
+
+The runner retains raw hypotheses, provenance-bound text reports, individual
+first/warm request timings, load-and-warmup duration, source/dependency versions,
+audio hashes and completion status. Warmup is separate from the first evaluated
+request. Text-evaluator `native_inference_run: false` refers to the offline
+metric computation; actual successful native calls are recorded separately in
+`native_runner` and `run.json`. Interrupted runs remain marked incomplete. Raw
+hypotheses may contain private speech; keep artifacts local until inspected.
+No destination-delivery timing is inferred from this offline speech benchmark.
+
+**UNVERIFIED — checks not run per user instruction**. This runner has not been
+executed; no Mac/Windows/Linux inference or external-control comparison is
+claimed for this PR.
