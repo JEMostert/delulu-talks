@@ -18,6 +18,8 @@ and retain the failing exit code. Unperformed categories remain `not-run`.
 | `bun run test:native -- …`                         | native-inference      | Explicit cached-model transcription on the machine running the command.                                                                                         |
 | `bun run test:manual -- --record observation.json` | manual-desktop        | Human-observed evidence, recorded as an attestation rather than automated approval.                                                                             |
 
+`bun run test:settings-write` runs the isolated Electron settings failure/native shortcut rollback smoke and records `fixture-only` evidence. Its native shortcut registration does not establish native model inference or manual delivery.
+
 Here `fixture-only` means behavior without model inference. A native inference
 run can use fixture audio and still belongs to `native-inference`. An automated
 Electron check is not a manual desktop observation. Typecheck, format and build
