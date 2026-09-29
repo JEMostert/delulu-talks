@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Check, Copy, HardDrive, RefreshCw, Terminal } from "lucide-react";
 import { bridge } from "../bridge";
+import { diagnosticReport } from "../diagnosticReport";
 import type { RuntimeDiagnostics } from "../types";
 import { Alert } from "./ui";
 
@@ -14,8 +15,8 @@ export function Diagnostics() {
     setError("");
     try {
       setData(await bridge.getDiagnostics());
-    } catch (reason) {
-      setError(String(reason));
+    } catch {
+      setError("Diagnostics could not be collected or copied. Retry the health check.");
     } finally {
       setBusy(false);
     }
@@ -73,6 +74,27 @@ export function Diagnostics() {
               </span>
             </div>
           </div>
+          {data.microphone && (
+            <div className="mb-[18px] rounded-xl bg-soft p-[15px]" role="status">
+              <strong className="text-xs text-ink">
+                Microphone permission: {data.microphone.state.replaceAll("-", " ")}
+              </strong>
+              <p className="caption mt-2">{data.microphone.detail}</p>
+            </div>
+          )}
+          {data.accessibility && (
+            <div className="mb-[18px] rounded-xl bg-soft p-[15px]" role="status">
+              <strong className="text-xs text-ink">
+                Accessibility permission: {data.accessibility.state.replaceAll("-", " ")}
+              </strong>
+              <p className="caption mt-2">{data.accessibility.detail}</p>
+              {data.platform === "darwin" && data.accessibility.canAttemptPaste && (
+                <p className="caption mt-2">
+                  Permission allows a paste attempt. It does not confirm that the destination accepted the text.
+                </p>
+              )}
+            </div>
+          )}
           <p className="caption">
             {data.platform === "darwin" && data.arch === "arm64"
               ? "R2T2 runs directly through MLX on Apple Silicon. The speech runtime needs native arm64 Python 3.12."
@@ -102,14 +124,19 @@ export function Diagnostics() {
                 ),
               )}
             </dl>
+            <p className="caption">
+              The copied report includes device and selected package versions.
+              Local paths, transcript content and backend output are excluded.
+              The local data path above is shown only in these expanded details.
+            </p>
             <button
               className="secondary-button"
               onClick={async () => {
                 try {
-                  await bridge.copyText(JSON.stringify(data, null, 2));
+                  await bridge.copyText(JSON.stringify(diagnosticReport(data), null, 2));
                   setCopied(true);
-                } catch (reason) {
-                  setError(String(reason));
+                } catch {
+                  setError("Diagnostics could not be collected or copied. Retry the health check.");
                 }
               }}
             >

@@ -2,7 +2,7 @@ import {
   TranscriptCard,
   type TranscriptActions,
 } from "../components/TranscriptCard";
-import { useState } from "react";
+import type { useWorkspaceOperations } from "../hooks/useWorkspaceOperations";
 import {
   FileAudio,
   LoaderCircle,
@@ -11,69 +11,36 @@ import {
   Upload,
 } from "lucide-react";
 import { Alert } from "../components/ui";
-import { bridge } from "../bridge";
 import type {
-  AppSettings,
-  AudioFileSelection,
   TranscriptRecord,
 } from "../types";
 
 export function LabPage({
-  settings,
   busy,
-  onResult,
-  onToast,
+  operation,
+  onChoose,
+  onRun,
+  onClearError,
   history,
   ...actions
 }: TranscriptActions & {
   history: TranscriptRecord[];
-  settings: AppSettings;
   busy: boolean;
-  onResult: (record: TranscriptRecord) => void;
-  onToast: (message: string) => void;
+  operation: ReturnType<typeof useWorkspaceOperations>["importOperation"];
+  onChoose: () => Promise<void>;
+  onRun: () => Promise<void>;
+  onClearError: () => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
-  const [file, setFile] = useState<AudioFileSelection | null>(null);
-  const [running, setRunning] = useState(false);
-  const [resultId, setResultId] = useState<string | null>(null);
+  const { file, error, resultId } = operation;
+  const running = operation.phase === "running";
+  const choosing = operation.phase === "choosing";
   const result = history.find((record) => record.id === resultId);
-
-  async function choose() {
-    try {
-      const selected = await bridge.chooseAudioFile();
-      if (selected) {
-        setFile(selected);
-        setResultId(null);
-        setError(null);
-      }
-    } catch (reason) {
-      setError(String(reason));
-    }
-  }
-
-  async function run() {
-    if (!file || busy) return;
-    setError(null);
-    setRunning(true);
-    try {
-      const record = await bridge.runLab({ path: file.path });
-      setResultId(record.id);
-      onResult(record);
-      onToast(
-        settings.keepHistory
-          ? "Transcript saved to history"
-          : "Transcript ready for this session",
-      );
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setRunning(false);
-    }
-  }
 
   return (
     <div className="content-stack">
-      {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
+      {error && <Alert onDismiss={onClearError}>{error}</Alert>}
+      {running && <p role="status" className="text-sm text-muted">File transcription continues when you navigate away. Use Resume import to return here.</p>}
+      {resultId && !result && <p role="status" className="text-sm text-muted">This import finished, but its transcript is no longer retained. Choose a file to start a new import.</p>}
       <section className="view-toolbar">
         <div>
           <strong>File transcription</strong>
@@ -87,9 +54,9 @@ export function LabPage({
       <div className="grid grid-cols-[330px_minmax(0,1fr)] gap-4 max-[1150px]:grid-cols-[260px_minmax(0,1fr)] max-[700px]:grid-cols-1">
         <section className="border border-line bg-surface rounded-panel shadow-panel backdrop-blur-xl overflow-hidden min-w-0 p-5 flex flex-col gap-4">
           <button
-            disabled={running}
+            disabled={running || choosing}
             className="file-drop w-full flex items-center gap-2.5 px-3.5 py-5 bg-surface border border-dashed border-line-strong rounded-xl backdrop-blur-md text-left"
-            onClick={() => void choose()}
+            onClick={() => void onChoose()}
           >
             <span>
               <FileAudio />
@@ -120,8 +87,8 @@ export function LabPage({
 
           <button
             className="primary-button lab-run"
-            disabled={!file || busy || running}
-            onClick={() => void run()}
+            disabled={!file || busy || running || choosing}
+            onClick={() => void onRun()}
           >
             {running ? <LoaderCircle className="spin" /> : <Sparkles />}{" "}
             {running ? "Working locally…" : "Transcribe"}

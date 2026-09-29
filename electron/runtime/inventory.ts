@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import type { RuntimeArtifact } from "./artifacts";
 
 /** Enumerates distribution metadata, without importing installed packages. */
 export const PYTHON_INVENTORY_PROBE = `import importlib.metadata as metadata
@@ -48,6 +49,9 @@ export type RequestedInstallStage = {
   requirements: string[];
   pipArguments: string[];
   constraint: { path: string; contents: string } | null;
+  artifacts?: RuntimeArtifact[];
+  resolverArguments?: string[];
+  artifactRequirements?: string;
 };
 type Interpreter = {
   executable: string;

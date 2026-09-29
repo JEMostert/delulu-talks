@@ -1,13 +1,21 @@
-import { useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { BookOpenText, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { ConfirmDialog, EmptyState, Modal, Toggle } from "../components/ui";
+import { VocabularyBulk } from "../components/VocabularyBulk";
+import { VocabularyTransfer } from "../components/VocabularyTransfer";
 import {
+  aliasError,
+  normalizeAliases,
   personalize,
+  previewPersonalization,
   ruleConflict,
   ruleKind,
+  ruleLanguage,
   ruleTriggers,
 } from "../personalization";
+import { LANGUAGES } from "../data";
 import type { CustomWord } from "../types";
+import { RuleUsagePanel } from "../components/RuleUsagePanel";
 
 export function VocabularyPage({
   words,
@@ -23,21 +31,28 @@ export function VocabularyPage({
   const [draft, setDraft] = useState<CustomWord | null>(null);
   const [remove, setRemove] = useState<CustomWord | null>(null);
   const [sample, setSample] = useState("");
+  const [testPhrase, setTestPhrase] = useState("");
+  const previewTitleId = useId();
+  const preview = useMemo(
+    () => previewPersonalization(testPhrase, words),
+    [testPhrase, words],
+  );
   const filtered = words.filter(
     (word) =>
       ruleKind(word) === kind &&
-      `${word.term} ${word.soundsLike} ${word.replacement}`
+      `${word.term} ${word.soundsLike} ${(word.aliases ?? []).join(" ")} ${word.replacement}`
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
   const conflict = draft ? ruleConflict(draft, words) : null;
   const shortcut = draft && ruleKind(draft) === "shortcut";
+  const aliasesError = draft ? aliasError(draft.aliases) : null;
   const invalid =
     !draft?.term.trim() ||
     (shortcut
       ? !draft.replacement.trim()
-      : !draft.soundsLike.trim() ||
-        draft.soundsLike.trim() === draft.term.trim());
+      : !ruleTriggers(draft).length ||
+        ruleTriggers(draft).every((phrase) => phrase === draft.term.trim()));
   return (
     <div className="content-stack">
       <div
@@ -71,8 +86,13 @@ export function VocabularyPage({
           </h2>
           <p className="text-muted max-w-[480px] text-[13px] mt-3">
             {kind === "correction"
-              ? "Replace recognized phrases in clean results. You can also remember a correction directly from a transcript."
+              ? "Replace recognized phrases and pronunciation variants in clean results. Aliases match the original text once; replacements never trigger another rule."
               : "Say a trigger phrase to insert an exact address, signature, or reusable block of text."}
+          </p>
+          <p className="text-muted max-w-[480px] text-[13px] mt-2">
+            Literal URLs, email addresses, paths, versions and command flags
+            stay exact during corrections and rewriting. Wrap commands in
+            backticks to keep the whole command unchanged.
           </p>
         </div>
         <button
@@ -94,6 +114,8 @@ export function VocabularyPage({
           {kind === "correction" ? "Add correction" : "Add shortcut"}
         </button>
       </section>
+      <VocabularyBulk words={words} saving={saving} onChange={onChange} />
+      <VocabularyTransfer words={words} saving={saving} onChange={onChange} />
       <div className="flex items-center gap-3.5 max-[700px]:flex-wrap">
         <label className="search-box max-[700px]:basis-full">
           <Search />
@@ -106,6 +128,85 @@ export function VocabularyPage({
         </label>
         <span className="caption">{words.length} / 500 rules</span>
       </div>
+      <RuleUsagePanel words={words} />
+      <section
+        className="border border-line rounded-panel bg-surface p-[18px] content-stack"
+        aria-labelledby={previewTitleId}
+      >
+        <div>
+          <h3 id={previewTitleId}>Try your saved rules</h3>
+          <p className="text-[12px] text-muted mt-2">
+            See how enabled corrections and text shortcuts work together.
+            Testing a phrase does not save it or change your transcripts.
+          </p>
+        </div>
+        <label className="field">
+          Test phrase
+          <textarea
+            aria-label="Test saved rules"
+            maxLength={2000}
+            value={testPhrase}
+            onChange={(event) => setTestPhrase(event.target.value)}
+            placeholder="Type a recognized phrase to try your saved rules…"
+          />
+        </label>
+        {testPhrase && (
+          <div className="grid grid-cols-2 gap-3 max-[700px]:grid-cols-1">
+            <div>
+              <h4 className="caption">Original</h4>
+              <output
+                aria-label="Original test phrase"
+                className="block whitespace-pre-wrap break-words text-[14px] leading-[1.6] mt-2 p-3 rounded-lg bg-soft"
+              >
+                {preview.original}
+              </output>
+            </div>
+            <div>
+              <h4 className="caption">Result</h4>
+              <output
+                aria-label="Saved rules result"
+                className="block whitespace-pre-wrap break-words text-[14px] leading-[1.6] mt-2 p-3 rounded-lg bg-soft"
+              >
+                {preview.result}
+              </output>
+            </div>
+            <div className="col-span-full">
+              <h4 className="caption">Matched rules</h4>
+              {preview.matches.length ? (
+                <ol
+                  aria-label="Matched saved rules"
+                  className="list-none p-0 m-0 mt-2 content-stack gap-2"
+                >
+                  {preview.matches.map((match) => (
+                    <li
+                      key={`${match.ruleId}-${match.index}`}
+                      className="border border-line rounded-lg p-3 text-[12px] break-words"
+                    >
+                      <span className="badge">
+                        {match.kind === "shortcut"
+                          ? "Text shortcut"
+                          : "Correction"}
+                      </span>{" "}
+                      <strong>{match.term}</strong>
+                      <p className="text-muted mt-2">
+                        Matched “{match.matchedText}” · trigger “{match.trigger}
+                        ”
+                      </p>
+                      <p className="whitespace-pre-wrap mt-2">
+                        {match.replacement}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-[12px] text-muted mt-2">
+                  No enabled rules matched this phrase.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
       <section className="border border-line rounded-panel bg-surface shadow-panel backdrop-blur-xl overflow-hidden">
         {filtered.map((word) => (
           <article
@@ -118,6 +219,7 @@ export function VocabularyPage({
             <div className="flex-1 min-w-0">
               <h3 className="text-[15px] flex gap-2 items-center break-words">
                 {word.term}
+                <span className="badge">{ruleLanguage(word) || "All languages"}</span>
                 {!ruleTriggers(word).length && (
                   <span className="badge">Needs a correction phrase</span>
                 )}
@@ -133,6 +235,11 @@ export function VocabularyPage({
                 <blockquote className="text-[12px] text-muted break-words my-3 mx-0 px-3.5 py-2.5 border-l-2 border-line-strong whitespace-pre-wrap">
                   {word.replacement}
                 </blockquote>
+              )}
+              {!!word.aliases?.length && (
+                <p className="text-[12px] text-muted mt-[5px] break-words">
+                  Aliases: {word.aliases.map((alias) => `“${alias}”`).join(" · ")}
+                </p>
               )}
             </div>
             <div className="panel-actions max-[700px]:ml-auto">
@@ -217,13 +324,14 @@ export function VocabularyPage({
               </button>
               <button
                 className="primary-button"
-                disabled={saving || !!invalid || !!conflict}
+                disabled={saving || !!invalid || !!conflict || !!aliasesError}
                 onClick={async () => {
                   const normalized = {
                     ...draft,
                     term: draft.term.trim(),
                     soundsLike: draft.soundsLike.trim(),
-                    replacement: draft.replacement.trim(),
+                    replacement: draft.replacement,
+                    aliases: normalizeAliases(draft.aliases),
                   };
                   if (
                     await onChange(
@@ -242,6 +350,23 @@ export function VocabularyPage({
             </>
           }
         >
+          <label className="field">
+            Rule language
+            <select
+              aria-label="Rule language"
+              value={draft.language ?? ""}
+              onChange={(e) => setDraft({ ...draft, language: e.target.value || undefined })}
+            >
+              <option value="">All languages</option>
+              {draft.language && !LANGUAGES.some(([code]) => code === draft.language) && (
+                <option value={draft.language}>{draft.language}</option>
+              )}
+              {LANGUAGES.map(([code, label]) => (
+                <option key={code} value={code}>{label}</option>
+              ))}
+            </select>
+            <small>Scoped rules apply only to results in this language. Unknown languages use global rules only.</small>
+          </label>
           {!shortcut && (
             <label className="field">
               Recognized text{" "}
@@ -296,8 +421,24 @@ export function VocabularyPage({
               </label>
             </>
           )}
+          <label className="field">
+            Pronunciation & recognition aliases
+            <small>Optional · one exact phrase per line, up to 32. Commas stay literal.</small>
+            <textarea
+              aria-label="Pronunciation and recognition aliases"
+              maxLength={16_384}
+              value={(draft.aliases ?? []).join("\n")}
+              onChange={(e) =>
+                setDraft({ ...draft, aliases: e.target.value.split("\n") })
+              }
+              placeholder={shortcut ? "my sign off\nmy closing text" : "de loo loo\ndel loo loo"}
+            />
+          </label>
+          {aliasesError && (
+            <p className="field-error" role="alert">{aliasesError}</p>
+          )}
           {conflict && (
-            <p className="field-error" role="alert">
+            <p className="field-error break-words" role="alert">
               {conflict}
             </p>
           )}
@@ -311,7 +452,7 @@ export function VocabularyPage({
                 placeholder={
                   shortcut
                     ? `Please insert ${draft.term || "my signature"}`
-                    : draft.soundsLike.split(",")[0] ||
+                    : ruleTriggers(draft)[0] ||
                       "Type a recognized phrase"
                 }
               />
@@ -321,7 +462,7 @@ export function VocabularyPage({
               aria-label="Rule preview"
             >
               {sample
-                ? personalize(sample, [{ ...draft, enabled: true }])
+                ? personalize(sample, [{ ...draft, enabled: true }], draft.language)
                 : "Enter a phrase to preview the exact replacement."}
             </output>
           </div>

@@ -1,5 +1,10 @@
 import type { TranscriptRecord } from "./types";
 
+export function transcriptSourceRevision(record: TranscriptRecord): number {
+  const revision = record.sourceRevision;
+  return Number.isSafeInteger(revision) && (revision ?? -1) >= 0 ? revision! : 0;
+}
+
 export function originalTranscriptText(record: TranscriptRecord): string {
   return record.text;
 }
@@ -14,10 +19,10 @@ export function transcriptIsEdited(record: TranscriptRecord): boolean {
 
 export function deliveredText(record: TranscriptRecord): string {
   return (
-    record.magicText?.trim() ||
-    (record.editedText == null
-      ? record.technicalText ?? record.personalizedText
-      : null) ||
+    ((record.rewriteSourceRevision == null ||
+      record.rewriteSourceRevision === transcriptSourceRevision(record))
+      ? (record.magicText?.trim() ? record.magicText : null) : null) ||
+    (record.editedText == null ? record.technicalText ?? record.personalizedText : null) ||
     transcriptText(record)
   );
 }

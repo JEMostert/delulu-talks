@@ -50,6 +50,21 @@ function observedInventory(python: string): string {
   });
 }
 
+function mockArtifactReport(args: string[]): void {
+  const report = args.indexOf("--report");
+  if (report < 0) return;
+  writeFileSync(args[report + 1], JSON.stringify({
+    version: "1",
+    install: [{
+      metadata: { name: "fixture-package", version: "1.0" },
+      download_info: {
+        url: "https://packages.example/fixture_package-1.0-py3-none-any.whl",
+        archive_info: { hashes: { sha256: "a".repeat(64) } },
+      },
+    }],
+  }));
+}
+
 function installedInventory(root: string, kind = "speech"): RuntimeInventory {
   return JSON.parse(
     readFileSync(
@@ -62,6 +77,7 @@ function installedInventory(root: string, kind = "speech"): RuntimeInventory {
 for (const failure of [
   "none",
   "install",
+  "artifact-hash",
   "check",
   "import",
   "interrupted",
@@ -86,6 +102,7 @@ for (const failure of [
     const commands: string[] = [];
     Object.defineProperty(installer, "run", {
       value: async (program: string, args: string[]) => {
+        mockArtifactReport(args);
         expect(runtimePython(root)).toBe(oldPython);
         const command = args.join(" ");
         commands.push(command);
@@ -104,6 +121,7 @@ for (const failure of [
         if (command.includes("version_info")) return "3.11";
         if (
           (failure === "install" && command.includes("git+")) ||
+          (failure === "artifact-hash" && args.includes("--no-deps")) ||
           (failure === "check" && command.includes("pip check")) ||
           (failure === "import" && command.includes("from qwen_asr")) ||
           (failure === "interrupted" && command.includes("venv"))
@@ -223,6 +241,7 @@ for (const failDownload of [false, true]) {
     const commands: string[] = [];
     Object.defineProperty(installer, "run", {
       value: async (program: string, args: string[]) => {
+        mockArtifactReport(args);
         const command = args.join(" ");
         commands.push(command);
         if (args.includes(PYTHON_INVENTORY_PROBE))
@@ -303,6 +322,7 @@ for (const failure of ["none", "cuda", "decoder-import"] as const) {
     const commands: string[] = [];
     Object.defineProperty(installer, "run", {
       value: async (program: string, args: string[]) => {
+        mockArtifactReport(args);
         const command = args.join(" ");
         commands.push(command);
         if (args.includes(PYTHON_INVENTORY_PROBE))
@@ -410,6 +430,7 @@ for (const target of [
       let observation = "";
       Object.defineProperty(installer, "run", {
         value: async (program: string, args: string[]) => {
+        mockArtifactReport(args);
           commands.push(args);
           expect(readFileSync(constraints, "utf8")).toBe(constraintContents);
           if (args.includes(PYTHON_INVENTORY_PROBE)) {
@@ -455,6 +476,10 @@ for (const target of [
           version: "1.7.4",
         });
         expect(inventory.requested[0].requirements).toEqual(INSTALLER_PACKAGES);
+        expect(inventory.requested[0].artifacts?.[0].verification).toBe("archive-hash");
+        expect(inventory.requested[0].artifactRequirements).toContain(`#sha256=${"a".repeat(64)}`);
+        expect(inventory.requested[0].resolverArguments).toContain("--dry-run");
+        expect(inventory.requested[0].pipArguments).toContain("--no-deps");
         const main = inventory.requested.at(-1)!;
         expect(main.requirements).toEqual(
           kind === "magic"
@@ -490,7 +515,7 @@ for (const target of [
         }
         expect(inventory.requested.map((s) => s.pipArguments)).toEqual(
           commands
-            .filter((args) => args[0] === "-m" && args[2] === "install")
+            .filter((args) => args[0] === "-m" && args[2] === "install" && !args.includes("--dry-run"))
             .map((args) => args.slice(2)),
         );
         expect(
@@ -527,6 +552,7 @@ for (const failure of ["probe", "parse", "validation", "write"] as const) {
     let candidate = "";
     Object.defineProperty(installer, "run", {
       value: async (program: string, args: string[]) => {
+        mockArtifactReport(args);
         expect(runtimePython(root)).toBe(oldPython);
         if (args.includes(PYTHON_INVENTORY_PROBE)) {
           candidate = dirname(dirname(program));
