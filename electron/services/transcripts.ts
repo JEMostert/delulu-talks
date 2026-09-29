@@ -9,6 +9,6 @@ export function exportRecord(
   const source = transcriptText(record);
   const output = deliveredText(record);
   return record.magicText || (record.personalizedText && output !== source)
-    ? `${output.trim()}\n\n--- Source transcript ---\n\n${source.trim()}\n`
-    : `${output.trim()}\n`;
+    ? `${output}\n\n--- Source transcript ---\n\n${source.trim()}\n`
+    : `${output}\n`;
 }

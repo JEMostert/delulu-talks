@@ -1,4 +1,5 @@
 import type { CustomWord } from "./types";
+import { splitTechnicalText, technicalRanges } from "./technicalIdentifiers";
 
 export const ruleKind = (rule: CustomWord) =>
   rule.kind ?? (rule.replacement ? "shortcut" : "correction");
@@ -95,15 +96,20 @@ export function personalize(text: string, words: CustomWord[]): string {
       if (!rules.has(trigger)) rules.set(trigger, output);
     }
   }
-  return replacePhrases(text, rules);
+  return splitTechnicalText(text)
+    .map((part) =>
+      part.protected ? part.text : replacePhrases(part.text, rules),
+    )
+    .join("");
 }
 
-/** Keep saved blocks outside the language model. Rewrite only the surrounding text. */
+/** Keep saved blocks and technical literals outside the language model. */
 export function splitForRewrite(
   text: string,
   words: CustomWord[],
 ): Array<{ text: string; protected: boolean }> {
   const rules = new Map<string, string>();
+  const savedBlocks = new Set<string>();
   for (const word of words) {
     if (
       !word.enabled ||
@@ -111,21 +117,42 @@ export function splitForRewrite(
       !word.replacement.trim()
     )
       continue;
+    savedBlocks.add(word.replacement);
     for (const phrase of [word.replacement, ...ruleTriggers(word)]) {
       if (!rules.has(phrase)) rules.set(phrase, word.replacement);
     }
   }
-  if (!rules.size) return [{ text, protected: false }];
+  if (!rules.size) return splitTechnicalText(text);
   const parts: Array<{ text: string; protected: boolean }> = [];
+  const literals = technicalRanges(text);
+  let literalIndex = 0;
   let cursor = 0;
   for (const match of phraseMatches(text, rules)) {
     const index = match.index;
+    const matchedText = text.slice(index, index + match.length);
+    while (literalIndex < literals.length && literals[literalIndex].end <= index)
+      literalIndex++;
+    // Exact saved blocks take priority. A spoken-trigger alias inside an
+    // address, path, command or version must never alter that literal.
+    if (
+      !savedBlocks.has(matchedText) &&
+      literalIndex < literals.length &&
+      literals[literalIndex].start < index + match.length
+    )
+      continue;
     if (index > cursor)
       parts.push({ text: text.slice(cursor, index), protected: false });
-    parts.push({ text: match.output, protected: true });
+    // Triggers use case-insensitive recognition, but an already expanded block
+    // must retain its bytes even when another block differs only in case.
+    parts.push({
+      text: savedBlocks.has(matchedText) ? matchedText : match.output,
+      protected: true,
+    });
     cursor = index + match.length;
   }
   if (cursor < text.length)
     parts.push({ text: text.slice(cursor), protected: false });
-  return parts;
+  return parts.flatMap((part) =>
+    part.protected ? [part] : splitTechnicalText(part.text),
+  );
 }
