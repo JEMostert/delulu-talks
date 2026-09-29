@@ -10,26 +10,43 @@ class FakeUpdater extends EventEmitter implements UpdaterPort {
   checks = 0;
   downloads = 0;
   installs = 0;
-  async checkForUpdates() { this.checks += 1; }
-  async downloadUpdate() { this.downloads += 1; }
-  quitAndInstall() { this.installs += 1; }
+  async checkForUpdates() {
+    this.checks += 1;
+  }
+  async downloadUpdate() {
+    this.downloads += 1;
+  }
+  quitAndInstall() {
+    this.installs += 1;
+  }
 }
 
 describe("application updates", () => {
   test("exposes update availability, progress, and restart readiness", async () => {
     const updater = new FakeUpdater();
     const states: UpdateStatus[] = [];
-    const service = new UpdateService(updater, "2.0.0", (status) => states.push(status));
+    const service = new UpdateService(updater, "2.0.0", (status) =>
+      states.push(status),
+    );
     service.start();
     expect(updater.autoDownload).toBe(false);
-    expect(updater.autoInstallOnAppQuit).toBe(true);
+    expect(updater.autoInstallOnAppQuit).toBe(false);
     expect(updater.allowDowngrade).toBe(true);
 
     updater.emit("update-available", { version: "2.1.0" });
     await service.download();
     expect(updater.downloads).toBe(1);
-    updater.emit("download-progress", { percent: 42.5, transferred: 425, total: 1000, bytesPerSecond: 200 });
-    expect(service.getStatus()).toMatchObject({ phase: "downloading", version: "2.1.0", percent: 42.5 });
+    updater.emit("download-progress", {
+      percent: 42.5,
+      transferred: 425,
+      total: 1000,
+      bytesPerSecond: 200,
+    });
+    expect(service.getStatus()).toMatchObject({
+      phase: "downloading",
+      version: "2.1.0",
+      percent: 42.5,
+    });
     updater.emit("update-downloaded", { version: "2.1.0" });
     service.install();
     expect(updater.installs).toBe(1);
@@ -46,4 +63,38 @@ describe("application updates", () => {
     new UpdateService(updater, "0.5.0", () => undefined).start();
     expect(updater.allowDowngrade).toBe(false);
   });
+});
+
+test("blocks restart while dictating and allows it when idle", () => {
+  const updater = new FakeUpdater();
+  let busy = true;
+  const service = new UpdateService(
+    updater,
+    "0.5.0",
+    () => undefined,
+    () => !busy,
+  );
+  service.start();
+  updater.emit("update-downloaded", { version: "0.6.0" });
+  expect(() => service.install()).toThrow("Finish recording");
+  expect(updater.installs).toBe(0);
+  busy = false;
+  service.install();
+  expect(updater.installs).toBe(1);
+});
+test("preserves a ready download when another update check is requested", async () => {
+  const updater = new FakeUpdater();
+  const service = new UpdateService(updater, "0.5.0", () => undefined);
+  service.start();
+  updater.emit("update-downloaded", { version: "0.6.0" });
+  expect((await service.check()).phase).toBe("downloaded");
+  expect(updater.checks).toBe(0);
+});
+test("does not attempt a download after a check error without a release", async () => {
+  const updater = new FakeUpdater();
+  const service = new UpdateService(updater, "0.5.0", () => undefined);
+  service.start();
+  updater.emit("error", new Error("offline"));
+  await service.download();
+  expect(updater.downloads).toBe(0);
 });

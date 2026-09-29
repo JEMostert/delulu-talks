@@ -26,3 +26,8 @@ __pycache__
 *.njsproj
 *.sln
 *.sw?
+
+# Verification artifacts
+artifacts/
+test-results/
+playwright-report/

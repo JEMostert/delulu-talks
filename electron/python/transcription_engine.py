@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Persistent JSON-lines worker for Delulu Talks local speech and writing models.
 
-The process keeps the speech and Magic models resident independently. Protocol
-messages are prefixed so library progress output can never be mistaken for a
-response by Electron.
+The speech engine is R2T2 (Confucius4-R2T2), a streaming-capable Qwen3-ASR model
+served through vLLM on Linux CUDA, native Transformers on Windows CUDA, or
+direct MLX Audio on Apple Silicon. The process keeps the speech and Magic models resident
+independently. Protocol messages are prefixed so library progress output can
+never be mistaken for a response by Electron.
 """
 
 from __future__ import annotations
@@ -12,17 +14,47 @@ import contextlib
 import gc
 import json
 import os
+import platform
 import re
 import sys
 import time
 import traceback
-from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from speech_engine import SpeechEngine
 
 
 PROTOCOL_PREFIX = "@delulu:"
-MODEL_NAMES = {"small", "medium", "turbo", "large"}
+SPEECH_MODEL = "netease-youdao/Confucius4-R2T2"
+MLX_SPEECH_MODEL = "mlx-community/Confucius4-R2T2-bf16"
+LANGUAGE_NAMES = {
+    "en": "English",
+    "de": "German",
+    "nl": "Dutch",
+    "fr": "French",
+    "es": "Spanish",
+    "pt": "Portuguese",
+    "it": "Italian",
+    "pl": "Polish",
+    "cs": "Czech",
+    "el": "Greek",
+    "sv": "Swedish",
+    "da": "Danish",
+    "fi": "Finnish",
+    "no": "Norwegian",
+    "uk": "Ukrainian",
+    "ru": "Russian",
+    "tr": "Turkish",
+    "ar": "Arabic",
+    "he": "Hebrew",
+    "hi": "Hindi",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "vi": "Vietnamese",
+}
 MAGIC_MODELS = {
     "qwen35Small": "Qwen/Qwen3.5-0.8B",
     "qwen35Medium": "Qwen/Qwen3.5-2B",
@@ -53,136 +85,41 @@ def emit(payload: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def active_vocabulary(values: Any) -> list[dict[str, Any]]:
-    if not isinstance(values, list):
-        return []
-    output: list[dict[str, Any]] = []
-    for value in values[:500]:
-        if not isinstance(value, dict) or not value.get("enabled", True):
-            continue
-        term = str(value.get("term", "")).strip()
-        if not term:
-            continue
-        output.append({
-            "term": term[:256],
-            "soundsLike": str(value.get("soundsLike", ""))[:1024],
-            "replacement": str(value.get("replacement", ""))[:4096],
-            "enabled": True,
-        })
-    return output
-
-
-def replacement_rules(vocabulary: list[dict[str, Any]]) -> dict[str, str]:
-    rules: dict[str, str] = {}
-    for entry in vocabulary:
-        term = entry["term"].strip()
-        replacement = entry.get("replacement", "").strip() or term
-        aliases = [value.strip() for value in entry.get("soundsLike", "").split(",")]
-        for alias in aliases:
-            if alias:
-                rules[alias.casefold()] = replacement
-        if replacement != term:
-            rules[term.casefold()] = replacement
-    return rules
-
-
-def apply_vocabulary(text: str, vocabulary: list[dict[str, Any]]) -> str:
-    rules = replacement_rules(vocabulary)
-    if not rules:
-        return text.strip()
-    sources = sorted(rules, key=len, reverse=True)
-    pattern = re.compile(
-        rf"(?<!\w)(?:{'|'.join(re.escape(source) for source in sources)})(?!\w)",
-        re.IGNORECASE,
-    )
-    return pattern.sub(lambda match: rules[match.group(0).casefold()], text).strip()
-
-
-def word_payload(word: Any) -> dict[str, Any]:
-    if is_dataclass(word):
-        value = asdict(word)
-    elif isinstance(word, dict):
-        value = word
-    else:
-        value = {
-            "word": getattr(word, "word", ""),
-            "start": getattr(word, "start", 0.0),
-            "end": getattr(word, "end", 0.0),
-        }
-    return {
-        "word": str(value.get("word", "")),
-        "start": round(float(value.get("start", 0.0)), 3),
-        "end": round(float(value.get("end", 0.0)), 3),
-    }
-
-
-def result_payload(result: Any, vocabulary: list[dict[str, Any]]) -> dict[str, Any]:
-    words = getattr(result, "words", None) or []
-    return {
-        "text": apply_vocabulary(str(getattr(result, "text", "")), vocabulary),
-        "language": str(getattr(result, "language", "en")),
-        "duration": float(getattr(result, "duration", 0.0) or 0.0),
-        "processingTime": float(getattr(result, "processing_time", 0.0) or 0.0),
-        "words": [word_payload(word) for word in words],
-    }
-
-
 class Worker:
     def __init__(self) -> None:
+        self.speech: SpeechEngine | None = None
+        # Both runtime processes use this worker, including writing-only ones.
+        # Select the platform now, but import its adapter only for speech work.
+        self.speech_backend = (
+            "mlx" if sys.platform == "darwin" and platform.machine() == "arm64"
+            else "windows" if sys.platform == "win32"
+            else "linux"
+        )
         self.model: Any | None = None
         self.model_name: str | None = None
-        self.backend: str | None = None
-        self.compute_type: str | None = None
         self.device: str | None = None
         self.magic_model: Any | None = None
         self.magic_processor: Any | None = None
         self.magic_model_name: str | None = None
         self.magic_device: str | None = None
 
-    @staticmethod
-    def resolve_runtime(backend: str, compute_type: str) -> tuple[str, str, str]:
-        import importlib.util
-
-        chosen_backend = backend
-        if chosen_backend == "auto":
-            chosen_backend = "ct2" if importlib.util.find_spec("ctranslate2") else "transformers"
-
-        if chosen_backend == "ct2":
-            import ctranslate2
-
-            has_cuda = ctranslate2.get_cuda_device_count() > 0
-            chosen_device = "cuda" if has_cuda else "cpu"
-            chosen_compute = compute_type
-            if chosen_compute == "auto":
-                chosen_compute = "float16" if has_cuda else "int8"
-        else:
-            import torch
-
-            has_cuda = torch.cuda.is_available()
-            has_mps = bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
-            chosen_device = "cuda" if has_cuda else "mps" if has_mps else "cpu"
-            chosen_compute = compute_type
-            if chosen_compute == "auto":
-                chosen_compute = "float16" if has_cuda or has_mps else "float32"
-            if chosen_compute in {"int8", "int8_float16"}:
-                chosen_compute = "float16" if has_cuda or has_mps else "float32"
-
-        return chosen_backend, chosen_compute, chosen_device
+    def speech_engine(self) -> SpeechEngine | None:
+        if self.speech is None:
+            if self.speech_backend == "mlx":
+                from metal_speech import MetalSpeech
+                self.speech = MetalSpeech()
+            elif self.speech_backend == "windows":
+                from windows_speech import WindowsSpeech
+                self.speech = WindowsSpeech()
+        return self.speech
 
     def unload(self) -> dict[str, Any]:
+        if self.speech is not None:
+            return self.speech.unload()
         self.model = None
         self.model_name = None
-        self.backend = None
-        self.compute_type = None
         self.device = None
-        gc.collect()
-        try:
-            import torch
-
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except Exception:
-            pass
+        self.clear_allocator(speech=True)
         return {"loaded": False}
 
     def unload_magic(self) -> dict[str, Any]:
@@ -190,61 +127,115 @@ class Worker:
         self.magic_processor = None
         self.magic_model_name = None
         self.magic_device = None
-        gc.collect()
+        self.clear_allocator()
+        return {"loaded": False}
+
+    def clear_allocator(self, *, speech: bool = False) -> None:
+        # A failed load can allocate before assigning model/device metadata.
+        # Reuse imported libraries and preserve the original operation error
+        # even when an allocator itself cannot be cleared.
+        with contextlib.suppress(Exception):
+            gc.collect()
+        if speech and self.speech_backend == "mlx":
+            with contextlib.suppress(Exception):
+                mx = sys.modules.get("mlx.core")
+                if mx is not None:
+                    mx.clear_cache()
+            return
+        torch = sys.modules.get("torch")
+        if torch is None:
+            return
+        with contextlib.suppress(Exception):
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        with contextlib.suppress(Exception):
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+
+    def load(self, request: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self.load_speech(request)
+        except BaseException:
+            with contextlib.suppress(Exception):
+                self.unload()
+            # Discard an adapter whose initialization did not complete; the
+            # next explicit load reacquires it, rather than trusting its state.
+            self.speech = None
+            self.model = None
+            self.model_name = None
+            self.device = None
+            self.clear_allocator(speech=True)
+            raise
+
+    def load_speech(self, request: dict[str, Any]) -> dict[str, Any]:
+        speech = self.speech_engine()
+        if speech is not None:
+            return speech.load(request)
+        if self.model is not None:
+            return self.status()
         try:
             import torch
 
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except Exception:
-            pass
-        return {"loaded": False}
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    "R2T2 needs a CUDA GPU. No usable CUDA device was found."
+                )
+        except ImportError as exc:
+            raise RuntimeError(
+                "The speech runtime is incomplete. Run Repair in Models."
+            ) from exc
 
-    def load(self, request: dict[str, Any]) -> dict[str, Any]:
-        model_name = str(request.get("model", "medium"))
-        if model_name not in MODEL_NAMES:
-            raise ValueError(f"Unsupported CrisperWhisper model: {model_name}")
-        requested_backend = str(request.get("backend", "auto"))
-        requested_compute = str(request.get("computeType", "auto")).replace("int8Float16", "int8_float16")
-        backend, compute_type, device = self.resolve_runtime(requested_backend, requested_compute)
-        draft_model = "turbo" if request.get("speculativeDecoding") and model_name == "large" and backend == "ct2" else None
+        from qwen_asr import Qwen3ASRModel
 
-        signature = (model_name, backend, compute_type, device, draft_model)
-        current = (self.model_name, self.backend, self.compute_type, self.device, getattr(self, "draft_model", None))
-        if self.model is not None and current == signature:
-            return self.status()
-
-        self.unload()
-        from crisperwhisper import CrisperWhisperModel
-
-        cache_dir = request.get("cacheDir")
-        kwargs: dict[str, Any] = {
-            "backend": backend,
-            "compute_type": compute_type,
-            "device": device,
-        }
-        if cache_dir:
-            kwargs["cache_dir"] = str(cache_dir)
-        if draft_model:
-            kwargs["draft_model"] = draft_model
-            kwargs["speculative_k"] = "auto"
-
-        self.model = CrisperWhisperModel(model_name, **kwargs)
-        self.model_name = model_name
-        self.backend = backend
-        self.compute_type = compute_type
-        self.device = device
-        self.draft_model = draft_model
+        self.model = Qwen3ASRModel.LLM(
+            model=SPEECH_MODEL,
+            # R2T2 advertises a 65k context by default, which makes vLLM reserve
+            # a 7+ GiB KV cache before a single audio request is processed. A
+            # 32k ASR context is ample for Delulu's bounded dictation/file flow
+            # and keeps the engine viable alongside the optional writing model.
+            gpu_memory_utilization=0.7,
+            max_model_len=32768,
+            max_new_tokens=4096,
+        )
+        # Exercise preprocessing and GPU decoding before the UI reports Ready.
+        # Keep this synthetic, private, and bounded; never publish its transcript.
+        import copy
+        import numpy as np
+        original_sampling = self.model.sampling_params
+        warmup_sampling = copy.copy(original_sampling)
+        warmup_sampling.max_tokens = 8
+        self.model.sampling_params = warmup_sampling
+        try:
+            self.model.transcribe(
+                audio=[(np.zeros(16000, dtype=np.float32), 16000)],
+                language=["English"], return_time_stamps=False,
+            )
+        except BaseException:
+            # A failed restore must not replace the inference cause. The outer
+            # load transaction discards this model before an explicit retry.
+            with contextlib.suppress(Exception):
+                self.model.sampling_params = original_sampling
+            raise
+        else:
+            # Restoration on success is required before reporting Ready.
+            self.model.sampling_params = original_sampling
+        self.model_name = SPEECH_MODEL
+        self.device = "cuda"
         return self.status()
 
     def status(self) -> dict[str, Any]:
+        if self.speech is not None:
+            return self.speech.status()
+        if self.speech_backend != "linux":
+            return {
+                "loaded": False,
+                "model": MLX_SPEECH_MODEL if self.speech_backend == "mlx" else SPEECH_MODEL,
+                "device": "mlx" if self.speech_backend == "mlx" else "cuda",
+            }
         return {
             "loaded": self.model is not None,
             "model": self.model_name,
-            "backend": self.backend,
-            "computeType": self.compute_type,
             "device": self.device,
-            "draftModel": getattr(self, "draft_model", None),
         }
 
     def magic_status(self) -> dict[str, Any]:
@@ -274,22 +265,26 @@ class Worker:
             return self.magic_status()
 
         self.unload_magic()
-        import torch
-        from transformers import AutoModelForMultimodalLM, AutoProcessor
+        try:
+            import torch
+            from transformers import AutoModelForMultimodalLM, AutoProcessor
 
-        cache_dir = str(request.get("cacheDir") or "") or None
-        self.magic_processor = AutoProcessor.from_pretrained(model_id, cache_dir=cache_dir)
-        self.magic_model = AutoModelForMultimodalLM.from_pretrained(
-            model_id,
-            cache_dir=cache_dir,
-            dtype="auto",
-            device_map={"": device},
-            low_cpu_mem_usage=True,
-        )
-        self.magic_model.eval()
-        self.magic_model_name = model_name
-        self.magic_device = device
-        return self.magic_status()
+            cache_dir = str(request.get("cacheDir") or "") or None
+            self.magic_processor = AutoProcessor.from_pretrained(model_id, cache_dir=cache_dir)
+            self.magic_model = AutoModelForMultimodalLM.from_pretrained(
+                model_id,
+                cache_dir=cache_dir,
+                dtype="auto",
+                device_map={"": device},
+                low_cpu_mem_usage=True,
+            )
+            self.magic_model.eval()
+            self.magic_model_name = model_name
+            self.magic_device = device
+            return self.magic_status()
+        except BaseException:
+            self.unload_magic()
+            raise
 
     @staticmethod
     def magic_prompt(request: dict[str, Any]) -> tuple[str, str]:
@@ -324,6 +319,13 @@ class Worker:
         return system, user
 
     def rewrite_magic(self, request: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self.generate_rewrite(request)
+        except BaseException:
+            self.clear_allocator()
+            raise
+
+    def generate_rewrite(self, request: dict[str, Any]) -> dict[str, Any]:
         if self.magic_model is None or self.magic_processor is None or self.magic_model_name is None:
             raise RuntimeError("No Magic model is loaded")
         import torch
@@ -350,10 +352,7 @@ class Worker:
             generated = self.magic_model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.8,
-                top_k=20,
+                do_sample=False,
                 repetition_penalty=1.05,
                 use_cache=True,
             )
@@ -371,117 +370,54 @@ class Worker:
             "includedInferences": bool(request.get("allowInferences", False)),
         }
 
-    def ensure_loaded(self) -> Any:
+    def transcribe(self, request: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self.transcribe_speech(request)
+        except BaseException:
+            self.clear_allocator(speech=True)
+            raise
+
+    def transcribe_speech(self, request: dict[str, Any]) -> dict[str, Any]:
+        speech = self.speech_engine()
+        if speech is not None:
+            return speech.transcribe(request)
+        started = time.perf_counter()
         if self.model is None:
             raise RuntimeError("No model is loaded")
-        return self.model
-
-    @staticmethod
-    def transcription_kwargs(request: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "language": str(request.get("language", "en")),
-            "word_timestamps": bool(request.get("wordTimestamps", True)),
-            "hallucination_mitigation": True,
-            "temperature_fallback": True,
-            "longform_strategy": "continuation",
-        }
-
-    def transcribe(self, request: dict[str, Any]) -> dict[str, Any]:
-        model = self.ensure_loaded()
-        audio = str(Path(str(request["audioPath"])).resolve())
-        if not Path(audio).is_file():
+        audio = Path(str(request["audioPath"])).resolve()
+        if not audio.is_file():
             raise FileNotFoundError("The selected audio file no longer exists")
-        mode = str(request.get("mode", "dual"))
-        vocabulary = active_vocabulary(request.get("customWords"))
-        kwargs = self.transcription_kwargs(request)
-        speculative = bool(request.get("speculativeDecoding")) and self.backend == "ct2" and self.model_name == "large"
-
-        started = time.perf_counter()
-        intended: dict[str, Any] | None = None
-        verbatim: dict[str, Any] | None = None
-
-        if mode == "dual":
-            if self.backend == "ct2":
-                first, second = model.transcribe_dual(audio, modes=("verbatim", "intended"), **kwargs)
-                verbatim = result_payload(first, vocabulary)
-                intended = result_payload(second, vocabulary)
-            else:
-                verbatim = result_payload(model.transcribe(audio, mode="verbatim", **kwargs), vocabulary)
-                intended = result_payload(model.transcribe(audio, mode="intended", **kwargs), vocabulary)
-        elif mode == "verbatim":
-            verbatim = result_payload(
-                model.transcribe(audio, mode="verbatim", speculative_decoding=speculative, **kwargs),
-                vocabulary,
-            )
-        elif mode == "intended":
-            intended = result_payload(
-                model.transcribe(audio, mode="intended", speculative_decoding=speculative, **kwargs),
-                vocabulary,
-            )
-        else:
-            raise ValueError(f"Unsupported transcription mode: {mode}")
-
-        primary = intended or verbatim or {}
-        return {
-            "mode": mode,
-            "text": primary.get("text", ""),
-            "intendedText": intended.get("text", "") if intended else "",
-            "verbatimText": verbatim.get("text", "") if verbatim else "",
-            "language": primary.get("language", request.get("language", "en")),
-            "duration": max((intended or {}).get("duration", 0), (verbatim or {}).get("duration", 0)),
-            "processingTime": time.perf_counter() - started,
-            "words": intended.get("words", []) if intended else verbatim.get("words", []) if verbatim else [],
-            "verbatimWords": verbatim.get("words", []) if verbatim else [],
-        }
-
-    def forced_align(self, request: dict[str, Any]) -> dict[str, Any]:
-        model = self.ensure_loaded()
-        reference = str(request.get("referenceText", "")).strip()
-        if not reference:
-            raise ValueError("A reference transcript is required for forced alignment")
-        started = time.perf_counter()
-        result = model.forced_align(
-            str(Path(str(request["audioPath"])).resolve()),
-            reference,
-            language=str(request.get("language", "en")),
-            mode="verbatim",
+        # Dictation and imported media already arrive as 16 kHz mono WAV.
+        # Avoid librosa's lazy initialization on this latency-sensitive path.
+        import soundfile as sf
+        try:
+            wav, sample_rate = sf.read(str(audio), dtype="float32", always_2d=False)
+        except RuntimeError:
+            # Preserve the flexible decoder for unusual imported formats.
+            import librosa
+            wav, sample_rate = librosa.load(str(audio), sr=16000, mono=True)
+        if wav.ndim > 1:
+            wav = wav.mean(axis=1)
+        if sample_rate != 16000:
+            import soxr
+            wav = soxr.resample(wav, sample_rate, 16000)
+        if not len(wav):
+            raise ValueError("The selected audio file contains no samples")
+        language_code = str(request.get("language", "en")).lower()
+        language = LANGUAGE_NAMES.get(language_code)
+        inference_started = time.perf_counter()
+        results = self.model.transcribe(
+            audio=[(wav, 16000)],
+            language=[language],
+            return_time_stamps=False,
         )
-        payload = result_payload(result, [])
+        finished = time.perf_counter()
         return {
-            "mode": "forcedAlign",
-            "text": reference,
-            "intendedText": reference,
-            "verbatimText": "",
-            "language": payload["language"],
-            "duration": payload["duration"],
-            "processingTime": time.perf_counter() - started,
-            "words": payload["words"],
-            "verbatimWords": [],
-        }
-
-    def verbatimize(self, request: dict[str, Any]) -> dict[str, Any]:
-        model = self.ensure_loaded()
-        reference = str(request.get("referenceText", "")).strip()
-        if not reference:
-            raise ValueError("A clean reference transcript is required for Verbatimize")
-        started = time.perf_counter()
-        result = model.verbatimize(
-            str(Path(str(request["audioPath"])).resolve()),
-            transcript=reference,
-            language=str(request.get("language", "en")),
-            word_timestamps=bool(request.get("wordTimestamps", True)),
-        )
-        payload = result_payload(result, active_vocabulary(request.get("customWords")))
-        return {
-            "mode": "verbatimize",
-            "text": payload["text"],
-            "intendedText": reference,
-            "verbatimText": payload["text"],
-            "language": payload["language"],
-            "duration": payload["duration"],
-            "processingTime": time.perf_counter() - started,
-            "words": payload["words"],
-            "verbatimWords": payload["words"],
+            "text": str(results[0].text).strip(),
+            "language": language_code,
+            "duration": len(wav) / 16000.0,
+            "processingTime": finished - started,
+            "inferenceTime": finished - inference_started,
         }
 
     def dispatch(self, request: dict[str, Any]) -> Any:
@@ -504,10 +440,6 @@ class Worker:
             return self.rewrite_magic(request)
         if command == "transcribe":
             return self.transcribe(request)
-        if command == "forcedAlign":
-            return self.forced_align(request)
-        if command == "verbatimize":
-            return self.verbatimize(request)
         if command == "shutdown":
             self.unload()
             self.unload_magic()

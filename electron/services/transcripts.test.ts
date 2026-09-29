@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { deriveInsights, exportRecord } from "./transcripts";
+import { exportRecord } from "./transcripts";
+import { deliveredText, transcriptIsEdited } from "../../src/transcriptText";
 import type { TranscriptRecord } from "../../src/types";
 
 const record: TranscriptRecord = {
@@ -7,52 +8,53 @@ const record: TranscriptRecord = {
   createdAt: 1,
   durationMs: 2_000,
   text: "Hello world.",
-  intendedText: "Hello world.",
-  verbatimText: "[UM] hello hello world.",
-  mode: "dual",
-  model: "crisperMedium",
+  model: "r2t2",
   language: "en",
-  words: [{ word: "Hello", start: 0.1, end: 0.4 }, { word: "world.", start: 0.5, end: 0.9 }],
-  verbatimWords: [],
-  insights: { fillerCount: 1, repetitionCount: 1, cutOffCount: 0, vocalEventCount: 0, wordsPerMinute: 90, speakingSeconds: 1 },
   source: "dictation",
   processingTimeMs: 200,
 };
 
-describe("speech metadata", () => {
-  test("counts disfluencies and repeated words", () => {
-    const insights = deriveInsights("[UM] we we th- [laughter]", [], 3_000);
-    expect(insights.fillerCount).toBe(1);
-    expect(insights.repetitionCount).toBe(1);
-    expect(insights.vocalEventCount).toBe(1);
+describe("transcript export", () => {
+  test("delivers the plain transcript by default", () => {
+    expect(deliveredText(record)).toBe("Hello world.");
+    expect(exportRecord(record, "txt")).toBe("Hello world.\n");
   });
 
-  test("exports dual text and timed captions", () => {
-    expect(exportRecord(record, "txt")).toContain("--- Verbatim ---");
-    expect(exportRecord(record, "vtt")).toContain("00:00:00.100 --> 00:00:00.900");
-    expect(exportRecord(record, "srt")).toContain("00:00:00,100 --> 00:00:00,900");
-  });
-
-  test("uses corrections in text exports without replacing model output", () => {
-    const corrected = { ...record, editedIntendedText: "Corrected hello world." };
-    expect(exportRecord(corrected, "txt")).toStartWith("Corrected hello world.");
+  test("corrections change delivery without replacing model output", () => {
+    const corrected = { ...record, editedText: "Corrected hello world." };
+    expect(deliveredText(corrected)).toBe("Corrected hello world.");
+    expect(transcriptIsEdited(corrected)).toBe(true);
+    expect(exportRecord(corrected, "txt")).toStartWith(
+      "Corrected hello world.",
+    );
     const json = JSON.parse(exportRecord(corrected, "json"));
-    expect(json.intendedText).toBe("Hello world.");
-    expect(json.editedIntendedText).toBe("Corrected hello world.");
-  });
-
-  test("exports a corrected verbatim-only record as a single transcript", () => {
-    const corrected = { ...record, mode: "verbatim" as const, intendedText: "", editedVerbatimText: "[UM] corrected world." };
-    const text = exportRecord(corrected, "txt");
-    expect(text).toBe("[UM] corrected world.\n");
-    expect(text).not.toContain("--- Verbatim ---");
+    expect(json.text).toBe("Hello world.");
+    expect(json.editedText).toBe("Corrected hello world.");
   });
 
   test("exports the delivered Magic result without losing the source transcript", () => {
-    const rewritten = { ...record, magicText: "A polished delivery.", magicModel: "qwen35Medium" as const, magicPreset: "polish" as const };
+    const rewritten = {
+      ...record,
+      magicText: "A polished delivery.",
+      magicModel: "qwen35Medium" as const,
+      magicPreset: "polish" as const,
+    };
     const text = exportRecord(rewritten, "txt");
     expect(text).toStartWith("A polished delivery.");
     expect(text).toContain("--- Source transcript ---");
     expect(text).toContain("Hello world.");
   });
+
+  test("restoring the original clears the correction", () => {
+    const updated = { ...record, editedText: null };
+    expect(transcriptIsEdited(updated)).toBe(false);
+    expect(deliveredText(updated)).toBe("Hello world.");
+  });
+});
+
+test("personalized delivery exports beside original speech", () => {
+  const personalized = { ...record, personalizedText: "Hello Delulu." };
+  expect(deliveredText(personalized)).toBe("Hello Delulu.");
+  expect(exportRecord(personalized, "txt")).toStartWith("Hello Delulu.");
+  expect(exportRecord(personalized, "txt")).toContain("Hello world.");
 });

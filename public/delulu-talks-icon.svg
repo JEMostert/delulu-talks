@@ -1,49 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
   <title id="title">Delulu Talks</title>
-  <desc id="desc">An orbital cyan microphone inside a futuristic blue speech core.</desc>
+  <desc id="desc">An ocean-blue speech current surrounds three rounded voice pulses.</desc>
   <defs>
-    <linearGradient id="core" x1="42" y1="32" x2="211" y2="226" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#102E56"/>
-      <stop offset=".52" stop-color="#07172D"/>
-      <stop offset="1" stop-color="#020A16"/>
+    <linearGradient id="voice" x1="48" y1="58" x2="208" y2="192" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#75e4ff"/><stop offset=".48" stop-color="#32baff"/><stop offset="1" stop-color="#237bff"/>
     </linearGradient>
-    <linearGradient id="energy" x1="38" y1="38" x2="218" y2="218" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#6CF6FF"/>
-      <stop offset=".48" stop-color="#00C8FF"/>
-      <stop offset="1" stop-color="#3971FF"/>
-    </linearGradient>
-    <radialGradient id="glow">
-      <stop stop-color="#00D8FF" stop-opacity=".42"/>
-      <stop offset="1" stop-color="#00D8FF" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="5" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
   </defs>
-
-  <circle cx="128" cy="126" r="112" fill="url(#glow)"/>
-  <path d="M128 14 214 62v99l-86 49-86-49V62z" fill="url(#core)" stroke="#163C68" stroke-width="5"/>
-  <path d="M128 25 204 68v86l-76 43-76-43V68z" fill="none" stroke="url(#energy)" stroke-width="2" stroke-dasharray="4 7" opacity=".72"/>
-
-  <g fill="none" stroke="url(#energy)" stroke-linecap="round">
-    <path d="M30 119a99 99 0 0 1 19-56" stroke-width="5"/>
-    <path d="M207 62a99 99 0 0 1 20 58" stroke-width="5"/>
-    <path d="M219 162a100 100 0 0 1-40 46" stroke-width="5"/>
-    <path d="M77 210a100 100 0 0 1-40-45" stroke-width="5"/>
+  <rect x="8" y="8" width="240" height="240" rx="58" fill="#071e34"/>
+  <g fill="none" stroke="url(#voice)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M94 56h65c39 0 65 27 65 64s-26 65-65 65h-36l-43 30 7-35c-32-9-55-31-55-60 0-37 27-64 62-64Z" stroke-width="16"/>
+    <path d="M91 109v24M128 91v60M165 104v34" stroke-width="17"/>
   </g>
-
-  <g filter="url(#softGlow)" stroke="url(#energy)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="103" y="69" width="50" height="72" rx="25" stroke-width="10"/>
-    <path d="M84 119v3a44 44 0 0 0 88 0v-3" stroke-width="9"/>
-    <path d="M128 166v22M105 188h46" stroke-width="9"/>
-  </g>
-
-  <g fill="#7AF7FF" filter="url(#softGlow)">
-    <circle cx="41" cy="62" r="5"/>
-    <circle cx="216" cy="62" r="5"/>
-    <circle cx="227" cy="132" r="4"/>
-    <circle cx="29" cy="132" r="4"/>
-  </g>
-  <path d="M90 224h76l-15 18h-46z" fill="url(#energy)" opacity=".9"/>
 </svg>

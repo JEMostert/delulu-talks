@@ -1,10 +1,13 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
+import { WorkspaceRoot } from "./WorkspaceRoot";
+import { RendererErrorBoundary } from "./components/RendererErrorBoundary";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <RendererErrorBoundary controllerFailed>
+      <WorkspaceRoot />
+    </RendererErrorBoundary>
   </React.StrictMode>,
 );

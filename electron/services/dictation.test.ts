@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_SETTINGS } from "../../src/data";
@@ -17,17 +17,27 @@ function fakePill() {
     service: {
       show: (command: unknown) => commands.push(command),
       hide: () => commands.push({ state: "hidden" }),
-      level: (value: number) => commands.push({ state: "listening", level: value }),
+      level: (value: number) =>
+        commands.push({ state: "listening", level: value }),
     } as unknown as PillService,
   };
 }
 
-function harness(settings: AppSettings, transcription: Record<string, unknown> = { text: "um ship the release", intendedText: "Ship the release.", verbatimText: "um ship the release" }) {
+function harness(
+  settings: AppSettings,
+  transcription: Record<string, unknown> = {
+    text: "Ship the release.",
+    language: "en",
+  },
+) {
   const cacheDirectory = mkdtempSync(join(tmpdir(), "delulu-dictation-test-"));
   const copied: string[] = [];
   const pasted: string[] = [];
   const records: TranscriptRecord[] = [];
   let magicCalls = 0;
+  let failOnce = false;
+  let rewriteFailure = false;
+  const recovery: boolean[] = [];
   const storage = {
     cacheDirectory,
     getSettings: () => settings,
@@ -36,16 +46,34 @@ function harness(settings: AppSettings, transcription: Record<string, unknown> =
   const asr = {
     getStatus: () => ({ phase: "idle", engine: "ready", message: "Ready" }),
     setActivity: () => undefined,
-    transcribe: async () => transcription,
+    transcribe: async () => {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error("Temporary inference failure");
+      }
+      return transcription;
+    },
+    setRecovery: (available: boolean) => recovery.push(available),
     rewriteMagic: async () => {
       magicCalls += 1;
-      return { text: "Ship the release today.", model: settings.magicModel, processingTimeMs: 12, inputCharacters: 17, outputCharacters: 23, includedInferences: settings.magicAllowInferences };
+      if (rewriteFailure) throw new Error("Writing model unavailable");
+      return {
+        text: "Ship the release today.",
+        model: settings.magicModel,
+        processingTimeMs: 12,
+        inputCharacters: 17,
+        outputCharacters: 23,
+        includedInferences: settings.magicAllowInferences,
+      };
     },
     unload: async () => undefined,
   } as unknown as AsrService;
   const paste = {
     copy: (text: string) => copied.push(text),
-    paste: async (text: string) => { pasted.push(text); return "test"; },
+    paste: async (text: string) => {
+      pasted.push(text);
+      return "test";
+    },
   } as unknown as PasteService;
   const pill = fakePill();
   const service = new DictationService(
@@ -55,10 +83,27 @@ function harness(settings: AppSettings, transcription: Record<string, unknown> =
     { main: () => null, pill: pill.service },
     (record) => records.push(record),
   );
-  return { service, copied, pasted, records, hud: pill.commands, magicCalls: () => magicCalls, cleanup: () => rmSync(cacheDirectory, { recursive: true, force: true }) };
+  return {
+    service,
+    asr,
+    copied,
+    pasted,
+    records,
+    hud: pill.commands,
+    magicCalls: () => magicCalls,
+    failRewrite: () => {
+      rewriteFailure = true;
+    },
+    failNext: () => {
+      failOnce = true;
+    },
+    recovery,
+    cacheDirectory,
+    cleanup: () => rmSync(cacheDirectory, { recursive: true, force: true }),
+  };
 }
 
-function captureHarness(settings: AppSettings = { ...DEFAULT_SETTINGS, modelLicenseAccepted: true }) {
+function captureHarness(settings: AppSettings = { ...DEFAULT_SETTINGS }) {
   const commands: unknown[] = [];
   let current = settings;
   let status = { phase: "idle", engine: "ready", message: "Ready" };
@@ -67,10 +112,22 @@ function captureHarness(settings: AppSettings = { ...DEFAULT_SETTINGS, modelLice
     { getSettings: () => current } as unknown as StorageService,
     {
       getStatus: () => status,
-      setActivity: (phase: typeof status.phase, message: string) => { status = { ...status, phase, message }; },
+      setActivity: (phase: typeof status.phase, message: string) => {
+        status = { ...status, phase, message };
+      },
     } as unknown as AsrService,
     {} as PasteService,
-    { main: () => ({ isDestroyed: () => false, webContents: { send: (_channel: string, command: unknown) => commands.push(command) } }) as never, pill: pill.service },
+    {
+      main: () =>
+        ({
+          isDestroyed: () => false,
+          webContents: {
+            send: (_channel: string, command: unknown) =>
+              commands.push(command),
+          },
+        }) as never,
+      pill: pill.service,
+    },
     () => undefined,
   );
   service.recorderAvailable();
@@ -78,16 +135,87 @@ function captureHarness(settings: AppSettings = { ...DEFAULT_SETTINGS, modelLice
     service,
     commands,
     hud: pill.commands,
-    setSettings: (next: AppSettings) => { current = next; },
+    setPhase: (phase: string) => {
+      status = { ...status, phase };
+    },
+    setSettings: (next: AppSettings) => {
+      current = next;
+    },
   };
 }
 
+test("a controller disconnect during submitted inference cannot admit another capture", async () => {
+  const h = harness({
+    ...DEFAULT_SETTINGS,
+    magicEnabled: false,
+    autoPaste: false,
+  });
+  let finish!: (result: Record<string, unknown>) => void;
+  h.asr.transcribe = () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
+  try {
+    const pending = h.service.submitRecording({
+      wav: new Uint8Array(128),
+      durationMs: 1000,
+    });
+    await Promise.resolve();
+    expect(h.service.isActive).toBe(true);
+    expect(h.service.canStopRecording).toBe(false);
+    h.service.recorderUnavailable();
+    expect(h.service.isActive).toBe(true);
+    h.service.start();
+    expect(h.service.isActive).toBe(true);
+    finish({ text: "Original submitted speech", language: "en" });
+    await pending;
+    expect(h.service.isActive).toBe(false);
+    expect(h.records[0].text).toBe("Original submitted speech");
+  } finally {
+    h.cleanup();
+  }
+});
+
 describe("dictation delivery pipeline", () => {
+  for (const action of ["stop", "cancel", "ready"] as const) {
+    test(`busy notice clears on ${action} without starting a recording`, () => {
+      const h = captureHarness();
+      h.setPhase("loading");
+      h.service.start();
+      expect(h.commands).toHaveLength(0);
+      expect(h.service.isActive).toBe(false);
+      if (action === "ready") {
+        h.setPhase("idle");
+        h.service.runtimeChanged();
+      } else h.service[action]();
+      expect(h.hud.at(-1)).toEqual({ state: "hidden" });
+    });
+  }
+  test("busy notice expires even without a later runtime event", async () => {
+    const h = captureHarness();
+    h.setPhase("loading");
+    h.service.start();
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+    expect(h.hud.at(-1)).toEqual({ state: "hidden" });
+  });
+  test("old busy notice cannot hide a subsequent recording", async () => {
+    const h = captureHarness();
+    h.setPhase("loading");
+    h.service.start();
+    h.setPhase("idle");
+    h.service.start();
+    h.service.recordingStarted();
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+    expect((h.hud.at(-1) as { state: string }).state).toBe("listening");
+    h.service.cancel();
+  });
   test("honors a hold release that arrives while the microphone is still opening", () => {
     const testHarness = captureHarness();
     testHarness.service.start();
     testHarness.service.stop();
-    expect(testHarness.commands).toEqual([{ action: "start", inputDeviceId: "default" }]);
+    expect(testHarness.commands).toEqual([
+      { action: "start", inputDeviceId: "default" },
+    ]);
     testHarness.service.recordingStarted();
     expect(testHarness.commands).toEqual([
       { action: "start", inputDeviceId: "default" },
@@ -100,26 +228,47 @@ describe("dictation delivery pipeline", () => {
     testHarness.service.toggle();
     testHarness.service.toggle();
     testHarness.service.recordingStarted();
-    expect(testHarness.commands.at(-1)).toEqual({ action: "stop", inputDeviceId: "default" });
+    expect(testHarness.commands.at(-1)).toEqual({
+      action: "stop",
+      inputDeviceId: "default",
+    });
   });
 
   test("rewrites with Magic before copying the delivered result", async () => {
-    const testHarness = harness({ ...DEFAULT_SETTINGS, modelLicenseAccepted: true, magicEnabled: true, magicPreset: "polish", magicAllowInferences: false, autoPaste: false, copyToClipboard: true });
+    const testHarness = harness({
+      ...DEFAULT_SETTINGS,
+      magicEnabled: true,
+      magicPreset: "polish",
+      magicAllowInferences: false,
+      autoPaste: false,
+      copyToClipboard: true,
+    });
     try {
-      await testHarness.service.submitRecording({ wav: new Uint8Array(64), durationMs: 1_000 });
+      await testHarness.service.submitRecording({
+        wav: new Uint8Array(64),
+        durationMs: 1_000,
+      });
       expect(testHarness.magicCalls()).toBe(1);
       expect(testHarness.copied).toEqual(["Ship the release today."]);
       expect(testHarness.records[0].magicText).toBe("Ship the release today.");
-      expect(testHarness.records[0].intendedText).toBe("Ship the release.");
+      expect(testHarness.records[0].text).toBe("Ship the release.");
     } finally {
       testHarness.cleanup();
     }
   });
 
   test("delivers the speech transcript directly when Magic is off", async () => {
-    const testHarness = harness({ ...DEFAULT_SETTINGS, modelLicenseAccepted: true, magicEnabled: false, autoPaste: false, copyToClipboard: true });
+    const testHarness = harness({
+      ...DEFAULT_SETTINGS,
+      magicEnabled: false,
+      autoPaste: false,
+      copyToClipboard: true,
+    });
     try {
-      await testHarness.service.submitRecording({ wav: new Uint8Array(64), durationMs: 1_000 });
+      await testHarness.service.submitRecording({
+        wav: new Uint8Array(64),
+        durationMs: 1_000,
+      });
       expect(testHarness.magicCalls()).toBe(0);
       expect(testHarness.copied).toEqual(["Ship the release."]);
       expect(testHarness.records[0].magicText).toBeUndefined();
@@ -129,47 +278,95 @@ describe("dictation delivery pipeline", () => {
   });
 
   test("automatic paste publishes the result exactly once", async () => {
-    const testHarness = harness({ ...DEFAULT_SETTINGS, modelLicenseAccepted: true, magicEnabled: false, autoPaste: true, copyToClipboard: true });
+    const testHarness = harness({
+      ...DEFAULT_SETTINGS,
+      magicEnabled: false,
+      autoPaste: true,
+      copyToClipboard: true,
+    });
     try {
-      await testHarness.service.submitRecording({ wav: new Uint8Array(64), durationMs: 1_000 });
+      await testHarness.service.submitRecording({
+        wav: new Uint8Array(64),
+        durationMs: 1_000,
+      });
       expect(testHarness.copied).toEqual([]);
       expect(testHarness.pasted).toEqual(["Ship the release."]);
-      expect(testHarness.hud.at(-1)).toEqual({ state: "success", title: "Pasted", detail: "Ready to keep talking" });
+      expect(testHarness.hud.at(-1)).toEqual({
+        state: "success",
+        title: "Pasted",
+        detail: "Ready to keep talking",
+      });
     } finally {
       testHarness.cleanup();
     }
   });
 
   test("does not save, rewrite, copy, or paste silence", async () => {
-    const testHarness = harness({ ...DEFAULT_SETTINGS, modelLicenseAccepted: true, magicEnabled: true, autoPaste: true, copyToClipboard: true }, { text: "", intendedText: "", verbatimText: "" });
+    const testHarness = harness(
+      {
+        ...DEFAULT_SETTINGS,
+        magicEnabled: true,
+        autoPaste: true,
+        copyToClipboard: true,
+      },
+      { text: "", language: "en" },
+    );
     try {
-      await testHarness.service.submitRecording({ wav: new Uint8Array(64), durationMs: 1_000 });
+      await testHarness.service.submitRecording({
+        wav: new Uint8Array(64),
+        durationMs: 1_000,
+      });
       expect(testHarness.magicCalls()).toBe(0);
       expect(testHarness.copied).toEqual([]);
       expect(testHarness.records).toEqual([]);
-      expect(testHarness.hud.at(-1)).toEqual({ state: "error", title: "Nothing heard", detail: "Try closer to the mic" });
+      expect(testHarness.hud.at(-1)).toEqual({
+        state: "error",
+        title: "Nothing heard",
+        detail: "Try closer to the mic",
+      });
     } finally {
       testHarness.cleanup();
     }
   });
 
   test("shows a short copied success state after delivery", async () => {
-    const testHarness = harness({ ...DEFAULT_SETTINGS, modelLicenseAccepted: true, magicEnabled: false, autoPaste: false, copyToClipboard: true });
+    const testHarness = harness({
+      ...DEFAULT_SETTINGS,
+      magicEnabled: false,
+      autoPaste: false,
+      copyToClipboard: true,
+    });
     try {
-      await testHarness.service.submitRecording({ wav: new Uint8Array(64), durationMs: 1_000 });
+      await testHarness.service.submitRecording({
+        wav: new Uint8Array(64),
+        durationMs: 1_000,
+      });
       expect(testHarness.hud).toContainEqual({ state: "transcribing" });
-      expect(testHarness.hud.at(-1)).toEqual({ state: "success", title: "Copied", detail: "Ready to keep talking" });
+      expect(testHarness.hud.at(-1)).toEqual({
+        state: "success",
+        title: "Copied",
+        detail: "Ready to keep talking",
+      });
     } finally {
       testHarness.cleanup();
     }
   });
 
   test("discards a tap as too short instead of hiding silently", async () => {
-    const testHarness = harness({ ...DEFAULT_SETTINGS, modelLicenseAccepted: true });
+    const testHarness = harness({
+      ...DEFAULT_SETTINGS,
+    });
     try {
-      await testHarness.service.submitRecording({ wav: new Uint8Array(64), durationMs: 80 });
+      await testHarness.service.submitRecording({
+        wav: new Uint8Array(64),
+        durationMs: 80,
+      });
       expect(testHarness.copied).toEqual([]);
-      expect(testHarness.hud.at(-1)).toEqual({ state: "error", title: "Too short", detail: "Hold a little longer" });
+      expect(testHarness.hud.at(-1)).toEqual({
+        state: "error",
+        title: "Too short",
+        detail: "Hold a little longer",
+      });
     } finally {
       testHarness.cleanup();
     }
@@ -179,12 +376,110 @@ describe("dictation delivery pipeline", () => {
     const testHarness = captureHarness();
     testHarness.service.start();
     testHarness.service.recordingStarted();
-    expect(testHarness.hud.at(-1)).toEqual({ state: "listening", detail: "Release to send" });
-    testHarness.setSettings({ ...DEFAULT_SETTINGS, modelLicenseAccepted: true, showOverlay: false });
+    expect(testHarness.hud.at(-1)).toEqual({
+      state: "listening",
+      detail: "Release to send",
+    });
+    testHarness.setSettings({
+      ...DEFAULT_SETTINGS,
+      showOverlay: false,
+    });
     testHarness.service.syncOverlay();
     expect(testHarness.hud.at(-1)).toEqual({ state: "hidden" });
-    testHarness.setSettings({ ...DEFAULT_SETTINGS, modelLicenseAccepted: true, showOverlay: true });
+    testHarness.setSettings({
+      ...DEFAULT_SETTINGS,
+      showOverlay: true,
+    });
     testHarness.service.syncOverlay();
-    expect(testHarness.hud.at(-1)).toEqual({ state: "listening", detail: "Release to send" });
+    expect(testHarness.hud.at(-1)).toEqual({
+      state: "listening",
+      detail: "Release to send",
+    });
   });
+});
+
+test("failed inference can retry from memory while temporary audio is deleted", async () => {
+  const h = harness({ ...DEFAULT_SETTINGS, magicEnabled: false });
+  try {
+    h.failNext();
+    await h.service.submitRecording({
+      wav: new Uint8Array(100),
+      durationMs: 1000,
+    });
+    expect(h.service.isActive).toBe(false);
+    expect(h.recovery.at(-1)).toBe(true);
+    expect(h.records).toHaveLength(0);
+    expect(readdirSync(h.cacheDirectory)).toEqual([]);
+    await h.service.retry();
+    expect(h.recovery.at(-1)).toBe(false);
+    expect(h.pasted).toHaveLength(1);
+    expect(readdirSync(h.cacheDirectory)).toEqual([]);
+    await expect(h.service.retry()).rejects.toThrow("No failed recording");
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("personalization changes delivery without corrupting source speech or timing", async () => {
+  const h = harness(
+    {
+      ...DEFAULT_SETTINGS,
+      autoPaste: false,
+      customWords: [
+        {
+          id: "name",
+          term: "Delulu",
+          soundsLike: "the lulu",
+          replacement: "",
+          enabled: true,
+        },
+      ],
+    },
+    {
+      text: "Open the lulu.",
+      language: "en",
+    },
+  );
+  try {
+    await h.service.submitRecording({
+      wav: new Uint8Array(128),
+      durationMs: 1000,
+    });
+    expect(h.copied).toEqual(["Open Delulu."]);
+    expect(h.records[0].text).toBe("Open the lulu.");
+    expect(h.records[0].personalizedText).toBe("Open Delulu.");
+    expect(h.magicCalls()).toBe(0);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("failed automatic writing delivers the personalized transcript once", async () => {
+  const h = harness({
+    ...DEFAULT_SETTINGS,
+    magicEnabled: true,
+    autoPaste: true,
+    customWords: [
+      {
+        id: "s",
+        kind: "shortcut",
+        term: "the release",
+        soundsLike: "",
+        replacement: "version 0.8.0",
+        enabled: true,
+      },
+    ],
+  });
+  h.failRewrite();
+  try {
+    await h.service.submitRecording({
+      wav: new Uint8Array(128),
+      durationMs: 1000,
+    });
+    expect(h.pasted).toEqual(["Ship version 0.8.0."]);
+    expect(h.records[0].text).toBe("Ship the release.");
+    expect(h.records[0].magicText).toBeUndefined();
+  } finally {
+    h.cleanup();
+  }
 });

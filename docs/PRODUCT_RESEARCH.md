@@ -1,4 +1,20 @@
-# Product research and direction
+# Current dictation workflow decision — 7 September 2026
+
+The 0.8 workflow uses native intended transcription by default, with Qwen available on demand and automatic rewriting off. Corrections and exact text shortcuts produce a separate result; the model transcripts and timing remain immutable. Existing entries migrate without deletion, and legacy spelling-only entries ask for a recognized phrase.
+
+Evidence checked against primary sources:
+
+- [CrisperWhisper style control](https://nyra-labs.com/research/multilingual-style-control): native intended and verbatim output make separate LLM cleanup unnecessary for normal dictation.
+- [CrisperWhisper API](https://github.com/nyrahealth/CrisperWhisper/blob/main/DOCS.md): dual batching requires CT2; our Transformers path uses separate decodes. Standard models are not trained for hotword boosting. Timings and longform transcription do not establish a streaming UI.
+- [Flow dictionary](https://docs.wisprflow.ai/articles/4052411709-teach-flow-your-words-with-the-dictionary) and [snippets](https://docs.wisprflow.ai/articles/5784437944-create-and-use-snippets): recurring spelling mistakes and reusable blocks represent different user intentions.
+- [Superwhisper modes](https://superwhisper.com/docs/modes/modes): plain voice-to-text can operate without AI transformations.
+- [Flow transforms](https://docs.wisprflow.ai/articles/2719941210-how-to-configure-polish-shortcuts-and-custom-prompts): explicit transformations provide useful access to rewriting without making it a prerequisite for every utterance.
+
+Validation includes real local Electron inference and Qwen rewriting with automatic rewriting off, exact shortcut preservation, apply/undo, original-preserving corrections and export. The short audio smoke sample is not an accuracy benchmark. Broad natural-speech evaluation, streaming previews, and application-aware profiles remain future work rather than advertised capabilities.
+
+---
+
+# Earlier product research and direction
 
 Research snapshot: 11 August 2026. Sources are the vendors' own product pages and repositories.
 

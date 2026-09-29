@@ -1,40 +1,32 @@
-# Desktop GUI design rationale
+# Ocean console design
 
-Research snapshot: 11 August 2026. The redesign follows desktop guidance rather than a landing-page pattern.
+The application opens into its controls. The startup screen exposes microphone, language, shortcut and gesture, optional rewriting and personal correction, automatic paste, clipboard and history. These controls fit above the fold at both 1280×650 and 860×650 after first-run help is dismissed.
 
-## Principles used
+## Visual system
 
-- [KDE's layout and navigation guidance](https://develop.kde.org/hig/layout_and_nav/) treats navigation as a chore to minimize and recommends a desktop structure built from a main content view, navigation sidebar, and contextual toolbar.
-- [KDE's application-design guidance](https://develop.kde.org/hig/kde_app_design/) asks that the common path stay obvious while advanced capability remains available when needed.
-- [KDE's status guidance](https://develop.kde.org/hig/status_changes/) favors quiet, actionable state changes over unnecessary success messages and decorative status color.
-- [Microsoft's command-bar guidance](https://learn.microsoft.com/en-us/windows/apps/design/controls/command-bar) places the most common commands where they are always easy to reach and orders them by importance.
-- [GNOME's header-bar guidance](https://developer.gnome.org/hig/patterns/containers/header-bars.html) keeps only a small number of context-relevant primary controls in the compact top region.
+Deep navy surfaces, ocean-blue selection, cyan accents, cool readable text, thin panel borders and compact 5–9 px corners establish the identity. The sidebar remains navy in both themes. Light mode uses arctic blue/white working surfaces. Semantic tokens in `src/index.css` define surfaces, inputs, headers, text and feedback. Tailwind utilities handle component layouts; the sidebar and recording action also embed brand gradients/colors. Consolidating those remaining values belongs to future visual-system cleanup.
 
-## Information architecture
+The working reference is [Tidal Console](design-concepts/01-tidal-console.png), with the light theme informed by [Current Workbench](design-concepts/02-current-workbench.png). [Abyss Studio](design-concepts/03-abyss-studio.png) is the third exploration. The generated images are visual references, not feature specifications; unsupported or duplicated controls were excluded. Prompts and generation method are recorded [alongside them](design-concepts/prompts.md).
 
-```text
-Work
-  Dictation          immediate capture, output choice, latest result
-  Magic              rewrite a transcript/draft with a visible accuracy boundary
-  Speech Lab         file transcription, Verbatimize, forced alignment
-  History            find, compare, copy, and export results
+## Layout and task hierarchy
 
-Configure
-  Wordbook           persistent spelling and expansion rules
-  Models & runtime   model choice, setup, residency, acceleration
+- Navigation begins with Controls, Settings and Models; History and Audio files follow. Labels stay visible at normal compact desktop sizes.
+- The persistent header contains one labeled Record/Stop action, current operation status, and theme switching. Missing engines route to setup.
+- Three numbered configuration panels occupy the startup control deck. A latest-output inspector sits alongside them on larger windows and below them on compact windows. It exposes Result/Speech views, correction, copy and export without a full-width transcript feed.
+- Settings starts with capture/delivery, followed by Personalization, Writing, Runtime and Application. Appearance is an application preference, not the first task on launch.
+- Model selection uses compact comparison rows. The standalone Writing workspace has been removed. Rewriting opens beside transcript review with source, preview, apply, and undo. Its optional model is managed in Models. Audio files keeps operation, file and transcript controls next to its result.
+- First-run setup is a dismissible inline notice, not a blocking introduction.
 
-Settings             lower-frequency global preferences
-```
+No promotional heroes, slogans, static waveforms, fabricated metrics or lifestyle copy belong in the working interface. Blank space is reserved for text editing and output, not illustration.
 
-There is no Home destination. Launching the application opens Dictation, the highest-frequency task. Record/stop, the shortcut, and runtime status live in the global command bar instead of being repeated as page cards. The sidebar contains destinations only; contextual actions belong in each view's toolbar.
+## Identity
 
-## Interaction rules
+`public/delulu-talks-icon.svg` is the source mark: an abstract ocean-blue speech current surrounding three voice pulses on a navy tile. A transparent mark and monochrome Mac tray templates accompany it; [brand masters and reproduction](BRAND.md) document the assets. PNG, ICO and ICNS application assets derive from this vector. The native overlay shares the ocean palette; live recording has a distinct coral state.
 
-- Optimize for the repeated record → transcribe → optional Magic → copy/paste loop; a capture does not require navigation.
-- Use dense rows, split views, tables, and toolbars where the content is operational. Avoid marketing heroes, oversized headings, dashboard cards, gradients, and ornamental statistics.
-- Keep shortcut registration and model/runtime failure visible and actionable without competing with the Record command.
-- On Wayland, display the binding reported by the desktop and open its shortcut editor instead of presenting a second editable value that can drift from the system binding.
-- Save Dictation quick controls immediately and silently. Reserve confirmations for transcript capture, copy/export, destructive actions, and explicit Settings saves.
-- Preserve transcript truth: intended and verbatim remain parallel views. Manual corrections live beside the untouched model output, drive copy/TXT export, and always offer Restore original. Wordbook changes are explicit exact-text rules, while delivery settings only choose which version leaves the app.
-- Keep generative expansion legible: Magic separates rewrite style from the factual boundary, defaults to preserving facts, and labels outputs that may contain inferred constraints or examples. The source remains visible beside the generated result for review.
-- Keep destructive actions visually distinct, require confirmation for environment/history removal, and provide text labels in addition to color and icons.
+## Interaction checks
+
+Shared controls retain visible focus, labels and native dialog behavior. Settings save through serialized patches. Writing style and writing enablement are independent. Microphones are enumerated on both Controls and Settings. Existing transcript originals remain intact beside corrections and delivered rewrites.
+
+Browser regression checks cover priority controls above the fold, quick-setting persistence, both themes, compact layouts, correction and shortcut editing, source preservation, modal focus and real browser microphone capture. Desktop smoke verifies the sandboxed preload, real settings IPC, diagnostics and setup dialogs. Runtime installation and inference remain separate from visual styling.
+
+Personalization lives in Settings and is reachable directly from Controls. Corrections and Text shortcuts have separate tabs and forms. Result review is shared across Controls, History, and imported audio, including rewrite preview/apply/undo, correction capture, copying, and export. Native speech options live with capture/delivery; optional rewriting settings have their own section.

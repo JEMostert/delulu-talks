@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 280" role="img" aria-labelledby="title description">
+<title id="title">Delulu Talks — speak, keep your flow</title>
+<desc id="description">The voice-current logo beside Delulu Talks on a deep ocean-blue background.</desc>
+<defs><linearGradient id="banner" x2="1" y2="1"><stop stop-color="#0d3555"/><stop offset="1" stop-color="#061527"/></linearGradient></defs>
+<rect width="1280" height="280" rx="24" fill="url(#banner)"/>
+<path d="M936 50v180M984 90v100M1032 30v220M1080 74v132M1128 104v72M1176 48v184" stroke="#32baff" stroke-width="16" stroke-linecap="round" opacity=".08"/>
+<svg x="60" y="44" width="192" height="192" viewBox="0 0 256 256">  <defs>
+    <linearGradient id="voice" x1="48" y1="58" x2="208" y2="192" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#75e4ff"/><stop offset=".48" stop-color="#32baff"/><stop offset="1" stop-color="#237bff"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="58" fill="#071e34"/>
+  <g fill="none" stroke="url(#voice)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M94 56h65c39 0 65 27 65 64s-26 65-65 65h-36l-43 30 7-35c-32-9-55-31-55-60 0-37 27-64 62-64Z" stroke-width="16"/>
+    <path d="M91 109v24M128 91v60M165 104v34" stroke-width="17"/>
+  </g>
+</svg>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="294" y="124" font-size="64" font-weight="750" letter-spacing="-2" fill="#eff9ff">Delulu Talks</text>
+<text x="298" y="170" font-size="26" fill="#aac8df">Speak. Keep your flow.</text>
+<text x="300" y="211" font-size="13" font-weight="600" letter-spacing="2.5" fill="#75e4ff">PRIVATE DICTATION · R2T2 · LOCAL FIRST</text>
+</g></svg>

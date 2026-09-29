@@ -1,9 +1,9 @@
 {
   "name": "delulu-talks",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.9.4",
   "type": "module",
-  "description": "Private, local-first system-wide dictation powered by CrisperWhisper 2.0",
+  "description": "Private, local-first system-wide R2T2 dictation with MLX and CUDA acceleration",
   "author": {
     "name": "JoranEMostert",
     "email": "92588849+JoranEMostert@users.noreply.github.com"
@@ -19,11 +19,21 @@
     "build": "bun run typecheck && electron-vite build",
     "preview": "electron-vite preview",
     "preview:web": "vite preview",
-    "test": "bun test",
+    "test": "node scripts/test-evidence.mjs unit",
     "dist": "bun run build && electron-builder",
     "dist:linux": "bun run build && electron-builder --linux AppImage pacman tar.xz",
     "dist:mac": "bun run build && electron-builder --mac dmg zip",
-    "dist:win": "bun run build && electron-builder --win nsis zip"
+    "dist:win": "bun run build && electron-builder --win nsis zip",
+    "test:e2e": "node scripts/test-evidence.mjs browser",
+    "test:desktop": "bun run build && node scripts/test-evidence.mjs desktop",
+    "test:data-deletion": "bun run build && node scripts/test-evidence.mjs data-deletion",
+    "format": "prettier --write src electron/**/*.ts electron/*.ts tests scripts/*.mjs playwright.config.ts",
+    "format:check": "prettier --check src electron/**/*.ts electron/*.ts tests scripts/*.mjs playwright.config.ts",
+    "test:python": "node scripts/test-evidence.mjs python",
+    "test:native": "node scripts/test-evidence.mjs native",
+    "test:mac-package": "node scripts/test-evidence.mjs mac-package",
+    "test:manual": "node scripts/test-evidence.mjs manual",
+    "test:evidence": "node scripts/test-evidence.mjs summary"
   },
   "dependencies": {
     "dbus-next": "^0.10.2",
@@ -33,7 +43,8 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.2",
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "^1.3.14",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.17",
@@ -42,7 +53,8 @@
     "electron": "43.3.0",
     "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
-    "tailwindcss": "^4.3.2",
+    "prettier": "^3.9.6",
+    "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "vite": "7.3.6"
   }

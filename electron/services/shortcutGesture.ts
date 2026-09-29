@@ -6,7 +6,10 @@ export class ShortcutGesture {
   private pressed = false;
   private stopOnRelease = false;
 
-  constructor(private readonly mode: () => ShortcutMode, private readonly actions: ShortcutActions) {}
+  constructor(
+    private readonly mode: () => ShortcutMode,
+    private readonly actions: ShortcutActions,
+  ) {}
 
   press(canRelease: boolean): void {
     if (canRelease) {

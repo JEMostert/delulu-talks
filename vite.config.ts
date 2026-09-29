@@ -9,7 +9,14 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      ignored: ["**/out/**", "**/release/**", "**/electron/**"],
+      ignored: [
+        "**/out/**",
+        "**/release/**",
+        "**/electron/**",
+        // Generated test fixtures remain served, without reloading other tests.
+        "**/artifacts/**",
+        "**/test-results/**",
+      ],
     },
   },
 });

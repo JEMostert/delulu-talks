@@ -1,125 +1,442 @@
-import { BookOpenText, Check, ChevronRight, Clock3, Copy, Cpu, Mic, Pencil, RotateCcw, Save, Settings2, WandSparkles, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import { LANGUAGES, modelById } from "../data";
-import { deliveredText, transcriptIsEdited, transcriptText } from "../transcriptText";
-import type { AppSettings, DictationStatus, Page, TranscriptRecord, TranscriptVersion } from "../types";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  ArrowUpRight,
+  Check,
+  ClipboardPaste,
+  Keyboard,
+  Mic,
+  Settings2,
+  Square,
+  WandSparkles,
+} from "lucide-react";
+import { speechLanguageCapability } from "../speechCapabilities";
+import {
+  TranscriptCard,
+  type TranscriptActions,
+} from "../components/TranscriptCard";
+import { Toggle } from "../components/ui";
+import type {
+  AppSettings,
+  DictationStatus,
+  MagicStatus,
+  MicrophoneDevice,
+  Page,
+  ShortcutStatus,
+  TranscriptRecord,
+} from "../types";
 
-function relativeTime(timestamp: number) {
-  const minutes = Math.max(1, Math.round((Date.now() - timestamp) / 60_000));
-  if (minutes < 60) return `${minutes}m ago`;
-  if (minutes < 1440) return `${Math.round(minutes / 60)}h ago`;
-  return `${Math.round(minutes / 1440)}d ago`;
+const panelHeader =
+  "flex items-center gap-2 min-h-9 px-3.5 py-[9px] border-b border-line bg-[linear-gradient(100deg,var(--panel-heading),var(--surface))]";
+const panelHeading = "text-[13px] font-[650] tracking-[0.1px]";
+
+function ControlField({
+  label,
+  children,
+  wide = false,
+}: {
+  label: string;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <label
+      className={`flex flex-col gap-1.5 min-w-0 ${wide ? "col-span-full" : ""}`}
+    >
+      <span className="text-[11px] text-muted">{label}</span>
+      {children}
+    </label>
+  );
 }
 
-function QuickSwitch({ checked, label, onChange }: { checked: boolean; label: string; onChange: () => void }) {
-  return <button className={`quick-switch ${checked ? "on" : ""}`} role="switch" aria-checked={checked} onClick={onChange}><i />{label}</button>;
-}
-
-export function HomePage({ settings, status, history, saving, onNavigate, onUpdateSettings, onUpdateTranscript, onCopy }: {
+export function HomePage({
+  settings: s,
+  status,
+  shortcutStatus,
+  devices,
+  history,
+  saving,
+  busy,
+  onNavigate,
+  onUpdateSettings: save,
+  onConfigureShortcut,
+  onPasteLast,
+  onToggleRecord,
+  ...actions
+}: TranscriptActions & {
   settings: AppSettings;
   status: DictationStatus;
+  magicStatus: MagicStatus;
+  shortcutStatus: ShortcutStatus;
+  devices: MicrophoneDevice[];
   history: TranscriptRecord[];
   saving: boolean;
+  busy: boolean;
   onNavigate: (page: Page) => void;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
-  onUpdateTranscript: (id: string, version: TranscriptVersion, text: string | null) => Promise<boolean>;
-  onCopy: (text: string) => void;
+  onConfigureShortcut: () => void;
+  onPasteLast: () => void;
+  onToggleRecord: () => void;
 }) {
-  const latest = history[0] ?? null;
-  const model = modelById(settings.model);
-  const [version, setVersion] = useState<TranscriptVersion>("intended");
-  const [editing, setEditing] = useState(false);
-  const [editDraft, setEditDraft] = useState("");
-  const [savingEdit, setSavingEdit] = useState(false);
-  useEffect(() => {
-    setVersion(latest?.intendedText ? "intended" : "verbatim");
-    setEditing(false);
-  }, [latest?.id, latest?.intendedText]);
-  useEffect(() => setEditing(false), [version]);
-  const visibleText = latest ? transcriptText(latest, version) : "";
-  const corrected = latest ? transcriptIsEdited(latest, version) : false;
-
-  function startEditing() {
-    setEditDraft(visibleText);
-    setEditing(true);
-  }
-
-  async function saveCorrection() {
-    if (!latest || !editDraft.trim() || editDraft.trim() === visibleText) return;
-    setSavingEdit(true);
-    try {
-      if (await onUpdateTranscript(latest.id, version, editDraft)) setEditing(false);
-    } finally {
-      setSavingEdit(false);
-    }
-  }
-
+  const [shortcut, setShortcut] = useState(s.shortcut);
+  useEffect(() => setShortcut(s.shortcut), [s.shortcut]);
+  const portal = shortcutStatus.method === "portal";
+  const latest = history[0];
+  const recording = status.phase === "listening";
+  const languageCapability = speechLanguageCapability(s.model);
+  const engineText = (engine: DictationStatus["engine"]) =>
+    ({
+      ready: "Ready",
+      unloaded: "Loads on demand",
+      missing: "Installation required",
+      error: "Needs repair",
+      loading: "Loading",
+      settingUp: "Installing",
+    })[engine];
   return (
-    <div className="dictation-view">
-      <section className="quick-controls" aria-label="Dictation controls">
-        <label><span>Transcript</span><div className="segmented compact triple" role="group" aria-label="Transcript mode">{(["intended", "dual", "verbatim"] as const).map((mode) => <button key={mode} className={settings.transcriptionMode === mode ? "active" : ""} aria-pressed={settings.transcriptionMode === mode} disabled={saving} onClick={() => onUpdateSettings({ transcriptionMode: mode })}>{mode === "dual" ? "Both" : mode}</button>)}</div></label>
-        <label><span>Language</span><select value={settings.language} disabled={saving} onChange={(event) => onUpdateSettings({ language: event.target.value })}>{LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></label>
-        {settings.transcriptionMode === "dual" && <label><span>Paste version</span><div className="segmented compact" role="group" aria-label="Version to paste"><button className={settings.pasteVersion === "intended" ? "active" : ""} aria-pressed={settings.pasteVersion === "intended"} onClick={() => onUpdateSettings({ pasteVersion: "intended" })}>Intended</button><button className={settings.pasteVersion === "verbatim" ? "active" : ""} aria-pressed={settings.pasteVersion === "verbatim"} onClick={() => onUpdateSettings({ pasteVersion: "verbatim" })}>Verbatim</button></div></label>}
-        <div className="quick-toggles"><QuickSwitch checked={settings.magicEnabled} label="Magic" onChange={() => onUpdateSettings({ magicEnabled: !settings.magicEnabled })} /><QuickSwitch checked={settings.autoPaste} label="Auto-paste" onChange={() => onUpdateSettings({ autoPaste: !settings.autoPaste })} /><QuickSwitch checked={settings.copyToClipboard} label="Keep copy" onChange={() => onUpdateSettings({ copyToClipboard: !settings.copyToClipboard })} /></div>
-      </section>
-
-      <div className="dictation-grid">
-        <section className="transcript-workbench">
-          <header className="panel-toolbar">
-            <div><strong>Latest transcript</strong>{latest && <span>{relativeTime(latest.createdAt)} · {Math.max(1, Math.round(latest.durationMs / 1000))}s · {corrected ? "corrected" : "original"}</span>}</div>
-            <div className="transcript-toolbar-actions">
-              {latest?.intendedText && latest.verbatimText && <div className="segmented compact" role="group" aria-label="Transcript version"><button className={version === "intended" ? "active" : ""} aria-pressed={version === "intended"} disabled={editing} onClick={() => setVersion("intended")}>Intended</button><button className={version === "verbatim" ? "active" : ""} aria-pressed={version === "verbatim"} disabled={editing} onClick={() => setVersion("verbatim")}>Verbatim</button></div>}
-              {latest && !editing && <button className="tool-button edit-command" onClick={startEditing}><Pencil /> Correct text</button>}
-            </div>
-          </header>
-          {latest ? <>
-            {latest.magicText && <div className="magic-delivery-preview"><div><WandSparkles /><span><strong>Delivered with Magic</strong><small>{latest.magicPreset ?? "polish"} · {latest.magicIncludedInferences ? "review inferred details" : "facts preserved"}</small></span></div><p>{latest.magicText}</p><button className="tool-button" onClick={() => onCopy(latest.magicText!)}><Copy /> Copy delivered text</button></div>}
-            {editing
-              ? <textarea className="transcript-editor transcript-edit" aria-label={`Correct ${version} transcript`} value={editDraft} autoFocus onChange={(event) => setEditDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setEditing(false); if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) void saveCorrection(); }} />
-              : <div className="transcript-editor" role="region" aria-label={`${version} transcript`} tabIndex={0}>{visibleText}</div>}
-            <footer className="panel-footer">
-              <div className="transcript-metrics">{editing ? <span>Ctrl + Enter to save · Esc to cancel</span> : <><span>{latest.insights.wordsPerMinute} WPM</span><span>{latest.insights.fillerCount} fillers</span><span>{latest.insights.repetitionCount} repetitions</span><span>{latest.words.length || latest.verbatimWords.length} timed words</span></>}</div>
-              <div>{editing ? <>
-                <button className="tool-button" disabled={savingEdit} onClick={() => setEditing(false)}><X /> Cancel</button>
-                <button className="primary-button" disabled={savingEdit || !editDraft.trim() || editDraft.trim() === visibleText} onClick={() => void saveCorrection()}><Save /> {savingEdit ? "Saving" : "Save correction"}</button>
-              </> : <>
-                {corrected && <button className="tool-button" onClick={() => void onUpdateTranscript(latest.id, version, null)}><RotateCcw /> Restore original</button>}
-                <button className="tool-button" onClick={() => onCopy(visibleText)}><Copy /> Copy</button>
-                <button className="tool-button" onClick={() => onNavigate("history")}><Clock3 /> Open in history</button>
-              </>}</div>
-            </footer>
-          </> : <div className="workbench-empty"><Mic /><strong>No transcript yet</strong><p>Use Record in the toolbar or press {settings.shortcut.split("+").join(" + ")} from any application.</p></div>}
-        </section>
-
-        <aside className="dictation-inspector">
-          <section>
-            <div className="inspector-heading"><span className={`state-dot phase-${status.phase}`} /><div><small>Capture status</small><strong>{status.phase === "listening" ? "Listening" : status.phase === "transcribing" ? "Transcribing" : status.engine === "ready" ? "Ready" : status.engine}</strong></div></div>
-            <p className="inspector-message" role={status.phase === "error" ? "alert" : "status"} aria-live={status.phase === "error" ? "assertive" : "polite"}>{status.message}</p>
-          </section>
-          <section>
-            <h3>Input</h3>
-            <dl><div><dt>Microphone</dt><dd>{settings.inputDeviceLabel}</dd></div><div><dt>Shortcut</dt><dd><kbd>{settings.shortcut.split("CommandOrControl").join("Ctrl")}</kbd></dd></div></dl>
-            <button className="inline-link" onClick={() => onNavigate("settings")}><Settings2 /> Change capture settings <ChevronRight /></button>
-          </section>
-          <section>
-            <h3>Runtime</h3>
-            <dl><div><dt>Speech</dt><dd>{model.size}</dd></div><div><dt>Magic</dt><dd>{settings.magicEnabled ? settings.magicPreset : "Off"}</dd></div><div><dt>Lifecycle</dt><dd>{settings.preloadModel ? "Resident" : "On demand"}</dd></div><div><dt>Backend</dt><dd>{status.backend ?? settings.backend}</dd></div></dl>
-            <button className="inline-link" onClick={() => onNavigate("models")}><Cpu /> Configure model <ChevronRight /></button>
-          </section>
-          <section>
-            <h3>Personalization</h3>
-            <button className="inline-link" onClick={() => onNavigate("vocabulary")}><BookOpenText /> {settings.customWords.length} Wordbook rules <ChevronRight /></button>
-          </section>
-        </aside>
+    <div className="control-workspace">
+      <div className="flex items-center justify-between gap-3 mt-[-5px] mb-3 max-[700px]:flex-wrap">
+        <span className="flex gap-1.5 items-center text-[10px] text-muted">
+          <Check className="w-[13px] h-[13px] text-success" />{" "}
+          {saving ? "Saving settings…" : "Settings saved automatically"}
+        </span>
+        <button
+          className="tool-button px-0 py-1 min-h-[26px] text-[11px]"
+          onClick={() => onNavigate("settings")}
+        >
+          <Settings2 className="w-3.5 h-3.5" /> All settings{" "}
+          <ArrowUpRight className="w-3.5 h-3.5" />
+        </button>
       </div>
-
-      <section className="recent-captures">
-        <header className="panel-toolbar"><div><strong>Recent captures</strong><span>{history.length} stored locally</span></div><button className="tool-button" onClick={() => onNavigate("history")}>View all <ChevronRight /></button></header>
-        <div className="recent-table">
-          {history.slice(0, 5).map((item) => { const itemVersion: TranscriptVersion = item.intendedText ? "intended" : "verbatim"; const itemText = deliveredText(item); return <div className="recent-row" key={item.id}><span className="source-icon">{item.magicText ? <WandSparkles /> : item.source === "dictation" ? <Mic /> : <Clock3 />}</span><p>{itemText}</p><small>{relativeTime(item.createdAt)}</small><b>{item.magicText ? "magic" : transcriptIsEdited(item, itemVersion) ? "edited" : item.mode}</b><button aria-label="Copy delivered text" onClick={() => onCopy(itemText)}><Copy /></button></div>; })}
-          {!history.length && <div className="recent-empty"><Check /> Finished dictations will appear here.</div>}
+      <div className="grid gap-4 items-start grid-cols-[minmax(0,1.55fr)_minmax(300px,1fr)] max-[1150px]:grid-cols-1">
+        <div className="grid grid-cols-2 gap-3.5 max-[700px]:grid-cols-1">
+          <section
+            className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden col-span-full"
+            aria-labelledby="record-heading"
+          >
+            <header className={panelHeader}>
+              <Mic className="w-4 h-4 text-accent-ink" />
+              <h2 id="record-heading" className={panelHeading}>
+                Record
+              </h2>
+              <span className="ml-auto font-mono text-[10px] text-subtle">
+                01
+              </span>
+            </header>
+            <div className="flex items-center gap-[18px] mx-3.5 mt-2.5 px-3.5 py-2.5 border border-line rounded-xl bg-[linear-gradient(115deg,var(--panel-heading),var(--surface)_70%)] backdrop-blur-md">
+              <button
+                className={`inline-flex items-center gap-2.5 shrink-0 min-h-11 px-[22px] py-2 rounded-[12px] border-0 text-[15px] font-[650] tracking-[0.2px] text-on-accent bg-[linear-gradient(160deg,var(--accent),var(--accent-hover))] shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_22px_rgba(10,132,255,0.35)] hover:brightness-[1.07] ${
+                  recording
+                    ? "bg-[linear-gradient(160deg,var(--danger),#c94a60)] shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_22px_rgba(200,60,80,0.35)]"
+                    : ""
+                }`}
+                disabled={busy && !recording}
+                onClick={() =>
+                  ["missing", "error"].includes(status.engine) && !recording
+                    ? onNavigate("models")
+                    : onToggleRecord()
+                }
+                aria-label={recording ? "Stop dictation" : "Start dictation"}
+              >
+                {recording ? (
+                  <Square className="w-5 h-5 animate-[voice_1.2s_ease-in-out_infinite]" />
+                ) : (
+                  <Mic className="w-5 h-5" />
+                )}
+                <span>{recording ? "Stop" : "Record"}</span>
+              </button>
+              <div className="flex flex-col justify-center gap-1 flex-1 min-w-0">
+                <div className="engine-line border-0 m-0 p-0 min-h-0">
+                  <span
+                    className={`engine-state ${status.engine === "ready" ? "ready" : ""}`}
+                  >
+                    {engineText(status.engine)}
+                  </span>
+                  <button
+                    className="text-button text-[10px] min-h-[26px] gap-[3px]"
+                    onClick={() => onNavigate("models")}
+                  >
+                    Manage <ArrowUpRight className="w-3 h-3" />
+                  </button>
+                </div>
+                <span className="text-[11px] text-muted">
+                  {recording
+                    ? portal && s.shortcutMode === "hold"
+                      ? "Listening — release the shortcut or press Stop"
+                      : "Listening — press the shortcut again or press Stop"
+                    : portal && s.shortcutMode === "hold"
+                      ? "Hold your shortcut, or press Record, and just talk."
+                      : "Press your shortcut or Record to start; press again to finish."}
+                </span>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2.5 px-3.5 pt-2.5 pb-1.5 max-[700px]:grid-cols-1">
+              <ControlField label="Microphone">
+                <select
+                  aria-label="Microphone"
+                  className="w-full min-h-[34px] px-[9px] py-[7px] pr-[23px] text-[12px] bg-input"
+                  value={s.inputDeviceId}
+                  disabled={saving || busy}
+                  onChange={(e) =>
+                    save({
+                      inputDeviceId: e.target.value,
+                      inputDeviceLabel:
+                        devices.find((d) => d.deviceId === e.target.value)
+                          ?.label ?? "Microphone",
+                    })
+                  }
+                >
+                  {!devices.some((d) => d.deviceId === s.inputDeviceId) && (
+                    <option value={s.inputDeviceId}>
+                      {s.inputDeviceLabel} (disconnected)
+                    </option>
+                  )}
+                  {devices.map((device) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label}
+                    </option>
+                  ))}
+                </select>
+              </ControlField>
+              <ControlField label="Language">
+                <select
+                  aria-label="Dictation language"
+                  className="w-full min-h-[34px] px-[9px] py-[7px] pr-[23px] text-[12px] bg-input"
+                  value={s.language}
+                  disabled={
+                    saving || busy || !languageCapability.canSelectLanguage
+                  }
+                  onChange={(e) => save({ language: e.target.value })}
+                >
+                  {languageCapability.languages.map(([code, label]) => (
+                    <option key={code} value={code}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </ControlField>
+              <ControlField label="Record mode">
+                <select
+                  aria-label="Recording gesture"
+                  className="w-full min-h-[34px] px-[9px] py-[7px] pr-[23px] text-[12px] bg-input"
+                  title={
+                    portal
+                      ? "Hold while speaking or press to toggle"
+                      : "This desktop supports toggle shortcuts"
+                  }
+                  value={portal ? s.shortcutMode : "toggle"}
+                  disabled={saving || busy || !portal}
+                  onChange={(e) =>
+                    save({
+                      shortcutMode: e.target
+                        .value as AppSettings["shortcutMode"],
+                    })
+                  }
+                >
+                  <option value="hold">Hold to talk</option>
+                  <option value="toggle">Toggle</option>
+                </select>
+              </ControlField>
+              <div className="flex items-center gap-2 min-h-[37px] mt-0.5 border-t border-line pt-[9px] col-span-full">
+                <span className="flex items-center gap-1.5 text-[10px] text-muted">
+                  <Keyboard className="w-[13px] h-[13px]" /> Shortcut
+                </span>
+                {portal ? (
+                  <>
+                    <kbd className="ml-auto px-1.5 py-1 font-mono text-[10px] bg-input">
+                      {shortcutStatus.accelerator
+                        .replace("Super", "Meta")
+                        .split("+")
+                        .join(" + ")}
+                    </kbd>
+                    <button
+                      className="tool-button px-0 py-1 min-h-[25px] text-[10px]"
+                      disabled={busy}
+                      onClick={onConfigureShortcut}
+                    >
+                      Change
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      aria-label="Dictation shortcut"
+                      className="w-full min-w-[50px] px-[7px] py-[5px] font-mono text-[11px]"
+                      value={shortcut}
+                      disabled={saving || busy}
+                      onChange={(e) => setShortcut(e.target.value)}
+                    />
+                    <button
+                      className="tool-button px-0 py-1 min-h-[25px] text-[10px]"
+                      disabled={
+                        saving ||
+                        busy ||
+                        shortcut === s.shortcut ||
+                        !shortcut.trim()
+                      }
+                      onClick={() => save({ shortcut })}
+                    >
+                      Save
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            {!shortcutStatus.registered && (
+              <p className="control-warning">{shortcutStatus.message}</p>
+            )}
+          </section>
+          <section
+            className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden"
+            aria-labelledby="polish-heading"
+          >
+            <header className={panelHeader}>
+              <WandSparkles className="w-4 h-4 text-accent-ink" />
+              <h2 id="polish-heading" className={panelHeading}>
+                Polish
+              </h2>
+              <span className="ml-auto font-mono text-[10px] text-subtle">
+                02
+              </span>
+            </header>
+            <div className="grid gap-3 p-4">
+              <p className="text-[13px] text-muted leading-[1.5]">
+                Correct names and insert saved text in clean results.
+              </p>
+              <button
+                className="secondary-button justify-between text-[12px]"
+                onClick={() => onNavigate("vocabulary")}
+              >
+                Corrections & text shortcuts <ArrowUpRight />
+              </button>
+              <span className="caption">
+                {s.customWords.filter((word) => word.enabled).length} enabled
+                rules
+              </span>
+              <div className="quick-toggle">
+                <span>
+                  Rewrite after dictation
+                  <small>
+                    {s.magicEnabled
+                      ? "Automatic rewriting enabled"
+                      : "Off · rewrite any result on demand"}
+                  </small>
+                </span>
+                <Toggle
+                  label="Rewrite after dictation"
+                  value={s.magicEnabled}
+                  disabled={saving || busy}
+                  onChange={() => save({ magicEnabled: !s.magicEnabled })}
+                />
+              </div>
+              {s.magicEnabled && (
+                <button
+                  className="text-button"
+                  onClick={() => onNavigate("settings")}
+                >
+                  Configure automatic writing <ArrowUpRight />
+                </button>
+              )}
+            </div>
+          </section>
+          <section
+            className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden"
+            aria-labelledby="delivery-heading"
+          >
+            <header className={panelHeader}>
+              <ClipboardPaste className="w-4 h-4 text-accent-ink" />
+              <h2 id="delivery-heading" className={panelHeading}>
+                Deliver
+              </h2>
+              <span className="ml-auto font-mono text-[10px] text-subtle">
+                03
+              </span>
+            </header>
+            <div className="px-3.5 pt-[3px] pb-[5px]">
+              {(
+                [
+                  [
+                    "autoPaste",
+                    "Paste automatically",
+                    "Into the active text field",
+                  ],
+                  [
+                    "copyToClipboard",
+                    "Copy to clipboard",
+                    "Keep the result ready to paste",
+                  ],
+                  [
+                    "keepHistory",
+                    "Save history",
+                    "Store new transcripts on this device",
+                  ],
+                ] as const
+              ).map(([key, label, detail]) => (
+                <div
+                  className="quick-toggle py-2.5 border-b border-line last:border-0"
+                  key={key}
+                >
+                  <span>
+                    {label}
+                    <small>{detail}</small>
+                  </span>
+                  <Toggle
+                    label={label}
+                    value={s[key]}
+                    disabled={saving || busy}
+                    onChange={() => save({ [key]: !s[key] })}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
-      </section>
+        <section
+          className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden"
+          aria-label="Latest output"
+        >
+          <header className="flex items-center justify-between gap-2 min-h-9 px-3.5 py-[9px] border-b border-line bg-[linear-gradient(100deg,var(--panel-heading),var(--surface))]">
+            <h2 className={panelHeading}>Latest output</h2>
+            <button
+              className="text-button min-h-[22px] text-[10px] gap-1"
+              onClick={() => onNavigate("history")}
+            >
+              History <ArrowUpRight className="w-[13px] h-[13px]" />
+            </button>
+          </header>
+          {latest ? (
+            <>
+              <TranscriptCard
+                key={latest.id}
+                record={latest}
+                inspector
+                {...actions}
+              />
+              <div className="flex flex-wrap gap-2.5 items-center justify-between border-t border-line bg-heading px-3.5 py-3">
+                <span className="caption text-[10px]">
+                  {s.keepHistory
+                    ? "History saving on"
+                    : "New results stay in this session"}
+                </span>
+                <button
+                  className="secondary-button text-[11px] min-h-[31px] px-[9px] py-1.5"
+                  onClick={onPasteLast}
+                >
+                  <ClipboardPaste /> Paste last
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="min-h-[380px] max-[1150px]:min-h-[160px] p-[30px] flex flex-col justify-center items-start gap-3">
+              <ClipboardPaste className="w-7 h-7 text-accent-ink" />
+              <h3 className="text-[15px]">No transcript yet</h3>
+              <p className="text-[12px] text-muted max-w-[30ch]">
+                Record with the button above or use your shortcut. The result
+                appears here for review, editing and copying.
+              </p>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

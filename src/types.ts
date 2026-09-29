@@ -1,20 +1,22 @@
-export type Page = "home" | "magic" | "lab" | "models" | "vocabulary" | "history" | "settings";
+export type Page =
+  "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
 
-export type ModelId = "crisperSmall" | "crisperMedium" | "crisperTurbo" | "crisperLarge";
+export type SpeechModelId = "r2t2" | "r2t2Mlx";
+/** Historical Qwen speech results retain their identity; it is never an active engine. */
+export type ModelId = SpeechModelId | "qwen3Asr";
 export type MagicModelId = "qwen35Small" | "qwen35Medium" | "qwen35Large";
 export type MagicPreset = "polish" | "concise" | "structured" | "prompt";
-export type TranscriptionMode = "intended" | "verbatim" | "dual";
-export type TranscriptVersion = "intended" | "verbatim";
-export type AsrBackend = "auto" | "ct2" | "transformers";
-export type ComputeType = "auto" | "float16" | "int8Float16" | "int8" | "float32";
-export type DictationPhase = "idle" | "preparing" | "loading" | "listening" | "transcribing" | "error";
-export type EnginePhase = "missing" | "unloaded" | "settingUp" | "loading" | "ready" | "error";
-export type MagicPhase = "idle" | "preparing" | "loading" | "rewriting" | "error";
-export type TranscriptSource = "dictation" | "file" | "verbatimize" | "forcedAlign";
-export type LabOperation = "transcribe" | "verbatimize" | "forcedAlign";
-export type ExportFormat = "txt" | "json" | "srt" | "vtt";
+export type DictationPhase =
+  "idle" | "preparing" | "loading" | "listening" | "transcribing" | "error";
+export type EnginePhase =
+  "missing" | "unloaded" | "settingUp" | "loading" | "ready" | "error";
+export type MagicPhase =
+  "idle" | "preparing" | "loading" | "rewriting" | "error";
+export type TranscriptSource = "dictation" | "file";
+export type ExportFormat = "txt" | "json";
 
 export type CustomWord = {
+  kind?: "correction" | "shortcut";
   id: string;
   term: string;
   soundsLike: string;
@@ -23,16 +25,16 @@ export type CustomWord = {
 };
 
 export type AppSettings = {
+  workflowVersion: 1;
   onboardingComplete: boolean;
+  theme: "system" | "light" | "dark";
   shortcut: string;
   shortcutMode: "hold" | "toggle";
-  model: ModelId;
+  model: SpeechModelId;
   language: string;
   pythonCommand: string;
   inputDeviceId: string;
   inputDeviceLabel: string;
-  transcriptionMode: TranscriptionMode;
-  pasteVersion: "intended" | "verbatim";
   autoPaste: boolean;
   copyToClipboard: boolean;
   pastePortalToken: string;
@@ -45,12 +47,7 @@ export type AppSettings = {
   magicAllowInferences: boolean;
   preloadMagicModel: boolean;
   modelIdleMinutes: number;
-  backend: AsrBackend;
-  computeType: ComputeType;
-  speculativeDecoding: boolean;
-  wordTimestamps: boolean;
   launchAtLogin: boolean;
-  modelLicenseAccepted: boolean;
   customWords: CustomWord[];
 };
 
@@ -72,6 +69,7 @@ export type MagicRewriteRequest = {
 };
 
 export type MagicRewriteResult = {
+  preset?: MagicPreset;
   text: string;
   model: MagicModelId;
   processingTimeMs: number;
@@ -81,28 +79,15 @@ export type MagicRewriteResult = {
 };
 
 export type DictationStatus = {
+  speechModel?: SpeechModelId;
+  retryAvailable?: boolean;
+  migrationRequired?: boolean;
   phase: DictationPhase;
   engine: EnginePhase;
   message: string;
   detail?: string | null;
-  model?: ModelId | null;
-  backend?: Exclude<AsrBackend, "auto"> | null;
+  model?: SpeechModelId | null;
   progress?: number | null;
-};
-
-export type WordTimestamp = {
-  word: string;
-  start: number;
-  end: number;
-};
-
-export type SpeechInsights = {
-  fillerCount: number;
-  repetitionCount: number;
-  cutOffCount: number;
-  vocalEventCount: number;
-  wordsPerMinute: number;
-  speakingSeconds: number;
 };
 
 export type TranscriptRecord = {
@@ -110,38 +95,39 @@ export type TranscriptRecord = {
   createdAt: number;
   durationMs: number;
   text: string;
-  intendedText: string;
-  verbatimText: string;
-  editedIntendedText?: string | null;
-  editedVerbatimText?: string | null;
+  personalizedText?: string | null;
+  editedText?: string | null;
   magicText?: string | null;
   magicModel?: MagicModelId | null;
   magicPreset?: MagicPreset | null;
   magicIncludedInferences?: boolean;
   magicProcessingTimeMs?: number;
-  mode: TranscriptionMode | "forcedAlign" | "verbatimize";
   model: ModelId;
   language: string;
-  words: WordTimestamp[];
-  verbatimWords: WordTimestamp[];
-  insights: SpeechInsights;
   source: TranscriptSource;
   sourceName?: string | null;
   processingTimeMs: number;
 };
 
+export type ModelProvenance = {
+  licenseName: string;
+  licenseUrl: string;
+  variants: {
+    label: string;
+    revision: string | null;
+    conversion: string;
+    attributionUrl?: string;
+  }[];
+};
+
 export type ModelInfo = {
-  id: ModelId;
-  shorthand: "small" | "medium" | "turbo" | "large";
+  runtime: string;
+  downloadSize: string;
+  id: SpeechModelId;
   hfId: string;
   name: string;
-  role: string;
   description: string;
-  size: string;
-  memory: string;
-  latency: string;
-  accent: "coral" | "blue" | "violet" | "yellow";
-  badges: string[];
+  provenance: ModelProvenance;
   recommended?: boolean;
 };
 
@@ -151,6 +137,7 @@ export type MagicModelInfo = {
   name: string;
   role: string;
   description: string;
+  provenance: ModelProvenance;
   parameters: string;
   memory: string;
   speed: string;
@@ -164,10 +151,7 @@ export type AudioFileSelection = {
 };
 
 export type LabRequest = {
-  operation: LabOperation;
   path: string;
-  referenceText?: string;
-  mode?: TranscriptionMode;
 };
 
 export type RecorderCommand = {
@@ -204,7 +188,15 @@ export type ShortcutStatus = {
 };
 
 export type UpdateStatus = {
-  phase: "unsupported" | "idle" | "checking" | "available" | "downloading" | "downloaded" | "upToDate" | "error";
+  phase:
+    | "unsupported"
+    | "idle"
+    | "checking"
+    | "available"
+    | "downloading"
+    | "downloaded"
+    | "upToDate"
+    | "error";
   currentVersion: string;
   version?: string;
   message: string;
@@ -215,8 +207,15 @@ export type UpdateStatus = {
 };
 
 export type DeluluApi = {
+  getRendererRecoveryState(): Promise<RendererRecoveryState>;
+  reloadWorkspace(): Promise<void>;
+  rendererControllerFailed(): Promise<void>;
   getSettings(): Promise<AppSettings>;
-  updateSettings(settings: AppSettings): Promise<AppSettings>;
+  getDiagnostics(): Promise<RuntimeDiagnostics>;
+  pasteLastTranscript(): Promise<void>;
+  retryRecording(): Promise<void>;
+  discardFailedRecording(): Promise<void>;
+  updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
   getStatus(): Promise<DictationStatus>;
   getMagicStatus(): Promise<MagicStatus>;
   getShortcutStatus(): Promise<ShortcutStatus>;
@@ -242,7 +241,12 @@ export type DeluluApi = {
   copyText(text: string): Promise<void>;
   authorizePaste(): Promise<void>;
   testPaste(): Promise<void>;
-  updateTranscript(id: string, version: TranscriptVersion, text: string | null): Promise<TranscriptRecord>;
+  updateTranscript(id: string, text: string | null): Promise<TranscriptRecord>;
+  setTranscriptRewrite(
+    id: string,
+    result: MagicRewriteResult | null,
+    sourceText: string,
+  ): Promise<TranscriptRecord>;
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
   chooseAudioFile(): Promise<AudioFileSelection | null>;
@@ -261,4 +265,23 @@ export type DeluluApi = {
   onTranscript(callback: (record: TranscriptRecord) => void): () => void;
   onRecorderCommand(callback: (command: RecorderCommand) => void): () => void;
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
+};
+
+export type RendererRecoveryState = {
+  canReload: boolean;
+  reason: string | null;
+  canStopRecording: boolean;
+};
+
+export type RuntimeDiagnostics = {
+  platform: string;
+  arch: string;
+  memoryGB: number;
+  freeMemoryGB: number;
+  python: string;
+  ffmpeg: string;
+  dataDirectory: string;
+  runtimeInstalled: boolean;
+  packages: Record<string, string>;
+  checkedAt: number;
 };
