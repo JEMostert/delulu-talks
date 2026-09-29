@@ -529,7 +529,11 @@ export class DictationService {
     }
   }
 
-  async runLab(request: LabRequest): Promise<TranscriptRecord> {
+  async runLab(request: LabRequest, signal?: AbortSignal): Promise<TranscriptRecord> {
+    const checkCancellation = () => {
+      if (signal?.aborted) throw new Error("Import cancelled; no transcript was saved.");
+    };
+    checkCancellation();
     if (this.isActive || this.asr.isBusy)
       throw new Error("Finish the current recording or model operation first");
     this.captureState = "processing";
@@ -539,10 +543,12 @@ export class DictationService {
     let failure: unknown;
     try {
       preparedAudio = await this.prepareAudio(request.path);
+      checkCancellation();
       const payload = await this.asr.transcribe(
         { audioPath: preparedAudio.path },
         settings,
       );
+      checkCancellation();
       const record = this.createRecord(
         payload,
         "file",
@@ -557,8 +563,8 @@ export class DictationService {
     } catch (error) {
       failure = error;
       this.asr.setActivity(
-        "error",
-        error instanceof Error ? error.message : String(error),
+        signal?.aborted ? "idle" : "error",
+        signal?.aborted ? "Import cancelled; no transcript was saved." : error instanceof Error ? error.message : String(error),
       );
       throw error;
     } finally {

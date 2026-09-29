@@ -1,3 +1,4 @@
+import { ImportQueue } from "../components/ImportQueue";
 import {
   TranscriptCard,
   type TranscriptActions,
@@ -84,6 +85,7 @@ export function LabPage({
         </div>
       </section>
 
+      <ImportQueue file={file} />
       <div className="grid grid-cols-[330px_minmax(0,1fr)] gap-4 max-[1150px]:grid-cols-[260px_minmax(0,1fr)] max-[700px]:grid-cols-1">
         <section className="border border-line bg-surface rounded-panel shadow-panel backdrop-blur-xl overflow-hidden min-w-0 p-5 flex flex-col gap-4">
           <button

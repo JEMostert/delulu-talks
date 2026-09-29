@@ -1,3 +1,4 @@
+import type { ImportQueueSnapshot } from "./importQueue";
 import type { ExportTemplateRequest } from "./exportTemplates";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
@@ -303,6 +304,14 @@ export type DeluluApi = {
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
   chooseAudioFile(): Promise<AudioFileSelection | null>;
+  getImportQueue(): Promise<ImportQueueSnapshot>;
+  enqueueImport(path: string): Promise<ImportQueueSnapshot>;
+  pauseImportQueue(paused: boolean): Promise<ImportQueueSnapshot>;
+  moveImportJob(id: string, direction: -1 | 1): Promise<ImportQueueSnapshot>;
+  cancelImportJob(id: string): Promise<ImportQueueSnapshot>;
+  retryImportJob(id: string): Promise<ImportQueueSnapshot>;
+  clearFinishedImports(): Promise<ImportQueueSnapshot>;
+  onImportQueue(callback: (snapshot: ImportQueueSnapshot) => void): () => void;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   exportTranscriptTemplate(

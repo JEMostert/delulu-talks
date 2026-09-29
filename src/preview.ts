@@ -1,3 +1,4 @@
+import { emptyImportQueue } from "./importQueue";
 import { changePersonalProfiles } from "./personalProfileCommands";
 import { DEFAULT_SETTINGS } from "./data";
 import { deliveredText, originalTranscriptText } from "./transcriptText";
@@ -275,6 +276,14 @@ export const previewApi: DeluluApi = {
   async chooseAudioFile(): Promise<AudioFileSelection | null> {
     return desktopOnly();
   },
+  async getImportQueue() { return emptyImportQueue(); },
+  async enqueueImport() { return desktopOnly(); },
+  async pauseImportQueue() { return desktopOnly(); },
+  async moveImportJob() { return desktopOnly(); },
+  async cancelImportJob() { return desktopOnly(); },
+  async retryImportJob() { return desktopOnly(); },
+  async clearFinishedImports() { return emptyImportQueue(); },
+  onImportQueue() { return () => {}; },
   async runLab(_request: LabRequest) {
     throw new Error("Audio file transcription requires Electron");
   },

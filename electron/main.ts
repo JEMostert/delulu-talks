@@ -1,3 +1,4 @@
+import { ImportQueue } from "./services/importQueue";
 import { randomUUID } from "node:crypto";
 import { changePersonalProfiles } from "../src/personalProfileCommands";
 import {
@@ -646,6 +647,12 @@ function assertRuntimeIdle(): void {
 }
 
 function registerIpc(): void {
+  const importQueue = new ImportQueue(async (path, signal) => {
+    if (!selectedAudioFiles.has(path) || !existsSync(path))
+      throw new Error("Choose an existing source file through Audio files first.");
+    return dictation.runLab({ path }, signal);
+  }, (snapshot) => broadcast("lab:queueChanged", snapshot));
+  app.on("before-quit", () => importQueue.shutdown());
   const handle = <Args extends unknown[]>(
     channel: string,
     listener: (event: Electron.IpcMainInvokeEvent, ...args: Args) => unknown,
@@ -977,6 +984,25 @@ function registerIpc(): void {
       size: statSync(resolved).size,
     };
   });
+  handle("lab:queueGet", () => importQueue.get());
+  handle("lab:queueEnqueue", (_event, input: unknown) => {
+    const path = resolve(validateText(input, 4096));
+    if (!selectedAudioFiles.has(path)) throw new Error("Choose the source file through Audio files first.");
+    const source = statSync(path);
+    if (!source.isFile()) throw new Error("Choose a regular audio or video file.");
+    return importQueue.enqueue({ path, name: basename(path), size: source.size });
+  });
+  handle("lab:queuePause", (_event, paused: unknown) => {
+    if (typeof paused !== "boolean") throw new Error("Invalid queue pause request.");
+    return importQueue.setPaused(paused);
+  });
+  handle("lab:queueMove", (_event, id: unknown, direction: unknown) => {
+    if (direction !== -1 && direction !== 1) throw new Error("Invalid queue move request.");
+    return importQueue.move(validateText(id, 128), direction);
+  });
+  handle("lab:queueCancel", (_event, id: unknown) => importQueue.cancel(validateText(id, 128)));
+  handle("lab:queueRetry", (_event, id: unknown) => importQueue.retry(validateText(id, 128)));
+  handle("lab:queueClearFinished", () => importQueue.clearFinished());
   handle("lab:run", async (_event, request: LabRequest) => {
     const path = resolve(validateText(request.path, 4096));
     if (!selectedAudioFiles.has(path) || !existsSync(path))
