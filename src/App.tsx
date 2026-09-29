@@ -47,6 +47,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
 };
 function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   useTheme(w.settings.theme);
+  const [modelTarget, setModelTarget] = useState<"decode" | "diagnostics" | null>(null);
   const [visited, setVisited] = useState<Set<Page>>(new Set(["home"]));
   useEffect(() => {
     setVisited((previous) => new Set([...previous, w.page]));
@@ -54,6 +55,31 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
       .getElementById("page-content")
       ?.scrollTo({ top: 0, behavior: "instant" });
   }, [w.page]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing || event.altKey ||
+          !(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
+      const key = event.key.toLowerCase();
+      if (key !== "m" && key !== "d") return;
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable='true'], [role='dialog']")) return;
+      if (document.querySelector("[role='dialog'][aria-modal='true']")) return;
+      event.preventDefault();
+      w.setPage("models");
+      setModelTarget(key === "m" ? "decode" : "diagnostics");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [w.setPage]);
+  useEffect(() => {
+    if (!w.ready || w.page !== "models" || !modelTarget) return;
+    const element = document.getElementById(`models-${modelTarget}`);
+    element?.focus();
+    element?.scrollIntoView({ block: "start", behavior: "instant" });
+    if (modelTarget === "diagnostics")
+      document.getElementById("runtime-diagnostics-refresh")?.click();
+    setModelTarget(null);
+  }, [modelTarget, w.page, w.ready]);
   const recording = w.status.phase === "listening";
   const needsSetup =
     !recording && ["missing", "error"].includes(w.status.engine);

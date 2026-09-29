@@ -1,3 +1,4 @@
+import { DecodeControls } from "../components/models/DecodeControls";
 import { Diagnostics } from "../components/Diagnostics";
 import {
   SpeechSetup,
@@ -13,7 +14,9 @@ export function ModelsPage(props: SpeechSetupProps & RewriteSetupProps) {
     <div className="content-stack">
       <SpeechSetup {...props} />
       <RewriteSetup {...props} />
-      <Diagnostics />
+      <DecodeControls {...props} />
+      <p className="caption">Keyboard: Ctrl/Cmd + Shift + M opens decoding; Ctrl/Cmd + Shift + D opens device diagnostics.</p>
+      <div id="models-diagnostics" tabIndex={-1} aria-label="Model device diagnostics"><Diagnostics refreshButtonId="runtime-diagnostics-refresh" /></div>
     </div>
   );
 }
