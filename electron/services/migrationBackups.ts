@@ -78,3 +78,26 @@ export function backupProfileMigration(
   for (const { directory } of old.slice(4))
     rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 }
+
+/** Explicit history deletion also revokes historical backup copies of that content. */
+export function removeMigrationHistoryBackups(dataDirectory: string): void {
+  const root = join(dataDirectory, "migration-backups");
+  if (!existsSync(root)) return;
+  for (const { directory, manifest } of completedSnapshots(root)) {
+    if (!("history.json" in manifest.files)) continue;
+    rmSync(join(directory, "history.json"), { force: true, maxRetries: 3, retryDelay: 100 });
+    const remaining = { ...manifest.files };
+    delete remaining["history.json"];
+    if (!Object.keys(remaining).length) {
+      rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      continue;
+    }
+    const temporary = join(directory, `manifest-${randomUUID()}.tmp`);
+    try {
+      writeFileSync(temporary, `${JSON.stringify({ ...manifest, files: remaining }, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+      renameSync(temporary, join(directory, "manifest.json"));
+    } finally {
+      rmSync(temporary, { force: true });
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { backupProfileMigration } from "./migrationBackups";
+import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
 import { speechModelForPlatform } from "../runtime/platform";
 import {
   existsSync,
@@ -467,11 +467,13 @@ export class StorageService {
   deleteHistory(id: string): void {
     const next = this.history.filter((item) => item.id !== id);
     writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    removeMigrationHistoryBackups(this.dataDirectory);
     this.history = next;
   }
 
   clearHistory(): void {
     writeJson(join(this.dataDirectory, HISTORY_FILE), []);
+    removeMigrationHistoryBackups(this.dataDirectory);
     this.history = [];
   }
 }
