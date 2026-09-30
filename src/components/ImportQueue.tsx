@@ -53,12 +53,9 @@ export function ImportQueue({ file }: { file: AudioFileSelection | null }) {
   return <section className="border border-line bg-surface rounded-panel shadow-panel min-w-0 p-5 content-stack" aria-label="Import queue" aria-busy={pending}>
     <div>
       <h3>Import queue</h3>
-      <p className="caption">{queue.jobs.length}/{IMPORT_QUEUE_LIMIT} jobs · Session only. Original media stays in place; audio is not copied into the queue.</p>
+      <p className="caption">{queue.jobs.length}/{IMPORT_QUEUE_LIMIT} jobs · Saved source/job metadata. Reopening starts paused; source audio stays in place.</p>
     </div>
     <div className="flex gap-2 flex-wrap">
-      <button className="primary-button" disabled={disabled || !file || queue.jobs.length >= IMPORT_QUEUE_LIMIT} onClick={() => { if (file) void command(() => bridge.enqueueImport(file.path)); }}>
-        <Plus /> Add selected file
-      </button>
       <button className="secondary-button" disabled={disabled} onClick={() => void command(() => bridge.pauseImportQueue(!queue.paused))}>
         {queue.paused ? <Play /> : <Pause />} {queue.paused ? "Resume queue" : "Pause queue"}
       </button>
@@ -67,10 +64,10 @@ export function ImportQueue({ file }: { file: AudioFileSelection | null }) {
     </div>
     <p className="text-muted text-[12px]">
       {queue.paused ? (active ? "Queue paused; current work finishes before the next job can start." : "Queue paused. Resume to process queued files one at a time.") : "Files are processed one at a time. Pausing lets current work finish."}
-      {" "}Cancellation waits for current conversion/inference to finish; its result is discarded.
+      {" "}Cancellation stops media conversion where possible. Native inference may need to settle; cancelled results are discarded.
     </p>
     {error && <p className="field-error break-words" role="alert">{error}</p>}
-    {ready && !queue.jobs.length && <p className="caption">Choose a file with the source picker and add it to the queue.</p>}
+    {ready && !queue.jobs.length && <p className="caption">Choose or drop source files to create queued jobs.</p>}
     <ol className="content-stack" aria-label="Import jobs">
       {queue.jobs.map((job) => {
         const queuedIndex = queued.findIndex((item) => item.id === job.id);

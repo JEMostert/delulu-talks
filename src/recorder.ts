@@ -393,6 +393,7 @@ export class PcmRecorder {
   }
 
   private async stop(submit: boolean, generation: number): Promise<void> {
+    const captureEndStarted = performance.now();
     if (!this.stream || !this.context || this.stopping) return;
     const sessionId = this.sessionId!;
     this.stopping = true;
@@ -447,9 +448,13 @@ export class PcmRecorder {
           await failure;
           return;
         }
+        const captureEndMs = performance.now() - captureEndStarted;
+        const preprocessingStarted = performance.now();
+        const encoded = wav(resample(captured, sampleRate));
         const delivery = bridge.submitRecording({
           sessionId,
-          wav: wav(resample(captured, sampleRate)),
+          wav: encoded,
+          timings: { captureEndMs, preprocessingMs: performance.now() - preprocessingStarted },
           durationMs,
           captureDiagnostics,
         });

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { changePersonalProfiles } from "../../src/personalProfileCommands";
-import { randomUUID } from "node:crypto";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 

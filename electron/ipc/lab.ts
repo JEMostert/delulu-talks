@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { ImportQueue } from "../services/importQueue";
+import type { ImportQueueJob } from "../../src/importQueue";
 import { dialog } from "electron";
 import { existsSync, statSync } from "node:fs";
 import type { Stats } from "node:fs";
@@ -9,10 +12,7 @@ import { loadLinkedAudio } from "../services/audioSource";
 import { inspectMedia } from "../services/mediaInspection";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
-export function registerLabIpc({handle}: IpcRegistrar, {storage, dictation, asr, getMainWindow, selectedAudioFiles}: IpcDependencies): void {
-  let audioJobs: AudioJobsService | null = null;
-  const importJobs = () => audioJobs ??= new AudioJobsService(storage.dataDirectory);
-function validateAudioFile(value: unknown): AudioFileSelection {
+export function validateAudioFile(value: unknown): AudioFileSelection {
   if (typeof value !== "string" || !value.trim() || value.length > 4096)
     throw new Error("Invalid audio file path");
   const path = resolve(value);
@@ -29,15 +29,50 @@ function validateAudioFile(value: unknown): AudioFileSelection {
   if (!info.isFile()) throw new Error(`${name}: choose a regular file`);
   if (info.size > MAX_AUDIO_FILE_BYTES)
     throw new Error(`${name}: file exceeds the 500 MiB limit`);
-  return { path, name, size: info.size };
+  return { path, name, size: info.size, sourceMtimeMs: info.mtimeMs };
 }
+
+
+export function registerLabIpc({handle}: IpcRegistrar, {storage, dictation, asr, getMainWindow, selectedAudioFiles, broadcast}: IpcDependencies) {
+  let audioJobs: AudioJobsService | null = null;
+  const importJobs = () => audioJobs ??= new AudioJobsService(storage.dataDirectory);
+  let queue: ImportQueue | null = null;
+  const restoredJobs = (): ImportQueueJob[] => importJobs().getJobs().map(job => {
+    let state: ImportQueueJob["state"] = job.queueState ?? (job.state === "pending" ? "queued" : job.state === "done" ? "completed" : job.state === "cancelled" ? "cancelled" : "failed");
+    if (state === "running" || state === "cancelling") state = "failed";
+    return { id: job.queueId ?? createHash("sha256").update(job.path).digest("hex"), path: job.path, name: job.name, size: job.size, sourceMtimeMs: job.sourceMtimeMs, state, error: job.error ?? null, transcriptId: job.resultId ?? null };
+  });
+  const getImportQueue = () => queue ??= new ImportQueue(async (path, signal) => {
+    validateAudioFile(path);
+    if (!importJobs().getJobs().some(job => job.path === path)) throw new Error("Import job no longer exists");
+    return dictation.runLab({path}, signal);
+  }, snapshot => broadcast("lab:queueChanged", snapshot), snapshot => importJobs().replaceQueue(snapshot.jobs), restoredJobs());
+  handle("lab:queueGet", () => getImportQueue().get());
+  handle("lab:queueEnqueue", (_event, path: string) => {
+    const file = validateAudioFile(path);
+    if (!selectedAudioFiles.has(file.path)) throw new Error("Select this source through Audio files first");
+    return getImportQueue().enqueue(file);
+  });
+  handle("lab:queuePause", (_event, paused: boolean) => getImportQueue().setPaused(paused));
+  handle("lab:queueMove", (_event, id: string, direction: -1 | 1) => getImportQueue().move(id,direction));
+  handle("lab:queueCancel", (_event, id: string) => getImportQueue().cancel(id));
+  handle("lab:queueRetry", (_event, id: string) => {
+    const job = getImportQueue().get().jobs.find(job => job.id === id);
+    if (job) validateAudioFile(job.path);
+    return getImportQueue().retry(id);
+  });
+  handle("lab:queueClearFinished", () => getImportQueue().clearFinished());
 
 function selectAudioFiles(value: unknown): AudioFileSelection[] {
   if (!Array.isArray(value) || value.length > MAX_AUDIO_BATCH_FILES)
     throw new Error(`Choose at most ${MAX_AUDIO_BATCH_FILES} files at once`);
   const files = Array.from(value, validateAudioFile);
   // Register only after every file passes, so invalid batches are rejected whole.
-  importJobs().replaceSelection(files);
+  if (dictation.isActive || asr.isBusy || getImportQueue().get().jobs.some(job => ["running","cancelling"].includes(job.state))) throw new Error("Finish the active operation before replacing sources");
+  const existing = getImportQueue().get().jobs;
+  const additions = files.filter(file => !existing.some(job => job.path === file.path)).map(file => ({...file, id: createHash("sha256").update(file.path).digest("hex"), state: "queued" as const, error: null, transcriptId: null }));
+  if (existing.length + additions.length > MAX_AUDIO_BATCH_FILES) throw new Error("Clear finished imports before adding more files");
+  getImportQueue().replace([...existing,...additions]);
   for (const file of files) selectedAudioFiles.add(file.path);
   return files;
 }
@@ -59,6 +94,7 @@ function selectAudioFiles(value: unknown): AudioFileSelection[] {
   handle("lab:chooseAudioFiles", () => chooseAudioFiles(true));
   handle("lab:resolveAudioFiles", (_event, paths: unknown) => selectAudioFiles(paths));
   handle("lab:run", async (_event, request: LabRequest) => {
+    if (getImportQueue().get().jobs.some(job => ["running","cancelling"].includes(job.state))) throw new Error("Wait for the active queued import");
     const file = validateAudioFile(request?.path);
     if (!selectedAudioFiles.has(file.path))
       throw new Error("Choose or drop the source file through Audio files first");
@@ -103,6 +139,7 @@ function selectAudioFiles(value: unknown): AudioFileSelection[] {
     if (dictation.isActive || asr.isBusy) throw new Error("Relink cancelled because another operation started");
     const current = validateAudioFile(file.path);
     const updated = importJobs().relink(key, current);
+    getImportQueue().replace(restoredJobs());
     selectedAudioFiles.delete(key);
     selectedAudioFiles.add(updated.path);
     return { ...updated, sourceAvailable: true };
@@ -110,7 +147,9 @@ function selectAudioFiles(value: unknown): AudioFileSelection[] {
   handle("lab:removeJob", (_event, path: unknown) => {
     if (dictation.isActive) throw new Error("Finish the current recording or import first");
     const key = resolve(validateText(path, 4096));
+    if (getImportQueue().get().jobs.some(job => ["running","cancelling"].includes(job.state))) throw new Error("Wait for the active queued import");
     importJobs().remove(key);
+    getImportQueue().replace(restoredJobs());
     selectedAudioFiles.delete(key);
   });
 
@@ -119,4 +158,6 @@ handle("lab:inspectAudio", (_event, value: unknown) => {
  if (!selectedAudioFiles.has(path) || !existsSync(path)) throw new Error("Choose the source file through Audio files first");
  return inspectMedia(path, storage);
 });
+  return { getImportQueue };
+
 }

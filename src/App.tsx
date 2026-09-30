@@ -79,6 +79,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
     createTranscriptCommands(w);
   const transcriptActions = {
     ...baseTranscriptActions,
+    onCancelRewrite: (operationId: string) => bridge.cancelRewrite(operationId),
     onOpenRewrite: (record: Parameters<typeof w.operations.openRewrite>[0]) => w.operations.openRewrite(record, w.page),
   };
   const rewrite = w.operations.rewriteOperation;
@@ -428,10 +429,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     {...transcriptActions}
                     history={w.history}
                     busy={busy}
-                    operation={w.operations.importOperation}
-                    onChoose={w.operations.chooseImport}
-                    onRun={() => w.operations.runImport(busy)}
-                    onClearError={w.operations.clearImportError}
                   />
                 </div>
               )}
@@ -533,6 +530,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           onOperationState={(phase) => w.operations.rewriteState(rewrite.key, phase)}
           onClose={() => w.operations.closeRewrite(rewrite.key)}
           onSetup={() => w.setPage("models")}
+          onCancelRewrite={(operationId) => bridge.cancelRewrite(operationId)}
           onRewrite={(request) => w.operations.runRewrite(rewrite.key, request)}
           onApply={(result, source, sourceRevision) => w.operations.applyRewrite(rewrite.key, () =>
             baseTranscriptActions.onSetRewrite!(rewrite.transcriptId, result, source, sourceRevision))}

@@ -1,3 +1,7 @@
+import { DEFAULT_SETTINGS } from "./data";
+import { REWRITE_PRESETS } from "./rewritePresets";
+import { normalizeTimings } from "./pipelineTimings";
+import { normalizeCaptureDiagnostics } from "./captureDiagnostics";
 import type {
   AppSettings,
   CustomWord,
@@ -82,13 +86,13 @@ function parseCustomWords(value: unknown): CustomWord[] {
     optionalString(word, "kind");
     optionalBoolean(word, "enabled");
     // Storage continues to supply legacy defaults and normalize empty terms.
-    const parsed: ObjectInput = {};
+    const parsed: ObjectInput = { ...object(jsonInput(word), "custom word") };
     for (const [key, max] of Object.entries({
       id: 128, term: 256, soundsLike: 1024, replacement: 4096,
     })) {
       optionalString(word, key);
       if (word[key] !== undefined)
-        parsed[key] = requestText((word[key] as string).trim(), max);
+        parsed[key] = requestText(key === "replacement" ? word[key] : (word[key] as string).trim(), max);
     }
     if (word.kind !== undefined) parsed.kind = word.kind;
     if (word.enabled !== undefined) parsed.enabled = word.enabled;
@@ -98,40 +102,34 @@ function parseCustomWords(value: unknown): CustomWord[] {
 
 export function parseSettingsPatch(value: unknown): Partial<AppSettings> {
   const source = object(value, "settings");
-  const allowed = new Set([
-    "workflowVersion", "modelIdleMinutes", "customWords",
-    ...settingsBooleans, ...Object.keys(settingsStrings),
-  ]);
-  for (const key of Object.keys(source))
-    if (!allowed.has(key)) throw new Error(`Unknown setting: ${key}`);
   const patch: ObjectInput = {};
-  for (const key of settingsBooleans) {
-    optionalBoolean(source, key);
-    if (source[key] !== undefined) patch[key] = source[key];
+  for (const [key, value] of Object.entries(source)) {
+    if (!Object.hasOwn(DEFAULT_SETTINGS, key)) throw new Error(`Unknown setting: ${key}`);
+    if (value === undefined) continue;
+    const fallback = DEFAULT_SETTINGS[key as keyof AppSettings];
+    if (typeof fallback === "boolean" && typeof value !== "boolean") throw new Error(`Expected ${key} boolean`);
+    if (typeof fallback === "number") finiteNumber(value, key);
+    if (typeof fallback === "string") requestText(value, 4096);
+    if (key === "customWords") patch[key] = parseCustomWords(value);
+    else if (fallback && typeof fallback === "object") { jsonInput(value); patch[key] = value; }
+    else patch[key] = value;
   }
-  for (const [key, max] of Object.entries(settingsStrings)) {
-    optionalString(source, key);
-    if (source[key] !== undefined)
-      patch[key] = requestText(
-        ["shortcut", "language", "pythonCommand", "inputDeviceId", "inputDeviceLabel", "pastePortalToken"].includes(key)
-          ? (source[key] as string).trim()
-          : source[key],
-        max,
-      );
-  }
-  if (source.workflowVersion !== undefined) {
-    if (source.workflowVersion !== 1)
-      throw new Error("Unsupported settings workflowVersion");
-    patch.workflowVersion = 1;
-  }
-  if (source.modelIdleMinutes !== undefined)
-    patch.modelIdleMinutes = finiteNumber(source.modelIdleMinutes, "model idle time");
-  if (source.customWords !== undefined)
-    patch.customWords = parseCustomWords(source.customWords);
+  if (source.schemaVersion !== undefined && source.schemaVersion !== 1) throw new Error("Unsupported settings schema version");
+  if (source.workflowVersion !== undefined && source.workflowVersion !== 1) throw new Error("Unsupported workflow version");
   return patch as Partial<AppSettings>;
 }
 
-const magicPresets = ["polish", "concise", "structured", "prompt"];
+function jsonInput(value: unknown, depth = 0): unknown {
+  if (depth > 64) throw new Error("Request nesting is too deep");
+  if (value === null || value === undefined || typeof value === "boolean") return value;
+  if (typeof value === "number") return finiteNumber(value, "request number");
+  if (typeof value === "string") return requestText(value, 500_000);
+  if (Array.isArray(value)) { if (value.length > 1000) throw new Error("Request list is too long"); return value.map(item => jsonInput(item,depth+1)); }
+  const source = object(value,"request");
+  return Object.fromEntries(Object.entries(source).map(([key,item]) => [key,jsonInput(item,depth+1)]));
+}
+
+const magicPresets = REWRITE_PRESETS.map(preset => preset.id);
 const magicModels = ["qwen35Small", "qwen35Medium", "qwen35Large"];
 
 export function parseMagicRequest(value: unknown): MagicRewriteRequest {
@@ -139,14 +137,16 @@ export function parseMagicRequest(value: unknown): MagicRewriteRequest {
   optionalString(source, "preset");
   optionalBoolean(source, "allowInferences");
   const request: MagicRewriteRequest = {
-    text: requestText(source.text, 50_000).trim(),
+    text: requestText(source.text, 50_000),
+    operationId: source.operationId === undefined ? undefined : requestText(source.operationId,128),
+    sourceLanguage: source.sourceLanguage === undefined ? undefined : requestText(source.sourceLanguage,64),
     preset: magicPresets.includes(String(source.preset))
       ? source.preset as MagicPreset
       : "polish",
     instructions: requestText(source.instructions ?? "", 4_000).trim(),
     allowInferences: source.allowInferences === true,
   };
-  if (!request.text)
+  if (!request.text.trim())
     throw new Error("Add a transcript or draft before using Magic");
   return request;
 }
@@ -165,7 +165,7 @@ export function parseRecording(value: unknown): RecordingSubmission {
     throw new Error("The microphone returned an empty recording");
   if (wav.byteLength > 500 * 1024 * 1024)
     throw new Error("Recording is too large; keep dictation captures below 500 MB");
-  return { wav: wav as Uint8Array, durationMs };
+  return { wav: wav as Uint8Array, durationMs, sessionId: requestText(source.sessionId,128), timings: normalizeTimings(source.timings) ?? undefined, captureDiagnostics: normalizeCaptureDiagnostics(source.captureDiagnostics) ?? undefined };
 }
 
 function parseRewriteResult(value: unknown): ObjectInput | null {
@@ -177,8 +177,8 @@ function parseRewriteResult(value: unknown): ObjectInput | null {
   for (const key of ["inputCharacters", "outputCharacters"])
     if (source[key] !== undefined && finiteNumber(source[key], key) < 0)
       throw new Error(`Invalid ${key}`);
-  const text = requestText(source.text, 500_000).trim();
-  if (!text) throw new Error("A rewrite cannot be empty");
+  const text = requestText(source.text, 500_000);
+  if (!text.trim()) throw new Error("A rewrite cannot be empty");
   const processingTimeMs = source.processingTimeMs === undefined
     ? 0
     : Math.max(0, finiteNumber(source.processingTimeMs, "rewrite processing time"));
@@ -188,12 +188,51 @@ function parseRewriteResult(value: unknown): ObjectInput | null {
     model: magicModels.includes(String(source.model)) ? source.model : undefined,
     includedInferences: source.includedInferences === true,
     processingTimeMs,
+    timings: normalizeTimings(source.timings),
   };
 }
 
 const noArguments = schema(0);
 
+function stringIds(value: unknown, limit = 128, count = 500): string[] {
+ if (!Array.isArray(value) || value.length > count) throw new Error("Invalid selection list");
+ const ids = value.map(item => requestText(item,limit));
+ if (new Set(ids).size !== ids.length) throw new Error("Duplicate selection entries");
+ return ids;
+}
+
 export const ipcRequestSchemas = {
+
+  "cache:preview": noArguments, "cache:cleanup": schema(2, ([token, ids]) => [requestText(token,128), stringIds(ids)]),
+  "rules:usage": noArguments, "rules:resetUsage": noArguments,
+  "dictation:pasteLastStatus": noArguments, "dictation:cancelPasteLast": noArguments,
+  "history:batchSnapshot": noArguments, "history:stageDeletion": schema(1, ([ids]) => [stringIds(ids)]),
+  "history:undoDeletion": schema(1, ([token]) => [requestText(token,128)]),
+  "history:exportSelection": schema(2, ([ids,format]) => [stringIds(ids),requestText(format,16)]),
+  "history:encryptedExport": schema(1, ([password]) => [requestText(password,1024)]),
+  "history:encryptedRecover": schema(1, ([password]) => [requestText(password,1024)]),
+  "history:retentionPreview": schema(1, ([policy]) => [jsonInput(policy)]),
+  "history:retentionApply": schema(1, ([token]) => [requestText(token,128)]),
+  "history:setTitle": schema(2, ([id,title]) => [requestText(id,128),title === null ? null : requestText(title,512)]),
+  "history:exportTemplate": schema(2, ([id,request]) => [requestText(id,128),jsonInput(request)]),
+  "lab:chooseAudioFiles": noArguments, "lab:getJobs": noArguments,
+  "lab:loadSource": schema(1, ([path]) => [requestText(path,4096)]),
+  "lab:removeJob": schema(1, ([path]) => [requestText(path,4096)]),
+  "lab:relinkJob": schema(1, ([path]) => [requestText(path,4096)]),
+  "lab:resolveAudioFiles": schema(1, ([paths]) => [stringIds(paths,4096,50)]),
+  "lab:queueGet": noArguments, "lab:queueClearFinished": noArguments,
+  "lab:queueEnqueue": schema(1, ([path]) => [requestText(path,4096)]),
+  "lab:queuePause": schema(1, ([paused]) => { if (typeof paused !== "boolean") throw new Error("Expected pause boolean"); return [paused]; }),
+  "lab:queueMove": schema(2, ([id,direction]) => { if (direction !== -1 && direction !== 1) throw new Error("Expected move direction"); return [requestText(id,128),direction]; }),
+  "lab:queueCancel": schema(1, ([id]) => [requestText(id,128)]),
+  "lab:queueRetry": schema(1, ([id]) => [requestText(id,128)]),
+  "magic:cancelRewrite": schema(1, ([id]) => [requestText(id,128)]),
+  "paste:recovery": noArguments, "paste:copyInstead": noArguments, "paste:dismissRecovery": noArguments,
+  "profiles:manage": schema(1, ([command]) => [jsonInput(command)]),
+  "recorder:limit": schema(1, ([id]) => [requestText(id,128)]),
+  "recorder:inputChanged": schema(3, ([id,message,lost]) => { if (typeof lost !== "boolean") throw new Error("Expected lost-input boolean"); return [requestText(id,128),requestText(message,1000),lost]; }),
+  "runtime:setupLog": noArguments, "runtime:setupSnapshot": noArguments, "storage:overview": noArguments,
+
   "renderer:recoveryState": noArguments,
   "renderer:reload": noArguments,
   "renderer:controllerFailed": noArguments,
@@ -224,9 +263,9 @@ export const ipcRequestSchemas = {
   "dictation:stop": noArguments,
   "dictation:toggle": noArguments,
   "dictation:cancel": noArguments,
-  "recorder:started": noArguments,
+  "recorder:started": schema(1, ([id]) => [requestText(id,128)]),
   "recorder:ready": noArguments,
-  "recorder:failed": schema(1, ([value]) => [requestText(value, 1000)]),
+  "recorder:failed": schema(2, ([value,id]) => [requestText(value, 1000), requestText(id,128)]),
   "recorder:submit": schema(1, ([value]) => [parseRecording(value)]),
   "recorder:level": schema(1, ([value]) => [
     Math.min(1, Math.max(0, finiteNumber(value, "recording level"))),
@@ -238,8 +277,8 @@ export const ipcRequestSchemas = {
   "history:updateTranscript": schema(2, ([id, text]) => [
     requestText(id, 128), text === null ? null : requestText(text, 500_000),
   ]),
-  "history:setRewrite": schema(3, ([id, value, expected]) => [
-    requestText(id, 128), parseRewriteResult(value), requestText(expected, 500_000),
+  "history:setRewrite": schema(4, ([id, value, expected, revision]) => [
+    requestText(id, 128), parseRewriteResult(value), requestText(expected, 500_000), revision === undefined ? undefined : finiteNumber(revision,"source revision"),
   ]),
   "history:delete": schema(1, ([id]) => [requestText(id, 128)]),
   "history:clear": noArguments,
@@ -250,7 +289,7 @@ export const ipcRequestSchemas = {
   ]),
   "history:export": schema(2, ([id, format]) => {
     if (typeof format !== "string") throw new Error("Expected export format text");
-    return [requestText(id, 128), ["txt", "json"].includes(format) ? format : "txt"];
+    return [requestText(id, 128), ["txt", "json", "md"].includes(format) ? format : "txt"];
   }),
 } satisfies Record<string, RequestSchema>;
 

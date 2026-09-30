@@ -6,7 +6,7 @@ import {
 } from "../../src/importQueue";
 
 type Runner = (path: string, signal: AbortSignal) => Promise<{ id: string }>;
-type SelectedFile = { path: string; name: string; size: number };
+type SelectedFile = { path: string; name: string; size: number; sourceMtimeMs?: number };
 
 /** In-memory metadata queue. One runner remains active until it fully settles. */
 export class ImportQueue {
@@ -14,15 +14,24 @@ export class ImportQueue {
   private paused = true;
   private version = 0;
   private closed = false;
+  private durable: ImportQueueSnapshot = { version: 0, paused: true, jobs: [] };
   private active: { id: string; controller: AbortController } | null = null;
 
   constructor(
     private readonly runner: Runner,
     private readonly changed: (snapshot: ImportQueueSnapshot) => void,
-  ) {}
+    private readonly persist?: (snapshot: ImportQueueSnapshot) => void,
+    initial: ImportQueueJob[] = [],
+  ) { this.jobs = initial.map(job => ({...job})); this.durable = this.get(); }
 
   get(): ImportQueueSnapshot {
     return { version: this.version, paused: this.paused, jobs: this.jobs.map((job) => ({ ...job })) };
+  }
+
+  replace(jobs: ImportQueueJob[]): ImportQueueSnapshot {
+    this.requireOpen();
+    if (this.active) throw new Error("Wait for the current import before replacing or relinking jobs");
+    this.paused = true; this.jobs = jobs.map(job => ({...job})); this.emit(); return this.get();
   }
 
   enqueue(file: SelectedFile): ImportQueueSnapshot {
@@ -31,7 +40,8 @@ export class ImportQueue {
     if (!file || typeof file.path !== "string" || !file.path.trim() || typeof file.name !== "string" || !file.name.trim() || !Number.isFinite(file.size) || file.size < 0) {
       throw new Error("Invalid selected import file.");
     }
-    this.jobs.push({ id: randomUUID(), path: file.path, name: file.name, size: file.size, state: "queued", error: null, transcriptId: null });
+    if (this.jobs.some(job => job.path === file.path)) throw new Error("This source already has a job; retry or relink it instead");
+    this.jobs.push({ id: randomUUID(), path: file.path, name: file.name, size: file.size, sourceMtimeMs: file.sourceMtimeMs, state: "queued", error: null, transcriptId: null });
     this.emit();
     this.pump();
     return this.get();
@@ -121,6 +131,8 @@ export class ImportQueue {
 
   private emit(): void {
     this.version += 1;
+    try { this.persist?.(this.get()); this.durable = this.get(); }
+    catch (error) { this.jobs = this.durable.jobs.map(job => ({...job})); this.paused = true; throw error; }
     // A detached renderer/subscriber cannot interrupt cancellation or leave the
     // runner promise unhandled. Subscribers always receive independent clones.
     try { this.changed(this.get()); } catch { /* Subscriber is unavailable. */ }
@@ -133,7 +145,7 @@ export class ImportQueue {
     const controller = new AbortController();
     this.active = { id: job.id, controller };
     job.state = "running";
-    this.emit();
+    try { this.emit(); } catch (error) { this.active = null; throw error; }
     void this.run(job, controller);
   }
 
@@ -163,8 +175,13 @@ export class ImportQueue {
       }
       // Release ownership only after the runner promise resolves or rejects.
       this.active = null;
-      this.emit();
-      this.pump();
+      try { this.emit(); this.pump(); } catch (error) {
+        this.paused = true;
+        const current = this.jobs.find(item => item.id === job.id);
+        if (current) { current.state = "failed"; current.error = `Job metadata could not be saved. Check History before retrying: ${error instanceof Error ? error.message : String(error)}`; }
+        this.version++;
+        try { this.changed(this.get()); } catch {}
+      }
     }
   }
 }

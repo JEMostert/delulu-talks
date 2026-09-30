@@ -28,7 +28,6 @@ import {
   type DesktopPasteAdapter,
   type DesktopShortcutAdapter,
 } from "./services/desktopAdapters";
-import { PasteLastService } from "./services/pasteLast";
 import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { UpdateService } from "./services/updates";
 import { registerMainIpc } from "./ipc";

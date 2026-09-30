@@ -310,6 +310,7 @@ export type MagicModelInfo = {
 };
 
 export type AudioFileSelection = {
+  sourceMtimeMs?: number;
   path: string;
   name: string;
   size: number;
@@ -327,7 +328,9 @@ export type AudioFileMetadata = {
 };
 
 export type AudioImportJob = AudioFileSelection & {
-  state: "pending" | "running" | "done" | "failed";
+  state: "pending" | "running" | "done" | "failed" | "cancelled";
+  queueId?: string;
+  queueState?: import("./importQueue").ImportJobState;
   createdAt: number;
   updatedAt: number;
   resultId?: string;

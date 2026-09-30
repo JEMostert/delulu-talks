@@ -12,7 +12,7 @@ import { MAX_AUDIO_BATCH_FILES, MAX_AUDIO_FILE_BYTES } from "../../src/audioForm
 import type { AudioFileSelection, AudioImportJob } from "../../src/types";
 
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
-const STATES = ["pending", "running", "done", "failed"];
+const STATES = ["pending", "running", "done", "failed", "cancelled"];
 type JobChanges = Partial<Pick<AudioImportJob, "state" | "resultId" | "error">>;
 
 function boundedString(value: unknown, limit: number): value is string {
@@ -29,7 +29,7 @@ function selection(value: unknown): AudioFileSelection {
     typeof source.size !== "number" || !Number.isSafeInteger(source.size) ||
     source.size < 0 || source.size > MAX_AUDIO_FILE_BYTES
   ) throw new Error("Invalid audio job file metadata");
-  return { path: source.path, name: source.name, size: source.size };
+  return { path: source.path, name: source.name, size: source.size, ...(typeof source.sourceMtimeMs === "number" && Number.isFinite(source.sourceMtimeMs) && source.sourceMtimeMs >= 0 ? { sourceMtimeMs: source.sourceMtimeMs } : {}) };
 }
 
 function persistedJob(value: unknown): AudioImportJob {
@@ -44,6 +44,8 @@ function persistedJob(value: unknown): AudioImportJob {
   ) throw new Error("Invalid audio job status metadata");
   return {
     ...file,
+    ...(typeof source.queueId === "string" && source.queueId.length <= 128 ? { queueId: source.queueId } : {}),
+    ...(typeof source.queueState === "string" && ["queued","running","cancelling","completed","failed","cancelled"].includes(source.queueState) ? { queueState: source.queueState as AudioImportJob["queueState"] } : {}),
     state: source.state as AudioImportJob["state"],
     createdAt: source.createdAt,
     updatedAt: source.updatedAt,
@@ -83,6 +85,13 @@ export class AudioJobsService {
         { cause: error },
       );
     }
+  }
+
+  replaceQueue(jobs: import("../../src/importQueue").ImportQueueJob[]): void {
+    if (jobs.length > MAX_AUDIO_BATCH_FILES) throw new Error("Too many durable import jobs");
+    const previous = new Map(this.jobs.map(job => [job.path, job]));
+    const now = Date.now();
+    this.persist(jobs.map(job => persistedJob({ ...previous.get(job.path), path: job.path, name: job.name, size: job.size, sourceMtimeMs: job.sourceMtimeMs, createdAt: previous.get(job.path)?.createdAt ?? now, updatedAt: now, queueId: job.id, queueState: job.state, state: job.state === "completed" ? "done" : job.state === "queued" ? "pending" : job.state === "cancelling" ? "running" : job.state, resultId: job.transcriptId ?? undefined, error: job.error ?? undefined })));
   }
 
   getJobs(): AudioImportJob[] {

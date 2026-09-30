@@ -584,7 +584,7 @@ export class DictationService {
     let failure: unknown;
     try {
       const preprocessingStarted = performance.now();
-      preparedAudio = await this.prepareAudio(request.path);
+      preparedAudio = await this.prepareAudio(request.path, signal);
       checkCancellation();
       const timings: PipelineTimings = { preprocessingMs: performance.now() - preprocessingStarted };
       const payload = await this.asr.transcribe(
@@ -639,6 +639,7 @@ export class DictationService {
 
   private async prepareAudio(
     sourcePath: string,
+    signal?: AbortSignal,
   ): Promise<{ path: string; directory?: string }> {
     if (
       [".wav", ".flac", ".ogg", ".opus"].includes(
@@ -664,6 +665,8 @@ export class DictationService {
           ],
           { windowsHide: true },
         );
+        const cancel = () => { child.kill(); };
+        if (signal?.aborted) cancel(); else signal?.addEventListener("abort", cancel, { once: true });
         let stderr = "";
         let spawnError: Error | null = null;
         child.stderr.on("data", (chunk: Buffer) => {
@@ -674,6 +677,8 @@ export class DictationService {
         });
         // Wait for stdio/file handles to close before removing partial output.
         child.once("close", (code) => {
+          signal?.removeEventListener("abort", cancel);
+          if (signal?.aborted) { reject(new Error("Import cancelled")); return; }
           if (spawnError) {
             reject(new Error(
               `This format needs FFmpeg. Install ffmpeg and try again (${spawnError.message})`,
