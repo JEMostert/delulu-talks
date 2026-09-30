@@ -1,6 +1,7 @@
 import { CaptureDiagnostics } from "./CaptureDiagnostics";
 import { ExportTemplateDialog } from "./ExportTemplateDialog";
 import type { ExportTemplateRequest } from "../exportTemplates";
+import { TechnicalAddressPreview } from "./TechnicalAddressPreview";
 import { RewriteDialog } from "./RewriteDialog";
 import { IdentifierPreview } from "./IdentifierPreview";
 import { FillerPreview } from "./FillerPreview";
@@ -351,6 +352,9 @@ export function TranscriptCard({
             No calibrated confidence score is available for this transcript.
             Review the text before using it.
           </p>
+          {!editing && record.dictationMode && record.dictationMode !== "prose" && (
+            <TechnicalAddressPreview key={record.id} speech={record.text} onCopy={onCopy} />
+          )}
           {editing ? (
             <textarea
               aria-label="Correct transcript"
