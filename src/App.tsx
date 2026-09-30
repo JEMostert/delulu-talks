@@ -24,6 +24,7 @@ import { PasteRecoveryNotice } from "./components/PasteRecoveryNotice";
 import { Alert } from "./components/ui";
 import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
+import { TechnicalPage } from "./pages/TechnicalPage";
 import { ModelsPage } from "./pages/ModelsPage";
 import { VocabularyPage } from "./pages/VocabularyPage";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -45,6 +46,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
     subtitle: "Transcribe imported recordings",
   },
   models: { title: "Models", subtitle: "Speech and rewrite models, runtimes and backends" },
+  technical: { title: "Technical text", subtitle: "Literal editing · undo · explicit copy" },
   settings: {
     title: "Settings",
     subtitle: "Capture, output, runtime and application",
@@ -428,6 +430,13 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     onRun={() => w.operations.runImport(busy)}
                     onClearError={w.operations.clearImportError}
                   />
+                </div>
+              )}
+              {(visited.has("technical") || w.page === "technical") && (
+                <div hidden={w.page !== "technical"} className="mx-auto max-w-[1440px]">
+                  <TechnicalPage history={w.history} settings={w.settings} busy={busy || w.saving}
+                    onUpdateSettings={(patch) => w.saveSettings(patch, null)}
+                    rewriteStatus={w.magicStatus} onRewriteSetup={() => w.setPage("models")} />
                 </div>
               )}
               {(visited.has("models") || w.page === "models") && (

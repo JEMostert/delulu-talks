@@ -14,6 +14,8 @@ import type {
 
 export function RewriteDialog({
   text,
+  title = "Rewrite transcript",
+  description = "Preview a change before using it. Original speech stays available and text shortcuts stay exactly as saved.",
   baseline,
   sourceRevision = 0,
   sourceLanguage,
@@ -28,6 +30,8 @@ export function RewriteDialog({
   contextLabel,
 }: {
   text: string;
+  title?: string;
+  description?: string;
   baseline: string;
   sourceRevision?: number;
   sourceLanguage?: string;
@@ -72,7 +76,7 @@ export function RewriteDialog({
   const stale = source !== text || expectedOutput !== baseline || sourceRevision !== expectedRevision;
   return (
     <Modal
-      title="Rewrite transcript"
+      title={title}
       visible={visible}
       busy={busy}
       onClose={closeDialog}
@@ -113,10 +117,7 @@ export function RewriteDialog({
         </>
       }
     >
-      <p>
-        Preview a change before using it. Original speech stays available and
-        text shortcuts stay exactly as saved.
-      </p>
+      <p>{description}</p>
       {contextLabel && <p className="caption">Rewriting: {contextLabel}. This session stays attached to this transcript when you navigate or open another card.</p>}
       {stale && (
         <div className="rewrite-setup my-3 rounded-panel border border-line p-3" role="alert">
