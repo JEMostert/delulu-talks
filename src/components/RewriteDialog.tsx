@@ -59,6 +59,10 @@ export function RewriteDialog({
   const [expectedRevision, setExpectedRevision] = useState(sourceRevision);
   const [preset, setPreset] = useState<MagicPreset>("concise");
   const [instructions, setInstructions] = useState("");
+  const [contextEnabled, setContextEnabled] = useState(false);
+  const [language, setLanguage] = useState("");
+  const [fileType, setFileType] = useState("");
+  const [selection, setSelection] = useState("");
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -109,6 +113,7 @@ export function RewriteDialog({
         operationId: session.id,
         text: source,
         preset,
+        context: contextEnabled ? {language,fileType,selection} : undefined,
         sourceLanguage,
         instructions: validateRewriteInstructions(instructions),
         allowInferences: false,

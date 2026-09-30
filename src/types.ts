@@ -113,6 +113,12 @@ export type MagicStatus = RuntimeLifecycle & {
   progress?: number | null;
 };
 
+export type MagicRewriteContext = {
+  language?: string;
+  fileType?: string;
+  selection?: string;
+};
+
 export type MagicRewriteRequest = {
   operationId?: string;
   text: string;
@@ -120,6 +126,7 @@ export type MagicRewriteRequest = {
   /** Optional style request for this rewrite only; never a saved preference. Max 4,000 UTF-16 units. */
   instructions?: string;
   sourceLanguage?: string;
+  context?: MagicRewriteContext;
   allowInferences: boolean;
 };
 

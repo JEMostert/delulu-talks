@@ -1,3 +1,4 @@
+import { normalizeRewriteContext, splitTechnicalBlocks } from "../../src/rewriteContext";
 import { splitForRewrite } from "../../src/personalization";
 import { app } from "electron";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
@@ -897,6 +898,7 @@ export class AsrService {
     request: MagicRewriteRequest,
     settings: AppSettings,
   ): Promise<MagicRewriteResult> {
+    const context = normalizeRewriteContext(request.context);
     if (this.manualRewrite || (request.operationId !== undefined && this.magicOperations > 0))
       throw new Error("Wait for the active rewrite to finish");
     if (request.operationId !== undefined && !request.operationId.trim())
@@ -940,6 +942,7 @@ export class AsrService {
           "magicRewrite",
           {
             ...request,
+            context,
             text: part.text.trim(),
           } as unknown as Record<string, unknown>,
         );

@@ -1,3 +1,4 @@
+import { normalizeRewriteContext } from "../../src/rewriteContext";
 import type { MagicRewriteRequest } from "../../src/types";
 import { isMagicPreset } from "../../src/rewritePresets";
 import { validateRewriteInstructions } from "../../src/rewriteInstructions";
@@ -80,6 +81,7 @@ handle("magic:rewrite", (_event, value: unknown) => {
       ? (source.preset as MagicRewriteRequest["preset"])
       : "polish";
     const request: MagicRewriteRequest = {
+      context: normalizeRewriteContext(source.context),
       operationId: source.operationId == null ? undefined : validateText(source.operationId,128),
       text: validateText(source.text, 50_000),
       preset,
