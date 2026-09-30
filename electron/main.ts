@@ -6,6 +6,8 @@ import { join, resolve } from "node:path";
 import type { AppSettings, MagicPreset, Page, PasteRecovery, TranscriptRecord } from "../src/types";
 import { REWRITE_PRESETS } from "../src/rewritePresets";
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
+import { randomUUID } from "node:crypto";
+import { DomainError } from "../src/domainErrors";
 import { deliveredText } from "../src/transcriptText";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
@@ -655,6 +657,7 @@ async function applySettings(value: unknown): Promise<AppSettings> {
     if (
       (runtimeChanged ||
         magicRuntimeChanged ||
+        next.memoryPolicy !== previous.memoryPolicy ||
         next.magicEnabled !== previous.magicEnabled) &&
       (dictation.isActive || asr.isBusy)
     )
@@ -686,7 +689,8 @@ async function applySettings(value: unknown): Promise<AppSettings> {
     next.preloadModel !== previous.preloadModel ||
     next.preloadMagicModel !== previous.preloadMagicModel ||
     next.magicEnabled !== previous.magicEnabled ||
-    next.modelIdleMinutes !== previous.modelIdleMinutes;
+    next.modelIdleMinutes !== previous.modelIdleMinutes ||
+    next.memoryPolicy !== previous.memoryPolicy;
   if (runtimeChanged || magicRuntimeChanged || residencyChanged)
     asr.configureResidency(saved);
   if (saved.showOverlay !== previous.showOverlay) {
@@ -700,7 +704,9 @@ async function applySettings(value: unknown): Promise<AppSettings> {
 
 function assertRuntimeIdle(): void {
   if (dictation.isActive || asr.isBusy)
-    throw new Error("Finish the current recording or model operation first");
+    throw new DomainError("BUSY", "Finish the current recording or model operation first", {
+      operationId: randomUUID(), operation: "runtime:idle",
+    });
 }
 
 async function start(): Promise<void> {

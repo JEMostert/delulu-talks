@@ -30,11 +30,23 @@ class WindowsSpeech:
         self.cuda_preflight = None
         self.warmup = "not-started"
 
+        self.precision = None
+
     def status(self):
-        loaded = self.model is not None
-        return {"loaded": loaded, "model": MODEL, "device": "cuda" if loaded else None,
-                "residency": "resident" if loaded else "unloaded", "warmup": self.warmup,
-                **({"cudaPreflight": self.cuda_preflight} if self.cuda_preflight is not None else {})}
+        status = {"loaded": self.model is not None, "model": MODEL, "device": "cuda" if self.model is not None else None}
+        status.update({"residency": "resident" if self.model is not None else "unloaded", "warmup": self.warmup})
+        if self.cuda_preflight is not None:
+            status["cudaPreflight"] = self.cuda_preflight
+        if self.model is not None:
+            status["speechExecution"] = {
+                "modelId": "r2t2",
+                "backendId": "transformers-cuda",
+                "precision": self.precision,
+                "checkpoint": {"repository": MODEL, "revision": MODEL_REVISION},
+                "platform": "win32",
+                "device": "cuda",
+            }
+        return status
 
     def load(self, request):
         if self.model is not None:
@@ -64,12 +76,14 @@ class WindowsSpeech:
         converted_root = Path(cache_root or HF_HOME) / "delulu-r2t2-transformers" / CONVERSION_VERSION / MODEL_REVISION
         try:
             if (converted_root / "complete").is_file():
+                emit_progress("Loading cached converted R2T2 weights…", stage="load")
                 self.processor = Qwen3ASRProcessor.from_pretrained(converted_root)
                 dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
                 self.model = Qwen3ASRForConditionalGeneration.from_pretrained(
                     converted_root, dtype=dtype, device_map={"": "cuda"},
                 ).eval()
                 self._warmup()
+                self.precision = "bf16" if dtype == torch.bfloat16 else "fp16"
                 return self.status()
             emit_progress("Converting R2T2 for native Windows CUDA (first load only)…", stage="conversion")
             self.processor = Qwen3ASRProcessor(
@@ -111,8 +125,10 @@ class WindowsSpeech:
                 if staged.exists():
                     shutil.rmtree(staged)
             # Cache the original BF16 weights before selecting this GPU's dtype.
+            emit_progress("Loading converted R2T2 weights onto CUDA…", stage="load")
             self.model.to(device="cuda", dtype=dtype).eval()
             self._warmup()
+            self.precision = "bf16" if dtype == torch.bfloat16 else "fp16"
             return self.status()
         except BaseException:
             self.unload()
@@ -196,6 +212,7 @@ class WindowsSpeech:
         self.processor = None
         self.warmup = "not-started"
         self.cuda_preflight = None
+        self.precision = None
         gc.collect()
         torch = sys.modules.get("torch")
         with contextlib.suppress(Exception):

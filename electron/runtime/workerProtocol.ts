@@ -1,3 +1,4 @@
+import type { DownloadBytes } from "../../src/types";
 import { StringDecoder } from "node:string_decoder";
 
 export const WORKER_PROTOCOL_VERSION = 1;
@@ -15,6 +16,7 @@ export type WorkerProgress = {
   stage: string;
   detail: string;
   fraction?: number;
+  downloadBytes?: DownloadBytes;
 };
 
 function object(value: unknown, label: string): JsonObject {
@@ -73,6 +75,8 @@ export function validateWorkerRequest(value: unknown): JsonObject {
   stringField(request, "command", true, true);
   if (Buffer.byteLength(request.id as string, "utf8") > 128 || Buffer.byteLength(request.command as string, "utf8") > 64)
     throw new Error("Model worker request ID/command exceeds its byte limit");
+  if (["streamStart", "streamChunk", "streamFinalize", "streamCancel"].includes(request.command as string))
+    throw new Error("Audio streaming is not enabled by the active speech runtime; use whole-recording transcription");
   jsonValue(request);
   if (request.command === "load" || request.command === "magicLoad") stringField(request, "cacheDir");
   if (request.command === "magicLoad") {
@@ -147,6 +151,18 @@ export function validateWorkerProgress(value: unknown): WorkerProgress {
     detail: event.detail as string,
   };
   if (typeof event.fraction === "number") progress.fraction = event.fraction;
+  if (event.downloadBytes !== undefined) {
+    const bytes = object(event.downloadBytes, "download bytes");
+    if (typeof bytes.completed !== "number" || !Number.isSafeInteger(bytes.completed) || bytes.completed < 0 ||
+        (bytes.total !== null && (typeof bytes.total !== "number" || !Number.isSafeInteger(bytes.total) || bytes.total < bytes.completed)) ||
+        (bytes.kind !== "transfer" && bytes.kind !== "reconstruction"))
+      throw new Error("Model worker download counters must be nonnegative safe integers with a nullable total and known byte kind");
+    progress.downloadBytes = {
+      completed: bytes.completed,
+      total: bytes.total as number | null,
+      kind: bytes.kind,
+    };
+  }
   return progress;
 }
 

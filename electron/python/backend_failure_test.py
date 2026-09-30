@@ -124,7 +124,7 @@ class BackendFixture:
                 ensure_cuda_compatible=fake_cuda_preflight),
             "torch": self.torch,
             "numpy": types.SimpleNamespace(zeros=lambda *a, **kw: Audio(), float32="float32"),
-            "qwen_asr": types.SimpleNamespace(Qwen3ASRModel=types.SimpleNamespace(LLM=speech_model)),
+            "r2t2": types.SimpleNamespace(R2T2ASRModel=types.SimpleNamespace(LLM=speech_model)),
             "transformers": types.SimpleNamespace(AutoProcessor=Processor,
                 AutoModelForMultimodalLM=RewriteModel),
             "soundfile": types.SimpleNamespace(read=read),
@@ -184,7 +184,7 @@ class BackendFailures(unittest.TestCase):
                 self.fixture.failure = None
                 self.worker.unload()
                 self.fixture.failure = stage
-                missing = {"numpy": None} if stage == "numpy" else {"qwen_asr": None} if stage == "import" else {}
+                missing = {"numpy": None} if stage == "numpy" else {"r2t2": None} if stage == "import" else {}
                 with patch.dict(sys.modules, missing), self.assertRaises((RuntimeError, ImportError)):
                     self.worker.load({})
                 self.assertEqual(self.worker.status(), {"loaded": False, "model": None, "device": None})
@@ -333,8 +333,8 @@ class BackendFailures(unittest.TestCase):
                 model = Model()
                 healthy = types.SimpleNamespace(sampling_params=model.original, transcribe=lambda **kw: [])
                 candidates = iter([model, healthy])
-                qwen = types.SimpleNamespace(Qwen3ASRModel=types.SimpleNamespace(LLM=lambda **kw: next(candidates)))
-                with patch.dict(sys.modules, {"qwen_asr": qwen}):
+                qwen = types.SimpleNamespace(R2T2ASRModel=types.SimpleNamespace(LLM=lambda **kw: next(candidates)))
+                with patch.dict(sys.modules, {"r2t2": qwen}):
                     with self.assertRaisesRegex(RuntimeError, "warmup failed" if failed_warmup else "restore failed"):
                         self.worker.load({})
                     self.assertFalse(self.worker.status()["loaded"])
@@ -410,6 +410,7 @@ class BackendFailures(unittest.TestCase):
             "mlx_audio": types.ModuleType("mlx_audio"),
             "mlx_audio.stt": types.ModuleType("mlx_audio.stt"),
             "mlx_audio.stt.utils": types.SimpleNamespace(load_audio=load_audio, load_model=load_model),
+            "download_progress": types.SimpleNamespace(download_progress_class=lambda: object),
             "huggingface_hub": types.SimpleNamespace(snapshot_download=lambda **kw: self.temp.name),
             "huggingface_hub.constants": types.SimpleNamespace(HF_HOME=self.temp.name),
             "accelerate": types.SimpleNamespace(init_empty_weights=contextlib.nullcontext),

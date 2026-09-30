@@ -11,11 +11,12 @@ import json
 import os
 import re
 import shutil
+import time
 import uuid
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-PATTERNS = ["*.json", "*.safetensors", "*.model", "*.txt", "*.tiktoken"]
+PATTERNS = ["*.json", "*.safetensors", "*.model", "*.txt", "*.tiktoken", "*.jinja"]
 
 
 def _digest(path, expected):
@@ -125,6 +126,7 @@ def verified_snapshot(repo_id, revision, cache_dir=None, local_files_only=False,
                     raise RuntimeError("Checkpoint changed during download")
                 request = Request(metadata.location, headers={"Range": f"bytes={offset}-"} if offset else {})
                 emit_progress(f"Downloading {name} from byte {offset} of {size}", stage="download")
+                last_progress = 0.0
                 with urlopen(request, timeout=60) as response:
                     if response.status == 206:
                         content_range = response.headers.get("Content-Range", "")
@@ -143,6 +145,11 @@ def verified_snapshot(repo_id, revision, cache_dir=None, local_files_only=False,
                             if offset > size:
                                 raise RuntimeError("Checkpoint download exceeded expected size")
                             output.write(chunk)
+                            now = time.monotonic()
+                            if now - last_progress >= 0.25 or offset == size:
+                                emit_progress(f"Receiving checkpoint file {name}", stage="download",
+                                              download_bytes={"completed": offset, "total": size, "kind": "transfer"})
+                                last_progress = now
                         output.flush()
                         os.fsync(output.fileno())
             if size == 0 and not partial.exists():

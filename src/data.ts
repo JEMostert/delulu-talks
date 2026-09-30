@@ -60,6 +60,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   magicAllowInferences: false,
   preloadMagicModel: false,
   modelIdleMinutes: 15,
+  memoryPolicy: "independent",
   launchAtLogin: false,
   menuBarOnly: false,
   customWords: [],
@@ -69,6 +70,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export const MODELS: ModelInfo[] = [
   {
     id: "r2t2",
+    identity: "r2t2",
+    backendIds: ["vllm-cuda", "transformers-cuda"],
     runtime: "CUDA · vLLM / PyTorch",
     downloadSize: "~4 GB",
     hfId: "netease-youdao/Confucius4-R2T2",
@@ -98,6 +101,8 @@ export const MODELS: ModelInfo[] = [
   },
   {
     id: "r2t2Mlx",
+    identity: "r2t2",
+    backendIds: ["mlx-audio"],
     hfId: "mlx-community/Confucius4-R2T2-bf16",
     name: "R2T2",
     runtime: "MLX Audio · BF16 · Apple Silicon",

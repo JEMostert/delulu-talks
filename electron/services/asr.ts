@@ -1,7 +1,10 @@
+import { normalizeSpeechExecution } from "../../src/speechModels";
 import { splitForRewrite } from "../../src/personalization";
+import { DomainError, domainError, serializeDomainError } from "../../src/domainErrors";
+import { randomUUID } from "node:crypto";
 import { app } from "electron";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { magicModelById, modelById } from "../../src/data";
 import type {
   AppSettings,
@@ -14,16 +17,23 @@ import type {
   RuntimeSetupKind,
   RuntimeSetupLog,
   RetryAudioState,
+  SetupStage,
 } from "../../src/types";
 import type { StorageService } from "./storage";
 
 import { WorkerClient, transcriptionTimeout } from "../runtime/workerClient";
 import { SerialQueue } from "../runtime/serialQueue";
 import { RuntimeInstaller } from "../runtime/installer";
+import { runtimeEnvironment } from "../runtime/environment";
 import { speechModelForPlatform } from "../runtime/platform";
 import { privateFailureLog } from "../runtime/privateDiagnostics";
 
+function modelSetupStage(stage: string): SetupStage | null {
+  return ({ download: "model-download", load: "model-load", conversion: "model-conversion", warmup: "warmup" } as Record<string, SetupStage>)[stage] ?? null;
+}
+
 type WorkerRuntime = {
+  speechExecution?: unknown;
   loaded: boolean;
   residency?: RuntimeLifecycle["residency"];
   warmup?: RuntimeLifecycle["warmup"];
@@ -82,24 +92,13 @@ function conciseError(value: string): string {
   ).slice(0, 800);
 }
 
-class SetupRollbackError extends Error {
-  constructor(setupError: unknown, rollbackError: unknown) {
-    const message = (error: unknown) =>
-      conciseError(
-        error instanceof Error ? error.message : String(error),
-      ).slice(0, 200);
-    super(
-      `The previous runtime could not be restored. Fix the filesystem error, then retry Repair. Setup failure: ${message(setupError)}. Rollback failure: ${message(rollbackError)}.`,
-      {
-        cause: new AggregateError(
-          [setupError, rollbackError],
-          "Setup and rollback failed",
-        ),
-      },
-    );
-    this.name = "SetupRollbackError";
-  }
-}
+type SetupOperation = {
+  controller: AbortController;
+  started: boolean;
+  previousEngine: DictationStatus["engine"];
+  promise: Promise<void> | null;
+  termination?: Promise<void>;
+};
 
 export class AsrService {
   private readonly speechWorker: WorkerClient;
@@ -107,11 +106,15 @@ export class AsrService {
   private readonly speechInstaller: RuntimeInstaller;
   private readonly magicInstaller: RuntimeInstaller;
   private readonly maintenance = new SerialQueue();
+  private readonly modelOperations = new SerialQueue();
   private initializing = false;
   get isBusy(): boolean {
     return (
       this.initializing ||
+      !!this.setupPromise ||
+      !!this.magicSetupPromise ||
       this.maintenance.busy ||
+      this.modelOperations.busy ||
       this.speechWorker.busy ||
       this.magicWorker.busy ||
       !!this.loadPromise ||
@@ -148,6 +151,8 @@ export class AsrService {
   };
   private magicStatusListeners = new Set<(status: MagicStatus) => void>();
   private setupPromise: Promise<void> | null = null;
+  private speechSetup: SetupOperation | null = null;
+  private magicSetup: SetupOperation | null = null;
   private loadPromise: Promise<void> | null = null;
   private magicSetupPromise: Promise<void> | null = null;
   private magicLoadPromise: Promise<void> | null = null;
@@ -173,6 +178,7 @@ export class AsrService {
       {
         dataDirectory: storage.dataDirectory,
         venvDirectory: storage.venvDirectory,
+        kind: "speech",
       },
       null,
       () => this.workerEnvironment("speech"),
@@ -181,6 +187,7 @@ export class AsrService {
       {
         dataDirectory: storage.dataDirectory,
         venvDirectory: storage.magicVenvDirectory,
+        kind: "magic",
       },
       magicConstraints,
       () => this.workerEnvironment("magic"),
@@ -191,13 +198,16 @@ export class AsrService {
         script: this.scriptPath(),
         env: this.workerEnvironment("speech"),
       }),
-      (error) => this.fail(error),
-      (detail, event) => this.updateStatus({
+      (error) => { if (!this.speechSetup?.controller.signal.aborted) this.fail(error); },
+      (detail, event) => { if (!this.speechSetup?.controller.signal.aborted) this.updateStatus({
         detail,
+        ...(event?.command === "load" && modelSetupStage(event.stage)
+          ? { setupStage: modelSetupStage(event.stage), progress: null } : {}),
         ...(event?.command === "load" && event.stage === "warmup"
           ? { residency: "resident" as const, warmup: "warming" as const }
           : {}),
-      }),
+        downloadBytes: event?.command === "load" ? event.downloadBytes ?? null : null,
+      }); },
     );
     this.magicWorker = new WorkerClient(
       () => ({
@@ -205,8 +215,15 @@ export class AsrService {
         script: this.scriptPath(),
         env: this.workerEnvironment("magic"),
       }),
-      (error) => this.failMagic(error),
-      (detail) => this.updateMagicStatus({ detail }),
+      (error) => { if (!this.magicSetup?.controller.signal.aborted) this.failMagic(error); },
+      (detail, event) => { if (!this.magicSetup?.controller.signal.aborted) this.updateMagicStatus({
+        detail,
+        ...(event?.command === "magicLoad" && modelSetupStage(event.stage)
+          ? { setupStage: modelSetupStage(event.stage), progress: null } : {}),
+        ...(event?.command === "magicRewrite" && event.stage === "warmup"
+          ? { setupStage: "warmup" as const, warmup: "warming" as const, progress: null } : {}),
+        downloadBytes: event?.command === "magicLoad" ? event.downloadBytes ?? null : null,
+      }); },
     );
   }
 
@@ -250,22 +267,33 @@ export class AsrService {
   }
 
   private updateStatus(patch: Partial<DictationStatus>): void {
+    if ((patch.phase && patch.phase !== "error") || (patch.engine && patch.engine !== "error"))
+      patch = { ...patch, failure: null };
     this.status = {
       ...this.status,
+      ...(["unloaded", "missing", "error"].includes(patch.engine ?? "") ? { setupStage: null } : {}),
       ...(patch.engine === "unloaded" || patch.engine === "missing"
         ? UNLOADED_LIFECYCLE : {}),
       ...patch,
     };
+    if (this.status.engine !== "ready") this.status.speechExecution = null;
+    if (patch.phase !== undefined || !["preparing", "loading"].includes(this.status.phase))
+      this.status.downloadBytes = null;
     for (const listener of this.statusListeners) listener(this.getStatus());
   }
 
   private updateMagicStatus(patch: Partial<MagicStatus>): void {
+    if ((patch.phase && patch.phase !== "error") || (patch.engine && patch.engine !== "error"))
+      patch = { ...patch, failure: null };
     this.magicStatus = {
       ...this.magicStatus,
+      ...(["unloaded", "missing", "error"].includes(patch.engine ?? "") ? { setupStage: null } : {}),
       ...(patch.engine === "unloaded" || patch.engine === "missing"
         ? UNLOADED_LIFECYCLE : {}),
       ...patch,
     };
+    if (patch.phase !== undefined || !["preparing", "loading"].includes(this.magicStatus.phase))
+      this.magicStatus.downloadBytes = null;
     for (const listener of this.magicStatusListeners)
       listener(this.getMagicStatus());
   }
@@ -343,7 +371,10 @@ export class AsrService {
     if (ready && settings.preloadModel) {
       void this.loadModel(settings).catch((error) => this.fail(error));
     }
-    if (magicReady && settings.preloadMagicModel) {
+    if (
+      magicReady && settings.preloadMagicModel &&
+      settings.memoryPolicy !== "balanced"
+    ) {
       void this.loadMagic(settings).catch((error) => this.failMagic(error));
     }
   }
@@ -357,158 +388,158 @@ export class AsrService {
 
   async setup(settings: AppSettings): Promise<void> {
     if (this.setupPromise) return this.setupPromise;
-    this.shuttingDown = false;
-    this.setupPromise = this.maintenance
-      .run(() => this.performSetup(settings))
-      .then(() => {
-        this.speechInstaller.recordSetupOutcome("Model preparation completed");
-        this.speechInstaller.setupLog.finish(
-          this.speechInstaller.setupLog.activeId, "success",
-          "Runtime packages and model load/warmup completed",
-        );
-      })
-      .catch(async (error) => {
-        this.speechInstaller.recordSetupOutcome("Setup failed before completion");
-        this.speechInstaller.setupLog.finish(
-          this.speechInstaller.setupLog.activeId,
-          this.speechInstaller.isCancelled ? "cancelled" : "error",
-          setupCause(error),
-        );
-        this.fail(error);
-        if (
-          !(error instanceof SetupRollbackError) &&
-          (await this.isEnvironmentReady())
-        )
-          this.updateStatus({
-            phase: "idle",
-            engine: "unloaded",
-            message:
-              "Setup failed; your existing speech runtime is preserved. Load the speech model to continue, or retry Repair.",
-            progress: null,
-          });
-        throw error;
-      })
+    const operation: SetupOperation = {
+      controller: new AbortController(), started: false,
+      previousEngine: this.status.engine, promise: null,
+    };
+    this.speechSetup = operation;
+    this.setupPromise = this.setupRuntime("speech", settings, operation)
       .finally(() => {
         this.setupPromise = null;
-        this.applyDeferredResidency();
+        if (this.speechSetup === operation) this.speechSetup = null;
+        if (!operation.controller.signal.aborted) this.applyDeferredResidency();
       });
+    operation.promise = this.setupPromise;
     return this.setupPromise;
-  }
-
-  private async performSetup(settings: AppSettings): Promise<void> {
-    this.speechInstaller.setupLog.begin("speech");
-    this.speechInstaller.recordSetupStage("Preparing speech setup");
-    const reloadMagic =
-      settings.preloadMagicModel && (await this.isMagicEnvironmentReady());
-    await this.speechWorker.stopAndWait();
-    this.clearSpeechIdle();
-    this.updateStatus({ ...UNLOADED_LIFECYCLE });
-    await this.speechInstaller.install("speech", settings, (progress) =>
-      this.updateStatus({
-        phase: "preparing",
-        engine: "settingUp",
-        ...progress,
-      }),
-    );
-    this.updateStatus({
-      phase: "loading",
-      engine: "loading",
-      message: "Downloading and loading the speech model",
-      progress: 0.82,
-    });
-    this.speechInstaller.recordSetupStage("Downloading, loading and warming up the speech model");
-    try {
-      await this.loadModel(settings, true);
-      if (reloadMagic && this.magicStatus.engine !== "ready") {
-        this.speechInstaller.recordSetupStage("Restoring preloaded rewrite model");
-        await this.loadMagic(settings, true);
-      }
-    } catch (error) {
-      await this.speechWorker.stopAndWait();
-      try {
-        this.speechInstaller.rollback();
-      } catch (rollbackError) {
-        throw new SetupRollbackError(error, rollbackError);
-      }
-      throw error;
-    }
   }
 
   async setupMagic(settings: AppSettings): Promise<void> {
     if (this.magicSetupPromise) return this.magicSetupPromise;
-    this.shuttingDown = false;
-    this.magicSetupPromise = this.maintenance
-      .run(() => this.performMagicSetup(settings))
-      .then(() => {
-        this.magicInstaller.recordSetupOutcome("Rewrite model preparation completed");
-        this.magicInstaller.setupLog.finish(
-          this.magicInstaller.setupLog.activeId, "success",
-          "Runtime packages and rewrite model load/warmup completed",
-        );
-      })
-      .catch(async (error) => {
-        this.magicInstaller.recordSetupOutcome("Setup failed before completion");
-        this.magicInstaller.setupLog.finish(
-          this.magicInstaller.setupLog.activeId,
-          this.magicInstaller.isCancelled ? "cancelled" : "error",
-          setupCause(error),
-        );
-        this.failMagic(error);
-        if (
-          !(error instanceof SetupRollbackError) &&
-          (await this.isMagicEnvironmentReady())
-        )
-          this.updateMagicStatus({
-            phase: "idle",
-            engine: "unloaded",
-            message:
-              "Setup failed; your existing rewrite runtime is preserved. Load the rewrite model to continue, or retry Repair.",
-            progress: null,
-          });
-        throw error;
-      })
+    const operation: SetupOperation = {
+      controller: new AbortController(), started: false,
+      previousEngine: this.magicStatus.engine, promise: null,
+    };
+    this.magicSetup = operation;
+    this.magicSetupPromise = this.setupRuntime("magic", settings, operation)
       .finally(() => {
         this.magicSetupPromise = null;
-        this.applyDeferredResidency();
+        if (this.magicSetup === operation) this.magicSetup = null;
+        if (!operation.controller.signal.aborted) this.applyDeferredResidency();
       });
+    operation.promise = this.magicSetupPromise;
     return this.magicSetupPromise;
   }
 
-  private async performMagicSetup(settings: AppSettings): Promise<void> {
-    this.magicInstaller.setupLog.begin("rewrite");
-    this.magicInstaller.recordSetupStage("Preparing rewrite setup");
-    const reloadSpeech =
-      settings.preloadModel && (await this.isEnvironmentReady());
-    await this.magicWorker.stopAndWait();
-    this.clearMagicIdle();
-    this.updateMagicStatus({ ...UNLOADED_LIFECYCLE });
-    await this.magicInstaller.install("magic", settings, (progress) =>
-      this.updateMagicStatus({
-        phase: "preparing",
-        engine: "settingUp",
-        ...progress,
-      }),
-    );
-    const model = magicModelById(settings.magicModel);
-    this.updateMagicStatus({
-      phase: "loading",
-      engine: "loading",
-      message: `Downloading and loading rewrite model ${model.name}`,
-      progress: 0.82,
-    });
-    this.magicInstaller.recordSetupStage("Downloading, loading and warming up the rewrite model");
+  async cancelSetup(kind: "speech" | "magic" = "speech"): Promise<void> {
+    const operation = kind === "speech" ? this.speechSetup : this.magicSetup;
+    if (!operation) return;
+    operation.controller.abort(new Error("Runtime setup cancelled"));
+    if (kind === "speech") {
+      this.clearSpeechIdle();
+      this.updateStatus({ setupState: "cancelling", message: "Cancelling setup — releasing runtime resources…", progress: null });
+    } else {
+      this.clearMagicIdle();
+      this.updateMagicStatus({ setupState: "cancelling", message: "Cancelling rewriting setup — releasing runtime resources…", progress: null });
+    }
+    if (operation.started) await this.terminateSetup(kind, operation);
+    // The original operation owns candidate disposal and the terminal status.
+    await operation.promise;
+  }
+
+  private terminateSetup(kind: "speech" | "magic", operation: SetupOperation): Promise<void> {
+    if (!operation.termination) {
+      const installer = kind === "speech" ? this.speechInstaller : this.magicInstaller;
+      const worker = kind === "speech" ? this.speechWorker : this.magicWorker;
+      operation.termination = Promise.all([
+        installer.stopAndWait(), worker.stopAndWait(),
+      ]).then(() => undefined);
+    }
+    return operation.termination;
+  }
+
+  private async setupRuntime(kind: "speech" | "magic", settings: AppSettings, operation: SetupOperation): Promise<void> {
+    this.shuttingDown = false;
+    const installer = kind === "speech" ? this.speechInstaller : this.magicInstaller;
+    const worker = kind === "speech" ? this.speechWorker : this.magicWorker;
+    const signal = operation.controller.signal;
+    installer.setupLog.begin(kind === "speech" ? "speech" : "rewrite");
+    installer.recordSetupStage("Preparing owned runtime candidate");
+    const current = () => !signal.aborted && !this.shuttingDown && !operation.termination &&
+      (kind === "speech" ? this.speechSetup : this.magicSetup) === operation;
+    if (kind === "speech")
+      this.updateStatus({ setupState: "running", phase: "preparing", engine: "settingUp", message: "Preparing speech setup", progress: null });
+    else
+      this.updateMagicStatus({ setupState: "running", phase: "preparing", engine: "settingUp", message: "Preparing rewriting setup", progress: null });
     try {
-      await this.loadMagic(settings, true);
-      if (reloadSpeech && this.status.engine !== "ready") {
-        this.magicInstaller.recordSetupStage("Restoring preloaded speech model");
-        await this.loadModel(settings, true);
-      }
+      await this.maintenance.run(async () => {
+        try {
+          signal.throwIfAborted();
+          operation.started = true;
+          await worker.stopAndWait();
+          if (kind === "speech") this.updateStatus({ ...UNLOADED_LIFECYCLE });
+          else this.updateMagicStatus({ ...UNLOADED_LIFECYCLE });
+          signal.throwIfAborted();
+          await installer.install(kind, settings, (progress) => {
+            if (!current()) return;
+            if (kind === "speech")
+              this.updateStatus({ phase: "preparing", engine: "settingUp", ...progress });
+            else
+              this.updateMagicStatus({ phase: "preparing", engine: "settingUp", ...progress });
+          }, { signal, deferActivation: true });
+          signal.throwIfAborted();
+          // Only this setup worker sees the prepared candidate. The saved active
+          // pointer remains unchanged throughout model download/load/warmup.
+          if (kind === "speech") await this.loadModel(settings, true, current);
+          else await this.loadMagic(settings, true, current);
+          signal.throwIfAborted();
+          if (this.shuttingDown) throw new Error("Runtime setup interrupted by shutdown");
+          if (kind === "magic") {
+            // Exercise writing inference before publishing the candidate pointer.
+            // This fixed local warmup is never stored or delivered.
+            await this.request("magic", "magicRewrite", { text: "Warmup.", preset: "polish", instructions: "", allowInferences: false, warmup: true });
+          }
+          signal.throwIfAborted();
+          const runtime = await this.request<WorkerRuntime>(kind, kind === "speech" ? "status" : "magicStatus");
+          if (!runtime.loaded || runtime.warmup !== "complete") throw new Error("Candidate inference warmup did not complete; previous runtime remains selected");
+          signal.throwIfAborted();
+          if (!current()) throw new Error("Runtime candidate no longer owns setup");
+          installer.commit();
+          installer.setupLog.finish(installer.setupLog.activeId, "success", "Runtime activated after inference warmup");
+          if (kind === "magic") this.updateMagicStatus({ ...reportedLifecycle(runtime), setupStage: "ready" });
+          // Apply configured preloads after this transaction releases its
+          // reservation, without making the other runtime part of cancellation.
+          this.residencyPending = true;
+          if (kind === "speech") this.updateStatus({ setupState: "complete" });
+          else this.updateMagicStatus({ setupState: "complete" });
+        } catch (error) {
+          // Keep the maintenance reservation until children are released and
+          // the staged candidate is no longer visible to worker configuration.
+          if (operation.started) {
+            await this.terminateSetup(kind, operation);
+            installer.discard();
+            installer.resetCancellation();
+          }
+          throw error;
+        }
+      });
     } catch (error) {
-      await this.magicWorker.stopAndWait();
-      try {
-        this.magicInstaller.rollback();
-      } catch (rollbackError) {
-        throw new SetupRollbackError(error, rollbackError);
+      installer.setupLog.finish(installer.setupLog.activeId, signal.aborted ? "cancelled" : "error", signal.aborted ? "Setup cancelled; previous runtime preserved" : "Setup failed; previous runtime preserved");
+      if (signal.aborted) {
+        let installed = false;
+        try { installed = existsSync(installer.python); } catch { /* damaged activation */ }
+        const engine = operation.started ? (installed ? "unloaded" : "missing") : operation.previousEngine;
+        const patch = {
+          phase: "idle" as const, engine,
+          setupState: "cancelled" as const,
+          message: installed || !operation.started && engine !== "missing"
+            ? "Setup cancelled. Your previous runtime is preserved."
+            : "Setup cancelled. No new runtime was activated; setup is still required.",
+          detail: null, progress: null,
+        };
+        if (kind === "speech") this.updateStatus({ ...patch, ...(operation.started ? { model: null } : {}) });
+        else this.updateMagicStatus({ ...patch, ...(operation.started ? { model: null, device: null } : {}) });
+        return;
+      }
+      if (kind === "speech") {
+        this.fail(error);
+        this.updateStatus({ setupState: "failed" });
+        if (await this.isEnvironmentReady())
+          this.updateStatus({ phase: "idle", engine: "unloaded", message: "Setup failed; your existing runtime is preserved. Load it to continue, or retry Repair.", progress: null });
+      } else {
+        this.failMagic(error);
+        this.updateMagicStatus({ setupState: "failed" });
+        if (await this.isMagicEnvironmentReady())
+          this.updateMagicStatus({ phase: "idle", engine: "unloaded", message: "Setup failed; your existing Writing runtime is preserved. Load it to continue, or retry Repair.", progress: null });
       }
       throw error;
     }
@@ -530,16 +561,12 @@ export class AsrService {
     } catch {
       /* Repair must still run when the old activation record is damaged. */
     }
-    const modelCache = this.storage.modelCacheDirectory;
-    return {
-      ...process.env,
-      PYTHONUNBUFFERED: "1",
-      PYTHONIOENCODING: "utf-8",
-      HF_HOME: modelCache,
-      HF_HUB_CACHE: join(modelCache, "hub"),
-      HUGGINGFACE_HUB_CACHE: join(modelCache, "hub"),
-      PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
-    };
+    return runtimeEnvironment(
+      kind,
+      this.storage.dataDirectory,
+      this.storage.modelCacheDirectory,
+      bin,
+    );
   }
 
   private request<T>(
@@ -549,7 +576,12 @@ export class AsrService {
     timeoutMs?: number,
   ): Promise<T> {
     if (this.shuttingDown)
-      return Promise.reject(new Error("The model workers are shutting down"));
+      return Promise.reject(new Error("The model engines are shutting down"));
+    const commands = kind === "speech"
+      ? ["capabilities", "ping", "load", "unload", "status", "transcribe", "shutdown"]
+      : ["capabilities", "ping", "magicLoad", "magicUnload", "magicStatus", "magicRewrite", "shutdown"];
+    if (!commands.includes(command))
+      return Promise.reject(new Error(`${command} is not allowed in the ${kind} runtime`));
     const worker = kind === "speech" ? this.speechWorker : this.magicWorker;
     return worker.request<T>(command, payload, timeoutMs);
   }
@@ -571,7 +603,39 @@ export class AsrService {
     return capabilities;
   }
 
-  async loadModel(
+  private runModelOperation<T>(
+    settings: AppSettings,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    if (settings.memoryPolicy !== "balanced") return operation();
+    return this.modelOperations
+      .run(operation)
+      .finally(() => this.applyDeferredResidency());
+  }
+
+  private async releaseMagicForSpeech(settings: AppSettings): Promise<void> {
+    if (settings.memoryPolicy !== "balanced") return;
+    await this.magicUnloadPromise;
+    if (
+      this.magicStatus.engine === "missing" ||
+      this.magicStatus.engine === "unloaded"
+    ) return;
+    // Called inside the balanced operation queue: rewriting has finished and
+    // its result is already returned. Stopping only the worker leaves raw
+    // transcripts, buffered audio and settings in their owning services.
+    await this.performUnloadMagic(true);
+    this.updateMagicStatus({
+      message: "Magic released for speech by balanced memory policy",
+    });
+  }
+
+  async loadModel(settings: AppSettings, fromSetup = false, eligible: () => boolean = () => true): Promise<void> {
+    return this.runModelOperation(settings, () =>
+      this.performLoadModel(settings, fromSetup, eligible),
+    );
+  }
+
+  private async performLoadModel(
     settings: AppSettings,
     fromSetup = false,
     eligible: () => boolean = () => true,
@@ -585,6 +649,7 @@ export class AsrService {
     this.clearSpeechIdle();
     this.loadPromise = (async () => {
       await this.speechUnloadPromise;
+      await this.releaseMagicForSpeech(settings);
       if (!eligible()) return;
       const ready = fromSetup || (await this.isEnvironmentReady());
       if (!eligible()) return;
@@ -596,6 +661,7 @@ export class AsrService {
       this.updateStatus({
         phase: "loading",
         engine: "loading",
+        setupStage: "model-prepare",
         residency: "loading",
         warmup: "unknown",
         device: null,
@@ -617,7 +683,9 @@ export class AsrService {
         ...reportedLifecycle(runtime),
         phase: "idle",
         engine: "ready",
+        setupStage: runtime.warmup === "complete" ? "ready" : "model-loaded",
         message: runtime.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
+        speechExecution: normalizeSpeechExecution(runtime.speechExecution) ?? null,
         detail: null,
         model: settings.model,
         progress: 1,
@@ -652,10 +720,19 @@ export class AsrService {
       throw new Error("The speech model worker is shutting down");
     if (this.status.engine === "ready" && this.status.model === settings.model)
       return;
-    await this.loadModel(settings, false, eligible);
+    await this.performLoadModel(settings, false, eligible);
   }
 
   async transcribe(
+    payload: Record<string, unknown>,
+    settings: AppSettings,
+  ): Promise<Record<string, unknown>> {
+    return this.runModelOperation(settings, () =>
+      this.performTranscription(payload, settings),
+    );
+  }
+
+  private async performTranscription(
     payload: Record<string, unknown>,
     settings: AppSettings,
   ): Promise<Record<string, unknown>> {
@@ -663,6 +740,7 @@ export class AsrService {
     this.speechOperations += 1;
     this.clearSpeechIdle();
     try {
+      await this.releaseMagicForSpeech(settings);
       await this.ensureLoaded(settings);
       this.clearSpeechIdle();
       const capabilities = this.status.capabilities;
@@ -677,6 +755,9 @@ export class AsrService {
             : "This adapter advertises no language hints; repair the local speech runtime."}`,
         );
       }
+      // Capture this execution before the asynchronous request; future loads must
+      // never relabel the transcript produced by the current worker.
+      const execution = this.status.speechExecution;
       const result = await this.request<Record<string, unknown>>(
         "speech",
         "transcribe",
@@ -688,6 +769,7 @@ export class AsrService {
       );
       return {
         ...result,
+        speechExecution: execution ? structuredClone(execution) : undefined,
         processingTime: (performance.now() - started) / 1000,
       };
     } finally {
@@ -698,6 +780,8 @@ export class AsrService {
   }
 
   async unload(): Promise<void> {
+    if (this.modelOperations.busy)
+      throw new Error("Wait for the current model operation before unloading");
     if (this.speechUnloadPromise) return this.speechUnloadPromise;
     if (
       this.speechWorker.busy ||
@@ -729,7 +813,13 @@ export class AsrService {
     return this.speechUnloadPromise;
   }
 
-  async loadMagic(
+  async loadMagic(settings: AppSettings, fromSetup = false, eligible: () => boolean = () => true): Promise<void> {
+    return this.runModelOperation(settings, () =>
+      this.performLoadMagic(settings, fromSetup, eligible),
+    );
+  }
+
+  private async performLoadMagic(
     settings: AppSettings,
     fromSetup = false,
     eligible: () => boolean = () => true,
@@ -752,6 +842,7 @@ export class AsrService {
       this.updateMagicStatus({
         phase: "loading",
         engine: "loading",
+        setupStage: "model-prepare",
         residency: "loading",
         warmup: "unknown",
         device: null,
@@ -778,6 +869,7 @@ export class AsrService {
         ...reportedLifecycle(runtime),
         phase: "idle",
         engine: "ready",
+        setupStage: runtime.warmup === "complete" ? "ready" : "model-loaded",
         message: runtime.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
         model: settings.magicModel,
         progress: 1,
@@ -812,10 +904,17 @@ export class AsrService {
       this.magicStatus.model === settings.magicModel
     )
       return;
-    await this.loadMagic(settings, false, eligible);
+    await this.performLoadMagic(settings, false, eligible);
   }
 
   async rewriteMagic(
+    request: MagicRewriteRequest,
+    settings: AppSettings,
+  ): Promise<MagicRewriteResult> {
+    return this.runModelOperation(settings, () => this.performRewrite(request, settings));
+  }
+
+  private async performRewrite(
     request: MagicRewriteRequest,
     settings: AppSettings,
   ): Promise<MagicRewriteResult> {
@@ -872,7 +971,8 @@ export class AsrService {
       this.updateMagicStatus({
         phase: "idle",
         engine: "ready",
-        message: runtime.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
+        setupStage: this.magicStatus.warmup === "complete" ? "ready" : "model-loaded",
+        message: this.magicStatus.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
         progress: 1,
       });
       return {
@@ -895,12 +995,18 @@ export class AsrService {
   }
 
   async unloadMagic(): Promise<void> {
+    if (this.modelOperations.busy)
+      throw new Error("Wait for the current model operation before unloading");
+    return this.performUnloadMagic();
+  }
+
+  private async performUnloadMagic(forSpeech = false): Promise<void> {
     if (this.magicUnloadPromise) return this.magicUnloadPromise;
     if (
       this.magicWorker.busy ||
       this.magicLoadPromise ||
       this.magicOperations > 0 ||
-      !this.canIdleUnload()
+      (!forSpeech && !this.canIdleUnload())
     )
       throw new Error("Wait for rewriting to finish before unloading the rewrite model");
     this.clearMagicIdle();
@@ -951,7 +1057,7 @@ export class AsrService {
           if (!ready || !current.preloadModel || !eligible()) return;
           if (this.isBusy) this.residencyPending = true;
           else
-            void this.ensureLoaded(current, eligible).catch((error) => {
+            void this.runModelOperation(current, () => this.ensureLoaded(current, eligible)).catch((error) => {
               if (eligible()) this.fail(error);
             });
         })
@@ -959,7 +1065,7 @@ export class AsrService {
           if (eligible()) this.fail(error);
         });
     }
-    if (settings.preloadMagicModel && this.magicStatus.engine !== "error") {
+    if (settings.preloadMagicModel && settings.memoryPolicy !== "balanced" && this.magicStatus.engine !== "error") {
       this.clearMagicIdle();
       const generation = this.magicFailureGeneration;
       const eligible = () =>
@@ -969,10 +1075,10 @@ export class AsrService {
       void this.isMagicEnvironmentReady()
         .then((ready) => {
           const current = this.storage.getSettings();
-          if (!ready || !current.preloadMagicModel || !eligible()) return;
+          if (!ready || !current.preloadMagicModel || current.memoryPolicy === "balanced" || !eligible()) return;
           if (this.isBusy) this.residencyPending = true;
           else
-            void this.ensureMagicLoaded(current, eligible).catch((error) => {
+            void this.runModelOperation(current, () => this.ensureMagicLoaded(current, eligible)).catch((error) => {
               if (eligible()) this.failMagic(error);
             });
         })
@@ -1028,7 +1134,7 @@ export class AsrService {
     const settings = this.storage.getSettings();
     if (
       this.shuttingDown ||
-      settings.preloadMagicModel ||
+      (settings.preloadMagicModel && settings.memoryPolicy !== "balanced") ||
       this.magicStatus.engine !== "ready"
     )
       return;
@@ -1037,7 +1143,7 @@ export class AsrService {
       this.updateMagicStatus({ idleUnloadAt: null });
       if (
         this.shuttingDown ||
-        this.storage.getSettings().preloadMagicModel ||
+        (this.storage.getSettings().preloadMagicModel && this.storage.getSettings().memoryPolicy !== "balanced") ||
         this.magicStatus.engine !== "ready"
       )
         return;
@@ -1073,6 +1179,8 @@ export class AsrService {
 
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
+    this.speechSetup?.controller.abort(new Error("Setup cancelled during shutdown"));
+    this.magicSetup?.controller.abort(new Error("Setup cancelled during shutdown"));
     this.residencyPending = false;
     this.speechInstaller.stop();
     this.magicInstaller.stop();
@@ -1081,15 +1189,20 @@ export class AsrService {
     await Promise.all([
       this.speechWorker.stopAndWait(),
       this.magicWorker.stopAndWait(),
+      this.speechInstaller.stopAndWait(),
+      this.magicInstaller.stopAndWait(),
     ]);
     this.updateStatus({ ...UNLOADED_LIFECYCLE });
     this.updateMagicStatus({ ...UNLOADED_LIFECYCLE });
+    await Promise.allSettled([this.setupPromise, this.magicSetupPromise]);
   }
 
   fail(error: unknown): void {
+    if (error instanceof DomainError && error.cancelled) return;
     this.clearSpeechIdle();
     this.speechFailureGeneration += 1;
-    const message = error instanceof Error ? error.message : String(error);
+    const failure = domainError(error, { operationId: randomUUID(), operation: "runtime:speech" });
+    const message = failure.message;
     try {
       writeFileSync(
         join(this.storage.dataDirectory, "last-asr-error.log"),
@@ -1106,13 +1219,16 @@ export class AsrService {
       message: conciseError(message),
       detail: message,
       progress: null,
+      failure: serializeDomainError(failure),
     });
   }
 
   failMagic(error: unknown): void {
+    if (error instanceof DomainError && error.cancelled) return;
     this.clearMagicIdle();
     this.magicFailureGeneration += 1;
-    const message = error instanceof Error ? error.message : String(error);
+    const failure = domainError(error, { operationId: randomUUID(), operation: "runtime:magic" });
+    const message = failure.message;
     try {
       writeFileSync(
         join(this.storage.dataDirectory, "last-magic-error.log"),
@@ -1129,6 +1245,7 @@ export class AsrService {
       message: conciseError(message),
       detail: message,
       progress: null,
+      failure: serializeDomainError(failure),
     });
   }
 }

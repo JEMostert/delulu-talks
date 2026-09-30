@@ -1,7 +1,11 @@
+export type SetupState = "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { DictationMode } from "./technicalDictation";
 import type { ExportTemplateRequest } from "./exportTemplates";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
+import type { SpeechBackendId, SpeechExecution, SpeechIdentity } from "./speechModels";
+import type { DomainFailure } from "./domainErrors";
+export type { DomainErrorCode, DomainFailure, RetryPolicy } from "./domainErrors";
 
 export type Page =
   "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
@@ -71,12 +75,19 @@ export type AppSettings = {
   magicAllowInferences: boolean;
   preloadMagicModel: boolean;
   modelIdleMinutes: number;
+  memoryPolicy: "independent" | "balanced";
   launchAtLogin: boolean;
   menuBarOnly: boolean;
   customWords: CustomWord[];
   /** Stored contract only; no active profile or automatic behavior change. */
   personalProfiles?: PersonalProfileDocument;
 };
+
+export type SetupStage =
+  | "runtime-check" | "runtime-prepare" | "runtime-packages"
+  | "runtime-download" | "runtime-install" | "runtime-build" | "runtime-validate"
+  | "model-prepare" | "model-download" | "model-load" | "model-conversion"
+  | "warmup" | "model-loaded" | "ready";
 
 export type ModelResidency = "unknown" | "unloaded" | "loading" | "resident" | "unloading";
 export type WarmupState = "unknown" | "not-started" | "warming" | "complete";
@@ -98,7 +109,18 @@ export type RuntimeLifecycle = {
   capabilities?: BackendCapabilities | null;
 };
 
+/** Observed downloader counters; aggregate totals may change during discovery. */
+export type DownloadBytes = {
+  completed: number;
+  total: number | null;
+  kind: "transfer" | "reconstruction";
+};
+
 export type MagicStatus = RuntimeLifecycle & {
+  setupStage?: SetupStage | null;
+  downloadBytes?: DownloadBytes | null;
+  failure?: DomainFailure | null;
+  setupState?: SetupState;
   phase: MagicPhase;
   engine: EnginePhase;
   message: string;
@@ -142,6 +164,11 @@ export type RetryAudioState = {
 };
 
 export type DictationStatus = RuntimeLifecycle & {
+  setupStage?: SetupStage | null;
+  speechExecution?: SpeechExecution | null;
+  downloadBytes?: DownloadBytes | null;
+  failure?: DomainFailure | null;
+  setupState?: SetupState;
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   captureInputNotice?: string | null;
@@ -212,6 +239,8 @@ export type TranscriptRecord = {
   magicIncludedInferences?: boolean;
   magicProcessingTimeMs?: number;
   model: ModelId;
+  /** Observed at recognition time; absent on legacy records, never inferred. */
+  speechExecution?: SpeechExecution;
   language: string;
   /** Decoder hint, not a detected-language claim. Absent on legacy records. */
   requestedLanguage?: string | null;
@@ -238,6 +267,8 @@ export type ModelProvenance = {
 };
 
 export type ModelInfo = {
+  identity: SpeechIdentity;
+  backendIds: SpeechBackendId[];
   runtime: string;
   downloadSize: string;
   id: SpeechModelId;
@@ -390,10 +421,12 @@ export type DeluluApi = {
   stopDictation(): Promise<void>;
   cancelDictation(): Promise<void>;
   setupModel(): Promise<void>;
+  cancelModelSetup(): Promise<void>;
   loadModel(): Promise<void>;
   unloadModel(): Promise<void>;
   resetPythonEnvironment(): Promise<void>;
   setupMagic(): Promise<void>;
+  cancelMagicSetup(): Promise<void>;
   loadMagic(): Promise<void>;
   unloadMagic(): Promise<void>;
   rewriteMagic(request: MagicRewriteRequest): Promise<MagicRewriteResult>;
