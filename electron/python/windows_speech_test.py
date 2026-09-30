@@ -71,6 +71,7 @@ class WindowsContract(unittest.TestCase):
                 bfloat16="bf16", float16="fp16",
                 cuda=types.SimpleNamespace(is_available=lambda: self.available,
                     is_bf16_supported=lambda: True, empty_cache=lambda: self.clears.append(True))),
+            "download_progress": types.SimpleNamespace(download_progress_class=lambda: object),
             "huggingface_hub": types.SimpleNamespace(snapshot_download=download),
             "huggingface_hub.constants": types.SimpleNamespace(HF_HOME=str(self.root)),
             "safetensors": types.ModuleType("safetensors"),

@@ -135,9 +135,11 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const download = run(() => bridge.downloadUpdate());
   const install = run(() => bridge.installUpdate());
   const setup = run(() => bridge.setupModel());
+  const cancelSetup = run(() => bridge.cancelModelSetup());
   const load = run(() => bridge.loadModel());
   const unload = run(() => bridge.unloadModel());
   const setupMagic = run(() => bridge.setupMagic());
+  const cancelSetupMagic = run(() => bridge.cancelMagicSetup());
   const loadMagic = run(() => bridge.loadMagic());
   const unloadMagic = run(() => bridge.unloadMagic());
   const commands: PaletteCommand[] = [
@@ -529,6 +531,8 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   className="mx-auto max-w-[1440px]"
                 >
                   <ModelsPage
+                    onCancelSetup={cancelSetup}
+                    onCancelSetupMagic={cancelSetupMagic}
                     status={w.status}
                     magicStatus={w.magicStatus}
                     settings={w.settings}
@@ -566,6 +570,8 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   className="mx-auto max-w-[1440px]"
                 >
                   <SettingsPage
+                    onCancelSetup={cancelSetup}
+                    onCancelSetupMagic={cancelSetupMagic}
                     settings={w.settings}
                     devices={w.devices}
                     capabilities={w.capabilities}

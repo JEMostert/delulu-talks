@@ -48,6 +48,7 @@ class MlxContract(unittest.TestCase):
             float32="float32", clear_cache=lambda: self.clears.append(True),
         )
         modules = {"mlx": mlx, "mlx.core": mlx.core,
+                   "download_progress": types.SimpleNamespace(download_progress_class=lambda: object),
                    "huggingface_hub": types.SimpleNamespace(snapshot_download=download),
                    "mlx_audio": types.ModuleType("mlx_audio"),
                    "mlx_audio.stt": types.ModuleType("mlx_audio.stt"),

@@ -38,6 +38,8 @@ extraResources:
     to: python/transcription_engine.py
   - from: electron/python/worker_protocol.py
     to: python/worker_protocol.py
+  - from: electron/python/download_progress.py
+    to: python/download_progress.py
   - from: electron/overlay/pill.py
     to: overlay/pill.py
   - from: build/icon.png

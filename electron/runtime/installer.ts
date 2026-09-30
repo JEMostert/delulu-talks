@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { homedir, release } from "node:os";
 import { usesMetal } from "./platform";
-import { activateRuntime, runtimePython, rollbackRuntime } from "./location";
-import type { AppSettings } from "../../src/types";
+import { activateRuntime, runtimeDirectory, runtimePython } from "./location";
+import type { AppSettings, SetupStage } from "../../src/types";
 import { resolveRuntimeArtifacts } from "./artifacts";
 import {
   parseRuntimePrerequisiteError,
@@ -16,6 +16,7 @@ import {
   runtimeReadinessScript,
   validatePythonInterpreter,
 } from "./prerequisites";
+import { DomainError, domainError } from "../../src/domainErrors";
 import {
   createRuntimeInventory,
   inventoryBackend,
@@ -35,11 +36,12 @@ import {
 } from "./manifest";
 
 export type InstallProgress = {
+  setupStage?: SetupStage;
   message: string;
   progress: number;
   detail?: string;
 };
-type Paths = { dataDirectory: string; venvDirectory: string };
+type Paths = { dataDirectory: string; venvDirectory: string; kind?: "speech" | "magic" };
 /** Owns interpreter discovery and package installation; model loading is separate. */
 export class RuntimeInstaller {
   readonly setupLog = new SetupLog();
@@ -83,6 +85,8 @@ export class RuntimeInstaller {
   private processes = new Set<ReturnType<typeof spawn>>();
   private cancelled = false;
   private validatedPython: string | null = null;
+  private candidate: { generation: string; python: string } | null = null;
+  private operationId = randomUUID();
   constructor(
     private readonly paths: Paths,
     private readonly constraintsPath: string | null,
@@ -102,13 +106,37 @@ export class RuntimeInstaller {
     );
   }
   get python(): string {
-    return runtimePython(this.paths.venvDirectory);
+    return this.candidate?.python ?? runtimePython(this.paths.venvDirectory);
   }
+  private assertKind(kind: "speech" | "magic"): void {
+    if (this.paths.kind && this.paths.kind !== kind)
+      throw new Error(`This installer owns the ${this.paths.kind} runtime, not ${kind}`);
+    const marker = join(runtimeDirectory(this.paths.venvDirectory), "runtime-role.json");
+    // Preserve pre-marker generations and the legacy Writing environment.
+    if (!existsSync(marker)) return;
+    const role = JSON.parse(readFileSync(marker, "utf8"));
+    if (role.kind !== kind)
+      throw new Error(`The selected environment belongs to ${role.kind}, not ${kind}. Choose its dedicated runtime directory.`);
+  }
+  /** Call only after the candidate worker has completed real model warmup. */
+  commit(): void {
+    if (!this.candidate) throw new Error("No prepared runtime is available to activate");
+    if (this.cancelled) throw new Error("Runtime setup cancelled before activation. Previous runtime remains selected.");
+    this.recordSetupStage("Activating runtime after model load and warmup");
+    activateRuntime(this.paths.venvDirectory, this.candidate.generation);
+    this.candidate = null;
+    this.recordSetupStage("Validated runtime activation committed");
+  }
+
+  discard(): void { this.rollback(); }
+  resetCancellation(): void { this.cancelled = false; }
+
   rollback(): void {
-    this.recordSetupStage("Restoring the previous active runtime");
+    // Setup has not changed the durable pointer. Discard only this candidate;
+    // do not roll back an unrelated already-active generation after a failure.
+    this.recordSetupStage("Discarding candidate; previous runtime remains selected");
+    this.candidate = null;
     this.validatedPython = null;
-    rollbackRuntime(this.paths.venvDirectory);
-    this.recordSetupStage("Previous runtime activation restored");
   }
 
   private run(
@@ -119,8 +147,9 @@ export class RuntimeInstaller {
   ): Promise<string> {
     if (this.cancelled)
       return Promise.reject(
-        new Error(
+        new DomainError("CANCELLED",
           "Runtime setup cancelled. The previous environment is unchanged.",
+          { operationId: this.operationId, operation: "runtime:setup" },
         ),
       );
     const attemptId = this.setupLog.activeId;
@@ -135,6 +164,7 @@ export class RuntimeInstaller {
     return new Promise((resolve, reject) => {
       const child = spawn(program, args, {
         windowsHide: true,
+        detached: !this.windows,
         env: this.environment(),
       });
       this.processes.add(child);
@@ -147,10 +177,11 @@ export class RuntimeInstaller {
           message: "Runtime command timed out; termination requested",
           durationMs: Math.round(performance.now() - started),
         });
-        child.kill();
+        this.terminate(child);
         reject(
-          new Error(
+          new DomainError("RUNTIME_SETUP_TIMEOUT",
             "Runtime operation timed out. Check your connection and try Repair.",
+            { operationId: this.operationId, operation: "runtime:setup" },
           ),
         );
       }, timeoutMs);
@@ -159,14 +190,14 @@ export class RuntimeInstaller {
         this.setupLog.record(attemptId, {
           type: "stdout", stage, message: String(chunk),
         });
-        onOutput?.(String(chunk));
+        if (!this.cancelled) onOutput?.(String(chunk));
       });
       child.stderr.on("data", (chunk) => {
         diagnostic = `${diagnostic}${chunk}`.slice(-16_000);
         this.setupLog.record(attemptId, {
           type: "stderr", stage, message: String(chunk),
         });
-        onOutput?.(String(chunk));
+        if (!this.cancelled) onOutput?.(String(chunk));
       });
       const finish = () => {
         clearTimeout(timer);
@@ -178,7 +209,10 @@ export class RuntimeInstaller {
           durationMs: Math.round(performance.now() - started),
         });
         finish();
-        reject(error);
+        reject(domainError(error, {
+          code: "WORKER_UNAVAILABLE", operationId: this.operationId, operation: "runtime:setup",
+          message: "Could not start the runtime setup command. Check Python and try Repair.",
+        }));
       });
       child.once("close", (code, signal) => {
         this.setupLog.record(attemptId, {
@@ -188,10 +222,7 @@ export class RuntimeInstaller {
         });
         finish();
         if (this.cancelled)
-          reject(
-            new Error(
-              "Runtime setup cancelled. The previous environment is unchanged.",
-            ),
+          reject(new DomainError("CANCELLED", "Runtime setup cancelled. The previous environment is unchanged.", { operationId: this.operationId, operation: "runtime:setup" })
           );
         else if (code === 0) resolve(output.trim());
         else {
@@ -203,18 +234,45 @@ export class RuntimeInstaller {
       });
     });
   }
+  private terminate(child: ReturnType<typeof spawn>): void {
+    if (!child.pid) return;
+    if (process.platform === "win32") {
+      const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        windowsHide: true, stdio: "ignore",
+      });
+      killer.once("error", () => child.kill());
+    } else {
+      const pid = child.pid;
+      try { process.kill(-pid, "SIGTERM"); }
+      catch { child.kill(); }
+      const escalation = setTimeout(() => {
+        try { process.kill(-pid, "SIGKILL"); }
+        catch { /* this generation has exited */ }
+      }, 5000);
+      escalation.unref();
+      child.once("close", () => clearTimeout(escalation));
+    }
+  }
   stop(): void {
-    this.setupLog.record(this.setupLog.activeId, {
-      type: "stage", stage: this.setupStage,
-      message: "Setup cancellation requested; terminating installer processes",
-    });
     this.cancelled = true;
-    for (const child of this.processes) child.kill();
-    this.processes.clear();
+    for (const child of this.processes) this.terminate(child);
+  }
+  async stopAndWait(): Promise<void> {
+    const children = [...this.processes];
+    const exited = Promise.all(children.map((child) =>
+      new Promise<void>((resolve) => child.once("close", () => resolve()))));
+    this.stop();
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      exited,
+      new Promise<void>((resolve) => { timer = setTimeout(resolve, 6000); }),
+    ]);
+    clearTimeout(timer);
   }
 
   async ready(kind: "speech" | "magic"): Promise<boolean> {
     try {
+      this.assertKind(kind);
       if (!existsSync(this.python)) return false;
       if (this.validatedPython === `${kind}:${this.python}`) return true;
       await this.run(
@@ -291,8 +349,30 @@ export class RuntimeInstaller {
     kind: "speech" | "magic",
     settings: AppSettings,
     publish: (progress: InstallProgress) => void,
+    options: { signal?: AbortSignal; deferActivation?: boolean } = {},
   ): Promise<void> {
+    options.signal?.throwIfAborted();
+    const cancel = () => this.stop();
+    options.signal?.addEventListener("abort", cancel, { once: true });
+    this.operationId = randomUUID();
+    try {
+      await this.installCandidate(kind, settings, publish);
+    } catch (reason) {
+      throw domainError(reason, { operationId: this.operationId, operation: `runtime:setup:${kind}` });
+    } finally {
+      options.signal?.removeEventListener("abort", cancel);
+    }
+  }
+
+  private async installCandidate(
+    kind: "speech" | "magic",
+    settings: AppSettings,
+    publish: (progress: InstallProgress) => void,
+  ): Promise<void> {
+    if (this.paths.kind && this.paths.kind !== kind)
+      throw new Error(`This installer owns the ${this.paths.kind} runtime, not ${kind}`);
     this.cancelled = false;
+    this.candidate = null;
     this.validatedPython = null;
     const metal = kind === "speech" && this.metal;
     if (
@@ -309,16 +389,24 @@ export class RuntimeInstaller {
       args: string[],
       message: string,
       progress: number,
+      setupStage: SetupStage = "runtime-prepare",
     ) => {
       this.recordSetupStage(message);
-      publish({ message, progress });
+        publish({ message, progress, setupStage });
       return this.run(program, args, (output) => {
         const detail = output.trim().split(/\r?\n/).at(-1)?.slice(-350);
-        if (detail) publish({ message, progress, detail });
+        if (setupStage === "runtime-packages" || setupStage === "runtime-download" || setupStage === "runtime-install" || setupStage === "runtime-build") {
+          for (const line of output.split(/\r?\n/).map((value) => value.trim())) {
+            if (/^(Downloading|Using cached) /.test(line)) setupStage = "runtime-download";
+            else if (/^Installing collected packages:/.test(line)) setupStage = "runtime-install";
+            else if (/^(Building wheel|Building wheels|Preparing metadata)/.test(line)) setupStage = "runtime-build";
+          }
+        }
+        if (detail) publish({ message, progress, detail, setupStage });
       });
     };
     this.recordSetupStage("Checking your Python environment");
-    publish({ message: "Checking your Python environment", progress: 0.05 });
+    publish({ message: "Checking your Python environment", progress: 0.05, setupStage: "runtime-check" });
     mkdirSync(this.paths.dataDirectory, { recursive: true });
     const generation = randomUUID();
     const candidate = join(this.paths.venvDirectory, "generations", generation);
@@ -388,6 +476,7 @@ export class RuntimeInstaller {
         ["-m", "pip", ...pipArguments],
         message,
         progress,
+        "runtime-packages",
       );
     };
     await installPackages(
@@ -439,12 +528,14 @@ export class RuntimeInstaller {
       ["-m", "pip", "check"],
       "Checking package compatibility",
       0.72,
+      "runtime-validate",
     );
     await stage(
       candidatePython,
       ["-c", this.readiness(kind)],
       "Validating the new runtime before switching",
       0.76,
+      "runtime-validate",
     );
     this.recordSetupStage("Recording installed package versions");
     const versions = await this.run(
@@ -462,6 +553,7 @@ export class RuntimeInstaller {
     publish({
       message: "Recording the runtime dependency inventory",
       progress: 0.78,
+      setupStage: "runtime-validate",
     });
     let observation: string;
     try {
@@ -491,15 +583,22 @@ export class RuntimeInstaller {
       observation,
     );
     writeRuntimeInventory(candidate, inventory);
+    writeFileSync(
+      join(candidate, "runtime-role.json"),
+      JSON.stringify({ kind, revision: RUNTIME_REVISION }),
+      { mode: 0o600 },
+    );
     if (this.cancelled)
-      throw new Error(
+      throw new DomainError("CANCELLED",
         "Runtime setup cancelled. The previous environment is unchanged.",
+        { operationId: this.operationId, operation: "runtime:setup" },
       );
-    this.recordSetupStage("Activating the validated runtime generation");
-    activateRuntime(this.paths.venvDirectory, generation);
+    this.recordSetupStage("Candidate imports validated; awaiting model load and warmup");
+    this.candidate = { generation, python: candidatePython };
     publish({
-      message: "Runtime installed. Preparing your model…",
+      message: "Runtime candidate prepared. Previous runtime stays selected until model warmup succeeds…",
       progress: 0.8,
+      setupStage: "model-prepare",
     });
   }
 }
