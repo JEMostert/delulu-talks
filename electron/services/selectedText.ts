@@ -1,5 +1,6 @@
 import { clipboard } from "electron";
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { SelectedTextSession } from "../../src/selectedText";
 
@@ -9,6 +10,7 @@ const run = (...args: string[]) => new Promise<string>((resolve,reject) => {
   execFile("xdotool",args,{timeout:2000,maxBuffer:16_384},(error,stdout) => error ? reject(error) : resolve(stdout.trim()));
 });
 type Destination = { window: string; pid: string };
+const EDITORS = new Set(["code","code-insiders","codium","kate","kwrite","gedit","xed","mousepad","leafpad","geany","pluma","sublime_text"]);
 /** X11 only. Unsupported desktops do not substitute existing clipboard contents. */
 export class SelectedTextService {
   readonly supported = process.platform === "linux" && process.env.XDG_SESSION_TYPE?.toLowerCase() === "x11";
@@ -25,6 +27,8 @@ export class SelectedTextService {
     if (!/^\d+$/.test(window)) throw new Error("Focused window identity was not reported.");
     const pid = await run("getwindowpid",window);
     if (!/^\d+$/.test(pid) || Number(pid) === process.pid) throw new Error("Select text in another application first.");
+    const executable = readFileSync(`/proc/${pid}/comm`,"utf8").trim();
+    if (!EDITORS.has(executable)) throw new Error("This native workflow accepts supported text editors only; terminal and unknown applications use manual copy. Capture in VS Code, Kate, Gedit or another listed editor.");
     return {window,pid};
   }
   private async verify(destination: Destination): Promise<void> {

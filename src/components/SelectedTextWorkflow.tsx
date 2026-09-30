@@ -20,10 +20,11 @@ export function SelectedTextWorkflow({status,onSetup}: {status:MagicStatus;onSet
   },[]);
   return <>
     <button className="secondary-button" onClick={() => setPreferences(true)}>Selected-text rewrite</button>
+    {state?.error && !preferences && <span role="alert" className="field-error">{state.error}</span>}
     {notice && <span role="status" className="caption">{notice}</span>}
     {preferences && <Modal title="Selected text from another application" busy={busy} onClose={() => setPreferences(false)} footer={<button className="secondary-button" disabled={busy} onClick={() => setPreferences(false)}>Close</button>}>
       <p>Enable the shortcut explicitly, select text in another application, then press Ctrl+Shift+R. Delulu captures that selection and opens an original → rewrite preview. Applying it is a separate action.</p>
-      <p className="caption mt-3">Current native support: Linux X11 with xdotool. Wayland, Windows and macOS use the editor workflow or manually entered text. Native behavior has not been verified. Rich clipboard content is left untouched; capture refuses when it cannot preserve the original formats.</p>
+      <p className="caption mt-3">Current native support: Linux X11 with xdotool and an explicitly recognized text editor (VS Code/Codium, Kate/KWrite, Gedit/Xed, Mousepad/Leafpad, Geany/Pluma or Sublime). Terminal and unknown applications use manual copy. Wayland, Windows and macOS use the editor workflow or manually entered text. Native behavior has not been verified. Rich clipboard content is left untouched; capture refuses when it cannot preserve the original formats.</p>
       <p className="caption mt-3">The shortcut temporarily copies the selection and restores your plain-text clipboard if it still belongs to this operation. Replacement returns to the captured window and copies its selection again to check for changes before sending Ctrl+V. Focus or selection mismatches leave the preview available for manual copy. No command is executed and Enter is never sent.</p>
       {(error || state?.error) && <p role="alert" className="field-error">{error ?? state?.error}</p>}
       <button className="primary-button mt-3" disabled={busy || !state || (!state.supported && !state.enabled)} onClick={async () => {
