@@ -136,9 +136,18 @@ export function HistoryRetention({
           <p className="mt-2 text-sm text-muted">
             Limits: {preview.policy.maxAgeDays === null ? "unlimited age" : `${preview.policy.maxAgeDays} days`} and {preview.policy.maxCount === null ? "unlimited count" : `newest ${preview.policy.maxCount} records`}. Preview calculated {new Date(preview.previewedAt).toLocaleString()}.
           </p>
+          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm" aria-label="Retention effects">
+            <dt>Original transcripts removed</dt><dd>{preview.effects.originals}</dd>
+            <dt>Personalized variants removed</dt><dd>{preview.effects.personalized}</dd>
+            <dt>Corrections removed</dt><dd>{preview.effects.corrections}</dd>
+            <dt>Rewrites removed</dt><dd>{preview.effects.rewrites}</dd>
+            <dt>Imported-file references removed</dt><dd>{preview.effects.importedReferences}</dd>
+            <dt>Source audio files deleted</dt><dd>{preview.effects.audioFilesDeleted}</dd>
+          </dl>
           <p className="mt-3 text-sm">
-            Removal is permanent and deletes each selected record’s original transcript, personalized text, correction, rewrite and history metadata together. Export anything you want to keep before applying. Imported source audio files, model cache, runtimes and other settings are preserved.
+            Removal is permanent and deletes each selected record’s original transcript, personalized text, correction, rewrite and history metadata together. Export anything you want to keep before applying. Imported source audio files, model cache, runtimes and other settings are preserved. Any source-file reference stored with a removed record is removed from history; the external audio stays where you saved it.
           </p>
+          <p className="mt-2 text-sm text-muted">Previously exported files and existing backups are separate copies and are not erased by retention. This is not a secure-erasure operation.</p>
           <p className="mt-2 text-sm text-muted">If history changes, apply will stop and ask you to preview again. Retained records keep all their text and provenance.</p>
           {preview.affected.length === 0 ? (
             <p className="mt-4">No saved records match these limits. Nothing will be removed.</p>

@@ -27,6 +27,7 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { OperationResumeNotice } from "./components/OperationResumeNotice";
 import { RewriteDialog } from "./components/RewriteDialog";
 import { PasteRecoveryNotice } from "./components/PasteRecoveryNotice";
+import { HistoryDeletionNotice } from "./components/HistoryDeletionNotice";
 import { Alert } from "./components/ui";
 import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
@@ -128,6 +129,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
     createTranscriptCommands(w);
   const transcriptActions = {
     ...baseTranscriptActions,
+    onCancelRewrite: (operationId: string) => bridge.cancelRewrite(operationId),
     onOpenRewrite: (record: Parameters<typeof w.operations.openRewrite>[0]) => w.operations.openRewrite(record, w.page),
   };
   const rewrite = w.operations.rewriteOperation;
@@ -302,6 +304,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           onDownload={download}
           onInstall={install}
         />
+        <HistoryDeletionNotice state={w.historyDeletion} onUndo={w.undoDeletion} onHistory={() => w.setPage("history")} />
         {w.ready && <ServiceRecovery recovery={w.serviceRecovery} />}
         {w.status.phase === "loading" && (
           <div
@@ -499,6 +502,9 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     onViewChange={w.setHistoryView}
                     {...transcriptActions}
                     onClear={onClearHistory}
+                    onExportSelection={w.exportSelection}
+                    onDeleteSelection={w.deleteSelection}
+                    deletionPending={w.historyDeletion?.phase === "pending"}
                   />
                 </div>
               )}
@@ -511,10 +517,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     {...transcriptActions}
                     history={w.history}
                     busy={busy}
-                    operation={w.operations.importOperation}
-                    onChoose={w.operations.chooseImport}
-                    onRun={() => w.operations.runImport(busy)}
-                    onClearError={w.operations.clearImportError}
                   />
                 </div>
               )}

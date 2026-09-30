@@ -11,7 +11,7 @@ import { registerSettingsIpc } from "./settings";
 import type { IpcDependencies } from "./types";
 import { registerUpdatesIpc } from "./updates";
 
-export function registerMainIpc(dependencies: IpcDependencies): void {
+export function registerMainIpc(dependencies: IpcDependencies) {
   const registrar = createIpcRegistrar(dependencies.getMainWindow);
   registerRendererIpc(registrar, dependencies);
   registerSettingsIpc(registrar, dependencies);
@@ -20,7 +20,8 @@ export function registerMainIpc(dependencies: IpcDependencies): void {
   registerPasteIpc(registrar, dependencies);
   registerUpdatesIpc(registrar, dependencies);
   registerHistoryIpc(registrar, dependencies);
-  registerLabIpc(registrar, dependencies);
+  const lab = registerLabIpc(registrar, dependencies);
   registerProjectVocabularyIpc(registrar, dependencies);
   registerSelectedTextIpc(registrar, dependencies);
+  return lab;
 }

@@ -1,3 +1,4 @@
+import { assertPersistedSchema, versionPersistedRecord } from "./persistedSchema";
 import { ruleConflict, ruleKind } from "./personalization";
 import type { CustomWord } from "./types";
 
@@ -32,7 +33,8 @@ export function parseVocabularyBundle(raw: string): VocabularyBundle {
   const ids = new Set<string>();
   const rules = bundle.rules.map((value, index): CustomWord => {
     const row = object(value, `Rule ${index + 1}`);
-    if (Object.keys(row).some((key) => !["id", "kind", "term", "soundsLike", "replacement", "enabled"].includes(key)))
+    assertPersistedSchema(row, "rule");
+    if (Object.keys(row).some((key) => !["schemaVersion", "id", "kind", "term", "soundsLike", "replacement", "enabled"].includes(key)))
       throw new Error(`Rule ${index + 1} contains unsupported fields.`);
     const id = text(row.id, `Rule ${index + 1} id`, 128, true);
     if (id !== id.trim() || ids.has(id)) throw new Error(`Rule ${index + 1} has a padded or duplicate id.`);
@@ -47,13 +49,13 @@ export function parseVocabularyBundle(raw: string): VocabularyBundle {
     if (typeof row.enabled !== "boolean") throw new Error(`Rule ${index + 1} enabled must be true or false.`);
     if (row.kind === "shortcut" && !replacement.trim()) throw new Error(`Rule ${index + 1} has an empty text shortcut.`);
     if (row.kind === "correction" && replacement !== "") throw new Error(`Rule ${index + 1} correction must not contain a shortcut replacement.`);
-    return { id, kind: row.kind, term, soundsLike, replacement, enabled: row.enabled };
+    return { schemaVersion: 1, id, kind: row.kind, term, soundsLike, replacement, enabled: row.enabled };
   });
   return { schemaVersion: 1, rules };
 }
 
 export function serializeVocabularyBundle(words: CustomWord[]): string {
-  const raw = JSON.stringify({ schemaVersion: 1, rules: words.map((word) => ({ ...word, kind: ruleKind(word) })) }, null, 2) + "\n";
+  const raw = JSON.stringify({ schemaVersion: 1, rules: words.map((word) => versionPersistedRecord({ ...word, kind: ruleKind(word) }, "rule")) }, null, 2) + "\n";
   parseVocabularyBundle(raw);
   return raw;
 }

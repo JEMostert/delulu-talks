@@ -1,6 +1,7 @@
 import { normalizeRewriteContext, splitTechnicalBlocks } from "../../src/rewriteContext";
 import { normalizeSpeechExecution } from "../../src/speechModels";
 import { splitForRewrite } from "../../src/personalization";
+import { normalizeTimings } from "../../src/pipelineTimings";
 import { DomainError, domainError, serializeDomainError } from "../../src/domainErrors";
 import { randomUUID } from "node:crypto";
 import { app } from "electron";
@@ -761,8 +762,10 @@ export class AsrService {
     this.speechOperations += 1;
     this.clearSpeechIdle();
     try {
+      const loadStarted = performance.now();
       await this.releaseMagicForSpeech(settings);
       await this.ensureLoaded(settings);
+      const speechLoadMs = performance.now() - loadStarted;
       this.clearSpeechIdle();
       const capabilities = this.status.capabilities;
       if (!capabilities) {
@@ -776,6 +779,7 @@ export class AsrService {
             : "This adapter advertises no language hints; repair the local speech runtime."}`,
         );
       }
+      const requestStarted = performance.now();
       // Capture this execution before the asynchronous request; future loads must
       // never relabel the transcript produced by the current worker.
       const execution = this.status.speechExecution;
@@ -788,8 +792,14 @@ export class AsrService {
         },
         transcriptionTimeout(payload.durationMs),
       );
+      const speechRequestMs = performance.now() - requestStarted;
       return {
         ...result,
+        timings: normalizeTimings({
+          ...normalizeTimings(result.timings),
+          speechLoadMs,
+          speechRequestMs,
+        }),
         speechExecution: execution ? structuredClone(execution) : undefined,
         processingTime: (performance.now() - started) / 1000,
       };
@@ -1015,7 +1025,9 @@ export class AsrService {
     this.clearMagicIdle();
     try {
       this.throwIfRewriteCancelled(operation);
+      const loadStarted = performance.now();
       await this.ensureMagicLoaded(settings, () => true, operation);
+      const rewriteLoadMs = performance.now() - loadStarted;
       this.throwIfRewriteCancelled(operation);
       this.clearMagicIdle();
       const model = magicModelById(settings.magicModel);
@@ -1028,12 +1040,14 @@ export class AsrService {
       this.throwIfRewriteCancelled(operation);
       const output: string[] = [];
       let processingTimeMs = 0;
+      let rewritingMs = 0;
       for (const part of parts) {
         this.throwIfRewriteCancelled(operation);
         if (part.protected || !part.text.trim()) {
           output.push(part.text);
           continue;
         }
+        const requestStarted = performance.now();
         const result = await this.request<MagicRewriteResult & Partial<WorkerRuntime>>(
           "magic",
           "magicRewrite",
@@ -1043,6 +1057,7 @@ export class AsrService {
             text: part.text.trim(),
           } as unknown as Record<string, unknown>,
         );
+        rewritingMs += performance.now() - requestStarted;
         this.throwIfRewriteCancelled(operation);
         if (result.residency !== undefined || result.warmup !== undefined || result.device !== undefined) {
           this.updateMagicStatus({
@@ -1072,6 +1087,7 @@ export class AsrService {
       return {
         model: settings.magicModel,
         processingTimeMs,
+        timings: normalizeTimings({ rewriteLoadMs, rewritingMs }),
         inputCharacters: request.text.length,
         includedInferences: request.allowInferences,
         preset: request.preset,
@@ -1306,11 +1322,13 @@ export class AsrService {
     const failure = domainError(error, { operationId: randomUUID(), operation: "runtime:speech" });
     const message = failure.message;
     try {
+      if (this.storage.getSettings().keepHistory) {
       writeFileSync(
         join(this.storage.dataDirectory, "last-asr-error.log"),
         privateFailureLog("speech", error, this.speechWorker.stderr),
         { encoding: "utf8", mode: 0o600 },
       );
+      }
     } catch {
       /* diagnostics are best-effort */
     }
@@ -1333,11 +1351,13 @@ export class AsrService {
     const failure = domainError(error, { operationId: randomUUID(), operation: "runtime:magic" });
     const message = failure.message;
     try {
+      if (this.storage.getSettings().keepHistory) {
       writeFileSync(
         join(this.storage.dataDirectory, "last-magic-error.log"),
         privateFailureLog("magic", error, this.magicWorker.stderr),
         { encoding: "utf8", mode: 0o600 },
       );
+      }
     } catch {
       /* diagnostics are best-effort */
     }

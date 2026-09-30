@@ -4,6 +4,12 @@ import { StringDecoder } from "node:string_decoder";
 export const WORKER_PROTOCOL_VERSION = 1;
 const PRESETS = new Set(["polish", "concise", "structured", "prompt", "bullet-points", "professional-message"]);
 const MAGIC_MODELS = new Set(["qwen35Small", "qwen35Medium", "qwen35Large"]);
+// Keep aligned with the shared PipelineTimings contract; unknown stages are omitted.
+const TIMING_FIELDS = new Set([
+  "captureEndMs", "preprocessingMs", "speechLoadMs", "speechRequestMs",
+  "backendPreprocessingMs", "inferenceMs", "rewriteLoadMs", "rewritingMs",
+  "clipboardMs", "pasteMs",
+]);
 type JsonObject = Record<string, unknown>;
 export type WorkerResponse =
   | { protocolVersion: 1; id: string; ok: true; result: unknown }
@@ -167,6 +173,14 @@ export function validateWorkerProgress(value: unknown): WorkerProgress {
 }
 
 export function validateWorkerResult(command: string, value: unknown): void {
+  const resultObject = object(value, "result");
+  if ("timings" in resultObject) {
+    const timings = object(resultObject.timings, "timings");
+    for (const key of Object.keys(timings)) {
+      if (!TIMING_FIELDS.has(key)) throw new Error(`Invalid model worker timing field: ${key}`);
+      numberField(timings, key, true);
+    }
+  }
   const statusCommands = ["ping", "status", "load", "unload", "magicStatus", "magicLoad", "magicUnload"];
   if (command === "capabilities") {
     const result = object(value, "capability result");

@@ -1,6 +1,7 @@
 import type { SelectedTextApi } from "./selectedText";
 export type SetupState = "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { DictationMode } from "./technicalDictation";
+import type { ImportQueueSnapshot } from "./importQueue";
 import type { ExportTemplateRequest } from "./exportTemplates";
 import type { ActivePersonalProfile, CaptureProfileSnapshot, ProfileActivationCommand } from "./activePersonalProfile";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
@@ -34,7 +35,21 @@ export type TranscriptSource = "dictation" | "file";
 export type PasteShortcut = "standard" | "terminal";
 export type ExportFormat = "txt" | "json" | "md";
 
+export type HistoryDeletionState = {
+  token: string;
+  ids: string[];
+  deadline: number;
+  phase: "pending" | "failed";
+  error?: string;
+};
+export type HistoryBatchSnapshot = {
+  deletion: HistoryDeletionState | null;
+  records: TranscriptRecord[];
+};
+export type DictationFormatting = "preserve" | "spoken";
+
 export type CustomWord = {
+  schemaVersion?: 1;
   kind?: "correction" | "shortcut";
   /** Omitted for legacy/global rules; scoped rules require a matching language. */
   language?: string;
@@ -48,6 +63,7 @@ export type CustomWord = {
 };
 
 export type AppSettings = {
+  schemaVersion?: 1;
   workflowVersion: 1;
   onboardingComplete: boolean;
   theme: "system" | "light" | "dark";
@@ -56,6 +72,7 @@ export type AppSettings = {
   model: SpeechModelId;
   language: string;
   dictationMode: DictationMode;
+  dictationFormatting: DictationFormatting;
   pythonCommand: string;
   inputDeviceId: string;
   inputDeviceLabel: string;
@@ -154,7 +171,21 @@ export type MagicRewriteRequest = {
   allowInferences: boolean;
 };
 
+export type PipelineTimings = {
+  captureEndMs?: number;
+  preprocessingMs?: number;
+  speechLoadMs?: number;
+  speechRequestMs?: number;
+  backendPreprocessingMs?: number;
+  inferenceMs?: number;
+  rewriteLoadMs?: number;
+  rewritingMs?: number;
+  clipboardMs?: number;
+  pasteMs?: number;
+};
+
 export type MagicRewriteResult = RuntimeLifecycle & {
+  timings?: PipelineTimings;
   preset?: MagicPreset;
   text: string;
   model: MagicModelId;
@@ -210,12 +241,23 @@ export type HistoryRetentionPolicy = {
   maxCount: number | null;
 };
 
+export type HistoryRetentionEffects = {
+  originals: number;
+  personalized: number;
+  corrections: number;
+  rewrites: number;
+  importedReferences: number;
+  /** Retention removes transcript records only, never source audio files. */
+  audioFilesDeleted: 0;
+};
+
 export type HistoryRetentionPreview = {
   token: string;
   policy: HistoryRetentionPolicy;
   previewedAt: number;
   totalSaved: number;
   retainedCount: number;
+  effects: HistoryRetentionEffects;
   affected: { record: TranscriptRecord; reason: "age" | "count" | "ageAndCount" }[];
 };
 
@@ -235,6 +277,11 @@ export type CaptureDiagnostics = {
  * Add score/uncertainty UI only with a backend calibration contract.
  */
 export type TranscriptRecord = {
+  /** Never automatically persisted, even if history is enabled later. */
+  sessionOnly?: boolean;
+  dictationFormatting?: DictationFormatting;
+  timings?: PipelineTimings;
+  schemaVersion?: 1;
   id: string;
   title?: string | null;
   createdAt: number;
@@ -309,9 +356,33 @@ export type MagicModelInfo = {
 };
 
 export type AudioFileSelection = {
+  sourceMtimeMs?: number;
   path: string;
   name: string;
   size: number;
+};
+
+export type AudioFileMetadata = {
+  durationSeconds: number | null;
+  channels: number | null;
+  sampleRate: number | null;
+  decoder: "soundfile" | "FFmpeg";
+  decoderReady: boolean;
+  decoderDetail: string;
+  estimatedPcmBytes: number | null;
+  processingTimeEstimate: string;
+};
+
+export type AudioImportJob = AudioFileSelection & {
+  state: "pending" | "running" | "done" | "failed" | "cancelled";
+  queueId?: string;
+  queueState?: import("./importQueue").ImportJobState;
+  createdAt: number;
+  updatedAt: number;
+  resultId?: string;
+  error?: string;
+  sourceAvailable?: boolean;
+  sourceError?: string;
 };
 
 export type LabRequest = {
@@ -329,6 +400,7 @@ export type RecorderCommand = {
 
 export type RecordingSubmission = {
   sessionId: string;
+  timings?: PipelineTimings;
   wav: Uint8Array;
   durationMs: number;
   captureDiagnostics?: CaptureDiagnostics;
@@ -405,6 +477,8 @@ export type DeluluApi = SelectedTextApi & {
   cleanupModelCache(token: string, ids: string[]): Promise<ModelCacheCleanupResult>;
   getRuleUsage(): Promise<RuleUsage>;
   resetRuleUsage(): Promise<RuleUsage>;
+  exportEncryptedHistory(passphrase: string): Promise<string | null>;
+  recoverEncryptedHistory(passphrase: string): Promise<string | null>;
   getRendererRecoveryState(): Promise<RendererRecoveryState>;
   reloadWorkspace(): Promise<void>;
   rendererControllerFailed(): Promise<void>;
@@ -465,6 +539,11 @@ export type DeluluApi = SelectedTextApi & {
   ): Promise<TranscriptRecord>;
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
+  getHistoryBatchSnapshot(): Promise<HistoryBatchSnapshot>;
+  stageHistoryDeletion(ids: string[]): Promise<HistoryDeletionState>;
+  undoHistoryDeletion(token: string): Promise<void>;
+  onHistoryBatchChanged(callback: (snapshot: HistoryBatchSnapshot) => void): () => void;
+  exportHistorySelection(ids: string[], format: ExportFormat): Promise<string | null>;
   previewHistoryRetention(policy: HistoryRetentionPolicy): Promise<HistoryRetentionPreview>;
   applyHistoryRetention(token: string): Promise<string[]>;
   onHistoryRetentionApplied(callback: (removedIds: string[]) => void): () => void;
@@ -474,6 +553,21 @@ export type DeluluApi = SelectedTextApi & {
   refreshProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
   clearProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
   chooseAudioFile(): Promise<AudioFileSelection | null>;
+  inspectAudioFile(path: string): Promise<AudioFileMetadata>;
+  chooseAudioFiles(): Promise<AudioFileSelection[]>;
+  resolveAudioFiles(files: File[]): Promise<AudioFileSelection[]>;
+  getAudioJobs(): Promise<AudioImportJob[]>;
+  loadAudioSource(path: string): Promise<{ bytes: Uint8Array; mime: string }>;
+  removeAudioJob(path: string): Promise<void>;
+  relinkAudioJob(path: string): Promise<AudioImportJob | null>;
+  getImportQueue(): Promise<ImportQueueSnapshot>;
+  enqueueImport(path: string): Promise<ImportQueueSnapshot>;
+  pauseImportQueue(paused: boolean): Promise<ImportQueueSnapshot>;
+  moveImportJob(id: string, direction: -1 | 1): Promise<ImportQueueSnapshot>;
+  cancelImportJob(id: string): Promise<ImportQueueSnapshot>;
+  retryImportJob(id: string): Promise<ImportQueueSnapshot>;
+  clearFinishedImports(): Promise<ImportQueueSnapshot>;
+  onImportQueue(callback: (snapshot: ImportQueueSnapshot) => void): () => void;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   exportTranscriptTemplate(

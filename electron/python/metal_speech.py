@@ -119,6 +119,7 @@ class MetalSpeech:
                 chunk_duration=CHUNK_SECONDS,
                 temperature=0.0, verbose=False,
             )
+            inference_finished = time.perf_counter()
         finally:
             # Upstream clears its decode cache on successful chunks only.
             # Release allocator buffers after failed generations as well.
@@ -140,7 +141,11 @@ class MetalSpeech:
                 **language_metadata,
                 "duration": len(samples) / SAMPLE_RATE,
                 "processingTime": finished - started,
-                "inferenceTime": finished - inference_started}
+                "inferenceTime": finished - inference_started,
+                "timings": {
+                    "backendPreprocessingMs": (inference_started - started) * 1000,
+                    "inferenceMs": (inference_finished - inference_started) * 1000,
+                }}
 
     def unload(self):
         loaded = self.model is not None

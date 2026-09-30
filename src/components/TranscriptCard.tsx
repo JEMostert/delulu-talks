@@ -1,6 +1,7 @@
 import { CaptureDiagnostics } from "./CaptureDiagnostics";
 import { ExportTemplateDialog } from "./ExportTemplateDialog";
 import type { ExportTemplateRequest } from "../exportTemplates";
+import { PipelineTimingDetails } from "./PipelineTimingDetails";
 import { TechnicalAddressPreview } from "./TechnicalAddressPreview";
 import { RewriteDialog } from "./RewriteDialog";
 import { IdentifierPreview } from "./IdentifierPreview";
@@ -529,6 +530,10 @@ export function TranscriptCard({
               </button>
             </div>
           )}
+          {record.dictationFormatting === "spoken" && (
+            <p className="caption">Explicit spoken formatting applied; original recognition remains in Speech.</p>
+          )}
+          <PipelineTimingDetails timings={record.timings} />
           {onExport && (
             <div className="export-row mt-3.5 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted [&_.tool-button]:min-h-[28px] [&_.tool-button]:px-2 [&_.tool-button]:py-[5px] [&_svg]:size-3">
               <span>Export</span>

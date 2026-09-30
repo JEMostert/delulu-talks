@@ -1,5 +1,6 @@
-import { bridge } from "../bridge";
 import { useEffect, useId, useRef, useState } from "react";
+import { PipelineTimingDetails } from "./PipelineTimingDetails";
+import { bridge } from "../bridge";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
 import { MAX_REWRITE_INSTRUCTIONS, validateRewriteInstructions } from "../rewriteInstructions";
@@ -112,10 +113,10 @@ export function RewriteDialog({
     try {
       const preview = await onRewrite({
         operationId: session.id,
+        sourceLanguage,
         text: source,
         preset,
         context: contextEnabled ? {language,fileType,selection} : undefined,
-        sourceLanguage,
         instructions: validateRewriteInstructions(instructions),
         allowInferences: false,
       });
@@ -188,9 +189,6 @@ export function RewriteDialog({
                 setError(null);
                 try {
                   if (await onApply(result, expectedOutput, expectedRevision)) closeDialog();
-                  const applied = await onApply(result, expectedOutput);
-                  if (!mounted.current) return;
-                  if (applied) onClose();
                   else
                     setError(
                       "Could not apply this rewrite. The transcript may have changed; close this preview and review the current result.",
@@ -372,6 +370,7 @@ export function RewriteDialog({
           source before generating a preview.
         </p>
       )}
+      {result && <PipelineTimingDetails timings={result.timings} />}
     </Modal>
   );
 }

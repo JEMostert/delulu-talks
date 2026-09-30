@@ -619,6 +619,10 @@ class Worker:
             "duration": len(wav) / 16000.0,
             "processingTime": finished - started,
             "inferenceTime": finished - inference_started,
+            "timings": {
+                "backendPreprocessingMs": (inference_started - started) * 1000,
+                "inferenceMs": (finished - inference_started) * 1000,
+            },
         }
 
     def capabilities(self, engine: str) -> dict[str, Any]:

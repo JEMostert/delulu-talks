@@ -1,3 +1,4 @@
+import { emptyImportQueue } from "./importQueue";
 import { activatePersonalProfile } from "./activePersonalProfile";
 import { changePersonalProfiles } from "./personalProfileCommands";
 import { emptyProjectVocabulary } from "./projectVocabulary";
@@ -74,6 +75,8 @@ export const previewApi: DeluluApi = {
   async cleanupModelCache() {
     return desktopOnly();
   },
+  async exportEncryptedHistory() { return desktopOnly(); },
+  async recoverEncryptedHistory() { return desktopOnly(); },
   async getRendererRecoveryState() {
     return { canReload: true, reason: null, canStopRecording: false };
   },
@@ -341,6 +344,11 @@ export const previewApi: DeluluApi = {
   async clearHistory() {
     demoHistory = [];
   },
+  async getHistoryBatchSnapshot() { return { deletion: null, records: demoHistory }; },
+  async stageHistoryDeletion(_ids) { return desktopOnly(); },
+  async undoHistoryDeletion(_token) { return desktopOnly(); },
+  onHistoryBatchChanged(_callback) { return () => undefined; },
+  async exportHistorySelection(_ids, _format) { return desktopOnly(); },
   async chooseProjectIdentifier() { return desktopOnly(); },
   async getProjectVocabulary() { return emptyProjectVocabulary(); },
   async selectProjectVocabulary() { return desktopOnly(); },
@@ -349,6 +357,27 @@ export const previewApi: DeluluApi = {
   async chooseAudioFile(): Promise<AudioFileSelection | null> {
     return desktopOnly();
   },
+  async inspectAudioFile(_path: string) {
+    throw new Error("Media inspection requires Electron");
+  },
+  async getAudioJobs() { return desktopOnly(); },
+  async loadAudioSource(_path: string) { return desktopOnly(); },
+  async removeAudioJob(_path: string) { return desktopOnly(); },
+  async relinkAudioJob(_path: string) { return desktopOnly(); },
+  async chooseAudioFiles(): Promise<AudioFileSelection[]> {
+    return desktopOnly();
+  },
+  async resolveAudioFiles(_files: File[]): Promise<AudioFileSelection[]> {
+    return desktopOnly();
+  },
+  async getImportQueue() { return emptyImportQueue(); },
+  async enqueueImport() { return desktopOnly(); },
+  async pauseImportQueue() { return desktopOnly(); },
+  async moveImportJob() { return desktopOnly(); },
+  async cancelImportJob() { return desktopOnly(); },
+  async retryImportJob() { return desktopOnly(); },
+  async clearFinishedImports() { return emptyImportQueue(); },
+  onImportQueue() { return () => {}; },
   async runLab(_request: LabRequest) {
     throw new Error("Audio file transcription requires Electron");
   },

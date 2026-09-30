@@ -3,6 +3,7 @@ import { ProfileActivationControls } from "../components/ProfileActivationContro
 import type { ProfileActivationCommand } from "../activePersonalProfile";
 import { PersonalProfiles } from "../components/PersonalProfiles";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
+import { EncryptedHistory } from "../components/EncryptedHistory";
 import { ProjectVocabulary } from "../components/ProjectVocabulary";
 import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
@@ -213,6 +214,28 @@ export function SettingsPage(props: Props) {
                 "Interpret spoken formatting commands",
                 busy,
               )}
+            </SettingRow>
+            <SettingRow
+              title="Dictation formatting"
+              description={
+                "Optional commands for English (en) and Dutch (nl) microphone dictation. " +
+                "Say “insert comma” or “insert new paragraph”; in Dutch, “voeg komma in” or “voeg nieuwe alinea in”. " +
+                "Imported audio and raw recognition stay unchanged. Quotes, code and shortcut blocks stay literal."
+              }
+            >
+              <select
+                aria-label="Dictation formatting"
+                value={s.dictationFormatting ?? "preserve"}
+                disabled={saving || busy}
+                onChange={(e) =>
+                  save({
+                    dictationFormatting: e.target.value as AppSettings["dictationFormatting"],
+                  })
+                }
+              >
+                <option value="preserve">Keep recognized punctuation</option>
+                <option value="spoken">Explicit spoken formatting commands</option>
+              </select>
             </SettingRow>
             <SettingRow
               icon={Keyboard}
@@ -495,7 +518,7 @@ export function SettingsPage(props: Props) {
             <SettingRow
               icon={ShieldCheck}
               title="Keep local history"
-              description="Save transcript text on this device. Turning this off stops new saves; existing history stays until you clear it."
+              description="Save transcript text on this device. When off, keep only the newest 20 session results within 8 MiB of text; the newest oversized result is kept whole. Session edits and rewrites stay in memory until exit. Existing saved history stays until cleared."
             >
               {toggle("keepHistory", "Keep local history")}
             </SettingRow>
@@ -645,6 +668,7 @@ export function SettingsPage(props: Props) {
       )}
       {tab === "maintenance" && (
         <>
+          <EncryptedHistory />
           <section className="settings-group">
             <div className="group-heading">
               <h3>Appearance</h3>
