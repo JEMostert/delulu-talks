@@ -8,11 +8,11 @@ The [architecture decision records](decisions/README.md) explain the current tra
 
 ## Boundaries
 
-- `src/pages/HomePage.tsx` is the settings-first Controls workspace. It exposes capture, transcription, writing and delivery settings alongside a latest-output inspector. Microphone enumeration runs here and on Settings.
+- `src/components/OceanController.tsx` provides the persistent icon-only capture controls. `QuickSettings.tsx` opens essential preferences; `OceanBackground.tsx` renders a bounded procedural GPU ocean without React frame updates. `src/ocean.css` defines the shell and working sheets.
 - `src/App.tsx` assembles the shell and pages. `hooks/useWorkspace.ts` owns subscriptions, serialized settings patches, transcript actions and feedback. `hooks/useTheme.ts` applies system/light/dark appearance.
 - `src/components/ui` supplies shared switches, setting rows, alerts, empty states and native modal dialogs. `TranscriptCard` owns review/edit/restore/remember-word interactions for both Controls and History.
 - `src/index.css` defines semantic light/dark tokens and reusable controls; Tailwind utilities in the components handle shell and page layouts. All pages remain usable in compact desktop windows.
-- Visited pages remain mounted for the current workspace so drafts and long-running file operations survive navigation. The standalone Writing workspace has been removed. Rewrite preview/apply/undo belongs to shared transcript review; model installation belongs to Models. No cloud draft storage is used.
+- Secondary pages are lazy loaded. Visited pages use React Activity to preserve drafts while suspending hidden effects; capture and submitted backend operations remain owned outside these views. The standalone Writing workspace has been removed. Rewrite preview/apply/undo belongs to shared transcript review; model installation belongs to Models. No cloud draft storage is used.
 - `src/bridge.ts` is the typed Electron boundary. `src/preview.ts` contains explicitly labeled browser sample data. Native actions in preview explain that the desktop app is required; preview does not pretend to run inference.
 - `electron/main.ts` owns lifecycle, tray, shortcuts, IPC registration and settings side effects. IPC accepts only the main window's top frame; the renderer has context isolation, sandboxing and no Node integration. Native file selections are allowlisted for Speech Lab.
 - `electron/services/dictation.ts` owns capture and delivery state. The microphone controller serializes commands, handles cancellation during pending permissions, and flushes AudioWorklet samples before producing mono 16 kHz PCM WAV.

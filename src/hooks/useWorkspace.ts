@@ -201,16 +201,74 @@ export function useWorkspace() {
       .catch((reason) => {
         if (isCurrent()) report(reason);
       });
+    // Optional services recover independently; slow update/device/rewrite reads
+    // must not hold a usable speech controller behind their eight-second timeout.
+    const optional = <T>(
+      name: string,
+      service: RecoveryService,
+      request: () => Promise<T>,
+      apply: (value: T) => void,
+      fail?: () => void,
+    ) => {
+      void read(name, request).then(
+        (value) => {
+          if (isCurrent() && !received.has(name)) apply(value);
+        },
+        (reason) => {
+          if (!isCurrent() || received.has(name)) return;
+          serviceRecovery.failed(service, reason);
+          fail?.();
+        },
+      );
+    };
+    optional(
+      "rewriting status",
+      "rewriting",
+      () => bridge.getMagicStatus(),
+      setMagicStatus,
+      () =>
+        setMagicStatus({
+          phase: "error",
+          engine: "error",
+          message: "Rewriting is unavailable. Dictation can still be used.",
+        }),
+    );
+    optional(
+      "shortcut status",
+      "shortcut",
+      () => bridge.getShortcutStatus(),
+      setShortcutStatus,
+      () =>
+        setShortcutStatus((previous) => ({
+          ...previous,
+          registered: false,
+          message: "Shortcut status is unavailable. Use the Record button.",
+        })),
+    );
+    optional(
+      "platform capabilities",
+      "platform",
+      () => bridge.getCapabilities(),
+      setCapabilities,
+    );
+    optional(
+      "update status",
+      "updates",
+      () => bridge.getUpdateStatus(),
+      setUpdateStatus,
+      () =>
+        setUpdateStatus((previous) => ({
+          ...previous,
+          phase: "error",
+          message: "Could not read update status",
+        })),
+    );
     void Promise.allSettled([
       read("settings", () => bridge.getSettings()),
       read("speech status", () => bridge.getStatus()),
-      read("rewriting status", () => bridge.getMagicStatus()),
-      read("shortcut status", () => bridge.getShortcutStatus()),
       read("transcript history", () => bridge.getHistoryBatchSnapshot()),
-      read("platform capabilities", () => bridge.getCapabilities()),
-      read("update status", () => bridge.getUpdateStatus()),
     ])
-      .then(([next, speech, magic, shortcut, records, platform, update]) => {
+      .then(([next, speech, records]) => {
         if (!isCurrent()) return;
         readingHistory = false;
         if (next.status === "rejected" || records.status === "rejected") {
@@ -252,42 +310,6 @@ export function useWorkspace() {
               message:
                 "Could not read speech engine status. Retry speech status.",
             });
-          }
-        }
-        if (!received.has("rewriting status")) {
-          if (magic.status === "fulfilled") setMagicStatus(magic.value);
-          else {
-            serviceRecovery.failed("rewriting", magic.reason);
-            setMagicStatus({
-              phase: "error",
-              engine: "error",
-              message: "Rewriting is unavailable. Dictation can still be used.",
-            });
-          }
-        }
-        if (!received.has("shortcut status")) {
-          if (shortcut.status === "fulfilled")
-            setShortcutStatus(shortcut.value);
-          else {
-            serviceRecovery.failed("shortcut", shortcut.reason);
-            setShortcutStatus((previous) => ({
-              ...previous,
-              registered: false,
-              message: "Shortcut status is unavailable. Use the Record button.",
-            }));
-          }
-        }
-        if (platform.status === "fulfilled") setCapabilities(platform.value);
-        else serviceRecovery.failed("platform", platform.reason);
-        if (!received.has("update status")) {
-          if (update.status === "fulfilled") setUpdateStatus(update.value);
-          else {
-            serviceRecovery.failed("updates", update.reason);
-            setUpdateStatus((previous) => ({
-              ...previous,
-              phase: "error",
-              message: "Could not read update status",
-            }));
           }
         }
         setReady(true);

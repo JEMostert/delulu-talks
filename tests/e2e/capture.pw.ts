@@ -14,7 +14,9 @@ test.beforeEach(async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
   await identifySyntheticMicrophone(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Dismiss setup" }).click();
+  await expect(
+    page.getByRole("button", { name: "Start dictation", exact: true }),
+  ).toBeEnabled();
 });
 
 test("stop delivers the final partial worklet batch before releasing capture", async ({

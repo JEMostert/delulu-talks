@@ -81,56 +81,60 @@ export function ImportQueue() {
       <div>
         <h3>Import queue</h3>
         <p className="caption">
-          {queue.jobs.length}/{IMPORT_QUEUE_LIMIT} jobs · Saved source/job
-          metadata. Reopening starts paused; source audio stays in place.
+          {queue.jobs.length}/{IMPORT_QUEUE_LIMIT} files
         </p>
       </div>
-      <div className="flex gap-2 flex-wrap">
-        <button
-          className="secondary-button"
-          disabled={disabled}
-          onClick={() =>
-            void command(() => bridge.pauseImportQueue(!queue.paused))
-          }
-        >
-          {queue.paused ? <Play /> : <Pause />}{" "}
-          {queue.paused ? "Resume queue" : "Pause queue"}
-        </button>
-        <button
-          className="secondary-button"
-          disabled={disabled || !finished}
-          onClick={() => void command(() => bridge.clearFinishedImports())}
-        >
-          Clear finished
-        </button>
-        {!ready && (
+      {(!!queue.jobs.length || !ready) && (
+        <div className="flex gap-2 flex-wrap">
           <button
             className="secondary-button"
-            disabled={pending}
-            onClick={() => void command(() => bridge.getImportQueue())}
+            disabled={disabled}
+            onClick={() =>
+              void command(() => bridge.pauseImportQueue(!queue.paused))
+            }
           >
-            <RotateCcw /> Reload queue
+            {queue.paused ? <Play /> : <Pause />}{" "}
+            {queue.paused ? "Resume queue" : "Pause queue"}
           </button>
-        )}
-      </div>
-      <p className="text-muted text-[12px]">
-        {queue.paused
-          ? active
-            ? "Queue paused; current work finishes before the next job can start."
-            : "Queue paused. Resume to process queued files one at a time."
-          : "Files are processed one at a time. Pausing lets current work finish."}{" "}
-        Cancellation stops media conversion where possible. Native inference may
-        need to settle; cancelled results are discarded.
-      </p>
+          <button
+            className="secondary-button"
+            disabled={disabled || !finished}
+            onClick={() => void command(() => bridge.clearFinishedImports())}
+          >
+            Clear finished
+          </button>
+          {!ready && (
+            <button
+              className="secondary-button"
+              disabled={pending}
+              onClick={() => void command(() => bridge.getImportQueue())}
+            >
+              <RotateCcw /> Reload queue
+            </button>
+          )}
+        </div>
+      )}
+      {!!queue.jobs.length && (
+        <details className="disclosure">
+          <summary>{queue.paused ? "Paused" : "Processing"}</summary>
+          <p className="text-muted text-[12px]">
+            {queue.paused
+              ? active
+                ? "Queue paused; current work finishes before the next job can start."
+                : "Queue paused. Resume to process queued files one at a time."
+              : "Files are processed one at a time. Pausing lets current work finish."}{" "}
+            Cancellation stops media conversion where possible. Native inference
+            may need to settle; cancelled results are discarded.
+          </p>
+        </details>
+      )}
       {error && (
         <p className="field-error break-words" role="alert">
           {error}
         </p>
       )}
       {ready && !queue.jobs.length && (
-        <p className="caption">
-          Choose or drop source files to create queued jobs.
-        </p>
+        <p className="caption">No files queued.</p>
       )}
       <ol className="content-stack" aria-label="Import jobs">
         {queue.jobs.map((job) => {

@@ -16,7 +16,7 @@ const STAGES: Record<SetupStage, string> = {
   "model-conversion": "Converting model weights",
   warmup: "Exercising inference warmup",
   "model-loaded": "Model loaded; warmup not yet exercised",
-  ready: "Ready — inference warmup completed",
+  ready: "Ready",
 };
 
 function formatBytes(bytes: number) {
@@ -86,18 +86,8 @@ export function ModelSetupStatus({
                   ? " · total unavailable"
                   : ` / ${formatBytes(bytes.total)} reported total`}
               </span>
-              . Reported total may change as more files are discovered.
             </p>
-          ) : (
-            <p className="caption">Byte totals unavailable for this setup.</p>
-          )}
-          <p className="caption">
-            Runtime packages and model files are separate stages. Cached files
-            may be reused. Byte counters show observed transfers when available;
-            the setup stage indicator is indeterminate. Readiness requires a
-            successful backend inference warmup, not a completed download or
-            progress percentage.
-          </p>
+          ) : null}
         </section>
       )}
       {!settingUp &&
@@ -108,8 +98,8 @@ export function ModelSetupStatus({
             {status.warmup === "complete"
               ? STAGES.ready
               : kind === "rewrite"
-                ? "Model load completed; inference warmup has not been reported complete. Rewriting exercises inference on the first actual request."
-                : "Speech model load completed, but inference warmup was not reported complete. Readiness is not established."}
+                ? "Loaded · checked on your first rewrite"
+                : "Loaded · warmup not confirmed"}
           </p>
         )}
       {failed && (
@@ -120,14 +110,17 @@ export function ModelSetupStatus({
               disabled={busy}
               onClick={onRepair}
             >
-              {kind === "speech" ? "Repair" : "Repair rewriting"}
+              Fix setup
             </button>
           }
         >
           {status.message}
         </Alert>
       )}
-      <RuntimeSetupLog kind={kind} />
+      <details>
+        <summary>Setup log</summary>
+        <RuntimeSetupLog kind={kind} />
+      </details>
     </>
   );
 }

@@ -145,10 +145,7 @@ export function ProfileActivationControls({
           Saved profiles use a newer schema and cannot be activated here.
         </p>
       )}
-      <p className="caption">
-        Switching replaces the settings below only after confirmation. Saving or
-        renaming a profile never activates it.
-      </p>
+
       {error && (
         <p role="alert" className="control-warning">
           {error}

@@ -8,10 +8,7 @@ import {
   type TranscriptActions,
 } from "../components/TranscriptCard";
 import { Alert } from "../components/ui";
-import {
-  MAX_AUDIO_BATCH_FILES,
-  SUPPORTED_AUDIO_EXTENSIONS,
-} from "../audioFormats";
+import { MAX_AUDIO_BATCH_FILES } from "../audioFormats";
 import type {
   AudioFileMetadata,
   AudioImportJob,
@@ -43,7 +40,7 @@ export function LabPage({
     }
   }
   useEffect(() => {
-    void reload();
+    if (window.delulu) void reload();
     const stop = bridge.onImportQueue(() => {
       void reload();
     });
@@ -99,15 +96,6 @@ export function LabPage({
   return (
     <div className="content-stack">
       {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
-      <section className="view-toolbar">
-        <div>
-          <h2>Audio files</h2>
-          <span className="caption">
-            Durable source references and a paused-on-restart queue. Original
-            media stays in place.
-          </span>
-        </div>
-      </section>
       <button
         className="file-drop flex items-center gap-3 p-5 border border-dashed border-line rounded-xl text-left"
         disabled={pending || busy}
@@ -123,12 +111,9 @@ export function LabPage({
       >
         {pending ? <LoaderCircle className="spin" /> : <FileAudio />}
         <span>
-          Choose or drop audio and video
+          Drop audio or choose files
           <br />
-          <small>
-            {SUPPORTED_AUDIO_EXTENSIONS.join(", ").toUpperCase()} · up to{" "}
-            {MAX_AUDIO_BATCH_FILES} retained jobs
-          </small>
+          <small>Audio & video · up to {MAX_AUDIO_BATCH_FILES} files</small>
         </span>
         <Upload />
       </button>

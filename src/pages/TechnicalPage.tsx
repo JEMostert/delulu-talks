@@ -1,5 +1,12 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Copy, Download, Redo2, Undo2 } from "lucide-react";
+import {
+  Copy,
+  Download,
+  Redo2,
+  Undo2,
+  IndentIncrease,
+  Trash2,
+} from "lucide-react";
 import { RewriteDialog } from "../components/RewriteDialog";
 import { rawTechnicalSelection } from "../technicalSelection";
 import { bridge } from "../bridge";
@@ -233,186 +240,75 @@ export function TechnicalPage({
 
   return (
     <div className="content-stack">
-      <section className="card">
-        <div className="section-heading">
-          <h2>Technical text buffer</h2>
-        </div>
-        <p className="mt-3 text-sm text-muted">
-          Edit literal text with its indentation, punctuation and Unicode
-          intact. Inserting a transcript uses its recognition original, leaving
-          the transcript unchanged. Text is never executed or automatically
-          pasted.
-        </p>
-        <div className="mt-4 flex flex-wrap items-end gap-3">
-          <label className="field min-w-0 flex-1">
-            Recognition original to insert
-            <select
-              value={source?.id ?? ""}
-              disabled={!history.length || composing.current}
-              onChange={(event) => setSourceId(event.target.value)}
-            >
-              {!history.length && (
-                <option value="">No transcripts available</option>
-              )}
-              {history.map((record) => (
-                <option key={record.id} value={record.id}>
-                  {new Date(record.createdAt).toLocaleString()} ·{" "}
-                  {record.sourceName ?? "Dictation"}
-                </option>
-              ))}
-            </select>
-          </label>
+      <section className="technical-editor">
+        <div className="editor-toolbar">
           <button
-            className="secondary-button"
-            disabled={!source?.text || composing.current}
-            onClick={prepareInsertion}
-          >
-            Prepare insertion preview
-          </button>
-        </div>
-        {source && (
-          <details className="mt-3">
-            <summary>Preview recognition original</summary>
-            <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-xs">
-              {source.text}
-            </pre>
-          </details>
-        )}
-        {pending && (
-          <section
-            className="mt-4 rounded-lg border border-line p-4"
-            aria-label="Pending technical insertion"
-          >
-            <h3>Prepared insertion</h3>
-            <p className="mt-2 text-xs text-muted">{pending.label}</p>
-            <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-xs">
-              {pending.text}
-            </pre>
-            <p className="mt-3 text-sm">
-              {pending.target.start === pending.target.end
-                ? "Insert at the captured caret."
-                : "Replace the captured selection."}{" "}
-              Editing the draft or moving its selection requires a fresh
-              preview.
-            </p>
-            {!buffer.isTargetCurrent(pending.target) && (
-              <p className="mt-3 text-sm" role="status">
-                The buffer or selection changed. Prepare a new insertion
-                preview; this one cannot be applied.
-              </p>
-            )}
-            <div className="runtime-actions mt-3">
-              <button
-                className="primary-button"
-                disabled={
-                  composing.current || !buffer.isTargetCurrent(pending.target)
-                }
-                onClick={applyInsertion}
-              >
-                Apply insertion
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => setPending(null)}
-              >
-                Cancel preview
-              </button>
-            </div>
-          </section>
-        )}
-        <div className="runtime-actions mt-4">
-          <button
-            className="tool-button"
+            className="sheet-icon"
+            aria-label="Undo"
+            title="Undo"
             disabled={!buffer.canUndo || composing.current}
             onClick={() => {
               buffer.undo();
               publish(true);
             }}
           >
-            <Undo2 /> Undo
+            <Undo2 />
           </button>
           <button
-            className="tool-button"
+            className="sheet-icon"
+            aria-label="Redo"
+            title="Redo"
             disabled={!buffer.canRedo || composing.current}
             onClick={() => {
               buffer.redo();
               publish(true);
             }}
           >
-            <Redo2 /> Redo
+            <Redo2 />
           </button>
           <button
-            className="tool-button"
+            className="sheet-icon"
+            aria-label="Insert tab"
+            title="Insert tab"
             disabled={composing.current}
             onClick={() => insert("\t")}
           >
-            Insert tab
+            <IndentIncrease />
           </button>
           <button
-            className="tool-button"
+            className="sheet-icon"
+            aria-label="Clear draft"
+            title="Clear draft"
             disabled={!snapshot.text || composing.current}
             onClick={() => setClear(true)}
           >
-            Clear draft…
+            <Trash2 />
+          </button>
+          <button
+            className="sheet-icon"
+            aria-label="Copy draft"
+            title="Copy"
+            disabled={copying || !snapshot.text || composing.current}
+            onClick={() => void copy()}
+          >
+            <Copy />
+          </button>
+          <button
+            className="sheet-icon"
+            aria-label="Download text"
+            title="Download"
+            disabled={!snapshot.text || composing.current}
+            onClick={download}
+          >
+            <Download />
           </button>
         </div>
-        <div className="runtime-actions mt-3">
-          <button
-            className="tool-button"
-            disabled={composing.current}
-            aria-keyshortcuts="Control+Alt+I Meta+Alt+I"
-            onClick={() => replaceToken("identifier")}
-          >
-            Replace last identifier
-          </button>
-          <button
-            className="tool-button"
-            disabled={composing.current}
-            aria-keyshortcuts="Control+Alt+W Meta+Alt+W"
-            onClick={() => replaceToken("word")}
-          >
-            Correct word
-          </button>
-          <button
-            className="tool-button"
-            disabled={composing.current}
-            aria-keyshortcuts="Control+Alt+Enter Meta+Alt+Enter"
-            onClick={insertNewline}
-          >
-            Insert newline
-          </button>
-          <button
-            className="tool-button"
-            disabled={
-              busy ||
-              composing.current ||
-              snapshot.selectionStart === snapshot.selectionEnd
-            }
-            aria-keyshortcuts="Control+Alt+R Meta+Alt+R"
-            onClick={rewriteSelection}
-          >
-            Rewrite selection
-          </button>
-          <button
-            className="tool-button"
-            disabled={busy || switchingMode || composing.current}
-            aria-keyshortcuts="Control+Alt+P Meta+Alt+P"
-            onClick={() => void returnToProse()}
-          >
-            {switchingMode ? "Switching…" : "Return to prose"}
-          </button>
-        </div>
-        <p className="mt-2 text-xs text-muted">
-          Dictation mode: {settings.dictationMode ?? "prose"}. In the editor,
-          use Ctrl/⌘+Alt+I for the last identifier, +W for a word, +Enter for a
-          newline, +P for prose, +R to rewrite a selection. Replacement previews
-          require confirmation and remain undoable.
-        </p>
-        <label className="field mt-4">
-          Literal technical draft
+        <label className="field editor-field">
           <textarea
             ref={editor}
-            rows={16}
+            aria-label="Technical draft"
+            placeholder="Write or insert a transcript…"
+            rows={10}
             wrap="off"
             spellCheck={false}
             autoCapitalize="off"
@@ -481,29 +377,148 @@ export function TechnicalPage({
             }}
           />
         </label>
-        <p className="mt-3 text-xs text-muted">
-          Undo/redo restores text and selection. History is bounded; your
-          current draft is never truncated. The draft survives navigation during
-          this app session and is not saved to disk automatically. Copy or
-          download it before closing the app. Tab moves focus; Insert tab adds
-          indentation at the selection.
-        </p>
-        <div className="runtime-actions mt-4">
-          <button
-            className="secondary-button"
-            disabled={copying || !snapshot.text || composing.current}
-            onClick={() => void copy()}
-          >
-            <Copy /> {copying ? "Copying…" : "Copy draft"}
-          </button>
-          <button
-            className="secondary-button"
-            disabled={!snapshot.text || composing.current}
-            onClick={download}
-          >
-            <Download /> Download text
-          </button>
-        </div>
+        <details className="disclosure">
+          <summary>Insert a transcript</summary>
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <label className="field min-w-0 flex-1">
+              Transcript
+              <select
+                value={source?.id ?? ""}
+                disabled={!history.length || composing.current}
+                onChange={(event) => setSourceId(event.target.value)}
+              >
+                {!history.length && (
+                  <option value="">No transcripts available</option>
+                )}
+                {history.map((record) => (
+                  <option key={record.id} value={record.id}>
+                    {new Date(record.createdAt).toLocaleString()} ·{" "}
+                    {record.sourceName ?? "Dictation"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="secondary-button"
+              disabled={!source?.text || composing.current}
+              onClick={prepareInsertion}
+            >
+              Preview insertion
+            </button>
+          </div>
+          {source && (
+            <details className="mt-3">
+              <summary>Original text</summary>
+              <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-xs">
+                {source.text}
+              </pre>
+            </details>
+          )}
+          {pending && (
+            <section
+              className="mt-4 rounded-lg border border-line p-4"
+              aria-label="Pending technical insertion"
+            >
+              <h3>Prepared insertion</h3>
+              <p className="mt-2 text-xs text-muted">{pending.label}</p>
+              <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-xs">
+                {pending.text}
+              </pre>
+              <p className="mt-3 text-sm">
+                {pending.target.start === pending.target.end
+                  ? "Insert at the captured caret."
+                  : "Replace the captured selection."}{" "}
+                Editing the draft or moving its selection requires a fresh
+                preview.
+              </p>
+              {!buffer.isTargetCurrent(pending.target) && (
+                <p className="mt-3 text-sm" role="status">
+                  The buffer or selection changed. Prepare a new insertion
+                  preview; this one cannot be applied.
+                </p>
+              )}
+              <div className="runtime-actions mt-3">
+                <button
+                  className="primary-button"
+                  disabled={
+                    composing.current || !buffer.isTargetCurrent(pending.target)
+                  }
+                  onClick={applyInsertion}
+                >
+                  Apply insertion
+                </button>
+                <button
+                  className="secondary-button"
+                  onClick={() => setPending(null)}
+                >
+                  Cancel preview
+                </button>
+              </div>
+            </section>
+          )}
+        </details>
+        <details className="disclosure">
+          <summary>Editing tools</summary>
+          <div className="runtime-actions mt-3">
+            <button
+              className="tool-button"
+              disabled={composing.current}
+              aria-keyshortcuts="Control+Alt+I Meta+Alt+I"
+              onClick={() => replaceToken("identifier")}
+            >
+              Replace last identifier
+            </button>
+            <button
+              className="tool-button"
+              disabled={composing.current}
+              aria-keyshortcuts="Control+Alt+W Meta+Alt+W"
+              onClick={() => replaceToken("word")}
+            >
+              Correct word
+            </button>
+            <button
+              className="tool-button"
+              disabled={composing.current}
+              aria-keyshortcuts="Control+Alt+Enter Meta+Alt+Enter"
+              onClick={insertNewline}
+            >
+              Insert newline
+            </button>
+            <button
+              className="tool-button"
+              disabled={
+                busy ||
+                composing.current ||
+                snapshot.selectionStart === snapshot.selectionEnd
+              }
+              aria-keyshortcuts="Control+Alt+R Meta+Alt+R"
+              onClick={rewriteSelection}
+            >
+              Rewrite selection
+            </button>
+            <button
+              className="tool-button"
+              disabled={busy || switchingMode || composing.current}
+              aria-keyshortcuts="Control+Alt+P Meta+Alt+P"
+              onClick={() => void returnToProse()}
+            >
+              {switchingMode ? "Switching…" : "Return to prose"}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            Dictation mode: {settings.dictationMode ?? "prose"}. In the editor,
+            use Ctrl/⌘+Alt+I for the last identifier, +W for a word, +Enter for
+            a newline, +P for prose, +R to rewrite a selection. Replacement
+            previews require confirmation and remain undoable.
+          </p>
+          <p className="mt-3 text-xs text-muted">
+            Undo/redo restores text and selection. History is bounded; your
+            current draft is never truncated. The draft survives navigation
+            during this app session and is not saved to disk automatically. Copy
+            or download it before closing the app. Tab moves focus; Insert tab
+            adds indentation at the selection.
+          </p>
+        </details>
         {message && (
           <p className="mt-3 text-sm" role="status">
             {message}

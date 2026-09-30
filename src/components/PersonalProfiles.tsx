@@ -310,6 +310,151 @@ export function PersonalProfiles({
         </p>
       ) : (
         <>
+          <form
+            className="grid gap-3 p-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run({ action: "create", name, starter }, () => setName(""));
+            }}
+          >
+            <label className="grid gap-1 text-[12px]">
+              Start from
+              <select
+                value={starter}
+                disabled={busy}
+                onChange={(event) => {
+                  const next = PROFILE_STARTERS.find(
+                    (item) => item.id === event.target.value,
+                  )!;
+                  setStarter(next.id);
+                  if (!name.trim() || name === selected.name)
+                    setName(next.name);
+                }}
+              >
+                {PROFILE_STARTERS.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-1 text-[12px]">
+              Profile name
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={128}
+                required
+                disabled={busy}
+                placeholder="e.g. Technical notes"
+              />
+            </label>
+            {preview && (
+              <details className="disclosure">
+                <summary>Settings to save</summary>
+                <details className="disclosure">
+                  <summary>About this preset</summary>
+                  <p className="caption">
+                    {selected.description} All starters keep your vocabulary,
+                    use backend defaults and request no context access.
+                  </p>
+                </details>
+                <ProfileSummary profile={preview} />
+                <EffectiveProfileSettings
+                  profile={preview}
+                  settings={settings}
+                />
+                <p className="caption mt-1">
+                  Identifier preservation requested; no literal terms added.
+                  Optional rewriting uses {preview.rewrite.model}. These
+                  settings are stored only.
+                </p>
+              </details>
+            )}
+            {previewError && (
+              <p role="alert" className="control-warning">
+                {previewError}
+              </p>
+            )}
+            <button
+              className="secondary-button justify-self-start"
+              type="submit"
+              disabled={
+                busy || !name.trim() || !!previewError || profiles.length >= 128
+              }
+            >
+              {pending ? "Saving…" : "Save new profile"}
+            </button>
+            {profiles.length >= 128 && (
+              <p className="caption">
+                128 profiles saved. Delete a profile before adding another.
+              </p>
+            )}
+          </form>
+          <div className="grid gap-3 p-4 border-t border-line">
+            <h4 className="text-[13px] font-semibold">
+              Saved profiles ({profiles.length})
+            </h4>
+            {!profiles.length && (
+              <p className="caption">
+                No profiles saved yet. Your existing settings remain active.
+              </p>
+            )}
+            {profiles.map((profile) => (
+              <article
+                key={profile.id}
+                className="rounded-lg border border-line p-3 grid gap-2"
+              >
+                <strong className="text-[13px]">{profile.name}</strong>
+                <ProfileSummary profile={profile} />
+                <EffectiveProfileSettings
+                  profile={profile}
+                  settings={settings}
+                />
+                <div className="flex gap-2">
+                  <button
+                    className="secondary-button"
+                    disabled={busy}
+                    onClick={() => {
+                      setError(null);
+                      setRename({ id: profile.id, name: profile.name });
+                    }}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={busy || profiles.length >= 128}
+                    onClick={() => {
+                      setError(null);
+                      setDuplicate({
+                        id: profile.id,
+                        name: `${profile.name} copy`,
+                      });
+                    }}
+                  >
+                    Duplicate
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={busy}
+                    onClick={() => {
+                      setError(null);
+                      setRemove({ id: profile.id, name: profile.name });
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+      {!blocked && (
+        <details className="disclosure">
+          <summary>Import / export profiles</summary>{" "}
           <div className="grid gap-3 p-4 border-b border-line">
             <h4 className="text-[13px] font-semibold">Transfer profiles</h4>
             <label className="flex gap-2 text-[12px]">
@@ -410,143 +555,7 @@ export function PersonalProfiles({
               </div>
             )}
           </div>
-          <form
-            className="grid gap-3 p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void run({ action: "create", name, starter }, () => setName(""));
-            }}
-          >
-            <label className="grid gap-1 text-[12px]">
-              Start from
-              <select
-                value={starter}
-                disabled={busy}
-                onChange={(event) => {
-                  const next = PROFILE_STARTERS.find(
-                    (item) => item.id === event.target.value,
-                  )!;
-                  setStarter(next.id);
-                  if (!name.trim() || name === selected.name)
-                    setName(next.name);
-                }}
-              >
-                {PROFILE_STARTERS.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="caption">
-              {selected.description} All starters keep your vocabulary, use
-              backend decoding defaults and request no context access.
-            </p>
-            <label className="grid gap-1 text-[12px]">
-              Profile name
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                maxLength={128}
-                required
-                disabled={busy}
-                placeholder="e.g. Technical notes"
-              />
-            </label>
-            {preview && (
-              <div className="rounded-lg border border-line p-3">
-                <strong className="text-[12px]">Settings to save</strong>
-                <ProfileSummary profile={preview} />
-                <EffectiveProfileSettings
-                  profile={preview}
-                  settings={settings}
-                />
-                <p className="caption mt-1">
-                  Identifier preservation requested; no literal terms added.
-                  Optional rewriting uses {preview.rewrite.model}. These
-                  settings are stored only.
-                </p>
-              </div>
-            )}
-            {previewError && (
-              <p role="alert" className="control-warning">
-                {previewError}
-              </p>
-            )}
-            <button
-              className="secondary-button justify-self-start"
-              type="submit"
-              disabled={
-                busy || !name.trim() || !!previewError || profiles.length >= 128
-              }
-            >
-              {pending ? "Saving…" : "Save new profile"}
-            </button>
-            {profiles.length >= 128 && (
-              <p className="caption">
-                128 profiles saved. Delete a profile before adding another.
-              </p>
-            )}
-          </form>
-          <div className="grid gap-3 p-4 border-t border-line">
-            <h4 className="text-[13px] font-semibold">
-              Saved profiles ({profiles.length})
-            </h4>
-            {!profiles.length && (
-              <p className="caption">
-                No profiles saved yet. Your existing settings remain active.
-              </p>
-            )}
-            {profiles.map((profile) => (
-              <article
-                key={profile.id}
-                className="rounded-lg border border-line p-3 grid gap-2"
-              >
-                <strong className="text-[13px]">{profile.name}</strong>
-                <ProfileSummary profile={profile} />
-                <EffectiveProfileSettings
-                  profile={profile}
-                  settings={settings}
-                />
-                <div className="flex gap-2">
-                  <button
-                    className="secondary-button"
-                    disabled={busy}
-                    onClick={() => {
-                      setError(null);
-                      setRename({ id: profile.id, name: profile.name });
-                    }}
-                  >
-                    Rename
-                  </button>
-                  <button
-                    className="secondary-button"
-                    disabled={busy || profiles.length >= 128}
-                    onClick={() => {
-                      setError(null);
-                      setDuplicate({
-                        id: profile.id,
-                        name: `${profile.name} copy`,
-                      });
-                    }}
-                  >
-                    Duplicate
-                  </button>
-                  <button
-                    className="secondary-button"
-                    disabled={busy}
-                    onClick={() => {
-                      setError(null);
-                      setRemove({ id: profile.id, name: profile.name });
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </>
+        </details>
       )}
       {error && (
         <p role="alert" className="control-warning">

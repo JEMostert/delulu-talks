@@ -1,6 +1,27 @@
 # Ocean-blue interface concepts
 
-Generated with the built-in image-generation tool. These are visual explorations, not feature specifications. The implemented direction uses concept 1's compact navy console and a light variant informed by concept 2. Unsupported controls and duplicated settings in generated mockups are excluded.
+Generated with the built-in image-generation tool. These are visual explorations, not feature specifications. Concepts 1–3 record the earlier settings-first console direction. Concept 4 is the reference for the requested minimal controller rewrite: an ocean background, three icon controls, and secondary settings opened on demand. Switch positions and other example values in the generated image do not specify application defaults.
+
+## 4. Ocean Controller — rewrite reference
+
+Image: [04-ocean-controller.png](04-ocean-controller.png). Generated on 2026-09-30 using the built-in image-generation tool. The left view establishes the idle screen with no visible text; the right view demonstrates a secondary settings sheet. This is a visual reference, not an implemented screen or a background asset ready for production.
+
+Exact generation prompt:
+
+```text
+Use case: ui-mockup.
+Asset type: high-fidelity visual reference for a complete Delulu Talks desktop UI rewrite.
+Create a beautiful, coherent desktop app concept board in a wide landscape composition. Show two straight-on app views side by side on a very dark navy studio background, separated by a narrow clean gutter. The left view takes approximately two thirds of the board and shows the normal idle app; the right view takes one third and shows the same app with its settings sheet open. Both are flat screen designs with crisp vector-like UI, no perspective and no laptop or phone hardware.
+
+MAIN LEFT VIEW:
+An edge-to-edge atmospheric ocean scene is the entire app background. Rich deep midnight navy water toward the bottom, luminous translucent teal and azure toward the upper right, subtle realistic flowing water contours and faint soft underwater caustic light. It should feel like a sophisticated Apple-quality ocean wallpaper: calm, dimensional and elegant, with softly sculpted currents, natural aquatic depth and ample empty space. No coastline, islands, boats, animals, beach, horizon, fantasy props or purple space effects. Keep the center calm enough for controls to be instantly readable.
+At approximately 58 percent of the app height, place ONE small horizontal floating glass controller, around 360 pixels wide and 86 pixels tall relative to a 1000-pixel-wide app. A softly translucent deep blue glass capsule with a fine luminous rim, restrained specular highlights, careful inner shading and a soft grounded shadow. It holds ONLY three controls: a small white outline clipboard/copy icon on the left, a larger circular ocean-cyan microphone button in the center, and a small white outline gear icon on the right. The microphone is the obvious primary control, about 60 pixels in diameter, with a crisp white microphone glyph. A tiny understated ring/light around it communicates readiness. Controls have ample spacing. It should look like a simple physical instrument suspended above the water.
+There must be ZERO visible words, letters, numbers, logos, headings, sidebar, navigation labels, status sentences, banners, charts, transcript text or onboarding on this main view. Only the ocean and the small three-control capsule. No huge glowing sci-fi orb, no cartoonish oversized controls, no decorative fake waveform.
+
+SECONDARY RIGHT VIEW:
+Repeat the identical ocean and controller language, showing a compact softly rounded settings sheet floating above the background. This is the ONLY part of the board that may contain text. Keep the sheet calm and sparse with short functional labels, crisp line icons, neatly aligned controls and generous spacing. A small close icon at the top. Exact short text: "Settings", "Microphone", "System default", "Language", "English", "Shortcut", "Super + Z", "Paste automatically", "Keep speech ready". Use two tasteful small blue switches for the final two rows. A quiet bottom icon row gives access to history (clock), audio files (audio-file icon), and advanced settings (sliders). No paragraphs, technical tables, setup diagnostics, cards inside cards, promotional copy or footer.
+Use a single coherent design system: navy glass, sea-blue accents, pale cool white icons, delicate borders, 24-pixel sheet corners, 40-pixel minimum secondary controls. Elegant precise rendering, polished realistic materials, sophisticated restrained lighting, functional UI hierarchy, professional product design reference. No external annotations, captions, labels around the app views, watermarks or Apple logos.
+```
 
 ## 1. Tidal Console
 

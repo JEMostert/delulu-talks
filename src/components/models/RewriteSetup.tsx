@@ -35,22 +35,17 @@ export function RewriteSetup({
     magicStatus.phase,
   );
   return (
-    <section className="card" aria-labelledby="rewrite-model-heading">
-      <div className="section-heading">
+    <section className="setup-card" aria-labelledby="rewrite-model-heading">
+      <div className="setup-card-heading">
+        <WandSparkles />
         <div>
-          <span className="eyebrow">OPTIONAL REWRITING</span>
-          <h3 id="rewrite-model-heading">Rewrite where your text is</h3>
+          <h2 id="rewrite-model-heading">Rewriting</h2>
+          <p>{writingModel.name}</p>
         </div>
-        <WandSparkles className="h-5 w-5 text-accent-ink" />
       </div>
-      <p className="mt-3 text-sm text-muted">
-        Use Rewrite beside any transcript to shorten, polish, make bullet
-        points, write a professional message, organize, or build a prompt.
-        Compare the preview before applying it, and undo at any time.
-      </p>
       <div className="mt-4 flex flex-wrap items-end gap-4">
         <label className="field min-w-[180px] flex-1">
-          Local rewrite model
+          Model
           <select
             aria-label="Local rewrite model"
             value={settings.magicModel}
@@ -80,7 +75,7 @@ export function RewriteSetup({
               >
                 {magicStatus.setupState === "cancelling"
                   ? "Cancelling…"
-                  : "Cancel rewriting setup"}
+                  : "Cancel setup"}
               </button>
             )}
           {magicStatus.engine === "ready" ? (
@@ -89,7 +84,7 @@ export function RewriteSetup({
               disabled={busy}
               onClick={onUnloadMagic}
             >
-              Unload rewrite model
+              Release memory
             </button>
           ) : magicStatus.engine === "unloaded" ? (
             <button
@@ -97,34 +92,56 @@ export function RewriteSetup({
               disabled={busy || setupPending}
               onClick={onLoadMagic}
             >
-              <Play /> Load rewrite model
+              <Play /> Load rewriting
             </button>
           ) : null}
-          <button
-            className="primary-button"
-            disabled={busy || setupPending}
-            onClick={onSetupMagic}
-          >
-            {writingBusy ? <LoaderCircle className="spin" /> : <Download />}
-            {magicStatus.engine === "missing"
-              ? "Install rewrite runtime"
-              : "Repair rewrite runtime"}
-          </button>
+          {(magicStatus.engine === "missing" ||
+            magicStatus.engine === "error") && (
+            <button
+              className="primary-button"
+              disabled={busy || setupPending}
+              onClick={onSetupMagic}
+            >
+              {writingBusy ? <LoaderCircle className="spin" /> : <Download />}
+              {magicStatus.engine === "missing"
+                ? "Download & set up"
+                : "Fix setup"}
+            </button>
+          )}
         </div>
       </div>
-      <p className="mt-3 text-xs text-muted">{writingModel.description}</p>
-      <ModelProvenance {...writingModel} />
-      <ModelLifecycle status={magicStatus} />
-      <BackendCapabilities capabilities={magicStatus.capabilities} />
-      <p className="mt-2 text-xs text-muted" role="status">
-        {magicStatus.message}
-      </p>
       <ModelSetupStatus
         status={magicStatus}
         kind="rewrite"
         busy={busy || setupPending}
         onRepair={onSetupMagic}
       />
+      {magicStatus.setupState === "cancelled" && (
+        <p className="setup-status-copy" role="status">
+          {magicStatus.message}
+        </p>
+      )}
+      {(magicStatus.engine === "ready" ||
+        magicStatus.engine === "unloaded") && (
+        <details className="disclosure">
+          <summary>Maintenance</summary>{" "}
+          <button
+            className="secondary-button"
+            disabled={busy || setupPending}
+            onClick={onSetupMagic}
+          >
+            {writingBusy ? <LoaderCircle className="spin" /> : <Download />}
+            Fix setup
+          </button>
+        </details>
+      )}
+      <details className="setup-details">
+        <summary>Model details & license</summary>
+        <p className="setup-status-copy">{writingModel.description}</p>
+        <ModelProvenance {...writingModel} />
+        <ModelLifecycle status={magicStatus} />
+        <BackendCapabilities capabilities={magicStatus.capabilities} />
+      </details>
     </section>
   );
 }

@@ -5,29 +5,33 @@ import {
   transcriptSourceRevision,
 } from "./transcriptText";
 import { createTranscriptCommands } from "./transcriptCommands";
-import { useEffect, useState } from "react";
+import { Activity, lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
+  AudioLines,
   Check,
+  Clock3,
+  Code2,
+  Cpu,
+  Home,
   LoaderCircle,
-  Mic,
-  Moon,
   RotateCcw,
-  Square,
-  Sun,
+  Settings2,
   Terminal,
   X,
 } from "lucide-react";
+import { OceanBackground } from "./components/OceanBackground";
+import { OceanController } from "./components/OceanController";
+import { QuickSettings } from "./components/QuickSettings";
 import { bridge } from "./bridge";
 import type { useWorkspace } from "./hooks/useWorkspace";
 import { useTheme } from "./hooks/useTheme";
-import { Sidebar } from "./components/Sidebar";
 import {
   CommandPalette,
   type PaletteCommand,
 } from "./components/CommandPalette";
 import { profilePaletteCommands } from "./profilePaletteCommands";
 import { effectiveProfileSettings } from "./activePersonalProfile";
-import { Onboarding } from "./components/Onboarding";
 import { PasteLastNotice } from "./components/PasteLastNotice";
 import { ServiceRecovery } from "./components/ServiceRecovery";
 import { UpdateNotice } from "./components/UpdateNotice";
@@ -36,13 +40,34 @@ import { RewriteDialog } from "./components/RewriteDialog";
 import { PasteRecoveryNotice } from "./components/PasteRecoveryNotice";
 import { HistoryDeletionNotice } from "./components/HistoryDeletionNotice";
 import { Alert } from "./components/ui";
-import { HomePage } from "./pages/HomePage";
-import { LabPage } from "./pages/LabPage";
-import { TechnicalPage } from "./pages/TechnicalPage";
-import { ModelsPage } from "./pages/ModelsPage";
-import { VocabularyPage } from "./pages/VocabularyPage";
-import { HistoryPage } from "./pages/HistoryPage";
-import { SettingsPage } from "./pages/SettingsPage";
+const LabPage = lazy(() =>
+  import("./pages/LabPage").then((module) => ({ default: module.LabPage })),
+);
+const TechnicalPage = lazy(() =>
+  import("./pages/TechnicalPage").then((module) => ({
+    default: module.TechnicalPage,
+  })),
+);
+const ModelsPage = lazy(() =>
+  import("./pages/ModelsPage").then((module) => ({
+    default: module.ModelsPage,
+  })),
+);
+const VocabularyPage = lazy(() =>
+  import("./pages/VocabularyPage").then((module) => ({
+    default: module.VocabularyPage,
+  })),
+);
+const HistoryPage = lazy(() =>
+  import("./pages/HistoryPage").then((module) => ({
+    default: module.HistoryPage,
+  })),
+);
+const SettingsPage = lazy(() =>
+  import("./pages/SettingsPage").then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
 import type { Page } from "./types";
 
 const pages: Record<Page, { title: string; subtitle: string }> = {
@@ -64,7 +89,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
     subtitle: "Speech and rewrite models, runtimes and backends",
   },
   technical: {
-    title: "Technical text",
+    title: "Editor",
     subtitle: "Literal editing · undo · explicit copy",
   },
   settings: {
@@ -98,12 +123,9 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
     return () => window.removeEventListener("keydown", openCommands);
   }, [w.ready]);
   useEffect(() => {
-    if (!focusHistory || paletteOpen || w.page !== "history") return;
-    document.querySelector<HTMLInputElement>("[data-history-search]")?.focus();
-    setFocusHistory(false);
-  }, [focusHistory, paletteOpen, w.page]);
-  useEffect(() => {
-    setVisited((previous) => new Set([...previous, w.page]));
+    setVisited((previous) =>
+      previous.has(w.page) ? previous : new Set([...previous, w.page]),
+    );
     document
       .getElementById("page-content")
       ?.scrollTo({ top: 0, behavior: "instant" });
@@ -138,15 +160,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [w.setPage]);
-  useEffect(() => {
-    if (!w.ready || w.page !== "models" || !modelTarget) return;
-    const element = document.getElementById(`models-${modelTarget}`);
-    element?.focus();
-    element?.scrollIntoView({ block: "start", behavior: "instant" });
-    if (modelTarget === "diagnostics")
-      document.getElementById("runtime-diagnostics-refresh")?.click();
-    setModelTarget(null);
-  }, [modelTarget, w.page, w.ready]);
   const recording =
     w.status.phase === "listening" || w.status.phase === "paused";
   const needsSetup =
@@ -161,7 +174,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const run = (operation: () => Promise<unknown>, message?: string) => () => {
     void w.action(operation, message);
   };
-  const onRecord = run(() => bridge.toggleDictation());
   const { actions: baseTranscriptActions, onClearHistory } =
     createTranscriptCommands(w);
   const transcriptActions = {
@@ -185,6 +197,14 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const loadMagic = run(() => bridge.loadMagic());
   const unloadMagic = run(() => bridge.unloadMagic());
   const commands: PaletteCommand[] = [
+    ...(
+      [
+        ["settings", "Open settings"],
+        ["lab", "Open audio files"],
+        ["technical", "Open technical text"],
+        ["vocabulary", "Open personalization"],
+      ] as const
+    ).map(([page, label]) => ({ id: page, label, run: () => w.setPage(page) })),
     ...profilePaletteCommands(
       w.settings,
       (profile) =>
@@ -291,191 +311,105 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
       },
     },
   ];
+  const [quickOpen, setQuickOpen] = useState(false);
+  const panelOpen = quickOpen || w.page !== "home";
+  useEffect(() => {
+    if (w.page !== "home") setQuickOpen(false);
+  }, [w.page]);
+  const panelRef = useRef<HTMLElement>(null);
+  const wasOpen = useRef(false);
+  const onboardingShown = useRef(false);
+  const [visible, setVisible] = useState(!document.hidden);
+  useEffect(() => {
+    const change = () => setVisible(!document.hidden);
+    document.addEventListener("visibilitychange", change);
+    return () => document.removeEventListener("visibilitychange", change);
+  }, []);
+  useEffect(() => {
+    if (w.ready && !w.settings.onboardingComplete && !onboardingShown.current) {
+      onboardingShown.current = true;
+      if (w.status.engine === "missing") w.setPage("models");
+    }
+  }, [w.ready, w.settings.onboardingComplete, w.status.engine]);
+  const closePanel = () => {
+    setQuickOpen(false);
+    w.setPage("home");
+    if (!w.settings.onboardingComplete) void w.finishOnboarding(false);
+  };
+  const navigate = (page: Page) => {
+    setQuickOpen(false);
+    w.setPage(page);
+  };
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      if (panelOpen) {
+        panelRef.current?.focus({ preventScroll: true });
+        const content = document.getElementById("page-content");
+        if (content) content.scrollTop = 0;
+      } else if (wasOpen.current)
+        document
+          .querySelector<HTMLButtonElement>('[aria-label="Open settings"]')
+          ?.focus();
+      wasOpen.current = panelOpen;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [panelOpen, w.page]);
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape" ||
+        event.defaultPrevented ||
+        document.querySelector(
+          'dialog[open], [role="dialog"][aria-modal="true"]',
+        )
+      )
+        return;
+      if (panelOpen) {
+        event.preventDefault();
+        closePanel();
+      }
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  });
+  const latest = w.history[0];
   return (
-    <div className="relative grid h-[100dvh] grid-cols-[184px_minmax(0,1fr)] overflow-hidden border-t-2 border-accent max-[900px]:grid-cols-[154px_minmax(0,1fr)] max-[700px]:grid-cols-[64px_minmax(0,1fr)]">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(120%_90%_at_15%_0%,#1b6fd6_0%,transparent_55%),radial-gradient(90%_70%_at_85%_10%,#38d0f0_0%,transparent_50%),radial-gradient(110%_100%_at_50%_110%,#123a7a_0%,transparent_60%)] opacity-70 dark:opacity-45" />
-        <div className="absolute -top-24 -left-16 size-[420px] rounded-full bg-[#6fd6ff]/35 blur-[110px] dark:bg-[#2aa6e8]/25" />
-        <div className="absolute top-1/3 -right-20 size-[460px] rounded-full bg-[#2a7de8]/30 blur-[120px] dark:bg-[#1558b8]/30" />
-        <div className="absolute -bottom-32 left-1/3 size-[520px] rounded-full bg-[#7c5cff]/25 blur-[130px] dark:bg-[#3b2a8c]/30" />
-      </div>
+    <main
+      className={`ocean-app ${panelOpen ? "panel-open" : ""}`}
+      data-visible={visible}
+    >
+      <OceanBackground recording={w.status.phase === "listening"} />
       <a
-        className="fixed top-2 left-2 z-[100] -translate-y-[150%] rounded-md bg-surface p-3 backdrop-blur-md focus:translate-y-0"
-        href="#page-content"
+        className="ocean-skip"
+        href={
+          w.status.phase === "listening" || w.status.phase === "paused"
+            ? "#recording-stop-control"
+            : "#recording-start-control"
+        }
       >
-        Skip to content
+        Skip to dictation controls
       </a>
-      <Sidebar
-        page={w.page}
-        onNavigate={w.setPage}
-        status={w.status}
-        magicStatus={w.magicStatus}
-      />
-      <main className="flex min-w-0 flex-col h-[calc(100dvh-2px)]">
-        <header className="flex min-h-[76px] items-center justify-between gap-4 border-b border-line bg-header px-6 py-[15px] backdrop-blur-2xl max-[900px]:min-h-[70px] max-[900px]:px-4 max-[900px]:py-3">
-          <div>
-            <h1 className="text-[22px] tracking-[-0.6px]">
-              {pages[w.page].title}
-            </h1>
-            <p className="mt-[3px] text-[11px] text-muted max-[700px]:hidden">
-              {pages[w.page].subtitle}
-            </p>
-          </div>
-          <div className="flex items-center gap-3.5 max-[900px]:gap-[9px]">
-            <button
-              className="icon-button"
-              disabled={!w.ready}
-              aria-label="Open command palette"
-              title="Commands · Ctrl/Cmd + Shift + P"
-              onClick={() => setPaletteOpen(true)}
-            >
-              <Terminal />
-            </button>
-            <button
-              className="icon-button theme-command max-[700px]:hidden"
-              aria-label="Switch color theme"
-              title="Switch light / dark theme"
-              onClick={() =>
-                void w.saveSettings(
-                  {
-                    theme:
-                      document.documentElement.dataset.theme === "dark"
-                        ? "light"
-                        : "dark",
-                  },
-                  null,
-                )
-              }
-            >
-              {w.settings.theme === "light" ? <Moon /> : <Sun />}
-            </button>
-            <button
-              className={`status-chip flex items-center gap-[7px] border-0 bg-transparent py-1.5 text-[11px] ${w.status.phase === "error" ? "has-error text-danger" : "text-muted"} max-[700px]:hidden`}
-              onClick={() => w.setPage("models")}
-              title={w.status.message}
-            >
-              {speechBusy ? (
-                <LoaderCircle className="spin h-[13px] w-[13px]" />
-              ) : (
-                <span
-                  className={`h-[6px] w-[6px] inline-block rounded-full ${w.status.phase === "error" ? "bg-danger" : "bg-success"}`}
-                />
-              )}
-              <span>
-                {recording
-                  ? w.status.phase === "paused"
-                    ? "Paused"
-                    : "Listening"
-                  : speechBusy
-                    ? w.status.phase === "transcribing"
-                      ? "Transcribing…"
-                      : w.status.phase === "preparing"
-                        ? "Updating setup…"
-                        : "Loading & warming up…"
-                    : w.status.engine === "ready"
-                      ? "Ready"
-                      : w.status.engine === "missing"
-                        ? w.status.migrationRequired
-                          ? "Update setup"
-                          : "Setup needed"
-                        : w.status.engine === "error"
-                          ? "Needs attention"
-                          : "Loads on demand"}
-              </span>
-            </button>
-            {recording && (
-              <button
-                className="secondary-button"
-                onClick={run(() =>
-                  w.status.phase === "paused"
-                    ? bridge.resumeDictation()
-                    : bridge.pauseDictation(),
-                )}
-              >
-                {w.status.phase === "paused" ? "Resume" : "Pause"}
-              </button>
-            )}
-            {recording && (
-              <button
-                className="icon-button"
-                aria-label="Cancel recording"
-                onClick={run(() => bridge.cancelDictation())}
-              >
-                <X />
-              </button>
-            )}
-            {(w.page !== "home" || recording) && (
-              <button
-                id={recording ? "recording-stop-control" : undefined}
-                className={`record-command ${recording ? "recording" : ""}`}
-                disabled={recording ? false : !w.ready || speechBusy || busy}
-                onClick={needsSetup ? () => w.setPage("models") : onRecord}
-                aria-label={
-                  needsSetup
-                    ? w.status.migrationRequired
-                      ? "Update dictation setup"
-                      : "Set up dictation"
-                    : recording
-                      ? "Stop recording"
-                      : "Start recording"
-                }
-              >
-                {recording ? <Square /> : <Mic />}
-                <span style={recording ? { display: "inline" } : undefined}>
-                  {needsSetup
-                    ? w.status.migrationRequired
-                      ? "Update"
-                      : "Set up"
-                    : recording
-                      ? "Stop"
-                      : "Record"}
-                </span>
-              </button>
-            )}
-          </div>
-        </header>
-        {!window.delulu && (
-          <div className="mx-auto mt-2.5 w-fit rounded-[99px] border border-line bg-soft px-[14px] py-[5px] text-[10px] text-muted max-[900px]:px-4">
-            Browser preview · sample transcript · recording and model
-            installation require the desktop app
-          </div>
-        )}
-        {w.ready && !w.settings.onboardingComplete && (
-          <Onboarding
-            engine={w.status.engine}
-            saving={w.saving}
-            onFinish={w.finishOnboarding}
+      <div className={`workspace-notices ${panelOpen ? "in-panel" : ""}`}>
+        {panelOpen && (
+          <UpdateNotice
+            status={w.updateStatus}
+            busy={busy}
+            onDownload={download}
+            onInstall={install}
           />
         )}
-        <UpdateNotice
-          status={w.updateStatus}
-          busy={busy}
-          onDownload={download}
-          onInstall={install}
-        />
         <HistoryDeletionNotice
           state={w.historyDeletion}
           onUndo={w.undoDeletion}
           onHistory={() => w.setPage("history")}
         />
         {w.ready && <ServiceRecovery recovery={w.serviceRecovery} />}
-        {w.status.phase === "loading" && (
-          <div
-            role="status"
-            className="px-6 pt-3 text-sm text-muted max-[900px]:px-4"
-          >
-            Loading and warming up the speech model. This prepares the first
-            transcription before showing Ready. Keep speech ready in Settings →
-            Runtime to avoid loading it again between recordings.
-          </div>
+        {panelOpen && (
+          <OperationResumeNotice
+            operations={w.operations}
+            onImport={() => w.setPage("lab")}
+          />
         )}
-        <OperationResumeNotice
-          operations={w.operations}
-          onImport={() => w.setPage("lab")}
-        />
         {w.status.captureInputNotice && (
           <div className="px-6 pt-3 max-[900px]:px-4">
             <div
@@ -490,24 +424,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         <PasteRecoveryNotice
           onCopied={() => w.setToast("Copied to clipboard — paste manually")}
         />
-        {w.status.phase === "paused" && (
-          <div role="status" className="px-6 pt-3 text-sm text-muted">
-            Paused. Audio stays in this session; the microphone remains open.
-            Resume to keep recording, or Stop to transcribe the retained audio.
-          </div>
-        )}
-        {w.status.silenceCountdownSeconds != null &&
-          w.status.silenceCountdownSeconds > 0 && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="px-6 pt-3 text-sm text-muted max-[900px]:px-4"
-            >
-              Quiet input — recording stops in{" "}
-              {w.status.silenceCountdownSeconds}s. Speaking above the configured
-              threshold restarts the countdown. You can press Stop at any time.
-            </div>
-          )}
         {w.error && (
           <div className="px-6 pt-3 max-[900px]:px-4">
             <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>
@@ -522,6 +438,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           const available = retryAudio
             ? retryAudio.phase === "available" && retained
             : !!w.status.retryAvailable;
+          if (w.page === "models" && !available && !retrying) return null;
           if (
             w.status.phase !== "error" &&
             !w.status.retryAvailable &&
@@ -596,73 +513,108 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             </div>
           );
         })()}
+
+        <PasteLastNotice
+          status={w.pasteLastStatus}
+          onCancel={w.cancelPasteLast}
+        />
+        {w.startupError && (
+          <Alert
+            action={
+              <button className="secondary-button" onClick={w.retryStartup}>
+                <RotateCcw /> Retry opening workspace
+              </button>
+            }
+          >
+            {w.startupError}
+          </Alert>
+        )}
+      </div>
+      <section
+        ref={panelRef}
+        className={`workspace-sheet ${quickOpen && w.page === "home" ? "quick-sheet" : "wide-sheet"}`}
+        hidden={!panelOpen}
+        aria-label={
+          quickOpen && w.page === "home"
+            ? "Quick settings"
+            : `${pages[w.page].title} panel`
+        }
+        tabIndex={-1}
+      >
+        <header className="sheet-header">
+          {w.page !== "home" && (
+            <button
+              className="sheet-icon"
+              aria-label="Back to quick settings"
+              title="Quick settings"
+              onClick={() => {
+                w.setPage("home");
+                setQuickOpen(true);
+              }}
+            >
+              <ArrowLeft />
+            </button>
+          )}
+          <h1>
+            {quickOpen && w.page === "home" ? "Settings" : pages[w.page].title}
+          </h1>
+          {w.page !== "home" && (
+            <button
+              className="sheet-icon"
+              aria-label="Open command palette"
+              title="Commands"
+              onClick={() => setPaletteOpen(true)}
+            >
+              <Terminal />
+            </button>
+          )}
+          <button
+            className="sheet-icon"
+            aria-label={
+              !w.settings.onboardingComplete && w.page === "models"
+                ? "Dismiss setup"
+                : "Close panel"
+            }
+            title="Close"
+            onClick={closePanel}
+          >
+            <X />
+          </button>
+        </header>
         <div
-          className="page-scroll min-h-0 flex-1 overflow-y-auto px-6 pt-[18px] pb-7 max-[900px]:px-4 max-[900px]:pt-3.5 max-[900px]:pb-6"
+          className="sheet-content page-scroll"
           id="page-content"
-          role="region"
-          aria-label={pages[w.page].title}
           tabIndex={-1}
+          role="region"
+          aria-label={
+            quickOpen && w.page === "home"
+              ? "Quick settings controls"
+              : pages[w.page].title
+          }
         >
-          <PasteLastNotice
-            status={w.pasteLastStatus}
-            onCancel={w.cancelPasteLast}
-          />
-          {!w.ready ? (
-            <div className="empty-state mx-auto max-w-[1440px]">
-              {w.startupError ? (
-                <>
-                  <p role="alert">{w.startupError}</p>
-                  <button className="secondary-button" onClick={w.retryStartup}>
-                    <RotateCcw /> Retry opening workspace
-                  </button>
-                </>
-              ) : (
-                <>
-                  <LoaderCircle className="spin" />
-                  <p>Opening your workspace…</p>
-                </>
-              )}
-            </div>
-          ) : (
-            <>
+          {quickOpen && w.page === "home" && (
+            <QuickSettings workspace={w} busy={busy} onNavigate={navigate} />
+          )}
+          <Suspense
+            fallback={
               <div
-                hidden={w.page !== "home"}
-                className="mx-auto max-w-[1440px]"
+                className="panel-loading"
+                role="status"
+                aria-label="Opening panel"
               >
-                <HomePage
-                  settings={w.settings}
-                  status={w.status}
-                  magicStatus={w.magicStatus}
-                  devices={w.devices}
-                  capabilities={w.capabilities}
-                  busy={busy}
-                  onConfigureShortcut={run(() => bridge.configureShortcut())}
-                  shortcutStatus={w.shortcutStatus}
-                  history={w.history}
-                  captureDiagnostics={w.captureDiagnostics}
-                  captureProfile={w.captureProfile}
-                  onActivateProfile={w.activateProfile}
-                  saving={w.saving}
-                  onNavigate={w.setPage}
-                  onUpdateSettings={(patch) => {
-                    void w.saveSettings(patch, null);
-                  }}
-                  onPasteLast={w.pasteLast}
-                  onToggleRecord={() =>
-                    w.action(() => bridge.toggleDictation())
-                  }
-                  pasteLastBusy={["pending", "delivering"].includes(
-                    w.pasteLastStatus.phase,
-                  )}
-                  {...transcriptActions}
-                />
+                <LoaderCircle className="spin" />
               </div>
-              {(visited.has("history") || w.page === "history") && (
-                <div
-                  hidden={w.page !== "history"}
-                  className="mx-auto max-w-[1440px]"
-                >
+            }
+          >
+            {(visited.has("history") || w.page === "history") && (
+              <Activity
+                name="history"
+                mode={w.page === "history" ? "visible" : "hidden"}
+              >
+                <div className="workspace-view">
                   <HistoryPage
+                    focusSearch={focusHistory && !paletteOpen}
+                    onSearchFocused={() => setFocusHistory(false)}
                     history={w.history}
                     view={w.historyView}
                     onViewChange={w.setHistoryView}
@@ -673,24 +625,28 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     deletionPending={w.historyDeletion?.phase === "pending"}
                   />
                 </div>
-              )}
-              {(visited.has("lab") || w.page === "lab") && (
-                <div
-                  hidden={w.page !== "lab"}
-                  className="mx-auto max-w-[1440px]"
-                >
+              </Activity>
+            )}
+            {(visited.has("lab") || w.page === "lab") && (
+              <Activity
+                name="lab"
+                mode={w.page === "lab" ? "visible" : "hidden"}
+              >
+                <div className="workspace-view">
                   <LabPage
                     {...transcriptActions}
                     history={w.history}
                     busy={busy}
                   />
                 </div>
-              )}
-              {(visited.has("technical") || w.page === "technical") && (
-                <div
-                  hidden={w.page !== "technical"}
-                  className="mx-auto max-w-[1440px]"
-                >
+              </Activity>
+            )}
+            {(visited.has("technical") || w.page === "technical") && (
+              <Activity
+                name="technical"
+                mode={w.page === "technical" ? "visible" : "hidden"}
+              >
+                <div className="workspace-view">
                   <TechnicalPage
                     history={w.history}
                     settings={w.settings}
@@ -700,19 +656,24 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     onRewriteSetup={() => w.setPage("models")}
                   />
                 </div>
-              )}
-              {(visited.has("models") || w.page === "models") && (
-                <div
-                  hidden={w.page !== "models"}
-                  className="mx-auto max-w-[1440px]"
-                >
+              </Activity>
+            )}
+            {(visited.has("models") || w.page === "models") && (
+              <Activity
+                name="models"
+                mode={w.page === "models" ? "visible" : "hidden"}
+              >
+                <div className="workspace-view">
                   <ModelsPage
+                    onDone={closePanel}
+                    focusTarget={modelTarget}
+                    onTargetHandled={() => setModelTarget(null)}
                     onCancelSetup={cancelSetup}
                     onCancelSetupMagic={cancelSetupMagic}
                     status={w.status}
                     magicStatus={w.magicStatus}
                     settings={w.settings}
-                    busy={busy}
+                    busy={busy || w.saving}
                     saving={w.saving}
                     onUpdateSettings={(patch) => {
                       void w.saveSettings(patch, null);
@@ -725,12 +686,14 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     onUnload={unload}
                   />
                 </div>
-              )}
-              {(visited.has("vocabulary") || w.page === "vocabulary") && (
-                <div
-                  hidden={w.page !== "vocabulary"}
-                  className="mx-auto max-w-[1440px]"
-                >
+              </Activity>
+            )}
+            {(visited.has("vocabulary") || w.page === "vocabulary") && (
+              <Activity
+                name="vocabulary"
+                mode={w.page === "vocabulary" ? "visible" : "hidden"}
+              >
+                <div className="workspace-view">
                   <VocabularyPage
                     words={w.settings.customWords}
                     saving={w.saving}
@@ -739,12 +702,14 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     }
                   />
                 </div>
-              )}
-              {(visited.has("settings") || w.page === "settings") && (
-                <div
-                  hidden={w.page !== "settings"}
-                  className="mx-auto max-w-[1440px]"
-                >
+              </Activity>
+            )}
+            {(visited.has("settings") || w.page === "settings") && (
+              <Activity
+                name="settings"
+                mode={w.page === "settings" ? "visible" : "hidden"}
+              >
+                <div className="workspace-view">
                   <SettingsPage
                     onCancelSetup={cancelSetup}
                     onCancelSetupMagic={cancelSetupMagic}
@@ -788,11 +753,79 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     )}
                   />
                 </div>
-              )}
-            </>
+              </Activity>
+            )}
+          </Suspense>
+          {w.page === "settings" && (
+            <details className="disclosure">
+              <summary>Rewrite selected text</summary>
+              <SelectedTextWorkflow
+                status={w.magicStatus}
+                onSetup={() => navigate("models")}
+              />
+            </details>
           )}
         </div>
-      </main>
+      </section>
+      <OceanController
+        navigation={
+          panelOpen ? (
+            <nav className="panel-navigation" aria-label="Workspace">
+              {(
+                [
+                  { page: "home", label: "Controls", Icon: Home },
+                  { page: "history", label: "History", Icon: Clock3 },
+                  { page: "lab", label: "Audio files", Icon: AudioLines },
+                  { page: "models", label: "Models", Icon: Cpu },
+                  { page: "technical", label: "Editor", Icon: Code2 },
+                  { page: "settings", label: "Settings", Icon: Settings2 },
+                ] as const
+              ).map(({ page, label, Icon }) => (
+                <button
+                  key={page}
+                  className="sheet-icon"
+                  title={label}
+                  aria-label={label}
+                  aria-current={w.page === page ? "page" : undefined}
+                  onClick={() =>
+                    page === "home" ? closePanel() : navigate(page)
+                  }
+                >
+                  <Icon />
+                </button>
+              ))}
+            </nav>
+          ) : undefined
+        }
+        status={w.status}
+        ready={w.ready}
+        busy={busy}
+        panelOpen={panelOpen}
+        canCopy={!!latest}
+        resultId={latest?.id}
+        onRecord={() => w.action(() => bridge.toggleDictation())}
+        onCopy={() =>
+          latest
+            ? w.action(() => bridge.copyText(deliveredText(latest)))
+            : Promise.resolve(false)
+        }
+        onSetup={() => navigate("models")}
+        onSettings={() => {
+          if (panelOpen) closePanel();
+          else {
+            w.setPage("home");
+            setQuickOpen(true);
+          }
+        }}
+        onPause={() =>
+          w.action(() =>
+            w.status.phase === "paused"
+              ? bridge.resumeDictation()
+              : bridge.pauseDictation(),
+          )
+        }
+        onCancel={() => w.action(() => bridge.cancelDictation())}
+      />
       {rewrite && (
         <RewriteDialog
           key={rewrite.key}
@@ -829,12 +862,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           }
         />
       )}
-      <div className="px-6 pb-3 flex flex-wrap items-center gap-3">
-        <SelectedTextWorkflow
-          status={w.magicStatus}
-          onSetup={() => w.setPage("models")}
-        />
-      </div>
+
       {paletteOpen && (
         <CommandPalette
           commands={commands}
@@ -843,14 +871,11 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         />
       )}
       {w.toast && (
-        <div
-          className="toast fixed bottom-[22px] left-[calc(50%+92px)] z-[90] flex max-w-[calc(100vw-40px)] -translate-x-1/2 items-center gap-3 rounded-[14px] border border-line-strong bg-surface px-4 py-3 text-[13px] shadow-pop backdrop-blur-xl max-[900px]:left-[calc(50%+77px)] max-[700px]:left-[calc(50%+32px)] max-[700px]:w-[calc(100vw-90px)]"
-          role="status"
-        >
-          <Check className="text-accent" />
+        <div className={panelOpen ? "ocean-toast" : "sr-only"} role="status">
+          <Check />
           <span>{w.toast}</span>
           <button
-            className="flex border-0 bg-transparent p-0 text-muted"
+            className="sheet-icon"
             aria-label="Dismiss notification"
             onClick={() => w.setToast(null)}
           >
@@ -858,7 +883,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           </button>
         </div>
       )}
-    </div>
+    </main>
   );
 }
 export default App;

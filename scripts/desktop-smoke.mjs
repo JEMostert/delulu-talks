@@ -131,6 +131,7 @@ try {
   console.log(
     "Built worklet passed: file:// asset, production CSP, synthetic Web Audio capture and flush; no microphone or inference.",
   );
+  await page.getByRole("button", { name: "Open settings", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Application", exact: true }).click();
   await page.getByRole("button", { name: "dark", exact: true }).click();

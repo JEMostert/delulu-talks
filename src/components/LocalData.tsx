@@ -27,27 +27,26 @@ export function LocalData() {
     }
   }
   useEffect(() => {
-    void refresh();
+    if (window.delulu) void refresh();
   }, []);
   return (
     <section className="card" aria-label="Local data overview">
       <div className="section-heading">
         <div>
-          <h3>Local data</h3>
-          <p className="caption">
-            Inspect what this app keeps on your device. Refreshing only reads
-            file metadata.
-          </p>
+          <h3>Storage</h3>
         </div>
         <button
           className="tool-button"
-          disabled={busy}
+          disabled={busy || !window.delulu}
           onClick={() => void refresh()}
         >
           <RefreshCw className={busy ? "spin" : ""} />
           {busy ? "Scanning…" : "Refresh local data"}
         </button>
       </div>
+      {!window.delulu && (
+        <p className="caption">Open the desktop app to view storage.</p>
+      )}
       {error && <Alert>{error} Use Refresh local data to try again.</Alert>}
       {data && (
         <>

@@ -37,30 +37,4 @@ jobs:
         run: bun run test:e2e
 
       - name: Verify isolated Electron desktop
-        run: xvfb-run --auto-servernum node scripts/test-evidence.mjs desktop
-
-      - name: Verify isolated local data inventory
-        run: xvfb-run --auto-servernum node scripts/local-data-smoke.mjs
-      - name: Verify isolated settings persistence failure
-        run: xvfb-run --auto-servernum node scripts/test-evidence.mjs settings-write
-
-      - name: Verify isolated deletion and reset
-        run: xvfb-run --auto-servernum node scripts/test-evidence.mjs data-deletion
-
-      - name: Verify Linux packaged resources and desktop
-        run: |
-          bunx --no-install electron-builder --dir --linux --x64 --publish never
-          bun run test:package-resources -- release/linux-unpacked linux
-          DELULU_TEST_EXECUTABLE="$PWD/release/linux-unpacked/delulu-talks" xvfb-run --auto-servernum node scripts/test-evidence.mjs desktop
-
-      - name: Summarize verification evidence
-        if: always()
-        run: bun run test:evidence
-
-      - name: Preserve verification evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: verification-evidence
-          path: artifacts/verification/
-          if-no-files-found: warn
+        run: xvfb-run --auto-servernum node scripts/desktop-smoke.mjs

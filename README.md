@@ -209,12 +209,11 @@ Delulu Talks is [MIT licensed](LICENSE). Vendored conversion helpers and their l
 
 ## Development checks
 
-[Verification evidence](docs/VERIFICATION.md) separates fixture-only, mocked,
-native-inference and manual-desktop results. The reporting commands below save
-SHA-bound JSON evidence under ignored `artifacts/verification/`; CI retains the
-reports after failures too. Run `bun run test:evidence` for the current HEAD's
-summary. Ordinary suites do not establish native inference or manual delivery.
-
+The small regression suite covers data persistence, dictation and paste safety,
+installer recovery, worker messages, and speech backend failure handling. One
+browser test file checks actual microphone capture and cleanup with synthetic
+audio. An optional Electron smoke check exercises the desktop IPC path.
+See [testing](docs/VERIFICATION.md) for commands and scope.
 
 Development uses its own **Delulu Talks Dev** profile, audio cache, and Linux desktop entry. It does not import production history, overwrite the installed launcher, automatically bind the production shortcut, or change login startup. `DELULU_USER_DATA_DIR` is an explicit development/test override; do not point it at your everyday profile.
 
@@ -235,13 +234,13 @@ bun run test:desktop
 The desktop smoke check uses temporary user data and skips global desktop integration. For opt-in real model verification with an existing runtime and cached models:
 
 ```bash
-bun run test:native -- --metadata /path/to/native-metadata.json --python /path/to/active-speech-generation/bin/python --cache /path/to/models
+/path/to/active-speech-generation/bin/python scripts/runtime-smoke.py --cache /path/to/models
 ```
 
 To exercise the full Electron transcription, correction and export path with the same existing runtime:
 
 ```bash
-bun run test:desktop -- --metadata /path/to/native-metadata.json "/path/to/Delulu Talks user data"
+bun run test:desktop -- "/path/to/Delulu Talks user data"
 ```
 
 Add `--lifecycle --writing` to test three real speech unload/reload/transcribe cycles, Writing, and a return to speech. Close the everyday app first so the test has enough GPU memory. The test uses temporary settings/history and the existing cached models; it does not install or repair the linked runtimes.
@@ -258,4 +257,4 @@ Ready now follows a bounded synthetic transcription warm-up. Recording timings i
 
 This uses temporary settings/history, disables clipboard/paste, and runs offline against cached models. The Python command uses the active speech runtime; rewriting is separate. It also runs offline against the included short audio sample. It is a smoke check, not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
 
-The [historical roadmap](https://github.com/JEMostert/delulu-talks/issues/14) now serves as a record of the broader plan. The current scope is the desktop dictation app: R2T2 speech, explicit profiles and vocabulary, a technical text buffer, optional local Qwen 3.5 rewrite previews, and local history and audio imports. CLI/API servers, editor extensions, watched folders, cloud/account features and meeting-summary pipelines are outside this scope. Acoustic streaming and experimental GPU tuning are deferred. Final mocked Python and isolated Electron desktop, settings-write, deletion and local-data fixtures passed; these checks do not establish native MLX/CUDA inference, physical microphone behavior or delivery into another application. Native platform acceptance remains pending.
+The [historical roadmap](https://github.com/JEMostert/delulu-talks/issues/14) now serves as a record of the broader plan. The current scope is the desktop dictation app: R2T2 speech, explicit profiles and vocabulary, a technical text buffer, optional local Qwen 3.5 rewrite previews, and local history and audio imports. CLI/API servers, editor extensions, watched folders, cloud/account features and meeting-summary pipelines are outside this scope. Acoustic streaming and experimental GPU tuning are deferred. Automated fixtures do not establish native MLX/CUDA inference, physical microphone behavior or delivery into another application. Native platform acceptance remains pending.

@@ -78,23 +78,6 @@ export function VocabularyPage({
         </button>
       </div>
       <section className="flex items-center justify-between gap-[30px] py-[18px] max-[700px]:flex-col max-[700px]:items-start max-[700px]:gap-3.5">
-        <div>
-          <h2>
-            {kind === "correction"
-              ? "Fix recurring recognition mistakes"
-              : "Insert saved text by voice"}
-          </h2>
-          <p className="text-muted max-w-[480px] text-[13px] mt-3">
-            {kind === "correction"
-              ? "Replace recognized phrases and pronunciation variants in clean results. Aliases match the original text once; replacements never trigger another rule."
-              : "Say a trigger phrase to insert an exact address, signature, or reusable block of text."}
-          </p>
-          <p className="text-muted max-w-[480px] text-[13px] mt-2">
-            Literal URLs, email addresses, paths, versions and command flags
-            stay exact during corrections and rewriting. Wrap commands in
-            backticks to keep the whole command unchanged.
-          </p>
-        </div>
         <button
           className="primary-button"
           disabled={saving || words.length >= 500}
@@ -114,8 +97,6 @@ export function VocabularyPage({
           {kind === "correction" ? "Add correction" : "Add shortcut"}
         </button>
       </section>
-      <VocabularyBulk words={words} saving={saving} onChange={onChange} />
-      <VocabularyTransfer words={words} saving={saving} onChange={onChange} />
       <div className="flex items-center gap-3.5 max-[700px]:flex-wrap">
         <label className="search-box max-[700px]:basis-full">
           <Search />
@@ -128,85 +109,6 @@ export function VocabularyPage({
         </label>
         <span className="caption">{words.length} / 500 rules</span>
       </div>
-      <RuleUsagePanel words={words} />
-      <section
-        className="border border-line rounded-panel bg-surface p-[18px] content-stack"
-        aria-labelledby={previewTitleId}
-      >
-        <div>
-          <h3 id={previewTitleId}>Try your saved rules</h3>
-          <p className="text-[12px] text-muted mt-2">
-            See how enabled corrections and text shortcuts work together.
-            Testing a phrase does not save it or change your transcripts.
-          </p>
-        </div>
-        <label className="field">
-          Test phrase
-          <textarea
-            aria-label="Test saved rules"
-            maxLength={2000}
-            value={testPhrase}
-            onChange={(event) => setTestPhrase(event.target.value)}
-            placeholder="Type a recognized phrase to try your saved rules…"
-          />
-        </label>
-        {testPhrase && (
-          <div className="grid grid-cols-2 gap-3 max-[700px]:grid-cols-1">
-            <div>
-              <h4 className="caption">Original</h4>
-              <output
-                aria-label="Original test phrase"
-                className="block whitespace-pre-wrap break-words text-[14px] leading-[1.6] mt-2 p-3 rounded-lg bg-soft"
-              >
-                {preview.original}
-              </output>
-            </div>
-            <div>
-              <h4 className="caption">Result</h4>
-              <output
-                aria-label="Saved rules result"
-                className="block whitespace-pre-wrap break-words text-[14px] leading-[1.6] mt-2 p-3 rounded-lg bg-soft"
-              >
-                {preview.result}
-              </output>
-            </div>
-            <div className="col-span-full">
-              <h4 className="caption">Matched rules</h4>
-              {preview.matches.length ? (
-                <ol
-                  aria-label="Matched saved rules"
-                  className="list-none p-0 m-0 mt-2 content-stack gap-2"
-                >
-                  {preview.matches.map((match) => (
-                    <li
-                      key={`${match.ruleId}-${match.index}`}
-                      className="border border-line rounded-lg p-3 text-[12px] break-words"
-                    >
-                      <span className="badge">
-                        {match.kind === "shortcut"
-                          ? "Text shortcut"
-                          : "Correction"}
-                      </span>{" "}
-                      <strong>{match.term}</strong>
-                      <p className="text-muted mt-2">
-                        Matched “{match.matchedText}” · trigger “{match.trigger}
-                        ”
-                      </p>
-                      <p className="whitespace-pre-wrap mt-2">
-                        {match.replacement}
-                      </p>
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p className="text-[12px] text-muted mt-2">
-                  No enabled rules matched this phrase.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-      </section>
       <section className="border border-line rounded-panel bg-surface shadow-panel backdrop-blur-xl overflow-hidden">
         {filtered.map((word) => (
           <article
@@ -301,10 +203,100 @@ export function VocabularyPage({
           </EmptyState>
         )}
       </section>
-      <p className="flex items-center justify-center gap-[7px] text-[11px] text-muted">
-        Rules apply to clean output. Original speech and word timings stay
-        untouched. These rules do not train the speech model.
-      </p>
+      <details className="disclosure">
+        <summary>Try a phrase</summary>{" "}
+        <section
+          className="border border-line rounded-panel bg-surface p-[18px] content-stack"
+          aria-labelledby={previewTitleId}
+        >
+          <div>
+            <h3 id={previewTitleId}>Try your saved rules</h3>
+            <p className="text-[12px] text-muted mt-2">
+              See how enabled corrections and text shortcuts work together.
+              Testing a phrase does not save it or change your transcripts.
+            </p>
+          </div>
+          <label className="field">
+            Test phrase
+            <textarea
+              aria-label="Test saved rules"
+              maxLength={2000}
+              value={testPhrase}
+              onChange={(event) => setTestPhrase(event.target.value)}
+              placeholder="Type a recognized phrase to try your saved rules…"
+            />
+          </label>
+          {testPhrase && (
+            <div className="grid grid-cols-2 gap-3 max-[700px]:grid-cols-1">
+              <div>
+                <h4 className="caption">Original</h4>
+                <output
+                  aria-label="Original test phrase"
+                  className="block whitespace-pre-wrap break-words text-[14px] leading-[1.6] mt-2 p-3 rounded-lg bg-soft"
+                >
+                  {preview.original}
+                </output>
+              </div>
+              <div>
+                <h4 className="caption">Result</h4>
+                <output
+                  aria-label="Saved rules result"
+                  className="block whitespace-pre-wrap break-words text-[14px] leading-[1.6] mt-2 p-3 rounded-lg bg-soft"
+                >
+                  {preview.result}
+                </output>
+              </div>
+              <div className="col-span-full">
+                <h4 className="caption">Matched rules</h4>
+                {preview.matches.length ? (
+                  <ol
+                    aria-label="Matched saved rules"
+                    className="list-none p-0 m-0 mt-2 content-stack gap-2"
+                  >
+                    {preview.matches.map((match) => (
+                      <li
+                        key={`${match.ruleId}-${match.index}`}
+                        className="border border-line rounded-lg p-3 text-[12px] break-words"
+                      >
+                        <span className="badge">
+                          {match.kind === "shortcut"
+                            ? "Text shortcut"
+                            : "Correction"}
+                        </span>{" "}
+                        <strong>{match.term}</strong>
+                        <p className="text-muted mt-2">
+                          Matched “{match.matchedText}” · trigger “
+                          {match.trigger}”
+                        </p>
+                        <p className="whitespace-pre-wrap mt-2">
+                          {match.replacement}
+                        </p>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="text-[12px] text-muted mt-2">
+                    No enabled rules matched this phrase.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+      </details>
+      <details className="disclosure">
+        <summary>Manage rules</summary>{" "}
+        <VocabularyBulk words={words} saving={saving} onChange={onChange} />
+        <VocabularyTransfer words={words} saving={saving} onChange={onChange} />
+      </details>
+      <details className="disclosure">
+        <summary>Usage & details</summary>
+        <RuleUsagePanel words={words} />{" "}
+        <p className="flex items-center justify-center gap-[7px] text-[11px] text-muted">
+          Rules apply to clean output. Original speech and word timings stay
+          untouched. These rules do not train the speech model.
+        </p>
+      </details>
       {draft && (
         <Modal
           title={

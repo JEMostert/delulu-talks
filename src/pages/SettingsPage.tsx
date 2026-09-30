@@ -6,7 +6,7 @@ import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { EncryptedHistory } from "../components/EncryptedHistory";
 import { ProjectVocabulary } from "../components/ProjectVocabulary";
 import { VocabularyPage } from "./VocabularyPage";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Clipboard,
   Clock3,
@@ -23,7 +23,6 @@ import { MAGIC_MODELS } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
 import { LocalData } from "../components/LocalData";
-import { Diagnostics } from "../components/Diagnostics";
 import { HistoryRetention } from "../components/HistoryRetention";
 import { MicrophoneNotice } from "../components/MicrophoneNotice";
 import type {
@@ -79,12 +78,16 @@ export function SettingsPage(props: Props) {
     onSave,
   } = props;
   const [tab, setTab] = useState("general");
+  useEffect(() => {
+    const content = document.getElementById("page-content");
+    if (content) content.scrollTop = 0;
+  }, [tab]);
   const [remove, setRemove] = useState(false);
   const [python, setPython] = useState(s.pythonCommand);
   const [shortcut, setShortcut] = useState(s.shortcut);
   const languageCapability = speechLanguageCapability(s.model);
   const busy =
-    ["preparing", "loading", "listening", "transcribing"].includes(
+    ["preparing", "loading", "listening", "paused", "transcribing"].includes(
       status.phase,
     ) || ["preparing", "loading", "rewriting"].includes(magicStatus.phase);
   const save = (patch: Partial<AppSettings>) => {
@@ -106,7 +109,7 @@ export function SettingsPage(props: Props) {
         aria-label="Settings sections"
       >
         {[
-          ["general", "Capture & delivery"],
+          ["general", "Recording"],
           ["personalization", "Personalization"],
           ["profiles", "Profiles"],
           ["writing", "Rewriting"],
@@ -124,11 +127,25 @@ export function SettingsPage(props: Props) {
             {label}
           </button>
         ))}
-        <span className="max-[900px]:hidden">
-          {saving ? "Saving…" : "Changes save automatically"}
-        </span>
+        <span className="max-[900px]:hidden">{saving ? "Saving…" : ""}</span>
       </div>
-      {tab === "data" && <LocalData />}
+      {tab === "data" && (
+        <>
+          <LocalData />
+          <details className="disclosure">
+            <summary>History retention</summary>
+            <HistoryRetention
+              policy={s.historyRetention}
+              saving={saving}
+              onSave={onSave}
+            />
+          </details>
+          <details className="disclosure">
+            <summary>Encrypted backup</summary>
+            <EncryptedHistory />
+          </details>
+        </>
+      )}
       {tab === "profiles" && (
         <>
           <ProfileActivationControls
@@ -145,19 +162,22 @@ export function SettingsPage(props: Props) {
       )}
       {tab === "personalization" && (
         <>
-          <ProjectVocabulary />
           <VocabularyPage
             words={s.customWords}
             saving={saving}
             onChange={(customWords) => onSave({ customWords })}
           />
+          <details className="disclosure">
+            <summary>Project vocabulary</summary>
+            <ProjectVocabulary />
+          </details>
         </>
       )}
       {tab === "general" && (
         <>
           <section className="settings-group">
             <div className="group-heading">
-              <h3>Capture configuration</h3>
+              <h3>Recording</h3>
               <p>Input, shortcut and recording behavior.</p>
             </div>
 
@@ -193,7 +213,7 @@ export function SettingsPage(props: Props) {
               <MicrophoneNotice settings={s} devices={devices} />
             </SettingRow>
             <SettingRow
-              title="Language hint"
+              title="Language"
               description="Choose a hint supported by the speech adapter. This guides recognition; it is not a detected-language report. Automatic language selection is not offered."
             >
               <select
@@ -316,53 +336,60 @@ export function SettingsPage(props: Props) {
                 busy,
               )}
             </SettingRow>
-            <SettingRow
-              title="Trailing silence duration"
-              description="Seconds below the threshold before stopping. Each recording uses the settings chosen when it starts; manual Stop is always available."
-            >
-              <input
-                type="number"
-                aria-label="Trailing silence duration in seconds"
-                min={2}
-                max={30}
-                step={1}
-                value={s.trailingSilenceSeconds}
-                disabled={saving || busy || !s.trailingSilenceStopEnabled}
-                onChange={(e) => {
-                  const value = e.target.valueAsNumber;
-                  if (Number.isFinite(value)) {
-                    save({
-                      trailingSilenceSeconds: Math.min(30, Math.max(2, value)),
-                    });
-                  }
-                }}
-              />
-            </SettingRow>
-            <SettingRow
-              title="Silence energy threshold"
-              description="Audio below this level in dB counts as silence. A lower threshold requires quieter audio."
-            >
-              <input
-                type="number"
-                aria-label="Silence energy threshold in dB"
-                min={-60}
-                max={-20}
-                step={1}
-                value={s.trailingSilenceThresholdDb}
-                disabled={saving || busy || !s.trailingSilenceStopEnabled}
-                onChange={(e) => {
-                  const value = e.target.valueAsNumber;
-                  if (Number.isFinite(value)) {
-                    save({
-                      trailingSilenceThresholdDb: Math.min(
-                        -20,
-                        Math.max(-60, value),
-                      ),
-                    });
-                  }
-                }}
-              />
-            </SettingRow>
+            {s.trailingSilenceStopEnabled && (
+              <>
+                <SettingRow
+                  title="Trailing silence duration"
+                  description="Seconds below the threshold before stopping. Each recording uses the settings chosen when it starts; manual Stop is always available."
+                >
+                  <input
+                    type="number"
+                    aria-label="Trailing silence duration in seconds"
+                    min={2}
+                    max={30}
+                    step={1}
+                    value={s.trailingSilenceSeconds}
+                    disabled={saving || busy || !s.trailingSilenceStopEnabled}
+                    onChange={(e) => {
+                      const value = e.target.valueAsNumber;
+                      if (Number.isFinite(value)) {
+                        save({
+                          trailingSilenceSeconds: Math.min(
+                            30,
+                            Math.max(2, value),
+                          ),
+                        });
+                      }
+                    }}
+                  />
+                </SettingRow>
+                <SettingRow
+                  title="Silence energy threshold"
+                  description="Audio below this level in dB counts as silence. A lower threshold requires quieter audio."
+                >
+                  <input
+                    type="number"
+                    aria-label="Silence energy threshold in dB"
+                    min={-60}
+                    max={-20}
+                    step={1}
+                    value={s.trailingSilenceThresholdDb}
+                    disabled={saving || busy || !s.trailingSilenceStopEnabled}
+                    onChange={(e) => {
+                      const value = e.target.valueAsNumber;
+                      if (Number.isFinite(value)) {
+                        save({
+                          trailingSilenceThresholdDb: Math.min(
+                            -20,
+                            Math.max(-60, value),
+                          ),
+                        });
+                      }
+                    }}
+                  />
+                </SettingRow>
+              </>
+            )}
             <SettingRow
               title="Recording overlay"
               description={
@@ -539,7 +566,7 @@ export function SettingsPage(props: Props) {
       {tab === "writing" && (
         <section className="settings-group">
           <div className="group-heading">
-            <h3>Optional automatic rewriting</h3>
+            <h3>Rewriting</h3>
             <p>
               Native clean dictation works without this. You can always rewrite
               individual results on demand.
@@ -609,18 +636,18 @@ export function SettingsPage(props: Props) {
             </SettingRow>
             <SettingRow
               icon={Clock3}
-              title="Keep speech model ready"
+              title="Keep speech ready"
               description="Load the speech model at startup and keep it in GPU memory. Uses more VRAM, but avoids cold starts between recordings."
             >
-              {toggle("preloadModel", "Keep speech model ready", busy)}
+              {toggle("preloadModel", "Keep speech ready", busy)}
             </SettingRow>
             <SettingRow
-              title="Keep rewrite model ready"
+              title="Keep rewriting ready"
               description="Keep the rewrite model loaded alongside the speech model."
             >
-              {toggle("preloadMagicModel", "Keep rewrite model ready", busy)}
+              {toggle("preloadMagicModel", "Keep rewriting ready", busy)}
             </SettingRow>
-            <SettingRow title="Release idle models after">
+            <SettingRow title="Release when idle">
               <select
                 aria-label="Idle unload delay"
                 value={s.modelIdleMinutes}
@@ -679,17 +706,10 @@ export function SettingsPage(props: Props) {
               </div>
             </SettingRow>
           </section>
-          <HistoryRetention
-            policy={s.historyRetention}
-            saving={saving}
-            onSave={onSave}
-          />
-          <Diagnostics />
         </>
       )}
       {tab === "maintenance" && (
         <>
-          <EncryptedHistory />
           <section className="settings-group">
             <div className="group-heading">
               <h3>Appearance</h3>
@@ -787,127 +807,124 @@ export function SettingsPage(props: Props) {
               </a>
             </div>
           </section>
-          <section className="settings-group">
-            <div className="group-heading">
-              <h3>Local runtime and model maintenance</h3>
-              <p>Repair uses the runtime versions included with this app.</p>
-            </div>
-            <SettingRow
-              title="Speech runtime and model"
-              description={status.message}
-            >
-              <div className="inline-control">
-                {props.onCancelSetup &&
-                  ["running", "cancelling"].includes(
-                    status.setupState ?? "",
-                  ) && (
-                    <button
-                      className="secondary-button"
-                      disabled={status.setupState === "cancelling"}
-                      onClick={props.onCancelSetup}
-                    >
-                      {status.setupState === "cancelling"
-                        ? "Cancelling…"
-                        : "Cancel setup"}
-                    </button>
-                  )}
-                <button
-                  className="secondary-button"
-                  disabled={busy}
-                  onClick={props.onSetup}
-                >
-                  Install / repair runtime
-                </button>
-                {status.engine === "ready" ? (
-                  <button
-                    className="tool-button"
-                    disabled={busy}
-                    onClick={props.onUnload}
-                  >
-                    Unload model
-                  </button>
-                ) : (
-                  <button
-                    className="tool-button"
-                    disabled={busy || status.engine !== "unloaded"}
-                    onClick={props.onLoad}
-                  >
-                    Load model
-                  </button>
-                )}
+          <details className="disclosure">
+            <summary>Advanced maintenance</summary>
+            <section className="settings-group">
+              <div className="group-heading">
+                <h3>Local runtime and model maintenance</h3>
+                <p>Repair uses the runtime versions included with this app.</p>
               </div>
-            </SettingRow>
-            <SettingRow
-              title="Rewrite runtime and model"
-              description={magicStatus.message}
-            >
-              <div className="inline-control">
-                {props.onCancelSetupMagic &&
-                  ["running", "cancelling"].includes(
-                    magicStatus.setupState ?? "",
-                  ) && (
-                    <button
-                      className="secondary-button"
-                      disabled={magicStatus.setupState === "cancelling"}
-                      onClick={props.onCancelSetupMagic}
-                    >
-                      {magicStatus.setupState === "cancelling"
-                        ? "Cancelling…"
-                        : "Cancel rewriting setup"}
-                    </button>
-                  )}
-                <button
-                  className="secondary-button"
-                  disabled={busy}
-                  onClick={props.onSetupMagic}
-                >
-                  Install / repair runtime
-                </button>
-                {magicStatus.engine === "ready" ? (
-                  <button
-                    className="tool-button"
-                    disabled={busy}
-                    onClick={props.onUnloadMagic}
-                  >
-                    Unload model
-                  </button>
-                ) : (
-                  <button
-                    className="tool-button"
-                    disabled={busy || magicStatus.engine !== "unloaded"}
-                    onClick={props.onLoadMagic}
-                  >
-                    Load model
-                  </button>
-                )}
-              </div>
-            </SettingRow>
-            <SettingRow
-              title="Remove runtime"
-              description="Remove the Python environment. Your settings, history and downloaded model cache are preserved."
-            >
-              <button
-                className="danger-button"
-                disabled={busy}
-                onClick={() => setRemove(true)}
+              <SettingRow
+                title="Speech runtime and model"
+                description={status.message}
               >
-                <Trash2 />
-                Remove runtime
-              </button>
-            </SettingRow>
-          </section>
-          <HistoryRetention
-            policy={s.historyRetention}
-            saving={saving}
-            onSave={onSave}
-          />
-          <Diagnostics />
+                <div className="inline-control">
+                  {props.onCancelSetup &&
+                    ["running", "cancelling"].includes(
+                      status.setupState ?? "",
+                    ) && (
+                      <button
+                        className="secondary-button"
+                        disabled={status.setupState === "cancelling"}
+                        onClick={props.onCancelSetup}
+                      >
+                        {status.setupState === "cancelling"
+                          ? "Cancelling…"
+                          : "Cancel setup"}
+                      </button>
+                    )}
+                  <button
+                    className="secondary-button"
+                    disabled={busy}
+                    onClick={props.onSetup}
+                  >
+                    Set up / fix model
+                  </button>
+                  {status.engine === "ready" ? (
+                    <button
+                      className="tool-button"
+                      disabled={busy}
+                      onClick={props.onUnload}
+                    >
+                      Unload model
+                    </button>
+                  ) : (
+                    <button
+                      className="tool-button"
+                      disabled={busy || status.engine !== "unloaded"}
+                      onClick={props.onLoad}
+                    >
+                      Load model
+                    </button>
+                  )}
+                </div>
+              </SettingRow>
+              <SettingRow
+                title="Rewrite runtime and model"
+                description={magicStatus.message}
+              >
+                <div className="inline-control">
+                  {props.onCancelSetupMagic &&
+                    ["running", "cancelling"].includes(
+                      magicStatus.setupState ?? "",
+                    ) && (
+                      <button
+                        className="secondary-button"
+                        disabled={magicStatus.setupState === "cancelling"}
+                        onClick={props.onCancelSetupMagic}
+                      >
+                        {magicStatus.setupState === "cancelling"
+                          ? "Cancelling…"
+                          : "Cancel rewriting setup"}
+                      </button>
+                    )}
+                  <button
+                    className="secondary-button"
+                    disabled={busy}
+                    onClick={props.onSetupMagic}
+                  >
+                    Set up / fix model
+                  </button>
+                  {magicStatus.engine === "ready" ? (
+                    <button
+                      className="tool-button"
+                      disabled={busy}
+                      onClick={props.onUnloadMagic}
+                    >
+                      Unload model
+                    </button>
+                  ) : (
+                    <button
+                      className="tool-button"
+                      disabled={busy || magicStatus.engine !== "unloaded"}
+                      onClick={props.onLoadMagic}
+                    >
+                      Load model
+                    </button>
+                  )}
+                </div>
+              </SettingRow>
+              <SettingRow
+                title="Remove setup"
+                description="Remove the Python environment. Your settings, history and downloaded model cache are preserved."
+              >
+                <button
+                  className="danger-button"
+                  disabled={busy}
+                  onClick={() => setRemove(true)}
+                >
+                  <Trash2 />
+                  Remove setup
+                </button>
+              </SettingRow>
+            </section>
+          </details>
         </>
       )}
       {remove && (
         <ConfirmDialog
           title="Remove the local runtime?"
-          confirmLabel="Remove runtime"
+          confirmLabel="Remove setup"
           onClose={() => setRemove(false)}
           onConfirm={props.onReset}
         >

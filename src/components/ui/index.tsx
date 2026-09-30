@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
-import { AlertCircle, X, type LucideIcon } from "lucide-react";
+import { AlertCircle, Info, X, type LucideIcon } from "lucide-react";
 
 export function Toggle({
   value,
@@ -43,7 +43,14 @@ export function SettingRow({
       {Icon && <Icon className="setting-icon" />}
       <div className="setting-copy">
         <strong>{title}</strong>
-        {description && <p>{description}</p>}
+        {description && (
+          <details className="setting-help">
+            <summary aria-label={`About ${title}`} title={`About ${title}`}>
+              <Info />
+            </summary>
+            <p>{description}</p>
+          </details>
+        )}
       </div>
       <div className="setting-control max-[900px]:max-w-[47%] max-[700px]:max-w-full">
         {children}
@@ -143,9 +150,12 @@ export function Modal({
         visible(current)
       )
         return;
+      const page = document.getElementById("page-content");
       const target = visible(previous)
         ? previous
-        : document.getElementById("page-content");
+        : visible(page)
+          ? page
+          : document.querySelector<HTMLElement>('[aria-label="Open settings"]');
       target?.focus({ preventScroll: true });
     };
   }, [visible]);
