@@ -42,6 +42,7 @@ export type HistoryBatchSnapshot = {
 export type DictationFormatting = "preserve" | "spoken";
 
 export type CustomWord = {
+  schemaVersion?: 1;
   kind?: "correction" | "shortcut";
   /** Omitted for legacy/global rules; scoped rules require a matching language. */
   language?: string;
@@ -55,6 +56,7 @@ export type CustomWord = {
 };
 
 export type AppSettings = {
+  schemaVersion?: 1;
   workflowVersion: 1;
   onboardingComplete: boolean;
   theme: "system" | "light" | "dark";
@@ -237,6 +239,7 @@ export type TranscriptRecord = {
   sessionOnly?: boolean;
   dictationFormatting?: DictationFormatting;
   timings?: PipelineTimings;
+  schemaVersion?: 1;
   id: string;
   title?: string | null;
   createdAt: number;

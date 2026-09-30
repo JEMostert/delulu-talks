@@ -1,3 +1,4 @@
+import { assertPersistedSchema, versionPersistedRecord } from "./persistedSchema";
 import { LANGUAGES } from "./data";
 import type { AppSettings, MagicModelId, MagicPreset } from "./types";
 
@@ -5,6 +6,7 @@ export type ProfileJson = null | boolean | number | string | ProfileJson[] | { [
 /** Opaque future documents remain stored, but must never be activated or edited. */
 export type PersonalProfileDocument = { schemaVersion: number; [key: string]: ProfileJson };
 export type ProfileVocabularyRuleV1 = {
+  schemaVersion?: 1;
   id: string;
   kind: "correction" | "shortcut";
   term: string;
@@ -98,6 +100,7 @@ function json(value: unknown, path: string, depth = 0): void {
 }
 function rule(value: unknown, path: string): void {
   const source = object(value, path);
+  assertPersistedSchema(source, "rule");
   text(source.id, `${path}.id`, 128);
   if (source.kind !== "correction" && source.kind !== "shortcut") fail(`${path}.kind`);
   text(source.term, `${path}.term`, 256);
@@ -172,7 +175,10 @@ export function readPersonalProfiles(value: unknown): ReadPersonalProfiles {
   if (future) return { status: "unsupported", document: structuredClone(source) as PersonalProfileDocument };
   uniqueIds(profiles, "personalProfiles.profiles");
   // Validate without reconstructing: preserve extra fields and exact text bytes.
-  return { status: "supported", document: structuredClone(source) as unknown as PersonalProfileCollectionV1 };
+  const document = structuredClone(source) as unknown as PersonalProfileCollectionV1;
+  for (const profile of document.profiles)
+    profile.vocabulary.rules = profile.vocabulary.rules.map((rule) => versionPersistedRecord(rule, "rule"));
+  return { status: "supported", document };
 }
 
 /** Called before storage writes; an older app may preserve but not replace future data. */
@@ -197,6 +203,7 @@ export function personalProfileFromSettings(settings: AppSettings, id: string, n
     delivery: { autoPaste: settings.autoPaste, copyToClipboard: settings.copyToClipboard, keepHistory: settings.keepHistory },
     vocabulary: { rules: settings.customWords.map((word) => ({
       ...word,
+      schemaVersion: 1,
       kind: word.kind ?? (word.replacement ? "shortcut" : "correction"),
     })) },
     technicalGrammar: { preserveIdentifiers: true, literalTerms: [] },

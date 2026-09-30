@@ -1,5 +1,6 @@
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { transcriptSourceRevision } from "../../src/transcriptText";
+import { assertPersistedSchema, versionPersistedRecord } from "../../src/persistedSchema";
 import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { normalizeTimings, withoutRewriteTimings } from "../../src/pipelineTimings";
 import { app } from "electron";
@@ -96,6 +97,13 @@ function readProfileJson(
     throw new Error(
       `Unsupported local data at ${sourcePath}: ${problem}. The file has been preserved. Restore a compatible backup or use an app version that supports this format.`,
     );
+  if (kind === "settings") {
+    assertPersistedSchema(value, "settings");
+    const rules = (value as Record<string, unknown>).customWords;
+    if (Array.isArray(rules)) rules.forEach((rule) => assertPersistedSchema(rule, "rule"));
+  } else if (Array.isArray(value)) {
+    value.forEach((record) => assertPersistedSchema(record, "transcript"));
+  }
   return value;
 }
 
@@ -157,25 +165,24 @@ function safeString(value: unknown, fallback: string, max = 512): string {
     : fallback;
 }
 
-function optionalText(
-  value: unknown,
-  max: number,
-  preserveWhitespace = false,
-): string | null {
-  if (typeof value !== "string") return null;
-  const text = preserveWhitespace ? value : value.trim();
-  return text.trim() ? text.slice(0, max) : null;
-}
-
 function normalizeWords(value: unknown): CustomWord[] {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, 500).flatMap((item, index) => {
-    if (!item || typeof item !== "object") return [];
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 500)
+    throw new Error("Invalid or oversized vocabulary rules. Existing settings are preserved.");
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      throw new Error("Invalid vocabulary rule. Existing settings are preserved.");
+    assertPersistedSchema(item, "rule");
     const source = item as Partial<CustomWord>;
     const term = safeString(source.term, "", 256);
-    if (!term) return [];
+    if (!term)
+      throw new Error("Vocabulary rule has no term. Existing settings are preserved.");
+    if (typeof source.replacement === "string" && source.replacement.length > 4096)
+      throw new Error("Vocabulary text block exceeds the supported limit. Existing settings are preserved.");
     return [
       {
+        ...source,
+        schemaVersion: 1,
         kind:
           source.kind === "shortcut" || (!source.kind && !!source.replacement)
             ? "shortcut"
@@ -193,7 +200,7 @@ function normalizeWords(value: unknown): CustomWord[] {
         // Shortcut indentation and trailing whitespace are literal user text.
         replacement:
           typeof source.replacement === "string" && source.replacement.trim()
-            ? source.replacement.slice(0, 4096)
+            ? source.replacement
             : "",
         enabled: source.enabled !== false &&
           (source.language == null || typeof source.language === "string"),
@@ -211,6 +218,7 @@ export function normalizeSettings(value: unknown): AppSettings {
     value && typeof value === "object"
       ? (value as Record<string, unknown>)
       : {};
+  assertPersistedSchema(source, "settings");
   const magicModel = validMagicModels.has(source.magicModel as MagicModelId)
     ? (source.magicModel as MagicModelId)
     : DEFAULT_SETTINGS.magicModel;
@@ -229,6 +237,8 @@ export function normalizeSettings(value: unknown): AppSettings {
   );
 
   return {
+    ...source,
+    schemaVersion: 1,
     workflowVersion: 1,
     theme: ["light", "dark"].includes(String(source.theme))
       ? (source.theme as AppSettings["theme"])
@@ -365,12 +375,12 @@ function migrateDelivery(value: unknown): TranscriptDelivery | undefined {
 function migrateRecord(value: unknown): TranscriptRecord | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
-  const text = safeString(
-    source.text ?? source.intendedText ?? source.verbatimText,
-    "",
-    250_000,
-  );
-  if (!text) return null;
+  assertPersistedSchema(source, "transcript");
+  const original = source.text ?? source.intendedText ?? source.verbatimText;
+  const text = typeof original === "string" ? original : "";
+  if (!text.trim())
+    throw new Error("Invalid transcript text. History has been preserved; repair or restore the file before migration.");
+  if (source.schemaVersion === 1) return structuredClone(source) as unknown as TranscriptRecord;
   const model = validHistoryModels.has(source.model as ModelId)
     ? (source.model as ModelId)
     : DEFAULT_SETTINGS.model;
@@ -384,6 +394,8 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     }
   }
   return {
+    ...source,
+    schemaVersion: 1,
     id: safeString(source.id, `legacy-${Date.now()}-${Math.random()}`, 128),
     ...(source.title === undefined ? {} : { title }),
     createdAt: Number(source.createdAt) || Date.now(),
@@ -401,12 +413,10 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
       ? Number(source.sourceRevision) : 0,
     rewriteSourceRevision: Number.isSafeInteger(source.rewriteSourceRevision) && Number(source.rewriteSourceRevision) >= 0
       ? Number(source.rewriteSourceRevision) : null,
-    personalizedText: optionalText(source.personalizedText, 500_000, true),
-    editedText: optionalText(
-      source.editedText ?? source.editedIntendedText,
-      500_000,
-    ),
-    magicText: optionalText(source.magicText, 500_000, true),
+    personalizedText: typeof source.personalizedText === "string" ? source.personalizedText : null,
+    editedText: typeof (source.editedText ?? source.editedIntendedText) === "string"
+      ? (source.editedText ?? source.editedIntendedText) as string : null,
+    magicText: typeof source.magicText === "string" ? source.magicText : null,
     magicModel: validMagicModels.has(source.magicModel as MagicModelId)
       ? (source.magicModel as MagicModelId)
       : null,
@@ -525,9 +535,11 @@ export class StorageService {
         : { ...prior, magicEnabled: false, preloadMagicModel: false },
     );
     this.history = Array.isArray(rawHistory)
-      ? rawHistory
-          .flatMap((item) => migrateRecord(item) ?? [])
-          .slice(0, MAX_HISTORY)
+      ? rawHistory.map((item) => {
+          const record = migrateRecord(item);
+          if (!record) throw new Error("Invalid transcript record. History has been preserved.");
+          return record;
+        })
       : [];
     const settingsChanged = rawSettings !== undefined &&
       JSON.stringify(rawSettings) !== JSON.stringify(this.settings);
@@ -569,6 +581,7 @@ export class StorageService {
         if (stagedHistory) rmSync(stagedHistory, { force: true });
       }
     } else {
+      if (historyChanged) writeJson(historyPath, this.history);
       writeJson(settingsPath, this.settings);
     }
   }
@@ -614,6 +627,7 @@ export class StorageService {
   }
 
   addHistory(record: TranscriptRecord): void {
+    record = versionPersistedRecord(record, "transcript");
     if (!this.settings.keepHistory || record.sessionOnly) return;
     const ordered = [
       record,
@@ -665,6 +679,7 @@ export class StorageService {
   }
 
   replaceHistory(record: TranscriptRecord): void {
+    record = versionPersistedRecord(record, "transcript");
     if (!this.findHistory(record.id)) throw new Error("Transcript not found");
     const next = this.history.map((item) =>
       item.id === record.id ? record : item,

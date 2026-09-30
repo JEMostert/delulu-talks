@@ -30,6 +30,7 @@ function rewriteProvenance(repo: string): ModelProvenance {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  schemaVersion: 1,
   workflowVersion: 1,
   onboardingComplete: false,
   theme: "system",
