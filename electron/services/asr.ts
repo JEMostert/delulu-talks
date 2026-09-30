@@ -1,7 +1,7 @@
 import { splitForRewrite } from "../../src/personalization";
 import { app } from "electron";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { magicModelById, modelById } from "../../src/data";
 import type {
   AppSettings,
@@ -20,6 +20,7 @@ import type { StorageService } from "./storage";
 import { WorkerClient, transcriptionTimeout } from "../runtime/workerClient";
 import { SerialQueue } from "../runtime/serialQueue";
 import { RuntimeInstaller } from "../runtime/installer";
+import { runtimeEnvironment } from "../runtime/environment";
 import { speechModelForPlatform } from "../runtime/platform";
 import { privateFailureLog } from "../runtime/privateDiagnostics";
 
@@ -173,6 +174,7 @@ export class AsrService {
       {
         dataDirectory: storage.dataDirectory,
         venvDirectory: storage.venvDirectory,
+        kind: "speech",
       },
       null,
       () => this.workerEnvironment("speech"),
@@ -181,6 +183,7 @@ export class AsrService {
       {
         dataDirectory: storage.dataDirectory,
         venvDirectory: storage.magicVenvDirectory,
+        kind: "magic",
       },
       magicConstraints,
       () => this.workerEnvironment("magic"),
@@ -530,16 +533,12 @@ export class AsrService {
     } catch {
       /* Repair must still run when the old activation record is damaged. */
     }
-    const modelCache = this.storage.modelCacheDirectory;
-    return {
-      ...process.env,
-      PYTHONUNBUFFERED: "1",
-      PYTHONIOENCODING: "utf-8",
-      HF_HOME: modelCache,
-      HF_HUB_CACHE: join(modelCache, "hub"),
-      HUGGINGFACE_HUB_CACHE: join(modelCache, "hub"),
-      PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
-    };
+    return runtimeEnvironment(
+      kind,
+      this.storage.dataDirectory,
+      this.storage.modelCacheDirectory,
+      bin,
+    );
   }
 
   private request<T>(
@@ -549,7 +548,12 @@ export class AsrService {
     timeoutMs?: number,
   ): Promise<T> {
     if (this.shuttingDown)
-      return Promise.reject(new Error("The model workers are shutting down"));
+      return Promise.reject(new Error("The model engines are shutting down"));
+    const commands = kind === "speech"
+      ? ["capabilities", "ping", "load", "unload", "status", "transcribe", "shutdown"]
+      : ["capabilities", "ping", "magicLoad", "magicUnload", "magicStatus", "magicRewrite", "shutdown"];
+    if (!commands.includes(command))
+      return Promise.reject(new Error(`${command} is not allowed in the ${kind} runtime`));
     const worker = kind === "speech" ? this.speechWorker : this.magicWorker;
     return worker.request<T>(command, payload, timeoutMs);
   }

@@ -3,8 +3,8 @@
 
 The speech engine is R2T2 (Confucius4-R2T2), a streaming-capable Qwen3-ASR model
 served through vLLM on Linux CUDA, native Transformers on Windows CUDA, or
-direct MLX Audio on Apple Silicon. The process keeps the speech and Magic models resident
-independently. Protocol messages are prefixed so library progress output can
+direct MLX Audio on Apple Silicon. The desktop starts a dedicated process per
+runtime role, each accepting only its own model commands. Protocol messages are prefixed so library progress output can
 never be mistaken for a response by Electron.
 """
 
@@ -603,10 +603,23 @@ class Worker:
 
     def dispatch(self, request: dict[str, Any]) -> Any:
         command = request.get("command")
+        # Standalone probes can omit the role; the desktop always supplies it.
+        role = os.environ.get("DELULU_RUNTIME_KIND")
+        if role:
+            allowed = {
+                "speech": {"capabilities", "ping", "load", "unload", "status", "transcribe", "shutdown"},
+                "magic": {"capabilities", "ping", "magicLoad", "magicUnload", "magicStatus", "magicRewrite", "shutdown"},
+            }
+            if role not in allowed or command not in allowed[role]:
+                raise ValueError(f"Command {command} is not allowed in the {role} runtime")
         if command == "capabilities":
+            expected = "writing" if role == "magic" else "speech"
+            if role and request.get("engine") != expected:
+                raise ValueError("Capabilities engine does not match runtime role")
             return self.capabilities(request["engine"])
         if command == "ping":
-            return {"python": sys.version.split()[0], **self.status()}
+            status = self.magic_status() if role == "magic" else self.status()
+            return {"python": sys.version.split()[0], **status}
         if command == "load":
             return self.load(request)
         if command == "unload":
@@ -624,8 +637,10 @@ class Worker:
         if command == "transcribe":
             return self.transcribe(request)
         if command == "shutdown":
-            self.unload()
-            self.unload_magic()
+            if role != "magic":
+                self.unload()
+            if role != "speech":
+                self.unload_magic()
             return {"shutdown": True}
         raise ValueError(f"Unknown worker command: {command}")
 

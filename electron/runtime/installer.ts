@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { homedir, release } from "node:os";
 import { usesMetal } from "./platform";
-import { activateRuntime, runtimePython, rollbackRuntime } from "./location";
+import { activateRuntime, runtimeDirectory, runtimePython, rollbackRuntime } from "./location";
 import type { AppSettings } from "../../src/types";
 import { resolveRuntimeArtifacts } from "./artifacts";
 import {
@@ -39,7 +39,7 @@ export type InstallProgress = {
   progress: number;
   detail?: string;
 };
-type Paths = { dataDirectory: string; venvDirectory: string };
+type Paths = { dataDirectory: string; venvDirectory: string; kind?: "speech" | "magic" };
 /** Owns interpreter discovery and package installation; model loading is separate. */
 export class RuntimeInstaller {
   readonly setupLog = new SetupLog();
@@ -103,6 +103,16 @@ export class RuntimeInstaller {
   }
   get python(): string {
     return runtimePython(this.paths.venvDirectory);
+  }
+  private assertKind(kind: "speech" | "magic"): void {
+    if (this.paths.kind && this.paths.kind !== kind)
+      throw new Error(`This installer owns the ${this.paths.kind} runtime, not ${kind}`);
+    const marker = join(runtimeDirectory(this.paths.venvDirectory), "runtime-role.json");
+    // Preserve pre-marker generations and the legacy Writing environment.
+    if (!existsSync(marker)) return;
+    const role = JSON.parse(readFileSync(marker, "utf8"));
+    if (role.kind !== kind)
+      throw new Error(`The selected environment belongs to ${role.kind}, not ${kind}. Choose its dedicated runtime directory.`);
   }
   rollback(): void {
     this.recordSetupStage("Restoring the previous active runtime");
@@ -215,6 +225,7 @@ export class RuntimeInstaller {
 
   async ready(kind: "speech" | "magic"): Promise<boolean> {
     try {
+      this.assertKind(kind);
       if (!existsSync(this.python)) return false;
       if (this.validatedPython === `${kind}:${this.python}`) return true;
       await this.run(
@@ -292,6 +303,8 @@ export class RuntimeInstaller {
     settings: AppSettings,
     publish: (progress: InstallProgress) => void,
   ): Promise<void> {
+    if (this.paths.kind && this.paths.kind !== kind)
+      throw new Error(`This installer owns the ${this.paths.kind} runtime, not ${kind}`);
     this.cancelled = false;
     this.validatedPython = null;
     const metal = kind === "speech" && this.metal;
@@ -491,6 +504,11 @@ export class RuntimeInstaller {
       observation,
     );
     writeRuntimeInventory(candidate, inventory);
+    writeFileSync(
+      join(candidate, "runtime-role.json"),
+      JSON.stringify({ kind, revision: RUNTIME_REVISION }),
+      { mode: 0o600 },
+    );
     if (this.cancelled)
       throw new Error(
         "Runtime setup cancelled. The previous environment is unchanged.",
