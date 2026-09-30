@@ -16,9 +16,11 @@ function textBytes(record: TranscriptRecord): number {
 /** Keep newest session outputs whole; only the newest may exceed the budget. */
 export function retainSessionTranscripts(
   records: TranscriptRecord[],
+  pinnedIds: readonly string[] = [],
 ): TranscriptRecord[] {
+  const pinned = new Set(pinnedIds);
   const sessions = records
-    .filter((record) => record.sessionOnly)
+    .filter((record) => record.sessionOnly && !pinned.has(record.id))
     .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id));
   const retained = new Set<string>();
   let bytes = 0;
@@ -32,7 +34,7 @@ export function retainSessionTranscripts(
     bytes += size;
   }
   return records.filter(
-    (record) => !record.sessionOnly || retained.has(record.id),
+    (record) => !record.sessionOnly || pinned.has(record.id) || retained.has(record.id),
   );
 }
 
@@ -40,11 +42,12 @@ export function retainSessionTranscripts(
 export function rememberSessionTranscript(
   records: Map<string, TranscriptRecord>,
   record: TranscriptRecord,
+  pinnedIds: readonly string[] = [],
 ): void {
   if (!record.sessionOnly) return;
   records.set(record.id, record);
   const retained = new Set(
-    retainSessionTranscripts([...records.values()]).map((item) => item.id),
+    retainSessionTranscripts([...records.values()], pinnedIds).map((item) => item.id),
   );
   for (const id of records.keys()) {
     if (!retained.has(id)) records.delete(id);

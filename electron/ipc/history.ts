@@ -148,7 +148,7 @@ handle("history:updateTranscript", (_event, id: unknown, text: unknown) => {
         ? applyTranscriptEdit(sessionRecord, correction)
         : null;
     if (!updated) throw new Error("Transcript not found");
-    rememberSessionTranscript(sessionTranscripts, updated);
+    rememberSessionTranscript(sessionTranscripts, updated, historyDeletion.getState()?.ids ?? []);
     if (getLastTranscript()?.id === key) setLastTranscript(updated);
     rebuildTrayMenu();
     return updated;
@@ -220,7 +220,7 @@ handle(
         };
       }
       if (storage.findHistory(key)) storage.replaceHistory(updated);
-      rememberSessionTranscript(sessionTranscripts, updated);
+      rememberSessionTranscript(sessionTranscripts, updated, historyDeletion.getState()?.ids ?? []);
       if (getLastTranscript()?.id === key) setLastTranscript(updated);
       rebuildTrayMenu();
       return updated;

@@ -413,9 +413,9 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
   if (!text.trim())
     throw new Error("Invalid transcript text. History has been preserved; repair or restore the file before migration.");
   if (source.schemaVersion === 1) return structuredClone(source) as unknown as TranscriptRecord;
-  const model = validHistoryModels.has(source.model as ModelId)
-    ? (source.model as ModelId)
-    : DEFAULT_SETTINGS.model;
+  if (source.model !== undefined && !validHistoryModels.has(source.model as ModelId))
+    throw new Error("Unknown historical speech model. History has been preserved; restore or repair the file before migration.");
+  const model = source.model === undefined ? DEFAULT_SETTINGS.model : source.model as ModelId;
   const delivery = migrateDelivery(source.delivery);
   let title: string | null = null;
   if (source.title !== undefined) {
