@@ -57,14 +57,6 @@ function desktopOnly(): never {
 }
 
 export const previewApi: DeluluApi = {
-  async getWatchedImports() { return []; },
-  async addWatchedImport() { throw new Error("Watched imports require the desktop app"); },
-  async setWatchedImportEnabled() { throw new Error("Watched imports require the desktop app"); },
-  async removeWatchedImport() { throw new Error("Watched imports require the desktop app"); },
-  async getAutomationStatus() { return { available: false, enabled: false, url: null, connectionFile: null, integrations: [] }; },
-  async setAutomationEnabled() { throw new Error("Local automation requires the desktop app"); },
-  async grantAutomation() { throw new Error("Local automation requires the desktop app"); },
-  async revokeAutomation() { throw new Error("Local automation requires the desktop app"); },
   getSelectedTextState: async () => ({enabled:false,supported:false,shortcut:"CommandOrControl+Shift+R",session:null,error:null}),
   enableSelectedText: async () => { throw new Error("Native selected-text capture requires the desktop application on X11."); },
   discardSelectedText: async () => {},

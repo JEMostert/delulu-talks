@@ -22,7 +22,6 @@ import { MAGIC_MODELS } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
 import { LocalData } from "../components/LocalData";
-import { LocalAutomation } from "../components/LocalAutomation";
 import { Diagnostics } from "../components/Diagnostics";
 import { HistoryRetention } from "../components/HistoryRetention";
 import { MicrophoneNotice } from "../components/MicrophoneNotice";
@@ -126,7 +125,7 @@ export function SettingsPage(props: Props) {
           {saving ? "Saving…" : "Changes save automatically"}
         </span>
       </div>
-      {tab === "data" && <><LocalData /><LocalAutomation /></>}
+      {tab === "data" && <LocalData />}
       {tab === "profiles" && (
         <>
           <ProfileActivationControls settings={s} busy={busy || saving} onActivate={props.onActivateProfile} />

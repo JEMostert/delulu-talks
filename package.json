@@ -36,8 +36,7 @@
     "test:manual": "node scripts/test-evidence.mjs manual",
     "test:evidence": "node scripts/test-evidence.mjs summary",
     "test:settings-write": "bun run build && node scripts/test-evidence.mjs settings-write",
-    "test:package-resources": "node scripts/test-evidence.mjs package-resources",
-    "cli": "node scripts/delulu.mjs"
+    "test:package-resources": "node scripts/test-evidence.mjs package-resources"
   },
   "dependencies": {
     "dbus-next": "^0.10.2",
