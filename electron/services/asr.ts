@@ -211,6 +211,7 @@ export class AsrService {
         ...(event?.command === "load" && event.stage === "warmup"
           ? { residency: "resident" as const, warmup: "warming" as const }
           : {}),
+        downloadBytes: event?.command === "load" ? event.downloadBytes ?? null : null,
       }),
     );
     this.magicWorker = new WorkerClient(
@@ -226,6 +227,7 @@ export class AsrService {
           ? { setupStage: modelSetupStage(event.stage), progress: null } : {}),
         ...(event?.command === "magicRewrite" && event.stage === "warmup"
           ? { setupStage: "warmup" as const, warmup: "warming" as const, progress: null } : {}),
+        downloadBytes: event?.command === "magicLoad" ? event.downloadBytes ?? null : null,
       }),
     );
   }
@@ -278,6 +280,8 @@ export class AsrService {
       ...patch,
     };
     if (this.status.engine !== "ready") this.status.speechExecution = null;
+    if (patch.phase !== undefined || !["preparing", "loading"].includes(this.status.phase))
+      this.status.downloadBytes = null;
     for (const listener of this.statusListeners) listener(this.getStatus());
   }
 
@@ -289,6 +293,8 @@ export class AsrService {
         ? UNLOADED_LIFECYCLE : {}),
       ...patch,
     };
+    if (patch.phase !== undefined || !["preparing", "loading"].includes(this.magicStatus.phase))
+      this.magicStatus.downloadBytes = null;
     for (const listener of this.magicStatusListeners)
       listener(this.getMagicStatus());
   }

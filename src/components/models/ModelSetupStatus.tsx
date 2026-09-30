@@ -19,6 +19,14 @@ const STAGES: Record<SetupStage, string> = {
   ready: "Ready — inference warmup completed",
 };
 
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "Unavailable";
+  const gib = 1024 ** 3;
+  const unit = bytes >= gib ? "GiB" : "MiB";
+  const value = bytes / (bytes >= gib ? gib : 1024 ** 2);
+  return `${value.toFixed(2)} ${unit}`;
+}
+
 export function ModelSetupStatus({
   status,
   kind,
@@ -32,6 +40,7 @@ export function ModelSetupStatus({
 }) {
   const settingUp = ["preparing", "loading"].includes(status.phase) || status.warmup === "warming";
   const failed = status.phase === "error" || status.engine === "error";
+  const bytes = status.downloadBytes;
   return (
     <>
       {settingUp && (
@@ -57,10 +66,29 @@ export function ModelSetupStatus({
               {status.detail}
             </p>
           )}
+          {bytes ? (
+            <p className="caption">
+              <strong>
+                {bytes.kind === "transfer" ? "Network transfer" : "Cache reconstruction"}
+              </strong>
+              {": "}
+              <span
+                title={`${bytes.completed} bytes completed; ${bytes.total == null ? "total unknown" : `${bytes.total} bytes reported total`}`}
+              >
+                {formatBytes(bytes.completed)} completed
+                {bytes.total == null
+                  ? " · total unavailable"
+                  : ` / ${formatBytes(bytes.total)} reported total`}
+              </span>
+              . Reported total may change as more files are discovered.
+            </p>
+          ) : (
+            <p className="caption">Byte totals unavailable for this setup.</p>
+          )}
           <p className="caption">
             Runtime packages and model files are separate stages. Cached files
-            may be reused. Byte progress is not reported for this operation; this
-            indicator is indeterminate. Readiness requires a successful backend
+            may be reused. Byte counters show observed transfers when available;
+            the setup stage indicator is indeterminate. Readiness requires a successful backend
             inference warmup, not a completed download or progress percentage.
           </p>
         </section>

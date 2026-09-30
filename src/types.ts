@@ -106,8 +106,16 @@ export type RuntimeLifecycle = {
   capabilities?: BackendCapabilities | null;
 };
 
+/** Observed downloader counters; aggregate totals may change during discovery. */
+export type DownloadBytes = {
+  completed: number;
+  total: number | null;
+  kind: "transfer" | "reconstruction";
+};
+
 export type MagicStatus = RuntimeLifecycle & {
   setupStage?: SetupStage | null;
+  downloadBytes?: DownloadBytes | null;
   phase: MagicPhase;
   engine: EnginePhase;
   message: string;
@@ -153,6 +161,7 @@ export type RetryAudioState = {
 export type DictationStatus = RuntimeLifecycle & {
   setupStage?: SetupStage | null;
   speechExecution?: SpeechExecution | null;
+  downloadBytes?: DownloadBytes | null;
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   captureInputNotice?: string | null;

@@ -410,6 +410,7 @@ class BackendFailures(unittest.TestCase):
             "mlx_audio": types.ModuleType("mlx_audio"),
             "mlx_audio.stt": types.ModuleType("mlx_audio.stt"),
             "mlx_audio.stt.utils": types.SimpleNamespace(load_audio=load_audio, load_model=load_model),
+            "download_progress": types.SimpleNamespace(download_progress_class=lambda: object),
             "huggingface_hub": types.SimpleNamespace(snapshot_download=lambda **kw: self.temp.name),
             "huggingface_hub.constants": types.SimpleNamespace(HF_HOME=self.temp.name),
             "accelerate": types.SimpleNamespace(init_empty_weights=contextlib.nullcontext),
