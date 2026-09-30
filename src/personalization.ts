@@ -199,7 +199,7 @@ export function previewPersonalization(text: string, words: CustomWord[], langua
   return { original: text, result: result + text.slice(cursor), matches };
 }
 
-/** Keep saved blocks outside the language model. Rewrite only the surrounding text. */
+/** Keep saved blocks and technical literals outside the language model. */
 export function splitForRewrite(
   text: string,
   words: CustomWord[],

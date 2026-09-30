@@ -1,10 +1,16 @@
 class DeluluCaptureProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
+    this.paused = false;
     this.chunks = [];
     this.samples = 0;
     this.sumSquares = 0;
     this.port.onmessage = (event) => {
+      if (event.data?.action === "pause" || event.data?.action === "resume") {
+        if (event.data.action === "pause") this.flush();
+        this.paused = event.data.action === "pause";
+        this.port.postMessage({ pauseChanged: this.paused });
+      }
       if (event.data === "flush") {
         this.flush();
         this.port.postMessage({ flushed: true });
@@ -29,7 +35,7 @@ class DeluluCaptureProcessor extends AudioWorkletProcessor {
   }
   process(inputs) {
     const channel = inputs[0] && inputs[0][0];
-    if (channel) {
+    if (channel && !this.paused) {
       this.chunks.push(new Float32Array(channel));
       this.samples += channel.length;
       for (let index = 0; index < channel.length; index += 1)

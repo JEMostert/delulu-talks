@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { RuntimeSetupSnapshot } from "../components/RuntimeSetupSnapshot";
+import { DecodeControls } from "../components/models/DecodeControls";
 import { Diagnostics } from "../components/Diagnostics";
 import { ModelCachePanel } from "../components/ModelCachePanel";
 import {
@@ -19,7 +20,9 @@ export function ModelsPage(props: SpeechSetupProps & RewriteSetupProps) {
       <SpeechSetup {...props} setupPending={snapshotPending} />
       <RewriteSetup {...props} setupPending={snapshotPending} />
       <ModelCachePanel status={props.status} magicStatus={props.magicStatus} busy={props.busy || props.saving} />
-      <Diagnostics />
+      <DecodeControls {...props} />
+      <p className="caption">Keyboard: Ctrl/Cmd + Shift + M opens decoding; Ctrl/Cmd + Shift + D opens device diagnostics.</p>
+      <div id="models-diagnostics" tabIndex={-1} aria-label="Model device diagnostics"><Diagnostics refreshButtonId="runtime-diagnostics-refresh" /></div>
     </div>
   );
 }

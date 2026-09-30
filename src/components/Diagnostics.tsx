@@ -1,28 +1,48 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, HardDrive, RefreshCw, Terminal } from "lucide-react";
 import { bridge } from "../bridge";
 import { diagnosticReport } from "../diagnosticReport";
+import { readStartupService } from "../startupServices";
 import type { RuntimeDiagnostics } from "../types";
 import { Alert } from "./ui";
 
-export function Diagnostics() {
+export function Diagnostics({ refreshButtonId }: { refreshButtonId?: string } = {}) {
   const [data, setData] = useState<RuntimeDiagnostics | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const mounted = useRef(false);
+  const pending = useRef<AbortController | null>(null);
   async function refresh() {
+    if (!mounted.current || pending.current) return;
+    const controller = new AbortController();
+    pending.current = controller;
     setBusy(true);
     setError("");
     try {
-      setData(await bridge.getDiagnostics());
-    } catch {
-      setError("Diagnostics could not be collected or copied. Retry the health check.");
+      const next = await readStartupService("diagnostics", () => bridge.getDiagnostics(), controller.signal);
+      if (mounted.current && !controller.signal.aborted) {
+        setData(next);
+        setCopied(false);
+      }
+    } catch (reason) {
+      if (mounted.current && !controller.signal.aborted)
+        setError(String(reason).replace("Retry opening the workspace.", "Retry diagnostics."));
     } finally {
-      setBusy(false);
+      if (pending.current === controller) {
+        pending.current = null;
+        if (mounted.current) setBusy(false);
+      }
     }
   }
   useEffect(() => {
+    mounted.current = true;
     void refresh();
+    return () => {
+      mounted.current = false;
+      pending.current?.abort();
+      pending.current = null;
+    };
   }, []);
   return (
     <section className="card">
@@ -33,11 +53,12 @@ export function Diagnostics() {
         </div>
         <button
           className="tool-button"
+          id={refreshButtonId}
           disabled={busy}
           onClick={() => void refresh()}
         >
           <RefreshCw className={busy ? "spin" : ""} />
-          {busy ? "Checking…" : "Refresh"}
+          {busy ? "Checking…" : error ? "Retry diagnostics" : "Refresh"}
         </button>
       </div>
       {error && <Alert>{error}</Alert>}
@@ -134,9 +155,9 @@ export function Diagnostics() {
               onClick={async () => {
                 try {
                   await bridge.copyText(JSON.stringify(diagnosticReport(data), null, 2));
-                  setCopied(true);
-                } catch {
-                  setError("Diagnostics could not be collected or copied. Retry the health check.");
+                  if (mounted.current) setCopied(true);
+                } catch (reason) {
+                  if (mounted.current) setError(String(reason));
                 }
               }}
             >

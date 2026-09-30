@@ -1,7 +1,10 @@
 import { REWRITE_PRESETS } from "../rewritePresets";
+import { ProfileActivationControls } from "../components/ProfileActivationControls";
+import type { ProfileActivationCommand } from "../activePersonalProfile";
 import { PersonalProfiles } from "../components/PersonalProfiles";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { EncryptedHistory } from "../components/EncryptedHistory";
+import { ProjectVocabulary } from "../components/ProjectVocabulary";
 import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
 import {
@@ -44,6 +47,7 @@ type Props = {
   saving: boolean;
   onSave: (patch: Partial<AppSettings>) => Promise<boolean>;
   onManagePersonalProfile: (command: PersonalProfileCommand) => Promise<boolean>;
+  onActivateProfile: (command: ProfileActivationCommand) => Promise<boolean>;
   onConfigureShortcut: () => void;
   onAuthorizePaste: () => void;
   onTestPaste: () => void;
@@ -124,18 +128,24 @@ export function SettingsPage(props: Props) {
       </div>
       {tab === "data" && <LocalData />}
       {tab === "profiles" && (
-        <PersonalProfiles
-          settings={s}
-          saving={saving}
-          onManage={props.onManagePersonalProfile}
-        />
+        <>
+          <ProfileActivationControls settings={s} busy={busy || saving} onActivate={props.onActivateProfile} />
+          <PersonalProfiles
+            settings={s}
+            saving={saving}
+            onManage={props.onManagePersonalProfile}
+          />
+        </>
       )}
       {tab === "personalization" && (
+        <>
+        <ProjectVocabulary />
         <VocabularyPage
           words={s.customWords}
           saving={saving}
           onChange={(customWords) => onSave({ customWords })}
         />
+        </>
       )}
       {tab === "general" && (
         <>
@@ -204,8 +214,8 @@ export function SettingsPage(props: Props) {
                 "Interpret spoken formatting commands",
                 busy,
               )}
-            </Row>
-            <Row
+            </SettingRow>
+            <SettingRow
               title="Dictation formatting"
               description={
                 "Optional commands for English (en) and Dutch (nl) microphone dictation. " +
@@ -286,6 +296,63 @@ export function SettingsPage(props: Props) {
                 <option value="hold">Hold to talk</option>
                 <option value="toggle">Press to toggle</option>
               </select>
+            </SettingRow>
+            <SettingRow
+              title="Stop after trailing silence"
+              description="Stops recording after audio stays below the energy threshold. This does not recognize speech: quiet speech may stop early, and background noise may prevent stopping. It arms after 150 ms above the threshold."
+            >
+              {toggle(
+                "trailingSilenceStopEnabled",
+                "Stop after trailing silence",
+                busy,
+              )}
+            </SettingRow>
+            <SettingRow
+              title="Trailing silence duration"
+              description="Seconds below the threshold before stopping. Each recording uses the settings chosen when it starts; manual Stop is always available."
+            >
+              <input
+                type="number"
+                aria-label="Trailing silence duration in seconds"
+                min={2}
+                max={30}
+                step={1}
+                value={s.trailingSilenceSeconds}
+                disabled={saving || busy || !s.trailingSilenceStopEnabled}
+                onChange={(e) => {
+                  const value = e.target.valueAsNumber;
+                  if (Number.isFinite(value)) {
+                    save({
+                      trailingSilenceSeconds: Math.min(30, Math.max(2, value)),
+                    });
+                  }
+                }}
+              />
+            </SettingRow>
+            <SettingRow
+              title="Silence energy threshold"
+              description="Audio below this level in dB counts as silence. A lower threshold requires quieter audio."
+            >
+              <input
+                type="number"
+                aria-label="Silence energy threshold in dB"
+                min={-60}
+                max={-20}
+                step={1}
+                value={s.trailingSilenceThresholdDb}
+                disabled={saving || busy || !s.trailingSilenceStopEnabled}
+                onChange={(e) => {
+                  const value = e.target.valueAsNumber;
+                  if (Number.isFinite(value)) {
+                    save({
+                      trailingSilenceThresholdDb: Math.min(
+                        -20,
+                        Math.max(-60, value),
+                      ),
+                    });
+                  }
+                }}
+              />
             </SettingRow>
             <SettingRow
               title="Recording overlay"

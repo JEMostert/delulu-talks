@@ -111,6 +111,11 @@ window { background: transparent; }
 .listening .wave.idle .b10 { animation-delay: .2s; }
 
 spinner { min-width: 12px; min-height: 12px; color: #52cafa; }
+.hud.reduced-motion.listening .dot,
+.hud.reduced-motion .wave.idle .bar {
+  animation: none;
+  transition: none;
+}
 
 @keyframes ping {
   0% { box-shadow: 0 0 0 0 alpha(#ff8898, .45); }
@@ -137,9 +142,14 @@ PREVIEW_STATES = ("listening", "transcribing", "magic", "delivering", "success",
 
 
 class PillApplication(Gtk.Application):
-    def __init__(self, preview: str | None = None) -> None:
+    def __init__(self, preview: str | None = None, preview_reduce_motion: bool = False) -> None:
         super().__init__(application_id="com.joran.delulu_talks.pill")
         self.preview = preview
+        self.force_reduced_motion = bool(preview and preview_reduce_motion)
+        self.reduce_motion = False
+        self.current_state = "hidden"
+        self.animation_settings: Gtk.Settings | None = None
+        self.animation_listener: int | None = None
         self.window: Gtk.ApplicationWindow | None = None
         self.hud: Gtk.Box | None = None
         self.dot: Gtk.Box | None = None
@@ -147,6 +157,7 @@ class PillApplication(Gtk.Application):
         self.spinner: Gtk.Spinner | None = None
         self.title: Gtk.Label | None = None
         self.detail: Gtk.Label | None = None
+        self.profile: Gtk.Label | None = None
         self.clock: Gtk.Label | None = None
         self.wave: Gtk.Box | None = None
         self.bars: list[Gtk.Box] = []
@@ -246,7 +257,13 @@ class PillApplication(Gtk.Application):
         footer.append(detail)
         footer.append(wave)
 
+        profile = Gtk.Label(xalign=0)
+        profile.add_css_class("detail")
+        profile.set_ellipsize(Pango.EllipsizeMode.END)
+        profile.set_max_width_chars(40)
+        profile.set_visible(False)
         body.append(header)
+        body.append(profile)
         body.append(footer)
         hud.append(rail)
         hud.append(body)
@@ -260,9 +277,16 @@ class PillApplication(Gtk.Application):
         self.spinner = spinner
         self.title = title
         self.detail = detail
+        self.profile = profile
         self.clock = clock
         self.wave = wave
         self.bars = bars
+        self.animation_settings = Gtk.Settings.get_default()
+        if self.animation_settings is not None:
+            self.animation_listener = self.animation_settings.connect(
+                "notify::gtk-enable-animations", lambda *_args: self._sync_motion_preference()
+            )
+        self._sync_motion_preference()
         if self.preview:
             self._set_state({"state": self.preview, "level": 0.62})
             GLib.timeout_add(280, self._export_preview)
@@ -270,6 +294,39 @@ class PillApplication(Gtk.Application):
             self._set_state({"state": "hidden"})
             print(json.dumps({"type": "ready"}), flush=True)
             threading.Thread(target=self._read_commands, daemon=True).start()
+
+    def _sync_motion_preference(self) -> None:
+        enabled = self.animation_settings.get_property("gtk-enable-animations") if self.animation_settings is not None else True
+        self.reduce_motion = self.force_reduced_motion or not enabled
+        if self.hud is not None:
+            if self.reduce_motion:
+                self.hud.add_css_class("reduced-motion")
+            else:
+                self.hud.remove_css_class("reduced-motion")
+        self._update_beacon()
+
+    def _update_beacon(self) -> None:
+        if self.spinner is None or self.dot is None or self.glyph is None:
+            return
+        busy = self.current_state in {"transcribing", "magic", "delivering"}
+        symbol = STATES.get(self.current_state, ("", "", ""))[0]
+        animate = busy and not self.reduce_motion
+        self.spinner.set_visible(animate)
+        if animate:
+            self.spinner.start()
+        else:
+            self.spinner.stop()
+        self.glyph.set_label("…" if busy and self.reduce_motion else symbol)
+        self.glyph.set_visible((busy and self.reduce_motion) or (not busy and bool(symbol)))
+        self.dot.set_visible(not busy and not symbol)
+
+    def do_shutdown(self) -> None:
+        self._clear_hide_timer()
+        self._clear_clock_timer()
+        if self.animation_settings is not None and self.animation_listener is not None:
+            self.animation_settings.disconnect(self.animation_listener)
+            self.animation_listener = None
+        Gtk.Application.do_shutdown(self)
 
     def _make_click_through(self, window: Gtk.Window) -> None:
         surface = window.get_surface()
@@ -323,11 +380,14 @@ class PillApplication(Gtk.Application):
         state = str(payload.get("state", "hidden"))
         self._clear_hide_timer()
         if state == "hidden":
+            self.current_state = state
+            self._update_beacon()
             self._clear_clock_timer()
             self.window.set_visible(False)
             return GLib.SOURCE_REMOVE
         if state not in STATES:
             return GLib.SOURCE_REMOVE
+        self.current_state = state
 
         symbol, title, detail = STATES[state]
         custom_title = payload.get("title")
@@ -335,18 +395,15 @@ class PillApplication(Gtk.Application):
         self.glyph.set_label(symbol)
         self.title.set_label(str(custom_title)[:28].upper() if custom_title else title)
         self.detail.set_label(str(custom_detail)[:36] if custom_detail else detail)
+        profile = payload.get("profile")
+        self.profile.set_visible(bool(profile))
+        self.profile.set_label(f"Profile: {str(profile)[:256]}" if profile else "")
+        self.profile.set_tooltip_text(str(profile)[:256] if profile else None)
         for name in STATES:
             self.hud.remove_css_class(name)
         self.hud.add_css_class(state)
 
-        busy = state in {"transcribing", "magic", "delivering"}
-        self.spinner.set_visible(busy)
-        if busy:
-            self.spinner.start()
-        else:
-            self.spinner.stop()
-        self.dot.set_visible(not busy and not symbol)
-        self.glyph.set_visible(not busy and bool(symbol))
+        self._update_beacon()
 
         listening = state == "listening"
         self.clock.set_visible(listening)
@@ -397,7 +454,8 @@ class PillApplication(Gtk.Application):
             renderer = native.get_renderer() if native is not None else None
             if node is not None and renderer is not None:
                 texture = renderer.render_texture(node, Graphene.Rect().init(0, 0, float(width), float(height)))
-                path = f"/tmp/delulu-pill-{self.preview}.png"
+                suffix = "-reduced-motion" if self.reduce_motion else ""
+                path = f"/tmp/delulu-pill-{self.preview}{suffix}.png"
                 texture.save_to_png(path)
                 print(json.dumps({"type": "export", "path": path, "width": width, "height": height}), flush=True)
         finally:
@@ -414,4 +472,4 @@ def preview_state() -> str | None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(PillApplication(preview_state()).run([sys.argv[0]]))
+    raise SystemExit(PillApplication(preview_state(), "--reduced-motion" in sys.argv).run([sys.argv[0]]))

@@ -1,3 +1,4 @@
+import { normalizeRewriteContext, splitTechnicalBlocks } from "../../src/rewriteContext";
 import { normalizeSpeechExecution } from "../../src/speechModels";
 import { splitForRewrite } from "../../src/personalization";
 import { normalizeTimings } from "../../src/pipelineTimings";
@@ -273,6 +274,10 @@ export class AsrService {
 
   setCaptureInputNotice(message: string | null): void {
     this.updateStatus({ captureInputNotice: message });
+  }
+
+  setSilenceCountdown(remainingSeconds: number | null): void {
+    this.updateStatus({ silenceCountdownSeconds: remainingSeconds });
   }
 
   setActivity(
@@ -933,10 +938,9 @@ export class AsrService {
 
   async ensureMagicLoaded(
     settings: AppSettings,
-    eligibility: (() => boolean) | ManualRewrite | null = () => true,
+    eligible: () => boolean = () => true,
+    operation: ManualRewrite | null = null,
   ): Promise<void> {
-    const eligible = typeof eligibility === "function" ? eligibility : () => true;
-    const operation = typeof eligibility === "function" ? null : eligibility;
     if (!eligible()) return;
     this.throwIfRewriteCancelled(operation);
     if (this.shuttingDown)
@@ -1001,12 +1005,13 @@ export class AsrService {
     request: MagicRewriteRequest,
     settings: AppSettings,
   ): Promise<MagicRewriteResult> {
+    const context = normalizeRewriteContext(request.context);
     if (this.manualRewrite || (request.operationId !== undefined && this.magicOperations > 0))
       throw new Error("Wait for the active rewrite to finish");
     if (request.operationId !== undefined && !request.operationId.trim())
       throw new Error("Manual rewrite requires a nonempty operation ID");
-    const parts = splitForRewrite(
-      request.text, settings.customWords, request.sourceLanguage ?? settings.language,
+    const parts = splitTechnicalBlocks(request.text).flatMap((part) =>
+      part.protected ? [part] : splitForRewrite(part.text, settings.customWords, request.sourceLanguage ?? settings.language),
     );
     if (parts.filter((part) => !part.protected && part.text.trim()).length > 16)
       throw new Error(
@@ -1021,7 +1026,7 @@ export class AsrService {
     try {
       this.throwIfRewriteCancelled(operation);
       const loadStarted = performance.now();
-      await this.ensureMagicLoaded(settings, operation);
+      await this.ensureMagicLoaded(settings, () => true, operation);
       const rewriteLoadMs = performance.now() - loadStarted;
       this.throwIfRewriteCancelled(operation);
       this.clearMagicIdle();
@@ -1048,6 +1053,7 @@ export class AsrService {
           "magicRewrite",
           {
             ...request,
+            context,
             text: part.text.trim(),
           } as unknown as Record<string, unknown>,
         );

@@ -442,15 +442,15 @@ function rebuildTrayMenu(): void {
   const status = asr.getStatus();
   const magic = asr.getMagicStatus();
   const latest = visibleHistory()[0];
-  const listening = status.phase === "listening";
+  const listening = status.phase === "listening" || status.phase === "paused";
   const dictationBusy = ["preparing", "loading", "transcribing"].includes(
     status.phase,
   );
   const update = updates?.getStatus();
   const speechUnavailable =
     status.engine === "missing" || status.engine === "error";
-  const presets: Array<[MagicPreset, string]> = REWRITE_PRESETS.map(
-    ({ id, label }) => [id, label],
+  const presets: Array<[AppSettings["magicPreset"], string]> = REWRITE_PRESETS.map(
+    ({ id, label }) => [id as AppSettings["magicPreset"], label],
   );
   const template: MenuItemConstructorOptions[] = [
     { label: "DELULU TALKS", enabled: false },
@@ -469,6 +469,9 @@ function rebuildTrayMenu(): void {
       click: () =>
         speechUnavailable ? showMainWindow("models") : dictation.toggle(),
     },
+    { label: status.phase === "paused" ? "Resume recording" : "Pause recording",
+      enabled: listening,
+      click: () => status.phase === "paused" ? dictation.resume() : dictation.pause() },
     { label: "Open Delulu Talks", click: () => showMainWindow("home") },
     {
       label: "Paste latest result",
@@ -628,7 +631,7 @@ function rebuildTrayMenu(): void {
   ];
   tray.setContextMenu(Menu.buildFromTemplate(template));
   const state = listening
-    ? "Listening"
+    ? status.phase === "paused" ? "Paused — microphone open" : "Listening"
     : status.phase === "transcribing"
       ? "Transcribing"
       : status.engine === "ready"
@@ -707,10 +710,14 @@ function persistSettings(value: unknown): Promise<AppSettings> {
   return settingsQueue.run(() => applySettings(value));
 }
 
-async function applySettings(value: unknown): Promise<AppSettings> {
+async function applySettings(value: unknown, explicitProfileActivation = false): Promise<AppSettings> {
   const previous = storage.getSettings();
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Expected a settings object");
+  if (!explicitProfileActivation && Object.prototype.hasOwnProperty.call(value, "activePersonalProfile") &&
+      JSON.stringify((value as Record<string, unknown>).activePersonalProfile) !== JSON.stringify(previous.activePersonalProfile)) {
+    throw new Error("Switch profiles using the explicit activation preview.");
+  }
   assertPersonalProfilesUpdate(
     previous.personalProfiles,
     Object.prototype.hasOwnProperty.call(value, "personalProfiles")

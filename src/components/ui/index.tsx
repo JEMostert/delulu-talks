@@ -127,7 +127,17 @@ export function Modal({
     else dialog?.close();
     return () => {
       dialog?.close();
-      previous?.focus();
+      const visible = (element: HTMLElement | null): element is HTMLElement =>
+        !!element?.isConnected && !element.matches(":disabled") &&
+        !element.closest("[hidden], [inert], [aria-hidden='true']") &&
+        getComputedStyle(element).visibility === "visible" && element.getClientRects().length > 0;
+      const current = document.activeElement as HTMLElement | null;
+      // Navigation may already have moved focus to a new view. Keep that target;
+      // otherwise avoid returning keyboard users to a hidden or removed opener.
+      if (current !== document.body && current !== previous &&
+        !dialog?.contains(current) && visible(current)) return;
+      const target = visible(previous) ? previous : document.getElementById("page-content");
+      target?.focus({ preventScroll: true });
     };
   }, [visible]);
   return (

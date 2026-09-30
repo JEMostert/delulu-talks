@@ -1,9 +1,0 @@
-# Temporary shared coordination. Keep profiles, messages and claims local.
-agents/*
-claims/*
-messages/*
-handoffs/*
-!agents/.gitkeep
-!claims/.gitkeep
-!messages/.gitkeep
-!handoffs/.gitkeep

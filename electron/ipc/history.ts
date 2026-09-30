@@ -115,6 +115,7 @@ handle("history:retentionPreview", (_event, value: unknown) => {
     return preview;
   });
 handle("history:retentionApply", (_event, value: unknown) => {
+    historyDeletion.assertNoPending();
     const token = validateText(value, 128);
     const pending = retentionPreview;
     if (!pending || pending.preview.token !== token)
@@ -138,6 +139,7 @@ handle("history:retentionApply", (_event, value: unknown) => {
   });
 handle("history:updateTranscript", (_event, id: unknown, text: unknown) => {
     const key = validateText(id, 128);
+    if (historyDeletion.hidden(key)) throw new Error("Undo deletion before using this transcript.");
     const correction = text === null ? null : validateText(text, 500_000);
     const sessionRecord = sessionTranscripts.get(key);
     const updated = storage.findHistory(key)
@@ -153,6 +155,7 @@ handle("history:updateTranscript", (_event, id: unknown, text: unknown) => {
   });
 handle("history:setTitle", (_event, id: unknown, title: unknown) => {
     const key = validateText(id, 128);
+    if (historyDeletion.hidden(key)) throw new Error("Undo deletion before using this transcript.");
     const normalized = normalizeTranscriptTitle(title);
     const sessionRecord = sessionTranscripts.get(key);
     const updated = storage.findHistory(key)
@@ -171,6 +174,7 @@ handle(
     "history:setRewrite",
     (_event, id: unknown, value: unknown, expected: unknown, expectedRevision: unknown = 0) => {
       const key = validateText(id, 128);
+    if (historyDeletion.hidden(key)) throw new Error("Undo deletion before using this transcript.");
       const record = storage.findHistory(key) ?? sessionTranscripts.get(key);
       if (!record) throw new Error("Transcript not found");
       if (!Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0)
@@ -224,6 +228,7 @@ handle(
   );
 handle("history:delete", (_event, id: unknown) => {
     const key = validateText(id, 128);
+    if (historyDeletion.hidden(key)) throw new Error("Undo deletion before using this transcript.");
     historyDeletion.assertNoPending();
     storage.deleteHistory(key);
     sessionTranscripts.delete(key);
@@ -243,6 +248,7 @@ handle(
     "history:exportTemplate",
     async (_event, id: unknown, input: unknown) => {
       const key = validateText(id, 128);
+    if (historyDeletion.hidden(key)) throw new Error("Undo deletion before using this transcript.");
       const request = validateExportTemplateRequest(input);
       const findRecord = () =>
         sessionTranscripts.get(key) ?? storage.findHistory(key);
@@ -284,6 +290,7 @@ handle(
     "history:export",
     async (_event, id: unknown, requestedFormat: ExportFormat) => {
       const key = validateText(id, 128);
+    if (historyDeletion.hidden(key)) throw new Error("Undo deletion before using this transcript.");
       const record = sessionTranscripts.get(key) ?? storage.findHistory(key);
       if (!record) throw new Error("Transcript not found");
       const format = ["txt", "json", "md"].includes(requestedFormat)

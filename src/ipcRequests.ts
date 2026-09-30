@@ -138,6 +138,7 @@ export function parseMagicRequest(value: unknown): MagicRewriteRequest {
   optionalBoolean(source, "allowInferences");
   const request: MagicRewriteRequest = {
     text: requestText(source.text, 50_000),
+    context: source.context === undefined ? undefined : jsonInput(source.context) as MagicRewriteRequest["context"],
     operationId: source.operationId === undefined ? undefined : requestText(source.operationId,128),
     sourceLanguage: source.sourceLanguage === undefined ? undefined : requestText(source.sourceLanguage,64),
     preset: magicPresets.includes(String(source.preset))
@@ -233,6 +234,12 @@ export const ipcRequestSchemas = {
   "recorder:inputChanged": schema(3, ([id,message,lost]) => { if (typeof lost !== "boolean") throw new Error("Expected lost-input boolean"); return [requestText(id,128),requestText(message,1000),lost]; }),
   "runtime:setupLog": noArguments, "runtime:setupSnapshot": noArguments, "storage:overview": noArguments,
 
+  "projectVocabulary:choose": schema(1, ([value]) => [jsonInput(value)]),
+  "projectVocabulary:get": noArguments, "projectVocabulary:refresh": noArguments, "projectVocabulary:clear": noArguments, "projectVocabulary:select": noArguments,
+  "selectedText:state": noArguments,
+  "selectedText:enable": schema(1, ([value]) => { if (typeof value !== "boolean") throw new Error("Expected selection consent boolean"); return [value]; }),
+  "selectedText:discard": schema(1, ([id]) => [requestText(id,128)]),
+  "selectedText:replace": schema(2, ([id,text]) => [requestText(id,128),requestText(text,500_000)]),
   "renderer:recoveryState": noArguments,
   "renderer:reload": noArguments,
   "renderer:controllerFailed": noArguments,

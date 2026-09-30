@@ -46,8 +46,8 @@ export const REWRITE_PRESETS: ReadonlyArray<{
     id: "prompt",
     label: "Build a prompt",
     description: "Arrange the stated goal and constraints into a prompt.",
-    exampleSource: "Write a short summary of the draft. Keep the dates unchanged.",
-    exampleOutput: "Summarize the draft briefly. Preserve all dates exactly.",
+    exampleSource: "Improve the wording of the draft. Keep the dates unchanged.",
+    exampleOutput: "Revise the draft for clarity. Preserve all dates exactly.",
   },
 ];
 

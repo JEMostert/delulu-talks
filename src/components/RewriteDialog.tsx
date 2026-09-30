@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { PipelineTimingDetails } from "./PipelineTimingDetails";
+import { bridge } from "../bridge";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
 import { MAX_REWRITE_INSTRUCTIONS, validateRewriteInstructions } from "../rewriteInstructions";
@@ -15,6 +16,8 @@ import type {
 
 export function RewriteDialog({
   text,
+  title = "Rewrite transcript",
+  description = "Preview a change before using it. Original speech stays available and text shortcuts stay exactly as saved.",
   baseline,
   sourceRevision = 0,
   sourceLanguage,
@@ -30,6 +33,8 @@ export function RewriteDialog({
   contextLabel,
 }: {
   text: string;
+  title?: string;
+  description?: string;
   baseline: string;
   sourceRevision?: number;
   sourceLanguage?: string;
@@ -56,6 +61,10 @@ export function RewriteDialog({
   const [expectedRevision, setExpectedRevision] = useState(sourceRevision);
   const [preset, setPreset] = useState<MagicPreset>("concise");
   const [instructions, setInstructions] = useState("");
+  const [contextEnabled, setContextEnabled] = useState(false);
+  const [language, setLanguage] = useState("");
+  const [fileType, setFileType] = useState("");
+  const [selection, setSelection] = useState("");
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -107,6 +116,7 @@ export function RewriteDialog({
         sourceLanguage,
         text: source,
         preset,
+        context: contextEnabled ? {language,fileType,selection} : undefined,
         instructions: validateRewriteInstructions(instructions),
         allowInferences: false,
       });
@@ -154,12 +164,13 @@ export function RewriteDialog({
   const stale = source !== text || expectedOutput !== baseline || sourceRevision !== expectedRevision;
   return (
     <Modal
-      title="Rewrite transcript"
+      title={title}
       visible={visible}
       busy={busy}
       onClose={closeDialog}
       footer={
         <>
+          {result && <button className="secondary-button" disabled={busy} onClick={async () => {try {await bridge.copyText(result.text);setNotice("Preview copied — paste manually into the intended destination.");} catch(reason) {setError(String(reason));}}}>Copy preview</button>}
           {onBackground && <button className="secondary-button" onClick={onBackground}>Continue in background</button>}
           <button
             className="secondary-button"
@@ -195,10 +206,7 @@ export function RewriteDialog({
         </>
       }
     >
-      <p>
-        Preview a change before using it. Original speech stays available and
-        text shortcuts stay exactly as saved.
-      </p>
+      <p>{description}</p>
       {contextLabel && <p className="caption">Rewriting: {contextLabel}. This session stays attached to this transcript when you navigate or open another card.</p>}
       {stale && (
         <div className="rewrite-setup my-3 rounded-panel border border-line p-3" role="alert">
@@ -337,7 +345,7 @@ export function RewriteDialog({
       {notice && <p role="status">{notice}</p>}
       <button
         className="secondary-button"
-        disabled={busy || stale || missing || source.length > 50_000}
+        disabled={busy || stale || missing || !source.trim() || source.length > 50_000}
         onClick={generatePreview}
       >
         {generating ? <LoaderCircle className="spin" /> : <WandSparkles />}
@@ -358,8 +366,8 @@ export function RewriteDialog({
       )}
       {source.length > 50_000 && (
         <p className="field-error">
-          This transcript exceeds the 50,000-character rewrite limit. Shorten
-          the transcript before rewriting it.
+          This source exceeds the 50,000-character rewrite limit. Choose a shorter
+          source before generating a preview.
         </p>
       )}
       {result && <PipelineTimingDetails timings={result.timings} />}

@@ -43,6 +43,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pythonCommand: "python3",
   inputDeviceId: "default",
   inputDeviceLabel: "System default",
+  trailingSilenceStopEnabled: false,
+  trailingSilenceSeconds: 5,
+  trailingSilenceThresholdDb: -45,
   autoPaste: true,
   pasteShortcut: "standard",
   pasteLastDelaySeconds: 3,
@@ -67,6 +70,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   menuBarOnly: false,
   customWords: [],
   personalProfiles: { schemaVersion: 1, profiles: [] },
+  activePersonalProfile: null;
 };
 
 export const MODELS: ModelInfo[] = [

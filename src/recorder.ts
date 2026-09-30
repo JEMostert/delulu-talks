@@ -7,6 +7,7 @@ import { MAX_CAPTURE_DURATION_MS, MAX_CAPTURE_SAMPLES } from "./captureLimits";
 import { CLIPPING_THRESHOLD } from "./captureDiagnostics";
 import { beginCaptureLevel } from "./captureLevel";
 import type { CaptureDiagnostics, MicrophoneDevice, RecorderCommand } from "./types";
+import { TrailingSilenceStop } from "./trailingSilence";
 
 function merge(chunks: Float32Array[]): Float32Array {
   const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
@@ -73,255 +74,217 @@ function audibleLevel(rms: number): number {
   return Math.min(1, Math.max(0, rms * 4.2));
 }
 
+type CaptureSession = {
+  readonly generation: number;
+  readonly sessionId: string;
+  sampleCount: number; peakAmplitude: number; sumSquares: number; clippedSampleCount: number;
+  silenceStop: TrailingSilenceStop | null; lastSilenceCountdown: number | null;
+  sampleLimit: number; limitStopRequested: boolean;
+  limitTimer?: ReturnType<typeof setTimeout>;
+  stopWatchingInput?: () => void;
+  liveLevel?: ReturnType<typeof beginCaptureLevel>;
+  context: AudioContext | null;
+  stream: MediaStream | null;
+  worklet: AudioWorkletNode | null;
+  processor: ScriptProcessorNode | null;
+  source: MediaStreamAudioSourceNode | null;
+  sink: GainNode | null;
+  chunks: Float32Array[];
+  startedAt: number;
+  lastLevelAt: number;
+  stopping: boolean;
+  paused: boolean;
+  cancelled: boolean;
+  readonly cancellation: Promise<void>;
+  cancel: () => void;
+  finishFlush?: () => void;
+  disposal?: Promise<void>;
+};
+
 export class PcmRecorder {
-  private context: AudioContext | null = null;
-  private stream: MediaStream | null = null;
-  private worklet: AudioWorkletNode | null = null;
-  private processor: ScriptProcessorNode | null = null;
-  private source: MediaStreamAudioSourceNode | null = null;
-  private sink: GainNode | null = null;
-  private chunks: Float32Array[] = [];
-  private sampleCount = 0;
-  private peakAmplitude = 0;
-  private sumSquares = 0;
-  private clippedSampleCount = 0;
-  private liveLevel: ReturnType<typeof beginCaptureLevel> | null = null;
-
-  constructor(private readonly onDiagnostics?: (stats: CaptureDiagnostics | null) => void) {}
-
-  private capturedSamples = 0;
-  private sampleLimit = MAX_CAPTURE_SAMPLES;
-  private limitStopRequested = false;
-  private captureLimitTimer: ReturnType<typeof setTimeout> | null = null;
-  private startedAt = 0;
-  private stopping = false;
-  private lastLevelAt = 0;
+  private session: CaptureSession | null = null;
   private generation = 0;
-  private sessionId: string | null = null;
   private requestedSessionId: string | null = null;
-  private readonly cuePlayer = new CaptureCuePlayer();
   private cueEpoch = 0;
+  private cuePlayer = new CaptureCuePlayer();
+  constructor(private readonly onDiagnostics?: (stats: CaptureDiagnostics | null) => void) {}
   private commands: Promise<void> = Promise.resolve();
-  private stopWatchingInput: (() => void) | null = null;
 
   async cancel(): Promise<void> {
     await this.handle({ action: "cancel", inputDeviceId: "default" });
-    // Public cancellation also disposes the controller during unmount/reload.
-    this.cueEpoch += 1;
-    await this.cuePlayer.dispose();
   }
 
   handle(command: RecorderCommand): Promise<void> {
     let sessionId = command.sessionId;
     if (command.action === "start") {
-      if (
-        sessionId &&
-        this.requestedSessionId &&
-        sessionId !== this.requestedSessionId
-      )
-        return Promise.resolve();
+      if (sessionId && this.requestedSessionId && sessionId !== this.requestedSessionId) return Promise.resolve();
       sessionId ??= this.requestedSessionId ?? crypto.randomUUID();
-      if (sessionId !== this.requestedSessionId) {
-        this.cueEpoch += 1;
-        void this.cuePlayer.dispose().catch(() => undefined);
-      }
       this.requestedSessionId = sessionId;
     } else {
-      // A queued Start already owns the next generation while the abandoned
-      // capture is still unwinding permission/flush/disposal. Old commands
-      // must not invalidate that newer reservation.
-      const owner = this.requestedSessionId ?? this.sessionId;
-      sessionId ??= owner ?? undefined;
-      if (sessionId && sessionId !== owner) return Promise.resolve();
-      if (command.action === "cancel") {
-        this.generation += 1;
-        this.cueEpoch += 1;
-        void this.cuePlayer.dispose().catch(() => undefined);
-        if (!sessionId || this.requestedSessionId === sessionId)
-          this.requestedSessionId = null;
+      const owner = this.requestedSessionId ?? this.session?.sessionId;
+      sessionId ??= owner;
+      if (sessionId && owner && sessionId !== owner) return Promise.resolve();
+    }
+    command = { ...command, sessionId };
+    if (command.action === "cancel") {
+      this.generation += 1;
+      this.requestedSessionId = null;
+      this.cueEpoch += 1;
+      void this.cuePlayer.dispose().catch(() => undefined);
+      const session = this.session;
+      if (session) {
+        // Invalidate immediately, including while acquisition or flush awaits.
+        session.cancelled = true;
+        session.cancel();
+        session.finishFlush?.();
+        void this.dispose(session);
       }
     }
     const generation = this.generation;
     const operation = this.commands.then(async () => {
-      if (command.action === "start") {
-        await this.start(command.inputDeviceId, generation, sessionId!);
-      } else if (!sessionId || sessionId === this.sessionId) {
-        if (command.action === "stop" && generation === this.generation)
-          await this.stop(true, generation);
-        if (command.action === "cancel") await this.stop(false, generation);
-      }
+      if (command.action === "start")
+        await this.start(command.inputDeviceId, generation, command.sessionId!, command.trailingSilence);
+      if (command.action === "pause" || command.action === "resume")
+        await this.changePause(command.action === "pause", command.sessionId);
+      if (command.action === "stop") await this.stop(true, command.sessionId);
+      if (command.action === "cancel") await this.stop(false, command.sessionId);
     });
     this.commands = operation.catch(() => undefined);
     return operation;
   }
 
-  private finishSession(sessionId: string): void {
-    if (this.sessionId === sessionId) this.sessionId = null;
-    if (this.requestedSessionId === sessionId) this.requestedSessionId = null;
+  private current(session: CaptureSession): boolean {
+    return (
+      this.session === session &&
+      !session.cancelled &&
+      session.generation === this.generation &&
+      !session.disposal
+    );
   }
 
-  private async start(
-    deviceId: string,
-    generation: number,
-    sessionId: string,
-  ): Promise<void> {
-    if (this.stream || this.stopping || generation !== this.generation) return;
-    const cueEpoch = this.cueEpoch;
-    this.sessionId = sessionId;
+  private async start(deviceId: string, generation: number, sessionId: string, trailingSilence?: RecorderCommand["trailingSilence"]): Promise<void> {
+    if (this.session || generation !== this.generation) return;
+    let cancel!: () => void;
+    const cancellation = new Promise<void>((resolve) => { cancel = resolve; });
+    const session: CaptureSession = {
+      generation, sessionId, cancellation, cancel,
+      silenceStop: trailingSilence ? new TrailingSilenceStop(trailingSilence.seconds,trailingSilence.thresholdDb) : null, lastSilenceCountdown: null,
+      sampleCount: 0, peakAmplitude: 0, sumSquares: 0, clippedSampleCount: 0, sampleLimit: MAX_CAPTURE_SAMPLES, limitStopRequested: false,
+      context: null, stream: null, worklet: null, processor: null,
+      source: null, sink: null, chunks: [], startedAt: 0, lastLevelAt: 0,
+      stopping: false, paused: false, cancelled: false,
+    };
+    this.session = session;
     try {
-      if (deviceId && deviceId !== "default") {
-        // Discovery can be unavailable independently of capture permission.
-        // In that case let getUserMedia check the exact saved input itself.
-        const devices = await listMicrophones(false).catch(() => []);
-        if (generation !== this.generation) return;
-        const selection = microphoneSelection(
-          { inputDeviceId: deviceId, inputDeviceLabel: "Selected microphone" },
-          devices,
-        );
-        if (selection.state === "missing") throw new Error(selection.message!);
-      }
-      const input = await acquireCaptureInput(deviceId);
-      const stream = input.stream;
-      if (generation !== this.generation) {
-        stream.getTracks().forEach((track) => track.stop());
-        this.finishSession(sessionId);
-        return;
-      }
-      this.stream = stream;
-      this.context = new AudioContext({ latencyHint: "interactive" });
-      const track = stream.getAudioTracks()[0];
-      if (track) this.liveLevel = beginCaptureLevel(track, this.context);
-      this.source = this.context.createMediaStreamSource(this.stream);
-      this.sink = this.context.createGain();
-      this.sink.gain.value = 0;
-      this.chunks = [];
-      this.sampleCount = 0;
-      this.peakAmplitude = 0;
-      this.sumSquares = 0;
-      this.clippedSampleCount = 0;
-      this.onDiagnostics?.(null);
-      this.capturedSamples = 0;
-      this.sampleLimit = Math.min(
-        MAX_CAPTURE_SAMPLES,
-        Math.floor((this.context.sampleRate * MAX_CAPTURE_DURATION_MS) / 1000),
-      );
-      this.limitStopRequested = false;
-      if (await this.connectWorklet(generation)) {
-        this.source.connect(this.worklet!);
-        this.worklet!.connect(this.sink);
-      } else {
-        this.processor = this.context.createScriptProcessor(4096, 1, 1);
-        const processor = this.processor;
-        processor.onaudioprocess = (event) => {
-          if (this.processor === processor && generation === this.generation)
-            this.ingest(event.inputBuffer.getChannelData(0));
-        };
-        this.source.connect(this.processor);
-        this.processor.connect(this.sink);
-      }
-      if (generation !== this.generation) {
-        await this.dispose();
-        this.finishSession(sessionId);
-        return;
-      }
-      this.sink.connect(this.context.destination);
-      this.startedAt = performance.now();
-      this.captureLimitTimer = setTimeout(
-        () => this.requestLimitStop(),
-        MAX_CAPTURE_DURATION_MS,
-      );
-      await bridge.recordingStarted(sessionId);
-      if (generation !== this.generation || this.sessionId !== sessionId)
-        return;
-      this.stopWatchingInput = watchCaptureInput(input, (event) => {
-        if (
-          generation !== this.generation ||
-          this.sessionId !== sessionId ||
-          this.stopping
-        )
-          return;
-        const inputLost = event.kind === "input-lost";
-        if (inputLost) {
-          // Stop accepting packets before queuing the existing flush/submit
-          // path. The audio captured from the original input is retained.
-          this.source?.disconnect();
-          this.stopWatchingInput?.();
-          this.stopWatchingInput = null;
-        }
-        void bridge
-          .recordingInputChanged(sessionId, event.message, inputLost)
-          .then(() => {
-            if (inputLost && generation === this.generation)
-              return this.handle({
-                action: "stop",
-                inputDeviceId: deviceId,
-                sessionId,
-              });
-          })
-          .catch((error) => {
-            // IPC failure must not leave a disconnected capture running.
-            if (inputLost && generation === this.generation) {
-              void this.handle({
-                action: "cancel",
-                inputDeviceId: deviceId,
-                sessionId,
-              }).catch(() => undefined);
-              void bridge.recordingFailed(
-                `Could not finish capture after microphone loss: ${error instanceof Error ? error.message : String(error)}`,
-                sessionId,
-              ).catch(() => undefined);
-            }
-          });
+      const acquisition = acquireCaptureInput(deviceId).then((input) => {
+        if (!this.current(session)) { input.stream.getTracks().forEach((track) => track.stop()); return null; }
+        session.stream = input.stream;
+        return input;
       });
-      void this.playCue("start", sessionId, generation, cueEpoch);
+      const input = await Promise.race([
+        acquisition,
+        session.cancellation.then(() => null),
+      ]);
+      if (!input || !this.current(session)) return;
+      const stream = input.stream;
+      const context = new AudioContext({ latencyHint: "interactive" });
+      session.context = context;
+      const track = stream.getAudioTracks()[0];
+      if (track) session.liveLevel = beginCaptureLevel(track, context);
+      session.sampleLimit = Math.min(MAX_CAPTURE_SAMPLES, Math.floor(context.sampleRate * MAX_CAPTURE_DURATION_MS / 1000));
+      this.onDiagnostics?.(null);
+      session.source = context.createMediaStreamSource(stream);
+      session.sink = context.createGain();
+      session.sink.gain.value = 0;
+      const connected = await this.connectWorklet(session);
+      if (!this.current(session)) return;
+      if (connected) {
+        session.source.connect(session.worklet!);
+        session.worklet!.connect(session.sink);
+      } else {
+        session.processor = context.createScriptProcessor(4096, 1, 1);
+        session.processor.onaudioprocess = (event) =>
+          this.ingest(session, event.inputBuffer.getChannelData(0));
+        session.source.connect(session.processor);
+        session.processor.connect(session.sink);
+      }
+      session.sink.connect(context.destination);
+      session.startedAt = performance.now();
+      await Promise.race([bridge.recordingStarted(session.sessionId), session.cancellation]);
+      if (!this.current(session)) return;
+      session.limitTimer = setTimeout(() => this.requestLimitStop(session), MAX_CAPTURE_DURATION_MS);
+      session.stopWatchingInput = watchCaptureInput(input, (event) => {
+        if (!this.current(session) || session.stopping) return;
+        const lost = event.kind === "input-lost";
+        if (lost) session.source?.disconnect();
+        void bridge.recordingInputChanged(session.sessionId, event.message, lost).then(() => {
+          if (lost && this.current(session)) return this.handle({action:"stop",inputDeviceId:deviceId,sessionId:session.sessionId});
+        }).catch((error) => {
+          if (!lost || !this.current(session)) return;
+          void this.handle({action:"cancel",inputDeviceId:deviceId,sessionId:session.sessionId});
+          void bridge.recordingFailed(String(error),session.sessionId).catch(() => undefined);
+        });
+      });
+      void this.playCue("start",session.sessionId,session.generation,this.cueEpoch);
     } catch (error) {
-      await this.dispose();
-      this.finishSession(sessionId);
-      if (generation !== this.generation) return;
+      const report = this.current(session);
+      await this.dispose(session);
+      if (!report || session.cancelled || generation !== this.generation) return;
       await bridge.recordingFailed(
-        `Microphone unavailable: ${error instanceof Error ? error.message : String(error)}`,
-        sessionId,
+        `Microphone unavailable: ${error instanceof Error ? error.message : String(error)}`, session.sessionId,
       );
     }
   }
 
-  private async connectWorklet(generation: number): Promise<boolean> {
-    if (!this.context) return false;
+  private async connectWorklet(session: CaptureSession): Promise<boolean> {
+    const context = session.context;
+    if (!context) return false;
     try {
-      await this.context.audioWorklet.addModule(captureWorkletUrl);
-      this.worklet = new AudioWorkletNode(this.context, "delulu-capture");
-      const worklet = this.worklet;
-      worklet.port.onmessage = (
+      await Promise.race([
+        context.audioWorklet.addModule(captureWorkletUrl),
+        session.cancellation,
+      ]);
+      if (!this.current(session)) return false;
+      session.worklet = new AudioWorkletNode(context, "delulu-capture");
+      session.worklet.port.onmessage = (
         event: MessageEvent<{ samples: Float32Array; rms: number }>,
       ) => {
-        if (this.worklet === worklet && generation === this.generation && event.data?.samples)
-          this.ingest(event.data.samples, event.data.rms);
+        if (event.data?.samples)
+          this.ingest(session, event.data.samples, event.data.rms);
       };
       return true;
     } catch {
-      this.worklet = null;
+      session.worklet = null;
       return false;
     }
   }
 
-  private ingest(samples: Float32Array, rms?: number): void {
-    const remaining = this.sampleLimit - this.capturedSamples;
-    if (remaining <= 0) return;
-    const accepted = Math.min(samples.length, remaining);
-    if (!accepted) return;
-    this.chunks.push(new Float32Array(samples.subarray(0, accepted)));
-    for (const sample of samples.subarray(0, accepted)) {
-      const amplitude = Math.abs(sample);
-      this.peakAmplitude = Math.max(this.peakAmplitude, amplitude);
-      this.sumSquares += sample * sample;
-      if (amplitude >= CLIPPING_THRESHOLD) this.clippedSampleCount += 1;
+  private ingest(session: CaptureSession, samples: Float32Array, rms?: number): void {
+    // Messages queued by a detached worklet and fallback callbacks can outlive
+    // resource disposal. They can only append to their original live session.
+    if (!this.current(session) || session.paused) return;
+    const accepted = Math.min(samples.length, session.sampleLimit - session.sampleCount);
+    if (accepted <= 0) return;
+    samples = samples.subarray(0,accepted);
+    session.chunks.push(new Float32Array(samples));
+    for (const sample of samples) {
+      session.peakAmplitude = Math.max(session.peakAmplitude, Math.abs(sample));
+      session.sumSquares += sample * sample;
+      if (Math.abs(sample) >= CLIPPING_THRESHOLD) session.clippedSampleCount += 1;
     }
-    this.sampleCount += accepted;
-    this.capturedSamples += accepted;
-    if (this.capturedSamples >= this.sampleLimit) this.requestLimitStop();
+    session.sampleCount += accepted;
+    if (session.sampleCount >= session.sampleLimit) this.requestLimitStop(session);
+    if (session.silenceStop && !session.stopping && !session.limitStopRequested) {
+      const countdown = session.silenceStop.update(samples, session.context!.sampleRate);
+      if (countdown.shouldStop) this.requestLimitStop(session,"silence");
+      else if (countdown.remainingSeconds !== session.lastSilenceCountdown) {
+        session.lastSilenceCountdown = countdown.remainingSeconds;
+        void bridge.recordingSilence(session.sessionId,countdown.remainingSeconds,false).catch(() => undefined);
+      }
+    }
     const now = performance.now();
-    if (now - this.lastLevelAt < 50) return;
-    this.lastLevelAt = now;
+    if (now - session.lastLevelAt < 50) return;
+    session.lastLevelAt = now;
     let level = rms;
     if (level == null) {
       let sum = 0;
@@ -329,7 +292,7 @@ export class PcmRecorder {
       level = Math.sqrt(sum / Math.max(1, samples.length));
     }
     bridge.recordingLevel(audibleLevel(level));
-    this.liveLevel?.sample(level);
+    session.liveLevel?.sample(level);
   }
 
   private async playCue(
@@ -354,147 +317,185 @@ export class PcmRecorder {
     }
   }
 
-  private clearCaptureLimitTimer(): void {
-    if (this.captureLimitTimer) clearTimeout(this.captureLimitTimer);
-    this.captureLimitTimer = null;
+  private requestLimitStop(session: CaptureSession, reason: "limit" | "silence" = "limit"): void {
+    if (!this.current(session) || session.stopping || session.limitStopRequested) return;
+    session.limitStopRequested = true;
+    clearTimeout(session.limitTimer);
+    session.source?.disconnect();
+    void (reason === "silence" ? bridge.recordingSilence(session.sessionId,0,true) : bridge.recordingLimitReached(session.sessionId)).then(() => {
+      if (this.current(session)) return this.handle({action:"stop", inputDeviceId:"default", sessionId:session.sessionId});
+    }).catch((error) => {
+      if (!this.current(session)) return;
+      void this.handle({action:"cancel", inputDeviceId:"default", sessionId:session.sessionId});
+      void bridge.recordingFailed(String(error),session.sessionId).catch(() => undefined);
+    });
   }
 
-  private requestLimitStop(): void {
-    if (!this.sessionId || this.stopping || this.limitStopRequested) return;
-    this.limitStopRequested = true;
-    this.clearCaptureLimitTimer();
-    this.source?.disconnect();
-    const sessionId = this.sessionId;
-    const generation = this.generation;
-    // Main must enter stopping ownership before the WAV can be committed.
-    // The tagged callback cannot stop a newer capture after Cancel/reload.
-    void bridge.recordingLimitReached(sessionId)
-      .then(() => {
-        if (generation !== this.generation) return;
-        return this.handle({
-          action: "stop",
-          inputDeviceId: "default",
-          sessionId,
-        });
-      })
-      .catch((error) => {
-        // Release bounded capture if its desktop controller cannot accept Stop.
-        // A failure is visible instead of silently leaving the mic running.
-        void this.handle({
-          action: "cancel",
-          inputDeviceId: "default",
-          sessionId,
-        }).catch(() => undefined);
-        void bridge.recordingFailed(
-          `Could not finish the recording at its limit: ${error instanceof Error ? error.message : String(error)}`,
-          sessionId,
-        ).catch(() => undefined);
-      });
+  private async changePause(paused: boolean, sessionId?: string): Promise<void> {
+    const session = this.session;
+    if (!session || !this.current(session) || session.stopping || !session.context ||
+        (sessionId && session.sessionId !== sessionId) || session.paused === paused) return;
+    if (!paused) session.paused = false;
+    const port = session.worklet?.port;
+    const receive = port?.onmessage;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const control = port ? new Promise<void>((resolve) => {
+        // The acknowledgement follows all pre-pause samples on the same port.
+        port.onmessage = (event) => {
+          if (event.data?.pauseChanged === paused) resolve();
+          else receive?.call(port, event);
+        };
+        port.postMessage({ action: paused ? "pause" : "resume" });
+      }) : paused ? session.context.suspend() : session.context.resume();
+      await Promise.race([control, session.cancellation, new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Pause/resume acknowledgement timed out")), 2000);
+      })]);
+    } catch (reason) {
+      if (port) port.onmessage = this.current(session) ? receive ?? null : null;
+      // An uncertain pause boundary cannot continue as if successful. Finalize
+      // the retained audio through the existing stop path instead of dropping it.
+      if (this.current(session)) await this.stop(true, session.sessionId);
+      throw new Error(`${reason instanceof Error ? reason.message : String(reason)}. Recording was stopped to preserve retained audio.`);
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (port && this.current(session)) port.onmessage = receive ?? null;
+    }
+    if (!this.current(session)) return;
+    session.paused = paused;
+    session.silenceStop?.reset();
+    session.lastSilenceCountdown = null;
+    await bridge.recordingSilence(session.sessionId,null,false);
+    bridge.recordingLevel(0);
+    if (session.sessionId) await bridge.recordingPauseChanged(session.sessionId, paused);
   }
 
-  private async stop(submit: boolean, generation: number): Promise<void> {
+  private async stop(submit: boolean, sessionId?: string): Promise<void> {
     const captureEndStarted = performance.now();
-    if (!this.stream || !this.context || this.stopping) return;
-    const sessionId = this.sessionId!;
-    this.stopping = true;
-    this.stopWatchingInput?.();
-    this.stopWatchingInput = null;
+    const session = this.session;
+    if (!session || (sessionId && session.sessionId !== sessionId)) return;
+    if (!submit) {
+      session.cancelled = true;
+      session.cancel();
+      session.finishFlush?.();
+      await this.dispose(session);
+      return;
+    }
+    if (
+      !this.current(session) ||
+      !session.stream ||
+      !session.context ||
+      session.stopping
+    )
+      return;
+    session.stopping = true;
+    clearTimeout(session.limitTimer);
+    session.stopWatchingInput?.();
     this.cueEpoch += 1;
     void this.cuePlayer.dispose().catch(() => undefined);
-    this.clearCaptureLimitTimer();
+    // Duration describes retained audio, excluding paused wall-clock time.
+
+    const sampleRate = session.context.sampleRate;
     try {
-      const durationMs = Math.min(
-        MAX_CAPTURE_DURATION_MS,
-        Math.round(performance.now() - this.startedAt),
-      );
-      const sampleRate = this.context.sampleRate;
-      this.source?.disconnect();
-      if (this.worklet && submit) {
-        const port = this.worklet.port;
+      session.source?.disconnect();
+      if (session.worklet) {
+        const port = session.worklet.port;
         const receive = port.onmessage;
         await new Promise<void>((resolve) => {
+          let finished = false;
           const finish = () => {
+            if (finished) return;
+            finished = true;
             clearTimeout(timer);
-            port.onmessage = receive;
+            session.finishFlush = undefined;
+            port.onmessage = this.current(session) ? receive : null;
             resolve();
           };
           const timer = setTimeout(finish, 300);
+          session.finishFlush = finish;
           port.onmessage = (event) => {
             if (event.data?.flushed) finish();
             else receive?.call(port, event);
           };
-          port.postMessage("flush");
+          try {
+            port.postMessage("flush");
+          } catch {
+            finish();
+          }
         });
       }
-      const captured = merge(this.chunks);
+      if (!this.current(session)) return;
+      const captured = merge(session.chunks);
+      const durationMs = Math.round(captured.length / sampleRate * 1000);
       const captureDiagnostics: CaptureDiagnostics = {
-        sampleCount: this.sampleCount, sampleRate, peakAmplitude: this.peakAmplitude,
-        rmsAmplitude: Math.min(this.peakAmplitude, Math.sqrt(this.sumSquares / Math.max(1, this.sampleCount))),
-        clippedSampleCount: this.clippedSampleCount, clippingThreshold: CLIPPING_THRESHOLD,
+        sampleCount:session.sampleCount, sampleRate, peakAmplitude:session.peakAmplitude,
+        rmsAmplitude:Math.min(session.peakAmplitude,Math.sqrt(session.sumSquares / Math.max(1,session.sampleCount))),
+        clippedSampleCount:session.clippedSampleCount, clippingThreshold:CLIPPING_THRESHOLD,
       };
-      this.chunks = [];
-      await this.dispose();
-      // End cues use a separate output context only after microphone release.
-      void this.playCue("stop", sessionId, this.generation, this.cueEpoch);
-      if (submit && generation === this.generation) {
-        this.onDiagnostics?.(captured.length ? captureDiagnostics : null);
-        if (!captured.length) {
-          const failure = bridge.recordingFailed(
-            "The microphone did not produce audio. Try another input.",
-            sessionId,
-          );
-          this.finishSession(sessionId);
-          this.stopping = false;
-          await failure;
-          return;
-        }
-        const captureEndMs = performance.now() - captureEndStarted;
-        const preprocessingStarted = performance.now();
-        const encoded = wav(resample(captured, sampleRate));
-        const delivery = bridge.submitRecording({
-          sessionId,
-          wav: encoded,
-          timings: { captureEndMs, preprocessingMs: performance.now() - preprocessingStarted },
-          durationMs,
-          captureDiagnostics,
-        });
-        // Capture is committed to desktop ownership. Accept a later Start even
-        // if the IPC reply still waits for completed inference/delivery.
-        this.finishSession(sessionId);
-        this.stopping = false;
-        await delivery;
+      await this.dispose(session);
+      // Cancellation can arrive while AudioContext.close is still pending.
+      if (session.cancelled || session.generation !== this.generation) return;
+      this.onDiagnostics?.(captured.length ? captureDiagnostics : null);
+      void this.playCue("stop",session.sessionId,session.generation,this.cueEpoch);
+      if (!captured.length) {
+        await bridge.recordingFailed(
+          "The microphone did not produce audio. Try another input.", session.sessionId,
+        );
+        return;
       }
+      const captureEndMs = performance.now() - captureEndStarted;
+      const preprocessingStarted = performance.now();
+      await bridge.submitRecording({
+        sessionId: session.sessionId,
+        wav: wav(resample(captured, sampleRate)),
+        durationMs,
+        timings: {captureEndMs, preprocessingMs: performance.now() - preprocessingStarted},
+        captureDiagnostics,
+      });
     } finally {
-      this.stopping = false;
-      this.finishSession(sessionId);
+      await this.dispose(session);
     }
   }
 
-  private async dispose(): Promise<void> {
-    this.stopWatchingInput?.();
-    this.stopWatchingInput = null;
-    this.liveLevel?.stop();
-    this.liveLevel = null;
-    this.clearCaptureLimitTimer();
-    if (this.worklet) this.worklet.port.onmessage = null;
-    if (this.processor) this.processor.onaudioprocess = null;
-    this.source?.disconnect();
-    this.worklet?.disconnect();
-    this.processor?.disconnect();
-    this.sink?.disconnect();
-    this.stream?.getTracks().forEach((track) => track.stop());
-    if (this.context && this.context.state !== "closed")
-      await this.context.close();
-    this.context = null;
-    this.stream = null;
-    this.worklet = null;
-    this.processor = null;
-    this.source = null;
-    this.sink = null;
-    this.chunks = [];
-    this.capturedSamples = 0;
-    this.limitStopRequested = false;
-    this.lastLevelAt = 0;
+  private dispose(session: CaptureSession): Promise<void> {
+    if (session.disposal) return session.disposal;
+    // Reserve disposal before clearing resources so repeated cancellation and
+    // finalization await the same release instead of closing a context twice.
+    session.disposal = Promise.resolve().then(async () => {
+      session.finishFlush?.();
+      clearTimeout(session.limitTimer);
+      session.stopWatchingInput?.();
+      session.liveLevel?.stop();
+      if (session.worklet) session.worklet.port.onmessage = null;
+      if (session.processor) session.processor.onaudioprocess = null;
+      for (const node of [session.source, session.worklet, session.processor, session.sink]) {
+        try {
+          node?.disconnect();
+        } catch { /* already disconnected */ }
+      }
+      session.stream?.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch { /* continue releasing the remaining tracks */ }
+      });
+      try {
+        if (session.context && session.context.state !== "closed")
+          await session.context.close();
+      } catch {
+        // Tracks and graph are already released even if the context was lost.
+      } finally {
+        session.context = null;
+        session.stream = null;
+        session.worklet = null;
+        session.processor = null;
+        session.source = null;
+        session.sink = null;
+        session.chunks = [];
+        if (this.session === session) this.session = null;
+        if (this.requestedSessionId === session.sessionId) this.requestedSessionId = null;
+      }
+    });
+    return session.disposal;
   }
 }
 

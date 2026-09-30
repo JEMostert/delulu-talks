@@ -1,6 +1,7 @@
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { transcriptSourceRevision } from "../../src/transcriptText";
 import { assertPersistedSchema, versionPersistedRecord } from "../../src/persistedSchema";
+import { readActivePersonalProfile } from "../../src/activePersonalProfile";
 import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { normalizeTimings, withoutRewriteTimings } from "../../src/pipelineTimings";
 import { normalizeSpeechExecution } from "../../src/speechModels";
@@ -214,6 +215,17 @@ function boolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function boundedNumber(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(maximum, Math.max(minimum, value))
+    : fallback;
+}
+
 export function normalizeSettings(value: unknown): AppSettings {
   const source =
     value && typeof value === "object"
@@ -224,7 +236,7 @@ export function normalizeSettings(value: unknown): AppSettings {
     ? (source.magicModel as MagicModelId)
     : DEFAULT_SETTINGS.magicModel;
   const magicPreset = isMagicPreset(source.magicPreset)
-    ? (source.magicPreset as MagicPreset)
+    ? source.magicPreset
     : DEFAULT_SETTINGS.magicPreset;
   const requestedLanguage = safeString(
     source.language,
@@ -276,6 +288,22 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.inputDeviceLabel,
       DEFAULT_SETTINGS.inputDeviceLabel,
       512,
+    ),
+    trailingSilenceStopEnabled: boolean(
+      source.trailingSilenceStopEnabled,
+      DEFAULT_SETTINGS.trailingSilenceStopEnabled,
+    ),
+    trailingSilenceSeconds: boundedNumber(
+      source.trailingSilenceSeconds,
+      DEFAULT_SETTINGS.trailingSilenceSeconds,
+      2,
+      30,
+    ),
+    trailingSilenceThresholdDb: boundedNumber(
+      source.trailingSilenceThresholdDb,
+      DEFAULT_SETTINGS.trailingSilenceThresholdDb,
+      -60,
+      -20,
     ),
     autoPaste: boolean(source.autoPaste, DEFAULT_SETTINGS.autoPaste),
     pasteShortcut:
@@ -344,6 +372,7 @@ export function normalizeSettings(value: unknown): AppSettings {
     menuBarOnly: boolean(source.menuBarOnly, DEFAULT_SETTINGS.menuBarOnly),
     customWords: normalizeWords(source.customWords),
     personalProfiles: readPersonalProfiles(source.personalProfiles).document as AppSettings["personalProfiles"],
+    activePersonalProfile: readActivePersonalProfile(source.activePersonalProfile),
   };
 }
 
@@ -621,7 +650,9 @@ export class StorageService {
       ? source.personalProfiles
       : this.settings.personalProfiles;
     assertPersonalProfilesUpdate(this.settings.personalProfiles, document);
-    const next = normalizeSettings({ ...source, personalProfiles: document });
+    const activePersonalProfile = Object.prototype.hasOwnProperty.call(source, "activePersonalProfile")
+      ? source.activePersonalProfile : this.settings.activePersonalProfile;
+    const next = normalizeSettings({ ...source, personalProfiles: document, activePersonalProfile });
     writeJson(join(this.dataDirectory, SETTINGS_FILE), next);
     this.settings = next;
     return this.getSettings();
