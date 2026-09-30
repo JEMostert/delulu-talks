@@ -8,7 +8,7 @@ import { deliveredText, transcriptSourceRevision } from "../../src/transcriptTex
 import { normalizeTranscriptTitle } from "../../src/transcriptTitle";
 import { rememberSessionTranscript, retainSessionTranscripts } from "../../src/sessionTranscriptRetention";
 import { applyTranscriptEdit } from "../services/storage";
-import { affectedByRetention, historyFingerprint, validateRetentionPolicy } from "../services/historyRetention";
+import { affectedByRetention, historyFingerprint, retentionEffects, validateRetentionPolicy } from "../services/historyRetention";
 import { exportRecord, saveTemplateExport } from "../services/transcripts";
 import { renderExportTemplate, validateExportTemplateRequest } from "../../src/exportTemplates";
 import { validateText } from "./validation";
@@ -37,6 +37,7 @@ handle("history:retentionPreview", (_event, value: unknown) => {
       token: randomUUID(), policy, previewedAt,
       totalSaved: saved.length,
       retainedCount: saved.length - affected.length,
+      effects: retentionEffects(affected.map(({ record }) => record)),
       affected,
     };
     retentionPreview = {

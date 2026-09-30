@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   HistoryRetentionPolicy,
+  HistoryRetentionEffects,
   HistoryRetentionPreview,
   TranscriptRecord,
 } from "../../src/types";
@@ -49,4 +50,16 @@ export function affectedByRetention(
     if (!age && !count) return [];
     return [{ record, reason: age && count ? "ageAndCount" as const : age ? "age" as const : "count" as const }];
   });
+}
+
+/** Describe all text variants removed, independently of the currently displayed variant. */
+export function retentionEffects(records: TranscriptRecord[]): HistoryRetentionEffects {
+  return {
+    originals: records.length,
+    personalized: records.filter((record) => record.personalizedText != null).length,
+    corrections: records.filter((record) => record.editedText != null).length,
+    rewrites: records.filter((record) => record.magicText != null).length,
+    importedReferences: records.filter((record) => record.source === "file").length,
+    audioFilesDeleted: 0,
+  };
 }
