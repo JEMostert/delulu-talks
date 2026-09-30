@@ -161,6 +161,13 @@ MAGIC_PRESETS = {
         "Turn this transcript into a high-quality prompt for an AI or technical collaborator. "
         "Make the goal, context, requirements, constraints, deliverables, and success criteria explicit."
     ),
+    "summary": (
+        "Produce a concise, factual summary using only information stated in the source transcript. "
+        "Preserve stated names, numbers, dates, decisions, uncertainty, negation, and unresolved items "
+        "where relevant to the summary. Do not turn tentative statements into facts or unresolved "
+        "items into decisions. Do not infer plans, next steps, causes, commitments, or unsupported "
+        "claims. Retain the source language where known. Return only the summary."
+    ),
 }
 
 
@@ -449,7 +456,7 @@ class Worker:
             raise ValueError("Rewrite instructions must be text")
         if len(custom.encode("utf-16-le", errors="surrogatepass")) // 2 > 4_000:
             raise ValueError("Rewrite instructions are limited to 4,000 characters")
-        allow_inferences = bool(request.get("allowInferences", False))
+        allow_inferences = preset != "summary" and bool(request.get("allowInferences", False))
         fact_boundary = (
             "You may add reasonable implementation details, examples, constraints, or success criteria "
             "that make the result more useful. Never invent names, dates, measurements, credentials, "

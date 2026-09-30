@@ -612,6 +612,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           key={rewrite.key}
           contextLabel={rewrite.label}
           text={rewriteRecord ? transcriptText(rewriteRecord) : rewrite.source}
+          originalText={rewriteRecord?.text ?? rewrite.source}
           baseline={rewriteRecord ? deliveredText(rewriteRecord) : rewrite.baseline}
           sourceRevision={rewriteRecord ? transcriptSourceRevision(rewriteRecord) : rewrite.sourceRevision}
           sourceLanguage={rewrite.sourceLanguage}

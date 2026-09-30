@@ -1,4 +1,4 @@
-import { REWRITE_PRESETS } from "../rewritePresets";
+import { REWRITE_PRESETS, AUTOMATIC_REWRITE_PRESETS } from "../rewritePresets";
 import { ProfileActivationControls } from "../components/ProfileActivationControls";
 import type { ProfileActivationCommand } from "../activePersonalProfile";
 import { PersonalProfiles } from "../components/PersonalProfiles";
@@ -527,7 +527,7 @@ export function SettingsPage(props: Props) {
                 })
               }
             >
-              {REWRITE_PRESETS.map((preset) => (
+              {AUTOMATIC_REWRITE_PRESETS.map((preset) => (
                 <option key={preset.id} value={preset.id}>{preset.label}</option>
               ))}
             </select>

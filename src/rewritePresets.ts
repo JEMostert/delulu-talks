@@ -8,6 +8,13 @@ export const REWRITE_PRESETS: ReadonlyArray<{
   exampleOutput: string;
 }> = [
   {
+    id: "summary",
+    label: "Summary",
+    description: "Summarize the preserved recognition original. Review it first; summaries omit detail and recognition errors can carry through.",
+    exampleSource: "We reviewed the draft. The budget is not approved yet. Eva will send the revised numbers on Friday, if finance confirms them.",
+    exampleOutput: "The draft was reviewed, but the budget remains unapproved. Eva may send revised numbers on Friday, pending finance confirmation.",
+  },
+  {
     id: "concise",
     label: "Shorten",
     description: "Remove repetition and filler while keeping facts, requests and uncertainty.",
@@ -54,3 +61,9 @@ export const REWRITE_PRESETS: ReadonlyArray<{
 export function isMagicPreset(value: unknown): value is MagicPreset {
   return typeof value === "string" && REWRITE_PRESETS.some((preset) => preset.id === value);
 }
+
+export function isAutomaticMagicPreset(value: unknown): value is Exclude<MagicPreset, "summary"> {
+  return value !== "summary" && isMagicPreset(value);
+}
+
+export const AUTOMATIC_REWRITE_PRESETS = REWRITE_PRESETS.filter((preset) => preset.id !== "summary");
