@@ -158,6 +158,6 @@ handle("lab:inspectAudio", (_event, value: unknown) => {
  if (!selectedAudioFiles.has(path) || !existsSync(path)) throw new Error("Choose the source file through Audio files first");
  return inspectMedia(path, storage);
 });
-  return { getImportQueue };
+  return { getImportQueue, shutdown: () => queue?.shutdown() };
 
 }

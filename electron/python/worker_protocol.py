@@ -66,11 +66,27 @@ def validate_progress(value: Any) -> dict[str, Any]:
         require_number(value, "fraction")
         if value["fraction"] > 1:
             raise ValueError("Worker progress fraction must be between 0 and 1")
+    if "downloadBytes" in value:
+        download = value["downloadBytes"]
+        if not isinstance(download, dict) or "total" not in download:
+            raise ValueError("Worker downloadBytes must contain completed, total and kind")
+        if download.get("kind") not in ("transfer", "reconstruction"):
+            raise ValueError("Worker downloadBytes kind must be transfer or reconstruction")
+        for key in ("completed", "total"):
+            if key == "total" and download[key] is None:
+                continue
+            require_number(download, key)
+            number = download[key]
+            if number > 2**53 - 1 or number != int(number):
+                raise ValueError(f"Worker downloadBytes {key} must be a safe integer")
+        if download["total"] is not None and download["completed"] > download["total"]:
+            raise ValueError("Worker downloadBytes total cannot be below completed")
     validate_json_value(value)
     return value
 
 
-def emit_progress(detail: str, stage: str = "load", fraction: float | None = None) -> None:
+def emit_progress(detail: str, stage: str = "load", fraction: float | None = None,
+                  *, download_bytes: dict[str, Any] | None = None) -> None:
     operation = _active_operation.get()
     if operation is None:
         # Direct adapter calls are diagnostics, without a desktop request owner.
@@ -82,6 +98,8 @@ def emit_progress(detail: str, stage: str = "load", fraction: float | None = Non
                "command": command, "stage": stage, "detail": detail}
     if fraction is not None:
         payload["fraction"] = fraction
+    if download_bytes is not None:
+        payload["downloadBytes"] = download_bytes
     validate_progress(payload)
     line = PROGRESS_PREFIX + json.dumps(payload, ensure_ascii=False, allow_nan=False)
     if len(line.encode("utf-8")) > MAX_PROGRESS_LINE_BYTES:
@@ -89,6 +107,20 @@ def emit_progress(detail: str, stage: str = "load", fraction: float | None = Non
     stream = sys.__stdout__ if sys.__stdout__ is not None else sys.stdout
     stream.write(line + "\n")
     stream.flush()
+
+
+def capture_progress_emitter():
+    """Bind callbacks to their request, even when a download runs in threads."""
+    operation = _active_operation.get()
+
+    def emit(detail: str, stage: str = "load", fraction: float | None = None,
+             *, download_bytes: dict[str, Any] | None = None) -> None:
+        if operation is None:
+            return
+        with operation_scope(*operation):
+            emit_progress(detail, stage, fraction, download_bytes=download_bytes)
+
+    return emit
 
 
 def validate_json_value(value: Any, depth: int = 0) -> None:

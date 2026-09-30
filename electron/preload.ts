@@ -3,6 +3,7 @@ import { validateRewriteInstructions } from "../src/rewriteInstructions";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { parseIpcRequest } from "../src/ipcRequests";
 import type { IpcRequestChannel } from "../src/ipcRequests";
+import { encodeDomainFailure, type OperationResult } from "../src/domainErrors";
 import type {
   AppSettings,
   DeluluApi,
@@ -22,8 +23,12 @@ import type {
   UpdateStatus,
 } from "../src/types";
 
-async function invoke(channel: IpcRequestChannel, ...args: unknown[]) {
-  return ipcRenderer.invoke(channel, ...parseIpcRequest(channel, args));
+async function invoke(channel: IpcRequestChannel, ...args: unknown[]): Promise<any> {
+  const result = await ipcRenderer.invoke(channel, ...parseIpcRequest(channel, args)) as OperationResult<unknown>;
+  if (!result || result.transport !== "delulu-operation-v1")
+    throw new Error("Desktop operation transport mismatch. Restart the app.");
+  if (result.ok === false) throw encodeDomainFailure(result.error);
+  return result.value;
 }
 
 function send(channel: IpcRequestChannel, ...args: unknown[]): void {
@@ -87,10 +92,12 @@ const api: DeluluApi = {
   startDictation: () => invoke("dictation:start"),
   stopDictation: () => invoke("dictation:stop"),
   cancelDictation: () => invoke("dictation:cancel"),
+  cancelModelSetup: () => invoke("runtime:cancelSetup"),
   setupModel: () => invoke("runtime:setup"),
   loadModel: () => invoke("runtime:load"),
   unloadModel: () => invoke("runtime:unload"),
   resetPythonEnvironment: () => invoke("runtime:reset"),
+  cancelMagicSetup: () => invoke("magic:cancelSetup"),
   setupMagic: () => invoke("magic:setup"),
   loadMagic: () => invoke("magic:load"),
   unloadMagic: () => invoke("magic:unload"),

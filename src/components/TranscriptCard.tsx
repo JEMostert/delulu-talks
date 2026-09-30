@@ -572,9 +572,9 @@ export function TranscriptCard({
           onClose={() => setRewriting(false)}
           onSetup={onRewriteSetup ?? (() => {})}
           onRewrite={onRewrite}
+          onCancelRewrite={onCancelRewrite}
           onApply={async (result, source, revision) => {
             const applied = await onSetRewrite(record.id, result, source, revision);
-          onCancelRewrite={onCancelRewrite}
             if (applied) setShowSource(false);
             return applied;
           }}

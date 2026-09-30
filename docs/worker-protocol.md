@@ -17,3 +17,4 @@ A progress line contains `{protocolVersion: 1, type: "progress", id, command, st
 Python scopes the operation ID/command around dispatch with a context variable that resets on exit. MLX and Windows R2T2 download/conversion/loading emitters use that context; a direct backend call without a worker operation logs to stderr instead of inventing an ID. Existing UI callbacks retain bounded text compatibility and can also receive structured metadata. The optional native smoke consumes the same schema. Events do not invent model percentages or expose transcript contents.
 
 This progress integration is UNVERIFIED. No tests, build, typecheck, formatting, packaging or native inference ran per user instruction; fixture wire migrations are source-only.
+Audio streaming has a separately specified [chunk/session contract](audio-stream-protocol.md). Its reserved commands remain rejected until an incremental-audio backend and transport adapter are implemented.

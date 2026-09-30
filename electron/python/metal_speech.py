@@ -34,10 +34,21 @@ class MetalSpeech:
         self.model = None
         self.warmup = "not-started"
 
+        self.precision = None
+
     def status(self):
-        loaded = self.model is not None
-        return {"loaded": loaded, "model": MODEL, "device": "mlx" if loaded else None,
-                "residency": "resident" if loaded else "unloaded", "warmup": self.warmup}
+        status = {"loaded": self.model is not None, "model": MODEL, "device": "mlx" if self.model is not None else None}
+        status.update({"residency": "resident" if self.model is not None else "unloaded", "warmup": self.warmup})
+        if self.model is not None:
+            status["speechExecution"] = {
+                "modelId": "r2t2",
+                "backendId": "mlx-audio",
+                "precision": self.precision,
+                "checkpoint": {"repository": MODEL, "revision": MODEL_REVISION},
+                "platform": "darwin",
+                "device": "mlx",
+            }
+        return status
 
     def load(self, request):
         if self.model is not None:
@@ -69,12 +80,15 @@ class MetalSpeech:
                 language="English", max_tokens=8, verbose=False,
             )
             self.warmup = "complete"
+            # The pinned, unquantized MLX conversion retains BF16 weights.
+            self.precision = "bf16"
             return self.status()
         except BaseException:
             # Loading itself can fail after allocating Metal buffers, before
             # load_model returns an object that we can assign to self.model.
             self.model = None
             self.warmup = "not-started"
+            self.precision = None
             gc.collect()
             with contextlib.suppress(Exception):
                 mx.clear_cache()
@@ -137,6 +151,7 @@ class MetalSpeech:
         loaded = self.model is not None
         self.model = None
         self.warmup = "not-started"
+        self.precision = None
         gc.collect()
         if loaded:
             import mlx.core as mx

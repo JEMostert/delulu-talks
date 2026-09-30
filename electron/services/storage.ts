@@ -3,6 +3,7 @@ import { transcriptSourceRevision } from "../../src/transcriptText";
 import { assertPersistedSchema, versionPersistedRecord } from "../../src/persistedSchema";
 import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { normalizeTimings, withoutRewriteTimings } from "../../src/pipelineTimings";
+import { normalizeSpeechExecution } from "../../src/speechModels";
 import { app } from "electron";
 import { isMagicPreset } from "../../src/rewritePresets";
 import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
@@ -329,6 +330,8 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.preloadMagicModel,
       DEFAULT_SETTINGS.preloadMagicModel,
     ),
+    memoryPolicy:
+      source.memoryPolicy === "balanced" ? "balanced" : "independent",
     modelIdleMinutes: [1, 5, 15, 30, 60].includes(
       Number(source.modelIdleMinutes),
     )
@@ -393,6 +396,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
       // Invalid optional metadata must not discard original transcript content.
     }
   }
+  const execution = model === "qwen3Asr" ? undefined : normalizeSpeechExecution(source.speechExecution);
   return {
     ...source,
     schemaVersion: 1,
@@ -429,6 +433,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
       Number(source.magicProcessingTimeMs) || 0,
     ),
     model,
+    ...(execution ? { speechExecution: execution } : {}),
     language: safeString(source.language, "en", 12),
     ...(source.requestedLanguage === undefined
       ? {}

@@ -157,8 +157,10 @@ for line in sys.stdin:
       h.client.request<string>("fixturePing", {}, 3000),
     ]);
     expect(broken.status).toBe("rejected");
-    if (broken.status === "rejected")
-      expect(broken.reason.message).toBe("Fixture operation failed");
+    if (broken.status === "rejected") {
+      expect(broken.reason).toMatchObject({ code: "BACKEND_FAILURE", operation: "broken", retry: "manual" });
+      expect(broken.reason.cause.message).toBe("Fixture operation failed");
+    }
     expect(healthy).toEqual({ status: "fulfilled", value: "healthy" });
     expect(h.client.running).toBe(true);
     expect(h.client.busy).toBe(false);
@@ -186,7 +188,7 @@ raise SystemExit(${code})
           expect(result.reason.message).toBe(
             code === 0
               ? "Model worker closed"
-              : `Model worker exited (${code})`,
+              : `Model worker exited (${code}). Load the model to try again.`,
           );
       }
       expect(h.client.running).toBe(false);
@@ -286,6 +288,10 @@ for line in sys.stdin:
       h.client.request("queued", {}, 3000),
     ]);
     expect(results.every((result) => result.status === "rejected")).toBe(true);
+    const reasons = results.map((result) => result.status === "rejected" ? result.reason : null);
+    expect(reasons[0]).toMatchObject({ code: "TIMEOUT", operation: "slow", retry: "reload-runtime" });
+    expect(reasons[1]).toMatchObject({ code: "OPERATION_INTERRUPTED", operation: "queued", retry: "reload-runtime" });
+    expect(reasons[0].operationId).not.toBe(reasons[1].operationId);
     expect(h.client.running).toBe(false);
     expect(h.client.busy).toBe(false);
     expect(h.failures).toHaveLength(1);
@@ -524,7 +530,7 @@ for line in sys.stdin:
     expect(await h.client.request<string>("exact", {}, 3000)).toBe("👋");
     expect(h.failures).toHaveLength(0);
     await expect(h.client.request("over", {}, 3000)).rejects.toThrow(
-      `stdout line exceeds ${bytes}`,
+      "protocol limits",
     );
     expect(h.failures).toHaveLength(1);
     expect(h.client.busy).toBe(false);
@@ -548,7 +554,7 @@ for line in sys.stdin:
   try {
     expect(await h.client.request<string>("exact", {}, 3000)).toBe("healthy");
     await expect(h.client.request("over", {}, 3000)).rejects.toThrow(
-      "stdout line exceeds 128",
+      "protocol limits",
     );
     expect(h.failures).toHaveLength(1);
     expect(h.client.running).toBe(false);
@@ -580,7 +586,7 @@ for line in sys.stdin:
     for (const result of results) {
       expect(result.status).toBe("rejected");
       if (result.status === "rejected")
-        expect(result.reason.message).toContain("stdout line exceeds 128");
+        expect(result.reason).toMatchObject({ code: "WORKER_PROTOCOL", retry: "repair-runtime" });
     }
     expect(h.failures).toHaveLength(1);
     expect(h.client.running).toBe(false);
@@ -618,7 +624,7 @@ for line in sys.stdin:
   );
   try {
     await expect(h.client.request("overflow", {}, 3000)).rejects.toThrow(
-      "stdout line exceeds 128",
+      "protocol limits",
     );
     expect(await retry.promise).toBe("fresh");
     expect(progress).toEqual([]);
@@ -683,7 +689,7 @@ test("desktop transport and real Python entrypoint agree at the default request 
     ).rejects.toThrow("UTF-8 bytes");
     await expect(
       client.request("fixture-unknown-command", {}, 3000),
-    ).rejects.toThrow("Unknown worker command");
+    ).rejects.toThrow("Model operation fixture-unknown-command failed");
     expect(
       (await client.request<{ loaded: boolean }>("magicStatus", {}, 3000))
         .loaded,
@@ -694,4 +700,31 @@ test("desktop transport and real Python entrypoint agree at the default request 
   } finally {
     await client.stopAndWait();
   }
+});
+
+
+test("pre-aborted requests cancel without spawning or notifying runtime failure", async () => {
+  const h = harness(echoWorker);
+  const controller = new AbortController();
+  controller.abort();
+  try {
+    const result = await h.client.request("fixturePing", {}, 3000, controller.signal).catch((error) => error);
+    expect(result).toMatchObject({ code: "CANCELLED", cancelled: true, retry: "never", cancellationEffect: "none" });
+    expect(h.starts).toBe(0);
+    expect(h.failures).toHaveLength(0);
+  } finally { h.cleanup(); }
+});
+
+test("explicit stop cancels pending operations with distinct IDs", async () => {
+  const h = harness("import time\ntime.sleep(60)\n");
+  try {
+    const first = h.client.request("first", {}, 3000).catch((error) => error);
+    const second = h.client.request("second", {}, 3000).catch((error) => error);
+    h.client.stop();
+    const failures = await Promise.all([first, second]);
+    for (const failure of failures)
+      expect(failure).toMatchObject({ code: "CANCELLED", cancelled: true, cancellationEffect: "worker-stopped", retry: "never" });
+    expect(failures[0].operationId).not.toBe(failures[1].operationId);
+    expect(h.failures).toHaveLength(0);
+  } finally { h.cleanup(); }
 });

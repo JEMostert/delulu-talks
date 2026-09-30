@@ -1,4 +1,6 @@
 import type { IpcRequestChannel } from "../../src/ipcRequests";
+import { randomUUID } from "node:crypto";
+import { DomainError, domainError, serializeDomainError, type OperationResult } from "../../src/domainErrors";
 import { ipcMain } from "electron";
 import { parseIpcRequest } from "../../src/ipcRequests";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
@@ -15,9 +17,14 @@ export function createIpcRegistrar(
     channel: IpcRequestChannel,
     listener: (event: IpcMainInvokeEvent, ...args: Args) => unknown,
   ): void => {
-    ipcMain.handle(channel, (event, ...args) => {
-      if (!isTrusted(event)) throw new Error("Untrusted IPC sender");
-      return listener(event, ...(parseIpcRequest(channel, args) as Args));
+    ipcMain.handle(channel, async (event, ...args): Promise<OperationResult<unknown>> => {
+      const operationId = randomUUID();
+      try {
+        if (!isTrusted(event)) throw new DomainError("UNTRUSTED_SENDER", "Untrusted IPC sender", { operationId, operation: channel });
+        return { transport: "delulu-operation-v1", ok: true, value: await listener(event, ...(parseIpcRequest(channel, args) as Args)) };
+      } catch (reason) {
+        return { transport: "delulu-operation-v1", ok: false, error: serializeDomainError(domainError(reason, { operationId, operation: channel })) };
+      }
     });
   };
   const on = <Args extends unknown[]>(

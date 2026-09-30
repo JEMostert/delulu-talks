@@ -116,12 +116,10 @@ export class ImportQueue {
     this.closed = true;
     this.paused = true;
     for (const job of this.jobs) {
-      if (job.state === "queued") job.state = "cancelled";
-      else if (job.state === "running") job.state = "cancelling";
+      if (job.state === "running") job.state = "cancelling";
     }
     const controller = this.active?.controller;
-    this.emit();
-    controller?.abort();
+    try { this.emit(); } finally { controller?.abort(); }
     return this.get();
   }
 

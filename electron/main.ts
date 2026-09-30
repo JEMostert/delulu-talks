@@ -8,6 +8,8 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import type { AppSettings, MagicPreset, Page, PasteRecovery, TranscriptRecord } from "../src/types";
 import { REWRITE_PRESETS } from "../src/rewritePresets";
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
+import { randomUUID } from "node:crypto";
+import { DomainError } from "../src/domainErrors";
 import { deliveredText } from "../src/transcriptText";
 import { rememberSessionTranscript } from "../src/sessionTranscriptRetention";
 import { SerialQueue } from "./runtime/serialQueue";
@@ -104,6 +106,7 @@ let paste: DesktopPasteAdapter;
 let pasteLast: PasteLastService;
 let pill: DesktopIndicatorAdapter;
 let dictation: DictationService;
+let labIpc: ReturnType<typeof registerMainIpc> | null = null;
 let ruleUsage: RuleUsageService;
 
 let shortcut: DesktopShortcutAdapter;
@@ -721,6 +724,7 @@ async function applySettings(value: unknown): Promise<AppSettings> {
     if (
       (runtimeChanged ||
         magicRuntimeChanged ||
+        next.memoryPolicy !== previous.memoryPolicy ||
         next.magicEnabled !== previous.magicEnabled) &&
       (dictation.isActive || asr.isBusy)
     )
@@ -752,7 +756,8 @@ async function applySettings(value: unknown): Promise<AppSettings> {
     next.preloadModel !== previous.preloadModel ||
     next.preloadMagicModel !== previous.preloadMagicModel ||
     next.magicEnabled !== previous.magicEnabled ||
-    next.modelIdleMinutes !== previous.modelIdleMinutes;
+    next.modelIdleMinutes !== previous.modelIdleMinutes ||
+    next.memoryPolicy !== previous.memoryPolicy;
   if (runtimeChanged || magicRuntimeChanged || residencyChanged)
     asr.configureResidency(saved);
   if (saved.showOverlay !== previous.showOverlay) {
@@ -766,7 +771,9 @@ async function applySettings(value: unknown): Promise<AppSettings> {
 
 function assertRuntimeIdle(): void {
   if (dictation.isActive || asr.isBusy)
-    throw new Error("Finish the current recording or model operation first");
+    throw new DomainError("BUSY", "Finish the current recording or model operation first", {
+      operationId: randomUUID(), operation: "runtime:idle",
+    });
 }
 
 async function start(): Promise<void> {
@@ -889,7 +896,7 @@ async function start(): Promise<void> {
   });
   shortcut.onStatus((status) => broadcast("shortcut:statusChanged", status));
   setupPermissions();
-  registerMainIpc({ getMainWindow: () => mainWindow, storage, asr, paste, pill, dictation, shortcut, updates, persistSettings, settingsBusy: () => settingsQueue.busy, getLastTranscript: () => lastTranscript, setLastTranscript: (record) => { lastTranscript = record; }, sessionTranscripts, rebuildTrayMenu, pasteLast, modelCache, ruleUsage, schedulePasteLast, getPasteRecovery: () => pasteRecovery, setPasteRecovery, applySettings, settingsQueue, broadcast, selectedAudioFiles, historyDeletion, visibleHistory, historyBatchSnapshot, selectedHistory, writeSelectionExport });
+  labIpc = registerMainIpc({ getMainWindow: () => mainWindow, storage, asr, paste, pill, dictation, shortcut, updates, persistSettings, settingsBusy: () => settingsQueue.busy, getLastTranscript: () => lastTranscript, setLastTranscript: (record) => { lastTranscript = record; }, sessionTranscripts, rebuildTrayMenu, pasteLast, modelCache, ruleUsage, schedulePasteLast, getPasteRecovery: () => pasteRecovery, setPasteRecovery, applySettings, settingsQueue, broadcast, selectedAudioFiles, historyDeletion, visibleHistory, historyBatchSnapshot, selectedHistory, writeSelectionExport });
   if (!smokeTest) {
     if (app.isPackaged)
       void shortcut
@@ -929,6 +936,7 @@ if (!hasLock) {
 app.on("activate", () => showMainWindow());
 app.on("before-quit", () => {
   quitting = true;
+  try { labIpc?.shutdown(); } catch (error) { console.error("Could not save import queue during shutdown", error); }
   dictation?.releaseRetryAudio();
   pill?.shutdown();
   pasteLast?.shutdown();

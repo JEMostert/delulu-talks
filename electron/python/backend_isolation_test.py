@@ -19,7 +19,7 @@ PLATFORMS = [
      "netease-youdao/Confucius4-R2T2", "cuda"),
 ]
 OPTIONAL_MODULES = {
-    "metal_speech", "windows_speech", "qwen_asr", "vllm", "mlx",
+    "metal_speech", "windows_speech", "r2t2", "vllm", "mlx",
     "mlx_audio", "torch", "transformers", "numpy", "soundfile",
 }
 
@@ -113,7 +113,7 @@ class BackendIsolation(unittest.TestCase):
                 self.assertEqual(attempts, [])
 
     def test_writing_workflow_works_when_all_speech_backends_are_missing(self):
-        blocked = {"metal_speech", "windows_speech", "qwen_asr", "vllm", "mlx", "mlx_audio"}
+        blocked = {"metal_speech", "windows_speech", "r2t2", "vllm", "mlx", "mlx_audio"}
         for system, arch in [("darwin", "arm64"), ("win32", "AMD64"), ("linux", "x86_64")]:
             with self.subTest(platform=system):
                 responses = self.protocol(system, arch, blocked, [
@@ -134,7 +134,7 @@ class BackendIsolation(unittest.TestCase):
         for system, arch, module in [
             ("darwin", "arm64", "metal_speech"),
             ("win32", "AMD64", "windows_speech"),
-            ("linux", "x86_64", "qwen_asr"),
+            ("linux", "x86_64", "r2t2"),
         ]:
             with self.subTest(platform=system):
                 responses = self.protocol(system, arch, {module}, [
@@ -248,7 +248,7 @@ class BackendIsolation(unittest.TestCase):
                         return {"loaded": False}
 
                 with patch.dict(sys.modules, {module: types.SimpleNamespace(**{class_name: Speech})}), \
-                        forbid_imports({"transformers", "qwen_asr", "vllm", "mlx_audio", "torch"}) as attempts:
+                        forbid_imports({"transformers", "r2t2", "vllm", "mlx_audio", "torch"}) as attempts:
                     self.assertTrue(worker.dispatch({"command": "load"})["loaded"])
                     self.assertTrue(worker.dispatch({"command": "status"})["loaded"])
                     self.assertEqual(worker.dispatch({"command": "transcribe"})["text"], "R2T2 fixture")
