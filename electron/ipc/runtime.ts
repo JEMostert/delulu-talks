@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { DomainError } from "../../src/domainErrors";
 import type { MagicRewriteRequest } from "../../src/types";
 import { isMagicPreset } from "../../src/rewritePresets";
 import { validateRewriteInstructions } from "../../src/rewriteInstructions";
@@ -8,7 +10,7 @@ import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
 export function registerRuntimeIpc({ handle }: IpcRegistrar, { storage, asr, dictation, settingsBusy, modelCache }: Pick<IpcDependencies, "storage" | "asr" | "dictation" | "settingsBusy" | "modelCache">): void {
-const assertRuntimeIdle = () => { if (dictation.isActive || asr.isBusy) throw new Error("Finish the current recording or model operation first"); };
+const assertRuntimeIdle = () => { if (dictation.isActive || asr.isBusy) throw new DomainError("BUSY", "Finish the current recording or model operation first", { operationId: randomUUID(), operation: "runtime:idle" }); };
 handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
 handle("cache:preview", () => modelCache.preview());
 handle("cache:cleanup", (_event, token: unknown, ids: unknown) => {

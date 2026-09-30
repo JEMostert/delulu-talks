@@ -486,7 +486,7 @@ export class AsrService {
           if (kind === "magic") {
             // Exercise writing inference before publishing the candidate pointer.
             // This fixed local warmup is never stored or delivered.
-            await this.request("magic", "magicRewrite", { text: "Warmup.", preset: "polish", instructions: "", allowInferences: false });
+            await this.request("magic", "magicRewrite", { text: "Warmup.", preset: "polish", instructions: "", allowInferences: false, warmup: true });
           }
           signal.throwIfAborted();
           const runtime = await this.request<WorkerRuntime>(kind, kind === "speech" ? "status" : "magicStatus");
@@ -494,7 +494,7 @@ export class AsrService {
           signal.throwIfAborted();
           if (!current()) throw new Error("Runtime candidate no longer owns setup");
           installer.commit();
-          installer.setupLog.finish("complete", "Runtime activated after inference warmup");
+          installer.setupLog.finish(installer.setupLog.activeId, "success", "Runtime activated after inference warmup");
           if (kind === "magic") this.updateMagicStatus({ ...reportedLifecycle(runtime), setupStage: "ready" });
           // Apply configured preloads after this transaction releases its
           // reservation, without making the other runtime part of cancellation.
@@ -513,7 +513,7 @@ export class AsrService {
         }
       });
     } catch (error) {
-      installer.setupLog.finish(signal.aborted ? "cancelled" : "failed", signal.aborted ? "Setup cancelled; previous runtime preserved" : "Setup failed; previous runtime preserved");
+      installer.setupLog.finish(installer.setupLog.activeId, signal.aborted ? "cancelled" : "error", signal.aborted ? "Setup cancelled; previous runtime preserved" : "Setup failed; previous runtime preserved");
       if (signal.aborted) {
         let installed = false;
         try { installed = existsSync(installer.python); } catch { /* damaged activation */ }
@@ -908,6 +908,13 @@ export class AsrService {
   }
 
   async rewriteMagic(
+    request: MagicRewriteRequest,
+    settings: AppSettings,
+  ): Promise<MagicRewriteResult> {
+    return this.runModelOperation(settings, () => this.performRewrite(request, settings));
+  }
+
+  private async performRewrite(
     request: MagicRewriteRequest,
     settings: AppSettings,
   ): Promise<MagicRewriteResult> {

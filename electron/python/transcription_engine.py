@@ -391,7 +391,7 @@ class Worker:
                 "backendId": "vllm-cuda",
                 # vLLM selects its dtype internally; do not guess from weights.
                 "precision": None,
-                "checkpoint": {"repository": SPEECH_MODEL, "revision": None},
+                "checkpoint": {"repository": SPEECH_MODEL, "revision": "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9"},
                 "platform": "linux",
                 "device": "cuda",
             }
@@ -431,12 +431,14 @@ class Worker:
             from transformers import AutoModelForMultimodalLM, AutoProcessor
 
             from huggingface_hub import snapshot_download
+            from download_progress import download_progress_class
             cache_dir = str(request.get("cacheDir") or "") or None
             emit_progress("Retrieving rewrite checkpoint (cached files may be reused)…", stage="download")
             model_path = snapshot_download(
                 repo_id=model_id, cache_dir=cache_dir,
                 local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1",
                 allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.tiktoken", "*.jinja"],
+                tqdm_class=download_progress_class(),
             )
             emit_progress("Loading rewrite processor and weights…", stage="load")
             self.magic_processor = AutoProcessor.from_pretrained(model_path, local_files_only=True)
@@ -522,7 +524,7 @@ class Worker:
         inputs = inputs.to(self.magic_device)
         input_length = int(inputs["input_ids"].shape[-1])
         preset = str(request.get("preset", "polish"))
-        max_new_tokens = 1536 if preset == "concise" else 4096
+        max_new_tokens = 8 if request.get("warmup") is True else (1536 if preset == "concise" else 4096)
         started = time.perf_counter()
         if self.magic_warmup != "complete":
             self.magic_warmup = "warming"

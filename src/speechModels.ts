@@ -24,7 +24,7 @@ export const SPEECH_BACKENDS = [
     platform: "linux" as const,
     device: "cuda" as const,
     precisions: "Runtime automatic selection; actual precision may be unknown",
-    checkpoint: { repository: SPEECH_IDENTITY.upstreamRepository, revision: null },
+    checkpoint: { repository: SPEECH_IDENTITY.upstreamRepository, revision: "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9" },
     capability: "Configured for Linux with NVIDIA CUDA; native acceptance pending",
   },
   {
