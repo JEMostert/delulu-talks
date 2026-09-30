@@ -1,3 +1,4 @@
+import { bridge } from "../bridge";
 import { useEffect, useId, useRef, useState } from "react";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
@@ -14,6 +15,9 @@ import type {
 
 export function RewriteDialog({
   text,
+  title = "Rewrite transcript",
+  description = "Preview a change before using it. Original speech stays available and text shortcuts stay exactly as saved.",
+  originalText,
   baseline,
   sourceRevision = 0,
   sourceLanguage,
@@ -21,6 +25,7 @@ export function RewriteDialog({
   onClose,
   onSetup,
   onRewrite,
+  onCancelRewrite,
   onApply,
   visible = true,
   onBackground,
@@ -28,6 +33,9 @@ export function RewriteDialog({
   contextLabel,
 }: {
   text: string;
+  title?: string;
+  description?: string;
+  originalText?: string;
   baseline: string;
   sourceRevision?: number;
   sourceLanguage?: string;
@@ -40,6 +48,7 @@ export function RewriteDialog({
   onSetup: () => void;
   onRewrite: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
   onApply: (result: MagicRewriteResult, source: string, sourceRevision: number) => Promise<boolean>;
+  onCancelRewrite?: (operationId: string) => Promise<boolean>;
 }) {
   const instructionHelpId = useId();
   const active = useRef(true);
@@ -49,12 +58,19 @@ export function RewriteDialog({
     return () => { active.current = false; };
   }, []);
   const [source, setSource] = useState(text);
+  const [originalSource, setOriginalSource] = useState(originalText ?? text);
   const [expectedOutput, setExpectedOutput] = useState(baseline);
   const [expectedRevision, setExpectedRevision] = useState(sourceRevision);
   const [preset, setPreset] = useState<MagicPreset>("concise");
   const [instructions, setInstructions] = useState("");
+  const [contextEnabled, setContextEnabled] = useState(false);
+  const [language, setLanguage] = useState("");
+  const [fileType, setFileType] = useState("");
+  const [selection, setSelection] = useState("");
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     onOperationState?.(busy ? "working" : error ? "error" : result ? "ready" : "draft");
@@ -68,16 +84,97 @@ export function RewriteDialog({
     onClose();
   };
   const presetDetails = REWRITE_PRESETS.find((item) => item.id === preset)!;
+  const [notice, setNotice] = useState<string | null>(null);
+  const mounted = useRef(true);
+  const activeSession = useRef<{ id: string; cancelled: boolean } | null>(null);
+  const cancelRewrite = useRef(onCancelRewrite);
+  cancelRewrite.current = onCancelRewrite;
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const session = activeSession.current;
+      activeSession.current = null;
+      if (session && !session.cancelled) {
+        session.cancelled = true;
+        const cancel = cancelRewrite.current;
+        if (cancel) void Promise.resolve().then(() => cancel(session.id)).catch(() => undefined);
+      }
+    };
+  }, []);
+
+  async function generatePreview() {
+    if (activeSession.current || busy || stale) return;
+    const session = { id: crypto.randomUUID(), cancelled: false };
+    activeSession.current = session;
+    setBusy(true);
+    setGenerating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const preview = await onRewrite({
+        operationId: session.id,
+        text: rewriteSource,
+        preset,
+        context: contextEnabled ? {language,fileType,selection} : undefined,
+        sourceLanguage,
+        instructions: validateRewriteInstructions(instructions),
+        allowInferences: false,
+      });
+      if (mounted.current && activeSession.current === session && !session.cancelled) {
+        setResult(preview);
+      }
+    } catch (reason) {
+      if (mounted.current && activeSession.current === session && !session.cancelled) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    } finally {
+      if (mounted.current && activeSession.current === session && !session.cancelled) {
+        activeSession.current = null;
+        setGenerating(false);
+        setBusy(false);
+      }
+    }
+  }
+
+  async function cancelPreview() {
+    const session = activeSession.current;
+    if (!session || session.cancelled || !onCancelRewrite) return;
+    session.cancelled = true;
+    setCancelling(true);
+    setError(null);
+    let cleanupFailed = false;
+    try {
+      await onCancelRewrite(session.id);
+    } catch {
+      cleanupFailed = true;
+    } finally {
+      if (mounted.current && activeSession.current === session) {
+        activeSession.current = null;
+        setGenerating(false);
+        setCancelling(false);
+        setBusy(false);
+        setNotice(cleanupFailed
+          ? "Preview request cancelled; runtime cleanup could not be confirmed."
+          : "Preview request cancelled");
+      }
+    }
+  }
+
+  const rewriteSource = preset === "summary" ? originalSource : source;
   const missing = status?.engine === "missing" || status?.engine === "error";
-  const stale = source !== text || expectedOutput !== baseline || sourceRevision !== expectedRevision;
+  const stale = source !== text || originalSource !== (originalText ?? text) ||
+    expectedOutput !== baseline || sourceRevision !== expectedRevision;
   return (
     <Modal
-      title="Rewrite transcript"
+      title={title}
       visible={visible}
       busy={busy}
       onClose={closeDialog}
       footer={
         <>
+          {result && <button className="secondary-button" disabled={busy} onClick={async () => {try {await bridge.copyText(result.text);setNotice("Preview copied — paste manually into the intended destination.");} catch(reason) {setError(String(reason));}}}>Copy preview</button>}
           {onBackground && <button className="secondary-button" onClick={onBackground}>Continue in background</button>}
           <button
             className="secondary-button"
@@ -96,6 +193,9 @@ export function RewriteDialog({
                 setError(null);
                 try {
                   if (await onApply(result, expectedOutput, expectedRevision)) closeDialog();
+                  const applied = await onApply(result, expectedOutput);
+                  if (!mounted.current) return;
+                  if (applied) onClose();
                   else
                     setError(
                       "Could not apply this rewrite. The transcript may have changed; close this preview and review the current result.",
@@ -103,7 +203,7 @@ export function RewriteDialog({
                 } catch (reason) {
                   setError(reason instanceof Error ? reason.message : String(reason));
                 } finally {
-                  setBusy(false);
+                  if (mounted.current) setBusy(false);
                 }
               }}
             >
@@ -113,16 +213,14 @@ export function RewriteDialog({
         </>
       }
     >
-      <p>
-        Preview a change before using it. Original speech stays available and
-        text shortcuts stay exactly as saved.
-      </p>
+      <p>{description}</p>
       {contextLabel && <p className="caption">Rewriting: {contextLabel}. This session stays attached to this transcript when you navigate or open another card.</p>}
       {stale && (
         <div className="rewrite-setup my-3 rounded-panel border border-line p-3" role="alert">
           <p>The transcript changed after this preview opened. This preview cannot be applied. Refresh to use the current text and generate a new preview.</p>
           <button className="secondary-button" disabled={busy} onClick={() => {
             setSource(text);
+            setOriginalSource(originalText ?? text);
             setExpectedOutput(baseline);
             setExpectedRevision(sourceRevision);
             setResult(null);
@@ -139,6 +237,7 @@ export function RewriteDialog({
           </p>
           <button
             className="secondary-button"
+            disabled={busy}
             onClick={() => {
               if (onBackground) onBackground();
               else closeDialog();
@@ -200,6 +299,13 @@ export function RewriteDialog({
         }}>Clear instructions</button>
       </div>
       <p className="mt-3" aria-live="polite">{presetDetails.description}</p>
+      {preset === "summary" && (
+        <p className="mt-3 text-sm text-muted">
+          Summary is a manual step after transcription. Compare the recognition original
+          below with the audio before summarizing; it stays available after applying or
+          undoing a summary. This does not certify recognition accuracy.
+        </p>
+      )}
       <details className="my-3 rounded-panel border border-line p-3">
         <summary>Illustrative example: {presetDetails.label}</summary>
         <p className="my-2">Written examples only; your local model's output may differ. Generate a preview to rewrite your transcript.</p>
@@ -210,11 +316,11 @@ export function RewriteDialog({
       </details>
       <div className="rewrite-comparison mb-4 mt-3 grid grid-cols-2 gap-4">
         <label className="field">
-          Current text
+          {preset === "summary" ? "Preserved recognition original" : "Current text"}
           <textarea
             readOnly
             className="min-h-[200px] w-full"
-            value={source}
+            value={rewriteSource}
             aria-label="Rewrite source"
           />
         </label>
@@ -242,8 +348,8 @@ export function RewriteDialog({
       </div>
       {result && (
         <>
-          <RewriteWarnings source={source} preview={result.text} />
-          <RewriteDiff source={source} preview={result.text} />
+          <RewriteWarnings source={rewriteSource} preview={result.text} />
+          <RewriteDiff source={rewriteSource} preview={result.text} />
         </>
       )}
       {error && (
@@ -251,41 +357,32 @@ export function RewriteDialog({
           {error}
         </p>
       )}
+      {notice && <p role="status">{notice}</p>}
       <button
         className="secondary-button"
-        disabled={busy || stale || missing || source.length > 50_000}
-        onClick={async () => {
-          if (busy || stale) return;
-          const generation = ++requestGeneration.current;
-          setBusy(true);
-          setError(null);
-          try {
-            const rewritten = await onRewrite({
-              text: source,
-              sourceLanguage,
-              preset,
-              instructions: validateRewriteInstructions(instructions),
-              allowInferences: false,
-            });
-            if (active.current && requestGeneration.current === generation) setResult(rewritten);
-          } catch (reason) {
-            if (active.current && requestGeneration.current === generation) setError(reason instanceof Error ? reason.message : String(reason));
-          } finally {
-            if (active.current && requestGeneration.current === generation) setBusy(false);
-          }
-        }}
+        disabled={busy || stale || missing || !rewriteSource.trim() || rewriteSource.length > 50_000}
+        onClick={generatePreview}
       >
-        {busy ? <LoaderCircle className="spin" /> : <WandSparkles />}
-        {busy
-          ? "Rewriting locally…"
+        {generating ? <LoaderCircle className="spin" /> : <WandSparkles />}
+        {generating
+          ? cancelling ? "Cancelling preview…" : "Rewriting locally…"
           : result
             ? "Try again"
             : "Generate preview"}
       </button>
-      {source.length > 50_000 && (
+      {generating && onCancelRewrite && (
+        <button
+          className="secondary-button"
+          disabled={cancelling}
+          onClick={cancelPreview}
+        >
+          {cancelling ? "Cancelling preview…" : "Cancel rewrite"}
+        </button>
+      )}
+      {rewriteSource.length > 50_000 && (
         <p className="field-error">
-          This transcript exceeds the 50,000-character rewrite limit. Shorten
-          the transcript before rewriting it.
+          This source exceeds the 50,000-character rewrite limit. A summary of the
+          full original needs a shorter recording or a later long-transcript workflow.
         </p>
       )}
     </Modal>

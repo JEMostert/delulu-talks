@@ -1,3 +1,5 @@
+import { registerSelectedTextIpc } from "./selectedText";
+import { registerProjectVocabularyIpc } from "./projectVocabulary";
 import { registerDictationIpc } from "./dictation";
 import { registerHistoryIpc } from "./history";
 import { registerLabIpc } from "./lab";
@@ -19,4 +21,6 @@ export function registerMainIpc(dependencies: IpcDependencies): void {
   registerUpdatesIpc(registrar, dependencies);
   registerHistoryIpc(registrar, dependencies);
   registerLabIpc(registrar, dependencies);
+  registerProjectVocabularyIpc(registrar, dependencies);
+  registerSelectedTextIpc(registrar, dependencies);
 }

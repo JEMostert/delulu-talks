@@ -2,6 +2,7 @@ import { renderTechnicalDictation } from "../../src/technicalDictation";
 import { personalizeWithUsage } from "../../src/personalization";
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { formatSpokenCommands } from "../../src/spokenFormatting";
+import { captureProfileSnapshot } from "../../src/activePersonalProfile";
 import { normalizeSpeechExecution } from "../../src/speechModels";
 import { deliveredText } from "../../src/transcriptText";
 import { normalizeLanguageMetadata, normalizeReportedLanguage } from "../../src/transcriptLanguage";
@@ -30,7 +31,7 @@ type WindowProvider = {
 };
 
 type CaptureState =
-  "idle" | "opening" | "listening" | "stopping" | "processing";
+  "idle" | "opening" | "listening" | "pausing" | "paused" | "resuming" | "stopping" | "processing";
 
 function numeric(value: unknown, fallback = 0): number {
   const parsed = Number(value);
@@ -39,6 +40,8 @@ function numeric(value: unknown, fallback = 0): number {
 
 export class DictationService {
   private readonly retryAudio = new RetryAudioStore();
+  private captureSettings: AppSettings | null = null;
+  private retrySettings: AppSettings | null = null;
   get isActive(): boolean {
     return this.captureState !== "idle";
   }
@@ -46,11 +49,12 @@ export class DictationService {
   get canStopRecording(): boolean {
     return (
       this.recorderReady &&
-      (this.captureState === "opening" || this.captureState === "listening")
+      (["opening", "listening", "pausing", "paused", "resuming"].includes(this.captureState))
     );
   }
   discardFailure(): void {
     this.retryAudio.discard();
+    this.retrySettings = null;
     this.publishRetryAudio();
     if (!this.isActive)
       this.asr.setActivity("idle", "Failed recording discarded");
@@ -108,6 +112,8 @@ export class DictationService {
     if (!window || window.isDestroyed() || !this.recorderReady) {
       this.captureState = "idle";
       this.captureSessionId = null;
+      this.captureSettings = null;
+      this.asr.setSilenceCountdown?.(null);
       this.asr.setActivity(
         "error",
         "The microphone controller is still starting — try again in a moment",
@@ -137,7 +143,9 @@ export class DictationService {
     if (this.busyNoticeTimer) clearTimeout(this.busyNoticeTimer);
     this.busyNoticeTimer = null;
     this.busyNotice = false;
-    this.hud = command;
+    this.hud = command.state !== "hidden" && this.captureSettings
+      ? { ...command, profile: captureProfileSnapshot(this.captureSettings).label }
+      : command;
     this.applyHud();
   }
 
@@ -179,9 +187,11 @@ export class DictationService {
 
   recorderUnavailable(): void {
     this.recorderReady = false;
+    this.asr.setSilenceCountdown?.(null);
     if (this.captureState !== "idle" && this.captureState !== "processing") {
       this.captureState = "idle";
       this.captureSessionId = null;
+      this.captureSettings = null;
       this.setHud({ state: "hidden" });
       this.asr.setActivity(
         "error",
@@ -191,6 +201,7 @@ export class DictationService {
   }
 
   start(): void {
+    if (this.paste.isBusy) throw new Error("Finish the clipboard operation before recording.");
     const status = this.asr.getStatus();
     if (this.captureState !== "idle") return;
     if (
@@ -244,19 +255,29 @@ export class DictationService {
       });
       return;
     }
-    const settings = this.settings();
+    const settings = structuredClone(this.settings());
+    this.captureSettings = settings;
     this.captureSessionId = randomUUID();
     this.captureState = "opening";
     this.asr.setCaptureInputNotice?.(null);
+    this.asr.setSilenceCountdown?.(null);
     this.asr.setActivity("idle", "Opening microphone");
     this.sendRecorder({
       action: "start",
       inputDeviceId: settings.inputDeviceId,
       sessionId: this.captureSessionId,
+      captureProfile: captureProfileSnapshot(settings),
+      trailingSilence: settings.trailingSilenceStopEnabled
+        ? {
+            seconds: settings.trailingSilenceSeconds,
+            thresholdDb: settings.trailingSilenceThresholdDb,
+          }
+        : null,
     });
   }
 
   stop(): void {
+    this.asr.setSilenceCountdown?.(null);
     if (this.busyNotice) this.setHud({ state: "hidden" });
     if (this.captureState === "opening") {
       this.captureState = "stopping";
@@ -266,7 +287,7 @@ export class DictationService {
       );
       return;
     }
-    if (this.captureState !== "listening") return;
+    if (!["listening", "pausing", "paused", "resuming"].includes(this.captureState)) return;
     this.captureState = "stopping";
     this.sendRecorder({
       action: "stop",
@@ -276,18 +297,42 @@ export class DictationService {
   }
 
   toggle(): void {
-    if (this.captureState === "opening" || this.captureState === "listening")
+    if (["opening", "listening", "pausing", "paused", "resuming"].includes(this.captureState))
       this.stop();
     else if (this.captureState === "idle") this.start();
   }
 
+  pause(): void {
+    if (this.captureState !== "listening") return;
+    this.captureState = "pausing";
+    this.sendRecorder({ action: "pause", sessionId: this.pendingSessionId ?? undefined, inputDeviceId: this.settings().inputDeviceId });
+  }
+
+  resume(): void {
+    if (this.captureState !== "paused") return;
+    this.captureState = "resuming";
+    this.sendRecorder({ action: "resume", sessionId: this.pendingSessionId ?? undefined, inputDeviceId: this.settings().inputDeviceId });
+  }
+
+  recordingPauseChanged(sessionId: string, paused: boolean): void {
+    if (sessionId !== this.pendingSessionId || this.captureState !== (paused ? "pausing" : "resuming")) return;
+    this.captureState = paused ? "paused" : "listening";
+    this.asr.setActivity(paused ? "paused" : "listening", paused
+      ? "Paused — audio retained; microphone remains open. Resume or Stop to transcribe."
+      : "Listening — resumed the same recording");
+    if (paused) this.setHud({ state: "hidden" });
+    else this.setHud({ state: "listening", detail: "Resumed — Stop to transcribe" });
+  }
+
   cancel(): void {
+    this.asr.setSilenceCountdown?.(null);
     if (this.busyNotice) this.setHud({ state: "hidden" });
     if (this.captureState === "idle" || this.captureState === "processing")
       return;
     const sessionId = this.captureSessionId!;
     this.captureState = "idle";
     this.captureSessionId = null;
+    this.captureSettings = null;
     this.sendRecorder({
       action: "cancel",
       inputDeviceId: this.settings().inputDeviceId,
@@ -295,6 +340,41 @@ export class DictationService {
     });
     this.setHud({ state: "hidden" });
     this.asr.setActivity("idle", "Recording cancelled");
+  }
+
+  recordingSilence(
+    sessionId: string,
+    remainingSeconds: number | null,
+    stop: boolean,
+  ): void {
+    if (
+      sessionId !== this.captureSessionId ||
+      !["opening", "listening"].includes(this.captureState)
+    )
+      return;
+    this.asr.setSilenceCountdown?.(remainingSeconds);
+    if (!stop) {
+      if (this.captureState === "listening") {
+        const hold = this.settings().shortcutMode === "hold";
+        this.setHud({
+          state: "listening",
+          detail:
+            remainingSeconds === null
+              ? hold
+                ? "Release to send"
+                : "Press shortcut to send"
+              : `Auto-stop in ${remainingSeconds}s · Stop still available`,
+        });
+      }
+      return;
+    }
+    this.stop();
+    this.asr.setActivity("listening", "Trailing silence — finishing capture");
+    this.setHud({
+      state: "transcribing",
+      title: "Finishing capture",
+      detail: "Trailing silence",
+    });
   }
 
   recordingLimitReached(sessionId: string): void {
@@ -330,7 +410,7 @@ export class DictationService {
     }
     if (this.captureState !== "opening") return;
     this.captureState = "listening";
-    const hold = this.settings().shortcutMode === "hold";
+    const hold = (this.captureSettings ?? this.settings()).shortcutMode === "hold";
     this.asr.setActivity(
       "listening",
       hold
@@ -367,8 +447,10 @@ export class DictationService {
   }
 
   private failCapture(message: string): void {
+    this.asr.setSilenceCountdown?.(null);
     this.captureState = "idle";
     this.captureSessionId = null;
+    this.captureSettings = null;
     this.setHud({
       state: "error",
       title: "Could not finish",
@@ -393,6 +475,7 @@ export class DictationService {
     )
       return;
     this.captureSessionId = null;
+    this.asr.setSilenceCountdown?.(null);
     await this.processRecording(submission);
   }
 
@@ -403,7 +486,9 @@ export class DictationService {
     if (this.captureState === "processing")
       throw new Error("A recording is already being processed");
     this.captureState = "processing";
-    const settings = this.settings();
+    const settings = this.captureSettings ??
+      (retryLease ? this.retrySettings : null) ?? this.settings();
+    this.captureSettings = structuredClone(settings);
     if (
       !(submission.wav instanceof Uint8Array) ||
       submission.wav.byteLength < 44
@@ -425,6 +510,7 @@ export class DictationService {
         detail: "Hold a little longer",
       });
       this.asr.setActivity("idle", "Recording was too short and was discarded");
+      this.captureSettings = null;
       return true;
     }
 
@@ -542,8 +628,9 @@ export class DictationService {
       this.asr.setActivity("idle", completion);
       return true;
     } catch (error) {
-      if (deliveryStarted) this.retryAudio.discard();
+      if (deliveryStarted) { this.retryAudio.discard(); this.retrySettings = null; }
       const retained = !deliveryStarted && (retryLease || this.retryAudio.retain(submission));
+      this.retrySettings = retained ? structuredClone(settings) : null;
       this.publishRetryAudio();
       this.setHud({ state: "error" });
       const cause = error instanceof Error ? error.message : String(error);
@@ -556,6 +643,7 @@ export class DictationService {
       return false;
     } finally {
       this.captureState = "idle";
+      this.captureSettings = null;
       rmSync(audioPath, { force: true });
     }
   }

@@ -91,6 +91,7 @@ export function HistoryPage({
           <Search />
           <input
             aria-label="Search transcript history"
+            data-history-search
             placeholder="Find a thought, a phrase, a file…"
             value={filters.query}
             onChange={(e) => update("query", e.target.value)}

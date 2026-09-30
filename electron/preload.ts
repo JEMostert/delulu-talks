@@ -47,6 +47,11 @@ const api: DeluluApi = {
   setAutomationEnabled: (enabled) => invoke("automation:enabled", enabled),
   grantAutomation: (request) => invoke("automation:grant", request),
   revokeAutomation: (id) => invoke("automation:revoke", id),
+  getSelectedTextState: () => invoke("selectedText:state"),
+  enableSelectedText: (enabled) => invoke("selectedText:enable",enabled),
+  discardSelectedText: (id) => invoke("selectedText:discard",id),
+  replaceSelectedText: (id,text) => invoke("selectedText:replace",id,text),
+  onSelectedTextState: (callback) => listener("selectedText:changed",callback),
   getRuleUsage: () => invoke("rules:usage"),
   resetRuleUsage: () => invoke("rules:resetUsage"),
   previewModelCache: () => invoke("cache:preview"),
@@ -76,6 +81,7 @@ const api: DeluluApi = {
   updateSettings: (settings: Partial<AppSettings>) =>
     invoke("settings:update", settings),
   managePersonalProfile: (command) => invoke("profiles:manage", command),
+  activatePersonalProfile: (command) => invoke("profiles:activate", command),
   getStatus: () => invoke("runtime:status"),
   getMagicStatus: () => invoke("magic:status"),
   getShortcutStatus: () => invoke("shortcut:status"),
@@ -86,24 +92,28 @@ const api: DeluluApi = {
   checkForUpdates: () => invoke("updates:check"),
   downloadUpdate: () => invoke("updates:download"),
   installUpdate: () => invoke("updates:install"),
+  pauseDictation: () => invoke("dictation:pause"),
+  resumeDictation: () => invoke("dictation:resume"),
   toggleDictation: () => invoke("dictation:toggle"),
   startDictation: () => invoke("dictation:start"),
   stopDictation: () => invoke("dictation:stop"),
   cancelDictation: () => invoke("dictation:cancel"),
-  cancelModelSetup: () => invoke("runtime:cancelSetup"),
   setupModel: () => invoke("runtime:setup"),
   loadModel: () => invoke("runtime:load"),
   unloadModel: () => invoke("runtime:unload"),
   resetPythonEnvironment: () => invoke("runtime:reset"),
-  cancelMagicSetup: () => invoke("magic:cancelSetup"),
   setupMagic: () => invoke("magic:setup"),
   loadMagic: () => invoke("magic:load"),
   unloadMagic: () => invoke("magic:unload"),
+  cancelModelSetup: () => invoke("runtime:cancelSetup"),
+  cancelMagicSetup: () => invoke("magic:cancelSetup"),
   rewriteMagic: (request: MagicRewriteRequest) =>
     invoke("magic:rewrite", {
       ...request,
       instructions: validateRewriteInstructions(request.instructions),
     }),
+  cancelRewrite: (operationId: string) =>
+    invoke("magic:cancelRewrite", operationId),
   copyText: (text: string) => invoke("clipboard:copy", text),
   authorizePaste: () => invoke("paste:authorize"),
   testPaste: () => invoke("paste:test"),
@@ -119,6 +129,11 @@ const api: DeluluApi = {
   applyHistoryRetention: (token: string) => invoke("history:retentionApply", token),
   onHistoryRetentionApplied: (callback: (removedIds: string[]) => void) =>
     listener("history:retentionApplied", callback),
+  chooseProjectIdentifier: (input) => invoke("projectVocabulary:choose", input),
+  getProjectVocabulary: () => invoke("projectVocabulary:get"),
+  selectProjectVocabulary: () => invoke("projectVocabulary:select"),
+  refreshProjectVocabulary: () => invoke("projectVocabulary:refresh"),
+  clearProjectVocabulary: () => invoke("projectVocabulary:clear"),
   chooseAudioFile: () => invoke("lab:chooseAudio"),
   runLab: (request: LabRequest) => invoke("lab:run", request),
   exportTranscript: (id: string, format: ExportFormat) =>
@@ -129,6 +144,9 @@ const api: DeluluApi = {
     invoke("recorder:started", sessionId),
   recordingLimitReached: (sessionId: string) =>
     invoke("recorder:limit", sessionId),
+  recordingPauseChanged: (sessionId, paused) => invoke("recorder:pause-changed", sessionId, paused),
+  recordingSilence: (sessionId, remainingSeconds, stop) =>
+    invoke("recorder:silence", sessionId, remainingSeconds, stop),
   recorderReady: () => invoke("recorder:ready"),
   recordingFailed: (message: string, sessionId: string) =>
     invoke("recorder:failed", message, sessionId),

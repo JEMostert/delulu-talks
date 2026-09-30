@@ -124,6 +124,7 @@ export class PasteService {
   }
 
   copy(text: string): void {
+    if (this.deliveryInFlight) throw new Error("A clipboard operation is already in progress.");
     this.clipboardRestore.cancel();
     this.publishClipboard(text);
   }
@@ -153,6 +154,15 @@ export class PasteService {
   async authorize(): Promise<void> {
     if (!this.waylandPortal) return;
     await this.ensurePortalSession();
+  }
+
+  get isBusy(): boolean { return this.deliveryInFlight; }
+
+  async withClipboardLease<T>(body: () => Promise<T>): Promise<T> {
+    if (this.deliveryInFlight) throw new Error("A clipboard delivery is already in progress.");
+    this.deliveryInFlight = true;
+    this.clipboardRestore.cancel();
+    try { return await body(); } finally { this.deliveryInFlight = false; }
   }
 
   async paste(text: string, restoreClipboard = false): Promise<string> {

@@ -1,14 +1,17 @@
+import type { SelectedTextApi } from "./selectedText";
 export type SetupState = "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { DictationMode } from "./technicalDictation";
 import type { ExportTemplateRequest } from "./exportTemplates";
+import type { ActivePersonalProfile, CaptureProfileSnapshot, ProfileActivationCommand } from "./activePersonalProfile";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
 import type { SpeechBackendId, SpeechExecution, SpeechIdentity } from "./speechModels";
 import type { DomainFailure } from "./domainErrors";
 export type { DomainErrorCode, DomainFailure, RetryPolicy } from "./domainErrors";
 
+import type { ProjectVocabularySnapshot } from "./projectVocabulary";
 export type Page =
-  "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
+  "home" | "lab" | "models" | "vocabulary" | "history" | "settings" | "technical";
 
 export type SpeechModelId = "r2t2" | "r2t2Mlx";
 /** Historical Qwen speech results retain their identity; it is never an active engine. */
@@ -20,9 +23,10 @@ export type MagicPreset =
   | "bullet-points"
   | "professional-message"
   | "structured"
-  | "prompt";
+  | "prompt"
+  | "summary";
 export type DictationPhase =
-  "idle" | "preparing" | "loading" | "listening" | "transcribing" | "error";
+  "idle" | "preparing" | "loading" | "listening" | "paused" | "transcribing" | "error";
 export type EnginePhase =
   "missing" | "unloaded" | "settingUp" | "loading" | "ready" | "error";
 export type MagicPhase =
@@ -56,6 +60,9 @@ export type AppSettings = {
   pythonCommand: string;
   inputDeviceId: string;
   inputDeviceLabel: string;
+  trailingSilenceStopEnabled: boolean;
+  trailingSilenceSeconds: number;
+  trailingSilenceThresholdDb: number;
   autoPaste: boolean;
   pasteShortcut: PasteShortcut;
   pasteLastDelaySeconds: number;
@@ -71,7 +78,7 @@ export type AppSettings = {
   preloadModel: boolean;
   magicEnabled: boolean;
   magicModel: MagicModelId;
-  magicPreset: MagicPreset;
+  magicPreset: Exclude<MagicPreset, "summary">;
   magicAllowInferences: boolean;
   preloadMagicModel: boolean;
   modelIdleMinutes: number;
@@ -81,6 +88,7 @@ export type AppSettings = {
   customWords: CustomWord[];
   /** Stored contract only; no active profile or automatic behavior change. */
   personalProfiles?: PersonalProfileDocument;
+  activePersonalProfile?: ActivePersonalProfile | null;
 };
 
 export type SetupStage =
@@ -130,12 +138,20 @@ export type MagicStatus = RuntimeLifecycle & {
   progress?: number | null;
 };
 
+export type MagicRewriteContext = {
+  language?: string;
+  fileType?: string;
+  selection?: string;
+};
+
 export type MagicRewriteRequest = {
+  operationId?: string;
   text: string;
   preset: MagicPreset;
   /** Optional style request for this rewrite only; never a saved preference. Max 4,000 UTF-16 units. */
   instructions?: string;
   sourceLanguage?: string;
+  context?: MagicRewriteContext;
   allowInferences: boolean;
 };
 
@@ -173,6 +189,7 @@ export type DictationStatus = RuntimeLifecycle & {
   retryAvailable?: boolean;
   captureInputNotice?: string | null;
   retryAudio?: RetryAudioState;
+  silenceCountdownSeconds?: number | null;
   migrationRequired?: boolean;
   phase: DictationPhase;
   engine: EnginePhase;
@@ -303,10 +320,12 @@ export type LabRequest = {
 };
 
 export type RecorderCommand = {
-  action: "start" | "stop" | "cancel";
+  action: "start" | "stop" | "cancel" | "pause" | "resume";
+  trailingSilence?: { seconds: number; thresholdDb: number } | null;
   inputDeviceId: string;
   /** Native commands identify their capture; standalone capture can omit this. */
   sessionId?: string;
+  captureProfile?: CaptureProfileSnapshot;
 };
 
 export type RecordingSubmission = {
@@ -382,7 +401,7 @@ export type ModelCacheCleanupResult = {
   failures: { id: string; message: string }[];
 };
 
-export type DeluluApi = import("./localAutomation").LocalAutomationApi & {
+export type DeluluApi = import("./localAutomation").LocalAutomationApi & SelectedTextApi & {
   previewModelCache(): Promise<ModelCachePreview>;
   cleanupModelCache(token: string, ids: string[]): Promise<ModelCacheCleanupResult>;
   getRuleUsage(): Promise<RuleUsage>;
@@ -406,6 +425,7 @@ export type DeluluApi = import("./localAutomation").LocalAutomationApi & {
   discardFailedRecording(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
   managePersonalProfile(command: PersonalProfileCommand): Promise<AppSettings>;
+  activatePersonalProfile(command: ProfileActivationCommand): Promise<AppSettings>;
   getStatus(): Promise<DictationStatus>;
   getMagicStatus(): Promise<MagicStatus>;
   getShortcutStatus(): Promise<ShortcutStatus>;
@@ -420,6 +440,8 @@ export type DeluluApi = import("./localAutomation").LocalAutomationApi & {
   startDictation(): Promise<void>;
   stopDictation(): Promise<void>;
   cancelDictation(): Promise<void>;
+  pauseDictation(): Promise<void>;
+  resumeDictation(): Promise<void>;
   setupModel(): Promise<void>;
   cancelModelSetup(): Promise<void>;
   loadModel(): Promise<void>;
@@ -430,6 +452,7 @@ export type DeluluApi = import("./localAutomation").LocalAutomationApi & {
   loadMagic(): Promise<void>;
   unloadMagic(): Promise<void>;
   rewriteMagic(request: MagicRewriteRequest): Promise<MagicRewriteResult>;
+  cancelRewrite(operationId: string): Promise<boolean>;
   copyText(text: string): Promise<void>;
   authorizePaste(): Promise<void>;
   testPaste(): Promise<void>;
@@ -446,6 +469,11 @@ export type DeluluApi = import("./localAutomation").LocalAutomationApi & {
   previewHistoryRetention(policy: HistoryRetentionPolicy): Promise<HistoryRetentionPreview>;
   applyHistoryRetention(token: string): Promise<string[]>;
   onHistoryRetentionApplied(callback: (removedIds: string[]) => void): () => void;
+  chooseProjectIdentifier(input: {repository: string; rawSpeech: string; symbol: string}): Promise<ProjectVocabularySnapshot>;
+  getProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
+  selectProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
+  refreshProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
+  clearProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
   chooseAudioFile(): Promise<AudioFileSelection | null>;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
@@ -455,6 +483,12 @@ export type DeluluApi = import("./localAutomation").LocalAutomationApi & {
   ): Promise<string | null>;
   recordingStarted(sessionId: string): Promise<void>;
   recordingLimitReached(sessionId: string): Promise<void>;
+  recordingPauseChanged(sessionId: string, paused: boolean): Promise<void>;
+  recordingSilence(
+    sessionId: string,
+    remainingSeconds: number | null,
+    stop: boolean,
+  ): Promise<void>;
   recorderReady(): Promise<void>;
   recordingFailed(message: string, sessionId: string): Promise<void>;
   recordingInputChanged(

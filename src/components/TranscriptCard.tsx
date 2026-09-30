@@ -1,6 +1,7 @@
 import { CaptureDiagnostics } from "./CaptureDiagnostics";
 import { ExportTemplateDialog } from "./ExportTemplateDialog";
 import type { ExportTemplateRequest } from "../exportTemplates";
+import { TechnicalAddressPreview } from "./TechnicalAddressPreview";
 import { RewriteDialog } from "./RewriteDialog";
 import { IdentifierPreview } from "./IdentifierPreview";
 import { FillerPreview } from "./FillerPreview";
@@ -31,6 +32,7 @@ import {
 } from "lucide-react";
 import {
   deliveredText,
+  originalTranscriptText,
   transcriptIsEdited,
   transcriptText,
   transcriptSourceRevision,
@@ -49,6 +51,7 @@ import type {
 export type TranscriptActions = {
   onOpenRewrite?: (record: TranscriptRecord) => void;
   onRewrite?: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
+  onCancelRewrite?: (operationId: string) => Promise<boolean>;
   onSetRewrite?: (
     id: string,
     result: MagicRewriteResult | null,
@@ -83,6 +86,7 @@ export function TranscriptCard({
   ruleExamples,
   onRewrite,
   onOpenRewrite,
+  onCancelRewrite,
   onSetRewrite,
   onRewriteSetup,
   rewriteStatus,
@@ -280,6 +284,7 @@ export function TranscriptCard({
               ? " · Added assumptions were allowed"
               : ""}
             {edited ? " · Corrected" : ""}
+            {record.magicPreset === "summary" && record.magicText === delivered ? " · Summary" : ""}
           </span>
           <button
             className="text-button min-h-[26px] py-0 text-[11px]"
@@ -332,7 +337,9 @@ export function TranscriptCard({
                   ? "Your correction"
                   : "Original speech"
                 : record.magicText
-                  ? "Optional rewrite"
+                  ? record.magicPreset === "summary" && record.magicText === delivered
+                    ? "Optional summary"
+                    : "Optional rewrite"
                   : "Corrections & shortcuts applied"}
             </span>
           </div>
@@ -351,6 +358,9 @@ export function TranscriptCard({
             No calibrated confidence score is available for this transcript.
             Review the text before using it.
           </p>
+          {!editing && record.dictationMode && record.dictationMode !== "prose" && (
+            <TechnicalAddressPreview key={record.id} speech={record.text} onCopy={onCopy} />
+          )}
           {editing ? (
             <textarea
               aria-label="Correct transcript"
@@ -558,6 +568,7 @@ export function TranscriptCard({
       {rewriting && onRewrite && onSetRewrite && (
         <RewriteDialog
           text={text}
+          originalText={originalTranscriptText(record)}
           baseline={deliveredText(record)}
           sourceRevision={transcriptSourceRevision(record)}
           sourceLanguage={record.language}
@@ -565,6 +576,7 @@ export function TranscriptCard({
           onClose={() => setRewriting(false)}
           onSetup={onRewriteSetup ?? (() => {})}
           onRewrite={onRewrite}
+          onCancelRewrite={onCancelRewrite}
           onApply={async (result, source, revision) => {
             const applied = await onSetRewrite(record.id, result, source, revision);
             if (applied) setShowSource(false);

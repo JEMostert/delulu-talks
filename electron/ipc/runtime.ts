@@ -1,3 +1,4 @@
+import { normalizeRewriteContext } from "../../src/rewriteContext";
 import { randomUUID } from "node:crypto";
 import { DomainError } from "../../src/domainErrors";
 import type { MagicRewriteRequest } from "../../src/types";
@@ -9,8 +10,8 @@ import { localDataOverview } from "../services/localData";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
-export function registerRuntimeIpc({ handle }: IpcRegistrar, { storage, asr, dictation, settingsBusy, modelCache }: Pick<IpcDependencies, "storage" | "asr" | "dictation" | "settingsBusy" | "modelCache">): void {
-const assertRuntimeIdle = () => { if (dictation.isActive || asr.isBusy) throw new DomainError("BUSY", "Finish the current recording or model operation first", { operationId: randomUUID(), operation: "runtime:idle" }); };
+export function registerRuntimeIpc({ handle }: IpcRegistrar, { storage, asr, dictation, settingsBusy, modelCache, paste }: Pick<IpcDependencies, "storage" | "asr" | "dictation" | "settingsBusy" | "modelCache" | "paste">): void {
+const assertRuntimeIdle = () => { if (dictation.isActive || asr.isBusy || paste.isBusy) throw new DomainError("BUSY", "Finish the current recording or model operation first", {operationId:randomUUID(),operation:"runtime:idle"}); };
 handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
 handle("cache:preview", () => modelCache.preview());
 handle("cache:cleanup", (_event, token: unknown, ids: unknown) => {
@@ -72,6 +73,10 @@ handle("magic:unload", () => {
     assertRuntimeIdle();
     return asr.unloadMagic();
   });
+handle("magic:cancelRewrite", (_event, id: unknown) => {
+ if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error("Invalid rewrite operation ID");
+ return asr.cancelRewrite(id);
+});
 handle("magic:rewrite", (_event, value: unknown) => {
     if (!value || typeof value !== "object")
       throw new Error("Expected a rewriting request");
@@ -80,6 +85,8 @@ handle("magic:rewrite", (_event, value: unknown) => {
       ? (source.preset as MagicRewriteRequest["preset"])
       : "polish";
     const request: MagicRewriteRequest = {
+      context: normalizeRewriteContext(source.context),
+      operationId: source.operationId == null ? undefined : validateText(source.operationId,128),
       text: validateText(source.text, 50_000),
       preset,
       instructions: validateRewriteInstructions(source.instructions),

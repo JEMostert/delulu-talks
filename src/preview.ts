@@ -1,4 +1,6 @@
+import { activatePersonalProfile } from "./activePersonalProfile";
 import { changePersonalProfiles } from "./personalProfileCommands";
+import { emptyProjectVocabulary } from "./projectVocabulary";
 import { DEFAULT_SETTINGS } from "./data";
 import { deliveredText, originalTranscriptText, transcriptSourceRevision } from "./transcriptText";
 import { normalizeTranscriptTitle } from "./transcriptTitle";
@@ -63,6 +65,11 @@ export const previewApi: DeluluApi = {
   async setAutomationEnabled() { throw new Error("Local automation requires the desktop app"); },
   async grantAutomation() { throw new Error("Local automation requires the desktop app"); },
   async revokeAutomation() { throw new Error("Local automation requires the desktop app"); },
+  getSelectedTextState: async () => ({enabled:false,supported:false,shortcut:"CommandOrControl+Shift+R",session:null,error:null}),
+  enableSelectedText: async () => { throw new Error("Native selected-text capture requires the desktop application on X11."); },
+  discardSelectedText: async () => {},
+  replaceSelectedText: async () => { throw new Error("Native selected-text replacement is unavailable in browser preview."); },
+  onSelectedTextState: () => () => {},
   async getRuleUsage() {
     return desktopOnly();
   },
@@ -155,7 +162,15 @@ export const previewApi: DeluluApi = {
     return mockSettings();
   },
   async updateSettings(settings) {
-    const next = { ...mockSettings(), ...settings };
+    const current = mockSettings();
+    if (Object.prototype.hasOwnProperty.call(settings, "activePersonalProfile") && JSON.stringify(settings.activePersonalProfile) !== JSON.stringify(current.activePersonalProfile)) throw new Error("Switch profiles using the explicit activation preview.");
+    const next = { ...current, ...settings };
+    localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
+    return next;
+  },
+  async activatePersonalProfile(command) {
+    const current = mockSettings();
+    const next = { ...current, ...activatePersonalProfile(current, command) };
     localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
     return next;
   },
@@ -227,6 +242,9 @@ export const previewApi: DeluluApi = {
   async installUpdate() {
     desktopOnly();
   },
+  async pauseDictation() { throw new Error("Pause requires the desktop recorder"); },
+  async resumeDictation() { throw new Error("Resume requires the desktop recorder"); },
+  async recordingPauseChanged() {},
   async toggleDictation() {
     desktopOnly();
   },
@@ -267,6 +285,9 @@ export const previewApi: DeluluApi = {
     desktopOnly();
   },
   async rewriteMagic(_request: MagicRewriteRequest) {
+    return desktopOnly();
+  },
+  async cancelRewrite(_operationId: string) {
     return desktopOnly();
   },
   async copyText(text) {
@@ -328,6 +349,11 @@ export const previewApi: DeluluApi = {
   async clearHistory() {
     demoHistory = [];
   },
+  async chooseProjectIdentifier() { return desktopOnly(); },
+  async getProjectVocabulary() { return emptyProjectVocabulary(); },
+  async selectProjectVocabulary() { return desktopOnly(); },
+  async refreshProjectVocabulary() { return desktopOnly(); },
+  async clearProjectVocabulary() { return emptyProjectVocabulary(); },
   async chooseAudioFile(): Promise<AudioFileSelection | null> {
     return desktopOnly();
   },
@@ -342,6 +368,7 @@ export const previewApi: DeluluApi = {
   },
   async recordingStarted() {},
   async recordingLimitReached() {},
+  async recordingSilence() {},
   async recorderReady() {},
   async recordingFailed() {},
   async recordingInputChanged() {},

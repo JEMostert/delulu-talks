@@ -230,14 +230,14 @@ export class WorkerClient {
     this.stop(error);
     this.onFailure(error);
   }
-  async stopAndWait(): Promise<void> {
+  async stopAndWait(error = new Error("Model worker stopped")): Promise<void> {
     const child = this.child;
     if (!child?.pid) return;
     const pid = child.pid;
     const exited = new Promise<void>((resolve) =>
       child.once("exit", () => resolve()),
     );
-    this.stop();
+    this.stop(error);
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([
       exited,

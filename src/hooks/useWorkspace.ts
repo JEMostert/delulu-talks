@@ -1,3 +1,4 @@
+import type { CaptureProfileSnapshot, ProfileActivationCommand } from "../activePersonalProfile";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
@@ -6,6 +7,7 @@ import { PcmRecorder, listMicrophones } from "../recorder";
 import { readStartupService } from "../startupServices";
 import { useWorkspaceOperations } from "./useWorkspaceOperations";
 import { DEFAULT_HISTORY_VIEW, type HistoryViewState } from "../historyView";
+import { useServiceRecovery, type RecoveryService } from "./useServiceRecovery";
 import type {
   AppSettings,
   CaptureDiagnostics,
@@ -51,6 +53,7 @@ export function useWorkspace() {
     remainingSeconds: 0,
     message: "",
   });
+  const [captureProfile, setCaptureProfile] = useState<CaptureProfileSnapshot | null>(null);
   const [history, setHistory] = useState<TranscriptRecord[]>([]);
   // Session-only view state survives History navigation and page remounts.
   const [historyView, setHistoryView] =
@@ -69,6 +72,10 @@ export function useWorkspace() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const serviceRecovery = useServiceRecovery({
+    speech: setStatus, rewriting: setMagicStatus, shortcut: setShortcutStatus,
+    platform: setCapabilities, updates: setUpdateStatus,
+  });
   const settingsRef = useRef(settings);
   const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   const pendingSaves = useRef(0);
@@ -100,6 +107,11 @@ export function useWorkspace() {
       (value: T) => {
         if (!isCurrent()) return;
         received.add(name);
+        const services: Record<string, RecoveryService> = {
+          "speech status": "speech", "rewriting status": "rewriting",
+          "shortcut status": "shortcut", "update status": "updates",
+        };
+        if (services[name]) serviceRecovery.received(services[name]);
         receive(value);
       };
     const read = <T>(name: string, request: () => Promise<T>) =>
@@ -109,7 +121,10 @@ export function useWorkspace() {
       if (alive) setCaptureDiagnostics(stats);
     });
     const subscriptions = [
-      bridge.onStatus(subscribe("speech status", setStatus)),
+      bridge.onStatus(subscribe("speech status", (next: DictationStatus) => {
+        setStatus(next);
+        if (next.phase === "idle" || next.phase === "error") setCaptureProfile(null);
+      })),
       bridge.onPasteLastStatus(subscribe("paste last", setPasteLastStatus)),
       bridge.onMagicStatus(subscribe("rewriting status", setMagicStatus)),
       bridge.onSettingsChanged(subscribe("settings", receiveSettings)),
@@ -118,6 +133,8 @@ export function useWorkspace() {
       bridge.onUpdateStatus(subscribe("update status", setUpdateStatus)),
       bridge.onRecorderCommand((command) => {
         if (!isCurrent()) return;
+        if (command.action === "start") setCaptureProfile(command.captureProfile ?? null);
+        if (command.action === "cancel") setCaptureProfile(null);
         void recorder.handle(command).catch((reason) => { if (isCurrent()) report(reason); });
       }),
       bridge.onTranscript((record) => {
@@ -173,42 +190,51 @@ export function useWorkspace() {
         liveRecords.clear();
         if (!received.has("speech status")) {
           if (speech.status === "fulfilled") setStatus(speech.value);
-          else
+          else {
+            serviceRecovery.failed("speech", speech.reason);
             setStatus({
               phase: "error",
               engine: "error",
               message:
-                "Could not read speech engine status. Retry loading it in Models.",
+                "Could not read speech engine status. Retry speech status.",
             });
+          }
         }
         if (!received.has("rewriting status")) {
           if (magic.status === "fulfilled") setMagicStatus(magic.value);
-          else
+          else {
+            serviceRecovery.failed("rewriting", magic.reason);
             setMagicStatus({
               phase: "error",
               engine: "error",
               message: "Rewriting is unavailable. Dictation can still be used.",
             });
+          }
         }
         if (!received.has("shortcut status")) {
           if (shortcut.status === "fulfilled")
             setShortcutStatus(shortcut.value);
-          else
+          else {
+            serviceRecovery.failed("shortcut", shortcut.reason);
             setShortcutStatus((previous) => ({
               ...previous,
               registered: false,
               message: "Shortcut status is unavailable. Use the Record button.",
             }));
+          }
         }
         if (platform.status === "fulfilled") setCapabilities(platform.value);
+        else serviceRecovery.failed("platform", platform.reason);
         if (!received.has("update status")) {
           if (update.status === "fulfilled") setUpdateStatus(update.value);
-          else
+          else {
+            serviceRecovery.failed("updates", update.reason);
             setUpdateStatus((previous) => ({
               ...previous,
               phase: "error",
               message: "Could not read update status",
             }));
+          }
         }
         setReady(true);
       })
@@ -222,6 +248,7 @@ export function useWorkspace() {
       alive = false;
       owner.alive = false;
       startup.abort();
+      serviceRecovery.cancel();
       subscriptions.forEach((remove) => remove());
       void recorder.cancel().catch(() => { /* The retired owner cannot publish an error. */ });
     };
@@ -315,6 +342,10 @@ export function useWorkspace() {
     }, `Profile ${verb} · active settings unchanged`);
   }
 
+  function activateProfile(command: ProfileActivationCommand): Promise<boolean> {
+    return action(async () => receiveSettings(await bridge.activatePersonalProfile(command)), "Profile switched");
+  }
+
   async function updateTranscript(
     id: string,
     text: string | null,
@@ -364,12 +395,14 @@ export function useWorkspace() {
     shortcutStatus,
     history,
     captureDiagnostics,
+    captureProfile,
     setHistory,
     historyView,
     setHistoryView,
     devices,
     capabilities,
     updateStatus,
+    serviceRecovery,
     saving,
     toast,
     setToast,
@@ -378,6 +411,7 @@ export function useWorkspace() {
     action,
     saveSettings,
     managePersonalProfile,
+    activateProfile,
     updateTranscript,
     finishOnboarding,
     copy,

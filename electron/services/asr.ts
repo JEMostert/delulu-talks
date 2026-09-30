@@ -1,3 +1,4 @@
+import { normalizeRewriteContext, splitTechnicalBlocks } from "../../src/rewriteContext";
 import { normalizeSpeechExecution } from "../../src/speechModels";
 import { splitForRewrite } from "../../src/personalization";
 import { DomainError, domainError, serializeDomainError } from "../../src/domainErrors";
@@ -38,6 +39,20 @@ type WorkerRuntime = {
   residency?: RuntimeLifecycle["residency"];
   warmup?: RuntimeLifecycle["warmup"];
   device?: string | null;
+};
+
+export class RewriteCancelledError extends Error {
+  constructor() {
+    super("Rewrite cancelled");
+    this.name = "RewriteCancelledError";
+  }
+}
+
+type ManualRewrite = {
+  id: string;
+  cancelled: boolean;
+  settled: boolean;
+  cancelPromise: Promise<void> | null;
 };
 
 const UNLOADED_LIFECYCLE: RuntimeLifecycle = {
@@ -122,7 +137,8 @@ export class AsrService {
       !!this.speechUnloadPromise ||
       !!this.magicUnloadPromise ||
       this.speechOperations > 0 ||
-      this.magicOperations > 0
+      this.magicOperations > 0 ||
+      !!this.manualRewrite
     );
   }
   private status: DictationStatus = {
@@ -160,6 +176,7 @@ export class AsrService {
   private magicUnloadPromise: Promise<void> | null = null;
   private speechOperations = 0;
   private magicOperations = 0;
+  private manualRewrite: ManualRewrite | null = null;
   private shuttingDown = false;
   private residencyPending = false;
   private speechFailureGeneration = 0;
@@ -215,8 +232,8 @@ export class AsrService {
         script: this.scriptPath(),
         env: this.workerEnvironment("magic"),
       }),
-      (error) => { if (!this.magicSetup?.controller.signal.aborted) this.failMagic(error); },
-      (detail, event) => { if (!this.magicSetup?.controller.signal.aborted) this.updateMagicStatus({
+      (error) => { if (!this.magicSetup?.controller.signal.aborted && !this.manualRewrite?.cancelled) this.failMagic(error); },
+      (detail, event) => { if (!this.magicSetup?.controller.signal.aborted && !this.manualRewrite?.cancelled) this.updateMagicStatus({
         detail,
         ...(event?.command === "magicLoad" && modelSetupStage(event.stage)
           ? { setupStage: modelSetupStage(event.stage), progress: null } : {}),
@@ -256,6 +273,10 @@ export class AsrService {
 
   setCaptureInputNotice(message: string | null): void {
     this.updateStatus({ captureInputNotice: message });
+  }
+
+  setSilenceCountdown(remainingSeconds: number | null): void {
+    this.updateStatus({ silenceCountdownSeconds: remainingSeconds });
   }
 
   setActivity(
@@ -825,6 +846,13 @@ export class AsrService {
     eligible: () => boolean = () => true,
   ): Promise<void> {
     if (!eligible()) return;
+    let operation = this.manualRewrite;
+    const guard = () => {
+      // A manual rewrite may join a load already awaiting runtime readiness.
+      operation ??= this.manualRewrite;
+      this.throwIfRewriteCancelled(operation);
+    };
+    guard();
     if (this.shuttingDown)
       throw new Error("The rewrite model worker is shutting down");
     if (!fromSetup && this.maintenance.busy)
@@ -838,6 +866,7 @@ export class AsrService {
       if (!eligible()) return;
       if (!ready)
         throw new Error("Install the rewrite runtime before loading a model");
+      guard();
       const model = magicModelById(settings.magicModel);
       this.updateMagicStatus({
         phase: "loading",
@@ -853,8 +882,10 @@ export class AsrService {
         progress: 0.86,
       });
       const capabilities = await this.negotiateCapabilities("magic");
+      guard();
       this.updateMagicStatus({ capabilities });
       if (!eligible()) return;
+      guard();
       const runtime = await this.request<WorkerRuntime>(
         "magic",
         "magicLoad",
@@ -863,6 +894,7 @@ export class AsrService {
           cacheDir: this.storage.modelCacheDirectory,
         },
       );
+      guard();
       if (!runtime.loaded) throw new Error("Writing model load did not report loaded weights");
       if (!eligible()) return;
       this.updateMagicStatus({
@@ -874,9 +906,15 @@ export class AsrService {
         model: settings.magicModel,
         progress: 1,
       });
+      guard();
       this.scheduleMagicIdle();
     })()
-      .catch((error) => {
+      .catch(async (error) => {
+        operation ??= this.manualRewrite;
+        if (operation?.cancelled) {
+          await operation.cancelPromise;
+          throw new RewriteCancelledError();
+        }
         if (!eligible()) return;
         this.failMagic(error);
         throw error;
@@ -891,12 +929,15 @@ export class AsrService {
   async ensureMagicLoaded(
     settings: AppSettings,
     eligible: () => boolean = () => true,
+    operation: ManualRewrite | null = null,
   ): Promise<void> {
     if (!eligible()) return;
+    this.throwIfRewriteCancelled(operation);
     if (this.shuttingDown)
       throw new Error("The rewrite model worker is shutting down");
     await this.magicUnloadPromise;
     if (!eligible()) return;
+    this.throwIfRewriteCancelled(operation);
     if (this.shuttingDown)
       throw new Error("The rewrite model worker is shutting down");
     if (
@@ -905,6 +946,42 @@ export class AsrService {
     )
       return;
     await this.performLoadMagic(settings, false, eligible);
+    this.throwIfRewriteCancelled(operation);
+  }
+
+  private throwIfRewriteCancelled(operation: ManualRewrite | null): void {
+    if (operation?.cancelled) throw new RewriteCancelledError();
+  }
+
+  private releaseManualRewrite(operation: ManualRewrite): void {
+    if (operation.settled && (!operation.cancelled || !operation.cancelPromise)
+      && this.manualRewrite === operation) this.manualRewrite = null;
+  }
+
+  async cancelRewrite(operationId: string): Promise<boolean> {
+    const operation = this.manualRewrite;
+    if (!operation || operation.id !== operationId || operation.settled) return false;
+    if (!operation.cancelled) {
+      operation.cancelled = true;
+      this.clearMagicIdle();
+      operation.cancelPromise = Promise.resolve().then(async () => {
+        await this.magicWorker.stopAndWait(new RewriteCancelledError());
+        this.updateMagicStatus({
+          ...UNLOADED_LIFECYCLE,
+          phase: "idle", engine: "unloaded", message: "Rewrite cancelled",
+          model: null, detail: null, progress: null,
+        });
+      });
+    }
+    const cleanup = operation.cancelPromise;
+    try {
+      await cleanup;
+    } finally {
+      operation.cancelPromise = null;
+      this.releaseManualRewrite(operation);
+      this.applyDeferredResidency();
+    }
+    return true;
   }
 
   async rewriteMagic(
@@ -918,17 +995,28 @@ export class AsrService {
     request: MagicRewriteRequest,
     settings: AppSettings,
   ): Promise<MagicRewriteResult> {
-    const parts = splitForRewrite(
-      request.text, settings.customWords, request.sourceLanguage ?? settings.language,
+    const context = normalizeRewriteContext(request.context);
+    if (this.manualRewrite || (request.operationId !== undefined && this.magicOperations > 0))
+      throw new Error("Wait for the active rewrite to finish");
+    if (request.operationId !== undefined && !request.operationId.trim())
+      throw new Error("Manual rewrite requires a nonempty operation ID");
+    const parts = splitTechnicalBlocks(request.text).flatMap((part) =>
+      part.protected ? [part] : splitForRewrite(part.text, settings.customWords, request.sourceLanguage ?? settings.language),
     );
     if (parts.filter((part) => !part.protected && part.text.trim()).length > 16)
       throw new Error(
         "This text contains too many separate protected blocks or identifiers to rewrite at once. Rewrite a shorter selection.",
       );
+    const operation: ManualRewrite | null = request.operationId === undefined ? null : {
+      id: request.operationId, cancelled: false, settled: false, cancelPromise: null,
+    };
+    if (operation) this.manualRewrite = operation;
     this.magicOperations += 1;
     this.clearMagicIdle();
     try {
-      await this.ensureMagicLoaded(settings);
+      this.throwIfRewriteCancelled(operation);
+      await this.ensureMagicLoaded(settings, () => true, operation);
+      this.throwIfRewriteCancelled(operation);
       this.clearMagicIdle();
       const model = magicModelById(settings.magicModel);
       this.updateMagicStatus({
@@ -937,9 +1025,11 @@ export class AsrService {
         message: `${model.name} is rewriting`,
         progress: null,
       });
+      this.throwIfRewriteCancelled(operation);
       const output: string[] = [];
       let processingTimeMs = 0;
       for (const part of parts) {
+        this.throwIfRewriteCancelled(operation);
         if (part.protected || !part.text.trim()) {
           output.push(part.text);
           continue;
@@ -949,9 +1039,11 @@ export class AsrService {
           "magicRewrite",
           {
             ...request,
+            context,
             text: part.text.trim(),
           } as unknown as Record<string, unknown>,
         );
+        this.throwIfRewriteCancelled(operation);
         if (result.residency !== undefined || result.warmup !== undefined || result.device !== undefined) {
           this.updateMagicStatus({
             ...(result.residency !== undefined ? { residency: result.residency } : {}),
@@ -968,6 +1060,7 @@ export class AsrService {
         );
       }
       const text = output.join("");
+      this.throwIfRewriteCancelled(operation);
       this.updateMagicStatus({
         phase: "idle",
         engine: "ready",
@@ -975,20 +1068,29 @@ export class AsrService {
         message: this.magicStatus.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
         progress: 1,
       });
+      this.throwIfRewriteCancelled(operation);
       return {
         model: settings.magicModel,
         processingTimeMs,
         inputCharacters: request.text.length,
-        includedInferences: request.allowInferences,
+        includedInferences: request.preset !== "summary" && request.allowInferences,
         preset: request.preset,
         text,
         outputCharacters: text.length,
       };
     } catch (error) {
+      if (operation?.cancelled) {
+        await operation.cancelPromise;
+        throw new RewriteCancelledError();
+      }
       this.failMagic(error);
       throw error;
     } finally {
       this.magicOperations -= 1;
+      if (operation) {
+        operation.settled = true;
+        this.releaseManualRewrite(operation);
+      }
       this.scheduleMagicIdle();
       this.applyDeferredResidency();
     }
@@ -1224,6 +1326,7 @@ export class AsrService {
   }
 
   failMagic(error: unknown): void {
+    if (error instanceof RewriteCancelledError || this.manualRewrite?.cancelled) return;
     if (error instanceof DomainError && error.cancelled) return;
     this.clearMagicIdle();
     this.magicFailureGeneration += 1;
