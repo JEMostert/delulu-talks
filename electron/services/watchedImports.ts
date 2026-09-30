@@ -4,8 +4,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { AudioFileSelection } from "../../src/types";
 import type { ImportQueue } from "./importQueue";
+import type { WatchedImport } from "../../src/localAutomation";
 
-export type WatchedImport = { id: string; directory: string; enabled: boolean; autoRun: boolean; error: string | null; imported: number };
 type Receipt = { hash: string; path: string; jobId: string | null };
 type StoredWatch = Omit<WatchedImport, "error" | "imported"> & { receipts: Receipt[] };
 const LIMIT = 5000;
@@ -15,6 +15,8 @@ export class WatchedImportService {
   private watches: StoredWatch[] = [];
   private errors = new Map<string, string>();
   private observed = new Map<string, string>();
+  private hashes = new Map<string, { signature: string; hash: string }>();
+  private persistenceError: string | null = null;
   private timer: NodeJS.Timeout | null = null;
   private busy = false;
   private stopping = false;
@@ -34,7 +36,7 @@ export class WatchedImportService {
         if (!watch || typeof watch.id !== "string" || typeof watch.directory !== "string" || !isAbsolute(watch.directory) || typeof watch.enabled !== "boolean" || typeof watch.autoRun !== "boolean" || !Array.isArray(watch.receipts) || watch.receipts.length > LIMIT || watch.receipts.some((receipt: Receipt) => !receipt || !/^[0-9a-f]{64}$/.test(receipt.hash) || typeof receipt.path !== "string" || (receipt.jobId !== null && typeof receipt.jobId !== "string"))) throw new Error("Invalid watched import ledger; existing file was preserved");
       }
       this.watches = value.watches;
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") { this.persistenceError = error instanceof Error ? error.message : String(error); throw error; } }
     this.timer = setInterval(() => { void this.poll(); }, 3000);
     this.timer.unref();
   }
@@ -46,13 +48,16 @@ export class WatchedImportService {
   private async save(): Promise<void> {
     await mkdir(this.dataDirectory, { recursive: true });
     const stage = `${this.path}.${randomUUID()}.tmp`;
+    const serialized = `${JSON.stringify({ schemaVersion: 1, watches: this.watches }, null, 2)}\n`;
+    if (Buffer.byteLength(serialized) > 4 * 1024 * 1024) throw new Error("Watched import ledger is full; remove a finished watch before adding more files");
     try {
-      await writeFile(stage, `${JSON.stringify({ schemaVersion: 1, watches: this.watches }, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+      await writeFile(stage, serialized, { flag: "wx", mode: 0o600 });
       await rename(stage, this.path);
     } finally { await rm(stage, { force: true }); }
   }
 
   async add(directory: string, autoRun: boolean): Promise<WatchedImport[]> {
+    if (this.persistenceError) throw new Error(this.persistenceError);
     if (this.busy) throw new Error("Wait for the current watched-folder scan");
     if (typeof directory !== "string" || !isAbsolute(directory) || typeof autoRun !== "boolean") throw new Error("Choose an absolute watched directory and explicit run policy");
     const path = await realpath(directory);
@@ -72,11 +77,23 @@ export class WatchedImportService {
   }
 
   async remove(id: string): Promise<WatchedImport[]> {
+    if (this.persistenceError) throw new Error(this.persistenceError);
     if (this.busy) throw new Error("Wait for the current watched-folder scan");
     if (typeof id !== "string" || id.length > 128) throw new Error("Expected a watched folder ID");
     this.busy = true;
     const previous = this.watches;
     try { this.watches = this.watches.filter((watch) => watch.id !== id); await this.save(); this.errors.delete(id); return this.get(); }
+    catch (error) { this.watches = previous; throw error; }
+    finally { this.busy = false; }
+  }
+
+  async setEnabled(id: string, enabled: boolean): Promise<WatchedImport[]> {
+    if (this.persistenceError) throw new Error(this.persistenceError);
+    if (this.busy) throw new Error("Wait for the current watched-folder scan");
+    if (typeof id !== "string" || typeof enabled !== "boolean" || !this.watches.some((watch) => watch.id === id)) throw new Error("Choose an existing watched folder");
+    this.busy = true;
+    const previous = this.watches;
+    try { this.watches = this.watches.map((watch) => watch.id === id ? { ...watch, enabled } : watch); await this.save(); return this.get(); }
     catch (error) { this.watches = previous; throw error; }
     finally { this.busy = false; }
   }
@@ -104,17 +121,21 @@ export class WatchedImportService {
             this.observed.set(path, signature);
             if (!info.size || previous !== signature || Date.now() - info.mtimeMs < 3000) continue;
             const queue = this.getQueue();
-            if (queue.get().jobs.length >= 20) throw new Error("Import queue is full; clear finished jobs to continue watching");
-            const digest = createHash("sha256");
-            for await (const chunk of createReadStream(path)) {
-              if (this.stopping) return;
-              digest.update(chunk);
+            let hash = this.hashes.get(path)?.signature === signature ? this.hashes.get(path)!.hash : null;
+            if (!hash) {
+              const digest = createHash("sha256");
+              for await (const chunk of createReadStream(path)) {
+                if (this.stopping) return;
+                digest.update(chunk);
+              }
+              hash = digest.digest("hex");
             }
             const after = await stat(path);
             if (after.size !== info.size || after.mtimeMs !== info.mtimeMs || await realpath(path) !== path) continue;
-            const hash = digest.digest("hex");
+            this.hashes.set(path, { signature, hash });
             let receipt = watch.receipts.find((item) => item.hash === hash);
             if (receipt?.jobId) continue;
+            if (queue.get().jobs.length >= 20) throw new Error("Import queue is full; clear finished jobs to continue watching");
             if (!receipt && watch.receipts.length >= LIMIT) throw new Error("Duplicate ledger is full; remove this watch before choosing a new import folder");
             const file = this.inspect(path);
             // Reserve intent before enqueue. A restart reconciles a pending intent
@@ -122,7 +143,7 @@ export class WatchedImportService {
             if (!receipt) {
               receipt = { hash, path, jobId: null }; watch.receipts.push(receipt); await this.save();
             }
-            const existing = queue.get().jobs.find((job) => job.path === receipt!.path && job.size === file.size && job.state !== "cancelled");
+            const existing = queue.get().jobs.find((job) => job.path === receipt!.path && job.size === file.size && job.sourceMtimeMs === info.mtimeMs && job.state !== "cancelled");
             if (existing) receipt.jobId = existing.id;
             else {
               const ids = new Set(queue.get().jobs.map((job) => job.id));
@@ -137,7 +158,7 @@ export class WatchedImportService {
           this.errors.delete(watch.id);
         } catch (error) { this.errors.set(watch.id, error instanceof Error ? error.message : String(error)); }
       }
-      for (const path of this.observed.keys()) if (!seen.has(path)) this.observed.delete(path);
+      for (const path of this.observed.keys()) if (!seen.has(path)) { this.observed.delete(path); this.hashes.delete(path); }
     } finally { this.busy = false; }
   }
 

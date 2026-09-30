@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { bridge } from "../bridge";
-import { AUTOMATION_CAPABILITIES, type AutomationCapability, type AutomationStatus } from "../localAutomation";
+import { AUTOMATION_CAPABILITIES, type AutomationCapability, type AutomationStatus, type WatchedImport } from "../localAutomation";
 
 export function LocalAutomation() {
   const [status, setStatus] = useState<AutomationStatus | null>(null);
@@ -10,7 +10,11 @@ export function LocalAutomation() {
   const [capabilities, setCapabilities] = useState<AutomationCapability[]>(["events:status"]);
   const [directories, setDirectories] = useState("");
   const [token, setToken] = useState<string | null>(null);
+  const [watches, setWatches] = useState<WatchedImport[]>([]);
+  const [watchDirectory, setWatchDirectory] = useState("");
+  const [autoRun, setAutoRun] = useState(false);
   useEffect(() => { let live = true; void bridge.getAutomationStatus().then((value) => { if (live) setStatus(value); }).catch((reason) => { if (live) setError(String(reason)); }); return () => { live = false; }; }, []);
+  useEffect(() => { let live = true; void bridge.getWatchedImports().then((value) => { if (live) setWatches(value); }).catch((reason) => { if (live) setError(String(reason)); }); return () => { live = false; }; }, []);
   const run = async (action: () => Promise<void>) => {
     setError(null); setBusy(true);
     try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
@@ -33,5 +37,12 @@ export function LocalAutomation() {
     </form>}
     {token && <div className="content-stack"><p>Save this token now. It is shown once and stored as a hash.</p><code className="break-all select-all">{token}</code><button className="secondary-button" onClick={() => setToken(null)}>Hide token</button></div>}
     {status?.integrations.map((integration) => <div key={integration.id} className="content-stack"><strong>{integration.name}</strong><p className="caption">{integration.capabilities.join(" · ")}</p>{integration.directories.length > 0 && <p className="caption">Audio roots: {integration.directories.join(" · ")}</p>}<button className="secondary-button" disabled={busy} onClick={() => void run(async () => { setStatus(await bridge.revokeAutomation(integration.id)); setToken(null); })}>Revoke {integration.name}</button></div>)}
+    <div><h3>Watched audio folders</h3><p className="caption">Explicit folders only, with no recursion or symlink following. Stable files enter the same durable Audio files queue; matching audio bytes are imported once per watch. Failed jobs remain available to retry.</p></div>
+    <form className="content-stack" onSubmit={(event) => { event.preventDefault(); void run(async () => { setWatches(await bridge.addWatchedImport(watchDirectory, autoRun)); setWatchDirectory(""); }); }}>
+      <label>Absolute import directory<input value={watchDirectory} onChange={(event) => setWatchDirectory(event.target.value)} /></label>
+      <label><input type="checkbox" checked={autoRun} onChange={(event) => setAutoRun(event.target.checked)} />Start the shared queue automatically when new audio arrives</label>
+      <button className="secondary-button" disabled={busy || !status?.available || !watchDirectory.trim()}>Watch folder</button>
+    </form>
+    {watches.map((watch) => <div key={watch.id} className="content-stack"><code>{watch.directory}</code><p className="caption">{watch.imported} queued audio fingerprints · {watch.autoRun ? "Auto-run enabled" : "Queue manually"}</p>{watch.error && <p role="alert">{watch.error}</p>}<div className="flex gap-2"><button className="secondary-button" disabled={busy} onClick={() => void run(async () => { setWatches(await bridge.setWatchedImportEnabled(watch.id, !watch.enabled)); })}>{watch.enabled ? "Pause watch" : "Resume watch"}</button><button className="secondary-button" disabled={busy} onClick={() => void run(async () => { setWatches(await bridge.removeWatchedImport(watch.id)); })}>Remove watch</button></div></div>)}
   </section>;
 }

@@ -40,6 +40,10 @@ function listener<T>(
 
 const api: DeluluApi = {
   getAutomationStatus: () => invoke("automation:status"),
+  getWatchedImports: () => invoke("automation:watches"),
+  addWatchedImport: (directory, autoRun) => invoke("automation:addWatch", directory, autoRun),
+  setWatchedImportEnabled: (id, enabled) => invoke("automation:toggleWatch", id, enabled),
+  removeWatchedImport: (id) => invoke("automation:removeWatch", id),
   setAutomationEnabled: (enabled) => invoke("automation:enabled", enabled),
   grantAutomation: (request) => invoke("automation:grant", request),
   revokeAutomation: (id) => invoke("automation:revoke", id),

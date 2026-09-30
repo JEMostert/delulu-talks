@@ -19,9 +19,14 @@ export type AutomationStatus = {
   error?: string;
 };
 export type AutomationGrantRequest = Pick<AutomationGrant, "name" | "capabilities" | "directories">;
+export type WatchedImport = { id: string; directory: string; enabled: boolean; autoRun: boolean; error: string | null; imported: number };
 export type LocalAutomationApi = {
   getAutomationStatus(): Promise<AutomationStatus>;
   setAutomationEnabled(enabled: boolean): Promise<AutomationStatus>;
   grantAutomation(request: AutomationGrantRequest): Promise<AutomationGrant & { token: string }>;
   revokeAutomation(id: string): Promise<AutomationStatus>;
+  getWatchedImports(): Promise<WatchedImport[]>;
+  addWatchedImport(directory: string, autoRun: boolean): Promise<WatchedImport[]>;
+  setWatchedImportEnabled(id: string, enabled: boolean): Promise<WatchedImport[]>;
+  removeWatchedImport(id: string): Promise<WatchedImport[]>;
 };
