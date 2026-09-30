@@ -426,6 +426,8 @@ export type DeluluApi = {
   cleanupModelCache(token: string, ids: string[]): Promise<ModelCacheCleanupResult>;
   getRuleUsage(): Promise<RuleUsage>;
   resetRuleUsage(): Promise<RuleUsage>;
+  exportEncryptedHistory(passphrase: string): Promise<string | null>;
+  recoverEncryptedHistory(passphrase: string): Promise<string | null>;
   getRendererRecoveryState(): Promise<RendererRecoveryState>;
   reloadWorkspace(): Promise<void>;
   rendererControllerFailed(): Promise<void>;

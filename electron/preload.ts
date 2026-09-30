@@ -48,6 +48,8 @@ const api: DeluluApi = {
   cleanupModelCache: (token, ids) => invoke("cache:cleanup", token, ids),
   getRendererRecoveryState: () => invoke("renderer:recoveryState"),
   reloadWorkspace: () => invoke("renderer:reload"),
+  exportEncryptedHistory: (passphrase) => invoke("history:encryptedExport", passphrase),
+  recoverEncryptedHistory: (passphrase) => invoke("history:encryptedRecover", passphrase),
   rendererControllerFailed: () =>
     invoke("renderer:controllerFailed"),
   getDiagnostics: () => invoke("runtime:diagnostics"),

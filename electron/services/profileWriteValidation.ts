@@ -2,7 +2,8 @@ import { DEFAULT_SETTINGS, LANGUAGES, MAGIC_MODELS, MODELS } from "../../src/dat
 
 type ProfileKind = "settings" | "history";
 type ObjectValue = Record<string, unknown>;
-const presets = ["polish", "concise", "structured", "prompt"];
+import { REWRITE_PRESETS } from "../../src/rewritePresets";
+const presets = REWRITE_PRESETS.map(preset => preset.id);
 
 /** Validate the original value before serialization; never normalize user text. */
 export function validateProfileWrite(kind: ProfileKind, value: unknown): void {
@@ -40,8 +41,8 @@ export function validateProfileWrite(kind: ProfileKind, value: unknown): void {
       fail(path, `must be one of ${allowed.join(", ")}`);
   };
   const array = (item: unknown, path: string): unknown[] => {
-    if (!Array.isArray(item) || item.length > 500)
-      return fail(path, "must be an array of at most 500 items");
+    if (!Array.isArray(item) || item.length > (path === "history" ? 1000 : 500))
+      return fail(path, "exceeds the supported record limit");
     return item;
   };
   const ancestors = new Set<object>();
