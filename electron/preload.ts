@@ -70,6 +70,8 @@ const api: DeluluApi = {
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
   downloadUpdate: () => ipcRenderer.invoke("updates:download"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
+  pauseDictation: () => ipcRenderer.invoke("dictation:pause"),
+  resumeDictation: () => ipcRenderer.invoke("dictation:resume"),
   toggleDictation: () => ipcRenderer.invoke("dictation:toggle"),
   startDictation: () => ipcRenderer.invoke("dictation:start"),
   stopDictation: () => ipcRenderer.invoke("dictation:stop"),
@@ -111,6 +113,7 @@ const api: DeluluApi = {
     ipcRenderer.invoke("recorder:started", sessionId),
   recordingLimitReached: (sessionId: string) =>
     ipcRenderer.invoke("recorder:limit", sessionId),
+  recordingPauseChanged: (sessionId, paused) => ipcRenderer.invoke("recorder:pause-changed", sessionId, paused),
   recorderReady: () => ipcRenderer.invoke("recorder:ready"),
   recordingFailed: (message: string, sessionId: string) =>
     ipcRenderer.invoke("recorder:failed", message, sessionId),

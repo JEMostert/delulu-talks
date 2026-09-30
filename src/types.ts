@@ -19,7 +19,7 @@ export type MagicPreset =
   | "structured"
   | "prompt";
 export type DictationPhase =
-  "idle" | "preparing" | "loading" | "listening" | "transcribing" | "error";
+  "idle" | "preparing" | "loading" | "listening" | "paused" | "transcribing" | "error";
 export type EnginePhase =
   "missing" | "unloaded" | "settingUp" | "loading" | "ready" | "error";
 export type MagicPhase =
@@ -274,7 +274,7 @@ export type LabRequest = {
 };
 
 export type RecorderCommand = {
-  action: "start" | "stop" | "cancel";
+  action: "start" | "stop" | "cancel" | "pause" | "resume";
   inputDeviceId: string;
   /** Native commands identify their capture; standalone capture can omit this. */
   sessionId?: string;
@@ -393,6 +393,8 @@ export type DeluluApi = {
   startDictation(): Promise<void>;
   stopDictation(): Promise<void>;
   cancelDictation(): Promise<void>;
+  pauseDictation(): Promise<void>;
+  resumeDictation(): Promise<void>;
   setupModel(): Promise<void>;
   loadModel(): Promise<void>;
   unloadModel(): Promise<void>;
@@ -426,6 +428,7 @@ export type DeluluApi = {
   ): Promise<string | null>;
   recordingStarted(sessionId: string): Promise<void>;
   recordingLimitReached(sessionId: string): Promise<void>;
+  recordingPauseChanged(sessionId: string, paused: boolean): Promise<void>;
   recorderReady(): Promise<void>;
   recordingFailed(message: string, sessionId: string): Promise<void>;
   recordingInputChanged(

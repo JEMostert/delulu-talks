@@ -17,6 +17,12 @@ handle("dictation:retry", () => dictation.retry());
 handle("dictation:start", () => dictation.start());
 handle("dictation:stop", () => dictation.stop());
 handle("dictation:toggle", () => dictation.toggle());
+handle("dictation:pause", () => dictation.pause());
+handle("dictation:resume", () => dictation.resume());
+handle("recorder:pause-changed", (_event, sessionId: unknown, paused: unknown) => {
+  if (typeof paused !== "boolean") throw new Error("Invalid pause state");
+  dictation.recordingPauseChanged(validateText(sessionId,128), paused);
+});
 handle("dictation:cancel", () => dictation.cancel());
 handle("recorder:started", (_event, sessionId: unknown) =>
     dictation.recordingStarted(validateText(sessionId, 128)),
