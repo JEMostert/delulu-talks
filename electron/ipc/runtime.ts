@@ -39,6 +39,8 @@ handle("runtime:setupLog", (_event, kind: unknown) => {
   });
 handle("storage:overview", () => localDataOverview(storage));
 handle("runtime:status", () => asr.getStatus());
+handle("runtime:cancelSetup", () => asr.cancelSetup("speech"));
+handle("magic:cancelSetup", () => asr.cancelSetup("magic"));
 handle("runtime:setup", () => {
     assertRuntimeIdle();
     return asr.setup(storage.getSettings());

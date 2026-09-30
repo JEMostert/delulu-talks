@@ -1,3 +1,4 @@
+export type SetupState = "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { DictationMode } from "./technicalDictation";
 import type { ExportTemplateRequest } from "./exportTemplates";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
@@ -119,6 +120,7 @@ export type MagicStatus = RuntimeLifecycle & {
   setupStage?: SetupStage | null;
   downloadBytes?: DownloadBytes | null;
   failure?: DomainFailure | null;
+  setupState?: SetupState;
   phase: MagicPhase;
   engine: EnginePhase;
   message: string;
@@ -166,6 +168,7 @@ export type DictationStatus = RuntimeLifecycle & {
   speechExecution?: SpeechExecution | null;
   downloadBytes?: DownloadBytes | null;
   failure?: DomainFailure | null;
+  setupState?: SetupState;
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   captureInputNotice?: string | null;
@@ -418,10 +421,12 @@ export type DeluluApi = {
   stopDictation(): Promise<void>;
   cancelDictation(): Promise<void>;
   setupModel(): Promise<void>;
+  cancelModelSetup(): Promise<void>;
   loadModel(): Promise<void>;
   unloadModel(): Promise<void>;
   resetPythonEnvironment(): Promise<void>;
   setupMagic(): Promise<void>;
+  cancelMagicSetup(): Promise<void>;
   loadMagic(): Promise<void>;
   unloadMagic(): Promise<void>;
   rewriteMagic(request: MagicRewriteRequest): Promise<MagicRewriteResult>;

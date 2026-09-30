@@ -50,9 +50,11 @@ type Props = {
   onDownloadUpdate: () => void;
   onInstallUpdate: () => void;
   onSetup: () => void;
+  onCancelSetup?: () => void;
   onLoad: () => void;
   onUnload: () => void;
   onSetupMagic: () => void;
+  onCancelSetupMagic?: () => void;
   onLoadMagic: () => void;
   onUnloadMagic: () => void;
   onReset: () => void;
@@ -680,6 +682,15 @@ export function SettingsPage(props: Props) {
             </div>
             <SettingRow title="Speech runtime and model" description={status.message}>
               <div className="inline-control">
+                {props.onCancelSetup && ["running", "cancelling"].includes(status.setupState ?? "") && (
+                  <button
+                    className="secondary-button"
+                    disabled={status.setupState === "cancelling"}
+                    onClick={props.onCancelSetup}
+                  >
+                    {status.setupState === "cancelling" ? "Cancelling…" : "Cancel setup"}
+                  </button>
+                )}
                 <button
                   className="secondary-button"
                   disabled={busy}
@@ -708,6 +719,15 @@ export function SettingsPage(props: Props) {
             </SettingRow>
             <SettingRow title="Rewrite runtime and model" description={magicStatus.message}>
               <div className="inline-control">
+                {props.onCancelSetupMagic && ["running", "cancelling"].includes(magicStatus.setupState ?? "") && (
+                  <button
+                    className="secondary-button"
+                    disabled={magicStatus.setupState === "cancelling"}
+                    onClick={props.onCancelSetupMagic}
+                  >
+                    {magicStatus.setupState === "cancelling" ? "Cancelling…" : "Cancel rewriting setup"}
+                  </button>
+                )}
                 <button
                   className="secondary-button"
                   disabled={busy}

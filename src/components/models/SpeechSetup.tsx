@@ -20,6 +20,7 @@ export type SpeechSetupProps = {
   busy: boolean;
   setupPending?: boolean;
   onSetup: () => void;
+  onCancelSetup?: () => void;
   onLoad: () => void;
   onUnload: () => void;
 };
@@ -29,6 +30,7 @@ export function SpeechSetup({
   busy,
   setupPending = false,
   onSetup,
+  onCancelSetup,
   onLoad,
   onUnload,
 }: SpeechSetupProps) {
@@ -60,7 +62,9 @@ export function SpeechSetup({
                     : "Speech model unloaded"}
           </h2>
           <p className="text-[12px] text-muted mt-2 [overflow-wrap:anywhere]">
-            {status.engine === "missing"
+            {status.setupState === "cancelled"
+              ? status.message
+              : status.engine === "missing"
               ? status.migrationRequired
                 ? `Update the dedicated speech runtime for ${model.name}.`
                 : `Install the speech runtime and download the ${model.name} weights. ${model.description}`
@@ -68,6 +72,15 @@ export function SpeechSetup({
           </p>
         </div>
         <div className="runtime-actions justify-end">
+          {onCancelSetup && ["running", "cancelling"].includes(status.setupState ?? "") && (
+            <button
+              className="secondary-button"
+              disabled={status.setupState === "cancelling"}
+              onClick={onCancelSetup}
+            >
+              {status.setupState === "cancelling" ? "Cancelling…" : "Cancel setup"}
+            </button>
+          )}
           {status.engine === "ready" ? (
             <button
               className="secondary-button"

@@ -128,6 +128,9 @@ export class RuntimeInstaller {
     this.recordSetupStage("Validated runtime activation committed");
   }
 
+  discard(): void { this.rollback(); }
+  resetCancellation(): void { this.cancelled = false; }
+
   rollback(): void {
     // Setup has not changed the durable pointer. Discard only this candidate;
     // do not roll back an unrelated already-active generation after a failure.
@@ -161,6 +164,7 @@ export class RuntimeInstaller {
     return new Promise((resolve, reject) => {
       const child = spawn(program, args, {
         windowsHide: true,
+        detached: !this.windows,
         env: this.environment(),
       });
       this.processes.add(child);
@@ -186,14 +190,14 @@ export class RuntimeInstaller {
         this.setupLog.record(attemptId, {
           type: "stdout", stage, message: String(chunk),
         });
-        onOutput?.(String(chunk));
+        if (!this.cancelled) onOutput?.(String(chunk));
       });
       child.stderr.on("data", (chunk) => {
         diagnostic = `${diagnostic}${chunk}`.slice(-16_000);
         this.setupLog.record(attemptId, {
           type: "stderr", stage, message: String(chunk),
         });
-        onOutput?.(String(chunk));
+        if (!this.cancelled) onOutput?.(String(chunk));
       });
       const finish = () => {
         clearTimeout(timer);
@@ -230,14 +234,39 @@ export class RuntimeInstaller {
       });
     });
   }
+  private terminate(child: ReturnType<typeof spawn>): void {
+    if (!child.pid) return;
+    if (process.platform === "win32") {
+      const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        windowsHide: true, stdio: "ignore",
+      });
+      killer.once("error", () => child.kill());
+    } else {
+      const pid = child.pid;
+      try { process.kill(-pid, "SIGTERM"); }
+      catch { child.kill(); }
+      const escalation = setTimeout(() => {
+        try { process.kill(-pid, "SIGKILL"); }
+        catch { /* this generation has exited */ }
+      }, 5000);
+      escalation.unref();
+    }
+  }
   stop(): void {
-    this.setupLog.record(this.setupLog.activeId, {
-      type: "stage", stage: this.setupStage,
-      message: "Setup cancellation requested; terminating installer processes",
-    });
     this.cancelled = true;
-    for (const child of this.processes) child.kill();
-    this.processes.clear();
+    for (const child of this.processes) this.terminate(child);
+  }
+  async stopAndWait(): Promise<void> {
+    const children = [...this.processes];
+    const exited = Promise.all(children.map((child) =>
+      new Promise<void>((resolve) => child.once("close", () => resolve()))));
+    this.stop();
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      exited,
+      new Promise<void>((resolve) => { timer = setTimeout(resolve, 6000); }),
+    ]);
+    clearTimeout(timer);
   }
 
   async ready(kind: "speech" | "magic"): Promise<boolean> {
@@ -319,12 +348,18 @@ export class RuntimeInstaller {
     kind: "speech" | "magic",
     settings: AppSettings,
     publish: (progress: InstallProgress) => void,
+    options: { signal?: AbortSignal; deferActivation?: boolean } = {},
   ): Promise<void> {
+    options.signal?.throwIfAborted();
+    const cancel = () => this.stop();
+    options.signal?.addEventListener("abort", cancel, { once: true });
     this.operationId = randomUUID();
     try {
       await this.installCandidate(kind, settings, publish);
     } catch (reason) {
       throw domainError(reason, { operationId: this.operationId, operation: `runtime:setup:${kind}` });
+    } finally {
+      options.signal?.removeEventListener("abort", cancel);
     }
   }
 
