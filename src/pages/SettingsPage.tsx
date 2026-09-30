@@ -483,6 +483,22 @@ export function SettingsPage(props: Props) {
               </p>
             </div>
             <SettingRow
+              title="Memory policy"
+              description="Balanced unloads Magic before speech loads or transcribes, and runs speech and rewriting one at a time. Magic loads on demand even when Keep Magic ready is enabled. This is a predictable memory-saving policy, not automatic pressure detection."
+            >
+              <select
+                aria-label="Memory policy"
+                value={s.memoryPolicy}
+                disabled={saving || busy}
+                onChange={(e) =>
+                  save({ memoryPolicy: e.target.value as AppSettings["memoryPolicy"] })
+                }
+              >
+                <option value="independent">Independent models (default)</option>
+                <option value="balanced">Balanced — prioritize speech</option>
+              </select>
+            </SettingRow>
+            <SettingRow
               icon={Clock3}
               title="Keep speech model ready"
               description="Load the speech model at startup and keep it in GPU memory. Uses more VRAM, but avoids cold starts between recordings."
