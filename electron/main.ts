@@ -4,7 +4,7 @@ import electronUpdater from "electron-updater";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { AppSettings, MagicPreset, Page, PasteRecovery, TranscriptRecord } from "../src/types";
-import { REWRITE_PRESETS, AUTOMATIC_REWRITE_PRESETS } from "../src/rewritePresets";
+import { REWRITE_PRESETS } from "../src/rewritePresets";
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
 import { randomUUID } from "node:crypto";
 import { DomainError } from "../src/domainErrors";
@@ -382,7 +382,7 @@ function rebuildTrayMenu(): void {
   const update = updates?.getStatus();
   const speechUnavailable =
     status.engine === "missing" || status.engine === "error";
-  const presets: Array<[AppSettings["magicPreset"], string]> = AUTOMATIC_REWRITE_PRESETS.map(
+  const presets: Array<[AppSettings["magicPreset"], string]> = REWRITE_PRESETS.map(
     ({ id, label }) => [id as AppSettings["magicPreset"], label],
   );
   const template: MenuItemConstructorOptions[] = [

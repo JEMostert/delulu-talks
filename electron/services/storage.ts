@@ -4,7 +4,7 @@ import { readActivePersonalProfile } from "../../src/activePersonalProfile";
 import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { normalizeSpeechExecution } from "../../src/speechModels";
 import { app } from "electron";
-import { isAutomaticMagicPreset, isMagicPreset } from "../../src/rewritePresets";
+import { isMagicPreset } from "../../src/rewritePresets";
 import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
 import { speechModelForPlatform } from "../runtime/platform";
 import { normalizeAliases } from "../../src/personalization";
@@ -183,7 +183,7 @@ export function normalizeSettings(value: unknown): AppSettings {
   const magicModel = validMagicModels.has(source.magicModel as MagicModelId)
     ? (source.magicModel as MagicModelId)
     : DEFAULT_SETTINGS.magicModel;
-  const magicPreset = isAutomaticMagicPreset(source.magicPreset)
+  const magicPreset = isMagicPreset(source.magicPreset)
     ? source.magicPreset
     : DEFAULT_SETTINGS.magicPreset;
   const requestedLanguage = safeString(

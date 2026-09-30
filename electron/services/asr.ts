@@ -1073,7 +1073,7 @@ export class AsrService {
         model: settings.magicModel,
         processingTimeMs,
         inputCharacters: request.text.length,
-        includedInferences: request.preset !== "summary" && request.allowInferences,
+        includedInferences: request.allowInferences,
         preset: request.preset,
         text,
         outputCharacters: text.length,

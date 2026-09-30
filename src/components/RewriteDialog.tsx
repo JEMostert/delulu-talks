@@ -17,7 +17,6 @@ export function RewriteDialog({
   text,
   title = "Rewrite transcript",
   description = "Preview a change before using it. Original speech stays available and text shortcuts stay exactly as saved.",
-  originalText,
   baseline,
   sourceRevision = 0,
   sourceLanguage,
@@ -35,7 +34,6 @@ export function RewriteDialog({
   text: string;
   title?: string;
   description?: string;
-  originalText?: string;
   baseline: string;
   sourceRevision?: number;
   sourceLanguage?: string;
@@ -58,7 +56,6 @@ export function RewriteDialog({
     return () => { active.current = false; };
   }, []);
   const [source, setSource] = useState(text);
-  const [originalSource, setOriginalSource] = useState(originalText ?? text);
   const [expectedOutput, setExpectedOutput] = useState(baseline);
   const [expectedRevision, setExpectedRevision] = useState(sourceRevision);
   const [preset, setPreset] = useState<MagicPreset>("concise");
@@ -115,7 +112,7 @@ export function RewriteDialog({
     try {
       const preview = await onRewrite({
         operationId: session.id,
-        text: rewriteSource,
+        text: source,
         preset,
         context: contextEnabled ? {language,fileType,selection} : undefined,
         sourceLanguage,
@@ -162,10 +159,8 @@ export function RewriteDialog({
     }
   }
 
-  const rewriteSource = preset === "summary" ? originalSource : source;
   const missing = status?.engine === "missing" || status?.engine === "error";
-  const stale = source !== text || originalSource !== (originalText ?? text) ||
-    expectedOutput !== baseline || sourceRevision !== expectedRevision;
+  const stale = source !== text || expectedOutput !== baseline || sourceRevision !== expectedRevision;
   return (
     <Modal
       title={title}
@@ -220,7 +215,6 @@ export function RewriteDialog({
           <p>The transcript changed after this preview opened. This preview cannot be applied. Refresh to use the current text and generate a new preview.</p>
           <button className="secondary-button" disabled={busy} onClick={() => {
             setSource(text);
-            setOriginalSource(originalText ?? text);
             setExpectedOutput(baseline);
             setExpectedRevision(sourceRevision);
             setResult(null);
@@ -299,13 +293,6 @@ export function RewriteDialog({
         }}>Clear instructions</button>
       </div>
       <p className="mt-3" aria-live="polite">{presetDetails.description}</p>
-      {preset === "summary" && (
-        <p className="mt-3 text-sm text-muted">
-          Summary is a manual step after transcription. Compare the recognition original
-          below with the audio before summarizing; it stays available after applying or
-          undoing a summary. This does not certify recognition accuracy.
-        </p>
-      )}
       <details className="my-3 rounded-panel border border-line p-3">
         <summary>Illustrative example: {presetDetails.label}</summary>
         <p className="my-2">Written examples only; your local model's output may differ. Generate a preview to rewrite your transcript.</p>
@@ -316,11 +303,11 @@ export function RewriteDialog({
       </details>
       <div className="rewrite-comparison mb-4 mt-3 grid grid-cols-2 gap-4">
         <label className="field">
-          {preset === "summary" ? "Preserved recognition original" : "Current text"}
+          Current text
           <textarea
             readOnly
             className="min-h-[200px] w-full"
-            value={rewriteSource}
+            value={source}
             aria-label="Rewrite source"
           />
         </label>
@@ -348,8 +335,8 @@ export function RewriteDialog({
       </div>
       {result && (
         <>
-          <RewriteWarnings source={rewriteSource} preview={result.text} />
-          <RewriteDiff source={rewriteSource} preview={result.text} />
+          <RewriteWarnings source={source} preview={result.text} />
+          <RewriteDiff source={source} preview={result.text} />
         </>
       )}
       {error && (
@@ -360,7 +347,7 @@ export function RewriteDialog({
       {notice && <p role="status">{notice}</p>}
       <button
         className="secondary-button"
-        disabled={busy || stale || missing || !rewriteSource.trim() || rewriteSource.length > 50_000}
+        disabled={busy || stale || missing || !source.trim() || source.length > 50_000}
         onClick={generatePreview}
       >
         {generating ? <LoaderCircle className="spin" /> : <WandSparkles />}
@@ -379,10 +366,10 @@ export function RewriteDialog({
           {cancelling ? "Cancelling preview…" : "Cancel rewrite"}
         </button>
       )}
-      {rewriteSource.length > 50_000 && (
+      {source.length > 50_000 && (
         <p className="field-error">
-          This source exceeds the 50,000-character rewrite limit. A summary of the
-          full original needs a shorter recording or a later long-transcript workflow.
+          This source exceeds the 50,000-character rewrite limit. Choose a shorter
+          source before generating a preview.
         </p>
       )}
     </Modal>

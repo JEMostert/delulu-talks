@@ -35,7 +35,7 @@ export function SelectedTextWorkflow({status,onSetup}: {status:MagicStatus;onSet
       }}>{state?.enabled ? "Disable capture shortcut" : "Enable selection capture shortcut"}</button>
     </Modal>}
     {state?.session && <RewriteDialog key={state.session.id} title="Rewrite captured selection" description={`Captured from ${state.session.destination}. Compare the complete original and preview. Applying attempts replacement in that window only after its selected text is checked again.`}
-      text={state.session.text} baseline={state.session.text} originalText={state.session.text} status={status} onRewrite={bridge.rewriteMagic} onCancelRewrite={bridge.cancelRewrite} onSetup={onSetup}
+      text={state.session.text} baseline={state.session.text} status={status} onRewrite={bridge.rewriteMagic} onCancelRewrite={bridge.cancelRewrite} onSetup={onSetup}
       onClose={() => {void bridge.discardSelectedText(state.session!.id).catch((reason) => setError(String(reason)));}}
       onApply={async (result) => {
         try {await bridge.replaceSelectedText(state.session!.id,result.text);setNotice("Replacement attempted — verify the destination editor.");return true;}

@@ -32,7 +32,6 @@ import {
 } from "lucide-react";
 import {
   deliveredText,
-  originalTranscriptText,
   transcriptIsEdited,
   transcriptText,
   transcriptSourceRevision,
@@ -284,7 +283,6 @@ export function TranscriptCard({
               ? " · Added assumptions were allowed"
               : ""}
             {edited ? " · Corrected" : ""}
-            {record.magicPreset === "summary" && record.magicText === delivered ? " · Summary" : ""}
           </span>
           <button
             className="text-button min-h-[26px] py-0 text-[11px]"
@@ -337,9 +335,7 @@ export function TranscriptCard({
                   ? "Your correction"
                   : "Original speech"
                 : record.magicText
-                  ? record.magicPreset === "summary" && record.magicText === delivered
-                    ? "Optional summary"
-                    : "Optional rewrite"
+                  ? "Optional rewrite"
                   : "Corrections & shortcuts applied"}
             </span>
           </div>
@@ -568,7 +564,6 @@ export function TranscriptCard({
       {rewriting && onRewrite && onSetRewrite && (
         <RewriteDialog
           text={text}
-          originalText={originalTranscriptText(record)}
           baseline={deliveredText(record)}
           sourceRevision={transcriptSourceRevision(record)}
           sourceLanguage={record.language}
