@@ -73,6 +73,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     ruleExamples: w.settings.keepHistory ? (w.history ?? []) : [],
     onCopy: w.copy,
     onRewrite: bridge.rewriteMagic,
+    onCancelRewrite: bridge.cancelRewrite,
     onRewriteSetup: () => w.setPage("models"),
     rewriteStatus: w.magicStatus,
     onSetRewrite: async (

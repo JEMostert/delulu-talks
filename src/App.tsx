@@ -621,6 +621,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           onOperationState={(phase) => w.operations.rewriteState(rewrite.key, phase)}
           onClose={() => w.operations.closeRewrite(rewrite.key)}
           onSetup={() => w.setPage("models")}
+          onCancelRewrite={bridge.cancelRewrite}
           onRewrite={(request) => w.operations.runRewrite(rewrite.key, request)}
           onApply={(result, source, sourceRevision) => w.operations.applyRewrite(rewrite.key, () =>
             baseTranscriptActions.onSetRewrite!(rewrite.transcriptId, result, source, sourceRevision))}

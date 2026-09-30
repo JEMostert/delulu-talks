@@ -267,6 +267,9 @@ export const previewApi: DeluluApi = {
   async rewriteMagic(_request: MagicRewriteRequest) {
     return desktopOnly();
   },
+  async cancelRewrite(_operationId: string) {
+    return desktopOnly();
+  },
   async copyText(text) {
     await navigator.clipboard?.writeText(text);
   },

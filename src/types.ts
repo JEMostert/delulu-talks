@@ -114,6 +114,7 @@ export type MagicStatus = RuntimeLifecycle & {
 };
 
 export type MagicRewriteRequest = {
+  operationId?: string;
   text: string;
   preset: MagicPreset;
   /** Optional style request for this rewrite only; never a saved preference. Max 4,000 UTF-16 units. */
@@ -408,6 +409,7 @@ export type DeluluApi = {
   loadMagic(): Promise<void>;
   unloadMagic(): Promise<void>;
   rewriteMagic(request: MagicRewriteRequest): Promise<MagicRewriteResult>;
+  cancelRewrite(operationId: string): Promise<boolean>;
   copyText(text: string): Promise<void>;
   authorizePaste(): Promise<void>;
   testPaste(): Promise<void>;

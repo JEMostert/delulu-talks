@@ -50,6 +50,7 @@ import type {
 export type TranscriptActions = {
   onOpenRewrite?: (record: TranscriptRecord) => void;
   onRewrite?: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
+  onCancelRewrite?: (operationId: string) => Promise<boolean>;
   onSetRewrite?: (
     id: string,
     result: MagicRewriteResult | null,
@@ -84,6 +85,7 @@ export function TranscriptCard({
   ruleExamples,
   onRewrite,
   onOpenRewrite,
+  onCancelRewrite,
   onSetRewrite,
   onRewriteSetup,
   rewriteStatus,
@@ -569,6 +571,7 @@ export function TranscriptCard({
           onClose={() => setRewriting(false)}
           onSetup={onRewriteSetup ?? (() => {})}
           onRewrite={onRewrite}
+          onCancelRewrite={onCancelRewrite}
           onApply={async (result, source, revision) => {
             const applied = await onSetRewrite(record.id, result, source, revision);
             if (applied) setShowSource(false);

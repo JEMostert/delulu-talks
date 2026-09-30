@@ -88,6 +88,8 @@ const api: DeluluApi = {
       ...request,
       instructions: validateRewriteInstructions(request.instructions),
     }),
+  cancelRewrite: (operationId: string) =>
+    ipcRenderer.invoke("magic:cancelRewrite", operationId),
   copyText: (text: string) => ipcRenderer.invoke("clipboard:copy", text),
   authorizePaste: () => ipcRenderer.invoke("paste:authorize"),
   testPaste: () => ipcRenderer.invoke("paste:test"),
