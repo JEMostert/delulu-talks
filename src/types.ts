@@ -28,6 +28,18 @@ export type TranscriptSource = "dictation" | "file";
 export type PasteShortcut = "standard" | "terminal";
 export type ExportFormat = "txt" | "json" | "md";
 
+export type HistoryDeletionState = {
+  token: string;
+  ids: string[];
+  deadline: number;
+  phase: "pending" | "failed";
+  error?: string;
+};
+export type HistoryBatchSnapshot = {
+  deletion: HistoryDeletionState | null;
+  records: TranscriptRecord[];
+};
+
 export type CustomWord = {
   kind?: "correction" | "shortcut";
   /** Omitted for legacy/global rules; scoped rules require a matching language. */
@@ -445,6 +457,11 @@ export type DeluluApi = {
   ): Promise<TranscriptRecord>;
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
+  getHistoryBatchSnapshot(): Promise<HistoryBatchSnapshot>;
+  stageHistoryDeletion(ids: string[]): Promise<HistoryDeletionState>;
+  undoHistoryDeletion(token: string): Promise<void>;
+  onHistoryBatchChanged(callback: (snapshot: HistoryBatchSnapshot) => void): () => void;
+  exportHistorySelection(ids: string[], format: ExportFormat): Promise<string | null>;
   previewHistoryRetention(policy: HistoryRetentionPolicy): Promise<HistoryRetentionPreview>;
   applyHistoryRetention(token: string): Promise<string[]>;
   onHistoryRetentionApplied(callback: (removedIds: string[]) => void): () => void;

@@ -473,6 +473,7 @@ export class StorageService {
   readonly modelCacheDirectory: string;
   private settings: AppSettings;
   private history: TranscriptRecord[];
+  private historyPins = new Set<string>();
 
   constructor() {
     this.dataDirectory = app.getPath("userData");
@@ -609,12 +610,22 @@ export class StorageService {
 
   addHistory(record: TranscriptRecord): void {
     if (!this.settings.keepHistory || record.sessionOnly) return;
-    const next = [
+    const ordered = [
       record,
       ...this.history.filter((item) => item.id !== record.id),
-    ].slice(0, MAX_HISTORY);
+    ];
+    // A pending undo window must survive the normal newest-500 eviction.
+    // At most 500 additional pinned records; ordinary retention resumes after it.
+    const next = [
+      ...ordered.slice(0, MAX_HISTORY),
+      ...ordered.slice(MAX_HISTORY).filter((item) => this.historyPins.has(item.id)),
+    ];
     writeJson(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
+  }
+
+  pinHistory(ids: readonly string[]): void {
+    this.historyPins = new Set(ids);
   }
 
   findHistory(id: string): TranscriptRecord | undefined {
@@ -661,6 +672,13 @@ export class StorageService {
     const next = this.history.filter((item) => item.id !== id);
     writeJson(join(this.dataDirectory, HISTORY_FILE), next);
     removeMigrationHistoryBackups(this.dataDirectory);
+    this.history = next;
+  }
+
+  deleteHistorySelection(ids: readonly string[]): void {
+    const removed = new Set(ids);
+    const next = this.history.filter((record) => !removed.has(record.id));
+    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
   }
 

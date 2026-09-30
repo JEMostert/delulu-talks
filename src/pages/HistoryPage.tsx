@@ -1,4 +1,4 @@
-import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { Clock3, Search, Trash2 } from "lucide-react";
 import {
   TranscriptCard,
@@ -6,7 +6,7 @@ import {
 } from "../components/TranscriptCard";
 import { ConfirmDialog, EmptyState } from "../components/ui";
 import { HistorySearchMatches } from "../components/HistorySearchMatches";
-import type { TranscriptRecord } from "../types";
+import type { ExportFormat, TranscriptRecord } from "../types";
 import { LANGUAGES } from "../data";
 import {
   EMPTY_HISTORY_FILTERS,
@@ -40,10 +40,16 @@ export function HistoryPage({
   onClear,
   view,
   onViewChange,
+  onExportSelection,
+  onDeleteSelection,
+  deletionPending,
   ...actions
 }: TranscriptActions & {
   history: TranscriptRecord[];
   onClear: () => void;
+  onExportSelection: (ids: string[], format: ExportFormat) => Promise<boolean>;
+  onDeleteSelection: (ids: string[]) => Promise<boolean>;
+  deletionPending: boolean;
   view: HistoryViewState;
   onViewChange: Dispatch<SetStateAction<HistoryViewState>>;
 }) {
@@ -74,6 +80,18 @@ export function HistoryPage({
       filters[key as keyof HistoryFilters] !==
       EMPTY_HISTORY_FILTERS[key as keyof HistoryFilters],
   );
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [confirmSelection, setConfirmSelection] = useState<string[] | null>(null);
+  const selectedIds = history.filter((record) => selected.has(record.id)).map((record) => record.id);
+  useEffect(() => {
+    const available = new Set(history.map((record) => record.id));
+    setSelected((ids) => new Set([...ids].filter((id) => available.has(id))));
+  }, [history]);
+  const exportSelected = async (format: ExportFormat) => {
+    setBatchBusy(true);
+    try { await onExportSelection(selectedIds, format); } finally { setBatchBusy(false); }
+  };
   const groups = useMemo(() => {
     const result = new Map<string, TranscriptRecord[]>();
     sorted.forEach((item) => {
@@ -115,7 +133,7 @@ export function HistoryPage({
         </label>
         <button
           className="tool-button danger"
-          disabled={!history.length}
+          disabled={!history.length || deletionPending || batchBusy}
           onClick={() => setConfirm(true)}
         >
           <Trash2 /> Clear history
@@ -233,6 +251,17 @@ export function HistoryPage({
           </button>
         </div>
       </fieldset>
+      <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-line bg-soft">
+        <span className="text-sm" role="status">{selectedIds.length} selected</span>
+        <button className="tool-button" disabled={batchBusy || !groups.length} onClick={() => {
+          setSelected((ids) => new Set([...new Set([...ids, ...groups.flatMap(([, records]) => records.map((record) => record.id))])].slice(0, 500)));
+        }}>Select matching (up to 500)</button>
+        <button className="tool-button" disabled={batchBusy || !selectedIds.length} onClick={() => setSelected(new Set())}>Clear selection</button>
+        <button className="secondary-button" disabled={batchBusy || !selectedIds.length} onClick={() => void exportSelected("txt")}>Export {selectedIds.length} TXT</button>
+        <button className="secondary-button" disabled={batchBusy || !selectedIds.length} onClick={() => void exportSelected("json")}>Export {selectedIds.length} JSON</button>
+        <button className="tool-button danger" disabled={batchBusy || deletionPending || !selectedIds.length} onClick={() => setConfirmSelection([...selectedIds])}>Delete {selectedIds.length} selected…</button>
+        <span className="caption">Up to 500 per action; selection includes records hidden by the current filter. JSON keeps full originals and provenance.</span>
+      </div>
       {groups.map(([day, records]) => (
         <section className="content-stack gap-3.5" key={day}>
           <div className="section-heading px-0.5 py-1.5">
@@ -273,6 +302,22 @@ export function HistoryPage({
             corrections from this device. Export anything you want to keep
             first.
           </p>
+        </ConfirmDialog>
+      )}
+      {confirmSelection && (
+        <ConfirmDialog title={`Delete ${confirmSelection.length} selected transcripts?`}
+          confirmLabel={`Delete ${confirmSelection.length} transcripts`}
+          onClose={() => setConfirmSelection(null)}
+          onConfirm={() => {
+            const ids = confirmSelection;
+            setConfirmSelection(null);
+            setBatchBusy(true);
+            void onDeleteSelection(ids).then((success) => {
+              if (success) setSelected(new Set());
+            }).finally(() => setBatchBusy(false));
+          }}>
+          <p>These {confirmSelection.length} transcripts will be hidden immediately. You have 30 seconds to undo before originals, corrections and rewrites are permanently removed from this device.</p>
+          <p className="caption">Export first if you need a separate copy. Other deletion and retention actions wait until this window ends.</p>
         </ConfirmDialog>
       )}
     </div>

@@ -30,6 +30,11 @@ export interface IpcRegistrar {
 }
 
 export interface IpcDependencies {
+  historyDeletion: import("../services/historyBatch").HistoryBatchDeletion;
+  visibleHistory: () => TranscriptRecord[];
+  historyBatchSnapshot: () => import("../../src/types").HistoryBatchSnapshot;
+  selectedHistory: (ids: string[]) => TranscriptRecord[];
+  writeSelectionExport: (path: string, text: string) => void;
   getMainWindow: () => BrowserWindow | null;
   storage: StorageService;
   asr: AsrService;

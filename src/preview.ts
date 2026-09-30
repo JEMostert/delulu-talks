@@ -315,6 +315,11 @@ export const previewApi: DeluluApi = {
   async clearHistory() {
     demoHistory = [];
   },
+  async getHistoryBatchSnapshot() { return { deletion: null, records: demoHistory }; },
+  async stageHistoryDeletion(_ids) { return desktopOnly(); },
+  async undoHistoryDeletion(_token) { return desktopOnly(); },
+  onHistoryBatchChanged(_callback) { return () => undefined; },
+  async exportHistorySelection(_ids, _format) { return desktopOnly(); },
   async chooseAudioFile(): Promise<AudioFileSelection | null> {
     return desktopOnly();
   },

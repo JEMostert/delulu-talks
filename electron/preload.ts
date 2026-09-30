@@ -110,6 +110,11 @@ const api: DeluluApi = {
   clearHistory: () => invoke("history:clear"),
   previewHistoryRetention: (policy: HistoryRetentionPolicy) => invoke("history:retentionPreview", policy),
   applyHistoryRetention: (token: string) => invoke("history:retentionApply", token),
+  getHistoryBatchSnapshot: () => invoke("history:batchSnapshot"),
+  stageHistoryDeletion: (ids) => invoke("history:stageDeletion", ids),
+  undoHistoryDeletion: (token) => invoke("history:undoDeletion", token),
+  onHistoryBatchChanged: (callback) => listener("history:batchChanged", callback),
+  exportHistorySelection: (ids, format) => invoke("history:exportSelection", ids, format),
   onHistoryRetentionApplied: (callback: (removedIds: string[]) => void) =>
     listener("history:retentionApplied", callback),
   chooseAudioFile: () => invoke("lab:chooseAudio"),

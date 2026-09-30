@@ -1,8 +1,10 @@
 import { app, BrowserWindow, dialog, Menu, nativeImage, session, shell, Tray } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import electronUpdater from "electron-updater";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { closeSync, existsSync, mkdirSync, openSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { HistoryBatchDeletion, historySelection } from "./services/historyBatch";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AppSettings, MagicPreset, Page, PasteRecovery, TranscriptRecord } from "../src/types";
 import { REWRITE_PRESETS } from "../src/rewritePresets";
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
@@ -100,12 +102,66 @@ const settingsQueue = new SerialQueue();
 let lastTranscript: TranscriptRecord | null = null;
 const sessionTranscripts = new Map<string, TranscriptRecord>();
 let pasteRecovery: PasteRecovery | null = null;
+const historyDeletion = new HistoryBatchDeletion(
+  (ids) => {
+    // Publish the durable snapshot before invalidating any session records.
+    storage.deleteHistorySelection(ids);
+    for (const id of ids) sessionTranscripts.delete(id);
+    if (lastTranscript && ids.includes(lastTranscript.id)) lastTranscript = null;
+    retentionPreview = null;
+  },
+  () => {
+    const state = historyDeletion.getState();
+    storage.pinHistory(state?.phase === "pending" ? state.ids : []);
+    broadcast("history:batchChanged", historyBatchSnapshot());
+    rebuildTrayMenu();
+  },
+);
+const selectedAudioFiles = new Set<string>();
 
 function setPasteRecovery(recovery: PasteRecovery | null): void {
   pasteRecovery = recovery;
   broadcast("paste:recoveryChanged", recovery);
 }
 const selectedAudioFiles = new Set<string>();
+
+function visibleHistory(): TranscriptRecord[] {
+  const records = new Map(storage.getHistory().map((record) => [record.id, record]));
+  for (const [id, record] of sessionTranscripts) records.set(id, record);
+  return [...records.values()].filter((record) => !historyDeletion.hidden(record.id))
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+function historyBatchSnapshot() {
+  return { deletion: historyDeletion.getState(), records: visibleHistory() };
+}
+
+function selectedHistory(ids: string[]): TranscriptRecord[] {
+  return ids.map((id) => {
+    if (historyDeletion.hidden(id)) throw new Error("Undo deletion before using this transcript.");
+    const record = sessionTranscripts.get(id) ?? storage.findHistory(id);
+    if (!record) throw new Error("A selected transcript is no longer available. Select the records again.");
+    return record;
+  });
+}
+
+function writeSelectionExport(outputPath: string, content: string): void {
+  const parent = realpathSync(dirname(outputPath));
+  const destination = join(parent, basename(outputPath));
+  const inside = relative(realpathSync(storage.dataDirectory), destination);
+  if (!inside || (!isAbsolute(inside) && inside !== ".." && !inside.startsWith(`..${sep}`)))
+    throw new Error("Export outside Delulu's data directory to preserve history, settings and runtimes.");
+  // Replacing a fresh file preserves existing exports on failed writes and
+  // avoids modifying another file through a final-component hard/symbolic link.
+  const temporary = join(parent, `.delulu-export-${randomUUID()}.tmp`);
+  const descriptor = openSync(temporary, "wx", 0o600);
+  try {
+    try { writeFileSync(descriptor, content, "utf8"); } finally { closeSync(descriptor); }
+    renameSync(temporary, destination);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
 
 function preloadPath(): string {
   return join(__dirname, "../preload/preload.cjs");
@@ -372,9 +428,7 @@ function rebuildTrayMenu(): void {
   const settings = storage.getSettings();
   const status = asr.getStatus();
   const magic = asr.getMagicStatus();
-  const latest = lastTranscript
-    ? (storage.findHistory(lastTranscript.id) ?? lastTranscript)
-    : storage.getHistory()[0];
+  const latest = visibleHistory()[0];
   const listening = status.phase === "listening";
   const dictationBusy = ["preparing", "loading", "transcribing"].includes(
     status.phase,
@@ -812,7 +866,7 @@ async function start(): Promise<void> {
   });
   shortcut.onStatus((status) => broadcast("shortcut:statusChanged", status));
   setupPermissions();
-  registerMainIpc({ getMainWindow: () => mainWindow, storage, asr, paste, pill, dictation, shortcut, updates, persistSettings, settingsBusy: () => settingsQueue.busy, getLastTranscript: () => lastTranscript, setLastTranscript: (record) => { lastTranscript = record; }, sessionTranscripts, rebuildTrayMenu, pasteLast, modelCache, ruleUsage, schedulePasteLast, getPasteRecovery: () => pasteRecovery, setPasteRecovery, applySettings, settingsQueue, broadcast, selectedAudioFiles });
+  registerMainIpc({ getMainWindow: () => mainWindow, storage, asr, paste, pill, dictation, shortcut, updates, persistSettings, settingsBusy: () => settingsQueue.busy, getLastTranscript: () => lastTranscript, setLastTranscript: (record) => { lastTranscript = record; }, sessionTranscripts, rebuildTrayMenu, pasteLast, modelCache, ruleUsage, schedulePasteLast, getPasteRecovery: () => pasteRecovery, setPasteRecovery, applySettings, settingsQueue, broadcast, selectedAudioFiles, historyDeletion, visibleHistory, historyBatchSnapshot, selectedHistory, writeSelectionExport });
   if (!smokeTest) {
     if (app.isPackaged)
       void shortcut

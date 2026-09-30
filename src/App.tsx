@@ -21,6 +21,7 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { OperationResumeNotice } from "./components/OperationResumeNotice";
 import { RewriteDialog } from "./components/RewriteDialog";
 import { PasteRecoveryNotice } from "./components/PasteRecoveryNotice";
+import { HistoryDeletionNotice } from "./components/HistoryDeletionNotice";
 import { Alert } from "./components/ui";
 import { HomePage } from "./pages/HomePage";
 import { LabPage } from "./pages/LabPage";
@@ -232,6 +233,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           onDownload={download}
           onInstall={install}
         />
+        <HistoryDeletionNotice state={w.historyDeletion} onUndo={w.undoDeletion} onHistory={() => w.setPage("history")} />
         {w.status.phase === "loading" && (
           <div
             role="status"
@@ -411,6 +413,9 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     onViewChange={w.setHistoryView}
                     {...transcriptActions}
                     onClear={onClearHistory}
+                    onExportSelection={w.exportSelection}
+                    onDeleteSelection={w.deleteSelection}
+                    deletionPending={w.historyDeletion?.phase === "pending"}
                   />
                 </div>
               )}

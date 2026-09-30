@@ -11,6 +11,9 @@ import type {
   AppSettings,
   CaptureDiagnostics,
   DictationStatus,
+  ExportFormat,
+  HistoryBatchSnapshot,
+  HistoryDeletionState,
   MagicStatus,
   MicrophoneDevice,
   Page,
@@ -56,6 +59,7 @@ export function useWorkspace() {
   // Session-only view state survives History navigation and page remounts.
   const [historyView, setHistoryView] =
     useState<HistoryViewState>(DEFAULT_HISTORY_VIEW);
+  const [historyDeletion, setHistoryDeletion] = useState<HistoryDeletionState | null>(null);
   const [devices, setDevices] = useState<MicrophoneDevice[]>([
     { deviceId: "default", label: "System default" },
   ]);
@@ -99,6 +103,9 @@ export function useWorkspace() {
     const liveRecords = new Map<string, TranscriptRecord>();
     let readingHistory = true;
     const received = new Set<string>();
+    const startupAdded = new Map<string, TranscriptRecord>();
+    const startupRemoved = new Set<string>();
+    let initialized = false;
     const subscribe =
       <T>(name: string, receive: (value: T) => void) =>
       (value: T) => {
@@ -112,6 +119,13 @@ export function useWorkspace() {
     const recorder = new PcmRecorder((stats) => {
       if (alive) setCaptureDiagnostics(stats);
     });
+    const receiveBatch = (snapshot: HistoryBatchSnapshot) => {
+      if (!alive) return;
+      received.add("history batch");
+      received.add("transcript history");
+      setHistory(retainSessionTranscripts(snapshot.records));
+      setHistoryDeletion(snapshot.deletion);
+    };
     const subscriptions = [
       bridge.onStatus(subscribe("speech status", setStatus)),
       bridge.onPasteLastStatus(subscribe("paste last", setPasteLastStatus)),
@@ -127,13 +141,16 @@ export function useWorkspace() {
       bridge.onTranscript((record) => {
         if (!isCurrent()) return;
         if (readingHistory) liveRecords.set(record.id, record);
+        if (!initialized) startupAdded.set(record.id, record);
         receiveTranscript(record);
       }),
       bridge.onHistoryRetentionApplied((removedIds) => {
         if (!isCurrent()) return;
         const removed = new Set(removedIds);
+        if (!initialized) for (const id of removed) startupRemoved.add(id);
         setHistory((items) => items.filter((record) => !removed.has(record.id)));
       }),
+      bridge.onHistoryBatchChanged(receiveBatch),
     ];
     void bridge.recorderReady().catch((reason) => { if (isCurrent()) report(reason); });
     void bridge
@@ -149,7 +166,7 @@ export function useWorkspace() {
       read("speech status", () => bridge.getStatus()),
       read("rewriting status", () => bridge.getMagicStatus()),
       read("shortcut status", () => bridge.getShortcutStatus()),
-      read("transcript history", () => bridge.getHistory()),
+      read("transcript history", () => bridge.getHistoryBatchSnapshot()),
       read("platform capabilities", () => bridge.getCapabilities()),
       read("update status", () => bridge.getUpdateStatus()),
     ])
@@ -170,11 +187,16 @@ export function useWorkspace() {
           return;
         }
         if (!received.has("settings")) receiveSettings(next.value);
-        const initialHistory = new Map(records.value.map((record) => [record.id, record]));
-        for (const record of liveRecords.values()) initialHistory.set(record.id, record);
-        setHistory(retainSessionTranscripts([...initialHistory.values()].sort((a, b) => b.createdAt - a.createdAt)));
-        readingHistory = false;
-        liveRecords.clear();
+        if (!received.has("history batch")) {
+          const merged = new Map(records.value.records.map((record) => [record.id, record]));
+          for (const [id, record] of startupAdded) merged.set(id, record);
+          setHistory([...merged.values()].filter((record) => !startupRemoved.has(record.id))
+            .sort((a, b) => b.createdAt - a.createdAt));
+          setHistoryDeletion(records.value.deletion);
+        }
+        initialized = true;
+        startupAdded.clear();
+        startupRemoved.clear();
         if (!received.has("speech status")) {
           if (speech.status === "fulfilled") setStatus(speech.value);
           else
@@ -353,6 +375,16 @@ export function useWorkspace() {
       await bridge.pasteLastTranscript();
     });
   };
+  const exportSelection = (ids: string[], format: ExportFormat) => action(async () => {
+    const path = await bridge.exportHistorySelection(ids, format);
+    if (path) setToast(`Exported ${ids.length} transcripts`);
+  });
+  const deleteSelection = (ids: string[]) => action(async () => {
+    await bridge.stageHistoryDeletion(ids);
+  });
+  const undoDeletion = (token: string) => action(
+    () => bridge.undoHistoryDeletion(token), "Deletion undone",
+  );
   return {
     operations,
     page,
@@ -370,6 +402,10 @@ export function useWorkspace() {
     shortcutStatus,
     history,
     captureDiagnostics,
+    historyDeletion,
+    exportSelection,
+    deleteSelection,
+    undoDeletion,
     setHistory,
     historyView,
     setHistoryView,

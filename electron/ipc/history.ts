@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { historySelection } from "../services/historyBatch";
 import { dialog, session } from "electron";
 import { writeFileSync } from "node:fs";
 import { extname } from "node:path";
@@ -14,19 +15,43 @@ import { renderExportTemplate, validateExportTemplateRequest } from "../../src/e
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
-export function registerHistoryIpc({ handle }: IpcRegistrar, { getMainWindow, storage, getLastTranscript, setLastTranscript, sessionTranscripts, rebuildTrayMenu, getPasteRecovery, setPasteRecovery, broadcast }: Pick<IpcDependencies, "getMainWindow" | "storage" | "getLastTranscript" | "setLastTranscript" | "sessionTranscripts" | "rebuildTrayMenu" | "getPasteRecovery" | "setPasteRecovery" | "broadcast">): void {
+export function registerHistoryIpc({ handle }: IpcRegistrar, { getMainWindow, storage, getLastTranscript, setLastTranscript, sessionTranscripts, rebuildTrayMenu, getPasteRecovery, setPasteRecovery, broadcast, historyDeletion, visibleHistory, historyBatchSnapshot, selectedHistory, writeSelectionExport }: IpcDependencies): void {
+  handle("history:batchSnapshot", () => historyBatchSnapshot());
+  handle("history:stageDeletion", (_event, value: unknown) => {
+    const ids = historySelection(value);
+    selectedHistory(ids); // Fail all-or-nothing if any selection is stale.
+    return historyDeletion.stage(ids);
+  });
+  handle("history:undoDeletion", (_event, token: unknown) => {
+    historyDeletion.undo(validateText(token, 128));
+  });
+  handle("history:exportSelection", async (_event, value: unknown, format: unknown) => {
+    const ids = historySelection(value);
+    if (format !== "txt" && format !== "json") throw new Error("Choose TXT or JSON export.");
+    const records = selectedHistory(ids);
+    const fingerprint = historyFingerprint(records);
+    const options: Electron.SaveDialogOptions = {
+      title: `Export ${records.length} transcripts as ${format.toUpperCase()}`,
+      defaultPath: `delulu-${records.length}-transcripts.${format}`,
+      filters: [{ name: format.toUpperCase(), extensions: [format] }],
+    };
+    const result = getMainWindow() ? await dialog.showSaveDialog(getMainWindow(), options) : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return null;
+    if (historyFingerprint(selectedHistory(ids)) !== fingerprint)
+      throw new Error("Selected transcripts changed while choosing a file. Export the current selection again.");
+    const content = format === "json" ? `${JSON.stringify(records, null, 2)}\n` : records.map((record, index) =>
+      `=== Transcript ${index + 1} of ${records.length} · ${new Date(record.createdAt).toISOString()} · ${record.id} ===\n${exportRecord(record, "txt")}`,
+    ).join("\n");
+    const outputPath = extname(result.filePath) ? result.filePath : `${result.filePath}.${format}`;
+    writeSelectionExport(outputPath, content);
+    return outputPath;
+  });
+
 let retentionPreview: { preview: HistoryRetentionPreview; savedFingerprint: string; fullFingerprint: string } | null = null;
 const retentionHistoryFingerprint = (saved: TranscriptRecord[]) => historyFingerprint({ saved, session: [...sessionTranscripts.values()] });
-handle("history:get", () => {
-    const records = new Map(
-      storage.getHistory().map((record) => [record.id, record]),
-    );
-    for (const [id, record] of sessionTranscripts) records.set(id, record);
-    return retainSessionTranscripts([...records.values()])
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, 500);
-  });
+handle("history:get", () => visibleHistory());
 handle("history:retentionPreview", (_event, value: unknown) => {
+    historyDeletion.assertNoPending();
     const policy = validateRetentionPolicy(value);
     const saved = storage.getHistory();
     // Show the same current text as History for saved records also held in this session.
@@ -157,6 +182,7 @@ handle(
   );
 handle("history:delete", (_event, id: unknown) => {
     const key = validateText(id, 128);
+    historyDeletion.assertNoPending();
     storage.deleteHistory(key);
     sessionTranscripts.delete(key);
     if (getPasteRecovery()?.transcriptId === key) setPasteRecovery(null);
@@ -164,6 +190,7 @@ handle("history:delete", (_event, id: unknown) => {
     rebuildTrayMenu();
   });
 handle("history:clear", () => {
+    historyDeletion.assertNoPending();
     storage.clearHistory();
     sessionTranscripts.clear();
     setPasteRecovery(null);
