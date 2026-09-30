@@ -64,6 +64,7 @@ class WindowsSpeech:
         converted_root = Path(cache_root or HF_HOME) / "delulu-r2t2-transformers" / CONVERSION_VERSION / MODEL_REVISION
         try:
             if (converted_root / "complete").is_file():
+                emit_progress("Loading cached converted R2T2 weights…", stage="load")
                 self.processor = Qwen3ASRProcessor.from_pretrained(converted_root)
                 dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
                 self.model = Qwen3ASRForConditionalGeneration.from_pretrained(
@@ -111,6 +112,7 @@ class WindowsSpeech:
                 if staged.exists():
                     shutil.rmtree(staged)
             # Cache the original BF16 weights before selecting this GPU's dtype.
+            emit_progress("Loading converted R2T2 weights onto CUDA…", stage="load")
             self.model.to(device="cuda", dtype=dtype).eval()
             self._warmup()
             return self.status()

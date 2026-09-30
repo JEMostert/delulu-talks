@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { homedir, release } from "node:os";
 import { usesMetal } from "./platform";
 import { activateRuntime, runtimeDirectory, runtimePython, rollbackRuntime } from "./location";
-import type { AppSettings } from "../../src/types";
+import type { AppSettings, SetupStage } from "../../src/types";
 import { resolveRuntimeArtifacts } from "./artifacts";
 import {
   parseRuntimePrerequisiteError,
@@ -35,6 +35,7 @@ import {
 } from "./manifest";
 
 export type InstallProgress = {
+  setupStage?: SetupStage;
   message: string;
   progress: number;
   detail?: string;
@@ -322,16 +323,24 @@ export class RuntimeInstaller {
       args: string[],
       message: string,
       progress: number,
+      setupStage: SetupStage = "runtime-prepare",
     ) => {
       this.recordSetupStage(message);
-      publish({ message, progress });
+        publish({ message, progress, setupStage });
       return this.run(program, args, (output) => {
         const detail = output.trim().split(/\r?\n/).at(-1)?.slice(-350);
-        if (detail) publish({ message, progress, detail });
+        if (setupStage === "runtime-packages" || setupStage === "runtime-download" || setupStage === "runtime-install" || setupStage === "runtime-build") {
+          for (const line of output.split(/\r?\n/).map((value) => value.trim())) {
+            if (/^(Downloading|Using cached) /.test(line)) setupStage = "runtime-download";
+            else if (/^Installing collected packages:/.test(line)) setupStage = "runtime-install";
+            else if (/^(Building wheel|Building wheels|Preparing metadata)/.test(line)) setupStage = "runtime-build";
+          }
+        }
+        if (detail) publish({ message, progress, detail, setupStage });
       });
     };
     this.recordSetupStage("Checking your Python environment");
-    publish({ message: "Checking your Python environment", progress: 0.05 });
+    publish({ message: "Checking your Python environment", progress: 0.05, setupStage: "runtime-check" });
     mkdirSync(this.paths.dataDirectory, { recursive: true });
     const generation = randomUUID();
     const candidate = join(this.paths.venvDirectory, "generations", generation);
@@ -401,6 +410,7 @@ export class RuntimeInstaller {
         ["-m", "pip", ...pipArguments],
         message,
         progress,
+        "runtime-packages",
       );
     };
     await installPackages(
@@ -452,12 +462,14 @@ export class RuntimeInstaller {
       ["-m", "pip", "check"],
       "Checking package compatibility",
       0.72,
+      "runtime-validate",
     );
     await stage(
       candidatePython,
       ["-c", this.readiness(kind)],
       "Validating the new runtime before switching",
       0.76,
+      "runtime-validate",
     );
     this.recordSetupStage("Recording installed package versions");
     const versions = await this.run(
@@ -475,6 +487,7 @@ export class RuntimeInstaller {
     publish({
       message: "Recording the runtime dependency inventory",
       progress: 0.78,
+      setupStage: "runtime-validate",
     });
     let observation: string;
     try {
@@ -518,6 +531,7 @@ export class RuntimeInstaller {
     publish({
       message: "Runtime installed. Preparing your model…",
       progress: 0.8,
+      setupStage: "model-prepare",
     });
   }
 }
