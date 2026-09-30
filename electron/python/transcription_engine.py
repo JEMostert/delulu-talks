@@ -315,9 +315,7 @@ class Worker:
                 "The speech runtime is incomplete. Run Repair in Models."
             ) from exc
 
-        from qwen_asr import Qwen3ASRModel
-        from huggingface_hub import snapshot_download
-
+        from r2t2 import R2T2ASRModel
         from verified_snapshot import verified_snapshot
         emit_progress("Retrieving pinned R2T2 checkpoint…", stage="download")
         checkpoint = verified_snapshot(
@@ -326,7 +324,7 @@ class Worker:
             local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1",
         )
         emit_progress("Loading R2T2 weights into the CUDA runtime…", stage="load")
-        self.model = Qwen3ASRModel.LLM(
+        self.model = R2T2ASRModel.LLM(
             model=checkpoint,
             # R2T2 advertises a 65k context by default, which makes vLLM reserve
             # a 7+ GiB KV cache before a single audio request is processed. A

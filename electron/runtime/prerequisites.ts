@@ -147,7 +147,7 @@ export function runtimeReadinessScript(
       ? "import mlx.core as mx\n    from mlx_audio.stt.utils import load_model, load_audio"
       : target.platform === "win32"
         ? "import torch, soundfile, soxr\n    from transformers import Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor"
-        : "import torch\n    from qwen_asr import Qwen3ASRModel";
+        : "import torch\n    from r2t2 import R2T2ASRModel";
   const hardware = kind !== "speech"
     ? ""
     : metal

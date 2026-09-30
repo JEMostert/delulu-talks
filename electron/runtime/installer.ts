@@ -177,7 +177,7 @@ export class RuntimeInstaller {
           message: "Runtime command timed out; termination requested",
           durationMs: Math.round(performance.now() - started),
         });
-        child.kill();
+        this.terminate(child);
         reject(
           new DomainError("RUNTIME_SETUP_TIMEOUT",
             "Runtime operation timed out. Check your connection and try Repair.",
@@ -250,6 +250,7 @@ export class RuntimeInstaller {
         catch { /* this generation has exited */ }
       }, 5000);
       escalation.unref();
+      child.once("close", () => clearTimeout(escalation));
     }
   }
   stop(): void {
