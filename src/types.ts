@@ -382,7 +382,7 @@ export type ModelCacheCleanupResult = {
   failures: { id: string; message: string }[];
 };
 
-export type DeluluApi = {
+export type DeluluApi = import("./localAutomation").LocalAutomationApi & {
   previewModelCache(): Promise<ModelCachePreview>;
   cleanupModelCache(token: string, ids: string[]): Promise<ModelCacheCleanupResult>;
   getRuleUsage(): Promise<RuleUsage>;

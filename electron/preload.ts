@@ -39,6 +39,10 @@ function listener<T>(
 }
 
 const api: DeluluApi = {
+  getAutomationStatus: () => invoke("automation:status"),
+  setAutomationEnabled: (enabled) => invoke("automation:enabled", enabled),
+  grantAutomation: (request) => invoke("automation:grant", request),
+  revokeAutomation: (id) => invoke("automation:revoke", id),
   getRuleUsage: () => invoke("rules:usage"),
   resetRuleUsage: () => invoke("rules:resetUsage"),
   previewModelCache: () => invoke("cache:preview"),

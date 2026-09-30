@@ -55,6 +55,10 @@ function desktopOnly(): never {
 }
 
 export const previewApi: DeluluApi = {
+  async getAutomationStatus() { return { available: false, enabled: false, url: null, connectionFile: null, integrations: [] }; },
+  async setAutomationEnabled() { throw new Error("Local automation requires the desktop app"); },
+  async grantAutomation() { throw new Error("Local automation requires the desktop app"); },
+  async revokeAutomation() { throw new Error("Local automation requires the desktop app"); },
   async getRuleUsage() {
     return desktopOnly();
   },
