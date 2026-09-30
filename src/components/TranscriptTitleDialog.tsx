@@ -34,7 +34,8 @@ export function TranscriptTitleDialog({
     setError(null);
     try {
       if (await onSave(normalized)) onClose();
-      else setError("The transcript title could not be saved. Please try again.");
+      else
+        setError("The transcript title could not be saved. Please try again.");
     } catch {
       setError("The transcript title could not be saved. Please try again.");
     } finally {
@@ -49,11 +50,7 @@ export function TranscriptTitleDialog({
       onClose={close}
       footer={
         <>
-          <button
-            className="secondary-button"
-            disabled={busy}
-            onClick={close}
-          >
+          <button className="secondary-button" disabled={busy} onClick={close}>
             Cancel
           </button>
           <button
@@ -71,7 +68,8 @@ export function TranscriptTitleDialog({
       }
     >
       <p>
-        Give this transcript an optional title. Leave it blank to remove the title.
+        Give this transcript an optional title. Leave it blank to remove the
+        title.
       </p>
       <label className="field">
         Transcript title

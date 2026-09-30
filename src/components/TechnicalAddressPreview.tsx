@@ -21,12 +21,17 @@ export function TechnicalAddressPreview({
   const preview = edited ?? parsed.text;
   return (
     <details className="mt-3 rounded-md border border-line p-3 text-[12px]">
-      <summary className="cursor-pointer font-medium">Technical address preview</summary>
+      <summary className="cursor-pointer font-medium">
+        Technical address preview
+      </summary>
       <p className="mt-2 text-muted">
-        Choose the spoken segment and its format. Review ambiguous pieces before copying.
-        This preview keeps the original transcript and never executes commands.
+        Choose the spoken segment and its format. Review ambiguous pieces before
+        copying. This preview keeps the original transcript and never executes
+        commands.
       </p>
-      <label htmlFor={`${id}-kind`} className="mt-3 block">Format</label>
+      <label htmlFor={`${id}-kind`} className="mt-3 block">
+        Format
+      </label>
       <select
         id={`${id}-kind`}
         className="mt-1 w-full bg-input p-2"
@@ -42,8 +47,12 @@ export function TechnicalAddressPreview({
         <option value="email">Email address</option>
         <option value="version">Version</option>
       </select>
-      <p className="mt-2 text-muted">Example: {technicalAddressGuide[kind].spoken}</p>
-      <label htmlFor={`${id}-source`} className="mt-3 block">Spoken segment</label>
+      <p className="mt-2 text-muted">
+        Example: {technicalAddressGuide[kind].spoken}
+      </p>
+      <label htmlFor={`${id}-source`} className="mt-3 block">
+        Spoken segment
+      </label>
       <textarea
         id={`${id}-source`}
         className="mt-1 min-h-20 w-full rounded-md bg-input p-2"
@@ -54,7 +63,9 @@ export function TechnicalAddressPreview({
           setEdited(null);
         }}
       />
-      <label htmlFor={`${id}-preview`} className="mt-3 block">Editable preview</label>
+      <label htmlFor={`${id}-preview`} className="mt-3 block">
+        Editable preview
+      </label>
       <textarea
         id={`${id}-preview`}
         className="mt-1 min-h-16 w-full rounded-md bg-input p-2 font-mono"
@@ -67,16 +78,30 @@ export function TechnicalAddressPreview({
         <div className="mt-2 text-muted" role="status">
           <p>Review these interpretations of the spoken segment:</p>
           <ul className="list-disc pl-5">
-            {parsed.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+            {parsed.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
           </ul>
         </div>
       )}
-      {edited !== null && <p className="mt-2 text-muted">Preview edited manually; check its final spelling.</p>}
+      {edited !== null && (
+        <p className="mt-2 text-muted">
+          Preview edited manually; check its final spelling.
+        </p>
+      )}
       <div className="mt-3 flex gap-2">
-        <button className="tool-button" disabled={!preview.trim()} onClick={() => onCopy(preview)}>
+        <button
+          className="tool-button"
+          disabled={!preview.trim()}
+          onClick={() => onCopy(preview)}
+        >
           Copy reviewed preview
         </button>
-        <button className="tool-button" disabled={edited === null} onClick={() => setEdited(null)}>
+        <button
+          className="tool-button"
+          disabled={edited === null}
+          onClick={() => setEdited(null)}
+        >
           Reset preview
         </button>
       </div>

@@ -12,7 +12,8 @@ const patterns: { label: string; pattern: RegExp }[] = [
   },
   {
     label: "Numbers",
-    pattern: /(?<![\p{L}\p{N}_])[+-]?\p{N}+(?:[.,:/-]\p{N}+)*(?:\s?%)?(?![\p{L}\p{N}_])/gu,
+    pattern:
+      /(?<![\p{L}\p{N}_])[+-]?\p{N}+(?:[.,:/-]\p{N}+)*(?:\s?%)?(?![\p{L}\p{N}_])/gu,
   },
   {
     label: "Dates and days",
@@ -26,7 +27,8 @@ const patterns: { label: string; pattern: RegExp }[] = [
   },
   {
     label: "Possible names (capitalized text)",
-    pattern: /(?<![\p{L}\p{N}_])\p{Lu}[\p{L}\p{M}]+(?:[ '-]\p{Lu}[\p{L}\p{M}]+)*/gu,
+    pattern:
+      /(?<![\p{L}\p{N}_])\p{Lu}[\p{L}\p{M}]+(?:[ '-]\p{Lu}[\p{L}\p{M}]+)*/gu,
   },
 ];
 

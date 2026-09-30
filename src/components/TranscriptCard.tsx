@@ -123,6 +123,11 @@ export function TranscriptCard({
   const delivered = deliveredText(record);
   const edited = transcriptIsEdited(record);
   const text = showSource ? transcriptText(record) : delivered;
+  const previousRewrite = useRef(record.magicText);
+  useEffect(() => {
+    if (previousRewrite.current !== record.magicText) setShowSource(false);
+    previousRewrite.current = record.magicText;
+  }, [record.magicText]);
   useEffect(() => {
     setEditing(!!pendingDraft);
     setOpen(defaultOpen || inspector || !!pendingDraft);
@@ -178,7 +183,8 @@ export function TranscriptCard({
             {record.title || record.sourceName || "Dictation"}
           </strong>
           {pendingDraft &&
-            (pendingDraft.error || pendingDraft.text.trim() !== transcriptText(record)) && (
+            (pendingDraft.error ||
+              pendingDraft.text.trim() !== transcriptText(record)) && (
               <span className="text-[10px] text-muted">
                 Unsaved correction · session only
               </span>
@@ -193,7 +199,13 @@ export function TranscriptCard({
           <span className="mt-[3px] flex items-center gap-1 text-[10px] text-muted">
             {date} · {Math.max(1, Math.round(record.durationMs / 1000))}s{" "}
             {record.dictationMode && record.dictationMode !== "prose" && (
-              <> · {record.dictationMode === "code" ? "Code symbols" : "Command text"}</>
+              <>
+                {" "}
+                ·{" "}
+                {record.dictationMode === "code"
+                  ? "Code symbols"
+                  : "Command text"}
+              </>
             )}
             {record.magicText && (
               <>
@@ -201,12 +213,18 @@ export function TranscriptCard({
               </>
             )}
           </span>
-          <span className="block text-[10px] text-muted" title={record.delivery?.detail}>
+          <span
+            className="block text-[10px] text-muted"
+            title={record.delivery?.detail}
+          >
             {record.delivery?.state === "paste-attempted"
               ? "Paste attempted · destination unconfirmed"
-              : record.delivery?.state === "confirmed" ? "Delivery confirmed"
-                : record.delivery?.state === "copied" ? "Copied to clipboard"
-                  : record.delivery?.state === "transcribed" ? "Transcribed · no delivery recorded"
+              : record.delivery?.state === "confirmed"
+                ? "Delivery confirmed"
+                : record.delivery?.state === "copied"
+                  ? "Copied to clipboard"
+                  : record.delivery?.state === "transcribed"
+                    ? "Transcribed · no delivery recorded"
                     : "Delivery not recorded"}
           </span>
           <span
@@ -345,19 +363,26 @@ export function TranscriptCard({
               {pendingDraft.error}
             </p>
           )}
-          {pendingDraft && pendingDraft.savedText !== transcriptText(record) && (
-            <p className="caption">
-              The saved transcript changed while this draft was open. Review
-              the current speech before replacing it.
-            </p>
-          )}
+          {pendingDraft &&
+            pendingDraft.savedText !== transcriptText(record) && (
+              <p className="caption">
+                The saved transcript changed while this draft was open. Review
+                the current speech before replacing it.
+              </p>
+            )}
           <p className="caption mt-2.5">
             No calibrated confidence score is available for this transcript.
             Review the text before using it.
           </p>
-          {!editing && record.dictationMode && record.dictationMode !== "prose" && (
-            <TechnicalAddressPreview key={record.id} speech={record.text} onCopy={onCopy} />
-          )}
+          {!editing &&
+            record.dictationMode &&
+            record.dictationMode !== "prose" && (
+              <TechnicalAddressPreview
+                key={record.id}
+                speech={record.text}
+                onCopy={onCopy}
+              />
+            )}
           {editing ? (
             <textarea
               aria-label="Correct transcript"
@@ -436,7 +461,9 @@ export function TranscriptCard({
                   className="tool-button"
                   onClick={() => {
                     setShowSource(true);
-                    setEditSource(pendingDraft?.savedText ?? transcriptText(record));
+                    setEditSource(
+                      pendingDraft?.savedText ?? transcriptText(record),
+                    );
                     if (!pendingDraft) setDraft(transcriptText(record));
                     setEditing(true);
                   }}
@@ -446,7 +473,10 @@ export function TranscriptCard({
                 <button className="tool-button" onClick={() => onCopy(text)}>
                   <Copy /> Copy {showSource ? "speech" : "result"}
                 </button>
-                <button className="tool-button" onClick={() => setIdentifierPreview(true)}>
+                <button
+                  className="tool-button"
+                  onClick={() => setIdentifierPreview(true)}
+                >
                   Identifiers
                 </button>
                 {edited && (
@@ -461,7 +491,9 @@ export function TranscriptCard({
                   <button
                     className="tool-button"
                     disabled={saving}
-                    onClick={() => onOpenRewrite ? onOpenRewrite(record) : setRewriting(true)}
+                    onClick={() =>
+                      onOpenRewrite ? onOpenRewrite(record) : setRewriting(true)
+                    }
                   >
                     <WandSparkles /> Rewrite
                   </button>
@@ -490,7 +522,14 @@ export function TranscriptCard({
                     <RotateCcw /> Undo rewrite
                   </button>
                 )}
-                <button className="tool-button" disabled={saving || transcriptText(record).length > 50_000} title="Compare hesitation-word removal before opening a correction draft (up to 50,000 characters)" onClick={() => setFillerPreview(true)}>Preview filler removal</button>
+                <button
+                  className="tool-button"
+                  disabled={saving || transcriptText(record).length > 50_000}
+                  title="Compare hesitation-word removal before opening a correction draft (up to 50,000 characters)"
+                  onClick={() => setFillerPreview(true)}
+                >
+                  Preview filler removal
+                </button>
                 {onRemember && (
                   <button
                     className="tool-button"
@@ -531,7 +570,10 @@ export function TranscriptCard({
             </div>
           )}
           {record.dictationFormatting === "spoken" && (
-            <p className="caption">Explicit spoken formatting applied; original recognition remains in Speech.</p>
+            <p className="caption">
+              Explicit spoken formatting applied; original recognition remains
+              in Speech.
+            </p>
           )}
           <PipelineTimingDetails timings={record.timings} />
           {onExport && (
@@ -578,7 +620,12 @@ export function TranscriptCard({
           onRewrite={onRewrite}
           onCancelRewrite={onCancelRewrite}
           onApply={async (result, source, revision) => {
-            const applied = await onSetRewrite(record.id, result, source, revision);
+            const applied = await onSetRewrite(
+              record.id,
+              result,
+              source,
+              revision,
+            );
             if (applied) setShowSource(false);
             return applied;
           }}
@@ -603,13 +650,19 @@ export function TranscriptCard({
           </p>
         </ConfirmDialog>
       )}
-      {fillerPreview && <FillerPreview text={transcriptText(record)} onClose={() => setFillerPreview(false)} onDraft={(source, result) => {
-        setFillerPreview(false);
-        setShowSource(true);
-        setEditSource(source);
-        setDraft(result);
-        setEditing(true);
-      }} />}
+      {fillerPreview && (
+        <FillerPreview
+          text={transcriptText(record)}
+          onClose={() => setFillerPreview(false)}
+          onDraft={(source, result) => {
+            setFillerPreview(false);
+            setShowSource(true);
+            setEditSource(source);
+            setDraft(result);
+            setEditing(true);
+          }}
+        />
+      )}
       {remember && (
         <Modal
           title="Remember correction"
@@ -698,7 +751,12 @@ export function TranscriptCard({
               placeholder="e.g. Delulu"
             />
           </label>
-          <SuggestedRulePreview source={record} examples={ruleExamples} heard={heard} correct={correct} />
+          <SuggestedRulePreview
+            source={record}
+            examples={ruleExamples}
+            heard={heard}
+            correct={correct}
+          />
         </Modal>
       )}
       {identifierPreview && (

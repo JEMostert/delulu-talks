@@ -8,7 +8,8 @@ function textBytes(record: TranscriptRecord): number {
   const encoder = new TextEncoder();
   return Object.values(record).reduce<number>(
     (bytes, value) =>
-      bytes + (typeof value === "string" ? encoder.encode(value).byteLength : 0),
+      bytes +
+      (typeof value === "string" ? encoder.encode(value).byteLength : 0),
     0,
   );
 }
@@ -29,12 +30,14 @@ export function retainSessionTranscripts(
     if (
       retained.size >= SESSION_TRANSCRIPT_LIMIT ||
       (retained.size > 0 && bytes + size > SESSION_TRANSCRIPT_TEXT_BYTES)
-    ) break;
+    )
+      break;
     retained.add(record.id);
     bytes += size;
   }
   return records.filter(
-    (record) => !record.sessionOnly || pinned.has(record.id) || retained.has(record.id),
+    (record) =>
+      !record.sessionOnly || pinned.has(record.id) || retained.has(record.id),
   );
 }
 
@@ -47,7 +50,9 @@ export function rememberSessionTranscript(
   if (!record.sessionOnly) return;
   records.set(record.id, record);
   const retained = new Set(
-    retainSessionTranscripts([...records.values()], pinnedIds).map((item) => item.id),
+    retainSessionTranscripts([...records.values()], pinnedIds).map(
+      (item) => item.id,
+    ),
   );
   for (const id of records.keys()) {
     if (!retained.has(id)) records.delete(id);

@@ -16,5 +16,12 @@ export type ProjectVocabularySnapshot = {
 };
 
 export function emptyProjectVocabulary(): ProjectVocabularySnapshot {
-  return { repository: null, symbols: [], filesScanned: 0, truncated: false, warnings: [], choices: [] };
+  return {
+    repository: null,
+    symbols: [],
+    filesScanned: 0,
+    truncated: false,
+    warnings: [],
+    choices: [],
+  };
 }

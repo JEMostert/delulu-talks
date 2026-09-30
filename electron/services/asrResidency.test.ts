@@ -48,12 +48,14 @@ const harness = `
     constructor() { this.name = workers.length === 0 ? "speech" : "magic"; workers.push(this); }
     get busy() { return this.active > 0; }
     async request(command) {
+      if (command === "capabilities") return { languageHints: { supported: true, languages: ["auto","nl","en"] }, engine: this.name === "speech" ? "speech" : "writing", modelFamily: this.name === "speech" ? "r2t2" : "qwen3.5", backend: this.name === "magic" ? "transformers" : process.platform === "darwin" ? "mlx" : process.platform === "win32" ? "cuda-transformers" : "cuda-vllm" };
+
       this.requests.push(command);
       events.push(this.name + ":" + command);
       this.active++;
       try {
         if (this.gate) await this.gate.promise;
-        return { text: "Fixture output", device: "fixture", processingTimeMs: 1 };
+        return { text: "Fixture output", device: "fixture", loaded: true, residency: "resident", warmup: "complete", processingTimeMs: 1 };
       } finally { this.active--; }
     }
     async stopAndWait() {
@@ -69,6 +71,11 @@ const harness = `
     installGate = null;
     constructor() { installers.push(this); }
     async ready() { return true; }
+    setupLog = {activeId: "fixture", begin() {}, finish() {}};
+    recordSetupStage() {}
+    commit() {}
+    discard() {}
+    async stopAndWait() {}
     stop() {}
     rollback() {}
     async install(_kind, _settings, progress) {
@@ -461,7 +468,9 @@ for (const kind of ["speech", "magic"]) {
       await ticks();
       assert.equal(service.${status}().engine, "error");
       assert.equal(service.${status}().detail, "Current automatic load failure");
-      assert.equal(readFileSync(join(root, ${JSON.stringify(diagnostic)}), "utf8"), "Current worker diagnostic\\nCurrent automatic load failure\\n");
+      const diagnosticLog = readFileSync(join(root, ${JSON.stringify(diagnostic)}), "utf8");
+      assert.equal(JSON.parse(diagnosticLog).backendOutputIncluded, false);
+      assert.equal(diagnosticLog.includes("Current worker diagnostic"), false);
       assert.deepEqual(${kind}.requests, [${JSON.stringify(load)}]);
       assert.equal(service.isBusy, false);
       assert.equal(deadlines().length, 0);

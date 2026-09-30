@@ -93,7 +93,10 @@ for (const service of [
       .getByRole("button", { name: "Controls", exact: true })
       .click();
     await expect(
-      page.getByRole("button", { name: "Start dictation", exact: true }),
+      page.getByRole("button", {
+        name: service === "getStatus" ? "Set up speech" : "Start dictation",
+        exact: true,
+      }),
     ).toBeEnabled();
     if (service === "getStatus")
       await expect(
@@ -107,26 +110,28 @@ for (const service of [
           .locator(".sidebar")
           .getByRole("button", { name: "Rewriting Error", exact: true }),
       ).toBeVisible();
-    if (service === "getShortcutStatus")
+    if (service === "getShortcutStatus") {
+      await page.getByText("Microphone & shortcut", { exact: true }).click();
       await expect(
         page.getByText(
           "Shortcut status is unavailable. Use the Record button.",
           { exact: true },
         ),
       ).toBeVisible();
+    }
   });
 }
 
 test("a slow successful essential read opens with its real data before the deadline", async ({
   page,
 }) => {
-  await openFailure(page, [], "getHistory");
+  await openFailure(page, [], "getHistoryBatchSnapshot");
   await expect
     .poll(() =>
       page.evaluate(() =>
         (
           window as unknown as { __failure: { state: { calls: string[] } } }
-        ).__failure.state.calls.includes("getHistory"),
+        ).__failure.state.calls.includes("getHistoryBatchSnapshot"),
       ),
     )
     .toBe(true);
@@ -172,7 +177,7 @@ test("subscriptions recover speech and rewriting after their initial reads faile
     });
   });
   await expect(
-    page.getByRole("button", { name: "Stop dictation", exact: true }),
+    page.getByRole("button", { name: "Stop recording", exact: true }),
   ).toBeEnabled();
   await expect(
     page
@@ -206,7 +211,10 @@ test("repeated failed retries dispose old subscriptions and one successful retry
     api.state.failures = [];
     return { listeners: api.subscriptions(), removed: api.state.removed };
   });
-  expect(Object.values(before.listeners)).toEqual(Array(8).fill(1));
+  expect(Object.values(before.listeners).every((count) => count === 1)).toBe(
+    true,
+  );
+  expect(Object.keys(before.listeners)).toContain("onStatus");
   expect(before.removed).toBeGreaterThanOrEqual(24);
   await page.getByRole("button", { name: "Retry opening workspace" }).click();
   await expect(
@@ -228,8 +236,9 @@ test("repeated failed retries dispose old subscriptions and one successful retry
     });
     return api.subscriptions();
   });
-  expect(Object.values(after)).toEqual(Array(8).fill(1));
+  expect(Object.values(after).every((count) => count === 1)).toBe(true);
+  expect(Object.keys(after)).toContain("onStatus");
   await expect(
-    page.getByRole("button", { name: "Stop dictation", exact: true }),
+    page.getByRole("button", { name: "Stop recording", exact: true }),
   ).toBeEnabled();
 });

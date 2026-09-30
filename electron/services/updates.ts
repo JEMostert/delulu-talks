@@ -1,7 +1,11 @@
 import type { UpdateStatus } from "../../src/types";
 
 type UpdateInfo = { version: string };
-type DownloadAttempt = { version: string; completed: boolean; confirmed: boolean };
+type DownloadAttempt = {
+  version: string;
+  completed: boolean;
+  confirmed: boolean;
+};
 type ProgressInfo = {
   percent: number;
   transferred: number;
@@ -115,7 +119,11 @@ export class UpdateService {
       if (info.version !== attempt.version) {
         this.downloadAttempt = null;
         this.readyVersion = null;
-        this.update({ phase: "error", message: "Downloaded update does not match the selected version. Check for updates and retry." });
+        this.update({
+          phase: "error",
+          message:
+            "Downloaded update does not match the selected version. Check for updates and retry.",
+        });
         return;
       }
       attempt.confirmed = true;
@@ -130,7 +138,10 @@ export class UpdateService {
 
   async check(): Promise<UpdateStatus> {
     if (
-      !this.updater || this.downloading || this.downloadAttempt || this.readyVersion ||
+      !this.updater ||
+      this.downloading ||
+      this.downloadAttempt ||
+      this.readyVersion ||
       ["downloading", "downloaded"].includes(this.status.phase)
     )
       return this.getStatus();
@@ -154,18 +165,25 @@ export class UpdateService {
   async download(): Promise<UpdateStatus> {
     if (!this.updater) return this.getStatus();
     if (this.downloading) return this.downloading;
-    if (this.downloadAttempt || !this.status.version ||
-      (this.status.phase !== "available" && this.status.phase !== "error"))
+    if (
+      this.downloadAttempt ||
+      !this.status.version ||
+      (this.status.phase !== "available" && this.status.phase !== "error")
+    )
       return this.getStatus();
     this.start();
     const attempt: DownloadAttempt = {
-      version: this.status.version, completed: false, confirmed: false,
+      version: this.status.version,
+      completed: false,
+      confirmed: false,
     };
     this.readyVersion = null;
     this.downloadAttempt = attempt;
     this.update({
-      phase: "downloading", version: attempt.version,
-      message: `Starting version ${attempt.version} download`, percent: 0,
+      phase: "downloading",
+      version: attempt.version,
+      message: `Starting version ${attempt.version} download`,
+      percent: 0,
     });
     this.downloading = (async () => {
       try {
@@ -184,23 +202,37 @@ export class UpdateService {
         }
       }
       return this.getStatus();
-    })().finally(() => { this.downloading = null; });
+    })().finally(() => {
+      this.downloading = null;
+    });
     return this.downloading;
   }
 
   private stageCompletedDownload(attempt: DownloadAttempt): void {
-    if (this.downloadAttempt !== attempt || !attempt.completed || !attempt.confirmed) return;
+    if (
+      this.downloadAttempt !== attempt ||
+      !attempt.completed ||
+      !attempt.confirmed
+    )
+      return;
     this.readyVersion = attempt.version;
     this.downloadAttempt = null;
     this.update({
-      phase: "downloaded", version: attempt.version,
-      message: `Version ${attempt.version} is ready to install`, percent: 100,
+      phase: "downloaded",
+      version: attempt.version,
+      message: `Version ${attempt.version} is ready to install`,
+      percent: 100,
     });
   }
 
   install(): void {
-    if (!this.updater || this.status.phase !== "downloaded" ||
-        !this.readyVersion || this.status.version !== this.readyVersion) return;
+    if (
+      !this.updater ||
+      this.status.phase !== "downloaded" ||
+      !this.readyVersion ||
+      this.status.version !== this.readyVersion
+    )
+      return;
     if (!this.canInstall())
       throw new Error(
         "Finish recording, processing, or model setup before restarting",

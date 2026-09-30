@@ -1,18 +1,37 @@
 import type { SelectedTextApi } from "./selectedText";
-export type SetupState = "running" | "cancelling" | "cancelled" | "complete" | "failed";
+export type SetupState =
+  "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { DictationMode } from "./technicalDictation";
 import type { ImportQueueSnapshot } from "./importQueue";
 import type { ExportTemplateRequest } from "./exportTemplates";
-import type { ActivePersonalProfile, CaptureProfileSnapshot, ProfileActivationCommand } from "./activePersonalProfile";
+import type {
+  ActivePersonalProfile,
+  CaptureProfileSnapshot,
+  ProfileActivationCommand,
+} from "./activePersonalProfile";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
-import type { SpeechBackendId, SpeechExecution, SpeechIdentity } from "./speechModels";
+import type {
+  SpeechBackendId,
+  SpeechExecution,
+  SpeechIdentity,
+} from "./speechModels";
 import type { DomainFailure } from "./domainErrors";
-export type { DomainErrorCode, DomainFailure, RetryPolicy } from "./domainErrors";
+export type {
+  DomainErrorCode,
+  DomainFailure,
+  RetryPolicy,
+} from "./domainErrors";
 
 import type { ProjectVocabularySnapshot } from "./projectVocabulary";
 export type Page =
-  "home" | "lab" | "models" | "vocabulary" | "history" | "settings" | "technical";
+  | "home"
+  | "lab"
+  | "models"
+  | "vocabulary"
+  | "history"
+  | "settings"
+  | "technical";
 
 export type SpeechModelId = "r2t2" | "r2t2Mlx";
 /** Historical Qwen speech results retain their identity; it is never an active engine. */
@@ -26,7 +45,13 @@ export type MagicPreset =
   | "structured"
   | "prompt";
 export type DictationPhase =
-  "idle" | "preparing" | "loading" | "listening" | "paused" | "transcribing" | "error";
+  | "idle"
+  | "preparing"
+  | "loading"
+  | "listening"
+  | "paused"
+  | "transcribing"
+  | "error";
 export type EnginePhase =
   "missing" | "unloaded" | "settingUp" | "loading" | "ready" | "error";
 export type MagicPhase =
@@ -108,12 +133,23 @@ export type AppSettings = {
 };
 
 export type SetupStage =
-  | "runtime-check" | "runtime-prepare" | "runtime-packages"
-  | "runtime-download" | "runtime-install" | "runtime-build" | "runtime-validate"
-  | "model-prepare" | "model-download" | "model-load" | "model-conversion"
-  | "warmup" | "model-loaded" | "ready";
+  | "runtime-check"
+  | "runtime-prepare"
+  | "runtime-packages"
+  | "runtime-download"
+  | "runtime-install"
+  | "runtime-build"
+  | "runtime-validate"
+  | "model-prepare"
+  | "model-download"
+  | "model-load"
+  | "model-conversion"
+  | "warmup"
+  | "model-loaded"
+  | "ready";
 
-export type ModelResidency = "unknown" | "unloaded" | "loading" | "resident" | "unloading";
+export type ModelResidency =
+  "unknown" | "unloaded" | "loading" | "resident" | "unloading";
 export type WarmupState = "unknown" | "not-started" | "warming" | "complete";
 export type BackendCapabilities = {
   schemaVersion: 1;
@@ -258,7 +294,10 @@ export type HistoryRetentionPreview = {
   totalSaved: number;
   retainedCount: number;
   effects: HistoryRetentionEffects;
-  affected: { record: TranscriptRecord; reason: "age" | "count" | "ageAndCount" }[];
+  affected: {
+    record: TranscriptRecord;
+    reason: "age" | "count" | "ageAndCount";
+  }[];
 };
 
 /** Diagnostics of captured mono PCM before resampling/encoding, not hardware gain. */
@@ -474,7 +513,10 @@ export type ModelCacheCleanupResult = {
 
 export type DeluluApi = SelectedTextApi & {
   previewModelCache(): Promise<ModelCachePreview>;
-  cleanupModelCache(token: string, ids: string[]): Promise<ModelCacheCleanupResult>;
+  cleanupModelCache(
+    token: string,
+    ids: string[],
+  ): Promise<ModelCacheCleanupResult>;
   getRuleUsage(): Promise<RuleUsage>;
   resetRuleUsage(): Promise<RuleUsage>;
   exportEncryptedHistory(passphrase: string): Promise<string | null>;
@@ -489,7 +531,9 @@ export type DeluluApi = SelectedTextApi & {
   getPasteRecovery(): Promise<PasteRecovery | null>;
   copyInstead(id: string): Promise<void>;
   dismissPasteRecovery(id: string): Promise<void>;
-  onPasteRecovery(callback: (recovery: PasteRecovery | null) => void): () => void;
+  onPasteRecovery(
+    callback: (recovery: PasteRecovery | null) => void,
+  ): () => void;
   getLocalDataOverview(): Promise<LocalDataOverview>;
   pasteLastTranscript(): Promise<PasteLastStatus>;
   getPasteLastStatus(): Promise<PasteLastStatus>;
@@ -498,7 +542,9 @@ export type DeluluApi = SelectedTextApi & {
   discardFailedRecording(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
   managePersonalProfile(command: PersonalProfileCommand): Promise<AppSettings>;
-  activatePersonalProfile(command: ProfileActivationCommand): Promise<AppSettings>;
+  activatePersonalProfile(
+    command: ProfileActivationCommand,
+  ): Promise<AppSettings>;
   getStatus(): Promise<DictationStatus>;
   getMagicStatus(): Promise<MagicStatus>;
   getShortcutStatus(): Promise<ShortcutStatus>;
@@ -530,7 +576,10 @@ export type DeluluApi = SelectedTextApi & {
   authorizePaste(): Promise<void>;
   testPaste(): Promise<void>;
   updateTranscript(id: string, text: string | null): Promise<TranscriptRecord>;
-  setTranscriptTitle(id: string, title: string | null): Promise<TranscriptRecord>;
+  setTranscriptTitle(
+    id: string,
+    title: string | null,
+  ): Promise<TranscriptRecord>;
   setTranscriptRewrite(
     id: string,
     result: MagicRewriteResult | null,
@@ -542,12 +591,25 @@ export type DeluluApi = SelectedTextApi & {
   getHistoryBatchSnapshot(): Promise<HistoryBatchSnapshot>;
   stageHistoryDeletion(ids: string[]): Promise<HistoryDeletionState>;
   undoHistoryDeletion(token: string): Promise<void>;
-  onHistoryBatchChanged(callback: (snapshot: HistoryBatchSnapshot) => void): () => void;
-  exportHistorySelection(ids: string[], format: ExportFormat): Promise<string | null>;
-  previewHistoryRetention(policy: HistoryRetentionPolicy): Promise<HistoryRetentionPreview>;
+  onHistoryBatchChanged(
+    callback: (snapshot: HistoryBatchSnapshot) => void,
+  ): () => void;
+  exportHistorySelection(
+    ids: string[],
+    format: ExportFormat,
+  ): Promise<string | null>;
+  previewHistoryRetention(
+    policy: HistoryRetentionPolicy,
+  ): Promise<HistoryRetentionPreview>;
   applyHistoryRetention(token: string): Promise<string[]>;
-  onHistoryRetentionApplied(callback: (removedIds: string[]) => void): () => void;
-  chooseProjectIdentifier(input: {repository: string; rawSpeech: string; symbol: string}): Promise<ProjectVocabularySnapshot>;
+  onHistoryRetentionApplied(
+    callback: (removedIds: string[]) => void,
+  ): () => void;
+  chooseProjectIdentifier(input: {
+    repository: string;
+    rawSpeech: string;
+    symbol: string;
+  }): Promise<ProjectVocabularySnapshot>;
   getProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
   selectProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
   refreshProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
@@ -664,7 +726,6 @@ export type RuntimeDiagnostics = {
   checkedAt: number;
 };
 
-
 export type SetupRuntimeObservation = {
   kind: "speech" | "magic";
   root: string;
@@ -680,7 +741,11 @@ export type SetupRuntimeObservation = {
     executable: string | null;
     version: string | null;
     machine: string | null;
-    modules: Array<{ name: string; status: "located" | "missing" | "unknown"; location: string | null }>;
+    modules: Array<{
+      name: string;
+      status: "located" | "missing" | "unknown";
+      location: string | null;
+    }>;
     detail: string;
   };
   bootstrap: SetupRuntimeObservation["interpreter"][];
@@ -702,7 +767,6 @@ export type RuntimeSetupSnapshot = {
   space: SetupSpaceSnapshot | null;
   runtimes: SetupRuntimeObservation[];
 };
-
 
 export type SetupDiskCapacity = {
   label: string;

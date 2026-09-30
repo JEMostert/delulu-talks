@@ -44,8 +44,9 @@ export function RewriteSetup({
         <WandSparkles className="h-5 w-5 text-accent-ink" />
       </div>
       <p className="mt-3 text-sm text-muted">
-        Use Rewrite beside any transcript to shorten, polish, make bullet points, write a professional message, organize, or build
-        a prompt. Compare the preview before applying it, and undo at any time.
+        Use Rewrite beside any transcript to shorten, polish, make bullet
+        points, write a professional message, organize, or build a prompt.
+        Compare the preview before applying it, and undo at any time.
       </p>
       <div className="mt-4 flex flex-wrap items-end gap-4">
         <label className="field min-w-[180px] flex-1">
@@ -68,15 +69,20 @@ export function RewriteSetup({
           </select>
         </label>
         <div className="runtime-actions">
-          {onCancelSetupMagic && ["running", "cancelling"].includes(magicStatus.setupState ?? "") && (
-            <button
-              className="secondary-button"
-              disabled={magicStatus.setupState === "cancelling"}
-              onClick={onCancelSetupMagic}
-            >
-              {magicStatus.setupState === "cancelling" ? "Cancelling…" : "Cancel rewriting setup"}
-            </button>
-          )}
+          {onCancelSetupMagic &&
+            ["running", "cancelling"].includes(
+              magicStatus.setupState ?? "",
+            ) && (
+              <button
+                className="secondary-button"
+                disabled={magicStatus.setupState === "cancelling"}
+                onClick={onCancelSetupMagic}
+              >
+                {magicStatus.setupState === "cancelling"
+                  ? "Cancelling…"
+                  : "Cancel rewriting setup"}
+              </button>
+            )}
           {magicStatus.engine === "ready" ? (
             <button
               className="secondary-button"

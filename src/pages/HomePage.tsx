@@ -4,18 +4,19 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CaptureDiagnostics } from "../components/CaptureDiagnostics";
 import { InputLevel } from "../components/InputLevel";
 import { ProfileActivationControls } from "../components/ProfileActivationControls";
-import type { CaptureProfileSnapshot, ProfileActivationCommand } from "../activePersonalProfile";
+import type {
+  CaptureProfileSnapshot,
+  ProfileActivationCommand,
+} from "../activePersonalProfile";
 import {
   ArrowUpRight,
   Check,
   ClipboardPaste,
-  Copy,
   Keyboard,
   Mic,
   Settings2,
   WandSparkles,
 } from "lucide-react";
-import { deliveredText } from "../transcriptText";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { MAX_CAPTURE_DURATION_MS } from "../captureLimits";
 import {
@@ -109,7 +110,9 @@ export function HomePage({
   const startedFromHome = useRef(false);
   useEffect(() => {
     if (recording && startedFromHome.current) {
-      document.getElementById("recording-stop-control")?.focus({ preventScroll: true });
+      document
+        .getElementById("recording-stop-control")
+        ?.focus({ preventScroll: true });
       startedFromHome.current = false;
     } else if (status.phase === "error") {
       startedFromHome.current = false;
@@ -140,7 +143,14 @@ export function HomePage({
           <ArrowUpRight className="w-3.5 h-3.5" />
         </button>
       </div>
-      <LiveCaptureStatus settings={s} speech={status} rewrite={magicStatus} shortcut={shortcutStatus} devices={devices} capabilities={capabilities} />
+      <LiveCaptureStatus
+        settings={s}
+        speech={status}
+        rewrite={magicStatus}
+        shortcut={shortcutStatus}
+        devices={devices}
+        capabilities={capabilities}
+      />
       <div className="grid gap-4 items-start grid-cols-[minmax(0,1.55fr)_minmax(300px,1fr)] max-[1150px]:grid-cols-1">
         <section
           className="min-w-0 rounded-2xl border border-line bg-surface shadow-panel backdrop-blur-xl overflow-hidden"
@@ -173,11 +183,13 @@ export function HomePage({
                     onNavigate("models");
                   } else {
                     startedFromHome.current = true;
-                    void onToggleRecord().then((started) => {
-                      if (!started) startedFromHome.current = false;
-                    }).catch(() => {
-                      startedFromHome.current = false;
-                    });
+                    void onToggleRecord()
+                      .then((started) => {
+                        if (!started) startedFromHome.current = false;
+                      })
+                      .catch(() => {
+                        startedFromHome.current = false;
+                      });
                   }
                 }}
                 aria-label={needsSetup ? "Set up speech" : "Start dictation"}
@@ -202,9 +214,11 @@ export function HomePage({
               </div>
               <span className="text-[11px] text-muted">
                 {recording
-                  ? status.phase === "paused" ? "Paused — microphone open; Resume or Stop in the header." : portal && s.shortcutMode === "hold"
-                    ? "Release the shortcut or press Stop in the header to finish."
-                    : "Press the shortcut again or press Stop in the header to finish."
+                  ? status.phase === "paused"
+                    ? "Paused — microphone open; Resume or Stop in the header."
+                    : portal && s.shortcutMode === "hold"
+                      ? "Release the shortcut or press Stop in the header to finish."
+                      : "Press the shortcut again or press Stop in the header to finish."
                   : portal && s.shortcutMode === "hold"
                     ? "Hold your shortcut, or press Record, and just talk."
                     : "Press your shortcut or Record to start; press again to finish."}
@@ -236,7 +250,12 @@ export function HomePage({
               onChange={save}
             />
           </div>
-          <ProfileActivationControls settings={s} busy={busy || saving} captureProfile={captureProfile} onActivate={onActivateProfile} />
+          <ProfileActivationControls
+            settings={s}
+            busy={busy || saving}
+            captureProfile={captureProfile}
+            onActivate={onActivateProfile}
+          />
           <details className="border-t border-line">
             <summary className="cursor-pointer px-3.5 py-3 text-[12px] font-[650] text-muted">
               Microphone & shortcut
@@ -276,7 +295,12 @@ export function HomePage({
                   className="w-full min-h-[34px] px-[9px] py-[7px] text-[12px] bg-input"
                   value={s.dictationMode ?? "prose"}
                   disabled={saving || busy}
-                  onChange={(e) => save({ dictationMode: e.target.value as AppSettings["dictationMode"] })}
+                  onChange={(e) =>
+                    save({
+                      dictationMode: e.target
+                        .value as AppSettings["dictationMode"],
+                    })
+                  }
                 >
                   <option value="prose">Prose</option>
                   <option value="code">Code symbols</option>
@@ -307,21 +331,31 @@ export function HomePage({
               </ControlField>
               {s.dictationMode && s.dictationMode !== "prose" && (
                 <div className="col-span-full text-[11px] text-muted">
-                  Spoken symbols become text after recognition. Original speech stays in history.
-                  Vocabulary expansion and automatic rewriting are bypassed. Command text is never executed by Delulu Talks.
+                  Spoken symbols become text after recognition. Original speech
+                  stays in history. Vocabulary expansion and automatic rewriting
+                  are bypassed. Command text is never executed by Delulu Talks.
                   <details className="mt-1">
-                    <summary className="cursor-pointer">Spoken symbol guide</summary>
-                    <p className="mt-1">Say “open parenthesis”, “close parenthesis”, “equals”, “semicolon”,
-                      “forward slash”, “backslash”, “new line”, “tab” or “space”.
-                      Say “literal” before a word to keep that word unchanged.
-                      Ordinary words keep their spacing; operators receive spaces.</p>
-                    <p className="mt-2">Identifiers: say “camel case user account end identifier” for userAccount.
-                      Also use pascal case, snake case, kebab case or literal spelling.
-                      Literal spelling accepts letters, digit names and “capital”/“hoofdletter”.</p>
+                    <summary className="cursor-pointer">
+                      Spoken symbol guide
+                    </summary>
+                    <p className="mt-1">
+                      Say “open parenthesis”, “close parenthesis”, “equals”,
+                      “semicolon”, “forward slash”, “backslash”, “new line”,
+                      “tab” or “space”. Say “literal” before a word to keep that
+                      word unchanged. Ordinary words keep their spacing;
+                      operators receive spaces.
+                    </p>
+                    <p className="mt-2">
+                      Identifiers: say “camel case user account end identifier”
+                      for userAccount. Also use pascal case, snake case, kebab
+                      case or literal spelling. Literal spelling accepts
+                      letters, digit names and “capital”/“hoofdletter”.
+                    </p>
                     <ul className="mt-2 grid gap-1">
                       {technicalDictationGuide.map((entry) => (
                         <li key={entry.label}>
-                          {entry.phrases.join(" / ")} → <code>{JSON.stringify(entry.output)}</code>
+                          {entry.phrases.join(" / ")} →{" "}
+                          <code>{JSON.stringify(entry.output)}</code>
                         </li>
                       ))}
                     </ul>
@@ -375,7 +409,10 @@ export function HomePage({
             </div>
             <InputLevel />
             <CaptureDiagnostics value={captureDiagnostics} />
-            <p className="caption">Recordings finish at {MAX_CAPTURE_DURATION_MS / 60_000} minutes; high sample-rate inputs may finish sooner to bound memory.</p>
+            <p className="caption">
+              Recordings finish at {MAX_CAPTURE_DURATION_MS / 60_000} minutes;
+              high sample-rate inputs may finish sooner to bound memory.
+            </p>
             {!shortcutStatus.registered && (
               <p className="control-warning">{shortcutStatus.message}</p>
             )}
@@ -410,6 +447,7 @@ export function HomePage({
                 </span>
                 <button
                   className="secondary-button text-[11px] min-h-[31px] px-[9px] py-1.5"
+                  disabled={pasteLastBusy}
                   onClick={onPasteLast}
                 >
                   <ClipboardPaste /> Paste last

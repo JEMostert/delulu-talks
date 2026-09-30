@@ -1,4 +1,7 @@
-import type { CaptureProfileSnapshot, ProfileActivationCommand } from "../activePersonalProfile";
+import type {
+  CaptureProfileSnapshot,
+  ProfileActivationCommand,
+} from "../activePersonalProfile";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
@@ -57,12 +60,14 @@ export function useWorkspace() {
     remainingSeconds: 0,
     message: "",
   });
-  const [captureProfile, setCaptureProfile] = useState<CaptureProfileSnapshot | null>(null);
+  const [captureProfile, setCaptureProfile] =
+    useState<CaptureProfileSnapshot | null>(null);
   const [history, setHistory] = useState<TranscriptRecord[]>([]);
   // Session-only view state survives History navigation and page remounts.
   const [historyView, setHistoryView] =
     useState<HistoryViewState>(DEFAULT_HISTORY_VIEW);
-  const [historyDeletion, setHistoryDeletion] = useState<HistoryDeletionState | null>(null);
+  const [historyDeletion, setHistoryDeletion] =
+    useState<HistoryDeletionState | null>(null);
   const [devices, setDevices] = useState<MicrophoneDevice[]>([
     { deviceId: "default", label: "System default" },
   ]);
@@ -78,8 +83,11 @@ export function useWorkspace() {
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const serviceRecovery = useServiceRecovery({
-    speech: setStatus, rewriting: setMagicStatus, shortcut: setShortcutStatus,
-    platform: setCapabilities, updates: setUpdateStatus,
+    speech: setStatus,
+    rewriting: setMagicStatus,
+    shortcut: setShortcutStatus,
+    platform: setCapabilities,
+    updates: setUpdateStatus,
   });
   const settingsRef = useRef(settings);
   const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
@@ -119,8 +127,10 @@ export function useWorkspace() {
         if (!isCurrent()) return;
         received.add(name);
         const services: Record<string, RecoveryService> = {
-          "speech status": "speech", "rewriting status": "rewriting",
-          "shortcut status": "shortcut", "update status": "updates",
+          "speech status": "speech",
+          "rewriting status": "rewriting",
+          "shortcut status": "shortcut",
+          "update status": "updates",
         };
         if (services[name]) serviceRecovery.received(services[name]);
         receive(value);
@@ -139,21 +149,29 @@ export function useWorkspace() {
       setHistoryDeletion(snapshot.deletion);
     };
     const subscriptions = [
-      bridge.onStatus(subscribe("speech status", (next: DictationStatus) => {
-        setStatus(next);
-        if (next.phase === "idle" || next.phase === "error") setCaptureProfile(null);
-      })),
+      bridge.onStatus(
+        subscribe("speech status", (next: DictationStatus) => {
+          setStatus(next);
+          if (next.phase === "idle" || next.phase === "error")
+            setCaptureProfile(null);
+        }),
+      ),
       bridge.onPasteLastStatus(subscribe("paste last", setPasteLastStatus)),
       bridge.onMagicStatus(subscribe("rewriting status", setMagicStatus)),
       bridge.onSettingsChanged(subscribe("settings", receiveSettings)),
-      bridge.onNavigate((next) => { if (isCurrent()) setPage(next); }),
+      bridge.onNavigate((next) => {
+        if (isCurrent()) setPage(next);
+      }),
       bridge.onShortcutStatus(subscribe("shortcut status", setShortcutStatus)),
       bridge.onUpdateStatus(subscribe("update status", setUpdateStatus)),
       bridge.onRecorderCommand((command) => {
         if (!isCurrent()) return;
-        if (command.action === "start") setCaptureProfile(command.captureProfile ?? null);
+        if (command.action === "start")
+          setCaptureProfile(command.captureProfile ?? null);
         if (command.action === "cancel") setCaptureProfile(null);
-        void recorder.handle(command).catch((reason) => { if (isCurrent()) report(reason); });
+        void recorder.handle(command).catch((reason) => {
+          if (isCurrent()) report(reason);
+        });
       }),
       bridge.onTranscript((record) => {
         if (!isCurrent()) return;
@@ -165,15 +183,20 @@ export function useWorkspace() {
         if (!isCurrent()) return;
         const removed = new Set(removedIds);
         if (!initialized) for (const id of removed) startupRemoved.add(id);
-        setHistory((items) => items.filter((record) => !removed.has(record.id)));
+        setHistory((items) =>
+          items.filter((record) => !removed.has(record.id)),
+        );
       }),
       bridge.onHistoryBatchChanged(receiveBatch),
     ];
-    void bridge.recorderReady().catch((reason) => { if (isCurrent()) report(reason); });
+    void bridge.recorderReady().catch((reason) => {
+      if (isCurrent()) report(reason);
+    });
     void bridge
       .getPasteLastStatus()
       .then((state) => {
-        if (isCurrent() && !received.has("paste last")) setPasteLastStatus(state);
+        if (isCurrent() && !received.has("paste last"))
+          setPasteLastStatus(state);
       })
       .catch((reason) => {
         if (isCurrent()) report(reason);
@@ -205,10 +228,15 @@ export function useWorkspace() {
         }
         if (!received.has("settings")) receiveSettings(next.value);
         if (!received.has("history batch")) {
-          const merged = new Map(records.value.records.map((record) => [record.id, record]));
+          const merged = new Map(
+            records.value.records.map((record) => [record.id, record]),
+          );
           for (const [id, record] of startupAdded) merged.set(id, record);
-          setHistory([...merged.values()].filter((record) => !startupRemoved.has(record.id))
-            .sort((a, b) => b.createdAt - a.createdAt));
+          setHistory(
+            [...merged.values()]
+              .filter((record) => !startupRemoved.has(record.id))
+              .sort((a, b) => b.createdAt - a.createdAt),
+          );
           setHistoryDeletion(records.value.deletion);
         }
         initialized = true;
@@ -276,7 +304,9 @@ export function useWorkspace() {
       startup.abort();
       serviceRecovery.cancel();
       subscriptions.forEach((remove) => remove());
-      void recorder.cancel().catch(() => { /* The retired owner cannot publish an error. */ });
+      void recorder.cancel().catch(() => {
+        /* The retired owner cannot publish an error. */
+      });
     };
   }, [startupAttempt]);
 
@@ -292,7 +322,11 @@ export function useWorkspace() {
         .catch((reason: unknown) => {
           if (alive && current === revision) {
             setDevices([
-              { deviceId: "default", label: "System default", labelKnown: false },
+              {
+                deviceId: "default",
+                label: "System default",
+                labelKnown: false,
+              },
             ]);
             report(reason);
           }
@@ -361,15 +395,28 @@ export function useWorkspace() {
     return run;
   }
 
-  function managePersonalProfile(command: PersonalProfileCommand): Promise<boolean> {
-    const verb = command.action === "delete" ? "deleted" : command.action === "rename" ? "renamed" : "saved";
+  function managePersonalProfile(
+    command: PersonalProfileCommand,
+  ): Promise<boolean> {
+    const verb =
+      command.action === "delete"
+        ? "deleted"
+        : command.action === "rename"
+          ? "renamed"
+          : "saved";
     return action(async () => {
       receiveSettings(await bridge.managePersonalProfile(command));
     }, `Profile ${verb} · active settings unchanged`);
   }
 
-  function activateProfile(command: ProfileActivationCommand): Promise<boolean> {
-    return action(async () => receiveSettings(await bridge.activatePersonalProfile(command)), "Profile switched");
+  function activateProfile(
+    command: ProfileActivationCommand,
+  ): Promise<boolean> {
+    return action(
+      async () =>
+        receiveSettings(await bridge.activatePersonalProfile(command)),
+      "Profile switched",
+    );
   }
 
   async function updateTranscript(
@@ -406,16 +453,17 @@ export function useWorkspace() {
       await bridge.pasteLastTranscript();
     });
   };
-  const exportSelection = (ids: string[], format: ExportFormat) => action(async () => {
-    const path = await bridge.exportHistorySelection(ids, format);
-    if (path) setToast(`Exported ${ids.length} transcripts`);
-  });
-  const deleteSelection = (ids: string[]) => action(async () => {
-    await bridge.stageHistoryDeletion(ids);
-  });
-  const undoDeletion = (token: string) => action(
-    () => bridge.undoHistoryDeletion(token), "Deletion undone",
-  );
+  const exportSelection = (ids: string[], format: ExportFormat) =>
+    action(async () => {
+      const path = await bridge.exportHistorySelection(ids, format);
+      if (path) setToast(`Exported ${ids.length} transcripts`);
+    });
+  const deleteSelection = (ids: string[]) =>
+    action(async () => {
+      await bridge.stageHistoryDeletion(ids);
+    });
+  const undoDeletion = (token: string) =>
+    action(() => bridge.undoHistoryDeletion(token), "Deletion undone");
   return {
     operations,
     page,

@@ -65,22 +65,25 @@ export function SpeechSetup({
             {status.setupState === "cancelled"
               ? status.message
               : status.engine === "missing"
-              ? status.migrationRequired
-                ? `Update the dedicated speech runtime for ${model.name}.`
-                : `Install the speech runtime and download the ${model.name} weights. ${model.description}`
-              : status.message}
+                ? status.migrationRequired
+                  ? `Update the dedicated speech runtime for ${model.name}.`
+                  : `Install the speech runtime and download the ${model.name} weights. ${model.description}`
+                : status.message}
           </p>
         </div>
         <div className="runtime-actions justify-end">
-          {onCancelSetup && ["running", "cancelling"].includes(status.setupState ?? "") && (
-            <button
-              className="secondary-button"
-              disabled={status.setupState === "cancelling"}
-              onClick={onCancelSetup}
-            >
-              {status.setupState === "cancelling" ? "Cancelling…" : "Cancel setup"}
-            </button>
-          )}
+          {onCancelSetup &&
+            ["running", "cancelling"].includes(status.setupState ?? "") && (
+              <button
+                className="secondary-button"
+                disabled={status.setupState === "cancelling"}
+                onClick={onCancelSetup}
+              >
+                {status.setupState === "cancelling"
+                  ? "Cancelling…"
+                  : "Cancel setup"}
+              </button>
+            )}
           {status.engine === "ready" ? (
             <button
               className="secondary-button"
@@ -100,7 +103,11 @@ export function SpeechSetup({
               </button>
             )
           )}
-          <button className="primary-button" disabled={busy || setupPending} onClick={onSetup}>
+          <button
+            className="primary-button"
+            disabled={busy || setupPending}
+            onClick={onSetup}
+          >
             {speechBusy ? <LoaderCircle className="spin" /> : <Download />}
             {status.engine === "missing"
               ? status.migrationRequired
@@ -156,26 +163,42 @@ export function SpeechSetup({
           <h3>Reported speech execution</h3>
           <dl className="text-xs [overflow-wrap:anywhere]">
             <dt>Model</dt>
-            <dd>{model.name} ({execution.modelId})</dd>
+            <dd>
+              {model.name} ({execution.modelId})
+            </dd>
             <dt>Backend</dt>
-            <dd>{backend?.label ?? execution.backendId} ({execution.backendId})</dd>
+            <dd>
+              {backend?.label ?? execution.backendId} ({execution.backendId})
+            </dd>
             <dt>Precision</dt>
-            <dd>{execution.precision?.toUpperCase() ?? "Unknown (not reported)"}</dd>
+            <dd>
+              {execution.precision?.toUpperCase() ?? "Unknown (not reported)"}
+            </dd>
             <dt>Platform / device</dt>
-            <dd>{execution.platform} / {execution.device}</dd>
+            <dd>
+              {execution.platform} / {execution.device}
+            </dd>
             <dt>Checkpoint repository</dt>
-            <dd>{execution.checkpoint.repository || "Unknown (not reported)"}</dd>
+            <dd>
+              {execution.checkpoint.repository || "Unknown (not reported)"}
+            </dd>
             <dt>Checkpoint revision</dt>
-            <dd>{execution.checkpoint.revision || "Unpinned / unknown (not reported)"}</dd>
+            <dd>
+              {execution.checkpoint.revision ||
+                "Unpinned / unknown (not reported)"}
+            </dd>
           </dl>
           <p className="caption">
-            Native hardware validation pending. A loaded model does not establish
-            native hardware acceptance.
+            Native hardware validation pending. A loaded model does not
+            establish native hardware acceptance.
           </p>
         </section>
       ) : null}
       <div>
-        <p className="text-xs text-muted mt-3">Catalog source and license (configured checkpoint, not observed runtime facts)</p>
+        <p className="text-xs text-muted mt-3">
+          Catalog source and license (configured checkpoint, not observed
+          runtime facts)
+        </p>
         <ModelProvenance {...model} />
       </div>
       <p className="flex items-center justify-center gap-[7px] text-[11px] text-muted">

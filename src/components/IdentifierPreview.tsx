@@ -21,8 +21,14 @@ export function IdentifierPreview({
       onClose={onClose}
       footer={
         <>
-          <button className="secondary-button" onClick={onClose}>Close</button>
-          <button className="primary-button" disabled={!preview.trim() || !changed} onClick={() => onCopy(preview)}>
+          <button className="secondary-button" onClick={onClose}>
+            Close
+          </button>
+          <button
+            className="primary-button"
+            disabled={!preview.trim() || !changed}
+            onClick={() => onCopy(preview)}
+          >
             <Copy /> Copy preview
           </button>
         </>
@@ -37,7 +43,9 @@ export function IdentifierPreview({
         <li>pascal case user account end identifier → UserAccount</li>
         <li>snake case user account end identifier → user_account</li>
         <li>kebab case user account end identifier → user-account</li>
-        <li>literal spelling capital A p i underscore two end identifier → Api_2</li>
+        <li>
+          literal spelling capital A p i underscore two end identifier → Api_2
+        </li>
       </ul>
       <label className="field">
         Recognized text / identifier commands
@@ -62,7 +70,9 @@ export function IdentifierPreview({
           value={preview}
         />
       </label>
-      <p className="caption">This preview stays local and copies only on request.</p>
+      <p className="caption">
+        This preview stays local and copies only on request.
+      </p>
     </Modal>
   );
 }

@@ -4,6 +4,8 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 
 mock.module("electron", () => ({
   app: { isPackaged: false, getAppPath: () => "/tmp/delulu" },
+  BrowserWindow: class {},
+  screen: {},
 }));
 
 let PillService: (typeof import("./pill"))["PillService"];

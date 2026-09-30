@@ -1,14 +1,50 @@
-import { app, BrowserWindow, dialog, Menu, nativeImage, session, shell, Tray } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Menu,
+  nativeImage,
+  session,
+  shell,
+  Tray,
+} from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import electronUpdater from "electron-updater";
-import { closeSync, existsSync, mkdirSync, openSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { randomUUID } from "node:crypto";
-import { HistoryBatchDeletion, historySelection } from "./services/historyBatch";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { AppSettings, MagicPreset, Page, PasteRecovery, TranscriptRecord } from "../src/types";
+import {
+  HistoryBatchDeletion,
+  historySelection,
+} from "./services/historyBatch";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
+import type {
+  AppSettings,
+  MagicPreset,
+  Page,
+  PasteRecovery,
+  TranscriptRecord,
+} from "../src/types";
+import { normalizeTimings } from "../src/pipelineTimings";
 import { REWRITE_PRESETS } from "../src/rewritePresets";
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
-import { randomUUID } from "node:crypto";
 import { DomainError } from "../src/domainErrors";
 import { deliveredText } from "../src/transcriptText";
 import { rememberSessionTranscript } from "../src/sessionTranscriptRetention";
@@ -33,40 +69,6 @@ import {
 import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { UpdateService } from "./services/updates";
 import { registerMainIpc } from "./ipc";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 const { autoUpdater } = electronUpdater;
 
@@ -120,7 +122,8 @@ const historyDeletion = new HistoryBatchDeletion(
     // Publish the durable snapshot before invalidating any session records.
     storage.deleteHistorySelection(ids);
     for (const id of ids) sessionTranscripts.delete(id);
-    if (lastTranscript && ids.includes(lastTranscript.id)) lastTranscript = null;
+    if (lastTranscript && ids.includes(lastTranscript.id))
+      lastTranscript = null;
   },
   () => {
     const state = historyDeletion.getState();
@@ -135,12 +138,14 @@ function setPasteRecovery(recovery: PasteRecovery | null): void {
   pasteRecovery = recovery;
   broadcast("paste:recoveryChanged", recovery);
 }
-const selectedAudioFiles = new Set<string>();
 
 function visibleHistory(): TranscriptRecord[] {
-  const records = new Map(storage.getHistory().map((record) => [record.id, record]));
+  const records = new Map(
+    storage.getHistory().map((record) => [record.id, record]),
+  );
   for (const [id, record] of sessionTranscripts) records.set(id, record);
-  return [...records.values()].filter((record) => !historyDeletion.hidden(record.id))
+  return [...records.values()]
+    .filter((record) => !historyDeletion.hidden(record.id))
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
@@ -150,9 +155,13 @@ function historyBatchSnapshot() {
 
 function selectedHistory(ids: string[]): TranscriptRecord[] {
   return ids.map((id) => {
-    if (historyDeletion.hidden(id)) throw new Error("Undo deletion before using this transcript.");
+    if (historyDeletion.hidden(id))
+      throw new Error("Undo deletion before using this transcript.");
     const record = sessionTranscripts.get(id) ?? storage.findHistory(id);
-    if (!record) throw new Error("A selected transcript is no longer available. Select the records again.");
+    if (!record)
+      throw new Error(
+        "A selected transcript is no longer available. Select the records again.",
+      );
     return record;
   });
 }
@@ -161,14 +170,23 @@ function writeSelectionExport(outputPath: string, content: string): void {
   const parent = realpathSync(dirname(outputPath));
   const destination = join(parent, basename(outputPath));
   const inside = relative(realpathSync(storage.dataDirectory), destination);
-  if (!inside || (!isAbsolute(inside) && inside !== ".." && !inside.startsWith(`..${sep}`)))
-    throw new Error("Export outside Delulu's data directory to preserve history, settings and runtimes.");
+  if (
+    !inside ||
+    (!isAbsolute(inside) && inside !== ".." && !inside.startsWith(`..${sep}`))
+  )
+    throw new Error(
+      "Export outside Delulu's data directory to preserve history, settings and runtimes.",
+    );
   // Replacing a fresh file preserves existing exports on failed writes and
   // avoids modifying another file through a final-component hard/symbolic link.
   const temporary = join(parent, `.delulu-export-${randomUUID()}.tmp`);
   const descriptor = openSync(temporary, "wx", 0o600);
   try {
-    try { writeFileSync(descriptor, content, "utf8"); } finally { closeSync(descriptor); }
+    try {
+      writeFileSync(descriptor, content, "utf8");
+    } finally {
+      closeSync(descriptor);
+    }
     renameSync(temporary, destination);
   } finally {
     rmSync(temporary, { force: true });
@@ -448,9 +466,11 @@ function rebuildTrayMenu(): void {
   const update = updates?.getStatus();
   const speechUnavailable =
     status.engine === "missing" || status.engine === "error";
-  const presets: Array<[AppSettings["magicPreset"], string]> = REWRITE_PRESETS.map(
-    ({ id, label }) => [id as AppSettings["magicPreset"], label],
-  );
+  const presets: Array<[AppSettings["magicPreset"], string]> =
+    REWRITE_PRESETS.map(({ id, label }) => [
+      id as AppSettings["magicPreset"],
+      label,
+    ]);
   const template: MenuItemConstructorOptions[] = [
     { label: "DELULU TALKS", enabled: false },
     {
@@ -468,9 +488,12 @@ function rebuildTrayMenu(): void {
       click: () =>
         speechUnavailable ? showMainWindow("models") : dictation.toggle(),
     },
-    { label: status.phase === "paused" ? "Resume recording" : "Pause recording",
+    {
+      label: status.phase === "paused" ? "Resume recording" : "Pause recording",
       enabled: listening,
-      click: () => status.phase === "paused" ? dictation.resume() : dictation.pause() },
+      click: () =>
+        status.phase === "paused" ? dictation.resume() : dictation.pause(),
+    },
     { label: "Open Delulu Talks", click: () => showMainWindow("home") },
     {
       label: "Paste latest result",
@@ -630,7 +653,9 @@ function rebuildTrayMenu(): void {
   ];
   tray.setContextMenu(Menu.buildFromTemplate(template));
   const state = listening
-    ? status.phase === "paused" ? "Paused — microphone open" : "Listening"
+    ? status.phase === "paused"
+      ? "Paused — microphone open"
+      : "Listening"
     : status.phase === "transcribing"
       ? "Transcribing"
       : status.engine === "ready"
@@ -709,12 +734,19 @@ function persistSettings(value: unknown): Promise<AppSettings> {
   return settingsQueue.run(() => applySettings(value));
 }
 
-async function applySettings(value: unknown, explicitProfileActivation = false): Promise<AppSettings> {
+async function applySettings(
+  value: unknown,
+  explicitProfileActivation = false,
+): Promise<AppSettings> {
   const previous = storage.getSettings();
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Expected a settings object");
-  if (!explicitProfileActivation && Object.prototype.hasOwnProperty.call(value, "activePersonalProfile") &&
-      JSON.stringify((value as Record<string, unknown>).activePersonalProfile) !== JSON.stringify(previous.activePersonalProfile)) {
+  if (
+    !explicitProfileActivation &&
+    Object.prototype.hasOwnProperty.call(value, "activePersonalProfile") &&
+    JSON.stringify((value as Record<string, unknown>).activePersonalProfile) !==
+      JSON.stringify(previous.activePersonalProfile)
+  ) {
     throw new Error("Switch profiles using the explicit activation preview.");
   }
   assertPersonalProfilesUpdate(
@@ -777,9 +809,14 @@ async function applySettings(value: unknown, explicitProfileActivation = false):
 
 function assertRuntimeIdle(): void {
   if (dictation.isActive || asr.isBusy)
-    throw new DomainError("BUSY", "Finish the current recording or model operation first", {
-      operationId: randomUUID(), operation: "runtime:idle",
-    });
+    throw new DomainError(
+      "BUSY",
+      "Finish the current recording or model operation first",
+      {
+        operationId: randomUUID(),
+        operation: "runtime:idle",
+      },
+    );
 }
 
 async function start(): Promise<void> {
@@ -843,21 +880,36 @@ async function start(): Promise<void> {
           ...current,
           timings: normalizeTimings({
             ...current.timings,
-            ...(record.timings?.clipboardMs === undefined ? {} : { clipboardMs: record.timings.clipboardMs }),
-            ...(record.timings?.pasteMs === undefined ? {} : { pasteMs: record.timings.pasteMs }),
+            ...(record.timings?.clipboardMs === undefined
+              ? {}
+              : { clipboardMs: record.timings.clipboardMs }),
+            ...(record.timings?.pasteMs === undefined
+              ? {}
+              : { pasteMs: record.timings.pasteMs }),
           }),
         };
       }
       lastTranscript = record;
-      rememberSessionTranscript(sessionTranscripts, record, historyDeletion.getState()?.ids ?? []);
+      rememberSessionTranscript(
+        sessionTranscripts,
+        record,
+        historyDeletion.getState()?.ids ?? [],
+      );
       broadcast("history:added", record);
       rebuildTrayMenu();
     },
     (transcriptId, detail) => {
-      if (storage.findHistory(transcriptId) || sessionTranscripts.has(transcriptId))
+      if (
+        storage.findHistory(transcriptId) ||
+        sessionTranscripts.has(transcriptId)
+      )
         setPasteRecovery({ transcriptId, detail });
     },
-    (counts) => ruleUsage.record(counts, storage.getSettings().customWords.map((rule) => rule.id)),
+    (counts) =>
+      ruleUsage.record(
+        counts,
+        storage.getSettings().customWords.map((rule) => rule.id),
+      ),
   );
   pasteLast = new PasteLastService({
     captureActive: () => dictation.isActive,
@@ -902,7 +954,39 @@ async function start(): Promise<void> {
   });
   shortcut.onStatus((status) => broadcast("shortcut:statusChanged", status));
   setupPermissions();
-  labIpc = registerMainIpc({ getMainWindow: () => mainWindow, storage, asr, paste, pill, dictation, shortcut, updates, persistSettings, settingsBusy: () => settingsQueue.busy, getLastTranscript: () => lastTranscript, setLastTranscript: (record) => { lastTranscript = record; }, sessionTranscripts, rebuildTrayMenu, pasteLast, modelCache, ruleUsage, schedulePasteLast, getPasteRecovery: () => pasteRecovery, setPasteRecovery, applySettings, settingsQueue, broadcast, selectedAudioFiles, historyDeletion, visibleHistory, historyBatchSnapshot, selectedHistory, writeSelectionExport });
+  labIpc = registerMainIpc({
+    getMainWindow: () => mainWindow,
+    storage,
+    asr,
+    paste,
+    pill,
+    dictation,
+    shortcut,
+    updates,
+    persistSettings,
+    settingsBusy: () => settingsQueue.busy,
+    getLastTranscript: () => lastTranscript,
+    setLastTranscript: (record) => {
+      lastTranscript = record;
+    },
+    sessionTranscripts,
+    rebuildTrayMenu,
+    pasteLast,
+    modelCache,
+    ruleUsage,
+    schedulePasteLast,
+    getPasteRecovery: () => pasteRecovery,
+    setPasteRecovery,
+    applySettings,
+    settingsQueue,
+    broadcast,
+    selectedAudioFiles,
+    historyDeletion,
+    visibleHistory,
+    historyBatchSnapshot,
+    selectedHistory,
+    writeSelectionExport,
+  });
   if (!smokeTest) {
     if (app.isPackaged)
       void shortcut
@@ -942,7 +1026,11 @@ if (!hasLock) {
 app.on("activate", () => showMainWindow());
 app.on("before-quit", () => {
   quitting = true;
-  try { labIpc?.shutdown(); } catch (error) { console.error("Could not save import queue during shutdown", error); }
+  try {
+    labIpc?.shutdown();
+  } catch (error) {
+    console.error("Could not save import queue during shutdown", error);
+  }
   dictation?.releaseRetryAudio();
   pill?.shutdown();
   pasteLast?.shutdown();

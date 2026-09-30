@@ -1,13 +1,25 @@
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { transcriptSourceRevision } from "../../src/transcriptText";
-import { assertPersistedSchema, versionPersistedRecord } from "../../src/persistedSchema";
+import {
+  assertPersistedSchema,
+  versionPersistedRecord,
+} from "../../src/persistedSchema";
 import { readActivePersonalProfile } from "../../src/activePersonalProfile";
-import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
-import { normalizeTimings, withoutRewriteTimings } from "../../src/pipelineTimings";
+import {
+  assertPersonalProfilesUpdate,
+  readPersonalProfiles,
+} from "../../src/personalProfiles";
+import {
+  normalizeTimings,
+  withoutRewriteTimings,
+} from "../../src/pipelineTimings";
 import { normalizeSpeechExecution } from "../../src/speechModels";
 import { app } from "electron";
 import { isMagicPreset } from "../../src/rewritePresets";
-import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
+import {
+  backupProfileMigration,
+  removeMigrationHistoryBackups,
+} from "./migrationBackups";
 import { randomUUID } from "node:crypto";
 import { validateProfileWrite } from "./profileWriteValidation";
 import { speechModelForPlatform } from "../runtime/platform";
@@ -102,7 +114,8 @@ function readProfileJson(
   if (kind === "settings") {
     assertPersistedSchema(value, "settings");
     const rules = (value as Record<string, unknown>).customWords;
-    if (Array.isArray(rules)) rules.forEach((rule) => assertPersistedSchema(rule, "rule"));
+    if (Array.isArray(rules))
+      rules.forEach((rule) => assertPersistedSchema(rule, "rule"));
   } else if (Array.isArray(value)) {
     value.forEach((record) => assertPersistedSchema(record, "transcript"));
   }
@@ -170,17 +183,28 @@ function safeString(value: unknown, fallback: string, max = 512): string {
 function normalizeWords(value: unknown): CustomWord[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 500)
-    throw new Error("Invalid or oversized vocabulary rules. Existing settings are preserved.");
+    throw new Error(
+      "Invalid or oversized vocabulary rules. Existing settings are preserved.",
+    );
   return value.flatMap((item, index) => {
     if (!item || typeof item !== "object" || Array.isArray(item))
-      throw new Error("Invalid vocabulary rule. Existing settings are preserved.");
+      throw new Error(
+        "Invalid vocabulary rule. Existing settings are preserved.",
+      );
     assertPersistedSchema(item, "rule");
     const source = item as Partial<CustomWord>;
     const term = safeString(source.term, "", 256);
     if (!term)
-      throw new Error("Vocabulary rule has no term. Existing settings are preserved.");
-    if (typeof source.replacement === "string" && source.replacement.length > 4096)
-      throw new Error("Vocabulary text block exceeds the supported limit. Existing settings are preserved.");
+      throw new Error(
+        "Vocabulary rule has no term. Existing settings are preserved.",
+      );
+    if (
+      typeof source.replacement === "string" &&
+      source.replacement.length > 4096
+    )
+      throw new Error(
+        "Vocabulary text block exceeds the supported limit. Existing settings are preserved.",
+      );
     return [
       {
         ...source,
@@ -192,9 +216,10 @@ function normalizeWords(value: unknown): CustomWord[] {
         id: safeString(source.id, `word-${Date.now()}-${index}`, 128),
         term,
         // Preserve nonempty scopes, including unknown codes: never widen a saved rule.
-        language: typeof source.language === "string" && source.language.trim()
-          ? source.language.trim().toLowerCase().slice(0, 64)
-          : undefined,
+        language:
+          typeof source.language === "string" && source.language.trim()
+            ? source.language.trim().toLowerCase().slice(0, 64)
+            : undefined,
         soundsLike: safeString(source.soundsLike, "", 1024),
         ...(source.aliases !== undefined
           ? { aliases: normalizeAliases(source.aliases) }
@@ -204,7 +229,8 @@ function normalizeWords(value: unknown): CustomWord[] {
           typeof source.replacement === "string" && source.replacement.trim()
             ? source.replacement
             : "",
-        enabled: source.enabled !== false &&
+        enabled:
+          source.enabled !== false &&
           (source.language == null || typeof source.language === "string"),
       },
     ];
@@ -273,7 +299,8 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.dictationMode === "code" || source.dictationMode === "command"
         ? source.dictationMode
         : "prose",
-    dictationFormatting: source.dictationFormatting === "spoken" ? "spoken" : "preserve",
+    dictationFormatting:
+      source.dictationFormatting === "spoken" ? "spoken" : "preserve",
     pythonCommand: safeString(
       source.pythonCommand,
       DEFAULT_SETTINGS.pythonCommand,
@@ -371,8 +398,11 @@ export function normalizeSettings(value: unknown): AppSettings {
     ),
     menuBarOnly: boolean(source.menuBarOnly, DEFAULT_SETTINGS.menuBarOnly),
     customWords: normalizeWords(source.customWords),
-    personalProfiles: readPersonalProfiles(source.personalProfiles).document as AppSettings["personalProfiles"],
-    activePersonalProfile: readActivePersonalProfile(source.activePersonalProfile),
+    personalProfiles: readPersonalProfiles(source.personalProfiles)
+      .document as AppSettings["personalProfiles"],
+    activePersonalProfile: readActivePersonalProfile(
+      source.activePersonalProfile,
+    ),
   };
 }
 
@@ -411,11 +441,22 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
   const original = source.text ?? source.intendedText ?? source.verbatimText;
   const text = typeof original === "string" ? original : "";
   if (!text.trim())
-    throw new Error("Invalid transcript text. History has been preserved; repair or restore the file before migration.");
-  if (source.schemaVersion === 1) return structuredClone(source) as unknown as TranscriptRecord;
-  if (source.model !== undefined && !validHistoryModels.has(source.model as ModelId))
-    throw new Error("Unknown historical speech model. History has been preserved; restore or repair the file before migration.");
-  const model = source.model === undefined ? DEFAULT_SETTINGS.model : source.model as ModelId;
+    throw new Error(
+      "Invalid transcript text. History has been preserved; repair or restore the file before migration.",
+    );
+  if (source.schemaVersion === 1)
+    return structuredClone(source) as unknown as TranscriptRecord;
+  if (
+    source.model !== undefined &&
+    !validHistoryModels.has(source.model as ModelId)
+  )
+    throw new Error(
+      "Unknown historical speech model. History has been preserved; restore or repair the file before migration.",
+    );
+  const model =
+    source.model === undefined
+      ? DEFAULT_SETTINGS.model
+      : (source.model as ModelId);
   const delivery = migrateDelivery(source.delivery);
   let title: string | null = null;
   if (source.title !== undefined) {
@@ -425,7 +466,10 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
       // Invalid optional metadata must not discard original transcript content.
     }
   }
-  const execution = model === "qwen3Asr" ? undefined : normalizeSpeechExecution(source.speechExecution);
+  const execution =
+    model === "qwen3Asr"
+      ? undefined
+      : normalizeSpeechExecution(source.speechExecution);
   return {
     ...source,
     schemaVersion: 1,
@@ -442,13 +486,24 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
       source.dictationMode === "code" || source.dictationMode === "command"
         ? source.dictationMode
         : "prose",
-    sourceRevision: Number.isSafeInteger(source.sourceRevision) && Number(source.sourceRevision) >= 0
-      ? Number(source.sourceRevision) : 0,
-    rewriteSourceRevision: Number.isSafeInteger(source.rewriteSourceRevision) && Number(source.rewriteSourceRevision) >= 0
-      ? Number(source.rewriteSourceRevision) : null,
-    personalizedText: typeof source.personalizedText === "string" ? source.personalizedText : null,
-    editedText: typeof (source.editedText ?? source.editedIntendedText) === "string"
-      ? (source.editedText ?? source.editedIntendedText) as string : null,
+    sourceRevision:
+      Number.isSafeInteger(source.sourceRevision) &&
+      Number(source.sourceRevision) >= 0
+        ? Number(source.sourceRevision)
+        : 0,
+    rewriteSourceRevision:
+      Number.isSafeInteger(source.rewriteSourceRevision) &&
+      Number(source.rewriteSourceRevision) >= 0
+        ? Number(source.rewriteSourceRevision)
+        : null,
+    personalizedText:
+      typeof source.personalizedText === "string"
+        ? source.personalizedText
+        : null,
+    editedText:
+      typeof (source.editedText ?? source.editedIntendedText) === "string"
+        ? ((source.editedText ?? source.editedIntendedText) as string)
+        : null,
     magicText: typeof source.magicText === "string" ? source.magicText : null,
     magicModel: validMagicModels.has(source.magicModel as MagicModelId)
       ? (source.magicModel as MagicModelId)
@@ -467,14 +522,17 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     ...(source.requestedLanguage === undefined
       ? {}
       : {
-          requestedLanguage: normalizeReportedLanguage(source.requestedLanguage),
+          requestedLanguage: normalizeReportedLanguage(
+            source.requestedLanguage,
+          ),
         }),
     ...(source.recognizedLanguage === undefined &&
     source.recognizedLanguages === undefined &&
     source.languageStatus === undefined
       ? {}
       : normalizeLanguageMetadata(source)),
-    dictationFormatting: source.dictationFormatting === "spoken" ? "spoken" : "preserve",
+    dictationFormatting:
+      source.dictationFormatting === "spoken" ? "spoken" : "preserve",
     source: ["dictation", "file"].includes(String(source.source))
       ? (source.source as TranscriptRecord["source"])
       : "dictation",
@@ -571,18 +629,36 @@ export class StorageService {
     this.history = Array.isArray(rawHistory)
       ? rawHistory.map((item) => {
           const record = migrateRecord(item);
-          if (!record) throw new Error("Invalid transcript record. History has been preserved.");
+          if (!record)
+            throw new Error(
+              "Invalid transcript record. History has been preserved.",
+            );
           return record;
         })
       : [];
-    const settingsChanged = rawSettings !== undefined &&
+    const settingsChanged =
+      rawSettings !== undefined &&
       JSON.stringify(rawSettings) !== JSON.stringify(this.settings);
-    const historyChanged = rawHistory !== undefined &&
-      (JSON.stringify(rawHistory) !== JSON.stringify(this.history) || !existsSync(historyPath));
-    if (settingsChanged || historyChanged || (rawSettings !== undefined && !existsSync(settingsPath))) {
+    const historyChanged =
+      rawHistory !== undefined &&
+      (JSON.stringify(rawHistory) !== JSON.stringify(this.history) ||
+        !existsSync(historyPath));
+    if (
+      settingsChanged ||
+      historyChanged ||
+      (rawSettings !== undefined && !existsSync(settingsPath))
+    ) {
       backupProfileMigration(this.dataDirectory, {
-        "settings.json": existsSync(settingsPath) ? settingsPath : legacy ? join(legacy, SETTINGS_FILE) : undefined,
-        "history.json": existsSync(historyPath) ? historyPath : legacy ? join(legacy, HISTORY_FILE) : undefined,
+        "settings.json": existsSync(settingsPath)
+          ? settingsPath
+          : legacy
+            ? join(legacy, SETTINGS_FILE)
+            : undefined,
+        "history.json": existsSync(historyPath)
+          ? historyPath
+          : legacy
+            ? join(legacy, HISTORY_FILE)
+            : undefined,
       });
     }
     if (!existsSync(historyPath) && this.history.length) {
@@ -642,17 +718,29 @@ export class StorageService {
   }
 
   updateSettings(value: unknown): AppSettings {
-    const source = value && typeof value === "object" && !Array.isArray(value)
-      ? value as Record<string, unknown>
-      : {};
+    const source =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
     // Older settings callers may omit the new field. Preserve existing documents.
-    const document = Object.prototype.hasOwnProperty.call(source, "personalProfiles")
+    const document = Object.prototype.hasOwnProperty.call(
+      source,
+      "personalProfiles",
+    )
       ? source.personalProfiles
       : this.settings.personalProfiles;
     assertPersonalProfilesUpdate(this.settings.personalProfiles, document);
-    const activePersonalProfile = Object.prototype.hasOwnProperty.call(source, "activePersonalProfile")
-      ? source.activePersonalProfile : this.settings.activePersonalProfile;
-    const next = normalizeSettings({ ...source, personalProfiles: document, activePersonalProfile });
+    const activePersonalProfile = Object.prototype.hasOwnProperty.call(
+      source,
+      "activePersonalProfile",
+    )
+      ? source.activePersonalProfile
+      : this.settings.activePersonalProfile;
+    const next = normalizeSettings({
+      ...source,
+      personalProfiles: document,
+      activePersonalProfile,
+    });
     writeJson(join(this.dataDirectory, SETTINGS_FILE), next);
     this.settings = next;
     return this.getSettings();
@@ -673,7 +761,9 @@ export class StorageService {
     // At most 500 additional pinned records; ordinary retention resumes after it.
     const next = [
       ...ordered.slice(0, MAX_HISTORY),
-      ...ordered.slice(MAX_HISTORY).filter((item) => this.historyPins.has(item.id)),
+      ...ordered
+        .slice(MAX_HISTORY)
+        .filter((item) => this.historyPins.has(item.id)),
     ];
     writeJson(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
@@ -738,9 +828,14 @@ export class StorageService {
     this.history = next;
   }
 
-  applyHistoryRetention(expectedFingerprint: string, ids: readonly string[]): void {
+  applyHistoryRetention(
+    expectedFingerprint: string,
+    ids: readonly string[],
+  ): void {
     if (historyFingerprint(this.history) !== expectedFingerprint)
-      throw new Error("History changed. Preview the affected records again before applying retention.");
+      throw new Error(
+        "History changed. Preview the affected records again before applying retention.",
+      );
     const removed = new Set(ids);
     const next = this.history.filter((record) => !removed.has(record.id));
     // Publish the complete filtered snapshot before changing memory; retained records are untouched.

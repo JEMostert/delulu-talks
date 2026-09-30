@@ -6,7 +6,9 @@ import { readStartupService } from "../startupServices";
 import type { RuntimeDiagnostics } from "../types";
 import { Alert } from "./ui";
 
-export function Diagnostics({ refreshButtonId }: { refreshButtonId?: string } = {}) {
+export function Diagnostics({
+  refreshButtonId,
+}: { refreshButtonId?: string } = {}) {
   const [data, setData] = useState<RuntimeDiagnostics | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -20,14 +22,23 @@ export function Diagnostics({ refreshButtonId }: { refreshButtonId?: string } = 
     setBusy(true);
     setError("");
     try {
-      const next = await readStartupService("diagnostics", () => bridge.getDiagnostics(), controller.signal);
+      const next = await readStartupService(
+        "diagnostics",
+        () => bridge.getDiagnostics(),
+        controller.signal,
+      );
       if (mounted.current && !controller.signal.aborted) {
         setData(next);
         setCopied(false);
       }
     } catch (reason) {
       if (mounted.current && !controller.signal.aborted)
-        setError(String(reason).replace("Retry opening the workspace.", "Retry diagnostics."));
+        setError(
+          String(reason).replace(
+            "Retry opening the workspace.",
+            "Retry diagnostics.",
+          ),
+        );
     } finally {
       if (pending.current === controller) {
         pending.current = null;
@@ -96,24 +107,34 @@ export function Diagnostics({ refreshButtonId }: { refreshButtonId?: string } = 
             </div>
           </div>
           {data.microphone && (
-            <div className="mb-[18px] rounded-xl bg-soft p-[15px]" role="status">
+            <div
+              className="mb-[18px] rounded-xl bg-soft p-[15px]"
+              role="status"
+            >
               <strong className="text-xs text-ink">
-                Microphone permission: {data.microphone.state.replaceAll("-", " ")}
+                Microphone permission:{" "}
+                {data.microphone.state.replace(/-/g, " ")}
               </strong>
               <p className="caption mt-2">{data.microphone.detail}</p>
             </div>
           )}
           {data.accessibility && (
-            <div className="mb-[18px] rounded-xl bg-soft p-[15px]" role="status">
+            <div
+              className="mb-[18px] rounded-xl bg-soft p-[15px]"
+              role="status"
+            >
               <strong className="text-xs text-ink">
-                Accessibility permission: {data.accessibility.state.replaceAll("-", " ")}
+                Accessibility permission:{" "}
+                {data.accessibility.state.replace(/-/g, " ")}
               </strong>
               <p className="caption mt-2">{data.accessibility.detail}</p>
-              {data.platform === "darwin" && data.accessibility.canAttemptPaste && (
-                <p className="caption mt-2">
-                  Permission allows a paste attempt. It does not confirm that the destination accepted the text.
-                </p>
-              )}
+              {data.platform === "darwin" &&
+                data.accessibility.canAttemptPaste && (
+                  <p className="caption mt-2">
+                    Permission allows a paste attempt. It does not confirm that
+                    the destination accepted the text.
+                  </p>
+                )}
             </div>
           )}
           <p className="caption">
@@ -154,7 +175,9 @@ export function Diagnostics({ refreshButtonId }: { refreshButtonId?: string } = 
               className="secondary-button"
               onClick={async () => {
                 try {
-                  await bridge.copyText(JSON.stringify(diagnosticReport(data), null, 2));
+                  await bridge.copyText(
+                    JSON.stringify(diagnosticReport(data), null, 2),
+                  );
                   if (mounted.current) setCopied(true);
                 } catch (reason) {
                   if (mounted.current) setError(String(reason));

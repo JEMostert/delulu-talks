@@ -63,9 +63,12 @@ test("failed settings writes keep the effective setting and show no success noti
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Application", exact: true }).click();
   await page.getByRole("button", { name: "dark", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText(
-    "Local data write failed",
-  );
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Local data write failed" })
+      .first(),
+  ).toContainText("Local data write failed");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(page.getByText("Changes saved", { exact: true })).toHaveCount(0);
   await allowRetry(page);
@@ -83,15 +86,18 @@ test("failed correction persistence retains the draft and original until retry s
   const draft = page.getByRole("textbox", { name: "Correct transcript" });
   await draft.fill("Unsaved correction with 👋");
   await page.getByRole("button", { name: "Save correction" }).click();
-  await expect(page.getByRole("alert")).toContainText(
-    "Local data write failed",
-  );
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Local data write failed" })
+      .first(),
+  ).toContainText("Local data write failed");
   await expect(draft).toHaveValue("Unsaved correction with 👋");
   await expect(page.getByText("Correction saved", { exact: true })).toHaveCount(
     0,
   );
   await allowRetry(page);
-  await page.getByRole("button", { name: "Save correction" }).click();
+  await page.getByRole("button", { name: "Retry saving" }).click();
   await expect(draft).toHaveCount(0);
   await expect(
     page.getByText("Unsaved correction with 👋", { exact: true }),

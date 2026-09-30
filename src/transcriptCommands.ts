@@ -6,7 +6,12 @@ import {
 import { ruleConflict, ruleKind, ruleLanguage } from "./personalization";
 import type { TranscriptActions } from "./components/TranscriptCard";
 import type { useWorkspace } from "./hooks/useWorkspace";
-import type { CustomWord, ExportFormat, MagicRewriteResult, TranscriptRecord } from "./types";
+import type {
+  CustomWord,
+  ExportFormat,
+  MagicRewriteResult,
+  TranscriptRecord,
+} from "./types";
 
 type TranscriptWorkspace = Pick<
   ReturnType<typeof useWorkspace>,

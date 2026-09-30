@@ -5,7 +5,10 @@ import { formatSpokenCommands } from "../../src/spokenFormatting";
 import { captureProfileSnapshot } from "../../src/activePersonalProfile";
 import { normalizeSpeechExecution } from "../../src/speechModels";
 import { deliveredText } from "../../src/transcriptText";
-import { normalizeLanguageMetadata, normalizeReportedLanguage } from "../../src/transcriptLanguage";
+import {
+  normalizeLanguageMetadata,
+  normalizeReportedLanguage,
+} from "../../src/transcriptLanguage";
 import { formatDictation } from "../../src/dictationFormatting";
 import { normalizeTimings } from "../../src/pipelineTimings";
 import type { BrowserWindow } from "electron";
@@ -23,7 +26,10 @@ import type {
 } from "../../src/types";
 import type { AsrService } from "./asr";
 import { ClipboardCopyError } from "./paste";
-import type { DesktopPasteAdapter, DesktopIndicatorAdapter } from "./desktopAdapters";
+import type {
+  DesktopPasteAdapter,
+  DesktopIndicatorAdapter,
+} from "./desktopAdapters";
 import type { StorageService } from "./storage";
 import { getMicrophonePermission } from "./microphonePermission";
 import { RetryAudioStore, type RetryAudioLease } from "./retryAudio";
@@ -34,7 +40,14 @@ type WindowProvider = {
 };
 
 type CaptureState =
-  "idle" | "opening" | "listening" | "pausing" | "paused" | "resuming" | "stopping" | "processing";
+  | "idle"
+  | "opening"
+  | "listening"
+  | "pausing"
+  | "paused"
+  | "resuming"
+  | "stopping"
+  | "processing";
 
 function numeric(value: unknown, fallback = 0): number {
   const parsed = Number(value);
@@ -52,7 +65,9 @@ export class DictationService {
   get canStopRecording(): boolean {
     return (
       this.recorderReady &&
-      (["opening", "listening", "pausing", "paused", "resuming"].includes(this.captureState))
+      ["opening", "listening", "pausing", "paused", "resuming"].includes(
+        this.captureState,
+      )
     );
   }
   discardFailure(): void {
@@ -92,7 +107,8 @@ export class DictationService {
   private recorderReady = false;
   private busyNoticeTimer: NodeJS.Timeout | null = null;
   private busyNotice = false;
-  private hud: Parameters<DesktopIndicatorAdapter["show"]>[0] | { state: "hidden" } = {
+  private hud:
+    Parameters<DesktopIndicatorAdapter["show"]>[0] | { state: "hidden" } = {
     state: "hidden",
   };
 
@@ -102,8 +118,13 @@ export class DictationService {
     private readonly paste: DesktopPasteAdapter,
     private readonly windows: WindowProvider,
     private readonly broadcastTranscript: (record: TranscriptRecord) => void,
-    private readonly reportPasteFailure: (id: string, detail: string) => void = () => undefined,
-    private readonly recordRuleUsage: (counts: Record<string, number>) => void = () => {},
+    private readonly reportPasteFailure: (
+      id: string,
+      detail: string,
+    ) => void = () => undefined,
+    private readonly recordRuleUsage: (
+      counts: Record<string, number>,
+    ) => void = () => {},
   ) {}
 
   private settings(): AppSettings {
@@ -141,14 +162,19 @@ export class DictationService {
   }
 
   private setHud(
-    command: Parameters<DesktopIndicatorAdapter["show"]>[0] | { state: "hidden" },
+    command:
+      Parameters<DesktopIndicatorAdapter["show"]>[0] | { state: "hidden" },
   ): void {
     if (this.busyNoticeTimer) clearTimeout(this.busyNoticeTimer);
     this.busyNoticeTimer = null;
     this.busyNotice = false;
-    this.hud = command.state !== "hidden" && this.captureSettings
-      ? { ...command, profile: captureProfileSnapshot(this.captureSettings).label }
-      : command;
+    this.hud =
+      command.state !== "hidden" && this.captureSettings
+        ? {
+            ...command,
+            profile: captureProfileSnapshot(this.captureSettings).label,
+          }
+        : command;
     this.applyHud();
   }
 
@@ -204,7 +230,8 @@ export class DictationService {
   }
 
   start(): void {
-    if (this.paste.isBusy) throw new Error("Finish the clipboard operation before recording.");
+    if (this.paste.isBusy)
+      throw new Error("Finish the clipboard operation before recording.");
     const status = this.asr.getStatus();
     if (this.captureState !== "idle") return;
     if (
@@ -290,7 +317,12 @@ export class DictationService {
       );
       return;
     }
-    if (!["listening", "pausing", "paused", "resuming"].includes(this.captureState)) return;
+    if (
+      !["listening", "pausing", "paused", "resuming"].includes(
+        this.captureState,
+      )
+    )
+      return;
     this.captureState = "stopping";
     this.sendRecorder({
       action: "stop",
@@ -300,7 +332,11 @@ export class DictationService {
   }
 
   toggle(): void {
-    if (["opening", "listening", "pausing", "paused", "resuming"].includes(this.captureState))
+    if (
+      ["opening", "listening", "pausing", "paused", "resuming"].includes(
+        this.captureState,
+      )
+    )
       this.stop();
     else if (this.captureState === "idle") this.start();
   }
@@ -308,23 +344,42 @@ export class DictationService {
   pause(): void {
     if (this.captureState !== "listening") return;
     this.captureState = "pausing";
-    this.sendRecorder({ action: "pause", sessionId: this.pendingSessionId ?? undefined, inputDeviceId: this.settings().inputDeviceId });
+    this.sendRecorder({
+      action: "pause",
+      sessionId: this.captureSessionId ?? undefined,
+      inputDeviceId: this.settings().inputDeviceId,
+    });
   }
 
   resume(): void {
     if (this.captureState !== "paused") return;
     this.captureState = "resuming";
-    this.sendRecorder({ action: "resume", sessionId: this.pendingSessionId ?? undefined, inputDeviceId: this.settings().inputDeviceId });
+    this.sendRecorder({
+      action: "resume",
+      sessionId: this.captureSessionId ?? undefined,
+      inputDeviceId: this.settings().inputDeviceId,
+    });
   }
 
   recordingPauseChanged(sessionId: string, paused: boolean): void {
-    if (sessionId !== this.pendingSessionId || this.captureState !== (paused ? "pausing" : "resuming")) return;
+    if (
+      sessionId !== this.captureSessionId ||
+      this.captureState !== (paused ? "pausing" : "resuming")
+    )
+      return;
     this.captureState = paused ? "paused" : "listening";
-    this.asr.setActivity(paused ? "paused" : "listening", paused
-      ? "Paused — audio retained; microphone remains open. Resume or Stop to transcribe."
-      : "Listening — resumed the same recording");
+    this.asr.setActivity(
+      paused ? "paused" : "listening",
+      paused
+        ? "Paused — audio retained; microphone remains open. Resume or Stop to transcribe."
+        : "Listening — resumed the same recording",
+    );
     if (paused) this.setHud({ state: "hidden" });
-    else this.setHud({ state: "listening", detail: "Resumed — Stop to transcribe" });
+    else
+      this.setHud({
+        state: "listening",
+        detail: "Resumed — Stop to transcribe",
+      });
   }
 
   cancel(): void {
@@ -413,7 +468,8 @@ export class DictationService {
     }
     if (this.captureState !== "opening") return;
     this.captureState = "listening";
-    const hold = (this.captureSettings ?? this.settings()).shortcutMode === "hold";
+    const hold =
+      (this.captureSettings ?? this.settings()).shortcutMode === "hold";
     this.asr.setActivity(
       "listening",
       hold
@@ -489,8 +545,10 @@ export class DictationService {
     if (this.captureState === "processing")
       throw new Error("A recording is already being processed");
     this.captureState = "processing";
-    const settings = this.captureSettings ??
-      (retryLease ? this.retrySettings : null) ?? this.settings();
+    const settings =
+      this.captureSettings ??
+      (retryLease ? this.retrySettings : null) ??
+      this.settings();
     this.captureSettings = structuredClone(settings);
     if (
       !(submission.wav instanceof Uint8Array) ||
@@ -527,7 +585,10 @@ export class DictationService {
       const preprocessingStarted = performance.now();
       mkdirSync(this.storage.cacheDirectory, { recursive: true });
       writeFileSync(audioPath, submission.wav, { mode: 0o600 });
-      timings.preprocessingMs = (timings.preprocessingMs ?? 0) + performance.now() - preprocessingStarted;
+      timings.preprocessingMs =
+        (timings.preprocessingMs ?? 0) +
+        performance.now() -
+        preprocessingStarted;
       this.asr.setActivity("transcribing", "Transcribing locally");
       this.setHud({ state: "transcribing" });
       const result = await this.asr.transcribe(
@@ -549,10 +610,15 @@ export class DictationService {
       );
       let output = this.outputText(record, settings);
       if (!output.trim()) {
-        throw new Error("Personalization returned no text. Review your saved rules and retry.");
+        throw new Error(
+          "Personalization returned no text. Review your saved rules and retry.",
+        );
       }
       let magicFailure: string | null = null;
-      if (settings.magicEnabled && (!settings.dictationMode || settings.dictationMode === "prose")) {
+      if (
+        settings.magicEnabled &&
+        (!settings.dictationMode || settings.dictationMode === "prose")
+      ) {
         this.asr.setActivity(
           "transcribing",
           "Rewriting is polishing the transcript",
@@ -577,7 +643,10 @@ export class DictationService {
             magicPreset: settings.magicPreset,
             magicIncludedInferences: magic.includedInferences,
             magicProcessingTimeMs: magic.processingTimeMs,
-            timings: normalizeTimings({ ...record.timings, ...normalizeTimings(magic.timings) }),
+            timings: normalizeTimings({
+              ...record.timings,
+              ...normalizeTimings(magic.timings),
+            }),
           };
         } catch (error) {
           magicFailure = (
@@ -598,32 +667,52 @@ export class DictationService {
       deliveryStarted = true;
       if (settings.autoPaste) {
         try {
-          const method = await this.paste.paste(output, settings.restoreClipboardAfterPaste, record.timings ??= {});
-          record = this.recordDelivery(record, "paste-attempted", "Paste command sent; destination receipt is not confirmed", method);
+          const method = await this.paste.paste(
+            output,
+            settings.restoreClipboardAfterPaste,
+            (record.timings ??= {}),
+          );
+          record = this.recordDelivery(
+            record,
+            "paste-attempted",
+            "Paste command sent; destination receipt is not confirmed",
+            method,
+          );
           delivery = "pasted";
           completion = `${outputName}: paste attempted — destination unconfirmed`;
         } catch (error) {
-          const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+          const detail = (
+            error instanceof Error ? error.message : String(error)
+          ).slice(0, 500);
           const copied = !(error instanceof ClipboardCopyError);
           this.reportPasteFailure(record.id, detail);
           delivery = copied ? "copied" : "failed";
-          record = this.recordDelivery(record, copied ? "copied" : "transcribed", detail);
-          completion = copied ? `Copied — paste manually (${detail})` : `Transcribed — clipboard copy failed (${detail})`;
+          record = this.recordDelivery(
+            record,
+            copied ? "copied" : "transcribed",
+            detail,
+          );
+          completion = copied
+            ? `Copied — paste manually (${detail})`
+            : `Transcribed — clipboard copy failed (${detail})`;
         }
       } else if (settings.copyToClipboard) {
         try {
-          this.paste.copy(output, record.timings ??= {});
+          this.paste.copy(output, (record.timings ??= {}));
           delivery = "copied";
           record = this.recordDelivery(record, "copied");
           completion = `${outputName} copied to clipboard`;
         } catch (error) {
-          const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+          const detail = (
+            error instanceof Error ? error.message : String(error)
+          ).slice(0, 500);
           delivery = "failed";
           record = this.recordDelivery(record, "transcribed", detail);
           completion = `Transcribed — clipboard copy failed (${detail})`;
         }
       }
-      if (settings.autoPaste || settings.copyToClipboard) this.publishDeliveryTimings(record, output);
+      if (settings.autoPaste || settings.copyToClipboard)
+        this.publishDeliveryTimings(record, output);
       if (magicFailure)
         completion = `${completion} · Rewriting unavailable: ${magicFailure}`;
       this.setHud({
@@ -631,16 +720,25 @@ export class DictationService {
         title:
           record.delivery?.state === "paste-attempted"
             ? "Paste attempted"
-            : record.delivery?.state === "copied" ? "Copied" : "Transcribed",
-        detail: record.delivery?.state === "paste-attempted"
-          ? "Destination unconfirmed"
-          : magicFailure ? "Rewriting skipped" : "Ready to keep talking",
+            : record.delivery?.state === "copied"
+              ? "Copied"
+              : "Transcribed",
+        detail:
+          record.delivery?.state === "paste-attempted"
+            ? "Destination unconfirmed"
+            : magicFailure
+              ? "Rewriting skipped"
+              : "Ready to keep talking",
       });
       this.asr.setActivity("idle", completion);
       return true;
     } catch (error) {
-      if (deliveryStarted) { this.retryAudio.discard(); this.retrySettings = null; }
-      const retained = !deliveryStarted && (retryLease || this.retryAudio.retain(submission));
+      if (deliveryStarted) {
+        this.retryAudio.discard();
+        this.retrySettings = null;
+      }
+      const retained =
+        !deliveryStarted && (retryLease || this.retryAudio.retain(submission));
       this.retrySettings = retained ? structuredClone(settings) : null;
       this.publishRetryAudio();
       this.setHud({ state: "error" });
@@ -659,9 +757,13 @@ export class DictationService {
     }
   }
 
-  async runLab(request: LabRequest, signal?: AbortSignal): Promise<TranscriptRecord> {
+  async runLab(
+    request: LabRequest,
+    signal?: AbortSignal,
+  ): Promise<TranscriptRecord> {
     const checkCancellation = () => {
-      if (signal?.aborted) throw new Error("Import cancelled; no transcript was saved.");
+      if (signal?.aborted)
+        throw new Error("Import cancelled; no transcript was saved.");
     };
     checkCancellation();
     if (this.isActive || this.asr.isBusy)
@@ -675,7 +777,9 @@ export class DictationService {
       const preprocessingStarted = performance.now();
       preparedAudio = await this.prepareAudio(request.path, signal);
       checkCancellation();
-      const timings: PipelineTimings = { preprocessingMs: performance.now() - preprocessingStarted };
+      const timings: PipelineTimings = {
+        preprocessingMs: performance.now() - preprocessingStarted,
+      };
       const payload = await this.asr.transcribe(
         { audioPath: preparedAudio.path },
         settings,
@@ -699,7 +803,11 @@ export class DictationService {
       failure = error;
       this.asr.setActivity(
         signal?.aborted ? "idle" : "error",
-        signal?.aborted ? "Import cancelled; no transcript was saved." : error instanceof Error ? error.message : String(error),
+        signal?.aborted
+          ? "Import cancelled; no transcript was saved."
+          : error instanceof Error
+            ? error.message
+            : String(error),
       );
       throw error;
     } finally {
@@ -708,7 +816,10 @@ export class DictationService {
         try {
           this.removeImportDirectory(preparedAudio.directory, failure);
         } catch (error) {
-          this.asr.setActivity("error", error instanceof Error ? error.message : String(error));
+          this.asr.setActivity(
+            "error",
+            error instanceof Error ? error.message : String(error),
+          );
           throw error;
         }
       }
@@ -717,11 +828,18 @@ export class DictationService {
 
   private removeImportDirectory(directory: string, failure?: unknown): void {
     try {
-      rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      rmSync(directory, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 100,
+      });
     } catch (cleanupError) {
       const message = "Could not remove temporary converted audio after import";
       if (failure !== undefined)
-        throw new AggregateError([failure, cleanupError], message, { cause: failure });
+        throw new AggregateError([failure, cleanupError], message, {
+          cause: failure,
+        });
       throw new Error(message, { cause: cleanupError });
     }
   }
@@ -748,14 +866,29 @@ export class DictationService {
         const child = spawn(
           "ffmpeg",
           [
-            "-nostdin", "-hide_banner", "-loglevel", "error", "-n",
-            "-i", sourcePath, "-vn", "-ac", "1", "-ar", "16000",
-            "-c:a", "pcm_s16le", outputPath,
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-n",
+            "-i",
+            sourcePath,
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            outputPath,
           ],
           { windowsHide: true },
         );
-        const cancel = () => { child.kill(); };
-        if (signal?.aborted) cancel(); else signal?.addEventListener("abort", cancel, { once: true });
+        const cancel = () => {
+          child.kill();
+        };
+        if (signal?.aborted) cancel();
+        else signal?.addEventListener("abort", cancel, { once: true });
         let stderr = "";
         let spawnError: Error | null = null;
         child.stderr.on("data", (chunk: Buffer) => {
@@ -767,16 +900,24 @@ export class DictationService {
         // Wait for stdio/file handles to close before removing partial output.
         child.once("close", (code) => {
           signal?.removeEventListener("abort", cancel);
-          if (signal?.aborted) { reject(new Error("Import cancelled")); return; }
+          if (signal?.aborted) {
+            reject(new Error("Import cancelled"));
+            return;
+          }
           if (spawnError) {
-            reject(new Error(
-              `This format needs FFmpeg. Install ffmpeg and try again (${spawnError.message})`,
-              { cause: spawnError },
-            ));
+            reject(
+              new Error(
+                `This format needs FFmpeg. Install ffmpeg and try again (${spawnError.message})`,
+                { cause: spawnError },
+              ),
+            );
           } else if (code === 0) resolveConversion();
-          else reject(new Error(
-            `FFmpeg could not decode this media file: ${stderr.trim() || `exit code ${code}`}`,
-          ));
+          else
+            reject(
+              new Error(
+                `FFmpeg could not decode this media file: ${stderr.trim() || `exit code ${code}`}`,
+              ),
+            );
         });
       });
       return { path: outputPath, directory };
@@ -798,37 +939,62 @@ export class DictationService {
       throw new Error("The speech worker returned an invalid text result.");
     const text = result.text.trim();
     if (!text)
-      throw new Error("The speech model returned no text. Check the recording and retry.");
-    const language = normalizeReportedLanguage(result.recognizedLanguage) ?? settings.language;
+      throw new Error(
+        "The speech model returned no text. Check the recording and retry.",
+      );
+    const language =
+      normalizeReportedLanguage(result.recognizedLanguage) ?? settings.language;
     const formatted = settings.spokenFormattingCommands
       ? formatSpokenCommands(text, settings.language)
       : text;
-    const personalized = personalizeWithUsage(formatted, settings.customWords, language);
+    const personalized = personalizeWithUsage(
+      formatted,
+      settings.customWords,
+      language,
+    );
     this.recordRuleUsage(personalized.counts);
     const durationMs =
       durationOverride ?? Math.round(numeric(result.duration) * 1000);
     const languageMetadata = normalizeLanguageMetadata(result);
     const backendTimings = normalizeTimings(result.timings);
     const mergedTimings = { ...timings, ...backendTimings };
-    if (timings?.preprocessingMs !== undefined && backendTimings?.preprocessingMs !== undefined) {
-      mergedTimings.preprocessingMs = timings.preprocessingMs + backendTimings.preprocessingMs;
+    if (
+      timings?.preprocessingMs !== undefined &&
+      backendTimings?.preprocessingMs !== undefined
+    ) {
+      mergedTimings.preprocessingMs =
+        timings.preprocessingMs + backendTimings.preprocessingMs;
     }
     return {
       id: randomUUID(),
       createdAt: Date.now(),
       durationMs,
       text,
-      dictationMode: source === "dictation" ? settings.dictationMode ?? "prose" : "prose",
+      dictationMode:
+        source === "dictation" ? (settings.dictationMode ?? "prose") : "prose",
       technicalText:
         source === "dictation" &&
-        (settings.dictationMode === "code" || settings.dictationMode === "command")
+        (settings.dictationMode === "code" ||
+          settings.dictationMode === "command")
           ? renderTechnicalDictation(text, settings.dictationMode)
           : null,
       sourceRevision: 0,
       rewriteSourceRevision: null,
-      personalizedText: source === "dictation" && settings.dictationFormatting === "spoken" ? formatDictation(text, settings.customWords, settings.dictationFormatting, settings.language) : personalized.text,
-      dictationFormatting: source === "dictation" && settings.dictationFormatting === "spoken"
-        && (settings.language === "en" || settings.language === "nl") ? "spoken" : "preserve",
+      personalizedText:
+        source === "dictation" && settings.dictationFormatting === "spoken"
+          ? formatDictation(
+              text,
+              settings.customWords,
+              settings.dictationFormatting,
+              settings.language,
+            )
+          : personalized.text,
+      dictationFormatting:
+        source === "dictation" &&
+        settings.dictationFormatting === "spoken" &&
+        (settings.language === "en" || settings.language === "nl")
+          ? "spoken"
+          : "preserve",
       model: settings.model,
       language: languageMetadata.recognizedLanguage ?? "und",
       ...languageMetadata,
@@ -849,22 +1015,33 @@ export class DictationService {
     method?: string,
   ): TranscriptRecord {
     const saved = this.storage.findHistory(record.id);
-    const updated = { ...(saved ?? record), delivery: { state, updatedAt: Date.now(), detail, method } };
+    const updated = {
+      ...(saved ?? record),
+      delivery: { state, updatedAt: Date.now(), detail, method },
+    };
     if (saved) this.storage.replaceHistory(updated);
     this.broadcastTranscript(updated);
     return updated;
   }
 
-  private publishDeliveryTimings(record: TranscriptRecord, output: string): void {
+  private publishDeliveryTimings(
+    record: TranscriptRecord,
+    output: string,
+  ): void {
     try {
       const existing = this.storage.findHistory(record.id);
       if (existing && deliveredText(existing) !== output) return;
       const deliveryTimings: PipelineTimings = {};
-      if (record.timings?.clipboardMs !== undefined) deliveryTimings.clipboardMs = record.timings.clipboardMs;
-      if (record.timings?.pasteMs !== undefined) deliveryTimings.pasteMs = record.timings.pasteMs;
+      if (record.timings?.clipboardMs !== undefined)
+        deliveryTimings.clipboardMs = record.timings.clipboardMs;
+      if (record.timings?.pasteMs !== undefined)
+        deliveryTimings.pasteMs = record.timings.pasteMs;
       const updated = {
         ...(existing ?? record),
-        timings: normalizeTimings({ ...(existing ?? record).timings, ...deliveryTimings }),
+        timings: normalizeTimings({
+          ...(existing ?? record).timings,
+          ...deliveryTimings,
+        }),
       };
       try {
         if (existing) this.storage.replaceHistory(updated);

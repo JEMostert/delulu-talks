@@ -1,32 +1,53 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  openSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { ExportFormat, TranscriptRecord } from "../../src/types";
 import { deliveredText, transcriptText } from "../../src/transcriptText";
 
 function markdownBlock(text: string, language = "text"): string {
-  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  const longest = Math.max(
+    0,
+    ...(text.match(/`+/g) ?? []).map((run) => run.length),
+  );
   const fence = "`".repeat(Math.max(3, longest + 1));
   return `${fence}${language}\n${text}${text.endsWith("\n") ? "" : "\n"}${fence}\n`;
 }
 
 function markdownNote(record: TranscriptRecord): string {
   const created = new Date(record.createdAt);
-  const metadata = JSON.stringify({
-    id: record.id,
-    recordedAt: Number.isFinite(created.getTime()) ? created.toISOString() : null,
-    speechModel: record.model,
-    language: record.language,
-    source: record.source,
-    sourceName: record.sourceName ?? null,
-    rewriteModel: record.magicModel ?? null,
-  }, null, 2);
+  const metadata = JSON.stringify(
+    {
+      id: record.id,
+      recordedAt: Number.isFinite(created.getTime())
+        ? created.toISOString()
+        : null,
+      speechModel: record.model,
+      language: record.language,
+      source: record.source,
+      sourceName: record.sourceName ?? null,
+      rewriteModel: record.magicModel ?? null,
+    },
+    null,
+    2,
+  );
   const sections: Array<[string, string]> = [["Original speech", record.text]];
-  if (record.editedText != null) sections.push(["Saved correction", record.editedText]);
-  if (record.personalizedText != null) sections.push(["Vocabulary result", record.personalizedText]);
+  if (record.editedText != null)
+    sections.push(["Saved correction", record.editedText]);
+  if (record.personalizedText != null)
+    sections.push(["Vocabulary result", record.personalizedText]);
   if (record.magicText != null) sections.push(["Rewrite", record.magicText]);
-  return `# Transcript note\n\n## Recording\n\n${markdownBlock(metadata, "json")}\n` +
-    sections.map(([title, text]) => `## ${title}\n\n${markdownBlock(text)}\n`).join("");
+  return (
+    `# Transcript note\n\n## Recording\n\n${markdownBlock(metadata, "json")}\n` +
+    sections
+      .map(([title, text]) => `## ${title}\n\n${markdownBlock(text)}\n`)
+      .join("")
+  );
 }
 
 export function exportRecord(

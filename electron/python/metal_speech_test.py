@@ -49,7 +49,7 @@ class MlxContract(unittest.TestCase):
         )
         modules = {"mlx": mlx, "mlx.core": mlx.core,
                    "download_progress": types.SimpleNamespace(download_progress_class=lambda: object),
-                   "huggingface_hub": types.SimpleNamespace(snapshot_download=download),
+                   "verified_snapshot": types.SimpleNamespace(verified_snapshot=download),
                    "mlx_audio": types.ModuleType("mlx_audio"),
                    "mlx_audio.stt": types.ModuleType("mlx_audio.stt"),
                    "mlx_audio.stt.utils": types.SimpleNamespace(load_model=load_model, load_audio=load_audio)}
@@ -68,7 +68,11 @@ class MlxContract(unittest.TestCase):
         self.assertTrue(self.downloads[0]["local_files_only"])
         self.assertTrue(self.loads[0][1]["strict"])
         self.assertEqual(self.generations[0][1]["max_tokens"], 8)
-        self.assertEqual(status, {"loaded": True, "model": MODEL, "device": "mlx"})
+        self.assertEqual(status, {"loaded": True, "model": MODEL, "device": "mlx",
+                                  "residency": "resident", "warmup": "complete",
+                                  "speechExecution": {"modelId": "r2t2", "backendId": "mlx-audio",
+                                      "precision": "bf16", "checkpoint": {"repository": MODEL, "revision": MODEL_REVISION},
+                                      "platform": "darwin", "device": "mlx"}})
         self.speech.load({})
         self.assertEqual(len(self.downloads), 1)
         self.assertEqual(len(self.generations), 1)

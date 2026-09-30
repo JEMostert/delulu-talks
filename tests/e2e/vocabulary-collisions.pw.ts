@@ -42,6 +42,8 @@ async function openVocabulary(page: Page, customWords: CustomWord[]) {
             get(_target, method: string) {
               if (method.startsWith("on")) return () => () => {};
               return async (...args: unknown[]) => {
+                if (method === "getHistoryBatchSnapshot")
+                  return { deletion: null, records: structuredClone(records) };
                 if (method === "getHistory") return structuredClone(records);
                 if (
                   [
@@ -320,7 +322,7 @@ test("shortcut creation and editing show the precise Unicode correction alias an
   const settings = JSON.parse(saved.settings!);
   expect(settings.customWords).toEqual([
     initial[0],
-    { ...initial[1], soundsLike: "sign off, final signoff" },
+    { ...initial[1], aliases: [], soundsLike: "sign off, final signoff" },
   ]);
   expect(settings.language).toBe("en");
   expect(settings.shortcut).toBe("CTRL+ALT+F7");

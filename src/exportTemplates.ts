@@ -1,10 +1,7 @@
 import type { TranscriptRecord } from "./types";
 
 export type ExportTextSource =
-  | "original"
-  | "corrected"
-  | "personalized"
-  | "rewritten";
+  "original" | "corrected" | "personalized" | "rewritten";
 
 export type ExportTemplateSpec = {
   template: string;
@@ -100,10 +97,12 @@ function plainDataObject(input: unknown): object {
   for (const key of Reflect.ownKeys(input)) {
     if (typeof key !== "string" || !REQUEST_FIELDS.includes(key))
       throw new Error("Export template options contain an unknown field.");
-    if (!Object.prototype.hasOwnProperty.call(
-      Object.getOwnPropertyDescriptor(input, key)!,
-      "value",
-    ))
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        Object.getOwnPropertyDescriptor(input, key)!,
+        "value",
+      )
+    )
       throw new Error("Export template options must contain literal values.");
   }
   return input;
@@ -147,7 +146,7 @@ function segments(template: string): Segment[] {
   const result: Segment[] = [];
   let literalStart = 0;
   let hasText = false;
-  for (let index = 0; index < template.length; ) {
+  for (let index = 0; index < template.length;) {
     if (template.startsWith("}}", index))
       throw new Error(
         "Export template contains an unmatched closing placeholder.",
@@ -172,8 +171,7 @@ function segments(template: string): Segment[] {
   }
   if (literalStart < template.length)
     result.push({ literal: template.slice(literalStart) });
-  if (!hasText)
-    throw new Error("Export templates must include {{text}}.");
+  if (!hasText) throw new Error("Export templates must include {{text}}.");
   return result;
 }
 

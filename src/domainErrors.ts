@@ -41,7 +41,12 @@ export class DomainError extends Error {
   constructor(
     code: DomainErrorCode,
     message: string,
-    context: { operationId: string; operation: string; cause?: unknown; cancellationEffect?: DomainFailure["cancellationEffect"] },
+    context: {
+      operationId: string;
+      operation: string;
+      cause?: unknown;
+      cancellationEffect?: DomainFailure["cancellationEffect"];
+    },
   ) {
     super(message);
     this.name = "DomainError";
@@ -57,22 +62,36 @@ export class DomainError extends Error {
 
 export function domainError(
   reason: unknown,
-  context: { operationId: string; operation: string; code?: DomainErrorCode; message?: string },
+  context: {
+    operationId: string;
+    operation: string;
+    code?: DomainErrorCode;
+    message?: string;
+  },
 ): DomainError {
   if (reason instanceof DomainError) return reason;
   return new DomainError(
     context.code ?? "OPERATION_FAILED",
-    context.message ?? (reason instanceof Error ? reason.message : "Operation failed"),
+    context.message ??
+      (reason instanceof Error ? reason.message : "Operation failed"),
     { ...context, cause: reason },
   );
 }
 
 export function serializeDomainError(error: DomainError): DomainFailure {
   const cause = error.cause;
-  const category = cause instanceof Error
-    ? { name: /^[A-Za-z][A-Za-z0-9]*Error$/.test(cause.name) ? cause.name : "Error" }
-    : undefined;
-  const code = cause && typeof cause === "object" && "code" in cause ? cause.code : undefined;
+  const category =
+    cause instanceof Error
+      ? {
+          name: /^[A-Za-z][A-Za-z0-9]*Error$/.test(cause.name)
+            ? cause.name
+            : "Error",
+        }
+      : undefined;
+  const code =
+    cause && typeof cause === "object" && "code" in cause
+      ? cause.code
+      : undefined;
   return {
     schemaVersion: 1,
     code: error.code,
@@ -82,10 +101,16 @@ export function serializeDomainError(error: DomainError): DomainFailure {
     retry: error.retry,
     cancelled: error.cancelled,
     cancellationEffect: error.cancellationEffect,
-    ...(category ? { cause: {
-      ...category,
-      ...(typeof code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? { code } : {}),
-    } } : {}),
+    ...(category
+      ? {
+          cause: {
+            ...category,
+            ...(typeof code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(code)
+              ? { code }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -98,7 +123,9 @@ const ERROR_MARKER = "\n@delulu-domain-error:";
 /** Error properties are stripped by Electron's contextBridge. The renderer
  * restores the safe contract from this message transport at its API boundary. */
 export function encodeDomainFailure(failure: DomainFailure): Error {
-  return new Error(`${failure.message}${ERROR_MARKER}${JSON.stringify(failure)}`);
+  return new Error(
+    `${failure.message}${ERROR_MARKER}${JSON.stringify(failure)}`,
+  );
 }
 
 export function restoreDomainError(reason: unknown): unknown {
@@ -106,13 +133,27 @@ export function restoreDomainError(reason: unknown): unknown {
   const index = reason.message.lastIndexOf(ERROR_MARKER);
   if (index < 0) return reason;
   try {
-    const failure = JSON.parse(reason.message.slice(index + ERROR_MARKER.length)) as DomainFailure;
-    if (failure.schemaVersion !== 1 || !Object.prototype.hasOwnProperty.call(DOMAIN_ERROR_POLICIES, failure.code) ||
-        typeof failure.operationId !== "string" || typeof failure.operation !== "string" ||
-        typeof failure.message !== "string") return reason;
+    const failure = JSON.parse(
+      reason.message.slice(index + ERROR_MARKER.length),
+    ) as DomainFailure;
+    if (
+      failure.schemaVersion !== 1 ||
+      !Object.prototype.hasOwnProperty.call(
+        DOMAIN_ERROR_POLICIES,
+        failure.code,
+      ) ||
+      typeof failure.operationId !== "string" ||
+      typeof failure.operation !== "string" ||
+      typeof failure.message !== "string"
+    )
+      return reason;
     return new DomainError(failure.code, failure.message, {
-      operationId: failure.operationId, operation: failure.operation,
-      cancellationEffect: failure.cancellationEffect === "worker-stopped" ? "worker-stopped" : "none",
+      operationId: failure.operationId,
+      operation: failure.operation,
+      cancellationEffect:
+        failure.cancellationEffect === "worker-stopped"
+          ? "worker-stopped"
+          : "none",
       cause: failure.cause,
     });
   } catch {

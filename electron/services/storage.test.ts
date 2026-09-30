@@ -218,58 +218,49 @@ describe("interrupted profile migration", () => {
       `failed legacy history staging preserves ${currentSettings ? "existing" : "absent"} settings and permits an intentional retry`,
       () => {
         const root = mkdtempSync(join(tmpdir(), "delulu-migration-rollback-"));
-        testDirectory = join(root, "current");
-        testHome = join(root, "home");
-        const legacy = join(
-          testHome,
-          ".local",
-          "share",
-          "com.joran.delulu-talks",
-        );
-        mkdirSync(legacy, { recursive: true });
-        mkdirSync(testDirectory);
-        if (currentSettings)
-          writeFileSync(join(testDirectory, "settings.json"), currentSettings);
-        const settings = '{"language":"nl","model":"qwen3Asr"}';
-        const history =
-          '[{"id":"legacy","text":"Origineel café 🚀","model":"qwen3Asr","editedText":"Correctie café 🚀"}]';
-        writeFileSync(join(legacy, "settings.json"), settings);
-        writeFileSync(join(legacy, "history.json"), history);
-        mkdirSync(join(testDirectory, "history.json.tmp"));
-        testPackaged = true;
         try {
-          expect(() => new StorageService()).toThrow();
-          expect(existsSync(join(testDirectory, "settings.json"))).toBe(
-            Boolean(currentSettings),
-          );
-          if (currentSettings)
-            expect(
-              readFileSync(join(testDirectory, "settings.json"), "utf8"),
-            ).toBe(currentSettings);
-          expect(existsSync(join(testDirectory, "settings.json.tmp"))).toBe(
-            false,
-          );
-          expect(existsSync(join(testDirectory, "history.json"))).toBe(false);
-          expect(readFileSync(join(legacy, "settings.json"), "utf8")).toBe(
-            settings,
-          );
-          expect(readFileSync(join(legacy, "history.json"), "utf8")).toBe(
-            history,
-          );
-          rmSync(join(testDirectory, "history.json.tmp"), { recursive: true });
-          const restored = new StorageService();
-          expect(restored.getSettings().language).toBe(
-            currentSettings ? "de" : "nl",
-          );
-          expect(restored.getHistory()[0]).toMatchObject({
-            id: "legacy",
-            text: "Origineel café 🚀",
-            model: "qwen3Asr",
-            editedText: "Correctie café 🚀",
-          });
+          const script = `
+            import { mock } from "bun:test";
+            import assert from "node:assert/strict";
+            import { join } from "node:path";
+            const fs = {...await import("node:fs")};
+            const root = ${JSON.stringify(root)};
+            const profile = join(root,"current"), home = join(root,"home");
+            const legacy = join(home,".local","share","com.joran.delulu-talks");
+            fs.mkdirSync(legacy,{recursive:true});
+            fs.mkdirSync(profile);
+            const currentSettings = ${JSON.stringify(currentSettings)};
+            if (currentSettings) fs.writeFileSync(join(profile,"settings.json"),currentSettings);
+            const settings = '{"language":"nl","model":"qwen3Asr"}';
+            const history = '[{"id":"legacy","text":"Origineel café 🚀","model":"qwen3Asr","editedText":"Correctie café 🚀"}]';
+            fs.writeFileSync(join(legacy,"settings.json"),settings);
+            fs.writeFileSync(join(legacy,"history.json"),history);
+            let failStage = true;
+            mock.module("electron",()=>({app:{isPackaged:true,getPath:name=>name === "home" ? home : profile}}));
+            mock.module("node:fs",()=>({...fs, openSync(path,...args) {
+              if (failStage && path.startsWith(join(profile,"history.json.")) && path.endsWith(".tmp"))
+                throw new Error("Injected legacy history staging failure");
+              return fs.openSync(path,...args);
+            }}));
+            const {StorageService} = await import(${JSON.stringify(new URL("./storage.ts", import.meta.url).href)});
+            assert.throws(()=>new StorageService(),/history staging failure/);
+            assert.equal(fs.existsSync(join(profile,"settings.json")),Boolean(currentSettings));
+            if (currentSettings) assert.equal(fs.readFileSync(join(profile,"settings.json"),"utf8"),currentSettings);
+            assert.equal(fs.existsSync(join(profile,"history.json")),false);
+            assert.equal(fs.readdirSync(profile).some(name=>name.endsWith(".tmp")),false);
+            assert.equal(fs.readFileSync(join(legacy,"settings.json"),"utf8"),settings);
+            assert.equal(fs.readFileSync(join(legacy,"history.json"),"utf8"),history);
+            failStage = false;
+            const restored = new StorageService();
+            assert.equal(restored.getSettings().language,currentSettings ? "de" : "nl");
+            assert.equal(restored.getHistory()[0].text,"Origineel café 🚀");
+            assert.equal(restored.getHistory()[0].editedText,"Correctie café 🚀");
+            assert.equal(restored.getHistory()[0].model,"qwen3Asr");
+          `;
+          const result = Bun.spawnSync([process.execPath, "--eval", script]);
+          expect(result.stderr.toString()).toBe("");
+          expect(result.exitCode).toBe(0);
         } finally {
-          testPackaged = false;
-          testHome = "";
           rmSync(root, { recursive: true, force: true });
         }
       },
@@ -370,8 +361,15 @@ describe("backup and interrupted write recovery", () => {
       expect(storage.getHistory().map((record) => record.id)).toEqual([
         "committed",
       ]);
+      const persisted = readFileSync(
+        join(testDirectory, "history.json"),
+        "utf8",
+      );
+      expect(JSON.parse(persisted)).toEqual(storage.getHistory());
+      expect(storage.getHistory()[0].text).toBe("Exact café 🚀 \nsecond line");
+      new StorageService();
       expect(readFileSync(join(testDirectory, "history.json"), "utf8")).toBe(
-        history,
+        persisted,
       );
       expect(
         readFileSync(join(testDirectory, "history.json.tmp"), "utf8"),
@@ -495,23 +493,27 @@ describe("settings migration", () => {
     );
   });
 
-  test("sanitizes custom vocabulary at the IPC boundary", () => {
+  test("normalizes valid vocabulary and rejects malformed rules without silently dropping them", () => {
     const settings = normalizeSettings({
       customWords: [
         { id: "x", term: " Nyra ", soundsLike: "nira", enabled: true },
-        { term: "" },
       ],
     });
     expect(settings.customWords).toEqual([
       {
+        schemaVersion: 1,
         kind: "correction",
         id: "x",
         term: "Nyra",
         soundsLike: "nira",
         replacement: "",
         enabled: true,
+        language: undefined,
       },
     ]);
+    expect(() => normalizeSettings({ customWords: [{ term: "" }] })).toThrow(
+      "Existing settings are preserved",
+    );
   });
 
   test("normalizes Magic model residency settings", () => {

@@ -1,27 +1,35 @@
-import type { MagicRewriteContext } from './types';
+import type { MagicRewriteContext } from "./types";
 
 /** Validate opt-in context without truncating or altering selected source text. */
-export function normalizeRewriteContext(value: unknown): MagicRewriteContext | undefined {
+export function normalizeRewriteContext(
+  value: unknown,
+): MagicRewriteContext | undefined {
   if (value === undefined || value === null) return undefined;
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Rewrite context must be an object');
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Rewrite context must be an object");
   }
   const source = value as Record<string, unknown>;
   const limits = { language: 80, fileType: 80, selection: 4000 } as const;
-  if (Object.keys(source).some((key) => !Object.prototype.hasOwnProperty.call(limits, key))) {
-    throw new Error('Rewrite context contains an unknown field');
+  if (
+    Object.keys(source).some(
+      (key) => !Object.prototype.hasOwnProperty.call(limits, key),
+    )
+  ) {
+    throw new Error("Rewrite context contains an unknown field");
   }
   const result: MagicRewriteContext = {};
-  for (const key of ['language', 'fileType', 'selection'] as const) {
+  for (const key of ["language", "fileType", "selection"] as const) {
     if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
     const field = source[key];
-    if (typeof field !== 'string') {
+    if (typeof field !== "string") {
       throw new Error(`Rewrite context ${key} must be a string`);
     }
     if (field.length > limits[key]) {
-      throw new Error(`Rewrite context ${key} exceeds ${limits[key]} characters`);
+      throw new Error(
+        `Rewrite context ${key} exceeds ${limits[key]} characters`,
+      );
     }
-    const normalized = key === 'selection' ? field : field.trim();
+    const normalized = key === "selection" ? field : field.trim();
     if (normalized.length) result[key] = normalized;
   }
   return Object.keys(result).length ? result : undefined;
@@ -32,9 +40,11 @@ export function normalizeRewriteContext(value: unknown): MagicRewriteContext | u
  * contiguous four-space/tab-indented code are protected, including unterminated
  * fences and trailing blank lines after indented code. No source is interpreted.
  */
-export function splitTechnicalBlocks(text: string): { text: string; protected: boolean }[] {
+export function splitTechnicalBlocks(
+  text: string,
+): { text: string; protected: boolean }[] {
   const blocks: { text: string; protected: boolean }[] = [];
-  let fenceCharacter: '`' | '~' | undefined;
+  let fenceCharacter: "`" | "~" | undefined;
   let fenceLength = 0;
   let indented = false;
   let offset = 0;
@@ -43,12 +53,17 @@ export function splitTechnicalBlocks(text: string): { text: string; protected: b
 
   while (offset < text.length) {
     const lineStart = offset;
-    while (offset < text.length && text[offset] !== '\r' && text[offset] !== '\n') offset += 1;
-    const line = text.slice(lineStart, offset);
-    if (text[offset] === '\r') {
+    while (
+      offset < text.length &&
+      text[offset] !== "\r" &&
+      text[offset] !== "\n"
+    )
       offset += 1;
-      if (text[offset] === '\n') offset += 1;
-    } else if (text[offset] === '\n') {
+    const line = text.slice(lineStart, offset);
+    if (text[offset] === "\r") {
+      offset += 1;
+      if (text[offset] === "\n") offset += 1;
+    } else if (text[offset] === "\n") {
       offset += 1;
     }
 
@@ -57,17 +72,20 @@ export function splitTechnicalBlocks(text: string): { text: string; protected: b
       isProtected = true;
       // Count a closing fence directly; no regex grows with the opening run.
       let cursor = 0;
-      while (cursor < 3 && line[cursor] === ' ') cursor += 1;
+      while (cursor < 3 && line[cursor] === " ") cursor += 1;
       const runStart = cursor;
       while (line[cursor] === fenceCharacter) cursor += 1;
-      if (cursor - runStart >= fenceLength && /^[ \t]*$/.test(line.slice(cursor))) {
+      if (
+        cursor - runStart >= fenceLength &&
+        /^[ \t]*$/.test(line.slice(cursor))
+      ) {
         fenceCharacter = undefined;
         fenceLength = 0;
       }
     } else {
       const opening = /^ {0,3}(`{3,}|~{3,})/.exec(line);
       if (opening) {
-        fenceCharacter = opening[1][0] as '`' | '~';
+        fenceCharacter = opening[1][0] as "`" | "~";
         fenceLength = opening[1].length;
         indented = false;
         isProtected = true;
@@ -84,7 +102,10 @@ export function splitTechnicalBlocks(text: string): { text: string; protected: b
     if (blockProtected === undefined) {
       blockProtected = isProtected;
     } else if (blockProtected !== isProtected) {
-      blocks.push({ text: text.slice(blockStart, lineStart), protected: blockProtected });
+      blocks.push({
+        text: text.slice(blockStart, lineStart),
+        protected: blockProtected,
+      });
       blockStart = lineStart;
       blockProtected = isProtected;
     }

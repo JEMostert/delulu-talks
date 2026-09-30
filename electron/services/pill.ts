@@ -99,7 +99,8 @@ export class PillService {
   }
 
   get method(): "layer-shell" | "mac-panel" | "unavailable" {
-    if (this.platform === "darwin") return this.unavailableReason ? "unavailable" : "mac-panel";
+    if (this.platform === "darwin")
+      return this.unavailableReason ? "unavailable" : "mac-panel";
     return this.supportedEnvironment() &&
       this.layerShellLibrary() &&
       !this.unavailableReason
@@ -109,7 +110,10 @@ export class PillService {
 
   get detail(): string {
     if (this.platform === "darwin")
-      return this.unavailableReason ?? "Nonactivating click-through Mac recording panel";
+      return (
+        this.unavailableReason ??
+        "Nonactivating click-through Mac recording panel"
+      );
     if (!this.supportedEnvironment())
       return "Native pill requires a Wayland layer-shell compositor";
     if (!this.layerShellLibrary())
@@ -156,7 +160,10 @@ export class PillService {
     if (this.platform === "darwin") {
       if (!this.mac && command.state !== "hidden") {
         this.unavailableReason = null;
-        this.mac = new MacPill((message) => { this.unavailableReason = message; this.mac = null; });
+        this.mac = new MacPill((message) => {
+          this.unavailableReason = message;
+          this.mac = null;
+        });
       }
       this.mac?.send(command);
       return;

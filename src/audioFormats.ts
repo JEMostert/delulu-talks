@@ -1,5 +1,15 @@
 export const SUPPORTED_AUDIO_EXTENSIONS = [
-  "wav", "flac", "mp3", "m4a", "ogg", "opus", "webm", "mp4", "mov", "mkv", "aac",
+  "wav",
+  "flac",
+  "mp3",
+  "m4a",
+  "ogg",
+  "opus",
+  "webm",
+  "mp4",
+  "mov",
+  "mkv",
+  "aac",
 ];
 
 export const MAX_AUDIO_BATCH_FILES = 50;

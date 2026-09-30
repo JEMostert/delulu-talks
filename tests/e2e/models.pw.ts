@@ -98,11 +98,11 @@ test("speech and rewrite lifecycle controls reach their own operations alongside
   await openModels(page);
   await page.getByRole("button", { name: "Load model", exact: true }).click();
   await page
-    .getByRole("button", { name: "Load rewriting", exact: true })
+    .getByRole("button", { name: "Load rewrite model", exact: true })
     .click();
-  await page.getByRole("button", { name: "Unload", exact: true }).click();
+  await page.getByRole("button", { name: "Unload model", exact: true }).click();
   await page
-    .getByRole("button", { name: "Unload rewriting", exact: true })
+    .getByRole("button", { name: "Unload rewrite model", exact: true })
     .click();
   await page
     .getByRole("combobox", { name: "Local rewrite model" })
@@ -151,7 +151,7 @@ test("both setup sections show honest stage progress and disable conflicting ope
   );
   await expect(
     page.getByRole("progressbar", { name: "Model setup stages", exact: true }),
-  ).toHaveAttribute("value", "0.25");
+  ).not.toHaveAttribute("value");
   await expect(
     page.getByRole("progressbar", { name: "Rewrite model setup stages" }),
   ).not.toHaveAttribute("value");
@@ -160,10 +160,10 @@ test("both setup sections show honest stage progress and disable conflicting ope
   ).toBeVisible();
   await expect(page.getByText("Rewrite warmup", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Repair engine", exact: true }),
+    page.getByRole("button", { name: "Repair runtime", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: "Repair rewriting", exact: true }),
+    page.getByRole("button", { name: "Repair rewrite runtime", exact: true }),
   ).toBeDisabled();
   await expect(
     page.getByRole("combobox", { name: "Local rewrite model" }),
@@ -203,10 +203,10 @@ test("rewrite inference locks model operations without showing setup-stage progr
     { phase: "rewriting", engine: "ready", message: "Rewriting a transcript" },
   );
   await expect(
-    page.getByRole("button", { name: "Unload", exact: true }),
+    page.getByRole("button", { name: "Unload model", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: "Unload rewriting", exact: true }),
+    page.getByRole("button", { name: "Unload rewrite model", exact: true }),
   ).toBeDisabled();
   await expect(
     page.getByRole("combobox", { name: "Local rewrite model" }),

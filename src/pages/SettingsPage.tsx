@@ -46,7 +46,9 @@ type Props = {
   magicStatus: MagicStatus;
   saving: boolean;
   onSave: (patch: Partial<AppSettings>) => Promise<boolean>;
-  onManagePersonalProfile: (command: PersonalProfileCommand) => Promise<boolean>;
+  onManagePersonalProfile: (
+    command: PersonalProfileCommand,
+  ) => Promise<boolean>;
   onActivateProfile: (command: ProfileActivationCommand) => Promise<boolean>;
   onConfigureShortcut: () => void;
   onAuthorizePaste: () => void;
@@ -129,7 +131,11 @@ export function SettingsPage(props: Props) {
       {tab === "data" && <LocalData />}
       {tab === "profiles" && (
         <>
-          <ProfileActivationControls settings={s} busy={busy || saving} onActivate={props.onActivateProfile} />
+          <ProfileActivationControls
+            settings={s}
+            busy={busy || saving}
+            onActivate={props.onActivateProfile}
+          />
           <PersonalProfiles
             settings={s}
             saving={saving}
@@ -139,12 +145,12 @@ export function SettingsPage(props: Props) {
       )}
       {tab === "personalization" && (
         <>
-        <ProjectVocabulary />
-        <VocabularyPage
-          words={s.customWords}
-          saving={saving}
-          onChange={(customWords) => onSave({ customWords })}
-        />
+          <ProjectVocabulary />
+          <VocabularyPage
+            words={s.customWords}
+            saving={saving}
+            onChange={(customWords) => onSave({ customWords })}
+          />
         </>
       )}
       {tab === "general" && (
@@ -229,12 +235,15 @@ export function SettingsPage(props: Props) {
                 disabled={saving || busy}
                 onChange={(e) =>
                   save({
-                    dictationFormatting: e.target.value as AppSettings["dictationFormatting"],
+                    dictationFormatting: e.target
+                      .value as AppSettings["dictationFormatting"],
                   })
                 }
               >
                 <option value="preserve">Keep recognized punctuation</option>
-                <option value="spoken">Explicit spoken formatting commands</option>
+                <option value="spoken">
+                  Explicit spoken formatting commands
+                </option>
               </select>
             </SettingRow>
             <SettingRow
@@ -441,19 +450,21 @@ export function SettingsPage(props: Props) {
                 disabled={saving}
                 onChange={(e) =>
                   save({
-                    pasteShortcut: e.target.value as AppSettings["pasteShortcut"],
+                    pasteShortcut: e.target
+                      .value as AppSettings["pasteShortcut"],
                   })
                 }
               >
                 <option value="standard">
-                  Standard ({capabilities?.platform === "darwin"
-                    ? "Cmd+V"
-                    : "Ctrl+V"})
+                  Standard (
+                  {capabilities?.platform === "darwin" ? "Cmd+V" : "Ctrl+V"})
                 </option>
                 <option value="terminal">
-                  Terminal ({capabilities?.platform === "darwin"
+                  Terminal (
+                  {capabilities?.platform === "darwin"
                     ? "Cmd+V"
-                    : "Ctrl+Shift+V"})
+                    : "Ctrl+Shift+V"}
+                  )
                 </option>
               </select>
             </SettingRow>
@@ -512,7 +523,7 @@ export function SettingsPage(props: Props) {
               {toggle(
                 "restoreClipboardAfterPaste",
                 "Restore clipboard after paste",
-                !settings.autoPaste,
+                !s.autoPaste,
               )}
             </SettingRow>
             <SettingRow
@@ -553,7 +564,9 @@ export function SettingsPage(props: Props) {
               }
             >
               {REWRITE_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>{preset.label}</option>
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
               ))}
             </select>
           </SettingRow>
@@ -583,10 +596,14 @@ export function SettingsPage(props: Props) {
                 value={s.memoryPolicy}
                 disabled={saving || busy}
                 onChange={(e) =>
-                  save({ memoryPolicy: e.target.value as AppSettings["memoryPolicy"] })
+                  save({
+                    memoryPolicy: e.target.value as AppSettings["memoryPolicy"],
+                  })
                 }
               >
-                <option value="independent">Independent models (default)</option>
+                <option value="independent">
+                  Independent models (default)
+                </option>
                 <option value="balanced">Balanced — prioritize speech</option>
               </select>
             </SettingRow>
@@ -662,7 +679,11 @@ export function SettingsPage(props: Props) {
               </div>
             </SettingRow>
           </section>
-          <HistoryRetention policy={s.historyRetention} saving={saving} onSave={onSave} />
+          <HistoryRetention
+            policy={s.historyRetention}
+            saving={saving}
+            onSave={onSave}
+          />
           <Diagnostics />
         </>
       )}
@@ -771,17 +792,25 @@ export function SettingsPage(props: Props) {
               <h3>Local runtime and model maintenance</h3>
               <p>Repair uses the runtime versions included with this app.</p>
             </div>
-            <SettingRow title="Speech runtime and model" description={status.message}>
+            <SettingRow
+              title="Speech runtime and model"
+              description={status.message}
+            >
               <div className="inline-control">
-                {props.onCancelSetup && ["running", "cancelling"].includes(status.setupState ?? "") && (
-                  <button
-                    className="secondary-button"
-                    disabled={status.setupState === "cancelling"}
-                    onClick={props.onCancelSetup}
-                  >
-                    {status.setupState === "cancelling" ? "Cancelling…" : "Cancel setup"}
-                  </button>
-                )}
+                {props.onCancelSetup &&
+                  ["running", "cancelling"].includes(
+                    status.setupState ?? "",
+                  ) && (
+                    <button
+                      className="secondary-button"
+                      disabled={status.setupState === "cancelling"}
+                      onClick={props.onCancelSetup}
+                    >
+                      {status.setupState === "cancelling"
+                        ? "Cancelling…"
+                        : "Cancel setup"}
+                    </button>
+                  )}
                 <button
                   className="secondary-button"
                   disabled={busy}
@@ -808,17 +837,25 @@ export function SettingsPage(props: Props) {
                 )}
               </div>
             </SettingRow>
-            <SettingRow title="Rewrite runtime and model" description={magicStatus.message}>
+            <SettingRow
+              title="Rewrite runtime and model"
+              description={magicStatus.message}
+            >
               <div className="inline-control">
-                {props.onCancelSetupMagic && ["running", "cancelling"].includes(magicStatus.setupState ?? "") && (
-                  <button
-                    className="secondary-button"
-                    disabled={magicStatus.setupState === "cancelling"}
-                    onClick={props.onCancelSetupMagic}
-                  >
-                    {magicStatus.setupState === "cancelling" ? "Cancelling…" : "Cancel rewriting setup"}
-                  </button>
-                )}
+                {props.onCancelSetupMagic &&
+                  ["running", "cancelling"].includes(
+                    magicStatus.setupState ?? "",
+                  ) && (
+                    <button
+                      className="secondary-button"
+                      disabled={magicStatus.setupState === "cancelling"}
+                      onClick={props.onCancelSetupMagic}
+                    >
+                      {magicStatus.setupState === "cancelling"
+                        ? "Cancelling…"
+                        : "Cancel rewriting setup"}
+                    </button>
+                  )}
                 <button
                   className="secondary-button"
                   disabled={busy}
@@ -859,7 +896,11 @@ export function SettingsPage(props: Props) {
               </button>
             </SettingRow>
           </section>
-          <HistoryRetention policy={s.historyRetention} saving={saving} onSave={onSave} />
+          <HistoryRetention
+            policy={s.historyRetention}
+            saving={saving}
+            onSave={onSave}
+          />
           <Diagnostics />
         </>
       )}
@@ -871,8 +912,8 @@ export function SettingsPage(props: Props) {
           onConfirm={props.onReset}
         >
           <p>
-            You’ll need to install the speech runtime again before dictating. Your
-            history, settings, and model cache stay on this device.
+            You’ll need to install the speech runtime again before dictating.
+            Your history, settings, and model cache stay on this device.
           </p>
         </ConfirmDialog>
       )}

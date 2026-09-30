@@ -1,5 +1,9 @@
 import { SelectedTextWorkflow } from "./components/SelectedTextWorkflow";
-import { deliveredText, transcriptText, transcriptSourceRevision } from "./transcriptText";
+import {
+  deliveredText,
+  transcriptText,
+  transcriptSourceRevision,
+} from "./transcriptText";
 import { createTranscriptCommands } from "./transcriptCommands";
 import { useEffect, useState } from "react";
 import {
@@ -17,7 +21,10 @@ import { bridge } from "./bridge";
 import type { useWorkspace } from "./hooks/useWorkspace";
 import { useTheme } from "./hooks/useTheme";
 import { Sidebar } from "./components/Sidebar";
-import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
+import {
+  CommandPalette,
+  type PaletteCommand,
+} from "./components/CommandPalette";
 import { profilePaletteCommands } from "./profilePaletteCommands";
 import { effectiveProfileSettings } from "./activePersonalProfile";
 import { Onboarding } from "./components/Onboarding";
@@ -52,8 +59,14 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
     title: "Audio files",
     subtitle: "Transcribe imported recordings",
   },
-  models: { title: "Models", subtitle: "Speech and rewrite models, runtimes and backends" },
-  technical: { title: "Technical text", subtitle: "Literal editing · undo · explicit copy" },
+  models: {
+    title: "Models",
+    subtitle: "Speech and rewrite models, runtimes and backends",
+  },
+  technical: {
+    title: "Technical text",
+    subtitle: "Literal editing · undo · explicit copy",
+  },
   settings: {
     title: "Settings",
     subtitle: "Capture, output, runtime and application",
@@ -61,13 +74,23 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
 };
 function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   useTheme(w.settings.theme);
-  const [modelTarget, setModelTarget] = useState<"decode" | "diagnostics" | null>(null);
+  const [modelTarget, setModelTarget] = useState<
+    "decode" | "diagnostics" | null
+  >(null);
   const [visited, setVisited] = useState<Set<Page>>(new Set(["home"]));
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [focusHistory, setFocusHistory] = useState(false);
   useEffect(() => {
     const openCommands = (event: KeyboardEvent) => {
-      if (!w.ready || event.repeat || event.altKey || !(event.ctrlKey || event.metaKey) || !event.shiftKey || event.code !== "KeyP") return;
+      if (
+        !w.ready ||
+        event.repeat ||
+        event.altKey ||
+        !(event.ctrlKey || event.metaKey) ||
+        !event.shiftKey ||
+        event.code !== "KeyP"
+      )
+        return;
       event.preventDefault();
       if (!document.querySelector("dialog[open]")) setPaletteOpen(true);
     };
@@ -88,12 +111,25 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   }, [w.page]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || event.isComposing || event.altKey ||
-          !(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        event.altKey ||
+        !(event.ctrlKey || event.metaKey) ||
+        !event.shiftKey
+      )
+        return;
       const key = event.key.toLowerCase();
       if (key !== "m" && key !== "d") return;
       const target = event.target;
-      if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable='true'], [role='dialog']")) return;
+      if (
+        target instanceof HTMLElement &&
+        target.closest(
+          "input, textarea, select, [contenteditable='true'], [role='dialog']",
+        )
+      )
+        return;
       if (document.querySelector("[role='dialog'][aria-modal='true']")) return;
       event.preventDefault();
       w.setPage("models");
@@ -111,7 +147,8 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
       document.getElementById("runtime-diagnostics-refresh")?.click();
     setModelTarget(null);
   }, [modelTarget, w.page, w.ready]);
-  const recording = w.status.phase === "listening" || w.status.phase === "paused";
+  const recording =
+    w.status.phase === "listening" || w.status.phase === "paused";
   const needsSetup =
     !recording && ["missing", "error"].includes(w.status.engine);
   const speechBusy = ["preparing", "loading", "transcribing"].includes(
@@ -130,10 +167,13 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const transcriptActions = {
     ...baseTranscriptActions,
     onCancelRewrite: (operationId: string) => bridge.cancelRewrite(operationId),
-    onOpenRewrite: (record: Parameters<typeof w.operations.openRewrite>[0]) => w.operations.openRewrite(record, w.page),
+    onOpenRewrite: (record: Parameters<typeof w.operations.openRewrite>[0]) =>
+      w.operations.openRewrite(record, w.page),
   };
   const rewrite = w.operations.rewriteOperation;
-  const rewriteRecord = rewrite ? w.history.find((record) => record.id === rewrite.transcriptId) : undefined;
+  const rewriteRecord = rewrite
+    ? w.history.find((record) => record.id === rewrite.transcriptId)
+    : undefined;
   const download = run(() => bridge.downloadUpdate());
   const install = run(() => bridge.installUpdate());
   const setup = run(() => bridge.setupModel());
@@ -145,18 +185,111 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const loadMagic = run(() => bridge.loadMagic());
   const unloadMagic = run(() => bridge.unloadMagic());
   const commands: PaletteCommand[] = [
-    ...profilePaletteCommands(w.settings, (profile) => w.activateProfile({ action: "activate", id: profile.id, expectedProfile: profile, expectedCurrentSettings: effectiveProfileSettings(w.settings) }), {
-      disabled: busy || w.saving ? "Finish the current capture, model operation, or settings save before switching profiles." : undefined,
-      activeId: w.settings.activePersonalProfile?.id,
-      global: () => w.activateProfile({ action: "global", expectedCurrentSettings: effectiveProfileSettings(w.settings) }),
-    }),
-    { id: "record", label: recording ? "Stop dictation" : "Start dictation", keywords: "record microphone capture speech", disabled: !recording && (busy || needsSetup) ? needsSetup ? "Set up or repair speech in Models first." : "Finish the current model operation first." : undefined, run: () => w.action(() => bridge.toggleDictation()) },
-    { id: "history", label: "Search transcript history", keywords: "find original corrected rewritten", run: () => { w.setPage("history"); setFocusHistory(true); } },
-    { id: "models", label: "Open model management", keywords: "speech rewriting runtime setup diagnostics", run: () => w.setPage("models") },
-    { id: "load-speech", label: "Load speech model", detail: "Prepare R2T2 for dictation.", disabled: busy ? "Finish the current capture or model operation first." : w.status.engine === "missing" ? "Install speech in Models first." : undefined, run: () => { w.setPage("models"); load(); } },
-    { id: "unload-speech", label: "Unload speech model", detail: "Release speech model memory.", disabled: busy ? "Finish the current capture or model operation first." : w.status.engine !== "ready" ? "The speech model is not ready to unload." : undefined, run: () => { w.setPage("models"); unload(); } },
-    { id: "load-rewrite", label: "Load rewriting model", detail: "Prepare the selected optional Qwen 3.5 model.", disabled: busy ? "Finish the current capture or model operation first." : w.magicStatus.engine === "missing" ? "Install rewriting in Models first." : undefined, run: () => { w.setPage("models"); loadMagic(); } },
-    { id: "unload-rewrite", label: "Unload rewriting model", detail: "Release rewriting model memory.", disabled: busy ? "Finish the current capture or model operation first." : w.magicStatus.engine !== "ready" ? "The rewriting model is not ready to unload." : undefined, run: () => { w.setPage("models"); unloadMagic(); } },
+    ...profilePaletteCommands(
+      w.settings,
+      (profile) =>
+        w.activateProfile({
+          action: "activate",
+          id: profile.id,
+          expectedProfile: profile,
+          expectedCurrentSettings: effectiveProfileSettings(w.settings),
+        }),
+      {
+        disabled:
+          busy || w.saving
+            ? "Finish the current capture, model operation, or settings save before switching profiles."
+            : undefined,
+        activeId: w.settings.activePersonalProfile?.id,
+        global: () =>
+          w.activateProfile({
+            action: "global",
+            expectedCurrentSettings: effectiveProfileSettings(w.settings),
+          }),
+      },
+    ),
+    {
+      id: "record",
+      label: recording ? "Stop dictation" : "Start dictation",
+      keywords: "record microphone capture speech",
+      disabled:
+        !recording && (busy || needsSetup)
+          ? needsSetup
+            ? "Set up or repair speech in Models first."
+            : "Finish the current model operation first."
+          : undefined,
+      run: () => w.action(() => bridge.toggleDictation()),
+    },
+    {
+      id: "history",
+      label: "Search transcript history",
+      keywords: "find original corrected rewritten",
+      run: () => {
+        w.setPage("history");
+        setFocusHistory(true);
+      },
+    },
+    {
+      id: "models",
+      label: "Open model management",
+      keywords: "speech rewriting runtime setup diagnostics",
+      run: () => w.setPage("models"),
+    },
+    {
+      id: "load-speech",
+      label: "Load speech model",
+      detail: "Prepare R2T2 for dictation.",
+      disabled: busy
+        ? "Finish the current capture or model operation first."
+        : w.status.engine === "missing"
+          ? "Install speech in Models first."
+          : undefined,
+      run: () => {
+        w.setPage("models");
+        load();
+      },
+    },
+    {
+      id: "unload-speech",
+      label: "Unload speech model",
+      detail: "Release speech model memory.",
+      disabled: busy
+        ? "Finish the current capture or model operation first."
+        : w.status.engine !== "ready"
+          ? "The speech model is not ready to unload."
+          : undefined,
+      run: () => {
+        w.setPage("models");
+        unload();
+      },
+    },
+    {
+      id: "load-rewrite",
+      label: "Load rewriting model",
+      detail: "Prepare the selected optional Qwen 3.5 model.",
+      disabled: busy
+        ? "Finish the current capture or model operation first."
+        : w.magicStatus.engine === "missing"
+          ? "Install rewriting in Models first."
+          : undefined,
+      run: () => {
+        w.setPage("models");
+        loadMagic();
+      },
+    },
+    {
+      id: "unload-rewrite",
+      label: "Unload rewriting model",
+      detail: "Release rewriting model memory.",
+      disabled: busy
+        ? "Finish the current capture or model operation first."
+        : w.magicStatus.engine !== "ready"
+          ? "The rewriting model is not ready to unload."
+          : undefined,
+      run: () => {
+        w.setPage("models");
+        unloadMagic();
+      },
+    },
   ];
   return (
     <div className="relative grid h-[100dvh] grid-cols-[184px_minmax(0,1fr)] overflow-hidden border-t-2 border-accent max-[900px]:grid-cols-[154px_minmax(0,1fr)] max-[700px]:grid-cols-[64px_minmax(0,1fr)]">
@@ -192,7 +325,15 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             </p>
           </div>
           <div className="flex items-center gap-3.5 max-[900px]:gap-[9px]">
-            <button className="icon-button" disabled={!w.ready} aria-label="Open command palette" title="Commands · Ctrl/Cmd + Shift + P" onClick={() => setPaletteOpen(true)}><Terminal /></button>
+            <button
+              className="icon-button"
+              disabled={!w.ready}
+              aria-label="Open command palette"
+              title="Commands · Ctrl/Cmd + Shift + P"
+              onClick={() => setPaletteOpen(true)}
+            >
+              <Terminal />
+            </button>
             <button
               className="icon-button theme-command max-[700px]:hidden"
               aria-label="Switch color theme"
@@ -225,7 +366,9 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
               )}
               <span>
                 {recording
-                  ? w.status.phase === "paused" ? "Paused" : "Listening"
+                  ? w.status.phase === "paused"
+                    ? "Paused"
+                    : "Listening"
                   : speechBusy
                     ? w.status.phase === "transcribing"
                       ? "Transcribing…"
@@ -243,9 +386,18 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                           : "Loads on demand"}
               </span>
             </button>
-            {recording && <button className="secondary-button" onClick={run(() => w.status.phase === "paused" ? bridge.resumeDictation() : bridge.pauseDictation())}>
-              {w.status.phase === "paused" ? "Resume" : "Pause"}
-            </button>}
+            {recording && (
+              <button
+                className="secondary-button"
+                onClick={run(() =>
+                  w.status.phase === "paused"
+                    ? bridge.resumeDictation()
+                    : bridge.pauseDictation(),
+                )}
+              >
+                {w.status.phase === "paused" ? "Resume" : "Pause"}
+              </button>
+            )}
             {recording && (
               <button
                 className="icon-button"
@@ -304,7 +456,11 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           onDownload={download}
           onInstall={install}
         />
-        <HistoryDeletionNotice state={w.historyDeletion} onUndo={w.undoDeletion} onHistory={() => w.setPage("history")} />
+        <HistoryDeletionNotice
+          state={w.historyDeletion}
+          onUndo={w.undoDeletion}
+          onHistory={() => w.setPage("history")}
+        />
         {w.ready && <ServiceRecovery recovery={w.serviceRecovery} />}
         {w.status.phase === "loading" && (
           <div
@@ -316,7 +472,10 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             Runtime to avoid loading it again between recordings.
           </div>
         )}
-        <OperationResumeNotice operations={w.operations} onImport={() => w.setPage("lab")} />
+        <OperationResumeNotice
+          operations={w.operations}
+          onImport={() => w.setPage("lab")}
+        />
         {w.status.captureInputNotice && (
           <div className="px-6 pt-3 max-[900px]:px-4">
             <div
@@ -328,8 +487,15 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             </div>
           </div>
         )}
-        <PasteRecoveryNotice onCopied={() => w.setToast("Copied to clipboard — paste manually")} />
-        {w.status.phase === "paused" && <div role="status" className="px-6 pt-3 text-sm text-muted">Paused. Audio stays in this session; the microphone remains open. Resume to keep recording, or Stop to transcribe the retained audio.</div>}
+        <PasteRecoveryNotice
+          onCopied={() => w.setToast("Copied to clipboard — paste manually")}
+        />
+        {w.status.phase === "paused" && (
+          <div role="status" className="px-6 pt-3 text-sm text-muted">
+            Paused. Audio stays in this session; the microphone remains open.
+            Resume to keep recording, or Stop to transcribe the retained audio.
+          </div>
+        )}
         {w.status.silenceCountdownSeconds != null &&
           w.status.silenceCountdownSeconds > 0 && (
             <div
@@ -337,9 +503,9 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
               aria-live="polite"
               className="px-6 pt-3 text-sm text-muted max-[900px]:px-4"
             >
-              Quiet input — recording stops in {w.status.silenceCountdownSeconds}s.
-              Speaking above the configured threshold restarts the countdown.
-              You can press Stop at any time.
+              Quiet input — recording stops in{" "}
+              {w.status.silenceCountdownSeconds}s. Speaking above the configured
+              threshold restarts the countdown. You can press Stop at any time.
             </div>
           )}
         {w.error && (
@@ -521,10 +687,18 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                 </div>
               )}
               {(visited.has("technical") || w.page === "technical") && (
-                <div hidden={w.page !== "technical"} className="mx-auto max-w-[1440px]">
-                  <TechnicalPage history={w.history} settings={w.settings} busy={busy || w.saving}
+                <div
+                  hidden={w.page !== "technical"}
+                  className="mx-auto max-w-[1440px]"
+                >
+                  <TechnicalPage
+                    history={w.history}
+                    settings={w.settings}
+                    busy={busy || w.saving}
                     onUpdateSettings={(patch) => w.saveSettings(patch, null)}
-                    rewriteStatus={w.magicStatus} onRewriteSetup={() => w.setPage("models")} />
+                    rewriteStatus={w.magicStatus}
+                    onRewriteSetup={() => w.setPage("models")}
+                  />
                 </div>
               )}
               {(visited.has("models") || w.page === "models") && (
@@ -594,7 +768,10 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                       w.setToast(
                         "Focus another text field — pasting in 3 seconds…",
                       );
-                      void w.action(() => bridge.testPaste(), "Paste test shortcut sent — check your destination");
+                      void w.action(
+                        () => bridge.testPaste(),
+                        "Paste test shortcut sent — check your destination",
+                      );
                     }}
                     onCheckForUpdates={run(() => bridge.checkForUpdates())}
                     onDownloadUpdate={download}
@@ -621,23 +798,50 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           key={rewrite.key}
           contextLabel={rewrite.label}
           text={rewriteRecord ? transcriptText(rewriteRecord) : rewrite.source}
-          baseline={rewriteRecord ? deliveredText(rewriteRecord) : rewrite.baseline}
-          sourceRevision={rewriteRecord ? transcriptSourceRevision(rewriteRecord) : rewrite.sourceRevision}
+          baseline={
+            rewriteRecord ? deliveredText(rewriteRecord) : rewrite.baseline
+          }
+          sourceRevision={
+            rewriteRecord
+              ? transcriptSourceRevision(rewriteRecord)
+              : rewrite.sourceRevision
+          }
           sourceLanguage={rewrite.sourceLanguage}
           status={w.magicStatus}
           visible={rewrite.visible}
           onBackground={w.operations.hideRewrite}
-          onOperationState={(phase) => w.operations.rewriteState(rewrite.key, phase)}
+          onOperationState={(phase) =>
+            w.operations.rewriteState(rewrite.key, phase)
+          }
           onClose={() => w.operations.closeRewrite(rewrite.key)}
           onSetup={() => w.setPage("models")}
           onCancelRewrite={bridge.cancelRewrite}
           onRewrite={(request) => w.operations.runRewrite(rewrite.key, request)}
-          onApply={(result, source, sourceRevision) => w.operations.applyRewrite(rewrite.key, () =>
-            baseTranscriptActions.onSetRewrite!(rewrite.transcriptId, result, source, sourceRevision))}
+          onApply={(result, source, sourceRevision) =>
+            w.operations.applyRewrite(rewrite.key, () =>
+              baseTranscriptActions.onSetRewrite!(
+                rewrite.transcriptId,
+                result,
+                source,
+                sourceRevision,
+              ),
+            )
+          }
         />
       )}
-      <div className="px-6 pb-3 flex flex-wrap items-center gap-3"><SelectedTextWorkflow status={w.magicStatus} onSetup={() => w.setPage("models")} /></div>
-      {paletteOpen && <CommandPalette commands={commands} actionError={w.error} onClose={() => setPaletteOpen(false)} />}
+      <div className="px-6 pb-3 flex flex-wrap items-center gap-3">
+        <SelectedTextWorkflow
+          status={w.magicStatus}
+          onSetup={() => w.setPage("models")}
+        />
+      </div>
+      {paletteOpen && (
+        <CommandPalette
+          commands={commands}
+          actionError={w.error}
+          onClose={() => setPaletteOpen(false)}
+        />
+      )}
       {w.toast && (
         <div
           className="toast fixed bottom-[22px] left-[calc(50%+92px)] z-[90] flex max-w-[calc(100vw-40px)] -translate-x-1/2 items-center gap-3 rounded-[14px] border border-line-strong bg-surface px-4 py-3 text-[13px] shadow-pop backdrop-blur-xl max-[900px]:left-[calc(50%+77px)] max-[700px]:left-[calc(50%+32px)] max-[700px]:w-[calc(100vw-90px)]"

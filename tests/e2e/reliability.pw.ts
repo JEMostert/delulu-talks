@@ -59,17 +59,20 @@ async function scenario(page: Page, kind: string) {
                   platform: "darwin",
                   wayland: false,
                 };
-              if (kind === "search" && property === "getHistory")
-                return [
-                  {
-                    ...(await previewApi
-                      .getHistory()
-                      .then((items) => items[0])),
-                    text: "Recognized words",
-                    magicText: null,
-                    personalizedText: "Nyra uniquely personalized",
-                  },
-                ];
+              if (kind === "search" && property === "getHistoryBatchSnapshot")
+                return {
+                  deletion: null,
+                  records: [
+                    {
+                      ...(await previewApi
+                        .getHistory()
+                        .then((items) => items[0])),
+                      text: "Recognized words",
+                      magicText: null,
+                      personalizedText: "Nyra uniquely personalized",
+                    },
+                  ],
+                };
               const method = previewApi[
                 property as keyof typeof previewApi
               ] as (...args: unknown[]) => unknown;
@@ -120,7 +123,7 @@ test("the main recording control remains usable while listening", async ({
 }) => {
   await scenario(page, "recording");
   const stop = page.getByRole("button", {
-    name: "Stop dictation",
+    name: "Stop recording",
     exact: true,
   });
   await expect(stop).toBeEnabled();

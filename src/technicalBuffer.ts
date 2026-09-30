@@ -44,7 +44,9 @@ function selection(
 ): Pick<TechnicalBufferSnapshot, "selectionStart" | "selectionEnd"> {
   const length = displayText(text).length;
   const clamp = (offset: number) =>
-    Number.isNaN(offset) ? 0 : Math.min(length, Math.max(0, Math.trunc(offset)));
+    Number.isNaN(offset)
+      ? 0
+      : Math.min(length, Math.max(0, Math.trunc(offset)));
   const first = clamp(start);
   const last = clamp(end);
   return {
@@ -183,7 +185,8 @@ export class TechnicalBuffer {
     const suffix = raw.slice(rawOffset(raw, previous.length - suffixLength));
     const fragment = next.slice(prefixLength, next.length - suffixLength);
     const style = raw.match(/\r\n|\r|\n/)?.[0] ?? "\n";
-    const text = prefix + typedFragment(fragment, style, prefix, suffix) + suffix;
+    const text =
+      prefix + typedFragment(fragment, style, prefix, suffix) + suffix;
     this.commit({ text, ...selection(text, start, end) });
   }
 

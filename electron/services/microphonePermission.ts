@@ -1,8 +1,7 @@
 import { systemPreferences } from "electron";
 import type { MicrophonePermission } from "../../src/types";
 
-const microphoneSettings =
-  "System Settings → Privacy & Security → Microphone";
+const microphoneSettings = "System Settings → Privacy & Security → Microphone";
 
 export function getMicrophonePermission(): MicrophonePermission {
   if (process.platform !== "darwin") {

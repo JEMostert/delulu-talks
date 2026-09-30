@@ -53,6 +53,7 @@ class ModelWorkerFixture {
   loadGate = null;
   loadEntered = null;
   nextFailure = null;
+  warmupFailure = null;
   denyRollback = false;
   constructor(paths) {
     this.paths = paths;
@@ -61,8 +62,10 @@ class ModelWorkerFixture {
   }
   get busy() { return this.active > 0; }
   async request(command) {
+      if (command === "capabilities") return { languageHints: { supported: true, languages: ["auto","nl","en"] }, engine: this.kind === "speech" ? "speech" : "writing", modelFamily: this.kind === "speech" ? "r2t2" : "qwen3.5", backend: this.kind === "magic" ? "transformers" : process.platform === "darwin" ? "mlx" : process.platform === "win32" ? "cuda-transformers" : "cuda-vllm" };
+
     const paths = this.paths();
-    calls.push({ kind: this.kind, command, python: paths.python });
+    if (command === "load" || command === "magicLoad") calls.push({ kind: this.kind, command, python: paths.python });
     assert.ok(existsSync(paths.python), "model load must use installed candidate interpreter");
     this.active++;
     this.loadEntered?.resolve();
@@ -75,7 +78,10 @@ class ModelWorkerFixture {
         if (this.denyRollback) chmodSync(this.kind === "speech" ? speechRoot : magicRoot, 0o500);
         throw error;
       }
-      return { device: "fixture", text: "fixture" };
+      if (((this.kind === "speech" && command === "load") || command === "magicRewrite") && this.warmupFailure) {
+        const error = this.warmupFailure; this.warmupFailure = null; throw error;
+      }
+      return { device: "fixture", text: "fixture", loaded: true, residency: "resident", warmup: "complete" };
     } finally { this.active--; }
   }
   async stopAndWait() {
@@ -153,34 +159,23 @@ async function verify(body: string) {
 
 for (const kind of ["speech", "magic"] as const) {
   processTest(
-    `${kind} failed restoration of the other preloaded model rolls back the setup candidate`,
+    `${kind} setup leaves the unrelated runtime outside its transaction`,
     () =>
       verify(`
-        const kind = ${JSON.stringify(kind)};
-        const otherKind = kind === "speech" ? "magic" : "speech";
-        const old = seed(runtimeRoot(kind), "generation");
-        const other = seed(runtimeRoot(otherKind), "generation");
-        const otherPointer = readFileSync(join(runtimeRoot(otherKind), "active.json"));
-        settings[kind === "speech" ? "preloadMagicModel" : "preloadModel"] = true;
-        worker(otherKind).nextFailure = new Error("Fixture opposite model restoration failed");
-        await assert.rejects(runSetup(kind), /opposite model restoration failed/);
-        assert.equal(runtimePython(runtimeRoot(kind)), old.python, "every failed setup stage must restore the prior active runtime");
-        assert.deepEqual(readFileSync(old.python), old.bytes);
-        assert.equal(readFileSync(old.report, "utf8"), "original dependency report");
-        assert.deepEqual(readFileSync(join(runtimeRoot(otherKind), "active.json")), otherPointer);
-        assert.deepEqual(readFileSync(other.python), other.bytes);
-        assert.equal(getStatus(kind).engine, "unloaded");
-        assert.equal(worker(kind).active, 0);
-        assert.ok(worker(kind).stopped >= 2, "stop validated candidate worker before restoring the prior pointer");
-        originalProfileIntact();
-        await runSetup(kind);
-        assert.equal(getStatus(kind).engine, "ready");
-        assert.equal(getStatus(otherKind).engine, "ready");
-        assert.notEqual(runtimePython(runtimeRoot(kind)), old.python);
-        assert.equal(runtimePython(runtimeRoot(otherKind)), other.python);
-        originalProfileIntact();
-      `),
-    30_000,
+    const kind = ${JSON.stringify(kind)};
+    const otherKind = kind === "speech" ? "magic" : "speech";
+    const old = seed(runtimeRoot(kind), "generation");
+    const other = seed(runtimeRoot(otherKind), "generation");
+    const pointer = readFileSync(join(runtimeRoot(otherKind), "active.json"));
+    await runSetup(kind);
+    assert.equal(getStatus(kind).engine, "ready");
+    assert.notEqual(runtimePython(runtimeRoot(kind)), old.python);
+    assert.deepEqual(readFileSync(join(runtimeRoot(otherKind), "active.json")), pointer);
+    assert.deepEqual(readFileSync(other.python), other.bytes);
+    assert.equal(worker(otherKind).stopped, 0);
+    originalProfileIntact();
+  `),
+    30000,
   );
 }
 
@@ -265,11 +260,12 @@ for (const kind of ["speech", "magic"] as const) {
         worker(kind).loadGate = deferred();
         worker(kind).loadEntered = deferred();
         const operation = runSetup(kind);
-        const rejected = assert.rejects(operation, /Fixture model worker stopped/);
+        const settled = operation;
         await worker(kind).loadEntered.promise;
-        assert.notEqual(runtimePython(runtimeRoot(kind)), old.python);
+        assert.equal(runtimePython(runtimeRoot(kind)), old.python, "candidate must not activate before validation");
         await service.shutdown();
-        await rejected;
+        await settled;
+        assert.equal(getStatus(kind).setupState, "cancelled");
         assert.equal(runtimePython(runtimeRoot(kind)), old.python);
         assert.deepEqual(readFileSync(old.python), old.bytes);
         assert.equal(statuses[kind].some(status => status.engine === "ready"), false);
@@ -287,59 +283,48 @@ for (const kind of ["speech", "magic"] as const) {
 
 for (const kind of ["speech", "magic"] as const) {
   permissionTest(
-    `${kind} rollback write failure reports incomplete recovery and retains both causes`,
+    `${kind} failed candidate preserves active pointer even when pointer writes are denied`,
     () =>
       verify(`
-        const kind = ${JSON.stringify(kind)};
-        const old = seed(runtimeRoot(kind), "generation");
-        worker(kind).denyRollback = true;
-        worker(kind).nextFailure = new Error("Fixture primary model load failed");
-        let error;
-        try { await runSetup(kind); } catch (reason) { error = reason; }
-        assert.ok(error, "failed rollback must reject setup");
-        assert.match(error.message, /previous runtime could not be restored/);
-        assert.ok(error.cause instanceof AggregateError);
-        assert.match(error.cause.errors[0].message, /primary model load failed/);
-        assert.equal(error.cause.errors[1].code, "EACCES");
-        assert.equal(getStatus(kind).engine, "error", "incomplete rollback must not advertise preserved-runtime recovery");
-        assert.match(getStatus(kind).message, /previous runtime could not be restored/);
-        assert.notEqual(runtimePython(runtimeRoot(kind)), old.python, "report the actual incomplete pointer recovery honestly");
-        assert.deepEqual(readFileSync(old.python), old.bytes);
-        assert.equal(readFileSync(old.report, "utf8"), "original dependency report");
-        assert.equal(statuses[kind].some(status => status.engine === "ready"), false);
-        assert.ok(worker(kind).stopped >= 2);
-        originalProfileIntact();
-        chmodSync(runtimeRoot(kind), 0o700);
-        worker(kind).denyRollback = false;
-        await runSetup(kind);
-        assert.equal(getStatus(kind).engine, "ready");
-        assert.deepEqual(readFileSync(old.python), old.bytes);
-        originalProfileIntact();
-      `),
+   const kind = ${JSON.stringify(kind)};
+   const old = seed(runtimeRoot(kind), "generation");
+   const pointer = readFileSync(join(runtimeRoot(kind), "active.json"));
+   worker(kind).denyRollback = true;
+   worker(kind).nextFailure = new Error("Fixture primary model load failed");
+   await assert.rejects(runSetup(kind), /primary model load failed/);
+   assert.deepEqual(readFileSync(join(runtimeRoot(kind), "active.json")), pointer);
+   assert.equal(runtimePython(runtimeRoot(kind)), old.python);
+   assert.deepEqual(readFileSync(old.python), old.bytes);
+   assert.equal(statuses[kind].some(status => status.engine === "ready"), false);
+   originalProfileIntact();
+   chmodSync(runtimeRoot(kind), 0o700);
+   worker(kind).denyRollback = false;
+   await runSetup(kind);
+   assert.equal(getStatus(kind).engine, "ready");
+ `),
     30000,
   );
 }
 
-permissionTest(
-  "rollback recovery guidance remains visible after a long model error",
-  () =>
-    verify(`
-    const old = seed(speechRoot, "generation");
-    const longMessage = "Fixture primary model load failed: " + "X".repeat(1000);
-    speechWorker.denyRollback = true;
-    speechWorker.nextFailure = new Error(longMessage);
-    let error;
-    try { await service.setup(settings); } catch (reason) { error = reason; }
-    assert.ok(error);
-    assert.equal(error.cause.errors[0].message, longMessage);
-    assert.equal(error.cause.errors[1].code, "EACCES");
-    const status = service.getStatus();
-    assert.equal(status.engine, "error");
-    assert.match(status.message, /previous runtime could not be restored/);
-    assert.match(status.message, /retry Repair/);
-    assert.ok(status.message.length <= 800);
-    assert.deepEqual(readFileSync(old.python), old.bytes);
-    originalProfileIntact();
-  `),
-  30000,
-);
+for (const kind of ["speech", "magic"] as const) {
+  processTest(
+    `${kind} failed inference warmup never activates candidate weights`,
+    () =>
+      verify(`
+   const kind = ${JSON.stringify(kind)};
+   const old = seed(runtimeRoot(kind), "generation");
+   const pointer = readFileSync(join(runtimeRoot(kind), "active.json"));
+   worker(kind).warmupFailure = new Error("Fixture warmup inference failed");
+   await assert.rejects(runSetup(kind), /warmup inference failed/);
+   assert.deepEqual(readFileSync(join(runtimeRoot(kind), "active.json")), pointer);
+   assert.deepEqual(readFileSync(old.python), old.bytes);
+   assert.equal(statuses[kind].some(status => status.engine === "ready"), false);
+   assert.equal(worker(kind).active, 0);
+   originalProfileIntact();
+   await runSetup(kind);
+   assert.equal(getStatus(kind).engine, "ready");
+   assert.notEqual(runtimePython(runtimeRoot(kind)), old.python);
+ `),
+    30000,
+  );
+}

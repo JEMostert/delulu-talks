@@ -10,9 +10,29 @@ function score(reference, text, includeResult = true) {
   try {
     const corpus = join(temporary, "corpus.json");
     const results = join(temporary, "results.json");
-    writeFileSync(corpus, JSON.stringify({ schemaVersion: 1, id: "synthetic-numeric", fixtures: [{ id: "case", language: "nl", reference }] }));
-    writeFileSync(results, JSON.stringify({ transcripts: includeResult ? [{ id: "case", text }] : [] }));
-    const result = spawnSync(process.execPath, [new URL("./score-speech-corpus.mjs", import.meta.url).pathname, results, corpus], { encoding: "utf8" });
+    writeFileSync(
+      corpus,
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "synthetic-numeric",
+        fixtures: [{ id: "case", language: "nl", reference }],
+      }),
+    );
+    writeFileSync(
+      results,
+      JSON.stringify({
+        transcripts: includeResult ? [{ id: "case", text }] : [],
+      }),
+    );
+    const result = spawnSync(
+      process.execPath,
+      [
+        new URL("./score-speech-corpus.mjs", import.meta.url).pathname,
+        results,
+        corpus,
+      ],
+      { encoding: "utf8" },
+    );
     return { exitCode: result.status, report: JSON.parse(result.stdout) };
   } finally {
     rmSync(temporary, { recursive: true, force: true });

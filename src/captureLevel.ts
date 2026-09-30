@@ -27,7 +27,9 @@ function publish(next: CaptureLevelSnapshot): void {
 export const captureLevelStore = {
   subscribe(listener: () => void) {
     listeners.add(listener);
-    return () => { listeners.delete(listener); };
+    return () => {
+      listeners.delete(listener);
+    };
   },
   getSnapshot: () => snapshot,
   getServerSnapshot: () => idle,
@@ -50,17 +52,21 @@ export function beginCaptureLevel(
   const refresh = (force = false) => {
     if (ended || owner !== token) return;
     const now = performance.now();
-    const state: CaptureLevelState = track.readyState === "ended"
-      ? "ended"
-      : track.muted || !track.enabled
-        ? "muted"
-        : context.state !== "running"
-          ? "suspended"
-          : now - lastSampleAt > 1200
-            ? "stalled"
-            : hasSamples ? signalState : "waiting";
+    const state: CaptureLevelState =
+      track.readyState === "ended"
+        ? "ended"
+        : track.muted || !track.enabled
+          ? "muted"
+          : context.state !== "running"
+            ? "suspended"
+            : now - lastSampleAt > 1200
+              ? "stalled"
+              : hasSamples
+                ? signalState
+                : "waiting";
     // State transitions publish immediately; only meter amplitude is throttled.
-    if (!force && state === snapshot.state && now - lastPublishedAt < 150) return;
+    if (!force && state === snapshot.state && now - lastPublishedAt < 150)
+      return;
     lastPublishedAt = now;
     publish({ state, db: state === "signal" || state === "quiet" ? db : -60 });
   };
@@ -78,7 +84,9 @@ export function beginCaptureLevel(
       const now = performance.now();
       lastSampleAt = now;
       hasSamples = true;
-      db = Math.round(Math.max(-60, Math.min(0, 20 * Math.log10(Math.max(rms, 1e-6)))));
+      db = Math.round(
+        Math.max(-60, Math.min(0, 20 * Math.log10(Math.max(rms, 1e-6)))),
+      );
       if (db <= -55) {
         quietSince ??= now;
         signalState = now - quietSince >= 600 ? "quiet" : "waiting";

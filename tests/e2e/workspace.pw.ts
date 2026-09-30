@@ -1,8 +1,12 @@
+import { identifySyntheticMicrophone } from "./syntheticMicrophone";
+import { openHomeOptions } from "./homeOptions";
 import { test, expect } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
+  await identifySyntheticMicrophone(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Dismiss setup" }).click();
+  await openHomeOptions(page);
 });
 
 test("all pages fit desktop and compact windows in both themes", async ({
@@ -97,6 +101,7 @@ test("text shortcuts can be previewed, edited, persisted and removed", async ({
     .fill("See you soon!");
   await page.getByRole("button", { name: "Save rule", exact: true }).click();
   await page.reload();
+  await openHomeOptions(page);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Personalization", exact: true }).click();
   await page.getByRole("tab", { name: "Text shortcuts", exact: true }).click();
@@ -147,7 +152,7 @@ test("preview explicitly reports unavailable native operations", async ({
   page,
 }) => {
   await page
-    .getByRole("button", { name: "Start recording", exact: true })
+    .getByRole("button", { name: "Start dictation", exact: true })
     .click();
   await expect(page.getByRole("alert")).toContainText("installed desktop app");
   await page.getByRole("button", { name: "Dismiss message" }).click();
@@ -173,9 +178,15 @@ test("microphone capture produces PCM WAV and releases the input", async ({
       wav = value.wav;
     };
     const recorder = new PcmRecorder();
-    await recorder.handle({ action: "start", inputDeviceId: "default" });
+    await recorder.handle({
+      action: "start",
+      inputDeviceId: "fixture-microphone",
+    });
     await new Promise((resolve) => setTimeout(resolve, 250));
-    await recorder.handle({ action: "stop", inputDeviceId: "default" });
+    await recorder.handle({
+      action: "stop",
+      inputDeviceId: "fixture-microphone",
+    });
     return {
       header: String.fromCharCode(...wav.slice(0, 4)),
       bytes: wav.length,
@@ -222,12 +233,23 @@ test("cancelling while microphone permission is pending releases the eventual st
     const recorder = new PcmRecorder();
     const start = recorder.handle({
       action: "start",
-      inputDeviceId: "default",
+      inputDeviceId: "fixture-microphone",
     });
     await pending;
     const cancel = recorder.cancel();
     release();
     await Promise.all([start, cancel]);
+    // Cancellation returns before an unabortable permission request settles.
+    // Observe the eventual stream cleanup instead of assuming it is synchronous.
+    const cleanupDeadline = performance.now() + 5000;
+    while (
+      !(stream as MediaStream | null)
+        ?.getTracks()
+        .every((track) => track.readyState === "ended") &&
+      performance.now() < cleanupDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     navigator.mediaDevices.getUserMedia = getUserMedia;
     return {
       started,
@@ -245,14 +267,8 @@ test("startup exposes priority settings above the fold in compact and desktop wi
   for (const width of [1280, 860]) {
     await page.setViewportSize({ width, height: 650 });
     for (const [role, name] of [
-      ["combobox", "Microphone"],
       ["combobox", "Dictation language"],
-      ["combobox", "Recording gesture"],
-      ["switch", "Rewrite after dictation"],
-      ["switch", "Paste automatically"],
-      ["switch", "Copy to clipboard"],
-      ["switch", "Save history"],
-      ["button", "Start recording"],
+      ["button", "Start dictation"],
       ["button", "Settings"],
     ] as const) {
       const control = page.getByRole(role, { name, exact: true });
@@ -269,7 +285,9 @@ test("startup exposes priority settings above the fold in compact and desktop wi
     }
   }
   await expect(page.getByText("Less typing.", { exact: false })).toHaveCount(0);
-  await expect(page.locator(".record-command")).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Start dictation", exact: true }),
+  ).toHaveCount(1);
 });
 
 test("native dictation defaults persist across reloads", async ({ page }) => {
@@ -280,6 +298,7 @@ test("native dictation defaults persist across reloads", async ({ page }) => {
     .getByRole("combobox", { name: "Dictation language", exact: true })
     .selectOption("fr");
   await page.reload();
+  await openHomeOptions(page);
   await expect(
     page.getByRole("combobox", { name: "Dictation language", exact: true }),
   ).toHaveValue("fr");
@@ -311,7 +330,7 @@ test("a transcript edit suggests an explicit correction rule and rejects conflic
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Personalization", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Delulu", exact: true }),
+    page.getByRole("heading", { name: "Delulu en", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Add correction" }).click();
   await page
@@ -320,7 +339,9 @@ test("a transcript edit suggests an explicit correction rule and rejects conflic
   await page
     .getByRole("textbox", { name: "Replace with", exact: true })
     .fill("Another");
-  await expect(page.getByRole("alert")).toContainText("already used");
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "already used",
+  );
   await expect(
     page.getByRole("button", { name: "Save rule", exact: true }),
   ).toBeDisabled();
@@ -389,43 +410,123 @@ test("rewrite failure preserves source and exposes a retryable error", async ({
   await expect(page.locator(".transcript-original")).toHaveText(original!);
 });
 
-test("imported recordings use the shared correction and rewrite review", async ({
+test("queued imported recordings use the shared correction and rewrite review", async ({
   page,
 }) => {
-  await page.evaluate(async () => {
-    const { bridge } = await import(/* @vite-ignore */ "/src/bridge.ts");
-    bridge.chooseAudioFile = async () => ({
-      path: "/fixture.wav",
-      name: "fixture.wav",
-      size: 1024,
+  await page.addInitScript(() => {
+    const listeners = new Map<string, Set<(value: unknown) => void>>();
+    let chosen = false;
+    let completed = false;
+    let version = 0;
+    const queue = () => ({
+      version,
+      paused: !completed,
+      jobs: chosen
+        ? [
+            {
+              id: "fixture-job",
+              path: "/fixture.wav",
+              name: "fixture.wav",
+              size: 1024,
+              state: completed ? "completed" : "queued",
+              error: null,
+              transcriptId: completed ? "imported-fixture" : null,
+            },
+          ]
+        : [],
     });
-    bridge.runLab = async () => ({
-      ...(await bridge.getHistory())[0],
-      id: "imported-fixture",
-      source: "file",
-      sourceName: "fixture.wav",
-      magicText: null,
+    const emit = (name: string, value: unknown) =>
+      listeners.get(name)?.forEach((callback) => callback(value));
+    Object.assign(window, {
+      delulu: new Proxy(
+        {},
+        {
+          get(_target, name: string) {
+            if (name.startsWith("on"))
+              return (callback: (value: unknown) => void) => {
+                const set = listeners.get(name) ?? new Set();
+                set.add(callback);
+                listeners.set(name, set);
+                return () => set.delete(callback);
+              };
+            return async (...args: unknown[]) => {
+              const { previewApi } = await import(
+                /* @vite-ignore */ "/src/preview.ts"
+              );
+              if (name === "getImportQueue") return queue();
+              if (name === "getAudioJobs")
+                return chosen
+                  ? [
+                      {
+                        path: "/fixture.wav",
+                        name: "fixture.wav",
+                        size: 1024,
+                        state: completed ? "done" : "pending",
+                        queueId: "fixture-job",
+                        createdAt: 1,
+                        updatedAt: version,
+                        resultId: completed ? "imported-fixture" : undefined,
+                        sourceAvailable: true,
+                      },
+                    ]
+                  : [];
+              if (name === "chooseAudioFiles") {
+                chosen = true;
+                version++;
+                emit("onImportQueue", queue());
+                return [];
+              }
+              if (name === "pauseImportQueue") {
+                completed = true;
+                version++;
+                emit("onTranscript", {
+                  ...(await previewApi.getHistory())[0],
+                  id: "imported-fixture",
+                  source: "file",
+                  sourceName: "fixture.wav",
+                  magicText: null,
+                });
+                emit("onImportQueue", queue());
+                return queue();
+              }
+              if (name === "inspectAudioFile")
+                return {
+                  durationSeconds: 1,
+                  channels: 1,
+                  sampleRate: 16000,
+                  decoder: "soundfile",
+                  decoderReady: true,
+                  decoderDetail: "Fixture decoder readiness",
+                  estimatedPcmBytes: 64000,
+                  processingTimeEstimate: "Not measured",
+                };
+              const method = previewApi[name as keyof typeof previewApi] as (
+                ...values: unknown[]
+              ) => unknown;
+              return method.apply(previewApi, args);
+            };
+          },
+        },
+      ),
     });
   });
+  await page.reload();
   await page.getByRole("button", { name: "Audio files", exact: true }).click();
-  await page.getByRole("button", { name: /Choose audio or video/ }).click();
-  await page.locator(".lab-run").click();
+  await page
+    .getByRole("button", { name: /Choose or drop audio and video/ })
+    .click();
+  await page.getByRole("button", { name: "Resume queue", exact: true }).click();
+  await page.getByRole("button", { name: /fixture.wav · done/ }).click();
+  const review = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "fixture.wav", exact: true }),
+  });
+  await review
+    .getByRole("button", { name: "Review transcript", exact: true })
+    .click();
   await expect(
-    page.locator(".lab-result").getByText("fixture.wav", { exact: true }),
+    review.getByRole("button", { name: "Edit", exact: true }),
   ).toBeVisible();
   await expect(
-    page
-      .locator(".lab-result")
-      .getByRole("button", { name: "Edit", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page
-      .locator(".lab-result")
-      .getByRole("button", { name: "Rewrite", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page
-      .locator(".lab-result")
-      .getByRole("button", { name: "Remember correction", exact: true }),
+    review.getByRole("button", { name: "Rewrite", exact: true }),
   ).toBeVisible();
 });

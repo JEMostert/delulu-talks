@@ -128,15 +128,24 @@ export function Modal({
     return () => {
       dialog?.close();
       const visible = (element: HTMLElement | null): element is HTMLElement =>
-        !!element?.isConnected && !element.matches(":disabled") &&
+        !!element?.isConnected &&
+        !element.matches(":disabled") &&
         !element.closest("[hidden], [inert], [aria-hidden='true']") &&
-        getComputedStyle(element).visibility === "visible" && element.getClientRects().length > 0;
+        getComputedStyle(element).visibility === "visible" &&
+        element.getClientRects().length > 0;
       const current = document.activeElement as HTMLElement | null;
       // Navigation may already have moved focus to a new view. Keep that target;
       // otherwise avoid returning keyboard users to a hidden or removed opener.
-      if (current !== document.body && current !== previous &&
-        !dialog?.contains(current) && visible(current)) return;
-      const target = visible(previous) ? previous : document.getElementById("page-content");
+      if (
+        current !== document.body &&
+        current !== previous &&
+        !dialog?.contains(current) &&
+        visible(current)
+      )
+        return;
+      const target = visible(previous)
+        ? previous
+        : document.getElementById("page-content");
       target?.focus({ preventScroll: true });
     };
   }, [visible]);
@@ -145,6 +154,42 @@ export function Modal({
       ref={ref}
       className="modal"
       aria-labelledby={id}
+      onKeyDown={(event) => {
+        if (event.key !== "Tab") return;
+        const dialog = ref.current;
+        if (!dialog) return;
+        const controls = [
+          ...dialog.querySelectorAll<HTMLElement>(
+            "button, input, textarea, select, a[href], [tabindex]",
+          ),
+        ].filter(
+          (element) =>
+            element.tabIndex >= 0 &&
+            !element.matches(":disabled") &&
+            element.getClientRects().length > 0,
+        );
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (!first) {
+          event.preventDefault();
+          dialog.focus();
+          return;
+        }
+        if (
+          event.shiftKey &&
+          (document.activeElement === first ||
+            document.activeElement === dialog)
+        ) {
+          event.preventDefault();
+          last.focus();
+        } else if (
+          !event.shiftKey &&
+          (document.activeElement === last || document.activeElement === dialog)
+        ) {
+          event.preventDefault();
+          first.focus();
+        }
+      }}
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onClose();

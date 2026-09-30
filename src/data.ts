@@ -70,7 +70,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   menuBarOnly: false,
   customWords: [],
   personalProfiles: { schemaVersion: 1, profiles: [] },
-  activePersonalProfile: null;
+  activePersonalProfile: null,
 };
 
 export const MODELS: ModelInfo[] = [

@@ -1,4 +1,5 @@
-export type ImportJobState = "queued" | "running" | "cancelling" | "completed" | "failed" | "cancelled";
+export type ImportJobState =
+  "queued" | "running" | "cancelling" | "completed" | "failed" | "cancelled";
 export type ImportQueueJob = {
   id: string;
   path: string;

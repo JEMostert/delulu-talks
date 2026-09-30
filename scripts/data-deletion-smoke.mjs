@@ -80,16 +80,8 @@ async function verify(operation) {
       )
       .toBe(true);
     await app.evaluate(({ clipboard }) => {
-      globalThis.__deletion = { writes: [], release: null };
+      globalThis.__deletion = { writes: [] };
       clipboard.writeText = (text) => globalThis.__deletion.writes.push(text);
-      const schedule = globalThis.setTimeout;
-      globalThis.setTimeout = (callback, delay, ...args) => {
-        if (delay === 3000) {
-          globalThis.__deletion.release = () => callback(...args);
-          return { ref() {}, unref() {} };
-        }
-        return schedule(callback, delay, ...args);
-      };
     });
     const before = await readFile(join(data, "settings.json"), "utf8");
     // Updating a persisted record also creates its session-map entry. Clearing
@@ -98,15 +90,10 @@ async function verify(operation) {
       (id) => window.delulu.updateTranscript(id, "Session fixture correction"),
       record.id,
     );
-    const pendingPaste = page.evaluate(() =>
-      window.delulu.pasteLastTranscript().then(
-        () => "pasted",
-        (error) => error.message,
-      ),
+    const pendingPaste = await page.evaluate(() =>
+      window.delulu.pasteLastTranscript(),
     );
-    await expect
-      .poll(() => app.evaluate(() => !!globalThis.__deletion.release))
-      .toBe(true);
+    assert.equal(pendingPaste.phase, "pending");
     if (operation === "delete") {
       await page.evaluate((id) => window.delulu.deleteHistory(id), record.id);
     } else if (operation === "edit") {
@@ -140,22 +127,43 @@ async function verify(operation) {
     } else {
       await page.evaluate(() => window.delulu.clearHistory());
     }
-    await app.evaluate(() => globalThis.__deletion.release());
-    if (["edit", "failed-clear"].includes(operation)) {
-      assert.equal(await pendingPaste, "pasted");
+    if (operation === "failed-clear") {
+      await expect
+        .poll(
+          () =>
+            page.evaluate(
+              async () => (await window.delulu.getPasteLastStatus()).phase,
+            ),
+          { timeout: 10_000 },
+        )
+        .toBe("attempted");
       assert.deepEqual(await app.evaluate(() => globalThis.__deletion.writes), [
-        operation === "edit"
-          ? "Newest correction"
-          : "Session fixture correction",
+        "Session fixture correction",
       ]);
       // A deliberate retry remains available after a failed write.
       await page.evaluate(() => window.delulu.clearHistory());
     } else {
-      assert.match(await pendingPaste, /removed|deleted|no longer available/i);
+      await expect
+        .poll(() =>
+          page.evaluate(
+            async () => (await window.delulu.getPasteLastStatus()).phase,
+          ),
+        )
+        .toBe("cancelled");
+      const cancelled = await page.evaluate(() =>
+        window.delulu.getPasteLastStatus(),
+      );
+      assert.equal(cancelled.operationId, pendingPaste.operationId);
+      assert.match(
+        cancelled.message,
+        /removed|deleted|changed|no longer available/i,
+      );
       assert.deepEqual(
         await app.evaluate(() => globalThis.__deletion.writes),
         [],
       );
+      if (operation === "edit")
+        await page.evaluate(() => window.delulu.clearHistory());
     }
     assert.deepEqual(await page.evaluate(() => window.delulu.getHistory()), []);
     assert.deepEqual(

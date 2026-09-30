@@ -9,8 +9,14 @@ import { PillService, type PillCommand } from "./pill";
 import { ShortcutService } from "./shortcut";
 
 export interface DesktopPasteAdapter {
+  readonly isBusy: boolean;
+  withClipboardLease<T>(operation: () => Promise<T>): Promise<T>;
   copy(text: string, timings?: import("../../src/types").PipelineTimings): void;
-  paste(text: string, restoreClipboard?: boolean, timings?: import("../../src/types").PipelineTimings): Promise<string>;
+  paste(
+    text: string,
+    restoreClipboard?: boolean,
+    timings?: import("../../src/types").PipelineTimings,
+  ): Promise<string>;
   authorize(): Promise<void>;
   capabilities(
     overlayMethod?: PlatformCapabilities["overlayMethod"],
@@ -36,9 +42,11 @@ export interface DesktopIndicatorAdapter {
   readonly method: PlatformCapabilities["overlayMethod"];
   readonly detail: string;
   prepare(): void;
-  show(command: Omit<PillCommand, "state"> & {
-    state: Exclude<PillCommand["state"], "hidden">;
-  }): void;
+  show(
+    command: Omit<PillCommand, "state"> & {
+      state: Exclude<PillCommand["state"], "hidden">;
+    },
+  ): void;
   hide(): void;
   level(value: number): void;
   shutdown(): void;

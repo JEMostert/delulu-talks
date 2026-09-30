@@ -91,12 +91,14 @@ export function historySearchResults(
     }
     if (cursor < excerpt.length)
       segments.push({ text: excerpt.slice(cursor), matched: false });
-    return [{
-      source: id,
-      label,
-      leadingEllipsis: start > 0,
-      trailingEllipsis: end < text.length,
-      segments,
-    }];
+    return [
+      {
+        source: id,
+        label,
+        leadingEllipsis: start > 0,
+        trailingEllipsis: end < text.length,
+        segments,
+      },
+    ];
   });
 }

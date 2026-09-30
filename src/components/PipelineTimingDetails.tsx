@@ -1,7 +1,11 @@
 import { normalizeTimings, TIMING_LABELS } from "../pipelineTimings";
 import type { PipelineTimings } from "../types";
 
-export function PipelineTimingDetails({ timings }: { timings?: PipelineTimings }) {
+export function PipelineTimingDetails({
+  timings,
+}: {
+  timings?: PipelineTimings;
+}) {
   const measured = normalizeTimings(timings);
   if (!measured) return null;
   return (
@@ -12,12 +16,21 @@ export function PipelineTimingDetails({ timings }: { timings?: PipelineTimings }
           measured[key] === undefined ? null : (
             <div key={key} className="contents">
               <dt>{TIMING_LABELS[key]}</dt>
-              <dd>{measured[key]!.toLocaleString(undefined, { maximumFractionDigits: 2 })} ms</dd>
+              <dd>
+                {measured[key]!.toLocaleString(undefined, {
+                  maximumFractionDigits: 2,
+                })}{" "}
+                ms
+              </dd>
             </div>
           ),
         )}
       </dl>
-      <p className="mt-2">Measured stages can overlap; do not add them to estimate total latency. Missing stages were not measured. Paste dispatch does not confirm insertion in another application.</p>
+      <p className="mt-2">
+        Measured stages can overlap; do not add them to estimate total latency.
+        Missing stages were not measured. Paste dispatch does not confirm
+        insertion in another application.
+      </p>
     </details>
   );
 }

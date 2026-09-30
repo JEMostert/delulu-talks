@@ -6,7 +6,12 @@ import {
 } from "../../src/importQueue";
 
 type Runner = (path: string, signal: AbortSignal) => Promise<{ id: string }>;
-type SelectedFile = { path: string; name: string; size: number; sourceMtimeMs?: number };
+type SelectedFile = {
+  path: string;
+  name: string;
+  size: number;
+  sourceMtimeMs?: number;
+};
 
 /** In-memory metadata queue. One runner remains active until it fully settles. */
 export class ImportQueue {
@@ -22,26 +27,62 @@ export class ImportQueue {
     private readonly changed: (snapshot: ImportQueueSnapshot) => void,
     private readonly persist?: (snapshot: ImportQueueSnapshot) => void,
     initial: ImportQueueJob[] = [],
-  ) { this.jobs = initial.map(job => ({...job})); this.durable = this.get(); }
+  ) {
+    this.jobs = initial.map((job) => ({ ...job }));
+    this.durable = this.get();
+  }
 
   get(): ImportQueueSnapshot {
-    return { version: this.version, paused: this.paused, jobs: this.jobs.map((job) => ({ ...job })) };
+    return {
+      version: this.version,
+      paused: this.paused,
+      jobs: this.jobs.map((job) => ({ ...job })),
+    };
   }
 
   replace(jobs: ImportQueueJob[]): ImportQueueSnapshot {
     this.requireOpen();
-    if (this.active) throw new Error("Wait for the current import before replacing or relinking jobs");
-    this.paused = true; this.jobs = jobs.map(job => ({...job})); this.emit(); return this.get();
+    if (this.active)
+      throw new Error(
+        "Wait for the current import before replacing or relinking jobs",
+      );
+    this.paused = true;
+    this.jobs = jobs.map((job) => ({ ...job }));
+    this.emit();
+    return this.get();
   }
 
   enqueue(file: SelectedFile): ImportQueueSnapshot {
     this.requireOpen();
-    if (this.jobs.length >= IMPORT_QUEUE_LIMIT) throw new Error(`The import queue is full (${IMPORT_QUEUE_LIMIT} jobs). Clear finished jobs first.`);
-    if (!file || typeof file.path !== "string" || !file.path.trim() || typeof file.name !== "string" || !file.name.trim() || !Number.isFinite(file.size) || file.size < 0) {
+    if (this.jobs.length >= IMPORT_QUEUE_LIMIT)
+      throw new Error(
+        `The import queue is full (${IMPORT_QUEUE_LIMIT} jobs). Clear finished jobs first.`,
+      );
+    if (
+      !file ||
+      typeof file.path !== "string" ||
+      !file.path.trim() ||
+      typeof file.name !== "string" ||
+      !file.name.trim() ||
+      !Number.isFinite(file.size) ||
+      file.size < 0
+    ) {
       throw new Error("Invalid selected import file.");
     }
-    if (this.jobs.some(job => job.path === file.path)) throw new Error("This source already has a job; retry or relink it instead");
-    this.jobs.push({ id: randomUUID(), path: file.path, name: file.name, size: file.size, sourceMtimeMs: file.sourceMtimeMs, state: "queued", error: null, transcriptId: null });
+    if (this.jobs.some((job) => job.path === file.path))
+      throw new Error(
+        "This source already has a job; retry or relink it instead",
+      );
+    this.jobs.push({
+      id: randomUUID(),
+      path: file.path,
+      name: file.name,
+      size: file.size,
+      sourceMtimeMs: file.sourceMtimeMs,
+      state: "queued",
+      error: null,
+      transcriptId: null,
+    });
     this.emit();
     this.pump();
     return this.get();
@@ -49,7 +90,8 @@ export class ImportQueue {
 
   setPaused(paused: boolean): ImportQueueSnapshot {
     this.requireOpen();
-    if (typeof paused !== "boolean") throw new Error("Invalid import pause state.");
+    if (typeof paused !== "boolean")
+      throw new Error("Invalid import pause state.");
     if (this.paused !== paused) {
       this.paused = paused;
       this.emit();
@@ -60,13 +102,18 @@ export class ImportQueue {
 
   move(id: string, direction: -1 | 1): ImportQueueSnapshot {
     if (this.closed || (direction !== -1 && direction !== 1)) return this.get();
-    const queued = this.jobs.map((job, index) => ({ job, index })).filter(({ job }) => job.state === "queued");
+    const queued = this.jobs
+      .map((job, index) => ({ job, index }))
+      .filter(({ job }) => job.state === "queued");
     const position = queued.findIndex(({ job }) => job.id === id);
     const other = position + direction;
     if (position < 0 || other < 0 || other >= queued.length) return this.get();
     const first = queued[position].index;
     const second = queued[other].index;
-    [this.jobs[first], this.jobs[second]] = [this.jobs[second], this.jobs[first]];
+    [this.jobs[first], this.jobs[second]] = [
+      this.jobs[second],
+      this.jobs[first],
+    ];
     this.emit();
     return this.get();
   }
@@ -103,7 +150,12 @@ export class ImportQueue {
   }
 
   clearFinished(): ImportQueueSnapshot {
-    const remaining = this.jobs.filter((job) => job.state !== "completed" && job.state !== "failed" && job.state !== "cancelled");
+    const remaining = this.jobs.filter(
+      (job) =>
+        job.state !== "completed" &&
+        job.state !== "failed" &&
+        job.state !== "cancelled",
+    );
     if (remaining.length !== this.jobs.length) {
       this.jobs = remaining;
       this.emit();
@@ -119,7 +171,11 @@ export class ImportQueue {
       if (job.state === "running") job.state = "cancelling";
     }
     const controller = this.active?.controller;
-    try { this.emit(); } finally { controller?.abort(); }
+    try {
+      this.emit();
+    } finally {
+      controller?.abort();
+    }
     return this.get();
   }
 
@@ -129,11 +185,21 @@ export class ImportQueue {
 
   private emit(): void {
     this.version += 1;
-    try { this.persist?.(this.get()); this.durable = this.get(); }
-    catch (error) { this.jobs = this.durable.jobs.map(job => ({...job})); this.paused = true; throw error; }
+    try {
+      this.persist?.(this.get());
+      this.durable = this.get();
+    } catch (error) {
+      this.jobs = this.durable.jobs.map((job) => ({ ...job }));
+      this.paused = true;
+      throw error;
+    }
     // A detached renderer/subscriber cannot interrupt cancellation or leave the
     // runner promise unhandled. Subscribers always receive independent clones.
-    try { this.changed(this.get()); } catch { /* Subscriber is unavailable. */ }
+    try {
+      this.changed(this.get());
+    } catch {
+      /* Subscriber is unavailable. */
+    }
   }
 
   private pump(): void {
@@ -143,17 +209,28 @@ export class ImportQueue {
     const controller = new AbortController();
     this.active = { id: job.id, controller };
     job.state = "running";
-    try { this.emit(); } catch (error) { this.active = null; throw error; }
+    try {
+      this.emit();
+    } catch (error) {
+      this.active = null;
+      throw error;
+    }
     void this.run(job, controller);
   }
 
-  private async run(job: ImportQueueJob, controller: AbortController): Promise<void> {
+  private async run(
+    job: ImportQueueJob,
+    controller: AbortController,
+  ): Promise<void> {
     try {
       // Cancellation in a synchronous subscriber can happen before invocation.
       if (!controller.signal.aborted) {
         const result = await this.runner(job.path, controller.signal);
         if (!controller.signal.aborted) {
-          if (!result || typeof result.id !== "string" || !result.id) throw new Error("The import runner returned no transcript identifier.");
+          if (!result || typeof result.id !== "string" || !result.id)
+            throw new Error(
+              "The import runner returned no transcript identifier.",
+            );
           job.state = "completed";
           job.transcriptId = result.id;
           job.error = null;
@@ -163,7 +240,9 @@ export class ImportQueue {
       if (!controller.signal.aborted) {
         job.state = "failed";
         this.paused = true;
-        job.error = (error instanceof Error ? error.message : "Import failed.").slice(0, 500);
+        job.error = (
+          error instanceof Error ? error.message : "Import failed."
+        ).slice(0, 500);
       }
     } finally {
       if (controller.signal.aborted) {
@@ -173,12 +252,20 @@ export class ImportQueue {
       }
       // Release ownership only after the runner promise resolves or rejects.
       this.active = null;
-      try { this.emit(); this.pump(); } catch (error) {
+      try {
+        this.emit();
+        this.pump();
+      } catch (error) {
         this.paused = true;
-        const current = this.jobs.find(item => item.id === job.id);
-        if (current) { current.state = "failed"; current.error = `Job metadata could not be saved. Check History before retrying: ${error instanceof Error ? error.message : String(error)}`; }
+        const current = this.jobs.find((item) => item.id === job.id);
+        if (current) {
+          current.state = "failed";
+          current.error = `Job metadata could not be saved. Check History before retrying: ${error instanceof Error ? error.message : String(error)}`;
+        }
         this.version++;
-        try { this.changed(this.get()); } catch {}
+        try {
+          this.changed(this.get());
+        } catch {}
       }
     }
   }

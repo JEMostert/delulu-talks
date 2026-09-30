@@ -11,7 +11,8 @@ const MAX_SYMBOLS = 3_000;
 const allowedText = /^[\p{L}\p{N}_$\s-]+$/u;
 
 function compactIdentifier(value: string): string {
-  return value.normalize("NFC")
+  return value
+    .normalize("NFC")
     .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1 $2")
     .replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, "$1 $2")
     .split(/[\s_-]+/u)
@@ -32,11 +33,16 @@ function compareSymbols(first: string, second: string): number {
 }
 
 /** Banded Levenshtein; values above the threshold are deliberately discarded. */
-function boundedDistance(first: string[], second: string[], threshold: number): number {
+function boundedDistance(
+  first: string[],
+  second: string[],
+  threshold: number,
+): number {
   if (Math.abs(first.length - second.length) > threshold) return threshold + 1;
   const outside = threshold + 1;
   let previous = new Array<number>(second.length + 1).fill(outside);
-  for (let index = 0; index <= Math.min(second.length, threshold); index += 1) previous[index] = index;
+  for (let index = 0; index <= Math.min(second.length, threshold); index += 1)
+    previous[index] = index;
   for (let row = 1; row <= first.length; row += 1) {
     const current = new Array<number>(second.length + 1).fill(outside);
     if (row <= threshold) current[0] = row;
@@ -68,16 +74,31 @@ export function rankIdentifierCandidates(
   symbols: readonly string[],
   limit = 8,
 ): IdentifierCandidate[] {
-  if (typeof rawSpeech !== "string" || !rawSpeech.trim() || rawSpeech.length > MAX_INPUT || !allowedText.test(rawSpeech) || !Number.isFinite(limit)) return [];
+  if (
+    typeof rawSpeech !== "string" ||
+    !rawSpeech.trim() ||
+    rawSpeech.length > MAX_INPUT ||
+    !allowedText.test(rawSpeech) ||
+    !Number.isFinite(limit)
+  )
+    return [];
   const boundedLimit = Math.max(1, Math.min(20, Math.trunc(limit)));
   const normalizedSpeech = rawSpeech.trim().normalize("NFC");
   const speech = compactIdentifier(normalizedSpeech);
   const speechCharacters = Array.from(speech);
-  if (!speechCharacters.length || speechCharacters.length > MAX_IDENTIFIER) return [];
+  if (!speechCharacters.length || speechCharacters.length > MAX_IDENTIFIER)
+    return [];
   const candidates: IdentifierCandidate[] = [];
   const seen = new Set<string>();
   for (const symbol of symbols.slice(0, MAX_SYMBOLS)) {
-    if (typeof symbol !== "string" || !symbol || symbol.length > MAX_IDENTIFIER || !allowedText.test(symbol) || seen.has(symbol)) continue;
+    if (
+      typeof symbol !== "string" ||
+      !symbol ||
+      symbol.length > MAX_IDENTIFIER ||
+      !allowedText.test(symbol) ||
+      seen.has(symbol)
+    )
+      continue;
     seen.add(symbol);
     const normalizedSymbol = symbol.normalize("NFC");
     const compact = compactIdentifier(normalizedSymbol);
@@ -86,11 +107,25 @@ export function rankIdentifierCandidates(
     if (symbol === rawSpeech) {
       candidates.push({ symbol, score: 100, reason: "Exact identifier text." });
     } else if (normalizedSymbol === normalizedSpeech) {
-      candidates.push({ symbol, score: 99, reason: "Exact text after Unicode normalization and trimming." });
-    } else if (normalizedSymbol.toLowerCase() === normalizedSpeech.toLowerCase()) {
-      candidates.push({ symbol, score: 98, reason: "Same identifier text with different casing." });
+      candidates.push({
+        symbol,
+        score: 99,
+        reason: "Exact text after Unicode normalization and trimming.",
+      });
+    } else if (
+      normalizedSymbol.toLowerCase() === normalizedSpeech.toLowerCase()
+    ) {
+      candidates.push({
+        symbol,
+        score: 98,
+        reason: "Same identifier text with different casing.",
+      });
     } else if (compact === speech) {
-      candidates.push({ symbol, score: 96, reason: "Same identifier words with different casing or separators." });
+      candidates.push({
+        symbol,
+        score: 96,
+        reason: "Same identifier words with different casing or separators.",
+      });
     } else {
       const length = Math.max(speechCharacters.length, characters.length);
       const threshold = Math.floor(length * 0.5);
@@ -107,5 +142,7 @@ export function rankIdentifierCandidates(
       });
     }
   }
-  return candidates.sort((a, b) => b.score - a.score || compareSymbols(a.symbol, b.symbol)).slice(0, boundedLimit);
+  return candidates
+    .sort((a, b) => b.score - a.score || compareSymbols(a.symbol, b.symbol))
+    .slice(0, boundedLimit);
 }

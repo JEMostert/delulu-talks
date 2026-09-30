@@ -62,6 +62,8 @@ async function historyFixture(page: Page, empty = false) {
           get(_target, property: string) {
             if (property.startsWith("on")) return () => () => undefined;
             return async (...args: unknown[]) => {
+              if (property === "getHistoryBatchSnapshot")
+                return { deletion: null, records };
               if (property === "getHistory") return records;
               if (
                 [
@@ -129,7 +131,9 @@ test("all five filters combine with search; reset restores untouched history", a
     .fill("personalized");
   await expect(cards(page)).toHaveCount(1);
   await expect(cards(page)).toContainText("Dutch meeting.wav");
-  await expect(page.getByRole("status")).toHaveText("1 of 4 transcripts");
+  await expect(
+    page.getByRole("status").filter({ hasText: "1 of 4 transcripts" }),
+  ).toHaveText("1 of 4 transcripts");
   await page
     .getByRole("button", { name: "Review transcript", exact: true })
     .click();

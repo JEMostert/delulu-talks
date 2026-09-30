@@ -2,7 +2,8 @@ import { lstat, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 // These are the legacy files created exclusively by DictationService, never an imported source path.
-const GENERATED_AUDIO = /^(?:dictation|import)-(\d{13})-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.wav$/;
+const GENERATED_AUDIO =
+  /^(?:dictation|import)-(\d{13})-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.wav$/;
 
 export type AudioCacheRecovery = {
   removed: number;
@@ -16,7 +17,12 @@ export async function recoverTemporaryAudio(
   cacheDirectory: string,
   startedAt = Date.now(),
 ): Promise<AudioCacheRecovery> {
-  const report: AudioCacheRecovery = { removed: 0, skipped: 0, failureCount: 0, failures: [] };
+  const report: AudioCacheRecovery = {
+    removed: 0,
+    skipped: 0,
+    failureCount: 0,
+    failures: [],
+  };
   const fail = (name: string, error: unknown) => {
     report.failureCount++;
     if (report.failures.length < 20) {
@@ -28,12 +34,16 @@ export async function recoverTemporaryAudio(
   try {
     const directory = await lstat(cacheDirectory);
     if (!directory.isDirectory() || directory.isSymbolicLink()) {
-      fail("Audio cache", "Expected Delulu's own regular audio-cache directory; cleanup did not follow this path.");
+      fail(
+        "Audio cache",
+        "Expected Delulu's own regular audio-cache directory; cleanup did not follow this path.",
+      );
       return report;
     }
     names = await readdir(cacheDirectory);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") fail("Audio cache", error);
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      fail("Audio cache", error);
     return report;
   }
   for (const name of names) {
@@ -46,7 +56,12 @@ export async function recoverTemporaryAudio(
     try {
       // lstat inspects the entry itself. Never recurse, follow links or touch source media.
       const file = await lstat(path);
-      if (!file.isFile() || file.isSymbolicLink() || file.nlink !== 1 || file.mtimeMs >= startedAt) {
+      if (
+        !file.isFile() ||
+        file.isSymbolicLink() ||
+        file.nlink !== 1 ||
+        file.mtimeMs >= startedAt
+      ) {
         report.skipped++;
         continue;
       }

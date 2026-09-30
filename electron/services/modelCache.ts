@@ -42,7 +42,9 @@ function safeDirectory(path: string): BigIntStats | null {
   const stat = optionalStat(path);
   if (
     stat &&
-    (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(path) !== path)
+    (!stat.isDirectory() ||
+      stat.isSymbolicLink() ||
+      realpathSync(path) !== path)
   )
     throw new Error(
       "The model cache location is not a local directory. No cache was deleted.",
@@ -50,7 +52,10 @@ function safeDirectory(path: string): BigIntStats | null {
   return stat;
 }
 
-function unchanged(before: BigIntStats | null, after: BigIntStats | null): boolean {
+function unchanged(
+  before: BigIntStats | null,
+  after: BigIntStats | null,
+): boolean {
   if (!before || !after) return before === after;
   return (
     before.dev === after.dev &&
@@ -149,7 +154,8 @@ export class ModelCacheService {
       if (
         snapshot.isSymbolicLink() ||
         (!snapshot.isFile() && !snapshot.isDirectory())
-      ) return;
+      )
+        return;
       if (realpathSync(path) !== path) return;
       const size = sizeOf(path, sizeBudget);
       planned.set(id, { path, snapshot });
@@ -179,7 +185,9 @@ export class ModelCacheService {
       !unchanged(root, safeDirectory(this.root)) ||
       !unchanged(hub, root ? safeDirectory(hubPath) : null)
     )
-      throw new Error("The model cache changed during preview. Refresh the preview.");
+      throw new Error(
+        "The model cache changed during preview. Refresh the preview.",
+      );
     const token = randomUUID();
     this.plan = {
       token,
@@ -200,7 +208,9 @@ export class ModelCacheService {
     };
     const plan = this.plan;
     if (!plan || plan.token !== token)
-      return reject("This cache preview is no longer current. Refresh before deleting.");
+      return reject(
+        "This cache preview is no longer current. Refresh before deleting.",
+      );
     this.plan = undefined;
     if (Date.now() >= plan.expiresAt)
       return reject("This cache preview expired. Refresh before deleting.");
@@ -229,7 +239,9 @@ export class ModelCacheService {
           realpathSync(entry.path) !== entry.path ||
           !unchanged(entry.snapshot, current)
         )
-          throw new Error("A selected cache entry changed. Refresh before deleting.");
+          throw new Error(
+            "A selected cache entry changed. Refresh before deleting.",
+          );
       }
     } catch (reason) {
       return reject(

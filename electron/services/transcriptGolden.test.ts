@@ -22,6 +22,11 @@ for (const fixture of fixtures) {
       const {personalize} = await import(${JSON.stringify(new URL("../../src/personalization.ts", import.meta.url).href)});
       const {deliveredText} = await import(${JSON.stringify(new URL("../../src/transcriptText.ts", import.meta.url).href)});
       const fixture = ${JSON.stringify(fixture)};
+      // Versions are protected technical literals; they no longer enter rewriting.
+      fixture.requests[1] = fixture.id === "dutch-code-block"
+        ? {input:"Controleer café en versie", output:"Controleer café en versie"}
+        : {input:"Keep C++ and snake_case at version", output:"Keep C++ and snake_case at version"};
+      fixture.requests.push({input:".",output:"."});
       const original = {id:fixture.id,createdAt:1,durationMs:1000,text:fixture.source,
         personalizedText:personalize(fixture.source,fixture.words),model:"r2t2",
         language:fixture.language,source:"dictation",processingTimeMs:20};
@@ -48,7 +53,7 @@ for (const fixture of fixtures) {
       assert.deepEqual(inputs,fixture.requests.map(request=>request.input));
       assert.equal(result.text,fixture.rewritten);
       assert(result.text.includes(fixture.block));
-      assert.equal(result.processingTimeMs,20);
+      assert.equal(result.processingTimeMs,30);
       assert.equal(corrected.text,fixture.source);
       const applied={...corrected,magicText:result.text};
       assert.equal(deliveredText(applied),fixture.rewritten);

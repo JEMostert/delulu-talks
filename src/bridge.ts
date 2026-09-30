@@ -5,14 +5,20 @@ import { restoreDomainError } from "./domainErrors";
 const api = window.delulu ?? previewApi;
 // Preserve subscription disposers and synchronous methods; only invocation
 // promise rejections cross the error reconstruction boundary.
-export const bridge: DeluluApi = new Proxy(api, {
-  get(target, property, receiver) {
-    const method = Reflect.get(target, property, receiver);
+// contextBridge freezes its exports. Proxy a mutable wrapper so wrapping a method
+// cannot violate the original object's non-configurable property invariants.
+export const bridge: DeluluApi = new Proxy({} as DeluluApi, {
+  get(target, property) {
+    const method = Object.prototype.hasOwnProperty.call(target, property)
+      ? Reflect.get(target, property)
+      : Reflect.get(api, property, api);
     if (typeof method !== "function") return method;
     return (...args: unknown[]) => {
-      const result = Reflect.apply(method, target, args);
+      const result = Reflect.apply(method, api, args);
       return result instanceof Promise
-        ? result.catch((reason: unknown) => { throw restoreDomainError(reason); })
+        ? result.catch((reason: unknown) => {
+            throw restoreDomainError(reason);
+          })
         : result;
     };
   },

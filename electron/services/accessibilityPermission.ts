@@ -20,7 +20,8 @@ export function getAccessibilityPermission(
       return {
         state: "granted",
         canAttemptPaste: true,
-        detail: "macOS has granted Accessibility access to Delulu Talks for automatic paste.",
+        detail:
+          "macOS has granted Accessibility access to Delulu Talks for automatic paste.",
       };
     }
     return {

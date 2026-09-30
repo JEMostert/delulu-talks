@@ -297,16 +297,23 @@ describe("vocabulary edge cases", () => {
     ]);
   });
 
-  test("V8 supports 500 stored rules with 100,000 aliases without exceeding its capture limit", () => {
+  test("V8 supports 500 stored rules with 100,000 aliases without exceeding its capture limit", async () => {
     // Run the real source in Node/V8: Bun's regex engine has a different limit.
     const source = readFileSync(
       new URL("../../src/personalization.ts", import.meta.url),
       "utf8",
     );
-    const code = new Bun.Transpiler({
-      loader: "ts",
+    const bundled = await Bun.build({
+      entrypoints: [
+        new URL("../../src/personalization.ts", import.meta.url).pathname,
+      ],
       target: "node",
-    }).transformSync(source);
+    });
+    if (!bundled.success)
+      throw new Error(
+        "Could not bundle the real personalization source for V8",
+      );
+    const code = await bundled.outputs[0].text();
     const checks = String.raw`
       import assert from 'node:assert/strict';
       try {

@@ -14,8 +14,13 @@ html,body{margin:0;background:transparent;overflow:hidden;font:13px -apple-syste
 </style></head><body><div class="pill" role="status"><div id="title">Listening</div><div id="detail">Recording locally</div><div class="track"><div id="level"></div></div></div></body></html>`;
 
 const TITLES: Record<PillCommand["state"], string> = {
-  hidden: "", listening: "● Listening", transcribing: "Transcribing",
-  magic: "Rewriting", delivering: "Delivering", success: "Done", error: "Needs attention",
+  hidden: "",
+  listening: "● Listening",
+  transcribing: "Transcribing",
+  magic: "Rewriting",
+  delivering: "Delivering",
+  success: "Done",
+  error: "Needs attention",
 };
 
 /** A nonactivating, click-through panel; it never hosts transcript content. */
@@ -48,65 +53,104 @@ export class MacPill {
   private create(): void {
     try {
       const window = new BrowserWindow({
-        width: WIDTH, height: HEIGHT, show: false, frame: false,
-        transparent: true, focusable: false, skipTaskbar: true,
-        resizable: false, movable: false, minimizable: false,
-        maximizable: false, fullscreenable: false, hasShadow: false,
+        width: WIDTH,
+        height: HEIGHT,
+        show: false,
+        frame: false,
+        transparent: true,
+        focusable: false,
+        skipTaskbar: true,
+        resizable: false,
+        movable: false,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        hasShadow: false,
         type: "panel",
-        webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+        webPreferences: {
+          sandbox: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+        },
       });
       this.window = window;
       window.setIgnoreMouseEvents(true);
       window.setAlwaysOnTop(true, "floating");
       window.setVisibleOnAllWorkspaces(true, {
-        visibleOnFullScreen: true, skipTransformProcessType: true,
+        visibleOnFullScreen: true,
+        skipTransformProcessType: true,
       });
       window.setHiddenInMissionControl(true);
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       window.webContents.on("will-navigate", (event) => event.preventDefault());
       window.once("closed", () => {
-        if (this.window === window) { this.window = null; this.ready = false; }
+        if (this.window === window) {
+          this.window = null;
+          this.ready = false;
+        }
       });
-      void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(HTML)}`)
+      void window
+        .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(HTML)}`)
         .then(() => {
           if (this.window !== window) return;
           this.ready = true;
           this.render();
-        }).catch((error: unknown) => this.fail(error));
-    } catch (error) { this.fail(error); }
+        })
+        .catch((error: unknown) => this.fail(error));
+    } catch (error) {
+      this.fail(error);
+    }
   }
 
   private render(): void {
     const window = this.window;
-    if (!window || window.isDestroyed() || this.desired.state === "hidden") return;
+    if (!window || window.isDestroyed() || this.desired.state === "hidden")
+      return;
     const command = this.desired;
     const revision = this.revision;
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const display = screen.getDisplayNearestPoint(
+      screen.getCursorScreenPoint(),
+    );
     const area = display.workArea;
     window.setPosition(
       Math.round(area.x + (area.width - WIDTH) / 2),
       Math.round(area.y + area.height - HEIGHT - 20),
       false,
     );
-    const level = Number.isFinite(command.level) ? Math.min(1, Math.max(0, command.level!)) : 0;
+    const level = Number.isFinite(command.level)
+      ? Math.min(1, Math.max(0, command.level!))
+      : 0;
     const payload = JSON.stringify({
       title: command.title || TITLES[command.state],
-      detail: command.detail || (command.state === "listening" ? "Recording locally" : ""),
+      detail:
+        command.detail ||
+        (command.state === "listening" ? "Recording locally" : ""),
       level: command.state === "listening" ? level * 100 : 0,
     });
-    void window.webContents.executeJavaScript(`(() => {
+    void window.webContents
+      .executeJavaScript(
+        `(() => {
       const data = ${payload};
       document.getElementById('title').textContent = data.title;
       document.getElementById('detail').textContent = data.detail;
       document.getElementById('level').style.width = data.level + '%';
-    })()`).then(() => {
-      if (this.window === window && this.revision === revision && !window.isDestroyed())
-        window.showInactive();
-    }).catch((error: unknown) => this.fail(error));
+    })()`,
+      )
+      .then(() => {
+        if (
+          this.window === window &&
+          this.revision === revision &&
+          !window.isDestroyed()
+        )
+          window.showInactive();
+      })
+      .catch((error: unknown) => this.fail(error));
   }
 
   private fail(error: unknown): void {
-    this.onError(`Mac recording indicator unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    this.onError(
+      `Mac recording indicator unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    );
     this.shutdown();
   }
 

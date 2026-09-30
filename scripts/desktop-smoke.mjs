@@ -164,7 +164,7 @@ try {
   const metal =
     state.diagnostics.platform === "darwin" &&
     state.diagnostics.arch === "arm64";
-  assert.equal(state.settings.model, metal ? "r2t2Mlx" : "r2t2");
+  assert.equal(state.settings.model, "r2t2");
   assert.equal(state.status.speechModel, state.settings.model);
   if (metal) {
     const update = await page.evaluate(() => window.delulu.getUpdateStatus());
@@ -199,7 +199,7 @@ try {
     );
     await page.getByRole("button", { name: "Models", exact: true }).click();
     await expect(
-      page.getByRole("button", { name: "Install engine", exact: true }),
+      page.getByRole("button", { name: "Install runtime", exact: true }),
     ).toBeVisible();
   } else {
     const audioPath = join(data, "sample.wav");
@@ -334,7 +334,8 @@ try {
           id,
           result,
           "Session correction stays private.",
-          (await window.delulu.getHistory()).find((item) => item.id === id)?.sourceRevision ?? 0,
+          (await window.delulu.getHistory()).find((item) => item.id === id)
+            ?.sourceRevision ?? 0,
         );
         return result;
       }, records[0].id);
@@ -349,8 +350,11 @@ try {
       await page.evaluate(
         async ({ id, text }) => {
           await window.delulu.setTranscriptRewrite(
-            id, null, text,
-            (await window.delulu.getHistory()).find((item) => item.id === id)?.sourceRevision ?? 0,
+            id,
+            null,
+            text,
+            (await window.delulu.getHistory()).find((item) => item.id === id)
+              ?.sourceRevision ?? 0,
           );
         },
         { id: records[0].id, text: rewritten.text },

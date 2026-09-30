@@ -23,8 +23,14 @@ import type {
   UpdateStatus,
 } from "../src/types";
 
-async function invoke(channel: IpcRequestChannel, ...args: unknown[]): Promise<any> {
-  const result = await ipcRenderer.invoke(channel, ...parseIpcRequest(channel, args)) as OperationResult<unknown>;
+async function invoke(
+  channel: IpcRequestChannel,
+  ...args: unknown[]
+): Promise<any> {
+  const result = (await ipcRenderer.invoke(
+    channel,
+    ...parseIpcRequest(channel, args),
+  )) as OperationResult<unknown>;
   if (!result || result.transport !== "delulu-operation-v1")
     throw new Error("Desktop operation transport mismatch. Restart the app.");
   if (result.ok === false) throw encodeDomainFailure(result.error);
@@ -48,20 +54,21 @@ function listener<T>(
 const api: DeluluApi = {
   inspectAudioFile: (path) => invoke("lab:inspectAudio", path),
   getSelectedTextState: () => invoke("selectedText:state"),
-  enableSelectedText: (enabled) => invoke("selectedText:enable",enabled),
-  discardSelectedText: (id) => invoke("selectedText:discard",id),
-  replaceSelectedText: (id,text) => invoke("selectedText:replace",id,text),
-  onSelectedTextState: (callback) => listener("selectedText:changed",callback),
+  enableSelectedText: (enabled) => invoke("selectedText:enable", enabled),
+  discardSelectedText: (id) => invoke("selectedText:discard", id),
+  replaceSelectedText: (id, text) => invoke("selectedText:replace", id, text),
+  onSelectedTextState: (callback) => listener("selectedText:changed", callback),
   getRuleUsage: () => invoke("rules:usage"),
   resetRuleUsage: () => invoke("rules:resetUsage"),
   previewModelCache: () => invoke("cache:preview"),
   cleanupModelCache: (token, ids) => invoke("cache:cleanup", token, ids),
   getRendererRecoveryState: () => invoke("renderer:recoveryState"),
   reloadWorkspace: () => invoke("renderer:reload"),
-  exportEncryptedHistory: (passphrase) => invoke("history:encryptedExport", passphrase),
-  recoverEncryptedHistory: (passphrase) => invoke("history:encryptedRecover", passphrase),
-  rendererControllerFailed: () =>
-    invoke("renderer:controllerFailed"),
+  exportEncryptedHistory: (passphrase) =>
+    invoke("history:encryptedExport", passphrase),
+  recoverEncryptedHistory: (passphrase) =>
+    invoke("history:encryptedRecover", passphrase),
+  rendererControllerFailed: () => invoke("renderer:controllerFailed"),
   getDiagnostics: () => invoke("runtime:diagnostics"),
   getRuntimeSetupSnapshot: () => invoke("runtime:setupSnapshot"),
   getSetupLog: (kind) => invoke("runtime:setupLog", kind),
@@ -119,22 +126,31 @@ const api: DeluluApi = {
   copyText: (text: string) => invoke("clipboard:copy", text),
   authorizePaste: () => invoke("paste:authorize"),
   testPaste: () => invoke("paste:test"),
-  cancelRewrite: (operationId) => invoke("magic:cancelRewrite", operationId),
   updateTranscript: (id: string, text: string | null) =>
     invoke("history:updateTranscript", id, text),
   setTranscriptRewrite: (id, result, sourceText, expectedSourceRevision) =>
-    invoke("history:setRewrite", id, result, sourceText, expectedSourceRevision),
+    invoke(
+      "history:setRewrite",
+      id,
+      result,
+      sourceText,
+      expectedSourceRevision,
+    ),
   setTranscriptTitle: (id: string, title: string | null) =>
     invoke("history:setTitle", id, title),
   deleteHistory: (id: string) => invoke("history:delete", id),
   clearHistory: () => invoke("history:clear"),
-  previewHistoryRetention: (policy: HistoryRetentionPolicy) => invoke("history:retentionPreview", policy),
-  applyHistoryRetention: (token: string) => invoke("history:retentionApply", token),
+  previewHistoryRetention: (policy: HistoryRetentionPolicy) =>
+    invoke("history:retentionPreview", policy),
+  applyHistoryRetention: (token: string) =>
+    invoke("history:retentionApply", token),
   getHistoryBatchSnapshot: () => invoke("history:batchSnapshot"),
   stageHistoryDeletion: (ids) => invoke("history:stageDeletion", ids),
   undoHistoryDeletion: (token) => invoke("history:undoDeletion", token),
-  onHistoryBatchChanged: (callback) => listener("history:batchChanged", callback),
-  exportHistorySelection: (ids, format) => invoke("history:exportSelection", ids, format),
+  onHistoryBatchChanged: (callback) =>
+    listener("history:batchChanged", callback),
+  exportHistorySelection: (ids, format) =>
+    invoke("history:exportSelection", ids, format),
   onHistoryRetentionApplied: (callback: (removedIds: string[]) => void) =>
     listener("history:retentionApplied", callback),
   chooseProjectIdentifier: (input) => invoke("projectVocabulary:choose", input),
@@ -157,10 +173,11 @@ const api: DeluluApi = {
       try {
         path = webUtils.getPathForFile(file);
       } catch {
-        throw new Error(`${file?.name || "Dropped item"}: this is not a local file`);
+        throw new Error(
+          `${file?.name || "Dropped item"}: this is not a local file`,
+        );
       }
-      if (!path)
-        throw new Error(`${file.name}: this file has no local path`);
+      if (!path) throw new Error(`${file.name}: this file has no local path`);
       return path;
     });
     return invoke("lab:resolveAudioFiles", paths);
@@ -181,7 +198,8 @@ const api: DeluluApi = {
     invoke("recorder:started", sessionId),
   recordingLimitReached: (sessionId: string) =>
     invoke("recorder:limit", sessionId),
-  recordingPauseChanged: (sessionId, paused) => invoke("recorder:pause-changed", sessionId, paused),
+  recordingPauseChanged: (sessionId, paused) =>
+    invoke("recorder:pause-changed", sessionId, paused),
   recordingSilence: (sessionId, remainingSeconds, stop) =>
     invoke("recorder:silence", sessionId, remainingSeconds, stop),
   recorderReady: () => invoke("recorder:ready"),

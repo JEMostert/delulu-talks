@@ -35,13 +35,17 @@ export class HistoryBatchDeletion {
 
   assertNoPending(): void {
     if (this.state?.phase === "pending")
-      throw new Error("Undo the pending deletion or wait for its window to finish first.");
+      throw new Error(
+        "Undo the pending deletion or wait for its window to finish first.",
+      );
   }
 
   stage(ids: string[]): HistoryDeletionState {
     this.assertNoPending();
     this.state = {
-      token: randomUUID(), ids: [...ids], phase: "pending",
+      token: randomUUID(),
+      ids: [...ids],
+      phase: "pending",
       deadline: Date.now() + 30_000,
     };
     const token = this.state.token;
@@ -66,15 +70,21 @@ export class HistoryBatchDeletion {
 
   private finish(token: string): void {
     const pending = this.state;
-    if (!pending || pending.token !== token || pending.phase !== "pending") return;
+    if (!pending || pending.token !== token || pending.phase !== "pending")
+      return;
     this.timer = null;
     try {
       this.commit(pending.ids);
       this.state = null;
     } catch (error) {
       this.state = {
-        ...pending, phase: "failed",
-        error: `Deletion was not completed. ${error instanceof Error ? error.message : String(error)}`.slice(0, 600),
+        ...pending,
+        phase: "failed",
+        error:
+          `Deletion was not completed. ${error instanceof Error ? error.message : String(error)}`.slice(
+            0,
+            600,
+          ),
       };
     }
     this.changed();

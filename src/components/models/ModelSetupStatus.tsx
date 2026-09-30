@@ -38,7 +38,9 @@ export function ModelSetupStatus({
   busy: boolean;
   onRepair: () => void;
 }) {
-  const settingUp = ["preparing", "loading"].includes(status.phase) || status.warmup === "warming";
+  const settingUp =
+    ["preparing", "loading"].includes(status.phase) ||
+    status.warmup === "warming";
   const failed = status.phase === "error" || status.engine === "error";
   const bytes = status.downloadBytes;
   return (
@@ -47,11 +49,13 @@ export function ModelSetupStatus({
         <section className="progress-panel" aria-live="polite">
           <div>
             <strong>
-              {status.setupStage ? STAGES[status.setupStage] : status.phase === "preparing" ? "Preparing runtime dependencies" : "Preparing the model"}
+              {status.setupStage
+                ? STAGES[status.setupStage]
+                : status.phase === "preparing"
+                  ? "Preparing runtime dependencies"
+                  : "Preparing the model"}
             </strong>
-            <span>
-              Working…
-            </span>
+            <span>Working…</span>
           </div>
           <progress
             aria-label={
@@ -69,7 +73,9 @@ export function ModelSetupStatus({
           {bytes ? (
             <p className="caption">
               <strong>
-                {bytes.kind === "transfer" ? "Network transfer" : "Cache reconstruction"}
+                {bytes.kind === "transfer"
+                  ? "Network transfer"
+                  : "Cache reconstruction"}
               </strong>
               {": "}
               <span
@@ -88,20 +94,24 @@ export function ModelSetupStatus({
           <p className="caption">
             Runtime packages and model files are separate stages. Cached files
             may be reused. Byte counters show observed transfers when available;
-            the setup stage indicator is indeterminate. Readiness requires a successful backend
-            inference warmup, not a completed download or progress percentage.
+            the setup stage indicator is indeterminate. Readiness requires a
+            successful backend inference warmup, not a completed download or
+            progress percentage.
           </p>
         </section>
       )}
-      {!settingUp && !failed && status.engine === "ready" && status.phase === "idle" && (
-        <p className="caption mt-3" role="status">
-          {status.warmup === "complete"
-            ? STAGES.ready
-            : kind === "rewrite"
-              ? "Model load completed; inference warmup has not been reported complete. Rewriting exercises inference on the first actual request."
-              : "Speech model load completed, but inference warmup was not reported complete. Readiness is not established."}
-        </p>
-      )}
+      {!settingUp &&
+        !failed &&
+        status.engine === "ready" &&
+        status.phase === "idle" && (
+          <p className="caption mt-3" role="status">
+            {status.warmup === "complete"
+              ? STAGES.ready
+              : kind === "rewrite"
+                ? "Model load completed; inference warmup has not been reported complete. Rewriting exercises inference on the first actual request."
+                : "Speech model load completed, but inference warmup was not reported complete. Readiness is not established."}
+          </p>
+        )}
       {failed && (
         <Alert
           action={

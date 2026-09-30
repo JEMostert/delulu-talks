@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from transcription_engine import language_hint, recognized_language_metadata
 from windows_checkpoint import clean_config, convert_state_dict, STATE_DICT_MAPPING_ASR
 from windows_speech import WindowsSpeech, MODEL, MODEL_REVISION, CONVERSION_VERSION
 
@@ -72,7 +73,7 @@ class WindowsContract(unittest.TestCase):
                 cuda=types.SimpleNamespace(is_available=lambda: self.available,
                     is_bf16_supported=lambda: True, empty_cache=lambda: self.clears.append(True))),
             "download_progress": types.SimpleNamespace(download_progress_class=lambda: object),
-            "huggingface_hub": types.SimpleNamespace(snapshot_download=download),
+            "verified_snapshot": types.SimpleNamespace(verified_snapshot=download),
             "huggingface_hub.constants": types.SimpleNamespace(HF_HOME=str(self.root)),
             "safetensors": types.ModuleType("safetensors"),
             "safetensors.torch": types.SimpleNamespace(load_file=lambda *a, **kw:
@@ -188,14 +189,15 @@ class WindowsContract(unittest.TestCase):
                 return Audio(min(self.length, key.stop) - key.start)
         chunks = []
         self.speech.model = self.model
-        def generate(samples, language, limit):
+        def generate(samples, language, limit, timings):
             chunks.append((len(samples), language, limit))
             return {"language": "Dutch", "transcription": "hallo"}
         self.speech._generate = generate
         with patch.dict(sys.modules, {
             "soundfile": types.SimpleNamespace(read=lambda *a, **kw: (Audio(64*48000,2),48000)),
             "soxr": types.SimpleNamespace(resample=lambda a, src, dst: Audio(64*16000)),
-            "transcription_engine": types.SimpleNamespace(LANGUAGE_NAMES={"nl":"Dutch"}),
+            "transcription_engine": types.SimpleNamespace(LANGUAGE_NAMES={"nl":"Dutch"},
+                language_hint=language_hint, recognized_language_metadata=recognized_language_metadata),
         }):
             result = self.speech.transcribe({"audioPath": str(self.source / "config.json"), "language":"nl"})
         self.assertEqual(chunks, [(480000,"Dutch",4096), (480000,"Dutch",4096), (64000,"Dutch",4096)])

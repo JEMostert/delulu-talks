@@ -4,11 +4,21 @@ import { RewriteDialog } from "../components/RewriteDialog";
 import { rawTechnicalSelection } from "../technicalSelection";
 import { bridge } from "../bridge";
 import { TechnicalBuffer, type TechnicalEditTarget } from "../technicalBuffer";
-import { correctionWordRange, previousIdentifierRange } from "../technicalEditingCommands";
+import {
+  correctionWordRange,
+  previousIdentifierRange,
+} from "../technicalEditingCommands";
 import type { AppSettings, MagicStatus, TranscriptRecord } from "../types";
 import { Alert, ConfirmDialog, Modal } from "../components/ui";
 
-export function TechnicalPage({ history, settings, busy, onUpdateSettings, rewriteStatus, onRewriteSetup }: {
+export function TechnicalPage({
+  history,
+  settings,
+  busy,
+  onUpdateSettings,
+  rewriteStatus,
+  onRewriteSetup,
+}: {
   history: TranscriptRecord[];
   rewriteStatus: MagicStatus;
   onRewriteSetup: () => void;
@@ -30,7 +40,10 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings, rewri
     original: string;
     text: string;
   } | null>(null);
-  const [selectedRewrite, setSelectedRewrite] = useState<{ target: TechnicalEditTarget; source: string } | null>(null);
+  const [selectedRewrite, setSelectedRewrite] = useState<{
+    target: TechnicalEditTarget;
+    source: string;
+  } | null>(null);
   const [replacementError, setReplacementError] = useState("");
   const [switchingMode, setSwitchingMode] = useState(false);
   const switchingModeRef = useRef(false);
@@ -57,7 +70,10 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings, rewri
       const before = buffer.snapshot;
       buffer.select(input.selectionStart, input.selectionEnd);
       const after = buffer.snapshot;
-      if (before.selectionStart !== after.selectionStart || before.selectionEnd !== after.selectionEnd)
+      if (
+        before.selectionStart !== after.selectionStart ||
+        before.selectionEnd !== after.selectionEnd
+      )
         setSnapshot(after);
     }
   }
@@ -93,22 +109,41 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings, rewri
     captureSelection();
     const current = buffer.snapshot;
     const displayed = buffer.displayText;
-    const range = kind === "identifier"
-      ? previousIdentifierRange(displayed, current.selectionStart)
-      : correctionWordRange(displayed, current.selectionStart, current.selectionEnd);
-    if (!range) { setError(`No ${kind} found at this caret or selection.`); return; }
+    const range =
+      kind === "identifier"
+        ? previousIdentifierRange(displayed, current.selectionStart)
+        : correctionWordRange(
+            displayed,
+            current.selectionStart,
+            current.selectionEnd,
+          );
+    if (!range) {
+      setError(`No ${kind} found at this caret or selection.`);
+      return;
+    }
     buffer.select(range.start, range.end);
     editor.current?.setSelectionRange(range.start, range.end);
     const original = displayed.slice(range.start, range.end);
-    setReplacement({ kind, target: buffer.captureTarget(), original, text: original });
+    setReplacement({
+      kind,
+      target: buffer.captureTarget(),
+      original,
+      text: original,
+    });
     setReplacementError("");
     publish();
   }
   function applyReplacement() {
     if (!replacement || composing.current) return;
-    if (replacement.kind === "identifier" &&
-        !/^[\p{L}_$][\p{L}\p{M}\p{N}_$]*(?:-[\p{L}\p{N}_$][\p{L}\p{M}\p{N}_$]*)*$/u.test(replacement.text)) {
-      setReplacementError("Enter one identifier, without spaces or punctuation.");
+    if (
+      replacement.kind === "identifier" &&
+      !/^[\p{L}_$][\p{L}\p{M}\p{N}_$]*(?:-[\p{L}\p{N}_$][\p{L}\p{M}\p{N}_$]*)*$/u.test(
+        replacement.text,
+      )
+    ) {
+      setReplacementError(
+        "Enter one identifier, without spaces or punctuation.",
+      );
       return;
     }
     try {
@@ -116,13 +151,19 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings, rewri
       setReplacement(null);
       setError("");
       publish(true);
-    } catch (reason) { setReplacementError(String(reason)); }
+    } catch (reason) {
+      setReplacementError(String(reason));
+    }
   }
   function rewriteSelection() {
     if (busy || composing.current) return;
     captureSelection();
     const current = buffer.snapshot;
-    const selected = rawTechnicalSelection(current.text, current.selectionStart, current.selectionEnd);
+    const selected = rawTechnicalSelection(
+      current.text,
+      current.selectionStart,
+      current.selectionEnd,
+    );
     if (selected === null || !selected.trim()) {
       setError("Select the text you want to rewrite first.");
       return;
@@ -145,14 +186,21 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings, rewri
       if (await onUpdateSettings({ dictationMode: "prose" }))
         setMessage("Prose dictation mode active. Technical draft preserved.");
       else setError("Could not switch dictation mode. Try again when idle.");
-    } catch (reason) { setError(String(reason)); }
-    finally { switchingModeRef.current = false; setSwitchingMode(false); }
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      switchingModeRef.current = false;
+      setSwitchingMode(false);
+    }
   }
   useLayoutEffect(() => {
     if (!focusEditor.current) return;
     focusEditor.current = false;
     editor.current?.focus();
-    editor.current?.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+    editor.current?.setSelectionRange(
+      snapshot.selectionStart,
+      snapshot.selectionEnd,
+    );
   }, [snapshot]);
 
   async function copy() {
@@ -172,7 +220,9 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings, rewri
     }
   }
   function download() {
-    const url = URL.createObjectURL(new Blob([buffer.snapshot.text], { type: "text/plain;charset=utf-8" }));
+    const url = URL.createObjectURL(
+      new Blob([buffer.snapshot.text], { type: "text/plain;charset=utf-8" }),
+    );
     const link = document.createElement("a");
     link.href = url;
     link.download = "technical-draft.txt";
@@ -184,97 +234,229 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings, rewri
   return (
     <div className="content-stack">
       <section className="card">
-        <div className="section-heading"><h2>Technical text buffer</h2></div>
+        <div className="section-heading">
+          <h2>Technical text buffer</h2>
+        </div>
         <p className="mt-3 text-sm text-muted">
-          Edit literal text with its indentation, punctuation and Unicode intact. Inserting a
-          transcript uses its recognition original, leaving the transcript unchanged. Text is
-          never executed or automatically pasted.
+          Edit literal text with its indentation, punctuation and Unicode
+          intact. Inserting a transcript uses its recognition original, leaving
+          the transcript unchanged. Text is never executed or automatically
+          pasted.
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <label className="field min-w-0 flex-1">
             Recognition original to insert
-            <select value={source?.id ?? ""} disabled={!history.length || composing.current}
-              onChange={(event) => setSourceId(event.target.value)}>
-              {!history.length && <option value="">No transcripts available</option>}
-              {history.map((record) => <option key={record.id} value={record.id}>
-                {new Date(record.createdAt).toLocaleString()} · {record.sourceName ?? "Dictation"}
-              </option>)}
+            <select
+              value={source?.id ?? ""}
+              disabled={!history.length || composing.current}
+              onChange={(event) => setSourceId(event.target.value)}
+            >
+              {!history.length && (
+                <option value="">No transcripts available</option>
+              )}
+              {history.map((record) => (
+                <option key={record.id} value={record.id}>
+                  {new Date(record.createdAt).toLocaleString()} ·{" "}
+                  {record.sourceName ?? "Dictation"}
+                </option>
+              ))}
             </select>
           </label>
-          <button className="secondary-button" disabled={!source?.text || composing.current}
-            onClick={prepareInsertion}>Prepare insertion preview</button>
+          <button
+            className="secondary-button"
+            disabled={!source?.text || composing.current}
+            onClick={prepareInsertion}
+          >
+            Prepare insertion preview
+          </button>
         </div>
-        {source && <details className="mt-3"><summary>Preview recognition original</summary>
-          <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-xs">{source.text}</pre>
-        </details>}
+        {source && (
+          <details className="mt-3">
+            <summary>Preview recognition original</summary>
+            <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-xs">
+              {source.text}
+            </pre>
+          </details>
+        )}
         {pending && (
-          <section className="mt-4 rounded-lg border border-line p-4" aria-label="Pending technical insertion">
+          <section
+            className="mt-4 rounded-lg border border-line p-4"
+            aria-label="Pending technical insertion"
+          >
             <h3>Prepared insertion</h3>
             <p className="mt-2 text-xs text-muted">{pending.label}</p>
-            <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-xs">{pending.text}</pre>
+            <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-xs">
+              {pending.text}
+            </pre>
             <p className="mt-3 text-sm">
-              {pending.target.start === pending.target.end ? "Insert at the captured caret." : "Replace the captured selection."}
-              {" "}Editing the draft or moving its selection requires a fresh preview.
+              {pending.target.start === pending.target.end
+                ? "Insert at the captured caret."
+                : "Replace the captured selection."}{" "}
+              Editing the draft or moving its selection requires a fresh
+              preview.
             </p>
             {!buffer.isTargetCurrent(pending.target) && (
-              <p className="mt-3 text-sm" role="status">The buffer or selection changed. Prepare a new insertion preview; this one cannot be applied.</p>
+              <p className="mt-3 text-sm" role="status">
+                The buffer or selection changed. Prepare a new insertion
+                preview; this one cannot be applied.
+              </p>
             )}
             <div className="runtime-actions mt-3">
-              <button className="primary-button" disabled={composing.current || !buffer.isTargetCurrent(pending.target)}
-                onClick={applyInsertion}>Apply insertion</button>
-              <button className="secondary-button" onClick={() => setPending(null)}>Cancel preview</button>
+              <button
+                className="primary-button"
+                disabled={
+                  composing.current || !buffer.isTargetCurrent(pending.target)
+                }
+                onClick={applyInsertion}
+              >
+                Apply insertion
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => setPending(null)}
+              >
+                Cancel preview
+              </button>
             </div>
           </section>
         )}
         <div className="runtime-actions mt-4">
-          <button className="tool-button" disabled={!buffer.canUndo || composing.current}
-            onClick={() => { buffer.undo(); publish(true); }}><Undo2 /> Undo</button>
-          <button className="tool-button" disabled={!buffer.canRedo || composing.current}
-            onClick={() => { buffer.redo(); publish(true); }}><Redo2 /> Redo</button>
-          <button className="tool-button" disabled={composing.current} onClick={() => insert("\t")}>Insert tab</button>
-          <button className="tool-button" disabled={!snapshot.text || composing.current} onClick={() => setClear(true)}>Clear draft…</button>
+          <button
+            className="tool-button"
+            disabled={!buffer.canUndo || composing.current}
+            onClick={() => {
+              buffer.undo();
+              publish(true);
+            }}
+          >
+            <Undo2 /> Undo
+          </button>
+          <button
+            className="tool-button"
+            disabled={!buffer.canRedo || composing.current}
+            onClick={() => {
+              buffer.redo();
+              publish(true);
+            }}
+          >
+            <Redo2 /> Redo
+          </button>
+          <button
+            className="tool-button"
+            disabled={composing.current}
+            onClick={() => insert("\t")}
+          >
+            Insert tab
+          </button>
+          <button
+            className="tool-button"
+            disabled={!snapshot.text || composing.current}
+            onClick={() => setClear(true)}
+          >
+            Clear draft…
+          </button>
         </div>
         <div className="runtime-actions mt-3">
-          <button className="tool-button" disabled={composing.current} aria-keyshortcuts="Control+Alt+I Meta+Alt+I"
-            onClick={() => replaceToken("identifier")}>Replace last identifier</button>
-          <button className="tool-button" disabled={composing.current} aria-keyshortcuts="Control+Alt+W Meta+Alt+W"
-            onClick={() => replaceToken("word")}>Correct word</button>
-          <button className="tool-button" disabled={composing.current} aria-keyshortcuts="Control+Alt+Enter Meta+Alt+Enter"
-            onClick={insertNewline}>Insert newline</button>
-          <button className="tool-button" disabled={busy || composing.current || snapshot.selectionStart === snapshot.selectionEnd}
-            aria-keyshortcuts="Control+Alt+R Meta+Alt+R" onClick={rewriteSelection}>Rewrite selection</button>
-          <button className="tool-button" disabled={busy || switchingMode || composing.current}
-            aria-keyshortcuts="Control+Alt+P Meta+Alt+P" onClick={() => void returnToProse()}>
+          <button
+            className="tool-button"
+            disabled={composing.current}
+            aria-keyshortcuts="Control+Alt+I Meta+Alt+I"
+            onClick={() => replaceToken("identifier")}
+          >
+            Replace last identifier
+          </button>
+          <button
+            className="tool-button"
+            disabled={composing.current}
+            aria-keyshortcuts="Control+Alt+W Meta+Alt+W"
+            onClick={() => replaceToken("word")}
+          >
+            Correct word
+          </button>
+          <button
+            className="tool-button"
+            disabled={composing.current}
+            aria-keyshortcuts="Control+Alt+Enter Meta+Alt+Enter"
+            onClick={insertNewline}
+          >
+            Insert newline
+          </button>
+          <button
+            className="tool-button"
+            disabled={
+              busy ||
+              composing.current ||
+              snapshot.selectionStart === snapshot.selectionEnd
+            }
+            aria-keyshortcuts="Control+Alt+R Meta+Alt+R"
+            onClick={rewriteSelection}
+          >
+            Rewrite selection
+          </button>
+          <button
+            className="tool-button"
+            disabled={busy || switchingMode || composing.current}
+            aria-keyshortcuts="Control+Alt+P Meta+Alt+P"
+            onClick={() => void returnToProse()}
+          >
             {switchingMode ? "Switching…" : "Return to prose"}
           </button>
         </div>
-        <p className="mt-2 text-xs text-muted">Dictation mode: {settings.dictationMode ?? "prose"}. In the editor, use Ctrl/⌘+Alt+I
-          for the last identifier, +W for a word, +Enter for a newline, +P for prose, +R to rewrite a selection.
-          Replacement previews require confirmation and remain undoable.</p>
+        <p className="mt-2 text-xs text-muted">
+          Dictation mode: {settings.dictationMode ?? "prose"}. In the editor,
+          use Ctrl/⌘+Alt+I for the last identifier, +W for a word, +Enter for a
+          newline, +P for prose, +R to rewrite a selection. Replacement previews
+          require confirmation and remain undoable.
+        </p>
         <label className="field mt-4">
           Literal technical draft
-          <textarea ref={editor} rows={16} wrap="off" spellCheck={false} autoCapitalize="off" autoCorrect="off"
+          <textarea
+            ref={editor}
+            rows={16}
+            wrap="off"
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
             className="w-full resize-y font-mono text-sm [tab-size:4]"
             value={composition ?? buffer.displayText}
             onSelect={captureSelection}
             onBeforeInput={captureSelection}
-            onCompositionStart={() => { captureSelection(); composing.current = true; setComposition(buffer.displayText); }}
+            onCompositionStart={() => {
+              captureSelection();
+              composing.current = true;
+              setComposition(buffer.displayText);
+            }}
             onCompositionEnd={(event) => {
               composing.current = false;
               setComposition(null);
-              buffer.edit(event.currentTarget.value, event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
+              buffer.edit(
+                event.currentTarget.value,
+                event.currentTarget.selectionStart,
+                event.currentTarget.selectionEnd,
+              );
               publish();
             }}
             onChange={(event) => {
-              if (composing.current) { setComposition(event.target.value); return; }
-              buffer.edit(event.target.value, event.target.selectionStart, event.target.selectionEnd);
+              if (composing.current) {
+                setComposition(event.target.value);
+                return;
+              }
+              buffer.edit(
+                event.target.value,
+                event.target.selectionStart,
+                event.target.selectionEnd,
+              );
               publish();
             }}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing || composing.current) return;
               captureSelection();
-              if ((event.ctrlKey || event.metaKey) && event.altKey && !event.shiftKey &&
-                  !event.getModifierState("AltGraph")) {
+              if (
+                (event.ctrlKey || event.metaKey) &&
+                event.altKey &&
+                !event.shiftKey &&
+                !event.getModifierState("AltGraph")
+              ) {
                 const key = event.key.toLowerCase();
                 if (["i", "w", "enter", "p", "r"].includes(key)) {
                   event.preventDefault();
@@ -291,65 +473,146 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings, rewri
                 const key = event.key.toLowerCase();
                 if (key === "z" || key === "y") {
                   event.preventDefault();
-                  if (key === "y" || event.shiftKey) buffer.redo(); else buffer.undo();
+                  if (key === "y" || event.shiftKey) buffer.redo();
+                  else buffer.undo();
                   publish(true);
                 }
               }
-            }} />
+            }}
+          />
         </label>
         <p className="mt-3 text-xs text-muted">
-          Undo/redo restores text and selection. History is bounded; your current draft is never
-          truncated. The draft survives navigation during this app session and is not saved to
-          disk automatically. Copy or download it before closing the app. Tab moves focus;
-          Insert tab adds indentation at the selection.
+          Undo/redo restores text and selection. History is bounded; your
+          current draft is never truncated. The draft survives navigation during
+          this app session and is not saved to disk automatically. Copy or
+          download it before closing the app. Tab moves focus; Insert tab adds
+          indentation at the selection.
         </p>
         <div className="runtime-actions mt-4">
-          <button className="secondary-button" disabled={copying || !snapshot.text || composing.current}
-            onClick={() => void copy()}><Copy /> {copying ? "Copying…" : "Copy draft"}</button>
-          <button className="secondary-button" disabled={!snapshot.text || composing.current}
-            onClick={download}><Download /> Download text</button>
+          <button
+            className="secondary-button"
+            disabled={copying || !snapshot.text || composing.current}
+            onClick={() => void copy()}
+          >
+            <Copy /> {copying ? "Copying…" : "Copy draft"}
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!snapshot.text || composing.current}
+            onClick={download}
+          >
+            <Download /> Download text
+          </button>
         </div>
-        {message && <p className="mt-3 text-sm" role="status">{message}</p>}
+        {message && (
+          <p className="mt-3 text-sm" role="status">
+            {message}
+          </p>
+        )}
         {error && <Alert>{error}</Alert>}
       </section>
-      {selectedRewrite && <RewriteDialog
-        title="Rewrite selection"
-        description="Preview this selection before replacing it. The draft keeps an undo copy; transcript history stays unchanged."
-        text={selectedRewrite.source}
-        baseline={selectedRewrite.source}
-        status={rewriteStatus}
-        onRewrite={bridge.rewriteMagic} onCancelRewrite={bridge.cancelRewrite}
-        onSetup={onRewriteSetup}
-        onClose={() => setSelectedRewrite(null)}
-        onApply={async (result, expectedSource) => {
-          if (expectedSource !== selectedRewrite.source) return false;
-          try {
-            buffer.applyInsert(selectedRewrite.target, result.text);
+      {selectedRewrite && (
+        <RewriteDialog
+          title="Rewrite selection"
+          description="Preview this selection before replacing it. The draft keeps an undo copy; transcript history stays unchanged."
+          text={selectedRewrite.source}
+          baseline={selectedRewrite.source}
+          status={rewriteStatus}
+          onRewrite={bridge.rewriteMagic}
+          onCancelRewrite={bridge.cancelRewrite}
+          onSetup={onRewriteSetup}
+          onClose={() => setSelectedRewrite(null)}
+          onApply={async (result, expectedSource) => {
+            if (expectedSource !== selectedRewrite.source) return false;
+            try {
+              buffer.applyInsert(selectedRewrite.target, result.text);
+              publish(true);
+              setMessage(
+                "Selection rewrite applied. Undo restores the prior draft.",
+              );
+              return true;
+            } catch (reason) {
+              setError(String(reason));
+              return false;
+            }
+          }}
+        />
+      )}
+      {replacement && (
+        <Modal
+          title={
+            replacement.kind === "identifier"
+              ? "Replace last identifier"
+              : "Correct word"
+          }
+          onClose={() => setReplacement(null)}
+          footer={
+            <>
+              <button
+                className="secondary-button"
+                onClick={() => setReplacement(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary-button"
+                disabled={
+                  !replacement.text.trim() ||
+                  !buffer.isTargetCurrent(replacement.target)
+                }
+                onClick={applyReplacement}
+              >
+                Replace in draft
+              </button>
+            </>
+          }
+        >
+          <p>
+            Replace only this captured range. The original transcript is
+            preserved.
+          </p>
+          <pre className="my-3 whitespace-pre-wrap font-mono">
+            {replacement.original}
+          </pre>
+          <label className="field">
+            Replacement
+            <input
+              autoFocus
+              maxLength={1024}
+              value={replacement.text}
+              onChange={(event) =>
+                setReplacement({ ...replacement, text: event.target.value })
+              }
+            />
+          </label>
+          {!buffer.isTargetCurrent(replacement.target) && (
+            <p role="alert">
+              The draft or selection changed. Cancel and prepare again.
+            </p>
+          )}
+          {replacementError && (
+            <p className="field-error" role="alert">
+              {replacementError}
+            </p>
+          )}
+        </Modal>
+      )}
+      {clear && (
+        <ConfirmDialog
+          title="Clear the technical draft?"
+          confirmLabel="Clear draft"
+          onClose={() => setClear(false)}
+          onConfirm={() => {
+            buffer.clear();
             publish(true);
-            setMessage("Selection rewrite applied. Undo restores the prior draft.");
-            return true;
-          } catch (reason) { setError(String(reason)); return false; }
-        }}
-      />}
-      {replacement && <Modal title={replacement.kind === "identifier" ? "Replace last identifier" : "Correct word"}
-        onClose={() => setReplacement(null)} footer={<>
-          <button className="secondary-button" onClick={() => setReplacement(null)}>Cancel</button>
-          <button className="primary-button" disabled={!replacement.text.trim() || !buffer.isTargetCurrent(replacement.target)}
-            onClick={applyReplacement}>Replace in draft</button>
-        </>}>
-        <p>Replace only this captured range. The original transcript is preserved.</p>
-        <pre className="my-3 whitespace-pre-wrap font-mono">{replacement.original}</pre>
-        <label className="field">Replacement
-          <input autoFocus maxLength={1024} value={replacement.text}
-            onChange={(event) => setReplacement({ ...replacement, text: event.target.value })} />
-        </label>
-        {!buffer.isTargetCurrent(replacement.target) && <p role="alert">The draft or selection changed. Cancel and prepare again.</p>}
-        {replacementError && <p className="field-error" role="alert">{replacementError}</p>}
-      </Modal>}
-      {clear && <ConfirmDialog title="Clear the technical draft?" confirmLabel="Clear draft"
-        onClose={() => setClear(false)} onConfirm={() => { buffer.clear(); publish(true); }}>
-        <p>This clears only the buffer. Source transcripts remain unchanged. You can undo this during this session.</p>
-      </ConfirmDialog>}
+          }}
+        >
+          <p>
+            This clears only the buffer. Source transcripts remain unchanged.
+            You can undo this during this session.
+          </p>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

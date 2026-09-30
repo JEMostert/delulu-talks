@@ -3,7 +3,10 @@ import { PipelineTimingDetails } from "./PipelineTimingDetails";
 import { bridge } from "../bridge";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
-import { MAX_REWRITE_INSTRUCTIONS, validateRewriteInstructions } from "../rewriteInstructions";
+import {
+  MAX_REWRITE_INSTRUCTIONS,
+  validateRewriteInstructions,
+} from "../rewriteInstructions";
 import { REWRITE_PRESETS } from "../rewritePresets";
 import { RewriteDiff } from "./RewriteDiff";
 import { RewriteWarnings } from "./RewriteWarnings";
@@ -46,7 +49,11 @@ export function RewriteDialog({
   onClose: () => void;
   onSetup: () => void;
   onRewrite: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
-  onApply: (result: MagicRewriteResult, source: string, sourceRevision: number) => Promise<boolean>;
+  onApply: (
+    result: MagicRewriteResult,
+    source: string,
+    sourceRevision: number,
+  ) => Promise<boolean>;
   onCancelRewrite?: (operationId: string) => Promise<boolean>;
 }) {
   const instructionHelpId = useId();
@@ -54,7 +61,9 @@ export function RewriteDialog({
   const requestGeneration = useRef(0);
   useEffect(() => {
     active.current = true;
-    return () => { active.current = false; };
+    return () => {
+      active.current = false;
+    };
   }, []);
   const [source, setSource] = useState(text);
   const [expectedOutput, setExpectedOutput] = useState(baseline);
@@ -71,7 +80,9 @@ export function RewriteDialog({
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    onOperationState?.(busy ? "working" : error ? "error" : result ? "ready" : "draft");
+    onOperationState?.(
+      busy ? "working" : error ? "error" : result ? "ready" : "draft",
+    );
   }, [busy, error, result, onOperationState]);
   const closeDialog = () => {
     requestGeneration.current += 1;
@@ -97,7 +108,10 @@ export function RewriteDialog({
       if (session && !session.cancelled) {
         session.cancelled = true;
         const cancel = cancelRewrite.current;
-        if (cancel) void Promise.resolve().then(() => cancel(session.id)).catch(() => undefined);
+        if (cancel)
+          void Promise.resolve()
+            .then(() => cancel(session.id))
+            .catch(() => undefined);
       }
     };
   }, []);
@@ -116,19 +130,31 @@ export function RewriteDialog({
         sourceLanguage,
         text: source,
         preset,
-        context: contextEnabled ? {language,fileType,selection} : undefined,
+        context: contextEnabled ? { language, fileType, selection } : undefined,
         instructions: validateRewriteInstructions(instructions),
         allowInferences: false,
       });
-      if (mounted.current && activeSession.current === session && !session.cancelled) {
+      if (
+        mounted.current &&
+        activeSession.current === session &&
+        !session.cancelled
+      ) {
         setResult(preview);
       }
     } catch (reason) {
-      if (mounted.current && activeSession.current === session && !session.cancelled) {
+      if (
+        mounted.current &&
+        activeSession.current === session &&
+        !session.cancelled
+      ) {
         setError(reason instanceof Error ? reason.message : String(reason));
       }
     } finally {
-      if (mounted.current && activeSession.current === session && !session.cancelled) {
+      if (
+        mounted.current &&
+        activeSession.current === session &&
+        !session.cancelled
+      ) {
         activeSession.current = null;
         setGenerating(false);
         setBusy(false);
@@ -153,15 +179,20 @@ export function RewriteDialog({
         setGenerating(false);
         setCancelling(false);
         setBusy(false);
-        setNotice(cleanupFailed
-          ? "Preview request cancelled; runtime cleanup could not be confirmed."
-          : "Preview request cancelled");
+        setNotice(
+          cleanupFailed
+            ? "Preview request cancelled; runtime cleanup could not be confirmed."
+            : "Preview request cancelled",
+        );
       }
     }
   }
 
   const missing = status?.engine === "missing" || status?.engine === "error";
-  const stale = source !== text || expectedOutput !== baseline || sourceRevision !== expectedRevision;
+  const stale =
+    source !== text ||
+    expectedOutput !== baseline ||
+    sourceRevision !== expectedRevision;
   return (
     <Modal
       title={title}
@@ -170,8 +201,29 @@ export function RewriteDialog({
       onClose={closeDialog}
       footer={
         <>
-          {result && <button className="secondary-button" disabled={busy} onClick={async () => {try {await bridge.copyText(result.text);setNotice("Preview copied — paste manually into the intended destination.");} catch(reason) {setError(String(reason));}}}>Copy preview</button>}
-          {onBackground && <button className="secondary-button" onClick={onBackground}>Continue in background</button>}
+          {result && (
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={async () => {
+                try {
+                  await bridge.copyText(result.text);
+                  setNotice(
+                    "Preview copied — paste manually into the intended destination.",
+                  );
+                } catch (reason) {
+                  setError(String(reason));
+                }
+              }}
+            >
+              Copy preview
+            </button>
+          )}
+          {onBackground && (
+            <button className="secondary-button" onClick={onBackground}>
+              Continue in background
+            </button>
+          )}
           <button
             className="secondary-button"
             disabled={busy}
@@ -188,13 +240,16 @@ export function RewriteDialog({
                 setBusy(true);
                 setError(null);
                 try {
-                  if (await onApply(result, expectedOutput, expectedRevision)) closeDialog();
+                  if (await onApply(result, expectedOutput, expectedRevision))
+                    closeDialog();
                   else
                     setError(
                       "Could not apply this rewrite. The transcript may have changed; close this preview and review the current result.",
                     );
                 } catch (reason) {
-                  setError(reason instanceof Error ? reason.message : String(reason));
+                  setError(
+                    reason instanceof Error ? reason.message : String(reason),
+                  );
                 } finally {
                   if (mounted.current) setBusy(false);
                 }
@@ -207,17 +262,35 @@ export function RewriteDialog({
       }
     >
       <p>{description}</p>
-      {contextLabel && <p className="caption">Rewriting: {contextLabel}. This session stays attached to this transcript when you navigate or open another card.</p>}
+      {contextLabel && (
+        <p className="caption">
+          Rewriting: {contextLabel}. This session stays attached to this
+          transcript when you navigate or open another card.
+        </p>
+      )}
       {stale && (
-        <div className="rewrite-setup my-3 rounded-panel border border-line p-3" role="alert">
-          <p>The transcript changed after this preview opened. This preview cannot be applied. Refresh to use the current text and generate a new preview.</p>
-          <button className="secondary-button" disabled={busy} onClick={() => {
-            setSource(text);
-            setExpectedOutput(baseline);
-            setExpectedRevision(sourceRevision);
-            setResult(null);
-            setError(null);
-          }}>Refresh rewrite source</button>
+        <div
+          className="rewrite-setup my-3 rounded-panel border border-line p-3"
+          role="alert"
+        >
+          <p>
+            The transcript changed after this preview opened. This preview
+            cannot be applied. Refresh to use the current text and generate a
+            new preview.
+          </p>
+          <button
+            className="secondary-button"
+            disabled={busy}
+            onClick={() => {
+              setSource(text);
+              setExpectedOutput(baseline);
+              setExpectedRevision(sourceRevision);
+              setResult(null);
+              setError(null);
+            }}
+          >
+            Refresh rewrite source
+          </button>
         </div>
       )}
       {missing ? (
@@ -254,7 +327,9 @@ export function RewriteDialog({
             }}
           >
             {REWRITE_PRESETS.map((item) => (
-              <option key={item.id} value={item.id}>{item.label}</option>
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
             ))}
           </select>
         </label>
@@ -278,26 +353,113 @@ export function RewriteDialog({
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <p id={instructionHelpId} className="flex-1 text-xs text-muted">
-          Kept for retries in this dialog and discarded when you close it.
-          Never saved as a writing preference or transcript metadata. Instructions
-          request tone or format; they do not guarantee factual accuracy. Compare
-          the full preview before applying it. Saved shortcut blocks stay protected.
+          Kept for retries in this dialog and discarded when you close it. Never
+          saved as a writing preference or transcript metadata. Instructions
+          request tone or format; they do not guarantee factual accuracy.
+          Compare the full preview before applying it. Saved shortcut blocks
+          stay protected.
         </p>
-        <span className="text-xs text-muted">{instructions.length.toLocaleString()} / 4,000</span>
-        <button className="secondary-button" disabled={busy || !instructions} onClick={() => {
-          setInstructions("");
-          setResult(null);
-          setError(null);
-        }}>Clear instructions</button>
+        <span className="text-xs text-muted">
+          {instructions.length.toLocaleString()} / 4,000
+        </span>
+        <button
+          className="secondary-button"
+          disabled={busy || !instructions}
+          onClick={() => {
+            setInstructions("");
+            setResult(null);
+            setError(null);
+          }}
+        >
+          Clear instructions
+        </button>
       </div>
-      <p className="mt-3" aria-live="polite">{presetDetails.description}</p>
+      <details className="my-3 rounded-panel border border-line p-3">
+        <summary>Optional language and editor context</summary>
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={contextEnabled}
+            disabled={busy}
+            onChange={(event) => {
+              setContextEnabled(event.target.checked);
+              setResult(null);
+            }}
+          />
+          Include the context below for this local rewrite
+        </label>
+        <p className="caption mt-2">
+          Only context you enter is used. It is discarded with this dialog and
+          never saved with the transcript. Fenced and indented code or terminal
+          blocks in the source stay exact.
+        </p>
+        {contextEnabled && (
+          <div className="grid gap-3 mt-3">
+            <label className="field">
+              Language
+              <input
+                aria-label="Rewrite context language"
+                maxLength={80}
+                disabled={busy}
+                value={language}
+                placeholder="For example: Dutch prose, TypeScript identifiers"
+                onChange={(event) => {
+                  setLanguage(event.target.value);
+                  setResult(null);
+                }}
+              />
+            </label>
+            <label className="field">
+              File type
+              <input
+                aria-label="Rewrite context file type"
+                maxLength={80}
+                disabled={busy}
+                value={fileType}
+                placeholder="For example: Markdown"
+                onChange={(event) => {
+                  setFileType(event.target.value);
+                  setResult(null);
+                }}
+              />
+            </label>
+            <label className="field">
+              Selection context <small>Read-only reference</small>
+              <textarea
+                aria-label="Rewrite selection context"
+                maxLength={4000}
+                disabled={busy}
+                value={selection}
+                onChange={(event) => {
+                  setSelection(event.target.value);
+                  setResult(null);
+                }}
+              />
+            </label>
+          </div>
+        )}
+      </details>
+      <p className="mt-3" aria-live="polite">
+        {presetDetails.description}
+      </p>
       <details className="my-3 rounded-panel border border-line p-3">
         <summary>Illustrative example: {presetDetails.label}</summary>
-        <p className="my-2">Written examples only; your local model's output may differ. Generate a preview to rewrite your transcript.</p>
-        <p><strong>Example source</strong></p>
-        <p className="whitespace-pre-wrap break-words">{presetDetails.exampleSource}</p>
-        <p className="mt-2"><strong>Example output</strong></p>
-        <p className="whitespace-pre-wrap break-words">{presetDetails.exampleOutput}</p>
+        <p className="my-2">
+          Written examples only; your local model's output may differ. Generate
+          a preview to rewrite your transcript.
+        </p>
+        <p>
+          <strong>Example source</strong>
+        </p>
+        <p className="whitespace-pre-wrap break-words">
+          {presetDetails.exampleSource}
+        </p>
+        <p className="mt-2">
+          <strong>Example output</strong>
+        </p>
+        <p className="whitespace-pre-wrap break-words">
+          {presetDetails.exampleOutput}
+        </p>
       </details>
       <div className="rewrite-comparison mb-4 mt-3 grid grid-cols-2 gap-4">
         <label className="field">
@@ -345,12 +507,16 @@ export function RewriteDialog({
       {notice && <p role="status">{notice}</p>}
       <button
         className="secondary-button"
-        disabled={busy || stale || missing || !source.trim() || source.length > 50_000}
+        disabled={
+          busy || stale || missing || !source.trim() || source.length > 50_000
+        }
         onClick={generatePreview}
       >
         {generating ? <LoaderCircle className="spin" /> : <WandSparkles />}
         {generating
-          ? cancelling ? "Cancelling preview…" : "Rewriting locally…"
+          ? cancelling
+            ? "Cancelling preview…"
+            : "Rewriting locally…"
           : result
             ? "Try again"
             : "Generate preview"}
@@ -366,8 +532,8 @@ export function RewriteDialog({
       )}
       {source.length > 50_000 && (
         <p className="field-error">
-          This source exceeds the 50,000-character rewrite limit. Choose a shorter
-          source before generating a preview.
+          This source exceeds the 50,000-character rewrite limit. Choose a
+          shorter source before generating a preview.
         </p>
       )}
       {result && <PipelineTimingDetails timings={result.timings} />}

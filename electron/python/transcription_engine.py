@@ -202,6 +202,8 @@ def bounded_error(exc: Exception) -> str:
         return "Model download or connection failed. Check connectivity and retry setup."
     if isinstance(exc, TimeoutError) or "timed out" in detail:
         return "Model operation timed out. Reload the model and retry."
+    if "response exceeds" in detail:
+        return "Model output exceeds the response limit. Shorten the input and retry."
     if "protocol" in detail or "byte limit" in detail or "mib limit" in detail or isinstance(exc, json.JSONDecodeError):
         return "Model worker protocol failed. Restart the app or repair its runtime."
     if isinstance(exc, (ValueError, TypeError, KeyError)):

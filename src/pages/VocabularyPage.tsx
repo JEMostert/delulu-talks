@@ -219,7 +219,9 @@ export function VocabularyPage({
             <div className="flex-1 min-w-0">
               <h3 className="text-[15px] flex gap-2 items-center break-words">
                 {word.term}
-                <span className="badge">{ruleLanguage(word) || "All languages"}</span>
+                <span className="badge">
+                  {ruleLanguage(word) || "All languages"}
+                </span>
                 {!ruleTriggers(word).length && (
                   <span className="badge">Needs a correction phrase</span>
                 )}
@@ -238,7 +240,8 @@ export function VocabularyPage({
               )}
               {!!word.aliases?.length && (
                 <p className="text-[12px] text-muted mt-[5px] break-words">
-                  Aliases: {word.aliases.map((alias) => `“${alias}”`).join(" · ")}
+                  Aliases:{" "}
+                  {word.aliases.map((alias) => `“${alias}”`).join(" · ")}
                 </p>
               )}
             </div>
@@ -355,17 +358,25 @@ export function VocabularyPage({
             <select
               aria-label="Rule language"
               value={draft.language ?? ""}
-              onChange={(e) => setDraft({ ...draft, language: e.target.value || undefined })}
+              onChange={(e) =>
+                setDraft({ ...draft, language: e.target.value || undefined })
+              }
             >
               <option value="">All languages</option>
-              {draft.language && !LANGUAGES.some(([code]) => code === draft.language) && (
-                <option value={draft.language}>{draft.language}</option>
-              )}
+              {draft.language &&
+                !LANGUAGES.some(([code]) => code === draft.language) && (
+                  <option value={draft.language}>{draft.language}</option>
+                )}
               {LANGUAGES.map(([code, label]) => (
-                <option key={code} value={code}>{label}</option>
+                <option key={code} value={code}>
+                  {label}
+                </option>
               ))}
             </select>
-            <small>Scoped rules apply only to results in this language. Unknown languages use global rules only.</small>
+            <small>
+              Scoped rules apply only to results in this language. Unknown
+              languages use global rules only.
+            </small>
           </label>
           {!shortcut && (
             <label className="field">
@@ -423,7 +434,10 @@ export function VocabularyPage({
           )}
           <label className="field">
             Pronunciation & recognition aliases
-            <small>Optional · one exact phrase per line, up to 32. Commas stay literal.</small>
+            <small>
+              Optional · one exact phrase per line, up to 32. Commas stay
+              literal.
+            </small>
             <textarea
               aria-label="Pronunciation and recognition aliases"
               maxLength={16_384}
@@ -431,11 +445,17 @@ export function VocabularyPage({
               onChange={(e) =>
                 setDraft({ ...draft, aliases: e.target.value.split("\n") })
               }
-              placeholder={shortcut ? "my sign off\nmy closing text" : "de loo loo\ndel loo loo"}
+              placeholder={
+                shortcut
+                  ? "my sign off\nmy closing text"
+                  : "de loo loo\ndel loo loo"
+              }
             />
           </label>
           {aliasesError && (
-            <p className="field-error" role="alert">{aliasesError}</p>
+            <p className="field-error" role="alert">
+              {aliasesError}
+            </p>
           )}
           {conflict && (
             <p className="field-error break-words" role="alert">
@@ -452,8 +472,7 @@ export function VocabularyPage({
                 placeholder={
                   shortcut
                     ? `Please insert ${draft.term || "my signature"}`
-                    : ruleTriggers(draft)[0] ||
-                      "Type a recognized phrase"
+                    : ruleTriggers(draft)[0] || "Type a recognized phrase"
                 }
               />
             </label>
@@ -462,7 +481,11 @@ export function VocabularyPage({
               aria-label="Rule preview"
             >
               {sample
-                ? personalize(sample, [{ ...draft, enabled: true }], draft.language)
+                ? personalize(
+                    sample,
+                    [{ ...draft, enabled: true }],
+                    draft.language,
+                  )
                 : "Enter a phrase to preview the exact replacement."}
             </output>
           </div>

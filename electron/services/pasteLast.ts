@@ -19,7 +19,12 @@ export class PasteLastService {
       copy(text: string): void;
       clipboardOnly(): boolean;
       changed(status: PasteLastStatus): void;
-      delivery?(id: string, state: "copied" | "paste-attempted" | "transcribed", detail?: string, method?: string): void;
+      delivery?(
+        id: string,
+        state: "copied" | "paste-attempted" | "transcribed",
+        detail?: string,
+        method?: string,
+      ): void;
     },
   ) {}
 
@@ -37,11 +42,7 @@ export class PasteLastService {
     this.timer = null;
   }
 
-  start(
-    recordId: string,
-    text: string,
-    delaySeconds: number,
-  ): PasteLastStatus {
+  start(recordId: string, text: string, delaySeconds: number): PasteLastStatus {
     if (["pending", "delivering"].includes(this.status.phase))
       throw new Error(
         "A paste is already scheduled or being attempted. Cancel the countdown before scheduling another.",
@@ -53,7 +54,9 @@ export class PasteLastService {
       delaySeconds < 1 ||
       delaySeconds > 30
     )
-      throw new Error("Paste delay must be a whole number from 1 to 30 seconds");
+      throw new Error(
+        "Paste delay must be a whole number from 1 to 30 seconds",
+      );
     this.clearTimer();
     const operationId = randomUUID();
     const dueAt = Date.now() + delaySeconds * 1000;
@@ -72,7 +75,10 @@ export class PasteLastService {
       )
         return;
       if (this.ports.captureActive()) {
-        this.cancel(operationId, "Paste cancelled because a recording started.");
+        this.cancel(
+          operationId,
+          "Paste cancelled because a recording started.",
+        );
         return;
       }
       const current = this.ports.currentText(recordId);
@@ -115,7 +121,12 @@ export class PasteLastService {
         });
       } else {
         const method = await this.ports.paste(text);
-        this.ports.delivery?.(recordId, "paste-attempted", "Paste command sent; destination receipt is not confirmed", method);
+        this.ports.delivery?.(
+          recordId,
+          "paste-attempted",
+          "Paste command sent; destination receipt is not confirmed",
+          method,
+        );
         if (this.status.operationId === operationId)
           this.publish({
             phase: "attempted",
@@ -124,7 +135,17 @@ export class PasteLastService {
           });
       }
     } catch (reason) {
-      this.ports.delivery?.(recordId, this.ports.clipboardOnly() || (reason instanceof Error && reason.name === "ClipboardCopyError") ? "transcribed" : "copied", (reason instanceof Error ? reason.message : String(reason)).slice(0, 500));
+      this.ports.delivery?.(
+        recordId,
+        this.ports.clipboardOnly() ||
+          (reason instanceof Error && reason.name === "ClipboardCopyError")
+          ? "transcribed"
+          : "copied",
+        (reason instanceof Error ? reason.message : String(reason)).slice(
+          0,
+          500,
+        ),
+      );
       if (this.status.operationId === operationId)
         this.publish({
           phase: "error",

@@ -101,10 +101,14 @@ for (const scenario of [
           const end = source.indexOf("function assertRuntimeIdle()", start);
           assert.ok(start >= 0 && end > start);
           const compiled = new Bun.Transpiler({ loader: "ts" }).transformSync(source.slice(start, end));
-          const apply = new Function("storage", "shortcut", "normalizeSettings", "dictation", "asr", "smokeTest", "app", "pill", "broadcast", "rebuildTrayMenu", compiled + "; return applySettings;")(
+          const apply = new Function("storage", "shortcut", "normalizeSettings", "dictation", "asr", "smokeTest", "app", "pill", "broadcast", "rebuildTrayMenu", "assertPersonalProfilesUpdate", compiled + "; return applySettings;")(
             storage, shortcut, normalizeSettings, dictation, asr, true, { isPackaged: false }, { prepare() {} },
             (name, settings) => settingsEvents.push({ name, settings }), () => {},
+            (await import(${JSON.stringify(new URL("../../src/personalProfiles.ts", import.meta.url).href)})).assertPersonalProfilesUpdate,
           );
+          const writeSettings = storage.updateSettings.bind(storage);
+          let rejectWrite = ["write", "restore", "restore-throw", "portal"].includes(scenario);
+          storage.updateSettings = (next) => { if (rejectWrite) throw new Error("Fixture atomic write rejected"); return writeSettings(next); };
           const path = join(root, "settings.json");
           const bytes = readFileSync(path, "utf8"), before = storage.getSettings();
           if (["write", "restore", "restore-throw", "portal"].includes(scenario)) mkdirSync(path + ".tmp");
@@ -132,7 +136,7 @@ for (const scenario of [
           }
           // An intentional retry commits disk, memory, binding and final events.
           rmSync(path + ".tmp", { recursive: true, force: true });
-          rejectNew = rejectOld = throwOld = becomeBusy = false; asr.isBusy = false;
+          rejectWrite = false; rejectNew = rejectOld = throwOld = becomeBusy = false; asr.isBusy = false;
           statuses.length = 0;
           const saved = await apply({ shortcut: next });
           assert.equal(saved.shortcut, next);

@@ -18,17 +18,43 @@ export type SpeechBackendLanguageCapability = {
 // this list aligned with Python LANGUAGE_NAMES, rather than exposing new UI
 // languages automatically when the general language catalog grows.
 const hintCodes = Object.freeze([
-  "en", "de", "nl", "fr", "es", "pt", "it", "pl", "cs", "el", "sv", "da",
-  "fi", "no", "uk", "ru", "tr", "ar", "he", "hi", "zh", "ja", "ko", "vi",
+  "en",
+  "de",
+  "nl",
+  "fr",
+  "es",
+  "pt",
+  "it",
+  "pl",
+  "cs",
+  "el",
+  "sv",
+  "da",
+  "fi",
+  "no",
+  "uk",
+  "ru",
+  "tr",
+  "ar",
+  "he",
+  "hi",
+  "zh",
+  "ja",
+  "ko",
+  "vi",
 ]);
 
 export const speechBackendLanguageCapabilities = Object.freeze({
   mlx: Object.freeze({ backend: "mlx", hintCodes, automaticLanguage: false }),
   "cuda-vllm": Object.freeze({
-    backend: "cuda-vllm", hintCodes, automaticLanguage: false,
+    backend: "cuda-vllm",
+    hintCodes,
+    automaticLanguage: false,
   }),
   "cuda-transformers": Object.freeze({
-    backend: "cuda-transformers", hintCodes, automaticLanguage: false,
+    backend: "cuda-transformers",
+    hintCodes,
+    automaticLanguage: false,
   }),
 } satisfies Record<string, SpeechBackendLanguageCapability>);
 
