@@ -59,6 +59,7 @@ const api: DeluluApi = {
   updateSettings: (settings: Partial<AppSettings>) =>
     ipcRenderer.invoke("settings:update", settings),
   managePersonalProfile: (command) => ipcRenderer.invoke("profiles:manage", command),
+  activatePersonalProfile: (command) => ipcRenderer.invoke("profiles:activate", command),
   getStatus: () => ipcRenderer.invoke("runtime:status"),
   getMagicStatus: () => ipcRenderer.invoke("magic:status"),
   getShortcutStatus: () => ipcRenderer.invoke("shortcut:status"),

@@ -49,7 +49,7 @@ export interface IpcDependencies {
   schedulePasteLast: () => unknown;
   getPasteRecovery: () => PasteRecovery | null;
   setPasteRecovery: (recovery: PasteRecovery | null) => void;
-  applySettings: (value: unknown) => Promise<AppSettings>;
+  applySettings: (value: unknown, explicitProfileActivation?: boolean) => Promise<AppSettings>;
   settingsQueue: SerialQueue;
   broadcast: (channel: string, payload: unknown) => void;
   selectedAudioFiles: Set<string>;

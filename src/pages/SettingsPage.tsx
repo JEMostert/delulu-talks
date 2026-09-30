@@ -1,4 +1,6 @@
 import { REWRITE_PRESETS } from "../rewritePresets";
+import { ProfileActivationControls } from "../components/ProfileActivationControls";
+import type { ProfileActivationCommand } from "../activePersonalProfile";
 import { PersonalProfiles } from "../components/PersonalProfiles";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { VocabularyPage } from "./VocabularyPage";
@@ -43,6 +45,7 @@ type Props = {
   saving: boolean;
   onSave: (patch: Partial<AppSettings>) => Promise<boolean>;
   onManagePersonalProfile: (command: PersonalProfileCommand) => Promise<boolean>;
+  onActivateProfile: (command: ProfileActivationCommand) => Promise<boolean>;
   onConfigureShortcut: () => void;
   onAuthorizePaste: () => void;
   onTestPaste: () => void;
@@ -121,11 +124,14 @@ export function SettingsPage(props: Props) {
       </div>
       {tab === "data" && <LocalData />}
       {tab === "profiles" && (
-        <PersonalProfiles
-          settings={s}
-          saving={saving}
-          onManage={props.onManagePersonalProfile}
-        />
+        <>
+          <ProfileActivationControls settings={s} busy={busy || saving} onActivate={props.onActivateProfile} />
+          <PersonalProfiles
+            settings={s}
+            saving={saving}
+            onManage={props.onManagePersonalProfile}
+          />
+        </>
       )}
       {tab === "personalization" && (
         <VocabularyPage

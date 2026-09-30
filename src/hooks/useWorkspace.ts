@@ -1,3 +1,4 @@
+import type { CaptureProfileSnapshot, ProfileActivationCommand } from "../activePersonalProfile";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
@@ -52,6 +53,7 @@ export function useWorkspace() {
     remainingSeconds: 0,
     message: "",
   });
+  const [captureProfile, setCaptureProfile] = useState<CaptureProfileSnapshot | null>(null);
   const [history, setHistory] = useState<TranscriptRecord[]>([]);
   // Session-only view state survives History navigation and page remounts.
   const [historyView, setHistoryView] =
@@ -119,7 +121,10 @@ export function useWorkspace() {
       if (alive) setCaptureDiagnostics(stats);
     });
     const subscriptions = [
-      bridge.onStatus(subscribe("speech status", setStatus)),
+      bridge.onStatus(subscribe("speech status", (next: DictationStatus) => {
+        setStatus(next);
+        if (next.phase === "idle" || next.phase === "error") setCaptureProfile(null);
+      })),
       bridge.onPasteLastStatus(subscribe("paste last", setPasteLastStatus)),
       bridge.onMagicStatus(subscribe("rewriting status", setMagicStatus)),
       bridge.onSettingsChanged(subscribe("settings", receiveSettings)),
@@ -128,6 +133,8 @@ export function useWorkspace() {
       bridge.onUpdateStatus(subscribe("update status", setUpdateStatus)),
       bridge.onRecorderCommand((command) => {
         if (!isCurrent()) return;
+        if (command.action === "start") setCaptureProfile(command.captureProfile ?? null);
+        if (command.action === "cancel") setCaptureProfile(null);
         void recorder.handle(command).catch((reason) => { if (isCurrent()) report(reason); });
       }),
       bridge.onTranscript((record) => {
@@ -335,6 +342,10 @@ export function useWorkspace() {
     }, `Profile ${verb} · active settings unchanged`);
   }
 
+  function activateProfile(command: ProfileActivationCommand): Promise<boolean> {
+    return action(async () => receiveSettings(await bridge.activatePersonalProfile(command)), "Profile switched");
+  }
+
   async function updateTranscript(
     id: string,
     text: string | null,
@@ -384,6 +395,7 @@ export function useWorkspace() {
     shortcutStatus,
     history,
     captureDiagnostics,
+    captureProfile,
     setHistory,
     historyView,
     setHistoryView,
@@ -399,6 +411,7 @@ export function useWorkspace() {
     action,
     saveSettings,
     managePersonalProfile,
+    activateProfile,
     updateTranscript,
     finishOnboarding,
     copy,

@@ -638,10 +638,14 @@ function persistSettings(value: unknown): Promise<AppSettings> {
   return settingsQueue.run(() => applySettings(value));
 }
 
-async function applySettings(value: unknown): Promise<AppSettings> {
+async function applySettings(value: unknown, explicitProfileActivation = false): Promise<AppSettings> {
   const previous = storage.getSettings();
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Expected a settings object");
+  if (!explicitProfileActivation && Object.prototype.hasOwnProperty.call(value, "activePersonalProfile") &&
+      JSON.stringify((value as Record<string, unknown>).activePersonalProfile) !== JSON.stringify(previous.activePersonalProfile)) {
+    throw new Error("Switch profiles using the explicit activation preview.");
+  }
   assertPersonalProfilesUpdate(
     previous.personalProfiles,
     Object.prototype.hasOwnProperty.call(value, "personalProfiles")

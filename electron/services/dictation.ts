@@ -2,6 +2,7 @@ import { renderTechnicalDictation } from "../../src/technicalDictation";
 import { personalizeWithUsage } from "../../src/personalization";
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { formatSpokenCommands } from "../../src/spokenFormatting";
+import { captureProfileSnapshot } from "../../src/activePersonalProfile";
 import { deliveredText } from "../../src/transcriptText";
 import { normalizeLanguageMetadata, normalizeReportedLanguage } from "../../src/transcriptLanguage";
 import type { BrowserWindow } from "electron";
@@ -38,6 +39,8 @@ function numeric(value: unknown, fallback = 0): number {
 
 export class DictationService {
   private readonly retryAudio = new RetryAudioStore();
+  private captureSettings: AppSettings | null = null;
+  private retrySettings: AppSettings | null = null;
   get isActive(): boolean {
     return this.captureState !== "idle";
   }
@@ -50,6 +53,7 @@ export class DictationService {
   }
   discardFailure(): void {
     this.retryAudio.discard();
+    this.retrySettings = null;
     this.publishRetryAudio();
     if (!this.isActive)
       this.asr.setActivity("idle", "Failed recording discarded");
@@ -107,6 +111,7 @@ export class DictationService {
     if (!window || window.isDestroyed() || !this.recorderReady) {
       this.captureState = "idle";
       this.captureSessionId = null;
+      this.captureSettings = null;
       this.asr.setActivity(
         "error",
         "The microphone controller is still starting — try again in a moment",
@@ -136,7 +141,9 @@ export class DictationService {
     if (this.busyNoticeTimer) clearTimeout(this.busyNoticeTimer);
     this.busyNoticeTimer = null;
     this.busyNotice = false;
-    this.hud = command;
+    this.hud = command.state !== "hidden" && this.captureSettings
+      ? { ...command, profile: captureProfileSnapshot(this.captureSettings).label }
+      : command;
     this.applyHud();
   }
 
@@ -181,6 +188,7 @@ export class DictationService {
     if (this.captureState !== "idle" && this.captureState !== "processing") {
       this.captureState = "idle";
       this.captureSessionId = null;
+      this.captureSettings = null;
       this.setHud({ state: "hidden" });
       this.asr.setActivity(
         "error",
@@ -243,7 +251,8 @@ export class DictationService {
       });
       return;
     }
-    const settings = this.settings();
+    const settings = structuredClone(this.settings());
+    this.captureSettings = settings;
     this.captureSessionId = randomUUID();
     this.captureState = "opening";
     this.asr.setCaptureInputNotice?.(null);
@@ -252,6 +261,7 @@ export class DictationService {
       action: "start",
       inputDeviceId: settings.inputDeviceId,
       sessionId: this.captureSessionId,
+      captureProfile: captureProfileSnapshot(settings),
     });
   }
 
@@ -287,6 +297,7 @@ export class DictationService {
     const sessionId = this.captureSessionId!;
     this.captureState = "idle";
     this.captureSessionId = null;
+    this.captureSettings = null;
     this.sendRecorder({
       action: "cancel",
       inputDeviceId: this.settings().inputDeviceId,
@@ -329,7 +340,7 @@ export class DictationService {
     }
     if (this.captureState !== "opening") return;
     this.captureState = "listening";
-    const hold = this.settings().shortcutMode === "hold";
+    const hold = (this.captureSettings ?? this.settings()).shortcutMode === "hold";
     this.asr.setActivity(
       "listening",
       hold
@@ -368,6 +379,7 @@ export class DictationService {
   private failCapture(message: string): void {
     this.captureState = "idle";
     this.captureSessionId = null;
+    this.captureSettings = null;
     this.setHud({
       state: "error",
       title: "Could not finish",
@@ -402,7 +414,9 @@ export class DictationService {
     if (this.captureState === "processing")
       throw new Error("A recording is already being processed");
     this.captureState = "processing";
-    const settings = this.settings();
+    const settings = this.captureSettings ??
+      (retryLease ? this.retrySettings : null) ?? this.settings();
+    this.captureSettings = structuredClone(settings);
     if (
       !(submission.wav instanceof Uint8Array) ||
       submission.wav.byteLength < 44
@@ -424,6 +438,7 @@ export class DictationService {
         detail: "Hold a little longer",
       });
       this.asr.setActivity("idle", "Recording was too short and was discarded");
+      this.captureSettings = null;
       return true;
     }
 
@@ -541,8 +556,9 @@ export class DictationService {
       this.asr.setActivity("idle", completion);
       return true;
     } catch (error) {
-      if (deliveryStarted) this.retryAudio.discard();
+      if (deliveryStarted) { this.retryAudio.discard(); this.retrySettings = null; }
       const retained = !deliveryStarted && (retryLease || this.retryAudio.retain(submission));
+      this.retrySettings = retained ? structuredClone(settings) : null;
       this.publishRetryAudio();
       this.setHud({ state: "error" });
       const cause = error instanceof Error ? error.message : String(error);
@@ -555,6 +571,7 @@ export class DictationService {
       return false;
     } finally {
       this.captureState = "idle";
+      this.captureSettings = null;
       rmSync(audioPath, { force: true });
     }
   }

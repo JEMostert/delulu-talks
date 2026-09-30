@@ -138,7 +138,7 @@ export function PersonalProfiles({ settings, saving, onManage }: {
     <section className="settings-group">
       <div className="group-heading">
         <h3>Personal profiles</h3>
-        <p>Save named settings for a workflow. Saving, renaming or deleting a profile does not change active settings. Profile activation is not available yet.</p>
+        <p>Save named settings for a workflow. Saving, renaming or deleting a profile does not change active settings. Use the separate activation preview to apply a supported profile.</p>
       </div>
       {blocked ? <p role="alert" className="control-warning">{blocked}</p> : (
         <>

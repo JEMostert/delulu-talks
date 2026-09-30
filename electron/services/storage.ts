@@ -1,5 +1,6 @@
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { transcriptSourceRevision } from "../../src/transcriptText";
+import { readActivePersonalProfile } from "../../src/activePersonalProfile";
 import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
 import { app } from "electron";
 import { isMagicPreset } from "../../src/rewritePresets";
@@ -286,6 +287,7 @@ export function normalizeSettings(value: unknown): AppSettings {
     menuBarOnly: boolean(source.menuBarOnly, DEFAULT_SETTINGS.menuBarOnly),
     customWords: normalizeWords(source.customWords),
     personalProfiles: readPersonalProfiles(source.personalProfiles).document as AppSettings["personalProfiles"],
+    activePersonalProfile: readActivePersonalProfile(source.activePersonalProfile),
   };
 }
 
@@ -554,7 +556,9 @@ export class StorageService {
       ? source.personalProfiles
       : this.settings.personalProfiles;
     assertPersonalProfilesUpdate(this.settings.personalProfiles, document);
-    const next = normalizeSettings({ ...source, personalProfiles: document });
+    const activePersonalProfile = Object.prototype.hasOwnProperty.call(source, "activePersonalProfile")
+      ? source.activePersonalProfile : this.settings.activePersonalProfile;
+    const next = normalizeSettings({ ...source, personalProfiles: document, activePersonalProfile });
     writeJson(join(this.dataDirectory, SETTINGS_FILE), next);
     this.settings = next;
     return this.getSettings();

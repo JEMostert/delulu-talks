@@ -2,6 +2,8 @@ import { technicalDictationGuide } from "../technicalDictation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CaptureDiagnostics } from "../components/CaptureDiagnostics";
 import { InputLevel } from "../components/InputLevel";
+import { ProfileActivationControls } from "../components/ProfileActivationControls";
+import type { CaptureProfileSnapshot, ProfileActivationCommand } from "../activePersonalProfile";
 import {
   ArrowUpRight,
   Check,
@@ -66,6 +68,8 @@ export function HomePage({
   devices,
   history,
   captureDiagnostics,
+  captureProfile,
+  onActivateProfile,
   saving,
   busy,
   onNavigate,
@@ -84,6 +88,8 @@ export function HomePage({
   devices: MicrophoneDevice[];
   history: TranscriptRecord[];
   captureDiagnostics?: CaptureStats | null;
+  captureProfile?: CaptureProfileSnapshot | null;
+  onActivateProfile: (command: ProfileActivationCommand) => Promise<boolean>;
   saving: boolean;
   busy: boolean;
   onNavigate: (page: Page) => void;
@@ -368,6 +374,12 @@ export function HomePage({
             )}
             <InputLevel />
             <CaptureDiagnostics value={captureDiagnostics} />
+            <ProfileActivationControls
+              settings={s}
+              busy={busy || saving}
+              captureProfile={captureProfile}
+              onActivate={onActivateProfile}
+            />
             {!shortcutStatus.registered && (
               <p className="control-warning">{shortcutStatus.message}</p>
             )}
