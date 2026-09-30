@@ -42,7 +42,6 @@ export function profileActivationSettings(profile: PersonalProfileV1): ProfileEf
   if (profile.context.mode !== "none") throw new Error("Context capture is not supported by profile activation. Choose no context; a profile cannot grant native permission.");
   if (!profile.technicalGrammar.preserveIdentifiers || profile.technicalGrammar.literalTerms.length) throw new Error("Only the built-in technical identifier protection is supported. Custom technical grammar is not available.");
   if (profile.rewrite.instructions?.trim()) throw new Error("Saved rewrite instructions are not supported by automatic profile activation. Use an existing preset.");
-  if (profile.vocabulary.rules.some((rule) => rule.language !== undefined)) throw new Error("Language-scoped vocabulary activation requires the language-rule integration. This app can activate all-language rules only.");
   return {
     language: profile.language,
     autoPaste: profile.delivery.autoPaste,
@@ -51,6 +50,7 @@ export function profileActivationSettings(profile: PersonalProfileV1): ProfileEf
     customWords: profile.vocabulary.rules.map((rule) => ({
       id: rule.id, kind: rule.kind, term: rule.term.trim(), soundsLike: rule.soundsLike.trim(),
       replacement: rule.replacement, enabled: rule.enabled,
+      ...(rule.language !== undefined ? { language: rule.language } : {}),
     })),
     magicEnabled: profile.rewrite.enabled,
     magicModel: profile.rewrite.model,
