@@ -19,7 +19,7 @@ async function exercise(
     import { mock } from "bun:test";
     import { EventEmitter } from "node:events";
     const copied = [], commands = [], keys = [], clipboardCalls = [];
-    mock.module("electron", () => ({ clipboard: { writeText: value => copied.push(value) } }));
+    mock.module("electron", () => ({ systemPreferences: { isTrustedAccessibilityClient: () => true }, clipboard: { writeText: value => copied.push(value) } }));
     const io = {
       platform: ${JSON.stringify(platform)},
       env: { XDG_SESSION_TYPE: ${JSON.stringify(session)}, XDG_CURRENT_DESKTOP: ${kde} ? "KDE" : "test-desktop" },
@@ -145,7 +145,12 @@ test("Wayland injection failure leaves text copied and sends no execution action
   const result = await exercise("linux", "wayland", true);
   expect(result.copied).toEqual([text]);
   expect(result.commands).toEqual([]);
-  expect(result.keys).toEqual([{ key: 0xffe3, state: 1 }]);
+  // A rejected press may have reached the compositor. Attempt its matching
+  // release without injecting V, Return, or any source text after the failure.
+  expect(result.keys).toEqual([
+    { key: 0xffe3, state: 1 },
+    { key: 0xffe3, state: 0 },
+  ]);
   expect(result.method).toBeNull();
   expect(result.error).toBe("Input injection denied");
 });
@@ -178,30 +183,71 @@ test("KDE publishes command text as one clipboard argument and injects Paste onl
   expect(result.error).toBeNull();
 });
 
-
 const deliveryFixtures = JSON.parse(
-  readFileSync(new URL("../../tests/fixtures/delivery-text.json", import.meta.url), "utf8"),
+  readFileSync(
+    new URL("../../tests/fixtures/delivery-text.json", import.meta.url),
+    "utf8",
+  ),
 ) as Array<{ id: string; tags: string[]; text: string }>;
 
 for (const fixture of deliveryFixtures) {
   for (const route of desktopRoutes) {
     test(`${route.platform}: ${fixture.id} reaches clipboard byte-for-byte`, async () => {
-      const result = await exercise(route.platform, "x11", false, true, false, fixture.text);
+      const result = await exercise(
+        route.platform,
+        "x11",
+        false,
+        true,
+        false,
+        fixture.text,
+      );
       expect(result.error).toBeNull();
       expect(result.copied).toEqual([fixture.text]);
-      expect(Buffer.from(result.copied[0], "utf8")).toEqual(Buffer.from(fixture.text, "utf8"));
-      expect(result.commands).toEqual([{ program: route.program, args: route.args, options: { windowsHide: true } }]);
+      expect(Buffer.from(result.copied[0], "utf8")).toEqual(
+        Buffer.from(fixture.text, "utf8"),
+      );
+      expect(result.commands).toEqual([
+        {
+          program: route.program,
+          args: route.args,
+          options: { windowsHide: true },
+        },
+      ]);
     });
   }
   test(`KDE Wayland: ${fixture.id} remains one exact clipboard argument`, async () => {
-    const result = await exercise("linux", "wayland", false, true, true, fixture.text);
+    const result = await exercise(
+      "linux",
+      "wayland",
+      false,
+      true,
+      true,
+      fixture.text,
+    );
     expect(result.copied).toEqual([fixture.text]);
-    expect(result.clipboardCalls).toEqual([{ program: "qdbus6", args: ["org.kde.klipper", "/klipper", "setClipboardContents", fixture.text] }]);
+    expect(result.clipboardCalls).toEqual([
+      {
+        program: "qdbus6",
+        args: [
+          "org.kde.klipper",
+          "/klipper",
+          "setClipboardContents",
+          fixture.text,
+        ],
+      },
+    ]);
     expect(result.commands).toEqual([]);
     expect(result.error).toBeNull();
   });
   test(`no injector: ${fixture.id} remains available for manual paste`, async () => {
-    const result = await exercise("linux", "x11", false, false, false, fixture.text);
+    const result = await exercise(
+      "linux",
+      "x11",
+      false,
+      false,
+      false,
+      fixture.text,
+    );
     expect(result.copied).toEqual([fixture.text]);
     expect(result.commands).toEqual([]);
     expect(result.method).toBeNull();

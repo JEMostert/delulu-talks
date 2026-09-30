@@ -1,0 +1,11 @@
+# Optional rewrite context and exact technical blocks
+
+Rewrite → Optional language and editor context lets you explicitly include language, file type and a selection as read-only reference for one local Qwen 3.5 request. Nothing is collected from applications, repositories or clipboard automatically. Fields start disabled and empty, and are not stored with settings/history. Changing context clears the earlier preview so it cannot be applied as if generated with the new context.
+
+Language and file type accept up to 80 UTF-16 code units each; selection accepts 4,000. Metadata is trimmed; selection text is preserved. IPC and the service reject invalid fields, types and excessive lengths without silently truncating content. Python validates context independently and labels it as untrusted reference data rather than instructions. Context can help interpret the source; it is not an authorization to add facts or modify code. All rewriting remains optional and local.
+
+Before rewriting, the service separates Markdown backtick/tilde fences (including terminal/shell fences) and four-space/tab-indented code. Those blocks bypass both vocabulary shortcut expansion and the language model. Reassembly preserves exact characters and line endings. Unterminated fences conservatively protect the remaining source. Existing saved shortcut protection continues in prose between technical blocks. More than 16 nonempty prose fragments asks for a shorter selection rather than issuing an unbounded sequence of model requests.
+
+Surrounding prose is rewritten separately; the model cannot use protected source blocks as context unless you explicitly supply separate selection context. Inline code and unmarked command lines are not blocks: fence them or indent them when exact preservation is required. Manual preview edits remain deliberate user edits. Original speech and accepted prior output stay governed by the existing preview/apply/undo flow.
+
+UNVERIFIED — no unit/browser/Python tests, builds, typechecks, formatting checks, native model inference, prompt-fidelity evaluation or independent review were run per user instruction. Prompt wording alone is not measured injection resistance or factual fidelity.

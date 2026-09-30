@@ -83,7 +83,8 @@ export function validatePythonInterpreter(
     );
   const machine = probe.machine.toLowerCase();
   const nativeArm = machine === "arm64" || machine === "aarch64";
-  const nativeX64 = machine === "x86_64" || machine === "amd64" || machine === "x64";
+  const nativeX64 =
+    machine === "x86_64" || machine === "amd64" || machine === "x64";
   if (
     probe.bits !== 64 ||
     (metal
@@ -113,7 +114,9 @@ export function parseRuntimePrerequisiteError(
         Object.values(RuntimePrerequisiteCode).includes(value.code) &&
         typeof value.details === "string"
       )
-        return new RuntimePrerequisiteError(value.code, value.details, { cause });
+        return new RuntimePrerequisiteError(value.code, value.details, {
+          cause,
+        });
     } catch {
       // Ordinary backend output remains available when no valid marker exists.
     }
@@ -127,9 +130,10 @@ export function runtimeReadinessScript(
   target: TargetPlatform,
   metal: boolean,
 ): string {
-  const version = metal || target.platform === "win32"
-    ? "sys.version_info[:2] == (3, 12)"
-    : "sys.version_info.major == 3 and 11 <= sys.version_info.minor <= 13";
+  const version =
+    metal || target.platform === "win32"
+      ? "sys.version_info[:2] == (3, 12)"
+      : "sys.version_info.major == 3 and 11 <= sys.version_info.minor <= 13";
   const architecture = metal
     ? target.platform === "darwin" && target.arch === "arm64"
       ? "platform.machine().lower() in ('arm64', 'aarch64')"
@@ -141,22 +145,24 @@ export function runtimeReadinessScript(
       : target.arch === "arm64"
         ? "platform.machine().lower() in ('arm64', 'aarch64')"
         : "True";
-  const imports = kind === "magic"
-    ? "import torch, torchvision, transformers\n    from transformers import AutoModelForMultimodalLM, AutoProcessor\n    if int(transformers.__version__.split('.')[0]) < 5:\n        fail('PACKAGE_IMPORT', 'Magic requires transformers 5 or later')"
-    : metal
-      ? "import mlx.core as mx\n    from mlx_audio.stt.utils import load_model, load_audio"
-      : target.platform === "win32"
-        ? "import torch, soundfile, soxr\n    from transformers import Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor"
-        : "import torch\n    from qwen_asr import Qwen3ASRModel";
-  const hardware = kind !== "speech"
-    ? ""
-    : metal
-      ? `try:
+  const imports =
+    kind === "magic"
+      ? "import torch, torchvision, transformers\n    from transformers import AutoModelForMultimodalLM, AutoProcessor\n    if int(transformers.__version__.split('.')[0]) < 5:\n        fail('PACKAGE_IMPORT', 'Magic requires transformers 5 or later')"
+      : metal
+        ? "import mlx.core as mx\n    from mlx_audio.stt.utils import load_model, load_audio"
+        : target.platform === "win32"
+          ? "import torch, soundfile, soxr\n    from transformers import Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor"
+          : "import torch\n    from r2t2 import R2T2ASRModel";
+  const hardware =
+    kind !== "speech"
+      ? ""
+      : metal
+        ? `try:
     if not mx.metal.is_available():
         fail('METAL_UNAVAILABLE', 'mlx.core reports Metal unavailable')
 except Exception as exc:
     fail('METAL_UNAVAILABLE', repr(exc))`
-      : `if torch.version.cuda is None:
+        : `if torch.version.cuda is None:
     fail('CUDA_BUILD', 'torch.version.cuda is None')
 try:
     if not torch.cuda.is_available():

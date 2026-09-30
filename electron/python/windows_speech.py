@@ -30,11 +30,23 @@ class WindowsSpeech:
         self.cuda_preflight = None
         self.warmup = "not-started"
 
+        self.precision = None
+
     def status(self):
-        loaded = self.model is not None
-        return {"loaded": loaded, "model": MODEL, "device": "cuda" if loaded else None,
-                "residency": "resident" if loaded else "unloaded", "warmup": self.warmup,
-                **({"cudaPreflight": self.cuda_preflight} if self.cuda_preflight is not None else {})}
+        status = {"loaded": self.model is not None, "model": MODEL, "device": "cuda" if self.model is not None else None}
+        status.update({"residency": "resident" if self.model is not None else "unloaded", "warmup": self.warmup})
+        if self.cuda_preflight is not None:
+            status["cudaPreflight"] = self.cuda_preflight
+        if self.model is not None:
+            status["speechExecution"] = {
+                "modelId": "r2t2",
+                "backendId": "transformers-cuda",
+                "precision": self.precision,
+                "checkpoint": {"repository": MODEL, "revision": MODEL_REVISION},
+                "platform": "win32",
+                "device": "cuda",
+            }
+        return status
 
     def load(self, request):
         if self.model is not None:
@@ -64,12 +76,14 @@ class WindowsSpeech:
         converted_root = Path(cache_root or HF_HOME) / "delulu-r2t2-transformers" / CONVERSION_VERSION / MODEL_REVISION
         try:
             if (converted_root / "complete").is_file():
+                emit_progress("Loading cached converted R2T2 weights…", stage="load")
                 self.processor = Qwen3ASRProcessor.from_pretrained(converted_root)
                 dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
                 self.model = Qwen3ASRForConditionalGeneration.from_pretrained(
                     converted_root, dtype=dtype, device_map={"": "cuda"},
                 ).eval()
                 self._warmup()
+                self.precision = "bf16" if dtype == torch.bfloat16 else "fp16"
                 return self.status()
             emit_progress("Converting R2T2 for native Windows CUDA (first load only)…", stage="conversion")
             self.processor = Qwen3ASRProcessor(
@@ -111,8 +125,10 @@ class WindowsSpeech:
                 if staged.exists():
                     shutil.rmtree(staged)
             # Cache the original BF16 weights before selecting this GPU's dtype.
+            emit_progress("Loading converted R2T2 weights onto CUDA…", stage="load")
             self.model.to(device="cuda", dtype=dtype).eval()
             self._warmup()
+            self.precision = "bf16" if dtype == torch.bfloat16 else "fp16"
             return self.status()
         except BaseException:
             self.unload()
@@ -126,15 +142,21 @@ class WindowsSpeech:
         self._generate(np.zeros(SAMPLE_RATE, dtype=np.float32), "English", 8)
         self.warmup = "complete"
 
-    def _generate(self, samples, language, max_tokens):
+    def _generate(self, samples, language, max_tokens, timings=None):
         import torch
+        preprocessing_started = time.perf_counter()
         inputs = self.processor.apply_transcription_request(
             audio=samples, language=language, return_tensors="pt",
             processor_kwargs={"audio_kwargs": {"sampling_rate": SAMPLE_RATE}},
         ).to(self.model.device).to(self.model.dtype)
         length = int(inputs["input_ids"].shape[-1])
         with torch.inference_mode():
+            inference_started = time.perf_counter()
             generated = self.model.generate(**inputs, max_new_tokens=max_tokens, do_sample=False)
+            inference_finished = time.perf_counter()
+        if timings is not None:
+            timings["backendPreprocessingMs"] += (inference_started - preprocessing_started) * 1000
+            timings["inferenceMs"] += (inference_finished - inference_started) * 1000
         output = generated[0][length:]
         if max_tokens > 8 and len(output) >= max_tokens and int(output[-1]) not in (151643, 151645):
             raise RuntimeError("R2T2 reached its transcription token limit. Try a shorter audio segment.")
@@ -169,10 +191,12 @@ class WindowsSpeech:
         if not len(samples):
             raise ValueError("The selected audio file contains no samples")
         inference_started = time.perf_counter()
+        timings = {"backendPreprocessingMs": (inference_started - started) * 1000,
+                   "inferenceMs": 0.0}
         results = []
         try:
             for offset in range(0, len(samples), CHUNK_SAMPLES):
-                results.append(self._generate(samples[offset:offset + CHUNK_SAMPLES], language, 4096))
+                results.append(self._generate(samples[offset:offset + CHUNK_SAMPLES], language, 4096, timings))
         except BaseException:
             with contextlib.suppress(Exception):
                 torch = sys.modules.get("torch")
@@ -189,13 +213,15 @@ class WindowsSpeech:
                 **language_metadata,
                 "duration": len(samples) / SAMPLE_RATE,
                 "processingTime": finished - started,
-                "inferenceTime": finished - inference_started}
+                "inferenceTime": finished - inference_started,
+                "timings": timings}
 
     def unload(self):
         self.model = None
         self.processor = None
         self.warmup = "not-started"
         self.cuda_preflight = None
+        self.precision = None
         gc.collect()
         torch = sys.modules.get("torch")
         with contextlib.suppress(Exception):

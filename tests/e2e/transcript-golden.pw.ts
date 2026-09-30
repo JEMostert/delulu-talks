@@ -32,6 +32,8 @@ for (const fixture of fixtures) {
               if (method.startsWith("on")) return () => () => {};
               return async (...args: unknown[]) => {
                 calls.push({ method, args });
+                if (method === "getHistoryBatchSnapshot")
+                  return { deletion: null, records: [structuredClone(record)] };
                 if (method === "getHistory") return [structuredClone(record)];
                 if (method === "updateTranscript") {
                   if (

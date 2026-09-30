@@ -7,7 +7,11 @@ import {
   type ClientInterface,
   type MessageBus,
 } from "dbus-next";
-import type { PasteShortcut, PlatformCapabilities } from "../../src/types";
+import type {
+  PipelineTimings,
+  PasteShortcut,
+  PlatformCapabilities,
+} from "../../src/types";
 import { compatibleSessionBusAddress } from "../compat";
 import { getAccessibilityPermission } from "./accessibilityPermission";
 import { portalRequest, PORTAL_NAME, PORTAL_PATH } from "./shortcutPortal";
@@ -123,9 +127,16 @@ export class PasteService {
     return null;
   }
 
-  copy(text: string): void {
-    this.clipboardRestore.cancel();
-    this.publishClipboard(text);
+  copy(text: string, timings?: PipelineTimings): void {
+    if (this.deliveryInFlight)
+      throw new Error("A clipboard operation is already in progress.");
+    const started = performance.now();
+    try {
+      this.clipboardRestore.cancel();
+      this.publishClipboard(text);
+    } finally {
+      if (timings) timings.clipboardMs = performance.now() - started;
+    }
   }
 
   private publishClipboard(text: string): void {
@@ -155,61 +166,100 @@ export class PasteService {
     await this.ensurePortalSession();
   }
 
-  async paste(text: string, restoreClipboard = false): Promise<string> {
-    if (this.deliveryInFlight) throw new Error("A paste is already in progress; wait before pasting again");
-    this.deliveryInFlight = true;
-    try { return await this.performPaste(text, restoreClipboard); }
-    finally { this.deliveryInFlight = false; }
+  get isBusy(): boolean {
+    return this.deliveryInFlight;
   }
 
-  private async performPaste(text: string, restoreClipboard = false): Promise<string> {
+  async withClipboardLease<T>(body: () => Promise<T>): Promise<T> {
+    if (this.deliveryInFlight)
+      throw new Error("A clipboard delivery is already in progress.");
+    this.deliveryInFlight = true;
+    this.clipboardRestore.cancel();
+    try {
+      return await body();
+    } finally {
+      this.deliveryInFlight = false;
+    }
+  }
+
+  async paste(
+    text: string,
+    restoreClipboard = false,
+    timings?: PipelineTimings,
+  ): Promise<string> {
+    const started = performance.now();
+    if (this.deliveryInFlight)
+      throw new Error(
+        "A paste is already in progress; wait before pasting again",
+      );
+    this.deliveryInFlight = true;
+    try {
+      return await this.performPaste(text, restoreClipboard);
+    } finally {
+      this.deliveryInFlight = false;
+      if (timings) timings.pasteMs = performance.now() - started;
+    }
+  }
+
+  private async performPaste(
+    text: string,
+    restoreClipboard = false,
+  ): Promise<string> {
     const shortcut = this.io.getShortcut?.() ?? "standard";
-    const prepareRestore = this.clipboardRestore.begin(restoreClipboard, (previous) => this.copy(previous));
+    const prepareRestore = this.clipboardRestore.begin(
+      restoreClipboard,
+      (previous) => this.copy(previous),
+    );
     const generation = this.clipboardRestore.generation;
-    try { this.publishClipboard(text); } catch (error) { throw new ClipboardCopyError(error); }
+    try {
+      this.publishClipboard(text);
+    } catch (error) {
+      throw new ClipboardCopyError(error);
+    }
     const finishRestore = prepareRestore?.();
     try {
-    if (this.platform === "darwin") {
-      const accessibility = getAccessibilityPermission(this.platform);
-      if (!accessibility.canAttemptPaste)
-        throw new Error(`The transcript was copied; ${accessibility.detail}`);
-    }
-    if (this.waylandPortal) {
-      await this.pasteThroughPortal(shortcut);
-      finishRestore?.();
-      return "wayland-portal";
-    }
-    const command = this.resolveCommand(shortcut);
-    if (!command)
-      throw new Error(
-        "no compatible input injector is available; the transcript is on the clipboard",
-      );
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 120));
-    await new Promise<void>((resolvePaste, reject) => {
-      const child = (this.io.spawn ?? spawn)(command.program, command.args, {
-        windowsHide: true,
-      });
-      let stderr = "";
-      child.stderr.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString();
-      });
-      if (command.input) child.stdin.end(command.input);
-      child.once("error", reject);
-      child.once("exit", (code) =>
-        code === 0
-          ? resolvePaste()
-          : reject(
-              new Error(
-                stderr.trim() ||
-                  `${command.program} exited with code ${code}`,
+      if (this.platform === "darwin") {
+        const accessibility = getAccessibilityPermission(this.platform);
+        if (!accessibility.canAttemptPaste)
+          throw new Error(`The transcript was copied; ${accessibility.detail}`);
+      }
+      if (this.waylandPortal) {
+        await this.pasteThroughPortal(shortcut);
+        finishRestore?.();
+        return "wayland-portal";
+      }
+      const command = this.resolveCommand(shortcut);
+      if (!command)
+        throw new Error(
+          "no compatible input injector is available; the transcript is on the clipboard",
+        );
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 120));
+      await new Promise<void>((resolvePaste, reject) => {
+        const child = (this.io.spawn ?? spawn)(command.program, command.args, {
+          windowsHide: true,
+        });
+        let stderr = "";
+        child.stderr.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString();
+        });
+        if (command.input) child.stdin.end(command.input);
+        child.once("error", reject);
+        child.once("exit", (code) =>
+          code === 0
+            ? resolvePaste()
+            : reject(
+                new Error(
+                  stderr.trim() ||
+                    `${command.program} exited with code ${code}`,
+                ),
               ),
-            ),
-      );
-    });
-    finishRestore?.();
-    return command.program;
+        );
+      });
+      finishRestore?.();
+      return command.program;
     } catch (error) {
-      if (generation === this.clipboardRestore.generation) this.clipboardRestore.cancel();
+      if (generation === this.clipboardRestore.generation)
+        this.clipboardRestore.cancel();
       throw error;
     }
   }

@@ -19,7 +19,7 @@ PLATFORMS = [
      "netease-youdao/Confucius4-R2T2", "cuda"),
 ]
 OPTIONAL_MODULES = {
-    "metal_speech", "windows_speech", "qwen_asr", "vllm", "mlx",
+    "metal_speech", "windows_speech", "r2t2", "vllm", "mlx",
     "mlx_audio", "torch", "transformers", "numpy", "soundfile",
 }
 
@@ -72,6 +72,9 @@ class Model:
     def from_pretrained(cls,*args,**kwargs):return cls()
     def eval(self):return self
     def generate(self,**kwargs):return [[1,2]]
+sys.modules['huggingface_hub']=types.SimpleNamespace(snapshot_download=lambda **kw:'/fixture/rewrite')
+sys.modules['download_progress']=types.SimpleNamespace(download_progress_class=lambda:object)
+sys.modules['cuda_preflight']=types.SimpleNamespace(ensure_cuda_compatible=lambda torch:{'probe':'synthetic-no-hardware'})
 sys.modules['torch']=torch
 sys.modules['transformers']=types.SimpleNamespace(AutoProcessor=Processor,AutoModelForMultimodalLM=Model)
 raise SystemExit(engine.main())
@@ -89,7 +92,7 @@ class BackendIsolation(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         responses = [json.loads(line.removeprefix("@delulu:"))
-                     for line in result.stdout.splitlines()]
+                     for line in result.stdout.splitlines() if line.startswith("@delulu:")]
         self.assertEqual([response["id"] for response in responses],
                          [request["id"] for request in requests], result.stderr)
         self.assertTrue(all(response["protocolVersion"] == 1 for response in responses))
@@ -103,17 +106,19 @@ class BackendIsolation(unittest.TestCase):
                     patch.object(engine.platform, "machine", return_value=arch), \
                     forbid_imports(OPTIONAL_MODULES) as attempts:
                 worker = engine.Worker()
-                expected = {"loaded": False, "model": model, "device": device}
+                expected = {"loaded": False, "model": model, "device": None, "residency": "unloaded", "warmup": "not-started"}
                 self.assertEqual(worker.dispatch({"command": "status"}), expected)
                 self.assertEqual(worker.dispatch({"command": "ping"})["loaded"], False)
-                self.assertEqual(worker.dispatch({"command": "unload"}), {"loaded": False})
-                self.assertEqual(worker.dispatch({"command": "magicUnload"}), {"loaded": False})
+                self.assertEqual(worker.dispatch({"command": "unload"}),
+                                 {"loaded": False, "model": model, "device": None, "residency": "unloaded", "warmup": "not-started"})
+                self.assertEqual(worker.dispatch({"command": "magicUnload"}),
+                                 {"loaded": False, "model": None, "device": None, "residency": "unloaded", "warmup": "not-started"})
                 self.assertFalse(worker.dispatch({"command": "magicStatus"})["loaded"])
                 self.assertEqual(worker.dispatch({"command": "shutdown"}), {"shutdown": True})
                 self.assertEqual(attempts, [])
 
     def test_writing_workflow_works_when_all_speech_backends_are_missing(self):
-        blocked = {"metal_speech", "windows_speech", "qwen_asr", "vllm", "mlx", "mlx_audio"}
+        blocked = {"metal_speech", "windows_speech", "r2t2", "vllm", "mlx", "mlx_audio"}
         for system, arch in [("darwin", "arm64"), ("win32", "AMD64"), ("linux", "x86_64")]:
             with self.subTest(platform=system):
                 responses = self.protocol(system, arch, blocked, [
@@ -134,7 +139,7 @@ class BackendIsolation(unittest.TestCase):
         for system, arch, module in [
             ("darwin", "arm64", "metal_speech"),
             ("win32", "AMD64", "windows_speech"),
-            ("linux", "x86_64", "qwen_asr"),
+            ("linux", "x86_64", "r2t2"),
         ]:
             with self.subTest(platform=system):
                 responses = self.protocol(system, arch, {module}, [
@@ -145,7 +150,7 @@ class BackendIsolation(unittest.TestCase):
                     {"command": "shutdown"},
                 ], device="cuda")
                 self.assertFalse(responses[1]["ok"])
-                self.assertIn(module, responses[1]["error"])
+                self.assertEqual(responses[1]["error"], "Model dependency unavailable. Repair this runtime.")
                 self.assertTrue(all(response["ok"] for index, response in enumerate(responses) if index != 1))
                 self.assertTrue(responses[3]["result"]["loaded"])
 
@@ -158,8 +163,9 @@ class BackendIsolation(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "not loaded"):
                     worker.dispatch({"command": "transcribe", "audioPath": "unused.wav"})
                 self.assertEqual(worker.dispatch({"command": "status"}),
-                                 {"loaded": False, "model": model, "device": device})
-                self.assertEqual(worker.dispatch({"command": "unload"}), {"loaded": False})
+                                 {"loaded": False, "model": model, "device": None, "residency": "unloaded", "warmup": "not-started"})
+                self.assertEqual(worker.dispatch({"command": "unload"}),
+                                 {"loaded": False, "model": model, "device": None, "residency": "unloaded", "warmup": "not-started"})
                 self.assertEqual(worker.dispatch({"command": "shutdown"}), {"shutdown": True})
                 self.assertEqual(attempts, [])
 
@@ -248,7 +254,7 @@ class BackendIsolation(unittest.TestCase):
                         return {"loaded": False}
 
                 with patch.dict(sys.modules, {module: types.SimpleNamespace(**{class_name: Speech})}), \
-                        forbid_imports({"transformers", "qwen_asr", "vllm", "mlx_audio", "torch"}) as attempts:
+                        forbid_imports({"transformers", "r2t2", "vllm", "mlx_audio", "torch"}) as attempts:
                     self.assertTrue(worker.dispatch({"command": "load"})["loaded"])
                     self.assertTrue(worker.dispatch({"command": "status"})["loaded"])
                     self.assertEqual(worker.dispatch({"command": "transcribe"})["text"], "R2T2 fixture")

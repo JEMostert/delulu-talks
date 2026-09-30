@@ -123,7 +123,11 @@ function scenario(kind: Kind, platform: keyof typeof platforms = "linux") {
     new RuntimeInstaller(
       { dataDirectory: profile, venvDirectory: root },
       null,
-      () => fixture.environment,
+      () => ({
+        ...fixture.environment,
+        DELULU_SETUP_FIXTURE_MACHINE:
+          target.arch === "arm64" ? "arm64" : "x86_64",
+      }),
       target.metal,
       target.windows,
       { platform: target.platform, arch: target.arch },
@@ -189,6 +193,8 @@ async function retry(
       progress.push(event),
     ),
   );
+  // Installer preparation cannot activate a runtime before its caller validates it.
+  context.installer.commit();
   const active = runtimeDirectory(context.root);
   expect(active).not.toBe(failedCandidate);
   expect(active).not.toBe(join(context.root, "generations", oldGeneration));
@@ -214,7 +220,9 @@ async function retry(
       .previous,
   ).toBe(oldGeneration);
   expect(
-    progress.filter((event) => event.message.startsWith("Runtime installed.")),
+    progress.filter((event) =>
+      event.message.startsWith("Runtime candidate prepared."),
+    ),
   ).toHaveLength(1);
   const stages = context.fixture
     .readLog()
@@ -235,7 +243,14 @@ async function retry(
     "freeze",
     "inventory",
   ];
-  expect(stages).toEqual(expectedStages);
+  // Resolution and installation each execute the same package stage.
+  expect(stages).toEqual(
+    expectedStages.flatMap((stage) =>
+      ["installer", "cuda", "runtime"].includes(stage)
+        ? [stage, stage]
+        : [stage],
+    ),
+  );
   context.assertPreserved(false);
 }
 
@@ -249,17 +264,17 @@ for (const kind of ["speech", "magic"] as const) {
       try {
         await expect(
           bounded(
-            context.installer.install(kind, context.settings, (event) =>
-              progress.push(event),
-            ),
+            context.installer
+              .install(kind, context.settings, (event) => progress.push(event))
+              .then(() => context.installer.commit()),
           ),
         ).rejects.toThrow("EACCES");
         context.assertPreserved();
         expect(
           progress.some((event) =>
-            event.message.startsWith("Runtime installed."),
+            event.message.startsWith("Runtime candidate prepared."),
           ),
-        ).toBe(false);
+        ).toBe(true);
         const candidate = context.inactiveCandidate();
         expect(
           existsSync(join(candidate, `runtime-${kind}-inventory.json`)),
@@ -304,13 +319,13 @@ for (const kind of ["speech", "magic"] as const) {
             ),
           ).rejects.toThrow(
             stage === "interpreter"
-              ? "Install Python"
+              ? "[PYTHON_VERSION]"
               : `Synthetic setup failure at ${stage}`,
           );
           context.assertPreserved();
           expect(
             progress.some((event) =>
-              event.message.startsWith("Runtime installed."),
+              event.message.startsWith("Runtime candidate prepared."),
             ),
           ).toBe(false);
           const failure = context.fixture
@@ -343,7 +358,7 @@ for (const kind of ["speech", "magic"] as const) {
         context.assertPreserved();
         expect(
           progress.some((event) =>
-            event.message.startsWith("Runtime installed."),
+            event.message.startsWith("Runtime candidate prepared."),
           ),
         ).toBe(false);
         const command = context.fixture
@@ -382,7 +397,7 @@ for (const kind of ["speech", "magic"] as const) {
           context.assertPreserved();
           expect(
             progress.some((event) =>
-              event.message.startsWith("Runtime installed."),
+              event.message.startsWith("Runtime candidate prepared."),
             ),
           ).toBe(false);
           const commands = context.fixture.readLog();
@@ -457,12 +472,12 @@ for (const [kind, platform, stage] of [
         context.assertPreserved();
         expect(
           progress.some((event) =>
-            event.message.startsWith("Runtime installed."),
+            event.message.startsWith("Runtime candidate prepared."),
           ),
         ).toBe(false);
         context.installer.stop();
         await expect(bounded(install, 2000)).rejects.toThrow(
-          "Runtime command failed",
+          "Runtime setup cancelled",
         );
         expect(alive(paused.pid)).toBe(false);
         expect(
@@ -479,7 +494,7 @@ for (const [kind, platform, stage] of [
         context.assertPreserved();
         expect(
           progress.some((event) =>
-            event.message.startsWith("Runtime installed."),
+            event.message.startsWith("Runtime candidate prepared."),
           ),
         ).toBe(false);
         const command = context.fixture

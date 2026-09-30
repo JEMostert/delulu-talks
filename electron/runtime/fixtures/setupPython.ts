@@ -48,7 +48,7 @@ const args = process.argv.slice(2);
 const code = args.includes("-c") ? args[args.indexOf("-c") + 1] : "";
 let candidate = dirname(dirname(program));
 let stage;
-if (code.includes("print('.'.join")) {
+if (code.includes("sys.version_info[:3]")) {
   stage = "interpreter";
   candidate = null;
 } else if (args[0] === "-m" && args[1] === "venv") {
@@ -59,7 +59,7 @@ if (code.includes("print('.'.join")) {
   else if (args[2] === "freeze") stage = "freeze";
   else if (args[2] === "install") {
     stage = args.includes("--index-url") ? "cuda"
-      : args.some(arg => arg.startsWith("pip==")) ? "installer" : "runtime";
+      : args.some(arg => arg.startsWith("pip==") || /runtime-(speech|magic)-installer-artifacts/.test(arg)) ? "installer" : "runtime";
   }
 } else if (code.includes("metadata.distributions()")) {
   stage = "inventory";
@@ -98,7 +98,11 @@ if (controlled && (control.pauseStage === stage || control.failStage === stage))
       mkdirSync(join(candidate, "runtime-" + kind + "-" + suffix));
     }
   }
-  if (stage === "interpreter") console.log("3.12");
+  if (args.includes("--report")) {
+    const report = args[args.indexOf("--report")+1];
+    writeFileSync(report, JSON.stringify({version:"1", install:[{metadata:{name:"setup-fixture-package",version:"1.0.0"},download_info:{url:"https://fixture.invalid/synthetic.whl",archive_info:{hashes:{sha256:"a".repeat(64)}}}}]}));
+  }
+  if (stage === "interpreter") console.log(JSON.stringify({ version: [3,12,0], machine: process.env.DELULU_SETUP_FIXTURE_MACHINE || (process.arch === "arm64" ? "arm64" : "x86_64"), bits: 64 }));
   if (stage === "venv") {
     for (const relative of ["bin/python", "Scripts/python.exe"]) {
       const executable = join(candidate, relative);

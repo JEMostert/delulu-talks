@@ -1,7 +1,9 @@
+import { identifySyntheticMicrophone } from "./syntheticMicrophone";
 import { expect, test, type Page } from "@playwright/test";
 
 test.beforeEach(async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
+  await identifySyntheticMicrophone(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Dismiss setup" }).click();
 });
@@ -168,13 +170,21 @@ async function exerciseRace(
     const recorder = new PcmRecorder();
     let sessionId = "abandoned-session";
     const start = () =>
-      recorder.handle({ action: "start", inputDeviceId: "default", sessionId });
+      recorder.handle({
+        action: "start",
+        inputDeviceId: "fixture-microphone",
+        sessionId,
+      });
     const stop = () =>
-      recorder.handle({ action: "stop", inputDeviceId: "default", sessionId });
+      recorder.handle({
+        action: "stop",
+        inputDeviceId: "fixture-microphone",
+        sessionId,
+      });
     const cancel = (id = sessionId) =>
       recorder.handle({
         action: "cancel",
-        inputDeviceId: "default",
+        inputDeviceId: "fixture-microphone",
         sessionId: id,
       });
     let staleCommandsPreservedCapture = true;
@@ -250,7 +260,7 @@ async function exerciseRace(
         if (scenario === "stale-commands") {
           await recorder.handle({
             action: "stop",
-            inputDeviceId: "default",
+            inputDeviceId: "fixture-microphone",
             sessionId: "abandoned-session",
           });
           await cancel("abandoned-session");

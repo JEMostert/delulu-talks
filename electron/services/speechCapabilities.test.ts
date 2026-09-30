@@ -7,7 +7,14 @@ describe("speech language capabilities", () => {
     test(`${model.id} offers explicit selection including persisted Dutch and default English`, () => {
       const capability = speechLanguageCapability(model.id);
       expect(capability.canSelectLanguage).toBe(true);
-      expect(capability.languages).toBe(LANGUAGES);
+      expect(capability.languages).toEqual(
+        LANGUAGES.filter(([code]) =>
+          capability.backends.every((backend) =>
+            backend.hintCodes.includes(code),
+          ),
+        ),
+      );
+      expect(capability.canRequestAutomaticLanguage).toBe(false);
       const choices = capability.languages.map(([code]) => code);
       expect(choices).toContain("nl");
       expect(choices).toContain(DEFAULT_SETTINGS.language);

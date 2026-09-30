@@ -1,6 +1,10 @@
 import { REWRITE_PRESETS } from "../rewritePresets";
+import { ProfileActivationControls } from "../components/ProfileActivationControls";
+import type { ProfileActivationCommand } from "../activePersonalProfile";
 import { PersonalProfiles } from "../components/PersonalProfiles";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
+import { EncryptedHistory } from "../components/EncryptedHistory";
+import { ProjectVocabulary } from "../components/ProjectVocabulary";
 import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
 import {
@@ -42,7 +46,10 @@ type Props = {
   magicStatus: MagicStatus;
   saving: boolean;
   onSave: (patch: Partial<AppSettings>) => Promise<boolean>;
-  onManagePersonalProfile: (command: PersonalProfileCommand) => Promise<boolean>;
+  onManagePersonalProfile: (
+    command: PersonalProfileCommand,
+  ) => Promise<boolean>;
+  onActivateProfile: (command: ProfileActivationCommand) => Promise<boolean>;
   onConfigureShortcut: () => void;
   onAuthorizePaste: () => void;
   onTestPaste: () => void;
@@ -50,9 +57,11 @@ type Props = {
   onDownloadUpdate: () => void;
   onInstallUpdate: () => void;
   onSetup: () => void;
+  onCancelSetup?: () => void;
   onLoad: () => void;
   onUnload: () => void;
   onSetupMagic: () => void;
+  onCancelSetupMagic?: () => void;
   onLoadMagic: () => void;
   onUnloadMagic: () => void;
   onReset: () => void;
@@ -121,18 +130,28 @@ export function SettingsPage(props: Props) {
       </div>
       {tab === "data" && <LocalData />}
       {tab === "profiles" && (
-        <PersonalProfiles
-          settings={s}
-          saving={saving}
-          onManage={props.onManagePersonalProfile}
-        />
+        <>
+          <ProfileActivationControls
+            settings={s}
+            busy={busy || saving}
+            onActivate={props.onActivateProfile}
+          />
+          <PersonalProfiles
+            settings={s}
+            saving={saving}
+            onManage={props.onManagePersonalProfile}
+          />
+        </>
       )}
       {tab === "personalization" && (
-        <VocabularyPage
-          words={s.customWords}
-          saving={saving}
-          onChange={(customWords) => onSave({ customWords })}
-        />
+        <>
+          <ProjectVocabulary />
+          <VocabularyPage
+            words={s.customWords}
+            saving={saving}
+            onChange={(customWords) => onSave({ customWords })}
+          />
+        </>
       )}
       {tab === "general" && (
         <>
@@ -203,6 +222,31 @@ export function SettingsPage(props: Props) {
               )}
             </SettingRow>
             <SettingRow
+              title="Dictation formatting"
+              description={
+                "Optional commands for English (en) and Dutch (nl) microphone dictation. " +
+                "Say “insert comma” or “insert new paragraph”; in Dutch, “voeg komma in” or “voeg nieuwe alinea in”. " +
+                "Imported audio and raw recognition stay unchanged. Quotes, code and shortcut blocks stay literal."
+              }
+            >
+              <select
+                aria-label="Dictation formatting"
+                value={s.dictationFormatting ?? "preserve"}
+                disabled={saving || busy}
+                onChange={(e) =>
+                  save({
+                    dictationFormatting: e.target
+                      .value as AppSettings["dictationFormatting"],
+                  })
+                }
+              >
+                <option value="preserve">Keep recognized punctuation</option>
+                <option value="spoken">
+                  Explicit spoken formatting commands
+                </option>
+              </select>
+            </SettingRow>
+            <SettingRow
               icon={Keyboard}
               title="Dictation shortcut"
               description={shortcutStatus.message}
@@ -261,6 +305,63 @@ export function SettingsPage(props: Props) {
                 <option value="hold">Hold to talk</option>
                 <option value="toggle">Press to toggle</option>
               </select>
+            </SettingRow>
+            <SettingRow
+              title="Stop after trailing silence"
+              description="Stops recording after audio stays below the energy threshold. This does not recognize speech: quiet speech may stop early, and background noise may prevent stopping. It arms after 150 ms above the threshold."
+            >
+              {toggle(
+                "trailingSilenceStopEnabled",
+                "Stop after trailing silence",
+                busy,
+              )}
+            </SettingRow>
+            <SettingRow
+              title="Trailing silence duration"
+              description="Seconds below the threshold before stopping. Each recording uses the settings chosen when it starts; manual Stop is always available."
+            >
+              <input
+                type="number"
+                aria-label="Trailing silence duration in seconds"
+                min={2}
+                max={30}
+                step={1}
+                value={s.trailingSilenceSeconds}
+                disabled={saving || busy || !s.trailingSilenceStopEnabled}
+                onChange={(e) => {
+                  const value = e.target.valueAsNumber;
+                  if (Number.isFinite(value)) {
+                    save({
+                      trailingSilenceSeconds: Math.min(30, Math.max(2, value)),
+                    });
+                  }
+                }}
+              />
+            </SettingRow>
+            <SettingRow
+              title="Silence energy threshold"
+              description="Audio below this level in dB counts as silence. A lower threshold requires quieter audio."
+            >
+              <input
+                type="number"
+                aria-label="Silence energy threshold in dB"
+                min={-60}
+                max={-20}
+                step={1}
+                value={s.trailingSilenceThresholdDb}
+                disabled={saving || busy || !s.trailingSilenceStopEnabled}
+                onChange={(e) => {
+                  const value = e.target.valueAsNumber;
+                  if (Number.isFinite(value)) {
+                    save({
+                      trailingSilenceThresholdDb: Math.min(
+                        -20,
+                        Math.max(-60, value),
+                      ),
+                    });
+                  }
+                }}
+              />
             </SettingRow>
             <SettingRow
               title="Recording overlay"
@@ -349,19 +450,21 @@ export function SettingsPage(props: Props) {
                 disabled={saving}
                 onChange={(e) =>
                   save({
-                    pasteShortcut: e.target.value as AppSettings["pasteShortcut"],
+                    pasteShortcut: e.target
+                      .value as AppSettings["pasteShortcut"],
                   })
                 }
               >
                 <option value="standard">
-                  Standard ({capabilities?.platform === "darwin"
-                    ? "Cmd+V"
-                    : "Ctrl+V"})
+                  Standard (
+                  {capabilities?.platform === "darwin" ? "Cmd+V" : "Ctrl+V"})
                 </option>
                 <option value="terminal">
-                  Terminal ({capabilities?.platform === "darwin"
+                  Terminal (
+                  {capabilities?.platform === "darwin"
                     ? "Cmd+V"
-                    : "Ctrl+Shift+V"})
+                    : "Ctrl+Shift+V"}
+                  )
                 </option>
               </select>
             </SettingRow>
@@ -420,13 +523,13 @@ export function SettingsPage(props: Props) {
               {toggle(
                 "restoreClipboardAfterPaste",
                 "Restore clipboard after paste",
-                !settings.autoPaste,
+                !s.autoPaste,
               )}
             </SettingRow>
             <SettingRow
               icon={ShieldCheck}
               title="Keep local history"
-              description="Save transcript text on this device. Turning this off stops new saves; existing history stays until you clear it."
+              description="Save transcript text on this device. When off, keep only the newest 20 session results within 8 MiB of text; the newest oversized result is kept whole. Session edits and rewrites stay in memory until exit. Existing saved history stays until cleared."
             >
               {toggle("keepHistory", "Keep local history")}
             </SettingRow>
@@ -461,7 +564,9 @@ export function SettingsPage(props: Props) {
               }
             >
               {REWRITE_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>{preset.label}</option>
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
               ))}
             </select>
           </SettingRow>
@@ -482,6 +587,26 @@ export function SettingsPage(props: Props) {
                 Defaults are a good starting point. Adjust when you need to.
               </p>
             </div>
+            <SettingRow
+              title="Memory policy"
+              description="Balanced unloads Magic before speech loads or transcribes, and runs speech and rewriting one at a time. Magic loads on demand even when Keep Magic ready is enabled. This is a predictable memory-saving policy, not automatic pressure detection."
+            >
+              <select
+                aria-label="Memory policy"
+                value={s.memoryPolicy}
+                disabled={saving || busy}
+                onChange={(e) =>
+                  save({
+                    memoryPolicy: e.target.value as AppSettings["memoryPolicy"],
+                  })
+                }
+              >
+                <option value="independent">
+                  Independent models (default)
+                </option>
+                <option value="balanced">Balanced — prioritize speech</option>
+              </select>
+            </SettingRow>
             <SettingRow
               icon={Clock3}
               title="Keep speech model ready"
@@ -554,12 +679,17 @@ export function SettingsPage(props: Props) {
               </div>
             </SettingRow>
           </section>
-          <HistoryRetention policy={s.historyRetention} saving={saving} onSave={onSave} />
+          <HistoryRetention
+            policy={s.historyRetention}
+            saving={saving}
+            onSave={onSave}
+          />
           <Diagnostics />
         </>
       )}
       {tab === "maintenance" && (
         <>
+          <EncryptedHistory />
           <section className="settings-group">
             <div className="group-heading">
               <h3>Appearance</h3>
@@ -662,8 +792,25 @@ export function SettingsPage(props: Props) {
               <h3>Local runtime and model maintenance</h3>
               <p>Repair uses the runtime versions included with this app.</p>
             </div>
-            <SettingRow title="Speech runtime and model" description={status.message}>
+            <SettingRow
+              title="Speech runtime and model"
+              description={status.message}
+            >
               <div className="inline-control">
+                {props.onCancelSetup &&
+                  ["running", "cancelling"].includes(
+                    status.setupState ?? "",
+                  ) && (
+                    <button
+                      className="secondary-button"
+                      disabled={status.setupState === "cancelling"}
+                      onClick={props.onCancelSetup}
+                    >
+                      {status.setupState === "cancelling"
+                        ? "Cancelling…"
+                        : "Cancel setup"}
+                    </button>
+                  )}
                 <button
                   className="secondary-button"
                   disabled={busy}
@@ -690,8 +837,25 @@ export function SettingsPage(props: Props) {
                 )}
               </div>
             </SettingRow>
-            <SettingRow title="Rewrite runtime and model" description={magicStatus.message}>
+            <SettingRow
+              title="Rewrite runtime and model"
+              description={magicStatus.message}
+            >
               <div className="inline-control">
+                {props.onCancelSetupMagic &&
+                  ["running", "cancelling"].includes(
+                    magicStatus.setupState ?? "",
+                  ) && (
+                    <button
+                      className="secondary-button"
+                      disabled={magicStatus.setupState === "cancelling"}
+                      onClick={props.onCancelSetupMagic}
+                    >
+                      {magicStatus.setupState === "cancelling"
+                        ? "Cancelling…"
+                        : "Cancel rewriting setup"}
+                    </button>
+                  )}
                 <button
                   className="secondary-button"
                   disabled={busy}
@@ -732,7 +896,11 @@ export function SettingsPage(props: Props) {
               </button>
             </SettingRow>
           </section>
-          <HistoryRetention policy={s.historyRetention} saving={saving} onSave={onSave} />
+          <HistoryRetention
+            policy={s.historyRetention}
+            saving={saving}
+            onSave={onSave}
+          />
           <Diagnostics />
         </>
       )}
@@ -744,8 +912,8 @@ export function SettingsPage(props: Props) {
           onConfirm={props.onReset}
         >
           <p>
-            You’ll need to install the speech runtime again before dictating. Your
-            history, settings, and model cache stay on this device.
+            You’ll need to install the speech runtime again before dictating.
+            Your history, settings, and model cache stay on this device.
           </p>
         </ConfirmDialog>
       )}

@@ -6,7 +6,12 @@ import {
 import { ruleConflict, ruleKind, ruleLanguage } from "./personalization";
 import type { TranscriptActions } from "./components/TranscriptCard";
 import type { useWorkspace } from "./hooks/useWorkspace";
-import type { CustomWord, ExportFormat, MagicRewriteResult, TranscriptRecord } from "./types";
+import type {
+  CustomWord,
+  ExportFormat,
+  MagicRewriteResult,
+  TranscriptRecord,
+} from "./types";
 
 type TranscriptWorkspace = Pick<
   ReturnType<typeof useWorkspace>,
@@ -73,6 +78,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     ruleExamples: w.settings.keepHistory ? (w.history ?? []) : [],
     onCopy: w.copy,
     onRewrite: bridge.rewriteMagic,
+    onCancelRewrite: bridge.cancelRewrite,
     onRewriteSetup: () => w.setPage("models"),
     rewriteStatus: w.magicStatus,
     onSetRewrite: async (

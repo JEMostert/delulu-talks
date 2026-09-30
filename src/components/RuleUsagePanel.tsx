@@ -163,14 +163,21 @@ export function RuleUsagePanel({ words }: { words: CustomWord[] }) {
             </thead>
             <tbody>
               {words.map((word) => (
-                <tr className="border-b border-line last:border-0" key={word.id}>
-                  <th className="py-2 pr-3 font-normal wrap-anywhere" scope="row">
+                <tr
+                  className="border-b border-line last:border-0"
+                  key={word.id}
+                >
+                  <th
+                    className="py-2 pr-3 font-normal wrap-anywhere"
+                    scope="row"
+                  >
                     {word.term}
                   </th>
                   <td className="py-2 text-right tabular-nums">
                     {(Object.prototype.hasOwnProperty.call(counts, word.id)
                       ? counts[word.id]
-                      : 0).toLocaleString()}
+                      : 0
+                    ).toLocaleString()}
                   </td>
                 </tr>
               ))}

@@ -7,6 +7,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { modelById } from "../../data";
+import { speechBackendById } from "../../speechModels";
 import type { AppSettings, DictationStatus } from "../../types";
 import { ModelSetupStatus } from "./ModelSetupStatus";
 import { ModelProvenance } from "./ModelProvenance";
@@ -19,6 +20,7 @@ export type SpeechSetupProps = {
   busy: boolean;
   setupPending?: boolean;
   onSetup: () => void;
+  onCancelSetup?: () => void;
   onLoad: () => void;
   onUnload: () => void;
 };
@@ -28,10 +30,13 @@ export function SpeechSetup({
   busy,
   setupPending = false,
   onSetup,
+  onCancelSetup,
   onLoad,
   onUnload,
 }: SpeechSetupProps) {
+  const execution = status.speechExecution;
   const model = modelById(status.speechModel ?? status.model ?? settings.model);
+  const backend = execution ? speechBackendById(execution.backendId) : null;
   const speechBusy = ["preparing", "loading", "transcribing"].includes(
     status.phase,
   );
@@ -57,14 +62,28 @@ export function SpeechSetup({
                     : "Speech model unloaded"}
           </h2>
           <p className="text-[12px] text-muted mt-2 [overflow-wrap:anywhere]">
-            {status.engine === "missing"
-              ? status.migrationRequired
-                ? `Update the dedicated speech runtime for ${model.name}.`
-                : `Install the speech runtime and download the ${model.name} weights. ${model.description}`
-              : status.message}
+            {status.setupState === "cancelled"
+              ? status.message
+              : status.engine === "missing"
+                ? status.migrationRequired
+                  ? `Update the dedicated speech runtime for ${model.name}.`
+                  : `Install the speech runtime and download the ${model.name} weights. ${model.description}`
+                : status.message}
           </p>
         </div>
         <div className="runtime-actions justify-end">
+          {onCancelSetup &&
+            ["running", "cancelling"].includes(status.setupState ?? "") && (
+              <button
+                className="secondary-button"
+                disabled={status.setupState === "cancelling"}
+                onClick={onCancelSetup}
+              >
+                {status.setupState === "cancelling"
+                  ? "Cancelling…"
+                  : "Cancel setup"}
+              </button>
+            )}
           {status.engine === "ready" ? (
             <button
               className="secondary-button"
@@ -84,7 +103,11 @@ export function SpeechSetup({
               </button>
             )
           )}
-          <button className="primary-button" disabled={busy || setupPending} onClick={onSetup}>
+          <button
+            className="primary-button"
+            disabled={busy || setupPending}
+            onClick={onSetup}
+          >
             {speechBusy ? <LoaderCircle className="spin" /> : <Download />}
             {status.engine === "missing"
               ? status.migrationRequired
@@ -117,11 +140,13 @@ export function SpeechSetup({
             <div>
               <h3 className="text-[16px]">{item.name}</h3>
               <span className="block text-[11px] text-muted mt-1">
-                Backend: {item.runtime}
+                {execution
+                  ? `Backend: ${backend?.label ?? execution.backendId} · ${execution.precision?.toUpperCase() ?? "Precision unknown"}`
+                  : item.runtime}
               </span>
             </div>
             <p className="text-[11px] text-muted leading-[1.6] max-[700px]:row-start-2 max-[700px]:col-span-full">
-              {item.description}
+              {execution && backend ? backend.capability : item.description}
             </p>
             <div className="flex items-center gap-2 text-[11px] max-[1150px]:hidden">
               <HardDrive className="w-[15px] h-[15px] text-muted" />
@@ -133,7 +158,49 @@ export function SpeechSetup({
           </article>
         ))}
       </div>
-      <ModelProvenance {...model} />
+      {execution ? (
+        <section className="card" aria-label="Reported speech execution">
+          <h3>Reported speech execution</h3>
+          <dl className="text-xs [overflow-wrap:anywhere]">
+            <dt>Model</dt>
+            <dd>
+              {model.name} ({execution.modelId})
+            </dd>
+            <dt>Backend</dt>
+            <dd>
+              {backend?.label ?? execution.backendId} ({execution.backendId})
+            </dd>
+            <dt>Precision</dt>
+            <dd>
+              {execution.precision?.toUpperCase() ?? "Unknown (not reported)"}
+            </dd>
+            <dt>Platform / device</dt>
+            <dd>
+              {execution.platform} / {execution.device}
+            </dd>
+            <dt>Checkpoint repository</dt>
+            <dd>
+              {execution.checkpoint.repository || "Unknown (not reported)"}
+            </dd>
+            <dt>Checkpoint revision</dt>
+            <dd>
+              {execution.checkpoint.revision ||
+                "Unpinned / unknown (not reported)"}
+            </dd>
+          </dl>
+          <p className="caption">
+            Native hardware validation pending. A loaded model does not
+            establish native hardware acceptance.
+          </p>
+        </section>
+      ) : null}
+      <div>
+        <p className="text-xs text-muted mt-3">
+          Catalog source and license (configured checkpoint, not observed
+          runtime facts)
+        </p>
+        <ModelProvenance {...model} />
+      </div>
       <p className="flex items-center justify-center gap-[7px] text-[11px] text-muted">
         <ShieldCheck className="w-3.5 h-3.5" /> Models stay on your device.
         Dictation runs fully locally.

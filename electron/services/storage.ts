@@ -1,9 +1,27 @@
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { transcriptSourceRevision } from "../../src/transcriptText";
-import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
+import {
+  assertPersistedSchema,
+  versionPersistedRecord,
+} from "../../src/persistedSchema";
+import { readActivePersonalProfile } from "../../src/activePersonalProfile";
+import {
+  assertPersonalProfilesUpdate,
+  readPersonalProfiles,
+} from "../../src/personalProfiles";
+import {
+  normalizeTimings,
+  withoutRewriteTimings,
+} from "../../src/pipelineTimings";
+import { normalizeSpeechExecution } from "../../src/speechModels";
 import { app } from "electron";
 import { isMagicPreset } from "../../src/rewritePresets";
-import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
+import {
+  backupProfileMigration,
+  removeMigrationHistoryBackups,
+} from "./migrationBackups";
+import { randomUUID } from "node:crypto";
+import { validateProfileWrite } from "./profileWriteValidation";
 import { speechModelForPlatform } from "../runtime/platform";
 import { normalizeAliases } from "../../src/personalization";
 import { historyFingerprint, savedRetentionPolicy } from "./historyRetention";
@@ -14,13 +32,16 @@ import {
 import { normalizeTranscriptTitle } from "../../src/transcriptTitle";
 import {
   existsSync,
+  closeSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   DEFAULT_SETTINGS,
   LANGUAGES,
@@ -90,21 +111,67 @@ function readProfileJson(
     throw new Error(
       `Unsupported local data at ${sourcePath}: ${problem}. The file has been preserved. Restore a compatible backup or use an app version that supports this format.`,
     );
+  if (kind === "settings") {
+    assertPersistedSchema(value, "settings");
+    const rules = (value as Record<string, unknown>).customWords;
+    if (Array.isArray(rules))
+      rules.forEach((rule) => assertPersistedSchema(rule, "rule"));
+  } else if (Array.isArray(value)) {
+    value.forEach((record) => assertPersistedSchema(record, "transcript"));
+  }
   return value;
 }
 
 function stageJson(path: string, value: unknown): string {
+  const kind = basename(path) === SETTINGS_FILE ? "settings" : "history";
+  validateProfileWrite(kind, value);
+  const serialized = `${JSON.stringify(value, null, 2)}\n`;
+  // Validate the exact JSON bytes that will become durable, not just the
+  // in-memory object, before creating or replacing any profile file.
+  validateProfileWrite(kind, JSON.parse(serialized));
   mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  return temporary;
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  let descriptor: number | undefined;
+  let created = false;
+  try {
+    descriptor = openSync(temporary, "wx", 0o600);
+    created = true;
+    writeFileSync(descriptor, serialized, "utf8");
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+    return temporary;
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try {
+        closeSync(descriptor);
+      } catch {
+        /* Preserve the write error. */
+      }
+    }
+    if (created) {
+      try {
+        rmSync(temporary, { force: true });
+      } catch {
+        /* Preserve the write error. */
+      }
+    }
+    throw error;
+  }
 }
 
 function writeJson(path: string, value: unknown): void {
-  renameSync(stageJson(path, value), path);
+  const temporary = stageJson(path, value);
+  try {
+    renameSync(temporary, path);
+  } catch (error) {
+    try {
+      rmSync(temporary, { force: true });
+    } catch {
+      /* Preserve the replacement error. */
+    }
+    throw error;
+  }
 }
 
 function safeString(value: unknown, fallback: string, max = 512): string {
@@ -113,25 +180,35 @@ function safeString(value: unknown, fallback: string, max = 512): string {
     : fallback;
 }
 
-function optionalText(
-  value: unknown,
-  max: number,
-  preserveWhitespace = false,
-): string | null {
-  if (typeof value !== "string") return null;
-  const text = preserveWhitespace ? value : value.trim();
-  return text.trim() ? text.slice(0, max) : null;
-}
-
 function normalizeWords(value: unknown): CustomWord[] {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, 500).flatMap((item, index) => {
-    if (!item || typeof item !== "object") return [];
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 500)
+    throw new Error(
+      "Invalid or oversized vocabulary rules. Existing settings are preserved.",
+    );
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      throw new Error(
+        "Invalid vocabulary rule. Existing settings are preserved.",
+      );
+    assertPersistedSchema(item, "rule");
     const source = item as Partial<CustomWord>;
     const term = safeString(source.term, "", 256);
-    if (!term) return [];
+    if (!term)
+      throw new Error(
+        "Vocabulary rule has no term. Existing settings are preserved.",
+      );
+    if (
+      typeof source.replacement === "string" &&
+      source.replacement.length > 4096
+    )
+      throw new Error(
+        "Vocabulary text block exceeds the supported limit. Existing settings are preserved.",
+      );
     return [
       {
+        ...source,
+        schemaVersion: 1,
         kind:
           source.kind === "shortcut" || (!source.kind && !!source.replacement)
             ? "shortcut"
@@ -139,9 +216,10 @@ function normalizeWords(value: unknown): CustomWord[] {
         id: safeString(source.id, `word-${Date.now()}-${index}`, 128),
         term,
         // Preserve nonempty scopes, including unknown codes: never widen a saved rule.
-        language: typeof source.language === "string" && source.language.trim()
-          ? source.language.trim().toLowerCase().slice(0, 64)
-          : undefined,
+        language:
+          typeof source.language === "string" && source.language.trim()
+            ? source.language.trim().toLowerCase().slice(0, 64)
+            : undefined,
         soundsLike: safeString(source.soundsLike, "", 1024),
         ...(source.aliases !== undefined
           ? { aliases: normalizeAliases(source.aliases) }
@@ -149,9 +227,10 @@ function normalizeWords(value: unknown): CustomWord[] {
         // Shortcut indentation and trailing whitespace are literal user text.
         replacement:
           typeof source.replacement === "string" && source.replacement.trim()
-            ? source.replacement.slice(0, 4096)
+            ? source.replacement
             : "",
-        enabled: source.enabled !== false &&
+        enabled:
+          source.enabled !== false &&
           (source.language == null || typeof source.language === "string"),
       },
     ];
@@ -162,16 +241,28 @@ function boolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function boundedNumber(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(maximum, Math.max(minimum, value))
+    : fallback;
+}
+
 export function normalizeSettings(value: unknown): AppSettings {
   const source =
     value && typeof value === "object"
       ? (value as Record<string, unknown>)
       : {};
+  assertPersistedSchema(source, "settings");
   const magicModel = validMagicModels.has(source.magicModel as MagicModelId)
     ? (source.magicModel as MagicModelId)
     : DEFAULT_SETTINGS.magicModel;
   const magicPreset = isMagicPreset(source.magicPreset)
-    ? (source.magicPreset as MagicPreset)
+    ? source.magicPreset
     : DEFAULT_SETTINGS.magicPreset;
   const requestedLanguage = safeString(
     source.language,
@@ -185,6 +276,8 @@ export function normalizeSettings(value: unknown): AppSettings {
   );
 
   return {
+    ...source,
+    schemaVersion: 1,
     workflowVersion: 1,
     theme: ["light", "dark"].includes(String(source.theme))
       ? (source.theme as AppSettings["theme"])
@@ -206,6 +299,8 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.dictationMode === "code" || source.dictationMode === "command"
         ? source.dictationMode
         : "prose",
+    dictationFormatting:
+      source.dictationFormatting === "spoken" ? "spoken" : "preserve",
     pythonCommand: safeString(
       source.pythonCommand,
       DEFAULT_SETTINGS.pythonCommand,
@@ -220,6 +315,22 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.inputDeviceLabel,
       DEFAULT_SETTINGS.inputDeviceLabel,
       512,
+    ),
+    trailingSilenceStopEnabled: boolean(
+      source.trailingSilenceStopEnabled,
+      DEFAULT_SETTINGS.trailingSilenceStopEnabled,
+    ),
+    trailingSilenceSeconds: boundedNumber(
+      source.trailingSilenceSeconds,
+      DEFAULT_SETTINGS.trailingSilenceSeconds,
+      2,
+      30,
+    ),
+    trailingSilenceThresholdDb: boundedNumber(
+      source.trailingSilenceThresholdDb,
+      DEFAULT_SETTINGS.trailingSilenceThresholdDb,
+      -60,
+      -20,
     ),
     autoPaste: boolean(source.autoPaste, DEFAULT_SETTINGS.autoPaste),
     pasteShortcut:
@@ -274,6 +385,8 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.preloadMagicModel,
       DEFAULT_SETTINGS.preloadMagicModel,
     ),
+    memoryPolicy:
+      source.memoryPolicy === "balanced" ? "balanced" : "independent",
     modelIdleMinutes: [1, 5, 15, 30, 60].includes(
       Number(source.modelIdleMinutes),
     )
@@ -285,7 +398,11 @@ export function normalizeSettings(value: unknown): AppSettings {
     ),
     menuBarOnly: boolean(source.menuBarOnly, DEFAULT_SETTINGS.menuBarOnly),
     customWords: normalizeWords(source.customWords),
-    personalProfiles: readPersonalProfiles(source.personalProfiles).document as AppSettings["personalProfiles"],
+    personalProfiles: readPersonalProfiles(source.personalProfiles)
+      .document as AppSettings["personalProfiles"],
+    activePersonalProfile: readActivePersonalProfile(
+      source.activePersonalProfile,
+    ),
   };
 }
 
@@ -320,15 +437,26 @@ function migrateDelivery(value: unknown): TranscriptDelivery | undefined {
 function migrateRecord(value: unknown): TranscriptRecord | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
-  const text = safeString(
-    source.text ?? source.intendedText ?? source.verbatimText,
-    "",
-    250_000,
-  );
-  if (!text) return null;
-  const model = validHistoryModels.has(source.model as ModelId)
-    ? (source.model as ModelId)
-    : DEFAULT_SETTINGS.model;
+  assertPersistedSchema(source, "transcript");
+  const original = source.text ?? source.intendedText ?? source.verbatimText;
+  const text = typeof original === "string" ? original : "";
+  if (!text.trim())
+    throw new Error(
+      "Invalid transcript text. History has been preserved; repair or restore the file before migration.",
+    );
+  if (source.schemaVersion === 1)
+    return structuredClone(source) as unknown as TranscriptRecord;
+  if (
+    source.model !== undefined &&
+    !validHistoryModels.has(source.model as ModelId)
+  )
+    throw new Error(
+      "Unknown historical speech model. History has been preserved; restore or repair the file before migration.",
+    );
+  const model =
+    source.model === undefined
+      ? DEFAULT_SETTINGS.model
+      : (source.model as ModelId);
   const delivery = migrateDelivery(source.delivery);
   let title: string | null = null;
   if (source.title !== undefined) {
@@ -338,7 +466,13 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
       // Invalid optional metadata must not discard original transcript content.
     }
   }
+  const execution =
+    model === "qwen3Asr"
+      ? undefined
+      : normalizeSpeechExecution(source.speechExecution);
   return {
+    ...source,
+    schemaVersion: 1,
     id: safeString(source.id, `legacy-${Date.now()}-${Math.random()}`, 128),
     ...(source.title === undefined ? {} : { title }),
     createdAt: Number(source.createdAt) || Date.now(),
@@ -352,16 +486,25 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
       source.dictationMode === "code" || source.dictationMode === "command"
         ? source.dictationMode
         : "prose",
-    sourceRevision: Number.isSafeInteger(source.sourceRevision) && Number(source.sourceRevision) >= 0
-      ? Number(source.sourceRevision) : 0,
-    rewriteSourceRevision: Number.isSafeInteger(source.rewriteSourceRevision) && Number(source.rewriteSourceRevision) >= 0
-      ? Number(source.rewriteSourceRevision) : null,
-    personalizedText: optionalText(source.personalizedText, 500_000, true),
-    editedText: optionalText(
-      source.editedText ?? source.editedIntendedText,
-      500_000,
-    ),
-    magicText: optionalText(source.magicText, 500_000, true),
+    sourceRevision:
+      Number.isSafeInteger(source.sourceRevision) &&
+      Number(source.sourceRevision) >= 0
+        ? Number(source.sourceRevision)
+        : 0,
+    rewriteSourceRevision:
+      Number.isSafeInteger(source.rewriteSourceRevision) &&
+      Number(source.rewriteSourceRevision) >= 0
+        ? Number(source.rewriteSourceRevision)
+        : null,
+    personalizedText:
+      typeof source.personalizedText === "string"
+        ? source.personalizedText
+        : null,
+    editedText:
+      typeof (source.editedText ?? source.editedIntendedText) === "string"
+        ? ((source.editedText ?? source.editedIntendedText) as string)
+        : null,
+    magicText: typeof source.magicText === "string" ? source.magicText : null,
     magicModel: validMagicModels.has(source.magicModel as MagicModelId)
       ? (source.magicModel as MagicModelId)
       : null,
@@ -374,17 +517,22 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
       Number(source.magicProcessingTimeMs) || 0,
     ),
     model,
+    ...(execution ? { speechExecution: execution } : {}),
     language: safeString(source.language, "en", 12),
     ...(source.requestedLanguage === undefined
       ? {}
       : {
-          requestedLanguage: normalizeReportedLanguage(source.requestedLanguage),
+          requestedLanguage: normalizeReportedLanguage(
+            source.requestedLanguage,
+          ),
         }),
     ...(source.recognizedLanguage === undefined &&
     source.recognizedLanguages === undefined &&
     source.languageStatus === undefined
       ? {}
       : normalizeLanguageMetadata(source)),
+    dictationFormatting:
+      source.dictationFormatting === "spoken" ? "spoken" : "preserve",
     source: ["dictation", "file"].includes(String(source.source))
       ? (source.source as TranscriptRecord["source"])
       : "dictation",
@@ -393,6 +541,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     processingTimeMs: Math.max(0, Number(source.processingTimeMs) || 0),
     ...(delivery ? { delivery } : {}),
     captureDiagnostics: normalizeCaptureDiagnostics(source.captureDiagnostics),
+    timings: normalizeTimings(source.timings),
   };
 }
 
@@ -412,6 +561,7 @@ export function applyTranscriptEdit(
     magicPreset: null,
     magicIncludedInferences: false,
     magicProcessingTimeMs: 0,
+    timings: withoutRewriteTimings(record.timings),
   };
   const normalized = text?.trim() ?? null;
   if (text !== null && !normalized)
@@ -430,6 +580,7 @@ export class StorageService {
   readonly modelCacheDirectory: string;
   private settings: AppSettings;
   private history: TranscriptRecord[];
+  private historyPins = new Set<string>();
 
   constructor() {
     this.dataDirectory = app.getPath("userData");
@@ -476,18 +627,38 @@ export class StorageService {
         : { ...prior, magicEnabled: false, preloadMagicModel: false },
     );
     this.history = Array.isArray(rawHistory)
-      ? rawHistory
-          .flatMap((item) => migrateRecord(item) ?? [])
-          .slice(0, MAX_HISTORY)
+      ? rawHistory.map((item) => {
+          const record = migrateRecord(item);
+          if (!record)
+            throw new Error(
+              "Invalid transcript record. History has been preserved.",
+            );
+          return record;
+        })
       : [];
-    const settingsChanged = rawSettings !== undefined &&
+    const settingsChanged =
+      rawSettings !== undefined &&
       JSON.stringify(rawSettings) !== JSON.stringify(this.settings);
-    const historyChanged = rawHistory !== undefined &&
-      (JSON.stringify(rawHistory) !== JSON.stringify(this.history) || !existsSync(historyPath));
-    if (settingsChanged || historyChanged || (rawSettings !== undefined && !existsSync(settingsPath))) {
+    const historyChanged =
+      rawHistory !== undefined &&
+      (JSON.stringify(rawHistory) !== JSON.stringify(this.history) ||
+        !existsSync(historyPath));
+    if (
+      settingsChanged ||
+      historyChanged ||
+      (rawSettings !== undefined && !existsSync(settingsPath))
+    ) {
       backupProfileMigration(this.dataDirectory, {
-        "settings.json": existsSync(settingsPath) ? settingsPath : legacy ? join(legacy, SETTINGS_FILE) : undefined,
-        "history.json": existsSync(historyPath) ? historyPath : legacy ? join(legacy, HISTORY_FILE) : undefined,
+        "settings.json": existsSync(settingsPath)
+          ? settingsPath
+          : legacy
+            ? join(legacy, SETTINGS_FILE)
+            : undefined,
+        "history.json": existsSync(historyPath)
+          ? historyPath
+          : legacy
+            ? join(legacy, HISTORY_FILE)
+            : undefined,
       });
     }
     if (!existsSync(historyPath) && this.history.length) {
@@ -520,6 +691,7 @@ export class StorageService {
         if (stagedHistory) rmSync(stagedHistory, { force: true });
       }
     } else {
+      if (historyChanged) writeJson(historyPath, this.history);
       writeJson(settingsPath, this.settings);
     }
   }
@@ -546,15 +718,29 @@ export class StorageService {
   }
 
   updateSettings(value: unknown): AppSettings {
-    const source = value && typeof value === "object" && !Array.isArray(value)
-      ? value as Record<string, unknown>
-      : {};
+    const source =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
     // Older settings callers may omit the new field. Preserve existing documents.
-    const document = Object.prototype.hasOwnProperty.call(source, "personalProfiles")
+    const document = Object.prototype.hasOwnProperty.call(
+      source,
+      "personalProfiles",
+    )
       ? source.personalProfiles
       : this.settings.personalProfiles;
     assertPersonalProfilesUpdate(this.settings.personalProfiles, document);
-    const next = normalizeSettings({ ...source, personalProfiles: document });
+    const activePersonalProfile = Object.prototype.hasOwnProperty.call(
+      source,
+      "activePersonalProfile",
+    )
+      ? source.activePersonalProfile
+      : this.settings.activePersonalProfile;
+    const next = normalizeSettings({
+      ...source,
+      personalProfiles: document,
+      activePersonalProfile,
+    });
     writeJson(join(this.dataDirectory, SETTINGS_FILE), next);
     this.settings = next;
     return this.getSettings();
@@ -565,13 +751,26 @@ export class StorageService {
   }
 
   addHistory(record: TranscriptRecord): void {
-    if (!this.settings.keepHistory) return;
-    const next = [
+    record = versionPersistedRecord(record, "transcript");
+    if (!this.settings.keepHistory || record.sessionOnly) return;
+    const ordered = [
       record,
       ...this.history.filter((item) => item.id !== record.id),
-    ].slice(0, MAX_HISTORY);
+    ];
+    // A pending undo window must survive the normal newest-500 eviction.
+    // At most 500 additional pinned records; ordinary retention resumes after it.
+    const next = [
+      ...ordered.slice(0, MAX_HISTORY),
+      ...ordered
+        .slice(MAX_HISTORY)
+        .filter((item) => this.historyPins.has(item.id)),
+    ];
     writeJson(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
+  }
+
+  pinHistory(ids: readonly string[]): void {
+    this.historyPins = new Set(ids);
   }
 
   findHistory(id: string): TranscriptRecord | undefined {
@@ -606,6 +805,7 @@ export class StorageService {
   }
 
   replaceHistory(record: TranscriptRecord): void {
+    record = versionPersistedRecord(record, "transcript");
     if (!this.findHistory(record.id)) throw new Error("Transcript not found");
     const next = this.history.map((item) =>
       item.id === record.id ? record : item,
@@ -621,9 +821,21 @@ export class StorageService {
     this.history = next;
   }
 
-  applyHistoryRetention(expectedFingerprint: string, ids: readonly string[]): void {
+  deleteHistorySelection(ids: readonly string[]): void {
+    const removed = new Set(ids);
+    const next = this.history.filter((record) => !removed.has(record.id));
+    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.history = next;
+  }
+
+  applyHistoryRetention(
+    expectedFingerprint: string,
+    ids: readonly string[],
+  ): void {
     if (historyFingerprint(this.history) !== expectedFingerprint)
-      throw new Error("History changed. Preview the affected records again before applying retention.");
+      throw new Error(
+        "History changed. Preview the affected records again before applying retention.",
+      );
     const removed = new Set(ids);
     const next = this.history.filter((record) => !removed.has(record.id));
     // Publish the complete filtered snapshot before changing memory; retained records are untouched.

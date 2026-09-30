@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { RuntimeInstaller } from "./installer";
+import { PYTHON_INTERPRETER_PROBE } from "./prerequisites";
 import { runtimePython, runtimeDirectory, activateRuntime } from "./location";
 import { DEFAULT_SETTINGS } from "../../src/data";
 import { PYTHON_INVENTORY_PROBE, type RuntimeInventory } from "./inventory";
@@ -53,16 +54,21 @@ function observedInventory(python: string): string {
 function mockArtifactReport(args: string[]): void {
   const report = args.indexOf("--report");
   if (report < 0) return;
-  writeFileSync(args[report + 1], JSON.stringify({
-    version: "1",
-    install: [{
-      metadata: { name: "fixture-package", version: "1.0" },
-      download_info: {
-        url: "https://packages.example/fixture_package-1.0-py3-none-any.whl",
-        archive_info: { hashes: { sha256: "a".repeat(64) } },
-      },
-    }],
-  }));
+  writeFileSync(
+    args[report + 1],
+    JSON.stringify({
+      version: "1",
+      install: [
+        {
+          metadata: { name: "fixture-package", version: "1.0" },
+          download_info: {
+            url: "https://packages.example/fixture_package-1.0-py3-none-any.whl",
+            archive_info: { hashes: { sha256: "a".repeat(64) } },
+          },
+        },
+      ],
+    }),
+  );
 }
 
 function installedInventory(root: string, kind = "speech"): RuntimeInventory {
@@ -103,6 +109,15 @@ for (const failure of [
     Object.defineProperty(installer, "run", {
       value: async (program: string, args: string[]) => {
         mockArtifactReport(args);
+        if (args.includes(PYTHON_INTERPRETER_PROBE))
+          return JSON.stringify({
+            version: [3, 12, 9],
+            machine:
+              Reflect.get(installer, "target").arch === "arm64"
+                ? "arm64"
+                : "x86_64",
+            bits: 64,
+          });
         expect(runtimePython(root)).toBe(oldPython);
         const command = args.join(" ");
         commands.push(command);
@@ -118,12 +133,11 @@ for (const failure of [
           if (failure === "inventory-cancel") installer.stop();
           return observedInventory(program);
         }
-        if (command.includes("version_info")) return "3.11";
         if (
           (failure === "install" && command.includes("git+")) ||
           (failure === "artifact-hash" && args.includes("--no-deps")) ||
           (failure === "check" && command.includes("pip check")) ||
-          (failure === "import" && command.includes("from qwen_asr")) ||
+          (failure === "import" && command.includes("from r2t2")) ||
           (failure === "interrupted" && command.includes("venv"))
         )
           throw new Error("simulated failure");
@@ -131,7 +145,9 @@ for (const failure of [
       },
     });
     try {
-      const install = installer.install("speech", DEFAULT_SETTINGS, () => {});
+      const install = installer
+        .install("speech", DEFAULT_SETTINGS, () => {})
+        .then(() => installer.commit());
       if (failure === "none") {
         await install;
         expect(runtimePython(root)).not.toBe(oldPython);
@@ -144,7 +160,7 @@ for (const failure of [
           ).python,
         ).toBe(runtimePython(root));
         expect(commands.some((c) => c.includes("pip check"))).toBe(true);
-        expect(commands.some((c) => c.includes("from qwen_asr"))).toBe(true);
+        expect(commands.some((c) => c.includes("from r2t2"))).toBe(true);
         const inventory = installedInventory(root);
         expect(inventory.runtime.revision).toBe(RUNTIME_REVISION);
         expect(inventory.observed.distributions).toContainEqual({
@@ -157,8 +173,9 @@ for (const failure of [
             "utf8",
           ),
         ).toContain("test-package==1.0");
+        const committedPython = runtimePython(root);
         installer.rollback();
-        expect(runtimePython(root)).toBe(oldPython);
+        expect(runtimePython(root)).toBe(committedPython);
       } else {
         await expect(install).rejects.toThrow(
           failure === "inventory-json" || failure === "inventory-metadata"
@@ -242,6 +259,15 @@ for (const failDownload of [false, true]) {
     Object.defineProperty(installer, "run", {
       value: async (program: string, args: string[]) => {
         mockArtifactReport(args);
+        if (args.includes(PYTHON_INTERPRETER_PROBE))
+          return JSON.stringify({
+            version: [3, 12, 9],
+            machine:
+              Reflect.get(installer, "target").arch === "arm64"
+                ? "arm64"
+                : "x86_64",
+            bits: 64,
+          });
         const command = args.join(" ");
         commands.push(command);
         if (args.includes(PYTHON_INVENTORY_PROBE))
@@ -255,15 +281,21 @@ for (const failDownload of [false, true]) {
     try {
       if (fail) {
         await expect(
-          installer.install("speech", DEFAULT_SETTINGS, () => {}),
+          installer
+            .install("speech", DEFAULT_SETTINGS, () => {})
+            .then(() => installer.commit()),
         ).rejects.toThrow("Download interrupted");
         expect(runtimePython(root)).toBe(oldPython);
         fail = false;
       }
-      await installer.install("speech", DEFAULT_SETTINGS, () => {});
+      await installer
+        .install("speech", DEFAULT_SETTINGS, () => {})
+        .then(() => installer.commit());
       expect(runtimePython(root)).not.toBe(oldPython);
       expect(
-        commands.some((c) => c.includes("platform.machine() == 'arm64'")),
+        commands.some((c) =>
+          c.includes("platform.machine().lower() in ('arm64', 'aarch64')"),
+        ),
       ).toBe(true);
       expect(commands.some((c) => c.includes("mlx-audio[stt]"))).toBe(true);
       expect(commands.some((c) => c.includes("mlx==0.32.2"))).toBe(true);
@@ -272,8 +304,9 @@ for (const failDownload of [false, true]) {
           c.includes("from mlx_audio.stt.utils import load_model, load_audio"),
         ),
       ).toBe(true);
+      const committedPython = runtimePython(root);
       installer.rollback();
-      expect(runtimePython(root)).toBe(oldPython);
+      expect(runtimePython(root)).toBe(committedPython);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -292,12 +325,18 @@ test("Metal refuses Python other than native 3.12 before downloading packages", 
   Object.defineProperty(installer, "run", {
     value: async (_: string, args: string[]) => {
       commands.push(args.join(" "));
-      return "3.13";
+      return JSON.stringify({
+        version: [3, 13, 0],
+        machine: "x86_64",
+        bits: 64,
+      });
     },
   });
   try {
     await expect(
-      installer.install("speech", DEFAULT_SETTINGS, () => {}),
+      installer
+        .install("speech", DEFAULT_SETTINGS, () => {})
+        .then(() => installer.commit()),
     ).rejects.toThrow("native arm64 Python 3.12");
     expect(commands.every((c) => !c.includes("pip install"))).toBe(true);
   } finally {
@@ -323,12 +362,19 @@ for (const failure of ["none", "cuda", "decoder-import"] as const) {
     Object.defineProperty(installer, "run", {
       value: async (program: string, args: string[]) => {
         mockArtifactReport(args);
+        if (args.includes(PYTHON_INTERPRETER_PROBE))
+          return JSON.stringify({
+            version: [3, 12, 9],
+            machine:
+              Reflect.get(installer, "target").arch === "arm64"
+                ? "arm64"
+                : "x86_64",
+            bits: 64,
+          });
         const command = args.join(" ");
         commands.push(command);
         if (args.includes(PYTHON_INVENTORY_PROBE))
           return observedInventory(program);
-        if (command.includes("version_info") && command.includes("print"))
-          return "3.12";
         if (
           (failure === "cuda" && command.includes("--index-url")) ||
           (failure === "decoder-import" &&
@@ -340,7 +386,9 @@ for (const failure of ["none", "cuda", "decoder-import"] as const) {
     });
     try {
       if (failure === "none") {
-        await installer.install("speech", DEFAULT_SETTINGS, () => {});
+        await installer
+          .install("speech", DEFAULT_SETTINGS, () => {})
+          .then(() => installer.commit());
         expect(runtimePython(root)).not.toBe(oldPython);
         expect(
           commands.some((c) =>
@@ -370,7 +418,9 @@ for (const failure of ["none", "cuda", "decoder-import"] as const) {
         ).toBe(true);
       } else {
         await expect(
-          installer.install("speech", DEFAULT_SETTINGS, () => {}),
+          installer
+            .install("speech", DEFAULT_SETTINGS, () => {})
+            .then(() => installer.commit()),
         ).rejects.toThrow("Windows validation failed");
         expect(runtimePython(root)).toBe(oldPython);
       }
@@ -388,18 +438,25 @@ test("Windows rejects unsupported Python before CUDA downloads", async () => {
     () => process.env,
     false,
     true,
+    { platform: "win32", arch: "x64" },
   );
   const commands: string[] = [];
   Object.defineProperty(installer, "run", {
     value: async (_: string, args: string[]) => {
       commands.push(args.join(" "));
-      return "3.13";
+      return JSON.stringify({
+        version: [3, 13, 0],
+        machine: "x86_64",
+        bits: 64,
+      });
     },
   });
   try {
     await expect(
-      installer.install("speech", DEFAULT_SETTINGS, () => {}),
-    ).rejects.toThrow("Install Python 3.12");
+      installer
+        .install("speech", DEFAULT_SETTINGS, () => {})
+        .then(() => installer.commit()),
+    ).rejects.toThrow("[PYTHON_VERSION]");
     expect(commands.every((c) => !c.includes("pip install"))).toBe(true);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -430,7 +487,16 @@ for (const target of [
       let observation = "";
       Object.defineProperty(installer, "run", {
         value: async (program: string, args: string[]) => {
-        mockArtifactReport(args);
+          mockArtifactReport(args);
+          if (args.includes(PYTHON_INTERPRETER_PROBE))
+            return JSON.stringify({
+              version: [3, 12, 9],
+              machine:
+                Reflect.get(installer, "target").arch === "arm64"
+                  ? "arm64"
+                  : "x86_64",
+              bits: 64,
+            });
           commands.push(args);
           expect(readFileSync(constraints, "utf8")).toBe(constraintContents);
           if (args.includes(PYTHON_INVENTORY_PROBE)) {
@@ -442,7 +508,15 @@ for (const target of [
         },
       });
       try {
+        if (target.platform === "linux" && target.arch === "arm64") {
+          await expect(
+            installer.install(kind, DEFAULT_SETTINGS, () => {}),
+          ).rejects.toThrow("[PYTHON_ARCHITECTURE]");
+          expect(commands.every((args) => !args.includes("pip"))).toBe(true);
+          return;
+        }
         await installer.install(kind, DEFAULT_SETTINGS, () => {});
+        installer.commit();
         const inventory = installedInventory(root, kind);
         expect(inventory.schemaVersion).toBe(1);
         expect(Number.isNaN(Date.parse(inventory.createdAt))).toBe(false);
@@ -476,8 +550,12 @@ for (const target of [
           version: "1.7.4",
         });
         expect(inventory.requested[0].requirements).toEqual(INSTALLER_PACKAGES);
-        expect(inventory.requested[0].artifacts?.[0].verification).toBe("archive-hash");
-        expect(inventory.requested[0].artifactRequirements).toContain(`#sha256=${"a".repeat(64)}`);
+        expect(inventory.requested[0].artifacts?.[0].verification).toBe(
+          "archive-hash",
+        );
+        expect(inventory.requested[0].artifactRequirements).toContain(
+          `#sha256=${"a".repeat(64)}`,
+        );
         expect(inventory.requested[0].resolverArguments).toContain("--dry-run");
         expect(inventory.requested[0].pipArguments).toContain("--no-deps");
         const main = inventory.requested.at(-1)!;
@@ -515,7 +593,12 @@ for (const target of [
         }
         expect(inventory.requested.map((s) => s.pipArguments)).toEqual(
           commands
-            .filter((args) => args[0] === "-m" && args[2] === "install" && !args.includes("--dry-run"))
+            .filter(
+              (args) =>
+                args[0] === "-m" &&
+                args[2] === "install" &&
+                !args.includes("--dry-run"),
+            )
             .map((args) => args.slice(2)),
         );
         expect(
@@ -553,6 +636,15 @@ for (const failure of ["probe", "parse", "validation", "write"] as const) {
     Object.defineProperty(installer, "run", {
       value: async (program: string, args: string[]) => {
         mockArtifactReport(args);
+        if (args.includes(PYTHON_INTERPRETER_PROBE))
+          return JSON.stringify({
+            version: [3, 12, 9],
+            machine:
+              Reflect.get(installer, "target").arch === "arm64"
+                ? "arm64"
+                : "x86_64",
+            bits: 64,
+          });
         expect(runtimePython(root)).toBe(oldPython);
         if (args.includes(PYTHON_INVENTORY_PROBE)) {
           candidate = dirname(dirname(program));
@@ -572,7 +664,9 @@ for (const failure of ["probe", "parse", "validation", "write"] as const) {
     });
     try {
       await expect(
-        installer.install("speech", DEFAULT_SETTINGS, () => {}),
+        installer
+          .install("speech", DEFAULT_SETTINGS, () => {})
+          .then(() => installer.commit()),
       ).rejects.toThrow("The previous environment is unchanged");
       expect(runtimePython(root)).toBe(oldPython);
       expect(readFileSync(oldPython, "utf8")).toBe(

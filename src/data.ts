@@ -30,6 +30,7 @@ function rewriteProvenance(repo: string): ModelProvenance {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  schemaVersion: 1,
   workflowVersion: 1,
   onboardingComplete: false,
   theme: "system",
@@ -38,9 +39,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   model: "r2t2",
   language: "en",
   dictationMode: "prose",
+  dictationFormatting: "preserve",
   pythonCommand: "python3",
   inputDeviceId: "default",
   inputDeviceLabel: "System default",
+  trailingSilenceStopEnabled: false,
+  trailingSilenceSeconds: 5,
+  trailingSilenceThresholdDb: -45,
   autoPaste: true,
   pasteShortcut: "standard",
   pasteLastDelaySeconds: 3,
@@ -60,15 +65,19 @@ export const DEFAULT_SETTINGS: AppSettings = {
   magicAllowInferences: false,
   preloadMagicModel: false,
   modelIdleMinutes: 15,
+  memoryPolicy: "independent",
   launchAtLogin: false,
   menuBarOnly: false,
   customWords: [],
   personalProfiles: { schemaVersion: 1, profiles: [] },
+  activePersonalProfile: null,
 };
 
 export const MODELS: ModelInfo[] = [
   {
     id: "r2t2",
+    identity: "r2t2",
+    backendIds: ["vllm-cuda", "transformers-cuda"],
     runtime: "CUDA · vLLM / PyTorch",
     downloadSize: "~4 GB",
     hfId: "netease-youdao/Confucius4-R2T2",
@@ -98,6 +107,8 @@ export const MODELS: ModelInfo[] = [
   },
   {
     id: "r2t2Mlx",
+    identity: "r2t2",
+    backendIds: ["mlx-audio"],
     hfId: "mlx-community/Confucius4-R2T2-bf16",
     name: "R2T2",
     runtime: "MLX Audio · BF16 · Apple Silicon",

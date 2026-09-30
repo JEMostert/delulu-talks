@@ -37,7 +37,8 @@ function SetupLogDialog({
       const next = await bridge.getSetupLog(kind);
       if (request.current === token) setSnapshot(next);
     } catch (reason) {
-      if (request.current === token) setError(`Could not load setup log: ${String(reason)}`);
+      if (request.current === token)
+        setError(`Could not load setup log: ${String(reason)}`);
     } finally {
       if (request.current === token) setLoading(false);
     }
@@ -58,7 +59,8 @@ function SetupLogDialog({
       await bridge.copyText(formatLog(snapshot));
       if (request.current === token) setCopied(true);
     } catch (reason) {
-      if (request.current === token) setError(`Could not copy setup log: ${String(reason)}`);
+      if (request.current === token)
+        setError(`Could not copy setup log: ${String(reason)}`);
     } finally {
       if (request.current === token) setCopying(false);
     }
@@ -104,9 +106,10 @@ function SetupLogDialog({
       {snapshot && (
         <>
           <p className="caption">
-            Local limits: {snapshot.maxEntries} entries and {snapshot.maxCharacters}
-            {" "}characters.
-            {snapshot.truncated && " This log was truncated to stay within these limits."}
+            Local limits: {snapshot.maxEntries} entries and{" "}
+            {snapshot.maxCharacters} characters.
+            {snapshot.truncated &&
+              " This log was truncated to stay within these limits."}
           </p>
           <textarea
             aria-label="Setup log snapshot"

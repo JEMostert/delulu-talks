@@ -45,9 +45,10 @@ export function RewriteWarnings({
         Review sensitive changes
       </h3>
       <p className="my-2 text-sm text-muted">
-        Check numbers, dates, names, negations and URLs before using this rewrite.
-        These are pattern matches, not a factual accuracy check. Capitalized
-        text may be a name; lowercase names and other changes can be missed.
+        Check numbers, dates, names, negations and URLs before using this
+        rewrite. These are pattern matches, not a factual accuracy check.
+        Capitalized text may be a name; lowercase names and other changes can be
+        missed.
       </p>
       {warnings.length ? (
         <div

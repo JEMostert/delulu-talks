@@ -4,8 +4,10 @@ import { splitTechnicalText, technicalRanges } from "./technicalIdentifiers";
 
 export function normalizeRuleLanguage(language?: string): string {
   const value = (language ?? "").trim().toLowerCase();
-  return LANGUAGES.find(([, name]) => name.toLowerCase() === value)?.[0]
-    ?? value.split(/[-_]/)[0];
+  return (
+    LANGUAGES.find(([, name]) => name.toLowerCase() === value)?.[0] ??
+    value.split(/[-_]/)[0]
+  );
 }
 export const ruleLanguage = (rule: CustomWord): string =>
   normalizeRuleLanguage(rule.language);
@@ -25,7 +27,8 @@ export function normalizeAliases(value: unknown): string[] {
     if (typeof item !== "string") continue;
     const phrase = item.trim().slice(0, MAX_ALIAS_LENGTH);
     if (!phrase || /[\r\n]/u.test(phrase)) continue;
-    if (!aliases.some((alias) => samePhrase(alias, phrase))) aliases.push(phrase);
+    if (!aliases.some((alias) => samePhrase(alias, phrase)))
+      aliases.push(phrase);
     if (aliases.length === MAX_RULE_ALIASES) break;
   }
   return aliases;
@@ -121,7 +124,13 @@ export function ruleConflict(
   if (!triggers.length) return null;
   const pattern = new RegExp(`^(?:${triggers.map(escape).join("|")})$`, "iu");
   for (const word of words) {
-    if (word.id === draft.id || (ruleLanguage(word) && ruleLanguage(draft) && ruleLanguage(word) !== ruleLanguage(draft))) continue;
+    if (
+      word.id === draft.id ||
+      (ruleLanguage(word) &&
+        ruleLanguage(draft) &&
+        ruleLanguage(word) !== ruleLanguage(draft))
+    )
+      continue;
     const existingTrigger = ruleTriggers(word).find((trigger) =>
       pattern.test(trigger),
     );
@@ -151,13 +160,21 @@ function* enabledRules(words: CustomWord[], language?: string) {
   }
 }
 
-export function personalize(text: string, words: CustomWord[], language?: string): string {
+export function personalize(
+  text: string,
+  words: CustomWord[],
+  language?: string,
+): string {
   const rules = new Map<string, string>();
   for (const { trigger, output } of enabledRules(words, language)) {
     // Stable first-rule priority for legacy conflicts. Never cascade replacements.
     if (!rules.has(trigger)) rules.set(trigger, output);
   }
-  return splitTechnicalText(text).map((part) => part.protected ? part.text : replacePhrases(part.text, rules)).join("");
+  return splitTechnicalText(text)
+    .map((part) =>
+      part.protected ? part.text : replacePhrases(part.text, rules),
+    )
+    .join("");
 }
 
 export type RuleMatch = {
@@ -171,7 +188,11 @@ export type RuleMatch = {
 };
 
 /** Explain the same matching pass used for clean output; never save or cascade. */
-export function previewPersonalization(text: string, words: CustomWord[], language?: string) {
+export function previewPersonalization(
+  text: string,
+  words: CustomWord[],
+  language?: string,
+) {
   const rules = new Map<string, { output: string; rule: CustomWord }>();
   for (const { trigger, output, rule } of enabledRules(words, language)) {
     if (!rules.has(trigger)) rules.set(trigger, { output, rule });
@@ -182,7 +203,13 @@ export function previewPersonalization(text: string, words: CustomWord[], langua
   let cursor = 0;
   if (rules.size) {
     for (const match of phraseMatches(text, rules)) {
-      if (literals.some((range) => range.start < match.index + match.length && range.end > match.index)) continue;
+      if (
+        literals.some(
+          (range) =>
+            range.start < match.index + match.length && range.end > match.index,
+        )
+      )
+        continue;
       result += text.slice(cursor, match.index) + match.output.output;
       cursor = match.index + match.length;
       matches.push({
@@ -199,7 +226,7 @@ export function previewPersonalization(text: string, words: CustomWord[], langua
   return { original: text, result: result + text.slice(cursor), matches };
 }
 
-/** Keep saved blocks outside the language model. Rewrite only the surrounding text. */
+/** Keep saved blocks and technical literals outside the language model. */
 export function splitForRewrite(
   text: string,
   words: CustomWord[],
@@ -216,7 +243,9 @@ export function splitForRewrite(
       continue;
     savedBlocks.add(word.replacement);
     // Already saved exact blocks stay protected even when rewriting an older language.
-    const triggers = ruleAppliesToLanguage(word, language) ? ruleTriggers(word) : [];
+    const triggers = ruleAppliesToLanguage(word, language)
+      ? ruleTriggers(word)
+      : [];
     for (const phrase of [word.replacement, ...triggers]) {
       if (!rules.has(phrase)) rules.set(phrase, word.replacement);
     }
@@ -229,7 +258,10 @@ export function splitForRewrite(
   for (const match of phraseMatches(text, rules)) {
     const index = match.index;
     const matchedText = text.slice(index, index + match.length);
-    while (literalIndex < literals.length && literals[literalIndex].end <= index)
+    while (
+      literalIndex < literals.length &&
+      literals[literalIndex].end <= index
+    )
       literalIndex++;
     // Exact saved blocks take priority. A spoken-trigger alias inside an
     // address, path, command or version must never alter that literal.
@@ -257,9 +289,14 @@ export function splitForRewrite(
 }
 
 /** Count selected source matches without retaining transcript text. */
-export function personalizeWithUsage(text: string, words: CustomWord[], language?: string): { text: string; counts: Record<string, number> } {
+export function personalizeWithUsage(
+  text: string,
+  words: CustomWord[],
+  language?: string,
+): { text: string; counts: Record<string, number> } {
   const preview = previewPersonalization(text, words, language);
   const counts: Record<string, number> = Object.create(null);
-  for (const match of preview.matches) counts[match.ruleId] = (counts[match.ruleId] ?? 0) + 1;
+  for (const match of preview.matches)
+    counts[match.ruleId] = (counts[match.ruleId] ?? 0) + 1;
   return { text: preview.result, counts };
 }

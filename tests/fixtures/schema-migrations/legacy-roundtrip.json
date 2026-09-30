@@ -1,0 +1,58 @@
+{
+  "description": "Additive schema migration must preserve these exact values; rollback restores the input including absent schemaVersion.",
+  "settings": {
+    "workflowVersion": 1,
+    "magicEnabled": false,
+    "customWords": [
+      {
+        "id": "literal",
+        "kind": "shortcut",
+        "term": "block",
+        "soundsLike": "",
+        "replacement": "  const answer = 42;\n\n",
+        "enabled": true
+      }
+    ],
+    "personalProfiles": { "schemaVersion": 1, "profiles": [] },
+    "futureMetadata": { "literal": " keep me " }
+  },
+  "transcript": {
+    "id": "fixture-exact",
+    "createdAt": 1000,
+    "durationMs": 2000,
+    "text": "  Raw transcript\n\n",
+    "editedText": " Edited text\t ",
+    "magicText": "  Rewrite\n",
+    "personalizedText": "Literal block\n\n",
+    "model": "qwen3Asr",
+    "language": "nl",
+    "requestedLanguage": "auto",
+    "recognizedLanguage": "nl",
+    "source": "file",
+    "processingTimeMs": 50,
+    "provenance": {
+      "revision": "historical-sha",
+      "decoder": "original",
+      "conversion": null
+    }
+  },
+  "rule": {
+    "id": "rule-exact",
+    "kind": "shortcut",
+    "term": "signature",
+    "soundsLike": "",
+    "replacement": "\n  Met vriendelijke groet,\n  J.\n",
+    "enabled": true
+  },
+  "futureSettings": {
+    "schemaVersion": 2,
+    "workflowVersion": 1,
+    "unknown": { "preserve": true }
+  },
+  "futureTranscript": { "schemaVersion": 2, "text": "Never overwrite me" },
+  "futureRule": { "schemaVersion": 2, "replacement": " Never downgrade " },
+  "futureProfiles": {
+    "schemaVersion": 2,
+    "profiles": [{ "schemaVersion": 2, "unknown": "opaque" }]
+  }
+}

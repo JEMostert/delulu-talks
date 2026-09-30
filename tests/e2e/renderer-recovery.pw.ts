@@ -1,7 +1,9 @@
+import { identifySyntheticMicrophone } from "./syntheticMicrophone";
 import { expect, test, type Page } from "@playwright/test";
 
 // Real React and Chromium PCM capture, with desktop IPC/inference fixtures.
 async function openScenario(page: Page, controllerFault = false) {
+  await identifySyntheticMicrophone(page);
   await page.addInitScript((controllerFault) => {
     const listeners = new Map<string, Set<(value: unknown) => void>>();
     const state = {
@@ -112,7 +114,7 @@ async function openScenario(page: Page, controllerFault = false) {
                 state.phase = "opening";
                 emit("onRecorderCommand", {
                   action: "start",
-                  inputDeviceId: "default",
+                  inputDeviceId: "fixture-microphone",
                 });
                 return;
               }
@@ -125,7 +127,7 @@ async function openScenario(page: Page, controllerFault = false) {
                 state.phase = "stopping";
                 emit("onRecorderCommand", {
                   action: "stop",
-                  inputDeviceId: "default",
+                  inputDeviceId: "fixture-microphone",
                 });
                 return;
               }

@@ -19,11 +19,17 @@ for (const operation of [
         `
           import { mock } from "bun:test";
           import assert from "node:assert/strict";
-          import { mkdtempSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+          import { mkdtempSync, readFileSync, rmSync } from "node:fs";
           import { tmpdir } from "node:os";
           import { join } from "node:path";
           const root = mkdtempSync(join(tmpdir(), "delulu-write-failure-"));
+          const fs = {...await import("node:fs")};
+          let deniedTarget = null;
           mock.module("electron", () => ({ app: { getPath: () => root, isPackaged: false } }));
+          mock.module("node:fs", () => ({...fs, renameSync(source, target) {
+            if (target === deniedTarget) throw new Error("Injected atomic replacement failure");
+            return fs.renameSync(source, target);
+          }}));
           try {
             const { StorageService } = await import(${JSON.stringify(storageUrl)});
             const storage = new StorageService();
@@ -44,9 +50,9 @@ for (const operation of [
             const historyBytes = readFileSync(historyFile, "utf8");
             const operation = ${JSON.stringify(operation)};
             const target = operation === "settings" ? settingsFile : historyFile;
-            // A directory at the temporary-write path deterministically rejects
-            // the write even under root, without changing permission policies.
-            mkdirSync(target + ".tmp");
+            // Fail the final replacement, independently of the randomized
+            // staging filename, while retaining the existing profile bytes.
+            deniedTarget = target;
             const mutate = () => {
               switch (operation) {
                 case "settings": return storage.updateSettings({ ...beforeSettings, language: "de" });
@@ -62,14 +68,15 @@ for (const operation of [
             assert.deepEqual(storage.getHistory(), beforeHistory);
             assert.equal(readFileSync(settingsFile, "utf8"), settingsBytes);
             assert.equal(readFileSync(historyFile, "utf8"), historyBytes);
-            rmSync(target + ".tmp", { recursive: true });
+            assert.equal(fs.readdirSync(root).some(name => name.endsWith(".tmp")), false);
+            deniedTarget = null;
             mutate();
             assert.notEqual(readFileSync(target, "utf8"), operation === "settings" ? settingsBytes : historyBytes);
             assert.deepEqual(JSON.parse(readFileSync(settingsFile, "utf8")), storage.getSettings());
-            assert.deepEqual(JSON.parse(readFileSync(historyFile, "utf8")), storage.getHistory());
+            assert.deepEqual(JSON.parse(readFileSync(historyFile, "utf8")), JSON.parse(JSON.stringify(storage.getHistory())));
             const reopened = new StorageService();
             assert.deepEqual(reopened.getSettings(), storage.getSettings());
-            assert.deepEqual(reopened.getHistory(), storage.getHistory());
+            assert.deepEqual(JSON.parse(JSON.stringify(reopened.getHistory())), JSON.parse(JSON.stringify(storage.getHistory())));
             process.stdout.write("verified");
           } finally {
             rmSync(root, { recursive: true, force: true });

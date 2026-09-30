@@ -1,3 +1,4 @@
+import { identifySyntheticMicrophone } from "./syntheticMicrophone";
 import { expect, test } from "@playwright/test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -11,6 +12,7 @@ test.afterEach(() => {
 // Real Chromium microphone/Web Audio; only the desktop IPC destination is stubbed.
 test.beforeEach(async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
+  await identifySyntheticMicrophone(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Dismiss setup" }).click();
 });
@@ -140,7 +142,10 @@ test("stop delivers the final partial worklet batch before releasing capture", a
     };
     const recorder = new PcmRecorder();
     try {
-      await recorder.handle({ action: "start", inputDeviceId: "default" });
+      await recorder.handle({
+        action: "start",
+        inputDeviceId: "fixture-microphone",
+      });
       await Promise.race([
         capturedFixture,
         new Promise(
@@ -162,9 +167,15 @@ test("stop delivers the final partial worklet batch before releasing capture", a
         ),
       ]);
       clearTimeout(fixtureTimer);
-      await recorder.handle({ action: "stop", inputDeviceId: "default" });
+      await recorder.handle({
+        action: "stop",
+        inputDeviceId: "fixture-microphone",
+      });
       // A repeated Stop must not submit an already delivered capture again.
-      await recorder.handle({ action: "stop", inputDeviceId: "default" });
+      await recorder.handle({
+        action: "stop",
+        inputDeviceId: "fixture-microphone",
+      });
       const view = new DataView(
         audio.buffer,
         audio.byteOffset,
@@ -326,7 +337,10 @@ test("unmodified worklet stops and repeated cancel releases capture without extr
     };
     const recorder = new PcmRecorder();
     try {
-      await recorder.handle({ action: "start", inputDeviceId: "default" });
+      await recorder.handle({
+        action: "start",
+        inputDeviceId: "fixture-microphone",
+      });
       await Promise.race([
         heardAudio,
         new Promise((_, reject) => {
@@ -342,7 +356,10 @@ test("unmodified worklet stops and repeated cancel releases capture without extr
         }),
       ]);
       clearTimeout(audioTimer);
-      await recorder.handle({ action: "stop", inputDeviceId: "default" });
+      await recorder.handle({
+        action: "stop",
+        inputDeviceId: "fixture-microphone",
+      });
       const normal = {
         sampleRate: new DataView(submittedAudio.buffer).getUint32(24, true),
         deliveredSamples: (submittedAudio.length - 44) / 2,
@@ -354,13 +371,19 @@ test("unmodified worklet stops and repeated cancel releases capture without extr
       };
       const cycles = [];
       for (let cycle = 0; cycle < 3; cycle += 1) {
-        await recorder.handle({ action: "start", inputDeviceId: "default" });
+        await recorder.handle({
+          action: "start",
+          inputDeviceId: "fixture-microphone",
+        });
         const live = streams
           .at(-1)!
           .getTracks()
           .every((track) => track.readyState === "live");
         await recorder.cancel();
-        await recorder.handle({ action: "stop", inputDeviceId: "default" });
+        await recorder.handle({
+          action: "stop",
+          inputDeviceId: "fixture-microphone",
+        });
         cycles.push({
           live,
           ended: streams

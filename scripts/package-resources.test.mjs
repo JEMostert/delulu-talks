@@ -77,14 +77,14 @@ function artifact(root, manifest, platform) {
 
 test("configured resources include every speech adapter, constraint, notice and tray template", () => {
   const manifest = sourceManifest(repository);
-  expect(manifest.resources).toHaveLength(13);
+  expect(manifest.resources).toHaveLength(17);
   expect(manifest.linuxSize).toEqual([1024, 1024]);
 });
 for (const platform of ["linux", "mac", "win"]) {
   test(`${platform} resource verification rejects omitted and stale packaged adapters without changing artifacts`, () => {
     const { root, manifest } = profile();
     const { directory, resources } = artifact(root, manifest, platform);
-    expect(verifyPackage(root, directory, platform).resources).toHaveLength(13);
+    expect(verifyPackage(root, directory, platform).resources).toHaveLength(17);
     const checkpoint = join(resources, "python/windows_checkpoint.py");
     const bytes = readFileSync(checkpoint);
     rmSync(checkpoint);

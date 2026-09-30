@@ -12,171 +12,121 @@
     {
       "id": "nl-integers",
       "language": "nl",
-      "tags": [
-        "numbers"
-      ],
+      "tags": ["numbers"],
       "reference": "We bestellen 12 dozen met 24 potloden, dus 288 potloden in totaal."
     },
     {
       "id": "en-integers",
       "language": "en",
-      "tags": [
-        "numbers"
-      ],
+      "tags": ["numbers"],
       "reference": "Order 12 boxes with 24 pencils each, for a total of 288 pencils."
     },
     {
       "id": "nl-currency",
       "language": "nl",
-      "tags": [
-        "currency",
-        "decimal-comma"
-      ],
+      "tags": ["currency", "decimal-comma"],
       "reference": "De prijs is € 12,50 inclusief btw, niet € 125,00."
     },
     {
       "id": "en-currency",
       "language": "en",
-      "tags": [
-        "currency",
-        "decimal-point"
-      ],
+      "tags": ["currency", "decimal-point"],
       "reference": "The price is £12.50, not £125.00, and the deposit is $3.75."
     },
     {
       "id": "nl-decimal",
       "language": "nl",
-      "tags": [
-        "decimal-comma"
-      ],
+      "tags": ["decimal-comma"],
       "reference": "De meting is 0,05 millimeter; de tolerantie is 1,25 millimeter."
     },
     {
       "id": "en-decimal",
       "language": "en",
-      "tags": [
-        "decimal-point"
-      ],
+      "tags": ["decimal-point"],
       "reference": "The reading is 0.05 millimetres, with a tolerance of 1.25 millimetres."
     },
     {
       "id": "nl-thousands",
       "language": "nl",
-      "tags": [
-        "thousands",
-        "decimal-comma"
-      ],
+      "tags": ["thousands", "decimal-comma"],
       "reference": "Het totaal is 1.234,56 euro voor 2.000 exemplaren."
     },
     {
       "id": "en-thousands",
       "language": "en",
-      "tags": [
-        "thousands",
-        "decimal-point"
-      ],
+      "tags": ["thousands", "decimal-point"],
       "reference": "The total is 1,234.56 dollars for 2,000 copies."
     },
     {
       "id": "nl-phone",
       "language": "nl",
-      "tags": [
-        "phone",
-        "leading-zero"
-      ],
+      "tags": ["phone", "leading-zero"],
       "reference": "Bel 020 555 0123 en vraag naar toestel 007."
     },
     {
       "id": "en-phone",
       "language": "en",
-      "tags": [
-        "phone",
-        "leading-zero"
-      ],
+      "tags": ["phone", "leading-zero"],
       "reference": "Call +44 20 7946 0958 and ask for extension 007."
     },
     {
       "id": "nl-time",
       "language": "nl",
-      "tags": [
-        "time"
-      ],
+      "tags": ["time"],
       "reference": "De trein vertrekt om 08:05 en komt om 17:45 terug."
     },
     {
       "id": "en-time",
       "language": "en",
-      "tags": [
-        "time"
-      ],
+      "tags": ["time"],
       "reference": "The train leaves at 8:05 a.m. and returns at 5:45 p.m."
     },
     {
       "id": "nl-date",
       "language": "nl",
-      "tags": [
-        "date"
-      ],
+      "tags": ["date"],
       "reference": "De afspraak is op 4 mei 2027, niet op 5 april 2027."
     },
     {
       "id": "en-date",
       "language": "en",
-      "tags": [
-        "date"
-      ],
+      "tags": ["date"],
       "reference": "The appointment is on May 4, 2027, not April 5, 2027."
     },
     {
       "id": "nl-ambiguous-date",
       "language": "nl",
-      "tags": [
-        "ambiguous-date"
-      ],
+      "tags": ["ambiguous-date"],
       "reference": "Schrijf letterlijk 04/05/2027 en vraag welke datum bedoeld wordt."
     },
     {
       "id": "en-ambiguous-date",
       "language": "en",
-      "tags": [
-        "ambiguous-date"
-      ],
+      "tags": ["ambiguous-date"],
       "reference": "Write 04/05/2027 exactly and ask which date was intended."
     },
     {
       "id": "nl-fraction",
       "language": "nl",
-      "tags": [
-        "fractions",
-        "percent"
-      ],
+      "tags": ["fractions", "percent"],
       "reference": "Gebruik een halve liter en verhoog het aandeel van 2,5% naar 10%."
     },
     {
       "id": "en-fraction",
       "language": "en",
-      "tags": [
-        "fractions",
-        "percent"
-      ],
+      "tags": ["fractions", "percent"],
       "reference": "Use half a litre and increase the share from 2.5% to 10%."
     },
     {
       "id": "nl-negative",
       "language": "nl",
-      "tags": [
-        "negative",
-        "range"
-      ],
+      "tags": ["negative", "range"],
       "reference": "De temperatuur gaat van -3 naar 7 graden, tussen 06:00 en 09:00."
     },
     {
       "id": "en-negative",
       "language": "en",
-      "tags": [
-        "negative",
-        "range"
-      ],
+      "tags": ["negative", "range"],
       "reference": "The temperature rises from -3 to 7 degrees between 06:00 and 09:00."
     }
   ]

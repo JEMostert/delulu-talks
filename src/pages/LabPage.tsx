@@ -1,120 +1,239 @@
+import { useEffect, useRef, useState, type DragEvent } from "react";
+import { FileAudio, LoaderCircle, Upload } from "lucide-react";
+import { bridge } from "../bridge";
+import { AudioSourceReview } from "../components/AudioSourceReview";
+import { ImportQueue } from "../components/ImportQueue";
 import {
   TranscriptCard,
   type TranscriptActions,
 } from "../components/TranscriptCard";
-import type { useWorkspaceOperations } from "../hooks/useWorkspaceOperations";
-import {
-  FileAudio,
-  LoaderCircle,
-  ScanText,
-  Sparkles,
-  Upload,
-} from "lucide-react";
 import { Alert } from "../components/ui";
+import {
+  MAX_AUDIO_BATCH_FILES,
+  SUPPORTED_AUDIO_EXTENSIONS,
+} from "../audioFormats";
 import type {
+  AudioFileMetadata,
+  AudioImportJob,
   TranscriptRecord,
 } from "../types";
 
 export function LabPage({
-  busy,
-  operation,
-  onChoose,
-  onRun,
-  onClearError,
   history,
+  busy,
   ...actions
-}: TranscriptActions & {
-  history: TranscriptRecord[];
-  busy: boolean;
-  operation: ReturnType<typeof useWorkspaceOperations>["importOperation"];
-  onChoose: () => Promise<void>;
-  onRun: () => Promise<void>;
-  onClearError: () => void;
-}) {
-  const { file, error, resultId } = operation;
-  const running = operation.phase === "running";
-  const choosing = operation.phase === "choosing";
-  const result = history.find((record) => record.id === resultId);
-
+}: TranscriptActions & { history: TranscriptRecord[]; busy: boolean }) {
+  const [jobs, setJobs] = useState<AudioImportJob[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [review, setReview] = useState<AudioImportJob | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [metadata, setMetadata] = useState<AudioFileMetadata | null>(null);
+  const [inspecting, setInspecting] = useState(false);
+  const generation = useRef(0);
+  const selectionBusy = useRef(false);
+  async function reload() {
+    const request = ++generation.current;
+    try {
+      const records = await bridge.getAudioJobs();
+      if (request === generation.current) setJobs(records);
+    } catch (reason) {
+      if (request === generation.current)
+        setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+  useEffect(() => {
+    void reload();
+    const stop = bridge.onImportQueue(() => {
+      void reload();
+    });
+    return () => {
+      generation.current++;
+      stop();
+    };
+  }, []);
+  const file = jobs.find((job) => job.path === selected) ?? null;
+  useEffect(() => {
+    let alive = true;
+    setMetadata(null);
+    setInspecting(false);
+    if (!file || file.sourceAvailable === false) return;
+    setInspecting(true);
+    void bridge
+      .inspectAudioFile(file.path)
+      .then((value) => {
+        if (alive) setMetadata(value);
+      })
+      .catch((reason) => {
+        if (alive)
+          setError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => {
+        if (alive) setInspecting(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [file?.path, file?.sourceAvailable]);
+  async function select(action: () => Promise<unknown>) {
+    if (selectionBusy.current) return;
+    selectionBusy.current = true;
+    setPending(true);
+    setError(null);
+    try {
+      await action();
+      await reload();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      selectionBusy.current = false;
+      setPending(false);
+    }
+  }
+  function drop(event: DragEvent) {
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length) void select(() => bridge.resolveAudioFiles(files));
+  }
+  const result = history.find((record) => record.id === file?.resultId);
   return (
     <div className="content-stack">
-      {error && <Alert onDismiss={onClearError}>{error}</Alert>}
-      {running && <p role="status" className="text-sm text-muted">File transcription continues when you navigate away. Use Resume import to return here.</p>}
-      {resultId && !result && <p role="status" className="text-sm text-muted">This import finished, but its transcript is no longer retained. Choose a file to start a new import.</p>}
+      {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
       <section className="view-toolbar">
         <div>
-          <strong>File transcription</strong>
-          <span>
-            The original media stays in place; processing and temporary
-            conversion remain local.
+          <h2>Audio files</h2>
+          <span className="caption">
+            Durable source references and a paused-on-restart queue. Original
+            media stays in place.
           </span>
         </div>
       </section>
-
-      <div className="grid grid-cols-[330px_minmax(0,1fr)] gap-4 max-[1150px]:grid-cols-[260px_minmax(0,1fr)] max-[700px]:grid-cols-1">
-        <section className="border border-line bg-surface rounded-panel shadow-panel backdrop-blur-xl overflow-hidden min-w-0 p-5 flex flex-col gap-4">
-          <button
-            disabled={running || choosing}
-            className="file-drop w-full flex items-center gap-2.5 px-3.5 py-5 bg-surface border border-dashed border-line-strong rounded-xl backdrop-blur-md text-left"
-            onClick={() => void onChoose()}
+      <button
+        className="file-drop flex items-center gap-3 p-5 border border-dashed border-line rounded-xl text-left"
+        disabled={pending || busy}
+        onClick={() => void select(() => bridge.chooseAudioFiles())}
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = pending || busy ? "none" : "copy";
+        }}
+        onDrop={(event) => {
+          if (!pending && !busy) drop(event);
+          else event.preventDefault();
+        }}
+      >
+        {pending ? <LoaderCircle className="spin" /> : <FileAudio />}
+        <span>
+          Choose or drop audio and video
+          <br />
+          <small>
+            {SUPPORTED_AUDIO_EXTENSIONS.join(", ").toUpperCase()} · up to{" "}
+            {MAX_AUDIO_BATCH_FILES} retained jobs
+          </small>
+        </span>
+        <Upload />
+      </button>
+      <ImportQueue />
+      <ul className="content-stack" aria-label="Linked source files">
+        {jobs.map((job) => (
+          <li
+            key={job.path}
+            className="rounded-xl border border-line p-3 content-stack"
           >
-            <span>
-              <FileAudio />
-            </span>
-            <div className="min-w-0 flex-1">
-              {file ? (
-                <>
-                  <strong className="block text-[12px] break-words">
-                    {file.name}
-                  </strong>
-                  <small className="block text-[10px] mt-1">
-                    {(file.size / 1024 / 1024).toFixed(1)} MB · click to replace
-                  </small>
-                </>
-              ) : (
-                <>
-                  <strong className="block text-[12px] break-words">
-                    Choose audio or video
-                  </strong>
-                  <small className="block text-[10px] mt-1">
-                    WAV, MP3, M4A, FLAC, WebM, MP4, MOV, or MKV
-                  </small>
-                </>
+            <button
+              className="text-left break-words"
+              aria-pressed={selected === job.path}
+              onClick={() => setSelected(job.path)}
+            >
+              {job.name} · {job.state} · {(job.size / 1048576).toFixed(1)} MiB
+            </button>
+            {job.sourceError && (
+              <p className="field-error">{job.sourceError}</p>
+            )}
+            {job.error && <p className="field-error">{job.error}</p>}
+            <div className="flex gap-2 flex-wrap">
+              <button
+                className="tool-button"
+                disabled={job.sourceAvailable === false}
+                onClick={() => setReview(job)}
+              >
+                Review linked audio
+              </button>
+              {job.sourceAvailable === false && (
+                <button
+                  className="tool-button"
+                  disabled={pending || busy}
+                  onClick={() =>
+                    void select(() => bridge.relinkAudioJob(job.path))
+                  }
+                >
+                  Relink source…
+                </button>
               )}
+              <button
+                className="tool-button"
+                disabled={pending || busy}
+                onClick={() =>
+                  void select(() => bridge.removeAudioJob(job.path))
+                }
+              >
+                Remove job reference
+              </button>
             </div>
-            <Upload className="w-[15px] h-[15px] text-muted" />
-          </button>
-
-          <button
-            className="primary-button lab-run"
-            disabled={!file || busy || running || choosing}
-            onClick={() => void onRun()}
-          >
-            {running ? <LoaderCircle className="spin" /> : <Sparkles />}{" "}
-            {running ? "Working locally…" : "Transcribe"}
-          </button>
-        </section>
-
-        <section className="lab-result border border-line bg-surface rounded-panel shadow-panel backdrop-blur-xl overflow-hidden min-w-0 px-[18px] py-4">
-          {!result ? (
-            <div className="min-h-[380px] flex flex-col items-center justify-center text-center">
-              <ScanText className="w-[38px] h-[38px] text-accent [stroke-width:1] mb-[22px]" />
-              <h3>No file processed</h3>
-              <p className="max-w-[290px] text-[12px] text-muted mt-3">
-                Choose a recording to transcribe. Everything is processed
-                locally.
+          </li>
+        ))}
+      </ul>
+      {file && (
+        <section
+          className="border border-line rounded-xl p-4 content-stack"
+          aria-live="polite"
+        >
+          <h3>{file.name}</h3>
+          {inspecting ? (
+            <p>Inspecting media…</p>
+          ) : metadata ? (
+            <>
+              <p>
+                {metadata.durationSeconds === null
+                  ? "Duration unknown"
+                  : `${metadata.durationSeconds.toFixed(1)} seconds`}{" "}
+                · {metadata.channels ?? "unknown"} channels ·{" "}
+                {metadata.sampleRate ?? "unknown"} Hz
               </p>
-            </div>
+              <p>{metadata.decoderDetail}</p>
+              <p>{metadata.processingTimeEstimate}</p>
+              {metadata.estimatedPcmBytes !== null && (
+                <p>
+                  Estimated mono 16 kHz PCM:{" "}
+                  {(metadata.estimatedPcmBytes / 1048576).toFixed(1)} MiB
+                </p>
+              )}
+            </>
           ) : (
-            <TranscriptCard
-              key={result.id}
-              record={result}
-              inspector
-              {...actions}
-            />
+            <p>
+              Media metadata unavailable. Duration and decoder readiness remain
+              unknown.
+            </p>
+          )}
+          {result ? (
+            <TranscriptCard record={result} {...actions} />
+          ) : (
+            file.resultId && (
+              <p>
+                The referenced transcript is no longer retained. Source media
+                has not been deleted.
+              </p>
+            )
           )}
         </section>
-      </div>
+      )}
+      {review && (
+        <AudioSourceReview
+          key={review.path}
+          path={review.path}
+          name={review.name}
+          onClose={() => setReview(null)}
+        />
+      )}
     </div>
   );
 }

@@ -12,176 +12,121 @@
     {
       "id": "nl-names",
       "language": "nl",
-      "tags": [
-        "names",
-        "diacritics"
-      ],
+      "tags": ["names", "diacritics"],
       "reference": "Zoë en Daniël sturen Chloë een bericht over René."
     },
     {
       "id": "nl-places",
       "language": "nl",
-      "tags": [
-        "places",
-        "diacritics"
-      ],
+      "tags": ["places", "diacritics"],
       "reference": "We reizen van 's-Hertogenbosch via Utrecht naar België."
     },
     {
       "id": "nl-informal",
       "language": "nl",
-      "tags": [
-        "informal",
-        "contractions"
-      ],
+      "tags": ["informal", "contractions"],
       "reference": "Da's prima, ik heb 't net gezien. Doe maar rustig aan."
     },
     {
       "id": "nl-accents",
       "language": "nl",
-      "tags": [
-        "diacritics"
-      ],
+      "tags": ["diacritics"],
       "reference": "Het café serveert crème brûlée; de conciërge drinkt thee."
     },
     {
       "id": "nl-question",
       "language": "nl",
-      "tags": [
-        "informal",
-        "punctuation"
-      ],
+      "tags": ["informal", "punctuation"],
       "reference": "Hé, kom je straks ook? Ik ben er rond half acht."
     },
     {
       "id": "nl-surname",
       "language": "nl",
-      "tags": [
-        "names"
-      ],
+      "tags": ["names"],
       "reference": "Stuur het verslag naar Noor van Dijk en meneer De Vries."
     },
     {
       "id": "nl-repeat",
       "language": "nl",
-      "tags": [
-        "repetition",
-        "informal"
-      ],
+      "tags": ["repetition", "informal"],
       "reference": "Nee, nee, wacht even. Ik bedoel morgen, niet vandaag."
     },
     {
       "id": "nl-apostrophe",
       "language": "nl",
-      "tags": [
-        "contractions",
-        "places"
-      ],
+      "tags": ["contractions", "places"],
       "reference": "'s Avonds fietsen we langs de haven van 's-Gravenhage."
     },
     {
       "id": "nl-unicode",
       "language": "nl",
-      "tags": [
-        "diacritics",
-        "names"
-      ],
+      "tags": ["diacritics", "names"],
       "reference": "Maëlys zegt dat ideeën uit Curaçao welkom zijn."
     },
     {
       "id": "nl-pause",
       "language": "nl",
-      "tags": [
-        "informal",
-        "punctuation"
-      ],
+      "tags": ["informal", "punctuation"],
       "reference": "Nou ja… misschien. Laat me daar nog even over nadenken."
     },
     {
       "id": "en-names",
       "language": "en",
-      "tags": [
-        "names",
-        "diacritics"
-      ],
+      "tags": ["names", "diacritics"],
       "reference": "Siobhán and José will send Zoë the notes for Chloë."
     },
     {
       "id": "en-places",
       "language": "en",
-      "tags": [
-        "places",
-        "diacritics"
-      ],
+      "tags": ["places", "diacritics"],
       "reference": "We're travelling from Edinburgh to São Paulo via Montréal."
     },
     {
       "id": "en-contractions",
       "language": "en",
-      "tags": [
-        "contractions"
-      ],
+      "tags": ["contractions"],
       "reference": "I can't tell if they've left; we'd better check before it's too late."
     },
     {
       "id": "en-informal",
       "language": "en",
-      "tags": [
-        "informal"
-      ],
+      "tags": ["informal"],
       "reference": "Hey, yeah, that sounds good. I'll catch you later, okay?"
     },
     {
       "id": "en-accents",
       "language": "en",
-      "tags": [
-        "diacritics"
-      ],
+      "tags": ["diacritics"],
       "reference": "The café's menu includes jalapeños, pâté, and crème brûlée."
     },
     {
       "id": "en-surname",
       "language": "en",
-      "tags": [
-        "names",
-        "apostrophes"
-      ],
+      "tags": ["names", "apostrophes"],
       "reference": "Please ask Niamh O'Connor and Anne-Marie about the schedule."
     },
     {
       "id": "en-repeat",
       "language": "en",
-      "tags": [
-        "repetition",
-        "informal"
-      ],
+      "tags": ["repetition", "informal"],
       "reference": "No, no, hang on. I meant Thursday, not Tuesday."
     },
     {
       "id": "en-possessive",
       "language": "en",
-      "tags": [
-        "contractions",
-        "apostrophes"
-      ],
+      "tags": ["contractions", "apostrophes"],
       "reference": "James's notes aren't ready, but the team's draft is."
     },
     {
       "id": "en-question",
       "language": "en",
-      "tags": [
-        "informal",
-        "punctuation"
-      ],
+      "tags": ["informal", "punctuation"],
       "reference": "Could you grab my jacket? It's by the door, I think."
     },
     {
       "id": "en-pause",
       "language": "en",
-      "tags": [
-        "informal",
-        "punctuation"
-      ],
+      "tags": ["informal", "punctuation"],
       "reference": "Well… maybe. Let's sleep on it and talk tomorrow."
     }
   ]

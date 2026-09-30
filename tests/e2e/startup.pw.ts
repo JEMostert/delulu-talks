@@ -62,7 +62,17 @@ async function openStartup(page: Page, hung: string[]) {
         () =>
           (
             window as unknown as { __startup: { completed: string[] } }
-          ).__startup.completed.filter((name) => name.startsWith("get")).length,
+          ).__startup.completed.filter((name) =>
+            [
+              "getSettings",
+              "getStatus",
+              "getMagicStatus",
+              "getShortcutStatus",
+              "getHistoryBatchSnapshot",
+              "getCapabilities",
+              "getUpdateStatus",
+            ].includes(name),
+          ).length,
       ),
     )
     .toBe(7 - hung.length);
@@ -89,7 +99,7 @@ test("hung optional services reach a usable workspace at the startup deadline", 
   ).toBeEnabled();
 });
 
-for (const method of ["getSettings", "getHistory"]) {
+for (const method of ["getSettings", "getHistoryBatchSnapshot"]) {
   test(`hung ${method} offers retry and late old replies cannot replace the new workspace`, async ({
     page,
   }) => {
@@ -146,7 +156,7 @@ test("a current status event survives a timed-out initial status snapshot", asyn
   });
   await page.clock.fastForward(8_001);
   await expect(
-    page.getByRole("button", { name: "Stop dictation", exact: true }),
+    page.getByRole("button", { name: "Stop recording", exact: true }),
   ).toBeEnabled();
   await page.evaluate(() => {
     (
@@ -160,6 +170,6 @@ test("a current status event survives a timed-out initial status snapshot", asyn
     });
   });
   await expect(
-    page.getByRole("button", { name: "Stop dictation", exact: true }),
+    page.getByRole("button", { name: "Stop recording", exact: true }),
   ).toBeEnabled();
 });

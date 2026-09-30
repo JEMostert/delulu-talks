@@ -3,29 +3,64 @@ import type { RecordingSubmission } from "../../src/types";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
-export function registerDictationIpc({ handle, on }: IpcRegistrar, { pasteLast, paste, dictation, schedulePasteLast }: Pick<IpcDependencies, "pasteLast" | "paste" | "dictation" | "schedulePasteLast">): void {
-
-handle("dictation:pasteLast", () => schedulePasteLast());
-handle("dictation:pasteLastStatus", () => pasteLast.getStatus());
-handle("dictation:cancelPasteLast", (_event, operationId: unknown) => {
+export function registerDictationIpc(
+  { handle, on }: IpcRegistrar,
+  {
+    pasteLast,
+    paste,
+    dictation,
+    schedulePasteLast,
+  }: Pick<
+    IpcDependencies,
+    "pasteLast" | "paste" | "dictation" | "schedulePasteLast"
+  >,
+): void {
+  handle("dictation:pasteLast", () => schedulePasteLast());
+  handle("dictation:pasteLastStatus", () => pasteLast.getStatus());
+  handle("dictation:cancelPasteLast", (_event, operationId: unknown) => {
     if (typeof operationId !== "string")
       throw new Error("Invalid paste operation");
     return pasteLast.cancel(operationId);
   });
-handle("dictation:discardFailed", () => dictation.discardFailure());
-handle("dictation:retry", () => dictation.retry());
-handle("dictation:start", () => dictation.start());
-handle("dictation:stop", () => dictation.stop());
-handle("dictation:toggle", () => dictation.toggle());
-handle("dictation:cancel", () => dictation.cancel());
-handle("recorder:started", (_event, sessionId: unknown) =>
+  handle("dictation:discardFailed", () => dictation.discardFailure());
+  handle("dictation:retry", () => dictation.retry());
+  handle("dictation:start", () => dictation.start());
+  handle("dictation:stop", () => dictation.stop());
+  handle("dictation:toggle", () => dictation.toggle());
+  handle("dictation:pause", () => dictation.pause());
+  handle("dictation:resume", () => dictation.resume());
+  handle(
+    "recorder:pause-changed",
+    (_event, sessionId: unknown, paused: unknown) => {
+      if (typeof paused !== "boolean") throw new Error("Invalid pause state");
+      dictation.recordingPauseChanged(validateText(sessionId, 128), paused);
+    },
+  );
+  handle("dictation:cancel", () => dictation.cancel());
+  handle("recorder:started", (_event, sessionId: unknown) =>
     dictation.recordingStarted(validateText(sessionId, 128)),
   );
-handle("recorder:limit", (_event, sessionId: unknown) =>
+  handle(
+    "recorder:silence",
+    (_event, id: unknown, remaining: unknown, stop: unknown) => {
+      if (
+        typeof stop !== "boolean" ||
+        (remaining !== null &&
+          (typeof remaining !== "number" || !Number.isFinite(remaining)))
+      )
+        throw new Error("Invalid silence countdown");
+      dictation.recordingSilence(
+        validateText(id, 128),
+        remaining as number | null,
+        stop,
+      );
+    },
+  );
+  handle("recorder:limit", (_event, sessionId: unknown) =>
     dictation.recordingLimitReached(validateText(sessionId, 128)),
   );
-handle("recorder:ready", () => dictation.recorderAvailable());
-handle(
+  handle("recorder:ready", () => dictation.recorderAvailable());
+  handle(
     "recorder:inputChanged",
     (_event, sessionId: unknown, message: unknown, inputLost: unknown) => {
       if (typeof inputLost !== "boolean")
@@ -37,18 +72,18 @@ handle(
       );
     },
   );
-handle("recorder:failed", (_event, message: unknown, sessionId: unknown) =>
+  handle("recorder:failed", (_event, message: unknown, sessionId: unknown) =>
     dictation.recordingFailed(
       validateText(message, 1000),
       validateText(sessionId, 128),
     ),
   );
-handle("recorder:submit", (_event, submission: RecordingSubmission) => {
+  handle("recorder:submit", (_event, submission: RecordingSubmission) => {
     if (typeof submission?.sessionId !== "string" || !submission.sessionId)
       throw new Error("Recording submission requires a capture session ID");
     return dictation.submitRecording(submission);
   });
-on("recorder:level", (_event, value: unknown) => {
+  on("recorder:level", (_event, value: unknown) => {
     const level =
       typeof value === "number" && Number.isFinite(value)
         ? Math.min(1, Math.max(0, value))

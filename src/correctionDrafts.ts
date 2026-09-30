@@ -14,7 +14,11 @@ const listeners = new Map<string, Set<() => void>>();
 const notify = (id: string) =>
   listeners.get(id)?.forEach((listener) => listener());
 
-export function writeCorrectionDraft(id: string, text: string, savedText: string) {
+export function writeCorrectionDraft(
+  id: string,
+  text: string,
+  savedText: string,
+) {
   const previous = drafts.get(id);
   drafts.set(id, {
     text,

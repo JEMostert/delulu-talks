@@ -20,7 +20,7 @@ class Speech:
     def transcribe(self,r):calls.append('transcribe');return {'text':'r2t2'}
     def unload(self):calls.append('unload');return {'loaded':False}
 sys.modules['windows_speech']=types.SimpleNamespace(WindowsSpeech=Speech)
-sys.modules['qwen_asr']=None;sys.modules['vllm']=None
+sys.modules['r2t2']=None;sys.modules['vllm']=None
 m.sys.platform='win32'
 w=m.Worker()
 assert w.dispatch({'command':'load'})['loaded']
@@ -75,7 +75,8 @@ model.transcribe=transcribe
 sys.modules['cuda_preflight']=types.SimpleNamespace(ensure_cuda_compatible=lambda _: {'probe':'synthetic-no-hardware'})
 sys.modules['torch']=types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda:True,empty_cache=lambda:None))
 sys.modules['numpy']=types.SimpleNamespace(zeros=lambda *a,**k:'synthetic',float32='float32')
-sys.modules['qwen_asr']=types.SimpleNamespace(Qwen3ASRModel=types.SimpleNamespace(LLM=lambda **kw:model))
+sys.modules['verified_snapshot']=types.SimpleNamespace(verified_snapshot=lambda *a,**kw:'/fixture/pinned-r2t2')
+sys.modules['r2t2']=types.SimpleNamespace(R2T2ASRModel=types.SimpleNamespace(LLM=lambda **kw:model))
 m.sys.platform="linux"
 w=m.Worker(); result=w.load({})
 assert calls==[8] and result['loaded'] and model.sampling_params is sampling

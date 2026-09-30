@@ -1,3 +1,4 @@
+import { identifySyntheticMicrophone } from "./syntheticMicrophone";
 import { expect, test } from "@playwright/test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -7,6 +8,7 @@ test("100 sessions reuse one recorder without leaked resources or lost final sam
   context,
 }, testInfo) => {
   test.setTimeout(150_000);
+  await identifySyntheticMicrophone(page);
   mkdirSync("artifacts", { recursive: true });
   const directory = mkdtempSync(join("artifacts", "capture-stress-"));
   try {
@@ -189,7 +191,10 @@ test("100 sessions reuse one recorder without leaked resources or lost final sam
           });
           const releasedBeforeStart = released();
           const start = () =>
-            recorder.handle({ action: "start", inputDeviceId: "default" });
+            recorder.handle({
+              action: "start",
+              inputDeviceId: "fixture-microphone",
+            });
           await Promise.all(index % 10 === 0 ? [start(), start()] : [start()]);
           await Promise.race([
             ready,
@@ -211,7 +216,10 @@ test("100 sessions reuse one recorder without leaked resources or lost final sam
             .getTracks()
             .every((track) => track.readyState === "live");
           const stop = () =>
-            recorder.handle({ action: "stop", inputDeviceId: "default" });
+            recorder.handle({
+              action: "stop",
+              inputDeviceId: "fixture-microphone",
+            });
           await Promise.all(index % 10 === 0 ? [stop(), stop()] : [stop()]);
           const audio = current.audio ?? new Uint8Array(44);
           const view = new DataView(

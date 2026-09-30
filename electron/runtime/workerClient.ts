@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { backendFailure } from "./privateDiagnostics";
+import { DomainError, domainError } from "../../src/domainErrors";
 import {
   BoundedWorkerLines,
   WorkerDiagnosticTail,
@@ -18,6 +19,7 @@ type Pending = {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
+  removeAbortListener?: () => void;
 };
 const PREFIX = "@delulu:";
 
@@ -47,7 +49,10 @@ export class WorkerClient {
       env: NodeJS.ProcessEnv;
     },
     private readonly onFailure: (error: Error) => void,
-    private readonly onProgress?: (detail: string, event?: WorkerProgress) => void,
+    private readonly onProgress?: (
+      detail: string,
+      event?: WorkerProgress,
+    ) => void,
     limits: Partial<WorkerProtocolLimits> = {},
   ) {
     this.limits = workerProtocolLimits(limits);
@@ -81,7 +86,9 @@ export class WorkerClient {
       // to its generation, even if a failure callback has already retried.
       if (this.child !== child) return false;
       if (line.startsWith("@delulu-progress:")) {
-        const event = validateWorkerProgress(JSON.parse(line.slice("@delulu-progress:".length)));
+        const event = validateWorkerProgress(
+          JSON.parse(line.slice("@delulu-progress:".length)),
+        );
         const request = this.pending.get(event.id);
         if (request && request.command === event.command)
           this.onProgress?.(event.detail.slice(-350), event);
@@ -89,21 +96,38 @@ export class WorkerClient {
       }
       if (!line.startsWith(PREFIX)) return true;
       try {
-        const response = validateWorkerResponse(JSON.parse(line.slice(PREFIX.length)));
+        const response = validateWorkerResponse(
+          JSON.parse(line.slice(PREFIX.length)),
+        );
         const request = this.pending.get(response.id);
         if (!request) return true;
         if (response.ok) validateWorkerResult(request.command, response.result);
         clearTimeout(request.timer);
+        request.removeAbortListener?.();
         this.pending.delete(response.id);
         if (response.ok) request.resolve(response.result);
         else
           request.reject(
-            new Error(
-              backendFailure(response.error).message,
+            new DomainError(
+              "BACKEND_FAILURE",
+              `Model operation ${request.command} failed. Check runtime diagnostics for the backend cause.`,
+              {
+                operationId: response.id,
+                operation: request.command,
+                cause: new Error(backendFailure(response.error).message),
+              },
             ),
           );
       } catch (reason) {
-        this.fail(new Error(backendFailure(reason).message));
+        this.fail(
+          domainError(reason, {
+            code: "WORKER_PROTOCOL",
+            operationId: randomUUID(),
+            operation: "worker:response",
+            message:
+              "Model worker returned an invalid response. Repair its runtime before retrying.",
+          }),
+        );
       }
       return this.child === child;
     };
@@ -114,27 +138,61 @@ export class WorkerClient {
       } catch (reason) {
         if (this.child === child)
           this.fail(
-            new Error(backendFailure(reason).message),
+            domainError(reason, {
+              code: "WORKER_PROTOCOL",
+              operationId: randomUUID(),
+              operation: "worker:stdout",
+              message:
+                "Model worker output exceeded its protocol limits. Repair its runtime before retrying.",
+            }),
           );
       }
     });
     child.stdout.once("end", () => {
-      if (this.child === child) lines.end(receive);
+      if (this.child !== child) return;
+      try {
+        lines.end(receive);
+      } catch (reason) {
+        this.fail(
+          domainError(reason, {
+            code: "WORKER_PROTOCOL",
+            operationId: randomUUID(),
+            operation: "worker:stdout",
+            message:
+              "Model worker returned incomplete output. Repair its runtime before retrying.",
+          }),
+        );
+      }
     });
     child.stderr.on("data", (chunk: Buffer) => {
       if (this.child !== child) return;
       this.diagnostics.push(chunk);
     });
     child.once("error", (error) => {
-      if (this.child === child) this.fail(new Error(backendFailure(error).message));
+      if (this.child === child)
+        this.fail(
+          domainError(error, {
+            code: "WORKER_UNAVAILABLE",
+            operationId: randomUUID(),
+            operation: "worker:start",
+            message:
+              "Could not start the model worker. Check Python and repair the runtime before retrying.",
+          }),
+        );
     });
     child.once("close", (code) => {
       if (this.child !== child) return;
       this.fail(
-        new Error(
+        new DomainError(
+          "WORKER_EXITED",
           code === 0
             ? "Model worker closed"
-            : `${backendFailure(this.stderr).message} (worker exit ${code ?? "signal"})`,
+            : `Model worker exited (${code}). Load the model to try again.`,
+          {
+            operationId: randomUUID(),
+            operation: "worker:exit",
+            cause: new Error(backendFailure(this.stderr).message),
+          },
         ),
       );
     });
@@ -145,11 +203,18 @@ export class WorkerClient {
     command: string,
     payload: Record<string, unknown> = {},
     timeoutMs = operationTimeout(command),
+    signal?: AbortSignal,
   ): Promise<T> {
     const id = randomUUID();
     let wire: string;
     let child: ChildProcessWithoutNullStreams;
     try {
+      if (signal?.aborted)
+        throw new DomainError(
+          "CANCELLED",
+          "Model operation cancelled before it started",
+          { operationId: id, operation: command },
+        );
       wire = serializeWorkerRequest(
         id,
         command,
@@ -159,19 +224,39 @@ export class WorkerClient {
       if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
         throw new Error("Model worker timeout must be a positive number");
       if (this.pending.size >= this.limits.pendingRequests)
-        throw new Error(
+        throw new DomainError(
+          "BUSY",
           `Model worker already has ${this.limits.pendingRequests} pending requests. Wait for an operation to finish and try again.`,
+          { operationId: id, operation: command },
         );
-      child = this.start();
+      try {
+        child = this.start();
+      } catch (reason) {
+        throw domainError(reason, {
+          code: "WORKER_UNAVAILABLE",
+          operationId: id,
+          operation: command,
+          message:
+            "Could not start the model worker. Check Python and repair the runtime before retrying.",
+        });
+      }
     } catch (reason) {
-      return Promise.reject(reason);
+      return Promise.reject(
+        domainError(reason, {
+          code: "INVALID_REQUEST",
+          operationId: id,
+          operation: command,
+        }),
+      );
     }
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(
         () =>
           this.fail(
-            new Error(
+            new DomainError(
+              "TIMEOUT",
               `Model operation ${command} timed out. Load the model to try again.`,
+              { operationId: id, operation: command },
             ),
           ),
         timeoutMs,
@@ -182,8 +267,39 @@ export class WorkerClient {
         reject,
         timer,
       });
+      if (signal) {
+        const cancel = () =>
+          this.stop(
+            new DomainError(
+              "CANCELLED",
+              "Model operation cancelled; its worker was stopped",
+              {
+                operationId: id,
+                operation: command,
+                cancellationEffect: "worker-stopped",
+              },
+            ),
+          );
+        signal.addEventListener("abort", cancel, { once: true });
+        this.pending.get(id)!.removeAbortListener = () =>
+          signal.removeEventListener("abort", cancel);
+        // Cover cancellation between the preflight check and registration.
+        if (signal.aborted) {
+          cancel();
+          return;
+        }
+      }
       child.stdin.write(wire, (error) => {
-        if (error && this.child === child) this.fail(error);
+        if (error && this.child === child)
+          this.fail(
+            domainError(error, {
+              code: "WORKER_EXITED",
+              operationId: id,
+              operation: command,
+              message:
+                "Could not send the model operation. Load the model to try again.",
+            }),
+          );
       });
     });
   }
@@ -192,14 +308,14 @@ export class WorkerClient {
     this.stop(error);
     this.onFailure(error);
   }
-  async stopAndWait(): Promise<void> {
+  async stopAndWait(error = new Error("Model worker stopped")): Promise<void> {
     const child = this.child;
     if (!child?.pid) return;
     const pid = child.pid;
     const exited = new Promise<void>((resolve) =>
       child.once("exit", () => resolve()),
     );
-    this.stop();
+    this.stop(error);
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([
       exited,
@@ -225,12 +341,43 @@ export class WorkerClient {
       }
     }
   }
-  stop(error = new Error("Model worker stopped")): void {
+  stop(
+    error: Error = new DomainError("CANCELLED", "Model worker stopped", {
+      operationId: randomUUID(),
+      operation: "worker:stop",
+      cancellationEffect: "worker-stopped",
+    }),
+  ): void {
     const child = this.child;
     this.child = null;
-    for (const request of this.pending.values()) {
+    for (const [id, request] of this.pending) {
       clearTimeout(request.timer);
-      request.reject(error);
+      request.removeAbortListener?.();
+      const failure = domainError(error, {
+        operationId: id,
+        operation: request.command,
+      });
+      const interrupted =
+        failure.operation !== "worker:stop" &&
+        failure.operationId !== id &&
+        ["TIMEOUT", "CANCELLED"].includes(failure.code);
+      request.reject(
+        new DomainError(
+          interrupted ? "OPERATION_INTERRUPTED" : failure.code,
+          interrupted
+            ? "Model operation interrupted because another operation stopped its worker. Load the model before retrying."
+            : failure.message,
+          {
+            operationId: id,
+            operation: request.command,
+            cause: failure.cause ?? failure,
+            cancellationEffect:
+              failure.code === "CANCELLED"
+                ? "worker-stopped"
+                : failure.cancellationEffect,
+          },
+        ),
+      );
     }
     this.pending.clear();
     if (!child?.pid) return;

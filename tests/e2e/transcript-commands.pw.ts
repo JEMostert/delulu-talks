@@ -1,3 +1,4 @@
+import { openHomeOptions } from "./homeOptions";
 import { expect, test } from "@playwright/test";
 
 test("Controls and History share rewrite apply/undo while preserving original speech", async ({
@@ -11,6 +12,7 @@ test("Controls and History share rewrite apply/undo while preserving original sp
       );
   });
   await page.goto("/");
+  await openHomeOptions(page);
   await page.getByRole("button", { name: "Speech", exact: true }).click();
   const original = await page
     .locator(".transcript-original:visible")

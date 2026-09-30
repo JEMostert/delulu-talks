@@ -34,9 +34,7 @@ function fromGroup(
   return matches.length === 1 ? matches[0] : undefined;
 }
 
-function defaultInput(
-  devices: MediaDeviceInfo[],
-): MediaDeviceInfo | undefined {
+function defaultInput(devices: MediaDeviceInfo[]): MediaDeviceInfo | undefined {
   const alias = devices.find(
     (device) => device.kind === "audioinput" && device.deviceId === "default",
   );
@@ -70,12 +68,17 @@ function stopStream(stream: MediaStream): void {
 function audioTrack(stream: MediaStream): MediaStreamTrack {
   const track = stream.getAudioTracks()[0];
   if (!track || track.readyState === "ended")
-    throw new Error("The microphone stopped before recording could start. Choose an available input and try again.");
+    throw new Error(
+      "The microphone stopped before recording could start. Choose an available input and try again.",
+    );
   return track;
 }
 
 function boundedLabel(label: string): string {
-  return label.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 160);
+  return label
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .trim()
+    .slice(0, 160);
 }
 
 function constraints(deviceId?: string): MediaStreamConstraints {
@@ -98,7 +101,9 @@ export async function acquireCaptureInput(
   try {
     const useDefault = !requestedDeviceId || requestedDeviceId === "default";
     if (!useDefault && !isPhysicalId(requestedDeviceId))
-      throw new Error("Choose a physical microphone or System default in Settings, then try again.");
+      throw new Error(
+        "Choose a physical microphone or System default in Settings, then try again.",
+      );
     let stream = await mediaDevices.getUserMedia(
       constraints(useDefault ? undefined : requestedDeviceId),
     );
@@ -115,20 +120,26 @@ export async function acquireCaptureInput(
     }
     // Enumerating after permission is essential: IDs and groups may previously
     // have been withheld by the browser.
-    const physical = trackInput(track, devices) ??
+    const physical =
+      trackInput(track, devices) ??
       (useDefault ? defaultInput(devices) : undefined);
-    const physicalId = physical?.deviceId ??
-      (!useDefault ? requestedDeviceId : undefined);
+    const physicalId =
+      physical?.deviceId ?? (!useDefault ? requestedDeviceId : undefined);
     if (!physicalId)
-      throw new Error("The browser could not identify the physical microphone. Choose a specific microphone in Settings and try again.");
+      throw new Error(
+        "The browser could not identify the physical microphone. Choose a specific microphone in Settings and try again.",
+      );
     const actualId = track.getSettings().deviceId;
-    if (!useDefault && (
-      physicalId !== requestedDeviceId ||
-      (actualId && actualId !== requestedDeviceId)
-    ))
-      throw new Error("The selected microphone is unavailable. Choose an available input in Settings and try again.");
-    const initialDefault = defaultInput(devices)?.deviceId ??
-      (useDefault ? physicalId : null);
+    if (
+      !useDefault &&
+      (physicalId !== requestedDeviceId ||
+        (actualId && actualId !== requestedDeviceId))
+    )
+      throw new Error(
+        "The selected microphone is unavailable. Choose an available input in Settings and try again.",
+      );
+    const initialDefault =
+      defaultInput(devices)?.deviceId ?? (useDefault ? physicalId : null);
 
     // Any stream requested with default constraints may follow OS changes,
     // even when its current settings report a physical ID. Always reopen with
@@ -144,12 +155,18 @@ export async function acquireCaptureInput(
     }
     if (
       track.readyState === "ended" ||
-      (!useDefault && Boolean(track.getSettings().deviceId) &&
+      (!useDefault &&
+        Boolean(track.getSettings().deviceId) &&
         track.getSettings().deviceId !== physicalId) ||
       (useDefault && track.getSettings().deviceId !== physicalId) ||
-      (useDefault && !physicalInputs(devices).some((device) => device.deviceId === physicalId))
+      (useDefault &&
+        !physicalInputs(devices).some(
+          (device) => device.deviceId === physicalId,
+        ))
     )
-      throw new Error("The browser could not keep the selected physical microphone fixed. Choose another microphone in Settings and try again.");
+      throw new Error(
+        "The browser could not keep the selected physical microphone fixed. Choose another microphone in Settings and try again.",
+      );
     const label = boundedLabel(physical?.label || track.label) || "Microphone";
     ownedStreams.delete(stream);
     return {
@@ -192,8 +209,11 @@ export function watchCaptureInput(
     if (!active || lost) return;
     const settingsId = track?.getSettings().deviceId;
     if (
-      !track || track.readyState === "ended" ||
-      !physicalInputs(devices).some((device) => device.deviceId === input.deviceId) ||
+      !track ||
+      track.readyState === "ended" ||
+      !physicalInputs(devices).some(
+        (device) => device.deviceId === input.deviceId,
+      ) ||
       (Boolean(settingsId) && settingsId !== input.deviceId)
     ) {
       reportLost();

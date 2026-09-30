@@ -1,10 +1,37 @@
+import type { SelectedTextApi } from "./selectedText";
+export type SetupState =
+  "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { DictationMode } from "./technicalDictation";
+import type { ImportQueueSnapshot } from "./importQueue";
 import type { ExportTemplateRequest } from "./exportTemplates";
+import type {
+  ActivePersonalProfile,
+  CaptureProfileSnapshot,
+  ProfileActivationCommand,
+} from "./activePersonalProfile";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
+import type {
+  SpeechBackendId,
+  SpeechExecution,
+  SpeechIdentity,
+} from "./speechModels";
+import type { DomainFailure } from "./domainErrors";
+export type {
+  DomainErrorCode,
+  DomainFailure,
+  RetryPolicy,
+} from "./domainErrors";
 
+import type { ProjectVocabularySnapshot } from "./projectVocabulary";
 export type Page =
-  "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
+  | "home"
+  | "lab"
+  | "models"
+  | "vocabulary"
+  | "history"
+  | "settings"
+  | "technical";
 
 export type SpeechModelId = "r2t2" | "r2t2Mlx";
 /** Historical Qwen speech results retain their identity; it is never an active engine. */
@@ -18,7 +45,13 @@ export type MagicPreset =
   | "structured"
   | "prompt";
 export type DictationPhase =
-  "idle" | "preparing" | "loading" | "listening" | "transcribing" | "error";
+  | "idle"
+  | "preparing"
+  | "loading"
+  | "listening"
+  | "paused"
+  | "transcribing"
+  | "error";
 export type EnginePhase =
   "missing" | "unloaded" | "settingUp" | "loading" | "ready" | "error";
 export type MagicPhase =
@@ -27,7 +60,21 @@ export type TranscriptSource = "dictation" | "file";
 export type PasteShortcut = "standard" | "terminal";
 export type ExportFormat = "txt" | "json" | "md";
 
+export type HistoryDeletionState = {
+  token: string;
+  ids: string[];
+  deadline: number;
+  phase: "pending" | "failed";
+  error?: string;
+};
+export type HistoryBatchSnapshot = {
+  deletion: HistoryDeletionState | null;
+  records: TranscriptRecord[];
+};
+export type DictationFormatting = "preserve" | "spoken";
+
 export type CustomWord = {
+  schemaVersion?: 1;
   kind?: "correction" | "shortcut";
   /** Omitted for legacy/global rules; scoped rules require a matching language. */
   language?: string;
@@ -41,6 +88,7 @@ export type CustomWord = {
 };
 
 export type AppSettings = {
+  schemaVersion?: 1;
   workflowVersion: 1;
   onboardingComplete: boolean;
   theme: "system" | "light" | "dark";
@@ -49,9 +97,13 @@ export type AppSettings = {
   model: SpeechModelId;
   language: string;
   dictationMode: DictationMode;
+  dictationFormatting: DictationFormatting;
   pythonCommand: string;
   inputDeviceId: string;
   inputDeviceLabel: string;
+  trailingSilenceStopEnabled: boolean;
+  trailingSilenceSeconds: number;
+  trailingSilenceThresholdDb: number;
   autoPaste: boolean;
   pasteShortcut: PasteShortcut;
   pasteLastDelaySeconds: number;
@@ -71,14 +123,33 @@ export type AppSettings = {
   magicAllowInferences: boolean;
   preloadMagicModel: boolean;
   modelIdleMinutes: number;
+  memoryPolicy: "independent" | "balanced";
   launchAtLogin: boolean;
   menuBarOnly: boolean;
   customWords: CustomWord[];
-  /** Stored contract only; no active profile or automatic behavior change. */
+  /** Saved profiles change behavior only through explicit activation. */
   personalProfiles?: PersonalProfileDocument;
+  activePersonalProfile?: ActivePersonalProfile | null;
 };
 
-export type ModelResidency = "unknown" | "unloaded" | "loading" | "resident" | "unloading";
+export type SetupStage =
+  | "runtime-check"
+  | "runtime-prepare"
+  | "runtime-packages"
+  | "runtime-download"
+  | "runtime-install"
+  | "runtime-build"
+  | "runtime-validate"
+  | "model-prepare"
+  | "model-download"
+  | "model-load"
+  | "model-conversion"
+  | "warmup"
+  | "model-loaded"
+  | "ready";
+
+export type ModelResidency =
+  "unknown" | "unloaded" | "loading" | "resident" | "unloading";
 export type WarmupState = "unknown" | "not-started" | "warming" | "complete";
 export type BackendCapabilities = {
   schemaVersion: 1;
@@ -98,7 +169,18 @@ export type RuntimeLifecycle = {
   capabilities?: BackendCapabilities | null;
 };
 
+/** Observed downloader counters; aggregate totals may change during discovery. */
+export type DownloadBytes = {
+  completed: number;
+  total: number | null;
+  kind: "transfer" | "reconstruction";
+};
+
 export type MagicStatus = RuntimeLifecycle & {
+  setupStage?: SetupStage | null;
+  downloadBytes?: DownloadBytes | null;
+  failure?: DomainFailure | null;
+  setupState?: SetupState;
   phase: MagicPhase;
   engine: EnginePhase;
   message: string;
@@ -108,16 +190,38 @@ export type MagicStatus = RuntimeLifecycle & {
   progress?: number | null;
 };
 
+export type MagicRewriteContext = {
+  language?: string;
+  fileType?: string;
+  selection?: string;
+};
+
 export type MagicRewriteRequest = {
+  operationId?: string;
   text: string;
   preset: MagicPreset;
   /** Optional style request for this rewrite only; never a saved preference. Max 4,000 UTF-16 units. */
   instructions?: string;
   sourceLanguage?: string;
+  context?: MagicRewriteContext;
   allowInferences: boolean;
 };
 
+export type PipelineTimings = {
+  captureEndMs?: number;
+  preprocessingMs?: number;
+  speechLoadMs?: number;
+  speechRequestMs?: number;
+  backendPreprocessingMs?: number;
+  inferenceMs?: number;
+  rewriteLoadMs?: number;
+  rewritingMs?: number;
+  clipboardMs?: number;
+  pasteMs?: number;
+};
+
 export type MagicRewriteResult = RuntimeLifecycle & {
+  timings?: PipelineTimings;
   preset?: MagicPreset;
   text: string;
   model: MagicModelId;
@@ -142,10 +246,16 @@ export type RetryAudioState = {
 };
 
 export type DictationStatus = RuntimeLifecycle & {
+  setupStage?: SetupStage | null;
+  speechExecution?: SpeechExecution | null;
+  downloadBytes?: DownloadBytes | null;
+  failure?: DomainFailure | null;
+  setupState?: SetupState;
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   captureInputNotice?: string | null;
   retryAudio?: RetryAudioState;
+  silenceCountdownSeconds?: number | null;
   migrationRequired?: boolean;
   phase: DictationPhase;
   engine: EnginePhase;
@@ -167,13 +277,27 @@ export type HistoryRetentionPolicy = {
   maxCount: number | null;
 };
 
+export type HistoryRetentionEffects = {
+  originals: number;
+  personalized: number;
+  corrections: number;
+  rewrites: number;
+  importedReferences: number;
+  /** Retention removes transcript records only, never source audio files. */
+  audioFilesDeleted: 0;
+};
+
 export type HistoryRetentionPreview = {
   token: string;
   policy: HistoryRetentionPolicy;
   previewedAt: number;
   totalSaved: number;
   retainedCount: number;
-  affected: { record: TranscriptRecord; reason: "age" | "count" | "ageAndCount" }[];
+  effects: HistoryRetentionEffects;
+  affected: {
+    record: TranscriptRecord;
+    reason: "age" | "count" | "ageAndCount";
+  }[];
 };
 
 /** Diagnostics of captured mono PCM before resampling/encoding, not hardware gain. */
@@ -192,6 +316,11 @@ export type CaptureDiagnostics = {
  * Add score/uncertainty UI only with a backend calibration contract.
  */
 export type TranscriptRecord = {
+  /** Never automatically persisted, even if history is enabled later. */
+  sessionOnly?: boolean;
+  dictationFormatting?: DictationFormatting;
+  timings?: PipelineTimings;
+  schemaVersion?: 1;
   id: string;
   title?: string | null;
   createdAt: number;
@@ -212,6 +341,8 @@ export type TranscriptRecord = {
   magicIncludedInferences?: boolean;
   magicProcessingTimeMs?: number;
   model: ModelId;
+  /** Observed at recognition time; absent on legacy records, never inferred. */
+  speechExecution?: SpeechExecution;
   language: string;
   /** Decoder hint, not a detected-language claim. Absent on legacy records. */
   requestedLanguage?: string | null;
@@ -238,6 +369,8 @@ export type ModelProvenance = {
 };
 
 export type ModelInfo = {
+  identity: SpeechIdentity;
+  backendIds: SpeechBackendId[];
   runtime: string;
   downloadSize: string;
   id: SpeechModelId;
@@ -262,9 +395,33 @@ export type MagicModelInfo = {
 };
 
 export type AudioFileSelection = {
+  sourceMtimeMs?: number;
   path: string;
   name: string;
   size: number;
+};
+
+export type AudioFileMetadata = {
+  durationSeconds: number | null;
+  channels: number | null;
+  sampleRate: number | null;
+  decoder: "soundfile" | "FFmpeg";
+  decoderReady: boolean;
+  decoderDetail: string;
+  estimatedPcmBytes: number | null;
+  processingTimeEstimate: string;
+};
+
+export type AudioImportJob = AudioFileSelection & {
+  state: "pending" | "running" | "done" | "failed" | "cancelled";
+  queueId?: string;
+  queueState?: import("./importQueue").ImportJobState;
+  createdAt: number;
+  updatedAt: number;
+  resultId?: string;
+  error?: string;
+  sourceAvailable?: boolean;
+  sourceError?: string;
 };
 
 export type LabRequest = {
@@ -272,14 +429,17 @@ export type LabRequest = {
 };
 
 export type RecorderCommand = {
-  action: "start" | "stop" | "cancel";
+  action: "start" | "stop" | "cancel" | "pause" | "resume";
+  trailingSilence?: { seconds: number; thresholdDb: number } | null;
   inputDeviceId: string;
   /** Native commands identify their capture; standalone capture can omit this. */
   sessionId?: string;
+  captureProfile?: CaptureProfileSnapshot;
 };
 
 export type RecordingSubmission = {
   sessionId: string;
+  timings?: PipelineTimings;
   wav: Uint8Array;
   durationMs: number;
   captureDiagnostics?: CaptureDiagnostics;
@@ -351,11 +511,16 @@ export type ModelCacheCleanupResult = {
   failures: { id: string; message: string }[];
 };
 
-export type DeluluApi = {
+export type DeluluApi = SelectedTextApi & {
   previewModelCache(): Promise<ModelCachePreview>;
-  cleanupModelCache(token: string, ids: string[]): Promise<ModelCacheCleanupResult>;
+  cleanupModelCache(
+    token: string,
+    ids: string[],
+  ): Promise<ModelCacheCleanupResult>;
   getRuleUsage(): Promise<RuleUsage>;
   resetRuleUsage(): Promise<RuleUsage>;
+  exportEncryptedHistory(passphrase: string): Promise<string | null>;
+  recoverEncryptedHistory(passphrase: string): Promise<string | null>;
   getRendererRecoveryState(): Promise<RendererRecoveryState>;
   reloadWorkspace(): Promise<void>;
   rendererControllerFailed(): Promise<void>;
@@ -366,7 +531,9 @@ export type DeluluApi = {
   getPasteRecovery(): Promise<PasteRecovery | null>;
   copyInstead(id: string): Promise<void>;
   dismissPasteRecovery(id: string): Promise<void>;
-  onPasteRecovery(callback: (recovery: PasteRecovery | null) => void): () => void;
+  onPasteRecovery(
+    callback: (recovery: PasteRecovery | null) => void,
+  ): () => void;
   getLocalDataOverview(): Promise<LocalDataOverview>;
   pasteLastTranscript(): Promise<PasteLastStatus>;
   getPasteLastStatus(): Promise<PasteLastStatus>;
@@ -375,6 +542,9 @@ export type DeluluApi = {
   discardFailedRecording(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
   managePersonalProfile(command: PersonalProfileCommand): Promise<AppSettings>;
+  activatePersonalProfile(
+    command: ProfileActivationCommand,
+  ): Promise<AppSettings>;
   getStatus(): Promise<DictationStatus>;
   getMagicStatus(): Promise<MagicStatus>;
   getShortcutStatus(): Promise<ShortcutStatus>;
@@ -389,19 +559,27 @@ export type DeluluApi = {
   startDictation(): Promise<void>;
   stopDictation(): Promise<void>;
   cancelDictation(): Promise<void>;
+  pauseDictation(): Promise<void>;
+  resumeDictation(): Promise<void>;
   setupModel(): Promise<void>;
+  cancelModelSetup(): Promise<void>;
   loadModel(): Promise<void>;
   unloadModel(): Promise<void>;
   resetPythonEnvironment(): Promise<void>;
   setupMagic(): Promise<void>;
+  cancelMagicSetup(): Promise<void>;
   loadMagic(): Promise<void>;
   unloadMagic(): Promise<void>;
   rewriteMagic(request: MagicRewriteRequest): Promise<MagicRewriteResult>;
+  cancelRewrite(operationId: string): Promise<boolean>;
   copyText(text: string): Promise<void>;
   authorizePaste(): Promise<void>;
   testPaste(): Promise<void>;
   updateTranscript(id: string, text: string | null): Promise<TranscriptRecord>;
-  setTranscriptTitle(id: string, title: string | null): Promise<TranscriptRecord>;
+  setTranscriptTitle(
+    id: string,
+    title: string | null,
+  ): Promise<TranscriptRecord>;
   setTranscriptRewrite(
     id: string,
     result: MagicRewriteResult | null,
@@ -410,10 +588,48 @@ export type DeluluApi = {
   ): Promise<TranscriptRecord>;
   deleteHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
-  previewHistoryRetention(policy: HistoryRetentionPolicy): Promise<HistoryRetentionPreview>;
+  getHistoryBatchSnapshot(): Promise<HistoryBatchSnapshot>;
+  stageHistoryDeletion(ids: string[]): Promise<HistoryDeletionState>;
+  undoHistoryDeletion(token: string): Promise<void>;
+  onHistoryBatchChanged(
+    callback: (snapshot: HistoryBatchSnapshot) => void,
+  ): () => void;
+  exportHistorySelection(
+    ids: string[],
+    format: ExportFormat,
+  ): Promise<string | null>;
+  previewHistoryRetention(
+    policy: HistoryRetentionPolicy,
+  ): Promise<HistoryRetentionPreview>;
   applyHistoryRetention(token: string): Promise<string[]>;
-  onHistoryRetentionApplied(callback: (removedIds: string[]) => void): () => void;
+  onHistoryRetentionApplied(
+    callback: (removedIds: string[]) => void,
+  ): () => void;
+  chooseProjectIdentifier(input: {
+    repository: string;
+    rawSpeech: string;
+    symbol: string;
+  }): Promise<ProjectVocabularySnapshot>;
+  getProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
+  selectProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
+  refreshProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
+  clearProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
   chooseAudioFile(): Promise<AudioFileSelection | null>;
+  inspectAudioFile(path: string): Promise<AudioFileMetadata>;
+  chooseAudioFiles(): Promise<AudioFileSelection[]>;
+  resolveAudioFiles(files: File[]): Promise<AudioFileSelection[]>;
+  getAudioJobs(): Promise<AudioImportJob[]>;
+  loadAudioSource(path: string): Promise<{ bytes: Uint8Array; mime: string }>;
+  removeAudioJob(path: string): Promise<void>;
+  relinkAudioJob(path: string): Promise<AudioImportJob | null>;
+  getImportQueue(): Promise<ImportQueueSnapshot>;
+  enqueueImport(path: string): Promise<ImportQueueSnapshot>;
+  pauseImportQueue(paused: boolean): Promise<ImportQueueSnapshot>;
+  moveImportJob(id: string, direction: -1 | 1): Promise<ImportQueueSnapshot>;
+  cancelImportJob(id: string): Promise<ImportQueueSnapshot>;
+  retryImportJob(id: string): Promise<ImportQueueSnapshot>;
+  clearFinishedImports(): Promise<ImportQueueSnapshot>;
+  onImportQueue(callback: (snapshot: ImportQueueSnapshot) => void): () => void;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   exportTranscriptTemplate(
@@ -422,6 +638,12 @@ export type DeluluApi = {
   ): Promise<string | null>;
   recordingStarted(sessionId: string): Promise<void>;
   recordingLimitReached(sessionId: string): Promise<void>;
+  recordingPauseChanged(sessionId: string, paused: boolean): Promise<void>;
+  recordingSilence(
+    sessionId: string,
+    remainingSeconds: number | null,
+    stop: boolean,
+  ): Promise<void>;
   recorderReady(): Promise<void>;
   recordingFailed(message: string, sessionId: string): Promise<void>;
   recordingInputChanged(
@@ -504,7 +726,6 @@ export type RuntimeDiagnostics = {
   checkedAt: number;
 };
 
-
 export type SetupRuntimeObservation = {
   kind: "speech" | "magic";
   root: string;
@@ -520,7 +741,11 @@ export type SetupRuntimeObservation = {
     executable: string | null;
     version: string | null;
     machine: string | null;
-    modules: Array<{ name: string; status: "located" | "missing" | "unknown"; location: string | null }>;
+    modules: Array<{
+      name: string;
+      status: "located" | "missing" | "unknown";
+      location: string | null;
+    }>;
     detail: string;
   };
   bootstrap: SetupRuntimeObservation["interpreter"][];
@@ -542,7 +767,6 @@ export type RuntimeSetupSnapshot = {
   space: SetupSpaceSnapshot | null;
   runtimes: SetupRuntimeObservation[];
 };
-
 
 export type SetupDiskCapacity = {
   label: string;

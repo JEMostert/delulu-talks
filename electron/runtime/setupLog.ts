@@ -118,9 +118,7 @@ export class SetupLog {
       if (event.command.args.length > 64) this.truncated = true;
       entry.command = {
         program: bounded(event.command.program, 256),
-        args: event.command.args
-          .slice(0, 64)
-          .map((arg) => bounded(arg, 128)),
+        args: event.command.args.slice(0, 64).map((arg) => bounded(arg, 128)),
       };
     }
     if (event.durationMs !== undefined && Number.isFinite(event.durationMs))
@@ -131,8 +129,7 @@ export class SetupLog {
     )
       entry.exitCode = event.exitCode;
     if (event.signal !== undefined)
-      entry.signal =
-        event.signal === null ? null : bounded(event.signal, 64);
+      entry.signal = event.signal === null ? null : bounded(event.signal, 64);
 
     // Bound the serialized copy too: escaped output and command arguments count.
     while (

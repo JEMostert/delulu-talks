@@ -120,11 +120,14 @@ class BackendFixture:
             inference_mode=contextlib.nullcontext,
         )
         self.modules = {
+            "verified_snapshot": types.SimpleNamespace(verified_snapshot=lambda *a, **kw: "/fixture/pinned-r2t2"),
+            "huggingface_hub": types.SimpleNamespace(snapshot_download=lambda **kw: "/fixture/rewrite"),
+            "download_progress": types.SimpleNamespace(download_progress_class=lambda: object),
             "cuda_preflight": types.SimpleNamespace(
                 ensure_cuda_compatible=fake_cuda_preflight),
             "torch": self.torch,
             "numpy": types.SimpleNamespace(zeros=lambda *a, **kw: Audio(), float32="float32"),
-            "qwen_asr": types.SimpleNamespace(Qwen3ASRModel=types.SimpleNamespace(LLM=speech_model)),
+            "r2t2": types.SimpleNamespace(R2T2ASRModel=types.SimpleNamespace(LLM=speech_model)),
             "transformers": types.SimpleNamespace(AutoProcessor=Processor,
                 AutoModelForMultimodalLM=RewriteModel),
             "soundfile": types.SimpleNamespace(read=read),
@@ -154,7 +157,7 @@ class BackendFailures(unittest.TestCase):
         self.audio.write_bytes(b"original source fixture")
 
     def assert_rewrite_empty(self):
-        self.assertEqual(self.worker.magic_status(), {"loaded": False, "model": None, "device": None})
+        self.assertEqual(self.worker.magic_status(), {"loaded": False, "model": None, "device": None, "residency": "unloaded", "warmup": "not-started"})
         self.assertIsNone(self.worker.magic_processor)
 
     def test_rewrite_load_failures_clear_partial_state_and_retry_preserves_speech(self):
@@ -184,10 +187,10 @@ class BackendFailures(unittest.TestCase):
                 self.fixture.failure = None
                 self.worker.unload()
                 self.fixture.failure = stage
-                missing = {"numpy": None} if stage == "numpy" else {"qwen_asr": None} if stage == "import" else {}
+                missing = {"numpy": None} if stage == "numpy" else {"r2t2": None} if stage == "import" else {}
                 with patch.dict(sys.modules, missing), self.assertRaises((RuntimeError, ImportError)):
                     self.worker.load({})
-                self.assertEqual(self.worker.status(), {"loaded": False, "model": None, "device": None})
+                self.assertEqual(self.worker.status(), {"loaded": False, "model": None, "device": None, "residency": "unloaded", "warmup": "not-started"})
                 self.assertIs(self.worker.magic_model, writing)
                 if stage == "warmup":
                     failed_model = self.fixture.speech_models[-1]
@@ -333,8 +336,8 @@ class BackendFailures(unittest.TestCase):
                 model = Model()
                 healthy = types.SimpleNamespace(sampling_params=model.original, transcribe=lambda **kw: [])
                 candidates = iter([model, healthy])
-                qwen = types.SimpleNamespace(Qwen3ASRModel=types.SimpleNamespace(LLM=lambda **kw: next(candidates)))
-                with patch.dict(sys.modules, {"qwen_asr": qwen}):
+                qwen = types.SimpleNamespace(R2T2ASRModel=types.SimpleNamespace(LLM=lambda **kw: next(candidates)))
+                with patch.dict(sys.modules, {"r2t2": qwen}):
                     with self.assertRaisesRegex(RuntimeError, "warmup failed" if failed_warmup else "restore failed"):
                         self.worker.load({})
                     self.assertFalse(self.worker.status()["loaded"])
@@ -410,7 +413,9 @@ class BackendFailures(unittest.TestCase):
             "mlx_audio": types.ModuleType("mlx_audio"),
             "mlx_audio.stt": types.ModuleType("mlx_audio.stt"),
             "mlx_audio.stt.utils": types.SimpleNamespace(load_audio=load_audio, load_model=load_model),
+            "download_progress": types.SimpleNamespace(download_progress_class=lambda: object),
             "huggingface_hub": types.SimpleNamespace(snapshot_download=lambda **kw: self.temp.name),
+            "verified_snapshot": types.SimpleNamespace(verified_snapshot=lambda **kw: self.temp.name),
             "huggingface_hub.constants": types.SimpleNamespace(HF_HOME=self.temp.name),
             "accelerate": types.SimpleNamespace(init_empty_weights=contextlib.nullcontext),
             "safetensors": types.ModuleType("safetensors"),
@@ -501,7 +506,7 @@ with patch.dict(sys.modules,fixture.modules):
                     capture_output=True, text=True, timeout=5,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
-                responses = [json.loads(line.removeprefix("@delulu:")) for line in result.stdout.splitlines()]
+                responses = [json.loads(line.removeprefix("@delulu:")) for line in result.stdout.splitlines() if line.startswith("@delulu:")]
                 self.assertEqual([response["id"] for response in responses], [str(i) for i in range(5)])
                 self.assertTrue(all(response["protocolVersion"] == 1 for response in responses))
                 self.assertFalse(responses[0]["ok"])

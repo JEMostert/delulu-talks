@@ -1,6 +1,13 @@
+import { emptyImportQueue } from "./importQueue";
+import { activatePersonalProfile } from "./activePersonalProfile";
 import { changePersonalProfiles } from "./personalProfileCommands";
+import { emptyProjectVocabulary } from "./projectVocabulary";
 import { DEFAULT_SETTINGS } from "./data";
-import { deliveredText, originalTranscriptText, transcriptSourceRevision } from "./transcriptText";
+import {
+  deliveredText,
+  originalTranscriptText,
+  transcriptSourceRevision,
+} from "./transcriptText";
 import { normalizeTranscriptTitle } from "./transcriptTitle";
 import type {
   AppSettings,
@@ -55,6 +62,25 @@ function desktopOnly(): never {
 }
 
 export const previewApi: DeluluApi = {
+  getSelectedTextState: async () => ({
+    enabled: false,
+    supported: false,
+    shortcut: "CommandOrControl+Shift+R",
+    session: null,
+    error: null,
+  }),
+  enableSelectedText: async () => {
+    throw new Error(
+      "Native selected-text capture requires the desktop application on X11.",
+    );
+  },
+  discardSelectedText: async () => {},
+  replaceSelectedText: async () => {
+    throw new Error(
+      "Native selected-text replacement is unavailable in browser preview.",
+    );
+  },
+  onSelectedTextState: () => () => {},
   async getRuleUsage() {
     return desktopOnly();
   },
@@ -67,6 +93,12 @@ export const previewApi: DeluluApi = {
   async cleanupModelCache() {
     return desktopOnly();
   },
+  async exportEncryptedHistory() {
+    return desktopOnly();
+  },
+  async recoverEncryptedHistory() {
+    return desktopOnly();
+  },
   async getRendererRecoveryState() {
     return { canReload: true, reason: null, canStopRecording: false };
   },
@@ -75,7 +107,14 @@ export const previewApi: DeluluApi = {
   },
   async rendererControllerFailed() {},
   async getRuntimeSetupSnapshot() {
-    return { checkedAt: Date.now(), platform: "Browser preview", arch: "Unknown", source: "preview" as const, space: null, runtimes: [] };
+    return {
+      checkedAt: Date.now(),
+      platform: "Browser preview",
+      arch: "Unknown",
+      source: "preview" as const,
+      space: null,
+      runtimes: [],
+    };
   },
   async getLocalDataOverview() {
     desktopOnly();
@@ -93,12 +132,14 @@ export const previewApi: DeluluApi = {
       microphone: {
         state: "not-applicable",
         canRequestCapture: false,
-        detail: "Native microphone permission is available in the desktop app. Browser preview does not inspect macOS permissions.",
+        detail:
+          "Native microphone permission is available in the desktop app. Browser preview does not inspect macOS permissions.",
       },
       accessibility: {
         state: "not-applicable",
         canAttemptPaste: false,
-        detail: "Native Accessibility permission is available in the desktop app. Browser preview cannot attempt native paste.",
+        detail:
+          "Native Accessibility permission is available in the desktop app. Browser preview cannot attempt native paste.",
       },
       packages: {},
       checkedAt: Date.now(),
@@ -117,10 +158,16 @@ export const previewApi: DeluluApi = {
       maxCharacters: 64000,
     };
   },
-  async getPasteRecovery() { return null; },
-  async copyInstead(_id: string) { desktopOnly(); },
+  async getPasteRecovery() {
+    return null;
+  },
+  async copyInstead(_id: string) {
+    desktopOnly();
+  },
   async dismissPasteRecovery(_id: string) {},
-  onPasteRecovery(_callback) { return () => undefined; },
+  onPasteRecovery(_callback) {
+    return () => undefined;
+  },
   async getPasteLastStatus() {
     return {
       phase: "idle" as const,
@@ -147,7 +194,20 @@ export const previewApi: DeluluApi = {
     return mockSettings();
   },
   async updateSettings(settings) {
-    const next = { ...mockSettings(), ...settings };
+    const current = mockSettings();
+    if (
+      Object.prototype.hasOwnProperty.call(settings, "activePersonalProfile") &&
+      JSON.stringify(settings.activePersonalProfile) !==
+        JSON.stringify(current.activePersonalProfile)
+    )
+      throw new Error("Switch profiles using the explicit activation preview.");
+    const next = { ...current, ...settings };
+    localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
+    return next;
+  },
+  async activatePersonalProfile(command) {
+    const current = mockSettings();
+    const next = { ...current, ...activatePersonalProfile(current, command) };
     localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
     return next;
   },
@@ -155,7 +215,9 @@ export const previewApi: DeluluApi = {
     const current = mockSettings();
     const next = {
       ...current,
-      personalProfiles: changePersonalProfiles(current, command, () => crypto.randomUUID()),
+      personalProfiles: changePersonalProfiles(current, command, () =>
+        crypto.randomUUID(),
+      ),
     };
     localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
     return next;
@@ -219,6 +281,13 @@ export const previewApi: DeluluApi = {
   async installUpdate() {
     desktopOnly();
   },
+  async pauseDictation() {
+    throw new Error("Pause requires the desktop recorder");
+  },
+  async resumeDictation() {
+    throw new Error("Resume requires the desktop recorder");
+  },
+  async recordingPauseChanged() {},
   async toggleDictation() {
     desktopOnly();
   },
@@ -234,6 +303,9 @@ export const previewApi: DeluluApi = {
   async setupModel() {
     desktopOnly();
   },
+  async cancelModelSetup() {
+    desktopOnly();
+  },
   async loadModel() {
     desktopOnly();
   },
@@ -246,6 +318,9 @@ export const previewApi: DeluluApi = {
   async setupMagic() {
     desktopOnly();
   },
+  async cancelMagicSetup() {
+    desktopOnly();
+  },
   async loadMagic() {
     desktopOnly();
   },
@@ -253,6 +328,9 @@ export const previewApi: DeluluApi = {
     desktopOnly();
   },
   async rewriteMagic(_request: MagicRewriteRequest) {
+    return desktopOnly();
+  },
+  async cancelRewrite(_operationId: string) {
     return desktopOnly();
   },
   async copyText(text) {
@@ -275,17 +353,34 @@ export const previewApi: DeluluApi = {
     const revision = transcriptSourceRevision(record);
     if (revision >= Number.MAX_SAFE_INTEGER)
       throw new Error("This transcript has reached its revision limit");
-    const updated = { ...record, editedText: correction, sourceRevision: revision + 1,
-      rewriteSourceRevision: null, magicText: null, magicModel: null, magicPreset: null,
-      magicIncludedInferences: false, magicProcessingTimeMs: 0 };
+    const updated = {
+      ...record,
+      editedText: correction,
+      sourceRevision: revision + 1,
+      rewriteSourceRevision: null,
+      magicText: null,
+      magicModel: null,
+      magicPreset: null,
+      magicIncludedInferences: false,
+      magicProcessingTimeMs: 0,
+    };
     demoHistory = demoHistory.map((item) => (item.id === id ? updated : item));
     return updated;
   },
-  async setTranscriptRewrite(id, result, sourceText, expectedSourceRevision = 0) {
+  async setTranscriptRewrite(
+    id,
+    result,
+    sourceText,
+    expectedSourceRevision = 0,
+  ) {
     const record = demoHistory.find((item) => item.id === id);
     if (!record) throw new Error("Transcript not found");
-    if (!Number.isSafeInteger(expectedSourceRevision) || expectedSourceRevision < 0 ||
-        transcriptSourceRevision(record) !== expectedSourceRevision || deliveredText(record) !== sourceText)
+    if (
+      !Number.isSafeInteger(expectedSourceRevision) ||
+      expectedSourceRevision < 0 ||
+      transcriptSourceRevision(record) !== expectedSourceRevision ||
+      deliveredText(record) !== sourceText
+    )
       throw new Error("Transcript changed while rewriting");
     const updated = {
       ...record,
@@ -308,14 +403,95 @@ export const previewApi: DeluluApi = {
   async deleteHistory(id) {
     demoHistory = demoHistory.filter((item) => item.id !== id);
   },
-  async previewHistoryRetention(_policy) { return desktopOnly(); },
-  async applyHistoryRetention(_token) { return desktopOnly(); },
-  onHistoryRetentionApplied(_callback) { return () => undefined; },
+  async previewHistoryRetention(_policy) {
+    return desktopOnly();
+  },
+  async applyHistoryRetention(_token) {
+    return desktopOnly();
+  },
+  onHistoryRetentionApplied(_callback) {
+    return () => undefined;
+  },
   async clearHistory() {
     demoHistory = [];
   },
+  async getHistoryBatchSnapshot() {
+    return { deletion: null, records: demoHistory };
+  },
+  async stageHistoryDeletion(_ids) {
+    return desktopOnly();
+  },
+  async undoHistoryDeletion(_token) {
+    return desktopOnly();
+  },
+  onHistoryBatchChanged(_callback) {
+    return () => undefined;
+  },
+  async exportHistorySelection(_ids, _format) {
+    return desktopOnly();
+  },
+  async chooseProjectIdentifier() {
+    return desktopOnly();
+  },
+  async getProjectVocabulary() {
+    return emptyProjectVocabulary();
+  },
+  async selectProjectVocabulary() {
+    return desktopOnly();
+  },
+  async refreshProjectVocabulary() {
+    return desktopOnly();
+  },
+  async clearProjectVocabulary() {
+    return emptyProjectVocabulary();
+  },
   async chooseAudioFile(): Promise<AudioFileSelection | null> {
     return desktopOnly();
+  },
+  async inspectAudioFile(_path: string) {
+    throw new Error("Media inspection requires Electron");
+  },
+  async getAudioJobs() {
+    return desktopOnly();
+  },
+  async loadAudioSource(_path: string) {
+    return desktopOnly();
+  },
+  async removeAudioJob(_path: string) {
+    return desktopOnly();
+  },
+  async relinkAudioJob(_path: string) {
+    return desktopOnly();
+  },
+  async chooseAudioFiles(): Promise<AudioFileSelection[]> {
+    return desktopOnly();
+  },
+  async resolveAudioFiles(_files: File[]): Promise<AudioFileSelection[]> {
+    return desktopOnly();
+  },
+  async getImportQueue() {
+    return emptyImportQueue();
+  },
+  async enqueueImport() {
+    return desktopOnly();
+  },
+  async pauseImportQueue() {
+    return desktopOnly();
+  },
+  async moveImportJob() {
+    return desktopOnly();
+  },
+  async cancelImportJob() {
+    return desktopOnly();
+  },
+  async retryImportJob() {
+    return desktopOnly();
+  },
+  async clearFinishedImports() {
+    return emptyImportQueue();
+  },
+  onImportQueue() {
+    return () => {};
   },
   async runLab(_request: LabRequest) {
     throw new Error("Audio file transcription requires Electron");
@@ -328,6 +504,7 @@ export const previewApi: DeluluApi = {
   },
   async recordingStarted() {},
   async recordingLimitReached() {},
+  async recordingSilence() {},
   async recorderReady() {},
   async recordingFailed() {},
   async recordingInputChanged() {},

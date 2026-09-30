@@ -8,9 +8,9 @@ nonblank `id`, and a nonblank `name`. The contract and reader live in
 The Profiles settings tab saves named current-settings snapshots or starters for
 code, terminal commands, Dutch/English messages, long notes and imported recordings.
 Saved profiles can be renamed or deleted. These operations do not activate a
-profile or change current language/delivery/vocabulary/rewrite settings. Activation,
-automatic selection, context capture and runtime decode control remain separate
-work. There is no persisted active profile in this schema.
+profile or change current language/delivery/vocabulary/rewrite settings. Explicit activation is available for supported settings through an idle-only
+preview/confirmation. Automatic selection, context capture and custom runtime
+decode control remain separate work.
 
 | Field | Contract |
 | --- | --- |
@@ -57,3 +57,26 @@ Commands reject empty/oversized names, duplicate names (Unicode-normalized and c
 insensitive), missing profile IDs, unknown starters, future schemas and collection
 limits. Rename/delete preserve the document's remaining unknown fields and rule
 text. Deletion requires confirmation in the UI; failed operations retain drafts.
+
+Explicit activation previews language, paste/copy/history, the full vocabulary,
+and optional rewriting settings. Profiles with custom decode/context/technical
+grammar or rewrite instructions unsupported by this baseline reject activation.
+Language-scoped vocabulary remains scoped through activation, capture and global
+restoration. Built-in identifier and saved-block protection uses
+the actual published PR357/339 personalization/rewrite paths; it is not a profile
+metadata-only promise. No native context permission is granted by activation.
+
+`activePersonalProfile` stores the selected profile snapshot, applied supported
+settings and pre-activation global settings. The controls show customization if
+current settings drift, and separately mark changed/deleted/read-only stored
+profiles. Rename/save/delete never activate or undo settings. Global fallback is
+an explicit previewed restore of the pre-activation settings. Profile selection
+metadata can only change through activation IPC, not ordinary settings patches.
+
+Native capture freezes effective settings and the displayed profile label at
+capture start. The renderer recording controls and native Linux pill show that
+capture label even if a profile is renamed/deleted or settings are edited later.
+Transcription/delivery and retry use the captured settings. New captures use the
+then-current settings. Metadata snapshots remain session/settings data; original
+backend text and existing history are untouched. Native indicator availability
+continues to follow platform support; no new hardware/overlay verification claim.

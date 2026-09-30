@@ -1,6 +1,13 @@
 import { _electron as electron } from "@playwright/test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -48,7 +55,11 @@ try {
   });
   const file = join(data, "settings.json");
   const bytes = await readFile(file, "utf8");
-  await mkdir(file + ".tmp");
+  // Staging names are unique. Obstruct the final atomic rename instead of
+  // assuming a fixed temporary filename; retain the original durable bytes.
+  const savedFile = file + ".saved";
+  await rename(file, savedFile);
+  await mkdir(file);
   const rejected = await page.evaluate(async (shortcut) => {
     try {
       await window.delulu.updateSettings({ shortcut });
@@ -58,7 +69,7 @@ try {
     }
   }, next);
   assert.equal(rejected, true);
-  assert.equal(await readFile(file, "utf8"), bytes);
+  assert.equal(await readFile(savedFile, "utf8"), bytes);
   const state = await page.evaluate(async () => ({
     settings: await window.delulu.getSettings(),
     shortcut: await window.delulu.getShortcutStatus(),
@@ -81,7 +92,8 @@ try {
     ),
     [true, false],
   );
-  await rm(file + ".tmp", { recursive: true });
+  await rm(file, { recursive: true });
+  await rename(savedFile, file);
   await page.evaluate(
     (shortcut) => window.delulu.updateSettings({ shortcut }),
     next,

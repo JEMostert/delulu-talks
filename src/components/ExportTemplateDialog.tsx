@@ -144,7 +144,9 @@ export function ExportTemplateDialog({
             }}
           >
             {versions
-              .filter((version) => version.available || version.value === source)
+              .filter(
+                (version) => version.available || version.value === source,
+              )
               .map((version) => (
                 <option
                   key={version.value}
@@ -164,7 +166,9 @@ export function ExportTemplateDialog({
             value={extension}
             disabled={busy}
             onChange={(event) => {
-              setExtension(event.target.value as ExportTemplateSpec["extension"]);
+              setExtension(
+                event.target.value as ExportTemplateSpec["extension"],
+              );
               setError(null);
             }}
           >
@@ -216,10 +220,11 @@ export function ExportTemplateDialog({
         />
       </label>
       <p className="caption my-3">
-        Include <code>{"{{text}}"}</code> for your selected transcript. Available
-        placeholders:{" "}
+        Include <code>{"{{text}}"}</code> for your selected transcript.
+        Available placeholders:{" "}
         {EXPORT_TEMPLATE_TOKENS.map((token) => `{{${token}}}`).join(", ")}.
-        Other text stays literal. Templates stay in this dialog for this session.
+        Other text stays literal. Templates stay in this dialog for this
+        session.
       </p>
       <div className="my-4 grid grid-cols-2 gap-4 max-[600px]:grid-cols-1">
         <label className="field">

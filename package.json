@@ -27,6 +27,7 @@
     "test:e2e": "node scripts/test-evidence.mjs browser",
     "test:desktop": "bun run build && node scripts/test-evidence.mjs desktop",
     "test:local-data": "bun run build && node scripts/local-data-smoke.mjs",
+    "backup:dry-run": "node scripts/backup-restore-dry-run.mjs",
     "test:data-deletion": "bun run build && node scripts/test-evidence.mjs data-deletion",
     "format": "prettier --write src electron/**/*.ts electron/*.ts tests scripts/*.mjs playwright.config.ts",
     "format:check": "prettier --check src electron/**/*.ts electron/*.ts tests scripts/*.mjs playwright.config.ts",

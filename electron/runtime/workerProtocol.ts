@@ -1,8 +1,29 @@
+import type { DownloadBytes } from "../../src/types";
 import { StringDecoder } from "node:string_decoder";
 
 export const WORKER_PROTOCOL_VERSION = 1;
-const PRESETS = new Set(["polish", "concise", "structured", "prompt", "bullet-points", "professional-message"]);
+const PRESETS = new Set([
+  "polish",
+  "concise",
+  "structured",
+  "prompt",
+  "bullet-points",
+  "professional-message",
+]);
 const MAGIC_MODELS = new Set(["qwen35Small", "qwen35Medium", "qwen35Large"]);
+// Keep aligned with the shared PipelineTimings contract; unknown stages are omitted.
+const TIMING_FIELDS = new Set([
+  "captureEndMs",
+  "preprocessingMs",
+  "speechLoadMs",
+  "speechRequestMs",
+  "backendPreprocessingMs",
+  "inferenceMs",
+  "rewriteLoadMs",
+  "rewritingMs",
+  "clipboardMs",
+  "pasteMs",
+]);
 type JsonObject = Record<string, unknown>;
 export type WorkerResponse =
   | { protocolVersion: 1; id: string; ok: true; result: unknown }
@@ -15,6 +36,7 @@ export type WorkerProgress = {
   stage: string;
   detail: string;
   fraction?: number;
+  downloadBytes?: DownloadBytes;
 };
 
 function object(value: unknown, label: string): JsonObject {
@@ -23,17 +45,26 @@ function object(value: unknown, label: string): JsonObject {
   return value as JsonObject;
 }
 
-function stringField(value: JsonObject, key: string, required = false, nonempty = false): void {
+function stringField(
+  value: JsonObject,
+  key: string,
+  required = false,
+  nonempty = false,
+): void {
   if (!(key in value) && !required) return;
   if (typeof value[key] !== "string" || (nonempty && !value[key]))
-    throw new Error(`Invalid model worker ${key}: expected ${nonempty ? "a nonempty" : "a"} string`);
+    throw new Error(
+      `Invalid model worker ${key}: expected ${nonempty ? "a nonempty" : "a"} string`,
+    );
 }
 
 function numberField(value: JsonObject, key: string, required = false): void {
   if (!(key in value) && !required) return;
   const field = value[key];
   if (typeof field !== "number" || !Number.isFinite(field) || field < 0)
-    throw new Error(`Invalid model worker ${key}: expected a finite nonnegative number`);
+    throw new Error(
+      `Invalid model worker ${key}: expected a finite nonnegative number`,
+    );
 }
 
 function booleanField(value: JsonObject, key: string, required = false): void {
@@ -43,9 +74,17 @@ function booleanField(value: JsonObject, key: string, required = false): void {
 }
 
 function lifecycleFields(value: JsonObject): void {
-  if ("residency" in value && !["unloaded", "resident"].includes(value.residency as string))
+  if (
+    "residency" in value &&
+    !["unloaded", "resident"].includes(value.residency as string)
+  )
     throw new Error("Invalid model worker residency state");
-  if ("warmup" in value && !["unknown", "not-started", "warming", "complete"].includes(value.warmup as string))
+  if (
+    "warmup" in value &&
+    !["unknown", "not-started", "warming", "complete"].includes(
+      value.warmup as string,
+    )
+  )
     throw new Error("Invalid model worker warmup state");
   if (value.device !== null) stringField(value, "device");
   if (value.residency === "resident") stringField(value, "device", true, true);
@@ -55,8 +94,10 @@ function lifecycleFields(value: JsonObject): void {
 
 // Keep schema traversal bounded independently of the serialized byte budget.
 function jsonValue(value: unknown, depth = 0): void {
-  if (depth > 64) throw new Error("Model worker JSON exceeds 64 nesting levels");
-  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (depth > 64)
+    throw new Error("Model worker JSON exceeds 64 nesting levels");
+  if (value === null || typeof value === "string" || typeof value === "boolean")
+    return;
   if (typeof value === "number" && Number.isFinite(value)) return;
   if (value && typeof value === "object") {
     for (const item of Object.values(value)) jsonValue(item, depth + 1);
@@ -68,16 +109,33 @@ function jsonValue(value: unknown, depth = 0): void {
 export function validateWorkerRequest(value: unknown): JsonObject {
   const request = object(value, "request");
   if (request.protocolVersion !== WORKER_PROTOCOL_VERSION)
-    throw new Error("Model worker protocol version mismatch. Restart the app or repair its runtime.");
+    throw new Error(
+      "Model worker protocol version mismatch. Restart the app or repair its runtime.",
+    );
   stringField(request, "id", true, true);
   stringField(request, "command", true, true);
-  if (Buffer.byteLength(request.id as string, "utf8") > 128 || Buffer.byteLength(request.command as string, "utf8") > 64)
+  if (
+    Buffer.byteLength(request.id as string, "utf8") > 128 ||
+    Buffer.byteLength(request.command as string, "utf8") > 64
+  )
     throw new Error("Model worker request ID/command exceeds its byte limit");
+  if (
+    ["streamStart", "streamChunk", "streamFinalize", "streamCancel"].includes(
+      request.command as string,
+    )
+  )
+    throw new Error(
+      "Audio streaming is not enabled by the active speech runtime; use whole-recording transcription",
+    );
   jsonValue(request);
-  if (request.command === "load" || request.command === "magicLoad") stringField(request, "cacheDir");
+  if (request.command === "load" || request.command === "magicLoad")
+    stringField(request, "cacheDir");
   if (request.command === "magicLoad") {
     stringField(request, "model");
-    if (request.model !== undefined && !MAGIC_MODELS.has(request.model as string))
+    if (
+      request.model !== undefined &&
+      !MAGIC_MODELS.has(request.model as string)
+    )
       throw new Error("Invalid model worker writing model");
   }
   if (request.command === "transcribe") {
@@ -86,17 +144,28 @@ export function validateWorkerRequest(value: unknown): JsonObject {
     numberField(request, "durationMs");
     for (const key of ["timestamps", "streaming", "vocabularyBiasing"]) {
       booleanField(request, key);
-      if (request[key] === true) throw new Error(`Current R2T2 adapter does not support ${key}. Use buffered transcription with a language hint.`);
+      if (request[key] === true)
+        throw new Error(
+          `Current R2T2 adapter does not support ${key}. Use buffered transcription with a language hint.`,
+        );
     }
   }
-  if (request.command === "capabilities" && !["speech", "writing"].includes(request.engine as string))
-    throw new Error("Model worker capability query requires speech or writing engine");
+  if (
+    request.command === "capabilities" &&
+    !["speech", "writing"].includes(request.engine as string)
+  )
+    throw new Error(
+      "Model worker capability query requires speech or writing engine",
+    );
   if (request.command === "magicRewrite") {
     stringField(request, "text", true);
     stringField(request, "preset");
     stringField(request, "instructions");
     booleanField(request, "allowInferences");
-    if ((request.text as string).length > 500_000 || ((request.instructions as string | undefined)?.length ?? 0) > 4_000)
+    if (
+      (request.text as string).length > 500_000 ||
+      ((request.instructions as string | undefined)?.length ?? 0) > 4_000
+    )
       throw new Error("Model worker writing input exceeds its character limit");
     if (request.preset !== undefined && !PRESETS.has(request.preset as string))
       throw new Error("Invalid model worker rewrite preset");
@@ -107,7 +176,9 @@ export function validateWorkerRequest(value: unknown): JsonObject {
 export function validateWorkerResponse(value: unknown): WorkerResponse {
   const response = object(value, "response");
   if (response.protocolVersion !== WORKER_PROTOCOL_VERSION)
-    throw new Error("Model worker protocol version mismatch. Restart the app or repair its runtime.");
+    throw new Error(
+      "Model worker protocol version mismatch. Restart the app or repair its runtime.",
+    );
   stringField(response, "id", true, true);
   if (Buffer.byteLength(response.id as string, "utf8") > 128)
     throw new Error("Invalid model worker response ID");
@@ -118,26 +189,54 @@ export function validateWorkerResponse(value: unknown): WorkerResponse {
     jsonValue(response.result);
   } else {
     stringField(response, "error", true, true);
-    if ("result" in response || Buffer.byteLength(response.error as string, "utf8") > 8_000)
+    if (
+      "result" in response ||
+      Buffer.byteLength(response.error as string, "utf8") > 8_000
+    )
       throw new Error("Invalid model worker failure response");
   }
   return response.ok
-    ? { protocolVersion: 1, id: response.id as string, ok: true, result: response.result }
-    : { protocolVersion: 1, id: response.id as string, ok: false, error: response.error as string };
+    ? {
+        protocolVersion: 1,
+        id: response.id as string,
+        ok: true,
+        result: response.result,
+      }
+    : {
+        protocolVersion: 1,
+        id: response.id as string,
+        ok: false,
+        error: response.error as string,
+      };
 }
 
 export function validateWorkerProgress(value: unknown): WorkerProgress {
   const event = object(value, "progress event");
-  if (event.protocolVersion !== WORKER_PROTOCOL_VERSION || event.type !== "progress")
-    throw new Error("Model worker progress protocol mismatch. Restart the app or repair its runtime.");
-  for (const key of ["id", "command", "stage"]) stringField(event, key, true, true);
+  if (
+    event.protocolVersion !== WORKER_PROTOCOL_VERSION ||
+    event.type !== "progress"
+  )
+    throw new Error(
+      "Model worker progress protocol mismatch. Restart the app or repair its runtime.",
+    );
+  for (const key of ["id", "command", "stage"])
+    stringField(event, key, true, true);
   stringField(event, "detail", true);
-  for (const [key, limit] of [["id", 128], ["command", 64], ["stage", 64], ["detail", 4_000]] as const)
+  for (const [key, limit] of [
+    ["id", 128],
+    ["command", 64],
+    ["stage", 64],
+    ["detail", 4_000],
+  ] as const)
     if (Buffer.byteLength(event[key] as string, "utf8") > limit)
-      throw new Error(`Model worker progress ${key} exceeds ${limit} UTF-8 bytes`);
+      throw new Error(
+        `Model worker progress ${key} exceeds ${limit} UTF-8 bytes`,
+      );
   numberField(event, "fraction");
   if (typeof event.fraction === "number" && event.fraction > 1)
-    throw new Error("Model worker progress fraction must be between zero and one");
+    throw new Error(
+      "Model worker progress fraction must be between zero and one",
+    );
   const progress: WorkerProgress = {
     protocolVersion: 1,
     type: "progress",
@@ -147,45 +246,114 @@ export function validateWorkerProgress(value: unknown): WorkerProgress {
     detail: event.detail as string,
   };
   if (typeof event.fraction === "number") progress.fraction = event.fraction;
+  if (event.downloadBytes !== undefined) {
+    const bytes = object(event.downloadBytes, "download bytes");
+    if (
+      typeof bytes.completed !== "number" ||
+      !Number.isSafeInteger(bytes.completed) ||
+      bytes.completed < 0 ||
+      (bytes.total !== null &&
+        (typeof bytes.total !== "number" ||
+          !Number.isSafeInteger(bytes.total) ||
+          bytes.total < bytes.completed)) ||
+      (bytes.kind !== "transfer" && bytes.kind !== "reconstruction")
+    )
+      throw new Error(
+        "Model worker download counters must be nonnegative safe integers with a nullable total and known byte kind",
+      );
+    progress.downloadBytes = {
+      completed: bytes.completed,
+      total: bytes.total as number | null,
+      kind: bytes.kind,
+    };
+  }
   return progress;
 }
 
 export function validateWorkerResult(command: string, value: unknown): void {
-  const statusCommands = ["ping", "status", "load", "unload", "magicStatus", "magicLoad", "magicUnload"];
+  const resultObject = object(value, "result");
+  if ("timings" in resultObject) {
+    const timings = object(resultObject.timings, "timings");
+    for (const key of Object.keys(timings)) {
+      if (!TIMING_FIELDS.has(key))
+        throw new Error(`Invalid model worker timing field: ${key}`);
+      numberField(timings, key, true);
+    }
+  }
+  const statusCommands = [
+    "ping",
+    "status",
+    "load",
+    "unload",
+    "magicStatus",
+    "magicLoad",
+    "magicUnload",
+  ];
   if (command === "capabilities") {
     const result = object(value, "capability result");
-    if (result.schemaVersion !== 1 || !["speech", "writing"].includes(result.engine as string))
+    if (
+      result.schemaVersion !== 1 ||
+      !["speech", "writing"].includes(result.engine as string)
+    )
       throw new Error("Invalid model worker capability schema or engine");
     const speech = result.engine === "speech";
-    if (result.modelFamily !== (speech ? "r2t2" : "qwen3.5") || !(speech ? ["mlx", "cuda-vllm", "cuda-transformers"] : ["transformers"]).includes(result.backend as string))
+    if (
+      result.modelFamily !== (speech ? "r2t2" : "qwen3.5") ||
+      !(
+        speech ? ["mlx", "cuda-vllm", "cuda-transformers"] : ["transformers"]
+      ).includes(result.backend as string)
+    )
       throw new Error("Invalid model worker capability backend/model family");
-    for (const key of ["timestamps", "streaming", "vocabularyBiasing"]) booleanField(result, key, true);
+    for (const key of ["timestamps", "streaming", "vocabularyBiasing"])
+      booleanField(result, key, true);
     const hints = object(result.languageHints, "language hint capability");
     booleanField(hints, "supported", true);
-    if (!Array.isArray(hints.languages) || hints.languages.length > 128 || hints.languages.some((code) => typeof code !== "string" || !code || Buffer.byteLength(code, "utf8") > 64))
+    if (
+      !Array.isArray(hints.languages) ||
+      hints.languages.length > 128 ||
+      hints.languages.some(
+        (code) =>
+          typeof code !== "string" ||
+          !code ||
+          Buffer.byteLength(code, "utf8") > 64,
+      )
+    )
       throw new Error("Invalid model worker language capability list");
-    if (new Set(hints.languages).size !== hints.languages.length || (!hints.supported && hints.languages.length))
+    if (
+      new Set(hints.languages).size !== hints.languages.length ||
+      (!hints.supported && hints.languages.length)
+    )
       throw new Error("Inconsistent model worker language capabilities");
   } else if (statusCommands.includes(command)) {
     const result = object(value, "status result");
     booleanField(result, "loaded", true);
     lifecycleFields(result);
-    if ((result.residency === "resident" && !result.loaded) || (result.residency === "unloaded" && result.loaded))
+    if (
+      (result.residency === "resident" && !result.loaded) ||
+      (result.residency === "unloaded" && result.loaded)
+    )
       throw new Error("Model worker residency disagrees with loaded state");
-    for (const key of ["model", "device"]) if (result[key] !== null) stringField(result, key);
+    for (const key of ["model", "device"])
+      if (result[key] !== null) stringField(result, key);
     if (command === "ping") stringField(result, "python", true, true);
   } else if (command === "transcribe") {
     const result = object(value, "transcription result");
     stringField(result, "text", true);
     stringField(result, "language", true);
-    for (const key of ["duration", "processingTime"]) numberField(result, key, true);
+    for (const key of ["duration", "processingTime"])
+      numberField(result, key, true);
     numberField(result, "inferenceTime");
   } else if (command === "magicRewrite") {
     const result = object(value, "rewrite result");
     lifecycleFields(result);
     stringField(result, "text", true);
     stringField(result, "model", true);
-    for (const key of ["processingTimeMs", "inputCharacters", "outputCharacters"]) numberField(result, key, true);
+    for (const key of [
+      "processingTimeMs",
+      "inputCharacters",
+      "outputCharacters",
+    ])
+      numberField(result, key, true);
     for (const key of ["inputCharacters", "outputCharacters"]) {
       const count = result[key];
       if (typeof count !== "number" || !Number.isSafeInteger(count))
@@ -332,15 +500,23 @@ export function serializeWorkerRequest(
     throw new Error("Model worker payload must be a JSON object");
   let serialized: string | undefined;
   try {
-    serialized = JSON.stringify({ ...payload, protocolVersion: WORKER_PROTOCOL_VERSION, id, command }, (_key, value) => {
-      if (typeof value === "number" && !Number.isFinite(value))
-        throw new Error("Non-finite number");
-      if (["bigint", "function", "symbol"].includes(typeof value))
-        throw new Error(`Unsupported ${typeof value} value`);
-      return value;
-    });
+    serialized = JSON.stringify(
+      { ...payload, protocolVersion: WORKER_PROTOCOL_VERSION, id, command },
+      (_key, value) => {
+        if (typeof value === "number" && !Number.isFinite(value))
+          throw new Error("Non-finite number");
+        if (["bigint", "function", "symbol"].includes(typeof value))
+          throw new Error(`Unsupported ${typeof value} value`);
+        return value;
+      },
+    );
     const envelope = serialized && JSON.parse(serialized);
-    if (!envelope || envelope.id !== id || envelope.command !== command || envelope.protocolVersion !== WORKER_PROTOCOL_VERSION)
+    if (
+      !envelope ||
+      envelope.id !== id ||
+      envelope.command !== command ||
+      envelope.protocolVersion !== WORKER_PROTOCOL_VERSION
+    )
       throw new Error(
         "Payload serialization must preserve the request envelope",
       );

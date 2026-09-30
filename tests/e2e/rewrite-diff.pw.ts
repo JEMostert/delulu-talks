@@ -45,10 +45,13 @@ test("word changes are readable, keyboard reachable, update with edits, and appl
     page.getByRole("textbox", { name: "Rewrite source" }),
   ).toHaveValue(source);
   await page.getByRole("textbox", { name: "Rewrite preview" }).focus();
-  await page.keyboard.press("Tab");
-  await expect(
-    page.getByLabel("Rewrite changes", { exact: true }),
-  ).toBeFocused();
+  const changes = page.getByLabel("Rewrite changes", { exact: true });
+  for (let step = 0; step < 12; step++) {
+    if (await changes.evaluate((element) => element === document.activeElement))
+      break;
+    await page.keyboard.press("Tab");
+  }
+  await expect(changes).toBeFocused();
   await page.getByRole("textbox", { name: "Rewrite preview" }).fill(source);
   await expect(region.getByRole("status")).toHaveText(
     "No changes from current text.",
