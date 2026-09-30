@@ -236,6 +236,7 @@ export function HomePage({
               onChange={save}
             />
           </div>
+          <ProfileActivationControls settings={s} busy={busy || saving} captureProfile={captureProfile} onActivate={onActivateProfile} />
           <details className="border-t border-line">
             <summary className="cursor-pointer px-3.5 py-3 text-[12px] font-[650] text-muted">
               Microphone & shortcut
@@ -374,7 +375,6 @@ export function HomePage({
             </div>
             <InputLevel />
             <CaptureDiagnostics value={captureDiagnostics} />
-            <ProfileActivationControls settings={s} busy={busy || saving} captureProfile={captureProfile} onActivate={onActivateProfile} />
             <p className="caption">Recordings finish at {MAX_CAPTURE_DURATION_MS / 60_000} minutes; high sample-rate inputs may finish sooner to bound memory.</p>
             {!shortcutStatus.registered && (
               <p className="control-warning">{shortcutStatus.message}</p>
