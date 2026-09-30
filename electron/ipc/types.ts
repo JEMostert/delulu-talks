@@ -38,10 +38,10 @@ export interface IpcDependencies {
   getMainWindow: () => BrowserWindow | null;
   storage: StorageService;
   asr: AsrService;
-  paste: PasteService;
-  pill: PillService;
+  paste: import("../services/desktopAdapters").DesktopPasteAdapter;
+  pill: import("../services/desktopAdapters").DesktopIndicatorAdapter;
   dictation: DictationService;
-  shortcut: ShortcutService;
+  shortcut: import("../services/desktopAdapters").DesktopShortcutAdapter;
   updates: UpdateService;
   persistSettings: (value: unknown) => Promise<AppSettings>;
   settingsBusy: () => boolean;

@@ -17,15 +17,15 @@ import type {
   TranscriptRecord,
 } from "../../src/types";
 import type { AsrService } from "./asr";
-import { ClipboardCopyError, type PasteService } from "./paste";
-import type { PillService } from "./pill";
+import { ClipboardCopyError } from "./paste";
+import type { DesktopPasteAdapter, DesktopIndicatorAdapter } from "./desktopAdapters";
 import type { StorageService } from "./storage";
 import { getMicrophonePermission } from "./microphonePermission";
 import { RetryAudioStore, type RetryAudioLease } from "./retryAudio";
 
 type WindowProvider = {
   main(): BrowserWindow | null;
-  pill: PillService;
+  pill: DesktopIndicatorAdapter;
 };
 
 type CaptureState =
@@ -84,14 +84,14 @@ export class DictationService {
   private recorderReady = false;
   private busyNoticeTimer: NodeJS.Timeout | null = null;
   private busyNotice = false;
-  private hud: Parameters<PillService["show"]>[0] | { state: "hidden" } = {
+  private hud: Parameters<DesktopIndicatorAdapter["show"]>[0] | { state: "hidden" } = {
     state: "hidden",
   };
 
   constructor(
     private readonly storage: StorageService,
     private readonly asr: AsrService,
-    private readonly paste: PasteService,
+    private readonly paste: DesktopPasteAdapter,
     private readonly windows: WindowProvider,
     private readonly broadcastTranscript: (record: TranscriptRecord) => void,
     private readonly reportPasteFailure: (id: string, detail: string) => void = () => undefined,
@@ -131,7 +131,7 @@ export class DictationService {
   }
 
   private setHud(
-    command: Parameters<PillService["show"]>[0] | { state: "hidden" },
+    command: Parameters<DesktopIndicatorAdapter["show"]>[0] | { state: "hidden" },
   ): void {
     if (this.busyNoticeTimer) clearTimeout(this.busyNoticeTimer);
     this.busyNoticeTimer = null;
