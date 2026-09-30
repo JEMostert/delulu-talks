@@ -4,6 +4,8 @@ import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { formatSpokenCommands } from "../../src/spokenFormatting";
 import { deliveredText } from "../../src/transcriptText";
 import { normalizeLanguageMetadata, normalizeReportedLanguage } from "../../src/transcriptLanguage";
+import { formatDictation } from "../../src/dictationFormatting";
+import { normalizeTimings } from "../../src/pipelineTimings";
 import type { BrowserWindow } from "electron";
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -12,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import type {
   AppSettings,
   LabRequest,
+  PipelineTimings,
   RecorderCommand,
   RecordingSubmission,
   TranscriptRecord,
@@ -432,9 +435,12 @@ export class DictationService {
       `dictation-${Date.now()}-${randomUUID()}.wav`,
     );
     let deliveryStarted = false;
+    const timings = normalizeTimings(submission.timings) ?? {};
     try {
+      const preprocessingStarted = performance.now();
       mkdirSync(this.storage.cacheDirectory, { recursive: true });
       writeFileSync(audioPath, submission.wav, { mode: 0o600 });
+      timings.preprocessingMs = (timings.preprocessingMs ?? 0) + performance.now() - preprocessingStarted;
       this.asr.setActivity("transcribing", "Transcribing locally");
       this.setHud({ state: "transcribing" });
       const result = await this.asr.transcribe(
@@ -449,6 +455,7 @@ export class DictationService {
         submission.durationMs,
         null,
         settings,
+        timings,
       );
       record.captureDiagnostics = normalizeCaptureDiagnostics(
         submission.captureDiagnostics,
@@ -483,6 +490,7 @@ export class DictationService {
             magicPreset: settings.magicPreset,
             magicIncludedInferences: magic.includedInferences,
             magicProcessingTimeMs: magic.processingTimeMs,
+            timings: normalizeTimings({ ...record.timings, ...normalizeTimings(magic.timings) }),
           };
         } catch (error) {
           magicFailure = (
@@ -503,7 +511,7 @@ export class DictationService {
       deliveryStarted = true;
       if (settings.autoPaste) {
         try {
-          const method = await this.paste.paste(output, settings.restoreClipboardAfterPaste);
+          const method = await this.paste.paste(output, settings.restoreClipboardAfterPaste, record.timings ??= {});
           record = this.recordDelivery(record, "paste-attempted", "Paste command sent; destination receipt is not confirmed", method);
           delivery = "pasted";
           completion = `${outputName}: paste attempted — destination unconfirmed`;
@@ -517,7 +525,7 @@ export class DictationService {
         }
       } else if (settings.copyToClipboard) {
         try {
-          this.paste.copy(output);
+          this.paste.copy(output, record.timings ??= {});
           delivery = "copied";
           record = this.recordDelivery(record, "copied");
           completion = `${outputName} copied to clipboard`;
@@ -528,6 +536,7 @@ export class DictationService {
           completion = `Transcribed — clipboard copy failed (${detail})`;
         }
       }
+      if (settings.autoPaste || settings.copyToClipboard) this.publishDeliveryTimings(record, output);
       if (magicFailure)
         completion = `${completion} · Rewriting unavailable: ${magicFailure}`;
       this.setHud({
@@ -574,8 +583,10 @@ export class DictationService {
     let preparedAudio: { path: string; directory?: string } | null = null;
     let failure: unknown;
     try {
+      const preprocessingStarted = performance.now();
       preparedAudio = await this.prepareAudio(request.path);
       checkCancellation();
+      const timings: PipelineTimings = { preprocessingMs: performance.now() - preprocessingStarted };
       const payload = await this.asr.transcribe(
         { audioPath: preparedAudio.path },
         settings,
@@ -587,6 +598,7 @@ export class DictationService {
         undefined,
         basename(request.path),
         settings,
+        timings,
       );
       record.sessionOnly =
         !settings.keepHistory || !this.storage.getSettings().keepHistory;
@@ -686,6 +698,7 @@ export class DictationService {
     durationOverride: number | undefined,
     sourceName: string | null,
     settings: AppSettings,
+    timings?: PipelineTimings,
   ): TranscriptRecord {
     if (typeof result.text !== "string")
       throw new Error("The speech worker returned an invalid text result.");
@@ -701,6 +714,11 @@ export class DictationService {
     const durationMs =
       durationOverride ?? Math.round(numeric(result.duration) * 1000);
     const languageMetadata = normalizeLanguageMetadata(result);
+    const backendTimings = normalizeTimings(result.timings);
+    const mergedTimings = { ...timings, ...backendTimings };
+    if (timings?.preprocessingMs !== undefined && backendTimings?.preprocessingMs !== undefined) {
+      mergedTimings.preprocessingMs = timings.preprocessingMs + backendTimings.preprocessingMs;
+    }
     return {
       id: randomUUID(),
       createdAt: Date.now(),
@@ -714,7 +732,9 @@ export class DictationService {
           : null,
       sourceRevision: 0,
       rewriteSourceRevision: null,
-      personalizedText: personalized.text,
+      personalizedText: source === "dictation" && settings.dictationFormatting === "spoken" ? formatDictation(text, settings.customWords, settings.dictationFormatting, settings.language) : personalized.text,
+      dictationFormatting: source === "dictation" && settings.dictationFormatting === "spoken"
+        && (settings.language === "en" || settings.language === "nl") ? "spoken" : "preserve",
       model: settings.model,
       language: languageMetadata.recognizedLanguage ?? "und",
       ...languageMetadata,
@@ -722,6 +742,7 @@ export class DictationService {
       source,
       sourceName,
       processingTimeMs: Math.round(numeric(result.processingTime) * 1000),
+      timings: normalizeTimings(mergedTimings),
       delivery: { state: "transcribed", updatedAt: Date.now() },
     };
   }
@@ -737,6 +758,28 @@ export class DictationService {
     if (saved) this.storage.replaceHistory(updated);
     this.broadcastTranscript(updated);
     return updated;
+  }
+
+  private publishDeliveryTimings(record: TranscriptRecord, output: string): void {
+    try {
+      const existing = this.storage.findHistory(record.id);
+      if (existing && deliveredText(existing) !== output) return;
+      const deliveryTimings: PipelineTimings = {};
+      if (record.timings?.clipboardMs !== undefined) deliveryTimings.clipboardMs = record.timings.clipboardMs;
+      if (record.timings?.pasteMs !== undefined) deliveryTimings.pasteMs = record.timings.pasteMs;
+      const updated = {
+        ...(existing ?? record),
+        timings: normalizeTimings({ ...(existing ?? record).timings, ...deliveryTimings }),
+      };
+      try {
+        if (existing) this.storage.replaceHistory(updated);
+      } catch {
+        // Timing metadata must not turn completed delivery into a failed recording.
+      }
+      this.broadcastTranscript(updated);
+    } catch {
+      // Delivery already completed; a metadata notification is best effort.
+    }
   }
 
   private outputText(record: TranscriptRecord, settings: AppSettings): string {

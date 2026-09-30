@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   model: "r2t2",
   language: "en",
   dictationMode: "prose",
+  dictationFormatting: "preserve",
   pythonCommand: "python3",
   inputDeviceId: "default",
   inputDeviceLabel: "System default",

@@ -100,6 +100,7 @@ const api: DeluluApi = {
   copyText: (text: string) => invoke("clipboard:copy", text),
   authorizePaste: () => invoke("paste:authorize"),
   testPaste: () => invoke("paste:test"),
+  cancelRewrite: (operationId) => invoke("magic:cancelRewrite", operationId),
   updateTranscript: (id: string, text: string | null) =>
     invoke("history:updateTranscript", id, text),
   setTranscriptRewrite: (id, result, sourceText, expectedSourceRevision) =>

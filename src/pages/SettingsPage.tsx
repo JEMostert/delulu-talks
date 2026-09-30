@@ -201,6 +201,28 @@ export function SettingsPage(props: Props) {
                 "Interpret spoken formatting commands",
                 busy,
               )}
+            </Row>
+            <Row
+              title="Dictation formatting"
+              description={
+                "Optional commands for English (en) and Dutch (nl) microphone dictation. " +
+                "Say “insert comma” or “insert new paragraph”; in Dutch, “voeg komma in” or “voeg nieuwe alinea in”. " +
+                "Imported audio and raw recognition stay unchanged. Quotes, code and shortcut blocks stay literal."
+              }
+            >
+              <select
+                aria-label="Dictation formatting"
+                value={s.dictationFormatting ?? "preserve"}
+                disabled={saving || busy}
+                onChange={(e) =>
+                  save({
+                    dictationFormatting: e.target.value as AppSettings["dictationFormatting"],
+                  })
+                }
+              >
+                <option value="preserve">Keep recognized punctuation</option>
+                <option value="spoken">Explicit spoken formatting commands</option>
+              </select>
             </SettingRow>
             <SettingRow
               icon={Keyboard}

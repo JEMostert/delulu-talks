@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { PipelineTimingDetails } from "./PipelineTimingDetails";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
 import { MAX_REWRITE_INSTRUCTIONS, validateRewriteInstructions } from "../rewriteInstructions";
@@ -21,6 +22,7 @@ export function RewriteDialog({
   onClose,
   onSetup,
   onRewrite,
+  onCancelRewrite,
   onApply,
   visible = true,
   onBackground,
@@ -40,6 +42,7 @@ export function RewriteDialog({
   onSetup: () => void;
   onRewrite: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
   onApply: (result: MagicRewriteResult, source: string, sourceRevision: number) => Promise<boolean>;
+  onCancelRewrite?: (operationId: string) => Promise<boolean>;
 }) {
   const instructionHelpId = useId();
   const active = useRef(true);
@@ -55,6 +58,8 @@ export function RewriteDialog({
   const [instructions, setInstructions] = useState("");
   const [result, setResult] = useState<MagicRewriteResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     onOperationState?.(busy ? "working" : error ? "error" : result ? "ready" : "draft");
@@ -68,6 +73,83 @@ export function RewriteDialog({
     onClose();
   };
   const presetDetails = REWRITE_PRESETS.find((item) => item.id === preset)!;
+  const [notice, setNotice] = useState<string | null>(null);
+  const mounted = useRef(true);
+  const activeSession = useRef<{ id: string; cancelled: boolean } | null>(null);
+  const cancelRewrite = useRef(onCancelRewrite);
+  cancelRewrite.current = onCancelRewrite;
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const session = activeSession.current;
+      activeSession.current = null;
+      if (session && !session.cancelled) {
+        session.cancelled = true;
+        const cancel = cancelRewrite.current;
+        if (cancel) void Promise.resolve().then(() => cancel(session.id)).catch(() => undefined);
+      }
+    };
+  }, []);
+
+  async function generatePreview() {
+    if (activeSession.current || busy || stale) return;
+    const session = { id: crypto.randomUUID(), cancelled: false };
+    activeSession.current = session;
+    setBusy(true);
+    setGenerating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const preview = await onRewrite({
+        operationId: session.id,
+        sourceLanguage,
+        text: source,
+        preset,
+        instructions: validateRewriteInstructions(instructions),
+        allowInferences: false,
+      });
+      if (mounted.current && activeSession.current === session && !session.cancelled) {
+        setResult(preview);
+      }
+    } catch (reason) {
+      if (mounted.current && activeSession.current === session && !session.cancelled) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    } finally {
+      if (mounted.current && activeSession.current === session && !session.cancelled) {
+        activeSession.current = null;
+        setGenerating(false);
+        setBusy(false);
+      }
+    }
+  }
+
+  async function cancelPreview() {
+    const session = activeSession.current;
+    if (!session || session.cancelled || !onCancelRewrite) return;
+    session.cancelled = true;
+    setCancelling(true);
+    setError(null);
+    let cleanupFailed = false;
+    try {
+      await onCancelRewrite(session.id);
+    } catch {
+      cleanupFailed = true;
+    } finally {
+      if (mounted.current && activeSession.current === session) {
+        activeSession.current = null;
+        setGenerating(false);
+        setCancelling(false);
+        setBusy(false);
+        setNotice(cleanupFailed
+          ? "Preview request cancelled; runtime cleanup could not be confirmed."
+          : "Preview request cancelled");
+      }
+    }
+  }
+
   const missing = status?.engine === "missing" || status?.engine === "error";
   const stale = source !== text || expectedOutput !== baseline || sourceRevision !== expectedRevision;
   return (
@@ -103,7 +185,7 @@ export function RewriteDialog({
                 } catch (reason) {
                   setError(reason instanceof Error ? reason.message : String(reason));
                 } finally {
-                  setBusy(false);
+                  if (mounted.current) setBusy(false);
                 }
               }}
             >
@@ -139,6 +221,7 @@ export function RewriteDialog({
           </p>
           <button
             className="secondary-button"
+            disabled={busy}
             onClick={() => {
               if (onBackground) onBackground();
               else closeDialog();
@@ -251,43 +334,35 @@ export function RewriteDialog({
           {error}
         </p>
       )}
+      {notice && <p role="status">{notice}</p>}
       <button
         className="secondary-button"
         disabled={busy || stale || missing || source.length > 50_000}
-        onClick={async () => {
-          if (busy || stale) return;
-          const generation = ++requestGeneration.current;
-          setBusy(true);
-          setError(null);
-          try {
-            const rewritten = await onRewrite({
-              text: source,
-              sourceLanguage,
-              preset,
-              instructions: validateRewriteInstructions(instructions),
-              allowInferences: false,
-            });
-            if (active.current && requestGeneration.current === generation) setResult(rewritten);
-          } catch (reason) {
-            if (active.current && requestGeneration.current === generation) setError(reason instanceof Error ? reason.message : String(reason));
-          } finally {
-            if (active.current && requestGeneration.current === generation) setBusy(false);
-          }
-        }}
+        onClick={generatePreview}
       >
-        {busy ? <LoaderCircle className="spin" /> : <WandSparkles />}
-        {busy
-          ? "Rewriting locally…"
+        {generating ? <LoaderCircle className="spin" /> : <WandSparkles />}
+        {generating
+          ? cancelling ? "Cancelling preview…" : "Rewriting locally…"
           : result
             ? "Try again"
             : "Generate preview"}
       </button>
+      {generating && onCancelRewrite && (
+        <button
+          className="secondary-button"
+          disabled={cancelling}
+          onClick={cancelPreview}
+        >
+          {cancelling ? "Cancelling preview…" : "Cancel rewrite"}
+        </button>
+      )}
       {source.length > 50_000 && (
         <p className="field-error">
           This transcript exceeds the 50,000-character rewrite limit. Shorten
           the transcript before rewriting it.
         </p>
       )}
+      {result && <PipelineTimingDetails timings={result.timings} />}
     </Modal>
   );
 }

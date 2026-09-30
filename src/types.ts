@@ -39,6 +39,7 @@ export type HistoryBatchSnapshot = {
   deletion: HistoryDeletionState | null;
   records: TranscriptRecord[];
 };
+export type DictationFormatting = "preserve" | "spoken";
 
 export type CustomWord = {
   kind?: "correction" | "shortcut";
@@ -62,6 +63,7 @@ export type AppSettings = {
   model: SpeechModelId;
   language: string;
   dictationMode: DictationMode;
+  dictationFormatting: DictationFormatting;
   pythonCommand: string;
   inputDeviceId: string;
   inputDeviceLabel: string;
@@ -122,6 +124,7 @@ export type MagicStatus = RuntimeLifecycle & {
 };
 
 export type MagicRewriteRequest = {
+  operationId?: string;
   text: string;
   preset: MagicPreset;
   /** Optional style request for this rewrite only; never a saved preference. Max 4,000 UTF-16 units. */
@@ -130,7 +133,21 @@ export type MagicRewriteRequest = {
   allowInferences: boolean;
 };
 
+export type PipelineTimings = {
+  captureEndMs?: number;
+  preprocessingMs?: number;
+  speechLoadMs?: number;
+  speechRequestMs?: number;
+  backendPreprocessingMs?: number;
+  inferenceMs?: number;
+  rewriteLoadMs?: number;
+  rewritingMs?: number;
+  clipboardMs?: number;
+  pasteMs?: number;
+};
+
 export type MagicRewriteResult = RuntimeLifecycle & {
+  timings?: PipelineTimings;
   preset?: MagicPreset;
   text: string;
   model: MagicModelId;
@@ -218,6 +235,8 @@ export type CaptureDiagnostics = {
 export type TranscriptRecord = {
   /** Never automatically persisted, even if history is enabled later. */
   sessionOnly?: boolean;
+  dictationFormatting?: DictationFormatting;
+  timings?: PipelineTimings;
   id: string;
   title?: string | null;
   createdAt: number;
@@ -327,6 +346,7 @@ export type RecorderCommand = {
 
 export type RecordingSubmission = {
   sessionId: string;
+  timings?: PipelineTimings;
   wav: Uint8Array;
   durationMs: number;
   captureDiagnostics?: CaptureDiagnostics;
@@ -444,6 +464,7 @@ export type DeluluApi = {
   loadMagic(): Promise<void>;
   unloadMagic(): Promise<void>;
   rewriteMagic(request: MagicRewriteRequest): Promise<MagicRewriteResult>;
+  cancelRewrite(operationId: string): Promise<boolean>;
   copyText(text: string): Promise<void>;
   authorizePaste(): Promise<void>;
   testPaste(): Promise<void>;

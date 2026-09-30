@@ -7,7 +7,7 @@ import {
   type ClientInterface,
   type MessageBus,
 } from "dbus-next";
-import type { PasteShortcut, PlatformCapabilities } from "../../src/types";
+import type { PipelineTimings, PasteShortcut, PlatformCapabilities } from "../../src/types";
 import { compatibleSessionBusAddress } from "../compat";
 import { getAccessibilityPermission } from "./accessibilityPermission";
 import { portalRequest, PORTAL_NAME, PORTAL_PATH } from "./shortcutPortal";
@@ -123,9 +123,10 @@ export class PasteService {
     return null;
   }
 
-  copy(text: string): void {
-    this.clipboardRestore.cancel();
-    this.publishClipboard(text);
+  copy(text: string, timings?: PipelineTimings): void {
+    const started = performance.now();
+    try { this.clipboardRestore.cancel(); this.publishClipboard(text); }
+    finally { if (timings) timings.clipboardMs = performance.now() - started; }
   }
 
   private publishClipboard(text: string): void {
@@ -155,11 +156,12 @@ export class PasteService {
     await this.ensurePortalSession();
   }
 
-  async paste(text: string, restoreClipboard = false): Promise<string> {
+  async paste(text: string, restoreClipboard = false, timings?: PipelineTimings): Promise<string> {
+    const started = performance.now();
     if (this.deliveryInFlight) throw new Error("A paste is already in progress; wait before pasting again");
     this.deliveryInFlight = true;
     try { return await this.performPaste(text, restoreClipboard); }
-    finally { this.deliveryInFlight = false; }
+    finally { this.deliveryInFlight = false; if (timings) timings.pasteMs = performance.now() - started; }
   }
 
   private async performPaste(text: string, restoreClipboard = false): Promise<string> {

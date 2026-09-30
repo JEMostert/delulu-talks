@@ -823,6 +823,19 @@ async function start(): Promise<void> {
     paste,
     { main: () => mainWindow, pill },
     (record: TranscriptRecord) => {
+      // Delivery measurements may arrive after a user changes this transcript.
+      const current = sessionTranscripts.get(record.id);
+      if (current) {
+        if (deliveredText(current) !== deliveredText(record)) return;
+        record = {
+          ...current,
+          timings: normalizeTimings({
+            ...current.timings,
+            ...(record.timings?.clipboardMs === undefined ? {} : { clipboardMs: record.timings.clipboardMs }),
+            ...(record.timings?.pasteMs === undefined ? {} : { pasteMs: record.timings.pasteMs }),
+          }),
+        };
+      }
       lastTranscript = record;
       rememberSessionTranscript(sessionTranscripts, record);
       broadcast("history:added", record);

@@ -68,6 +68,7 @@ handle("magic:unload", () => {
     assertRuntimeIdle();
     return asr.unloadMagic();
   });
+handle("magic:cancelRewrite", (_event, value: unknown) => asr.cancelRewrite(validateText(value,128)));
 handle("magic:rewrite", (_event, value: unknown) => {
     if (!value || typeof value !== "object")
       throw new Error("Expected a rewriting request");
@@ -76,6 +77,7 @@ handle("magic:rewrite", (_event, value: unknown) => {
       ? (source.preset as MagicRewriteRequest["preset"])
       : "polish";
     const request: MagicRewriteRequest = {
+      operationId: source.operationId === undefined ? undefined : validateText(source.operationId,128),
       text: validateText(source.text, 50_000),
       preset,
       instructions: validateRewriteInstructions(source.instructions),

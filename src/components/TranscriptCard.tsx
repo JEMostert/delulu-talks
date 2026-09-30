@@ -1,6 +1,7 @@
 import { CaptureDiagnostics } from "./CaptureDiagnostics";
 import { ExportTemplateDialog } from "./ExportTemplateDialog";
 import type { ExportTemplateRequest } from "../exportTemplates";
+import { PipelineTimingDetails } from "./PipelineTimingDetails";
 import { RewriteDialog } from "./RewriteDialog";
 import { IdentifierPreview } from "./IdentifierPreview";
 import { FillerPreview } from "./FillerPreview";
@@ -49,6 +50,7 @@ import type {
 export type TranscriptActions = {
   onOpenRewrite?: (record: TranscriptRecord) => void;
   onRewrite?: (request: MagicRewriteRequest) => Promise<MagicRewriteResult>;
+  onCancelRewrite?: (operationId: string) => Promise<boolean>;
   onSetRewrite?: (
     id: string,
     result: MagicRewriteResult | null,
@@ -83,6 +85,7 @@ export function TranscriptCard({
   ruleExamples,
   onRewrite,
   onOpenRewrite,
+  onCancelRewrite,
   onSetRewrite,
   onRewriteSetup,
   rewriteStatus,
@@ -523,6 +526,10 @@ export function TranscriptCard({
               </button>
             </div>
           )}
+          {record.dictationFormatting === "spoken" && (
+            <p className="caption">Explicit spoken formatting applied; original recognition remains in Speech.</p>
+          )}
+          <PipelineTimingDetails timings={record.timings} />
           {onExport && (
             <div className="export-row mt-3.5 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted [&_.tool-button]:min-h-[28px] [&_.tool-button]:px-2 [&_.tool-button]:py-[5px] [&_svg]:size-3">
               <span>Export</span>
@@ -567,6 +574,7 @@ export function TranscriptCard({
           onRewrite={onRewrite}
           onApply={async (result, source, revision) => {
             const applied = await onSetRewrite(record.id, result, source, revision);
+          onCancelRewrite={onCancelRewrite}
             if (applied) setShowSource(false);
             return applied;
           }}

@@ -1,6 +1,7 @@
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { transcriptSourceRevision } from "../../src/transcriptText";
 import { assertPersonalProfilesUpdate, readPersonalProfiles } from "../../src/personalProfiles";
+import { normalizeTimings, withoutRewriteTimings } from "../../src/pipelineTimings";
 import { app } from "electron";
 import { isMagicPreset } from "../../src/rewritePresets";
 import { backupProfileMigration, removeMigrationHistoryBackups } from "./migrationBackups";
@@ -249,6 +250,7 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.dictationMode === "code" || source.dictationMode === "command"
         ? source.dictationMode
         : "prose",
+    dictationFormatting: source.dictationFormatting === "spoken" ? "spoken" : "preserve",
     pythonCommand: safeString(
       source.pythonCommand,
       DEFAULT_SETTINGS.pythonCommand,
@@ -428,6 +430,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     source.languageStatus === undefined
       ? {}
       : normalizeLanguageMetadata(source)),
+    dictationFormatting: source.dictationFormatting === "spoken" ? "spoken" : "preserve",
     source: ["dictation", "file"].includes(String(source.source))
       ? (source.source as TranscriptRecord["source"])
       : "dictation",
@@ -436,6 +439,7 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     processingTimeMs: Math.max(0, Number(source.processingTimeMs) || 0),
     ...(delivery ? { delivery } : {}),
     captureDiagnostics: normalizeCaptureDiagnostics(source.captureDiagnostics),
+    timings: normalizeTimings(source.timings),
   };
 }
 
@@ -455,6 +459,7 @@ export function applyTranscriptEdit(
     magicPreset: null,
     magicIncludedInferences: false,
     magicProcessingTimeMs: 0,
+    timings: withoutRewriteTimings(record.timings),
   };
   const normalized = text?.trim() ?? null;
   if (text !== null && !normalized)

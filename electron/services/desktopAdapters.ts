@@ -9,8 +9,8 @@ import { PillService, type PillCommand } from "./pill";
 import { ShortcutService } from "./shortcut";
 
 export interface DesktopPasteAdapter {
-  copy(text: string): void;
-  paste(text: string, restoreClipboard?: boolean): Promise<string>;
+  copy(text: string, timings?: import("../../src/types").PipelineTimings): void;
+  paste(text: string, restoreClipboard?: boolean, timings?: import("../../src/types").PipelineTimings): Promise<string>;
   authorize(): Promise<void>;
   capabilities(
     overlayMethod?: PlatformCapabilities["overlayMethod"],
