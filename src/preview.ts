@@ -1,5 +1,6 @@
 import { activatePersonalProfile } from "./activePersonalProfile";
 import { changePersonalProfiles } from "./personalProfileCommands";
+import { emptyProjectVocabulary } from "./projectVocabulary";
 import { DEFAULT_SETTINGS } from "./data";
 import { deliveredText, originalTranscriptText, transcriptSourceRevision } from "./transcriptText";
 import { normalizeTranscriptTitle } from "./transcriptTitle";
@@ -329,6 +330,11 @@ export const previewApi: DeluluApi = {
   async clearHistory() {
     demoHistory = [];
   },
+  async chooseProjectIdentifier() { return desktopOnly(); },
+  async getProjectVocabulary() { return emptyProjectVocabulary(); },
+  async selectProjectVocabulary() { return desktopOnly(); },
+  async refreshProjectVocabulary() { return desktopOnly(); },
+  async clearProjectVocabulary() { return emptyProjectVocabulary(); },
   async chooseAudioFile(): Promise<AudioFileSelection | null> {
     return desktopOnly();
   },

@@ -3,6 +3,7 @@ import { ProfileActivationControls } from "../components/ProfileActivationContro
 import type { ProfileActivationCommand } from "../activePersonalProfile";
 import { PersonalProfiles } from "../components/PersonalProfiles";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
+import { ProjectVocabulary } from "../components/ProjectVocabulary";
 import { VocabularyPage } from "./VocabularyPage";
 import { useState } from "react";
 import {
@@ -134,11 +135,14 @@ export function SettingsPage(props: Props) {
         </>
       )}
       {tab === "personalization" && (
+        <>
+        <ProjectVocabulary />
         <VocabularyPage
           words={s.customWords}
           saving={saving}
           onChange={(customWords) => onSave({ customWords })}
         />
+        </>
       )}
       {tab === "general" && (
         <>

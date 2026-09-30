@@ -4,6 +4,7 @@ import type { ActivePersonalProfile, CaptureProfileSnapshot, ProfileActivationCo
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
 
+import type { ProjectVocabularySnapshot } from "./projectVocabulary";
 export type Page =
   "home" | "lab" | "models" | "vocabulary" | "history" | "settings" | "technical";
 
@@ -433,6 +434,11 @@ export type DeluluApi = {
   previewHistoryRetention(policy: HistoryRetentionPolicy): Promise<HistoryRetentionPreview>;
   applyHistoryRetention(token: string): Promise<string[]>;
   onHistoryRetentionApplied(callback: (removedIds: string[]) => void): () => void;
+  chooseProjectIdentifier(input: {repository: string; rawSpeech: string; symbol: string}): Promise<ProjectVocabularySnapshot>;
+  getProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
+  selectProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
+  refreshProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
+  clearProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
   chooseAudioFile(): Promise<AudioFileSelection | null>;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;

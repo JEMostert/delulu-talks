@@ -105,6 +105,11 @@ const api: DeluluApi = {
   applyHistoryRetention: (token: string) => ipcRenderer.invoke("history:retentionApply", token),
   onHistoryRetentionApplied: (callback: (removedIds: string[]) => void) =>
     listener("history:retentionApplied", callback),
+  chooseProjectIdentifier: (input) => ipcRenderer.invoke("projectVocabulary:choose", input),
+  getProjectVocabulary: () => ipcRenderer.invoke("projectVocabulary:get"),
+  selectProjectVocabulary: () => ipcRenderer.invoke("projectVocabulary:select"),
+  refreshProjectVocabulary: () => ipcRenderer.invoke("projectVocabulary:refresh"),
+  clearProjectVocabulary: () => ipcRenderer.invoke("projectVocabulary:clear"),
   chooseAudioFile: () => ipcRenderer.invoke("lab:chooseAudio"),
   runLab: (request: LabRequest) => ipcRenderer.invoke("lab:run", request),
   exportTranscript: (id: string, format: ExportFormat) =>
