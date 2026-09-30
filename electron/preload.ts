@@ -135,6 +135,14 @@ const api: DeluluApi = {
     });
     return invoke("lab:resolveAudioFiles", paths);
   },
+  getImportQueue: () => invoke("lab:queueGet"),
+  enqueueImport: (path) => invoke("lab:queueEnqueue", path),
+  pauseImportQueue: (paused) => invoke("lab:queuePause", paused),
+  moveImportJob: (id, direction) => invoke("lab:queueMove", id, direction),
+  cancelImportJob: (id) => invoke("lab:queueCancel", id),
+  retryImportJob: (id) => invoke("lab:queueRetry", id),
+  clearFinishedImports: () => invoke("lab:queueClearFinished"),
+  onImportQueue: (callback) => listener("lab:queueChanged", callback),
   exportTranscript: (id: string, format: ExportFormat) =>
     invoke("history:export", id, format),
   exportTranscriptTemplate: (id, request) =>

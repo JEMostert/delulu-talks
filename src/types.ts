@@ -1,4 +1,5 @@
 import type { DictationMode } from "./technicalDictation";
+import type { ImportQueueSnapshot } from "./importQueue";
 import type { ExportTemplateRequest } from "./exportTemplates";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
@@ -455,6 +456,14 @@ export type DeluluApi = {
   loadAudioSource(path: string): Promise<{ bytes: Uint8Array; mime: string }>;
   removeAudioJob(path: string): Promise<void>;
   relinkAudioJob(path: string): Promise<AudioImportJob | null>;
+  getImportQueue(): Promise<ImportQueueSnapshot>;
+  enqueueImport(path: string): Promise<ImportQueueSnapshot>;
+  pauseImportQueue(paused: boolean): Promise<ImportQueueSnapshot>;
+  moveImportJob(id: string, direction: -1 | 1): Promise<ImportQueueSnapshot>;
+  cancelImportJob(id: string): Promise<ImportQueueSnapshot>;
+  retryImportJob(id: string): Promise<ImportQueueSnapshot>;
+  clearFinishedImports(): Promise<ImportQueueSnapshot>;
+  onImportQueue(callback: (snapshot: ImportQueueSnapshot) => void): () => void;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   exportTranscriptTemplate(
