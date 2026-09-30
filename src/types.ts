@@ -291,6 +291,16 @@ export type AudioFileMetadata = {
   processingTimeEstimate: string;
 };
 
+export type AudioImportJob = AudioFileSelection & {
+  state: "pending" | "running" | "done" | "failed";
+  createdAt: number;
+  updatedAt: number;
+  resultId?: string;
+  error?: string;
+  sourceAvailable?: boolean;
+  sourceError?: string;
+};
+
 export type LabRequest = {
   path: string;
 };
@@ -439,6 +449,12 @@ export type DeluluApi = {
   onHistoryRetentionApplied(callback: (removedIds: string[]) => void): () => void;
   chooseAudioFile(): Promise<AudioFileSelection | null>;
   inspectAudioFile(path: string): Promise<AudioFileMetadata>;
+  chooseAudioFiles(): Promise<AudioFileSelection[]>;
+  resolveAudioFiles(files: File[]): Promise<AudioFileSelection[]>;
+  getAudioJobs(): Promise<AudioImportJob[]>;
+  loadAudioSource(path: string): Promise<{ bytes: Uint8Array; mime: string }>;
+  removeAudioJob(path: string): Promise<void>;
+  relinkAudioJob(path: string): Promise<AudioImportJob | null>;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
   exportTranscriptTemplate(

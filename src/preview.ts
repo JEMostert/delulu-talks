@@ -320,6 +320,16 @@ export const previewApi: DeluluApi = {
   async inspectAudioFile(_path: string) {
     throw new Error("Media inspection requires Electron");
   },
+  async getAudioJobs() { return desktopOnly(); },
+  async loadAudioSource(_path: string) { return desktopOnly(); },
+  async removeAudioJob(_path: string) { return desktopOnly(); },
+  async relinkAudioJob(_path: string) { return desktopOnly(); },
+  async chooseAudioFiles(): Promise<AudioFileSelection[]> {
+    return desktopOnly();
+  },
+  async resolveAudioFiles(_files: File[]): Promise<AudioFileSelection[]> {
+    return desktopOnly();
+  },
   async runLab(_request: LabRequest) {
     throw new Error("Audio file transcription requires Electron");
   },

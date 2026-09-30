@@ -1,5 +1,6 @@
+import { MAX_AUDIO_BATCH_FILES } from "../src/audioFormats";
 import { validateRewriteInstructions } from "../src/rewriteInstructions";
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { parseIpcRequest } from "../src/ipcRequests";
 import type { IpcRequestChannel } from "../src/ipcRequests";
 import type {
@@ -113,6 +114,27 @@ const api: DeluluApi = {
     listener("history:retentionApplied", callback),
   chooseAudioFile: () => invoke("lab:chooseAudio"),
   runLab: (request: LabRequest) => invoke("lab:run", request),
+  chooseAudioFiles: () => invoke("lab:chooseAudioFiles"),
+  getAudioJobs: () => invoke("lab:getJobs"),
+  loadAudioSource: (path: string) => invoke("lab:loadSource", path),
+  removeAudioJob: (path: string) => invoke("lab:removeJob", path),
+  relinkAudioJob: (path: string) => invoke("lab:relinkJob", path),
+  resolveAudioFiles: async (files: File[]) => {
+    if (!Array.isArray(files) || files.length > MAX_AUDIO_BATCH_FILES)
+      throw new Error(`Choose at most ${MAX_AUDIO_BATCH_FILES} files at once`);
+    const paths = files.map((file) => {
+      let path: string;
+      try {
+        path = webUtils.getPathForFile(file);
+      } catch {
+        throw new Error(`${file?.name || "Dropped item"}: this is not a local file`);
+      }
+      if (!path)
+        throw new Error(`${file.name}: this file has no local path`);
+      return path;
+    });
+    return invoke("lab:resolveAudioFiles", paths);
+  },
   exportTranscript: (id: string, format: ExportFormat) =>
     invoke("history:export", id, format),
   exportTranscriptTemplate: (id, request) =>

@@ -86,6 +86,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
 let storage: StorageService;
+
 let asr: AsrService;
 let modelCache: ModelCacheService;
 let paste: PasteService;
