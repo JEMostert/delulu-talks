@@ -60,8 +60,9 @@ text. Deletion requires confirmation in the UI; failed operations retain drafts.
 
 Explicit activation previews language, paste/copy/history, the full vocabulary,
 and optional rewriting settings. Profiles with custom decode/context/technical
-grammar, rewrite instructions, or language-scoped rules unsupported by this
-baseline reject activation. Built-in identifier and saved-block protection uses
+grammar or rewrite instructions unsupported by this baseline reject activation.
+Language-scoped vocabulary remains scoped through activation, capture and global
+restoration. Built-in identifier and saved-block protection uses
 the actual published PR357/339 personalization/rewrite paths; it is not a profile
 metadata-only promise. No native context permission is granted by activation.
 

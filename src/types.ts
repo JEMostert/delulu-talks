@@ -85,7 +85,7 @@ export type AppSettings = {
   launchAtLogin: boolean;
   menuBarOnly: boolean;
   customWords: CustomWord[];
-  /** Stored contract only; no active profile or automatic behavior change. */
+  /** Saved profiles change behavior only through explicit activation. */
   personalProfiles?: PersonalProfileDocument;
   activePersonalProfile?: ActivePersonalProfile | null;
 };
