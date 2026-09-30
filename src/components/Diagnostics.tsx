@@ -6,7 +6,7 @@ import { readStartupService } from "../startupServices";
 import type { RuntimeDiagnostics } from "../types";
 import { Alert } from "./ui";
 
-export function Diagnostics() {
+export function Diagnostics({ refreshButtonId }: { refreshButtonId?: string } = {}) {
   const [data, setData] = useState<RuntimeDiagnostics | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -53,6 +53,7 @@ export function Diagnostics() {
         </div>
         <button
           className="tool-button"
+          id={refreshButtonId}
           disabled={busy}
           onClick={() => void refresh()}
         >
