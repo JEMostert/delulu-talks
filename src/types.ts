@@ -2,6 +2,7 @@ import type { DictationMode } from "./technicalDictation";
 import type { ExportTemplateRequest } from "./exportTemplates";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
+import type { SpeechBackendId, SpeechExecution, SpeechIdentity } from "./speechModels";
 
 export type Page =
   "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
@@ -151,6 +152,7 @@ export type RetryAudioState = {
 
 export type DictationStatus = RuntimeLifecycle & {
   setupStage?: SetupStage | null;
+  speechExecution?: SpeechExecution | null;
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   captureInputNotice?: string | null;
@@ -221,6 +223,8 @@ export type TranscriptRecord = {
   magicIncludedInferences?: boolean;
   magicProcessingTimeMs?: number;
   model: ModelId;
+  /** Observed at recognition time; absent on legacy records, never inferred. */
+  speechExecution?: SpeechExecution;
   language: string;
   /** Decoder hint, not a detected-language claim. Absent on legacy records. */
   requestedLanguage?: string | null;
@@ -247,6 +251,8 @@ export type ModelProvenance = {
 };
 
 export type ModelInfo = {
+  identity: SpeechIdentity;
+  backendIds: SpeechBackendId[];
   runtime: string;
   downloadSize: string;
   id: SpeechModelId;

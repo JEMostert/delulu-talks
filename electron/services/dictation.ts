@@ -2,6 +2,7 @@ import { renderTechnicalDictation } from "../../src/technicalDictation";
 import { personalizeWithUsage } from "../../src/personalization";
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { formatSpokenCommands } from "../../src/spokenFormatting";
+import { normalizeSpeechExecution } from "../../src/speechModels";
 import { deliveredText } from "../../src/transcriptText";
 import { normalizeLanguageMetadata, normalizeReportedLanguage } from "../../src/transcriptLanguage";
 import type { BrowserWindow } from "electron";
@@ -709,6 +710,7 @@ export class DictationService {
       language: languageMetadata.recognizedLanguage ?? "und",
       ...languageMetadata,
       requestedLanguage: settings.language,
+      speechExecution: normalizeSpeechExecution(result.speechExecution),
       source,
       sourceName,
       processingTimeMs: Math.round(numeric(result.processingTime) * 1000),

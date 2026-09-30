@@ -376,7 +376,7 @@ class Worker:
                 "residency": "unloaded",
                 "warmup": "not-started",
             }
-        return {
+        status = {
             "loaded": self.model is not None,
             "model": self.model_name,
             "device": self.device if self.model is not None else None,
@@ -385,6 +385,17 @@ class Worker:
             **({"cudaPreflight": self.cuda_preflight}
                if getattr(self, "cuda_preflight", None) is not None else {}),
         }
+        if self.model is not None:
+            status["speechExecution"] = {
+                "modelId": "r2t2",
+                "backendId": "vllm-cuda",
+                # vLLM selects its dtype internally; do not guess from weights.
+                "precision": None,
+                "checkpoint": {"repository": SPEECH_MODEL, "revision": None},
+                "platform": "linux",
+                "device": "cuda",
+            }
+        return status
 
     def magic_status(self) -> dict[str, Any]:
         return {

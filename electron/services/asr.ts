@@ -1,3 +1,4 @@
+import { normalizeSpeechExecution } from "../../src/speechModels";
 import { splitForRewrite } from "../../src/personalization";
 import { app } from "electron";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
@@ -30,6 +31,7 @@ function modelSetupStage(stage: string): SetupStage | null {
 }
 
 type WorkerRuntime = {
+  speechExecution?: unknown;
   loaded: boolean;
   residency?: RuntimeLifecycle["residency"];
   warmup?: RuntimeLifecycle["warmup"];
@@ -275,6 +277,7 @@ export class AsrService {
         ? UNLOADED_LIFECYCLE : {}),
       ...patch,
     };
+    if (this.status.engine !== "ready") this.status.speechExecution = null;
     for (const listener of this.statusListeners) listener(this.getStatus());
   }
 
@@ -680,6 +683,7 @@ export class AsrService {
         engine: "ready",
         setupStage: runtime.warmup === "complete" ? "ready" : "model-loaded",
         message: runtime.warmup === "complete" ? `${model.name} ready` : `${model.name} loaded; warmup not reported complete`,
+        speechExecution: normalizeSpeechExecution(runtime.speechExecution) ?? null,
         detail: null,
         model: settings.model,
         progress: 1,
@@ -749,6 +753,9 @@ export class AsrService {
             : "This adapter advertises no language hints; repair the local speech runtime."}`,
         );
       }
+      // Capture this execution before the asynchronous request; future loads must
+      // never relabel the transcript produced by the current worker.
+      const execution = this.status.speechExecution;
       const result = await this.request<Record<string, unknown>>(
         "speech",
         "transcribe",
@@ -760,6 +767,7 @@ export class AsrService {
       );
       return {
         ...result,
+        speechExecution: execution ? structuredClone(execution) : undefined,
         processingTime: (performance.now() - started) / 1000,
       };
     } finally {
