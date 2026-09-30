@@ -57,6 +57,11 @@ function desktopOnly(): never {
 }
 
 export const previewApi: DeluluApi = {
+  getSelectedTextState: async () => ({enabled:false,supported:false,shortcut:"CommandOrControl+Shift+R",session:null,error:null}),
+  enableSelectedText: async () => { throw new Error("Native selected-text capture requires the desktop application on X11."); },
+  discardSelectedText: async () => {},
+  replaceSelectedText: async () => { throw new Error("Native selected-text replacement is unavailable in browser preview."); },
+  onSelectedTextState: () => () => {},
   async getRuleUsage() {
     return desktopOnly();
   },

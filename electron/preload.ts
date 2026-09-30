@@ -30,6 +30,11 @@ function listener<T>(
 }
 
 const api: DeluluApi = {
+  getSelectedTextState: () => ipcRenderer.invoke("selectedText:state"),
+  enableSelectedText: (enabled) => ipcRenderer.invoke("selectedText:enable",enabled),
+  discardSelectedText: (id) => ipcRenderer.invoke("selectedText:discard",id),
+  replaceSelectedText: (id,text) => ipcRenderer.invoke("selectedText:replace",id,text),
+  onSelectedTextState: (callback) => listener("selectedText:changed",callback),
   getRuleUsage: () => ipcRenderer.invoke("rules:usage"),
   resetRuleUsage: () => ipcRenderer.invoke("rules:resetUsage"),
   previewModelCache: () => ipcRenderer.invoke("cache:preview"),

@@ -1,3 +1,4 @@
+import { SelectedTextWorkflow } from "./components/SelectedTextWorkflow";
 import { deliveredText, transcriptText, transcriptSourceRevision } from "./transcriptText";
 import { createTranscriptCommands } from "./transcriptCommands";
 import { useEffect, useState } from "react";
@@ -628,6 +629,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             baseTranscriptActions.onSetRewrite!(rewrite.transcriptId, result, source, sourceRevision))}
         />
       )}
+      <div className="px-6 pb-3 flex flex-wrap items-center gap-3"><SelectedTextWorkflow status={w.magicStatus} onSetup={() => w.setPage("models")} /></div>
       {paletteOpen && <CommandPalette commands={commands} actionError={w.error} onClose={() => setPaletteOpen(false)} />}
       {w.toast && (
         <div

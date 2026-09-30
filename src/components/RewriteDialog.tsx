@@ -1,3 +1,4 @@
+import { bridge } from "../bridge";
 import { useEffect, useId, useRef, useState } from "react";
 import { LoaderCircle, WandSparkles } from "lucide-react";
 import { Modal } from "./ui";
@@ -173,6 +174,7 @@ export function RewriteDialog({
       onClose={closeDialog}
       footer={
         <>
+          {result && <button className="secondary-button" disabled={busy} onClick={async () => {try {await bridge.copyText(result.text);setNotice("Preview copied — paste manually into the intended destination.");} catch(reason) {setError(String(reason));}}}>Copy preview</button>}
           {onBackground && <button className="secondary-button" onClick={onBackground}>Continue in background</button>}
           <button
             className="secondary-button"

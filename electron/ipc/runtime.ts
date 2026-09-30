@@ -8,8 +8,8 @@ import { localDataOverview } from "../services/localData";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
-export function registerRuntimeIpc({ handle }: IpcRegistrar, { storage, asr, dictation, settingsBusy, modelCache }: Pick<IpcDependencies, "storage" | "asr" | "dictation" | "settingsBusy" | "modelCache">): void {
-const assertRuntimeIdle = () => { if (dictation.isActive || asr.isBusy) throw new Error("Finish the current recording or model operation first"); };
+export function registerRuntimeIpc({ handle }: IpcRegistrar, { storage, asr, dictation, settingsBusy, modelCache, paste }: Pick<IpcDependencies, "storage" | "asr" | "dictation" | "settingsBusy" | "modelCache" | "paste">): void {
+const assertRuntimeIdle = () => { if (dictation.isActive || asr.isBusy || paste.isBusy) throw new Error("Finish the current recording or model operation first"); };
 handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
 handle("cache:preview", () => modelCache.preview());
 handle("cache:cleanup", (_event, token: unknown, ids: unknown) => {

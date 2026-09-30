@@ -200,6 +200,7 @@ export class DictationService {
   }
 
   start(): void {
+    if (this.paste.isBusy) throw new Error("Finish the clipboard operation before recording.");
     const status = this.asr.getStatus();
     if (this.captureState !== "idle") return;
     if (

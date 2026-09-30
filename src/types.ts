@@ -1,3 +1,4 @@
+import type { SelectedTextApi } from "./selectedText";
 import type { DictationMode } from "./technicalDictation";
 import type { ExportTemplateRequest } from "./exportTemplates";
 import type { ActivePersonalProfile, CaptureProfileSnapshot, ProfileActivationCommand } from "./activePersonalProfile";
@@ -369,7 +370,7 @@ export type ModelCacheCleanupResult = {
   failures: { id: string; message: string }[];
 };
 
-export type DeluluApi = {
+export type DeluluApi = SelectedTextApi & {
   previewModelCache(): Promise<ModelCachePreview>;
   cleanupModelCache(token: string, ids: string[]): Promise<ModelCacheCleanupResult>;
   getRuleUsage(): Promise<RuleUsage>;

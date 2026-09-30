@@ -202,7 +202,7 @@ export function HomePage({
               </div>
               <span className="text-[11px] text-muted">
                 {recording
-                  ? portal && s.shortcutMode === "hold"
+                  ? status.phase === "paused" ? "Paused — microphone open; Resume or Stop in the header." : portal && s.shortcutMode === "hold"
                     ? "Release the shortcut or press Stop in the header to finish."
                     : "Press the shortcut again or press Stop in the header to finish."
                   : portal && s.shortcutMode === "hold"
@@ -268,6 +268,7 @@ export function HomePage({
                   ))}
                 </select>
               </ControlField>
+              <MicrophoneNotice settings={s} devices={devices} />
               <ControlField label="Text mode">
                 <select
                   aria-label="Dictation text mode"
@@ -280,7 +281,6 @@ export function HomePage({
                   <option value="code">Code symbols</option>
                   <option value="command">Command text</option>
                 </select>
-                <MicrophoneNotice settings={s} devices={devices} />
               </ControlField>
               <ControlField label="Record mode">
                 <select

@@ -318,7 +318,7 @@ export function TechnicalPage({ history, settings, busy, onUpdateSettings, rewri
         text={selectedRewrite.source}
         baseline={selectedRewrite.source}
         status={rewriteStatus}
-        onRewrite={bridge.rewriteMagic}
+        onRewrite={bridge.rewriteMagic} onCancelRewrite={bridge.cancelRewrite}
         onSetup={onRewriteSetup}
         onClose={() => setSelectedRewrite(null)}
         onApply={async (result, expectedSource) => {

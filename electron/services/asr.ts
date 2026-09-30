@@ -903,8 +903,8 @@ export class AsrService {
       throw new Error("Wait for the active rewrite to finish");
     if (request.operationId !== undefined && !request.operationId.trim())
       throw new Error("Manual rewrite requires a nonempty operation ID");
-    const parts = splitForRewrite(
-      request.text, settings.customWords, request.sourceLanguage ?? settings.language,
+    const parts = splitTechnicalBlocks(request.text).flatMap((part) =>
+      part.protected ? [part] : splitForRewrite(part.text, settings.customWords, request.sourceLanguage ?? settings.language),
     );
     if (parts.filter((part) => !part.protected && part.text.trim()).length > 16)
       throw new Error(
@@ -975,7 +975,7 @@ export class AsrService {
         model: settings.magicModel,
         processingTimeMs,
         inputCharacters: request.text.length,
-        includedInferences: request.allowInferences,
+        includedInferences: request.preset !== "summary" && request.allowInferences,
         preset: request.preset,
         text,
         outputCharacters: text.length,
