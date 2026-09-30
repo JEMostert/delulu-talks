@@ -241,6 +241,10 @@ export class AsrService {
     this.updateStatus({ captureInputNotice: message });
   }
 
+  setSilenceCountdown(remainingSeconds: number | null): void {
+    this.updateStatus({ silenceCountdownSeconds: remainingSeconds });
+  }
+
   setActivity(
     phase: DictationStatus["phase"],
     message: string,

@@ -7,6 +7,7 @@ import { MAX_CAPTURE_DURATION_MS, MAX_CAPTURE_SAMPLES } from "./captureLimits";
 import { CLIPPING_THRESHOLD } from "./captureDiagnostics";
 import { beginCaptureLevel } from "./captureLevel";
 import type { CaptureDiagnostics, MicrophoneDevice, RecorderCommand } from "./types";
+import { TrailingSilenceStop } from "./trailingSilence";
 
 function merge(chunks: Float32Array[]): Float32Array {
   const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
@@ -77,6 +78,7 @@ type CaptureSession = {
   readonly generation: number;
   readonly sessionId: string;
   sampleCount: number; peakAmplitude: number; sumSquares: number; clippedSampleCount: number;
+  silenceStop: TrailingSilenceStop | null; lastSilenceCountdown: number | null;
   sampleLimit: number; limitStopRequested: boolean;
   limitTimer?: ReturnType<typeof setTimeout>;
   stopWatchingInput?: () => void;
@@ -141,7 +143,7 @@ export class PcmRecorder {
     const generation = this.generation;
     const operation = this.commands.then(async () => {
       if (command.action === "start")
-        await this.start(command.inputDeviceId, generation, command.sessionId!);
+        await this.start(command.inputDeviceId, generation, command.sessionId!, command.trailingSilence);
       if (command.action === "pause" || command.action === "resume")
         await this.changePause(command.action === "pause", command.sessionId);
       if (command.action === "stop") await this.stop(true, command.sessionId);
@@ -160,12 +162,13 @@ export class PcmRecorder {
     );
   }
 
-  private async start(deviceId: string, generation: number, sessionId: string): Promise<void> {
+  private async start(deviceId: string, generation: number, sessionId: string, trailingSilence?: RecorderCommand["trailingSilence"]): Promise<void> {
     if (this.session || generation !== this.generation) return;
     let cancel!: () => void;
     const cancellation = new Promise<void>((resolve) => { cancel = resolve; });
     const session: CaptureSession = {
       generation, sessionId, cancellation, cancel,
+      silenceStop: trailingSilence ? new TrailingSilenceStop(trailingSilence.seconds,trailingSilence.thresholdDb) : null, lastSilenceCountdown: null,
       sampleCount: 0, peakAmplitude: 0, sumSquares: 0, clippedSampleCount: 0, sampleLimit: MAX_CAPTURE_SAMPLES, limitStopRequested: false,
       context: null, stream: null, worklet: null, processor: null,
       source: null, sink: null, chunks: [], startedAt: 0, lastLevelAt: 0,
@@ -271,6 +274,14 @@ export class PcmRecorder {
     }
     session.sampleCount += accepted;
     if (session.sampleCount >= session.sampleLimit) this.requestLimitStop(session);
+    if (session.silenceStop && !session.stopping && !session.limitStopRequested) {
+      const countdown = session.silenceStop.update(samples, session.context!.sampleRate);
+      if (countdown.shouldStop) this.requestLimitStop(session,"silence");
+      else if (countdown.remainingSeconds !== session.lastSilenceCountdown) {
+        session.lastSilenceCountdown = countdown.remainingSeconds;
+        void bridge.recordingSilence(session.sessionId,countdown.remainingSeconds,false).catch(() => undefined);
+      }
+    }
     const now = performance.now();
     if (now - session.lastLevelAt < 50) return;
     session.lastLevelAt = now;
@@ -306,12 +317,12 @@ export class PcmRecorder {
     }
   }
 
-  private requestLimitStop(session: CaptureSession): void {
+  private requestLimitStop(session: CaptureSession, reason: "limit" | "silence" = "limit"): void {
     if (!this.current(session) || session.stopping || session.limitStopRequested) return;
     session.limitStopRequested = true;
     clearTimeout(session.limitTimer);
     session.source?.disconnect();
-    void bridge.recordingLimitReached(session.sessionId).then(() => {
+    void (reason === "silence" ? bridge.recordingSilence(session.sessionId,0,true) : bridge.recordingLimitReached(session.sessionId)).then(() => {
       if (this.current(session)) return this.handle({action:"stop", inputDeviceId:"default", sessionId:session.sessionId});
     }).catch((error) => {
       if (!this.current(session)) return;
@@ -352,6 +363,9 @@ export class PcmRecorder {
     }
     if (!this.current(session)) return;
     session.paused = paused;
+    session.silenceStop?.reset();
+    session.lastSilenceCountdown = null;
+    await bridge.recordingSilence(session.sessionId,null,false);
     bridge.recordingLevel(0);
     if (session.sessionId) await bridge.recordingPauseChanged(session.sessionId, paused);
   }

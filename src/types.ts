@@ -53,6 +53,9 @@ export type AppSettings = {
   pythonCommand: string;
   inputDeviceId: string;
   inputDeviceLabel: string;
+  trailingSilenceStopEnabled: boolean;
+  trailingSilenceSeconds: number;
+  trailingSilenceThresholdDb: number;
   autoPaste: boolean;
   pasteShortcut: PasteShortcut;
   pasteLastDelaySeconds: number;
@@ -148,6 +151,7 @@ export type DictationStatus = RuntimeLifecycle & {
   retryAvailable?: boolean;
   captureInputNotice?: string | null;
   retryAudio?: RetryAudioState;
+  silenceCountdownSeconds?: number | null;
   migrationRequired?: boolean;
   phase: DictationPhase;
   engine: EnginePhase;
@@ -275,6 +279,7 @@ export type LabRequest = {
 
 export type RecorderCommand = {
   action: "start" | "stop" | "cancel" | "pause" | "resume";
+  trailingSilence?: { seconds: number; thresholdDb: number } | null;
   inputDeviceId: string;
   /** Native commands identify their capture; standalone capture can omit this. */
   sessionId?: string;
@@ -429,6 +434,11 @@ export type DeluluApi = {
   recordingStarted(sessionId: string): Promise<void>;
   recordingLimitReached(sessionId: string): Promise<void>;
   recordingPauseChanged(sessionId: string, paused: boolean): Promise<void>;
+  recordingSilence(
+    sessionId: string,
+    remainingSeconds: number | null,
+    stop: boolean,
+  ): Promise<void>;
   recorderReady(): Promise<void>;
   recordingFailed(message: string, sessionId: string): Promise<void>;
   recordingInputChanged(

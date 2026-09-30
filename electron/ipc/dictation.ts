@@ -27,6 +27,10 @@ handle("dictation:cancel", () => dictation.cancel());
 handle("recorder:started", (_event, sessionId: unknown) =>
     dictation.recordingStarted(validateText(sessionId, 128)),
   );
+handle("recorder:silence", (_event, id: unknown, remaining: unknown, stop: unknown) => {
+  if (typeof stop !== "boolean" || (remaining !== null && (typeof remaining !== "number" || !Number.isFinite(remaining)))) throw new Error("Invalid silence countdown");
+  dictation.recordingSilence(validateText(id,128), remaining as number | null, stop);
+});
 handle("recorder:limit", (_event, sessionId: unknown) =>
     dictation.recordingLimitReached(validateText(sessionId, 128)),
   );

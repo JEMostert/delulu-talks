@@ -269,6 +269,63 @@ export function SettingsPage(props: Props) {
               </select>
             </SettingRow>
             <SettingRow
+              title="Stop after trailing silence"
+              description="Stops recording after audio stays below the energy threshold. This does not recognize speech: quiet speech may stop early, and background noise may prevent stopping. It arms after 150 ms above the threshold."
+            >
+              {toggle(
+                "trailingSilenceStopEnabled",
+                "Stop after trailing silence",
+                busy,
+              )}
+            </SettingRow>
+            <SettingRow
+              title="Trailing silence duration"
+              description="Seconds below the threshold before stopping. Each recording uses the settings chosen when it starts; manual Stop is always available."
+            >
+              <input
+                type="number"
+                aria-label="Trailing silence duration in seconds"
+                min={2}
+                max={30}
+                step={1}
+                value={s.trailingSilenceSeconds}
+                disabled={saving || busy || !s.trailingSilenceStopEnabled}
+                onChange={(e) => {
+                  const value = e.target.valueAsNumber;
+                  if (Number.isFinite(value)) {
+                    save({
+                      trailingSilenceSeconds: Math.min(30, Math.max(2, value)),
+                    });
+                  }
+                }}
+              />
+            </SettingRow>
+            <SettingRow
+              title="Silence energy threshold"
+              description="Audio below this level in dB counts as silence. A lower threshold requires quieter audio."
+            >
+              <input
+                type="number"
+                aria-label="Silence energy threshold in dB"
+                min={-60}
+                max={-20}
+                step={1}
+                value={s.trailingSilenceThresholdDb}
+                disabled={saving || busy || !s.trailingSilenceStopEnabled}
+                onChange={(e) => {
+                  const value = e.target.valueAsNumber;
+                  if (Number.isFinite(value)) {
+                    save({
+                      trailingSilenceThresholdDb: Math.min(
+                        -20,
+                        Math.max(-60, value),
+                      ),
+                    });
+                  }
+                }}
+              />
+            </SettingRow>
+            <SettingRow
               title="Recording overlay"
               description={
                 capabilities?.overlayDetail ??

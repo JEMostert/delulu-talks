@@ -112,6 +112,7 @@ export class DictationService {
       this.captureState = "idle";
       this.captureSessionId = null;
       this.captureSettings = null;
+      this.asr.setSilenceCountdown?.(null);
       this.asr.setActivity(
         "error",
         "The microphone controller is still starting — try again in a moment",
@@ -185,6 +186,7 @@ export class DictationService {
 
   recorderUnavailable(): void {
     this.recorderReady = false;
+    this.asr.setSilenceCountdown?.(null);
     if (this.captureState !== "idle" && this.captureState !== "processing") {
       this.captureState = "idle";
       this.captureSessionId = null;
@@ -256,16 +258,24 @@ export class DictationService {
     this.captureSessionId = randomUUID();
     this.captureState = "opening";
     this.asr.setCaptureInputNotice?.(null);
+    this.asr.setSilenceCountdown?.(null);
     this.asr.setActivity("idle", "Opening microphone");
     this.sendRecorder({
       action: "start",
       inputDeviceId: settings.inputDeviceId,
       sessionId: this.captureSessionId,
       captureProfile: captureProfileSnapshot(settings),
+      trailingSilence: settings.trailingSilenceStopEnabled
+        ? {
+            seconds: settings.trailingSilenceSeconds,
+            thresholdDb: settings.trailingSilenceThresholdDb,
+          }
+        : null,
     });
   }
 
   stop(): void {
+    this.asr.setSilenceCountdown?.(null);
     if (this.busyNotice) this.setHud({ state: "hidden" });
     if (this.captureState === "opening") {
       this.captureState = "stopping";
@@ -313,6 +323,7 @@ export class DictationService {
   }
 
   cancel(): void {
+    this.asr.setSilenceCountdown?.(null);
     if (this.busyNotice) this.setHud({ state: "hidden" });
     if (this.captureState === "idle" || this.captureState === "processing")
       return;
@@ -327,6 +338,41 @@ export class DictationService {
     });
     this.setHud({ state: "hidden" });
     this.asr.setActivity("idle", "Recording cancelled");
+  }
+
+  recordingSilence(
+    sessionId: string,
+    remainingSeconds: number | null,
+    stop: boolean,
+  ): void {
+    if (
+      sessionId !== this.captureSessionId ||
+      !["opening", "listening"].includes(this.captureState)
+    )
+      return;
+    this.asr.setSilenceCountdown?.(remainingSeconds);
+    if (!stop) {
+      if (this.captureState === "listening") {
+        const hold = this.settings().shortcutMode === "hold";
+        this.setHud({
+          state: "listening",
+          detail:
+            remainingSeconds === null
+              ? hold
+                ? "Release to send"
+                : "Press shortcut to send"
+              : `Auto-stop in ${remainingSeconds}s · Stop still available`,
+        });
+      }
+      return;
+    }
+    this.stop();
+    this.asr.setActivity("listening", "Trailing silence — finishing capture");
+    this.setHud({
+      state: "transcribing",
+      title: "Finishing capture",
+      detail: "Trailing silence",
+    });
   }
 
   recordingLimitReached(sessionId: string): void {
@@ -399,6 +445,7 @@ export class DictationService {
   }
 
   private failCapture(message: string): void {
+    this.asr.setSilenceCountdown?.(null);
     this.captureState = "idle";
     this.captureSessionId = null;
     this.captureSettings = null;
@@ -426,6 +473,7 @@ export class DictationService {
     )
       return;
     this.captureSessionId = null;
+    this.asr.setSilenceCountdown?.(null);
     await this.processRecording(submission);
   }
 
