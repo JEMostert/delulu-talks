@@ -26,6 +26,8 @@ export class TrailingSilenceStop {
     this.threshold = 10 ** (db / 20);
   }
 
+  reset(): void { this.armed = false; this.activityMs = 0; this.quietMs = 0; this.stopped = false; this.remainingSeconds = null; }
+
   update(samples: Float32Array, sampleRate: number): TrailingSilenceUpdate {
     if (this.stopped) return { remainingSeconds: 0, shouldStop: false };
     if (!samples.length || !Number.isFinite(sampleRate) || sampleRate <= 0)
