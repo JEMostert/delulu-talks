@@ -3,6 +3,8 @@ import type { ExportTemplateRequest } from "./exportTemplates";
 import type { PersonalProfileCommand } from "./personalProfileCommands";
 import type { PersonalProfileDocument } from "./personalProfiles";
 import type { SpeechBackendId, SpeechExecution, SpeechIdentity } from "./speechModels";
+import type { DomainFailure } from "./domainErrors";
+export type { DomainErrorCode, DomainFailure, RetryPolicy } from "./domainErrors";
 
 export type Page =
   "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
@@ -116,6 +118,7 @@ export type DownloadBytes = {
 export type MagicStatus = RuntimeLifecycle & {
   setupStage?: SetupStage | null;
   downloadBytes?: DownloadBytes | null;
+  failure?: DomainFailure | null;
   phase: MagicPhase;
   engine: EnginePhase;
   message: string;
@@ -162,6 +165,7 @@ export type DictationStatus = RuntimeLifecycle & {
   setupStage?: SetupStage | null;
   speechExecution?: SpeechExecution | null;
   downloadBytes?: DownloadBytes | null;
+  failure?: DomainFailure | null;
   speechModel?: SpeechModelId;
   retryAvailable?: boolean;
   captureInputNotice?: string | null;

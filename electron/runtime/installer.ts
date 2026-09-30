@@ -16,6 +16,7 @@ import {
   runtimeReadinessScript,
   validatePythonInterpreter,
 } from "./prerequisites";
+import { DomainError, domainError } from "../../src/domainErrors";
 import {
   createRuntimeInventory,
   inventoryBackend,
@@ -85,6 +86,7 @@ export class RuntimeInstaller {
   private cancelled = false;
   private validatedPython: string | null = null;
   private candidate: { generation: string; python: string } | null = null;
+  private operationId = randomUUID();
   constructor(
     private readonly paths: Paths,
     private readonly constraintsPath: string | null,
@@ -142,8 +144,9 @@ export class RuntimeInstaller {
   ): Promise<string> {
     if (this.cancelled)
       return Promise.reject(
-        new Error(
+        new DomainError("CANCELLED",
           "Runtime setup cancelled. The previous environment is unchanged.",
+          { operationId: this.operationId, operation: "runtime:setup" },
         ),
       );
     const attemptId = this.setupLog.activeId;
@@ -172,8 +175,9 @@ export class RuntimeInstaller {
         });
         child.kill();
         reject(
-          new Error(
+          new DomainError("RUNTIME_SETUP_TIMEOUT",
             "Runtime operation timed out. Check your connection and try Repair.",
+            { operationId: this.operationId, operation: "runtime:setup" },
           ),
         );
       }, timeoutMs);
@@ -201,7 +205,10 @@ export class RuntimeInstaller {
           durationMs: Math.round(performance.now() - started),
         });
         finish();
-        reject(error);
+        reject(domainError(error, {
+          code: "WORKER_UNAVAILABLE", operationId: this.operationId, operation: "runtime:setup",
+          message: "Could not start the runtime setup command. Check Python and try Repair.",
+        }));
       });
       child.once("close", (code, signal) => {
         this.setupLog.record(attemptId, {
@@ -211,10 +218,7 @@ export class RuntimeInstaller {
         });
         finish();
         if (this.cancelled)
-          reject(
-            new Error(
-              "Runtime setup cancelled. The previous environment is unchanged.",
-            ),
+          reject(new DomainError("CANCELLED", "Runtime setup cancelled. The previous environment is unchanged.", { operationId: this.operationId, operation: "runtime:setup" })
           );
         else if (code === 0) resolve(output.trim());
         else {
@@ -316,11 +320,23 @@ export class RuntimeInstaller {
     settings: AppSettings,
     publish: (progress: InstallProgress) => void,
   ): Promise<void> {
+    this.operationId = randomUUID();
+    try {
+      await this.installCandidate(kind, settings, publish);
+    } catch (reason) {
+      throw domainError(reason, { operationId: this.operationId, operation: `runtime:setup:${kind}` });
+    }
+  }
+
+  private async installCandidate(
+    kind: "speech" | "magic",
+    settings: AppSettings,
+    publish: (progress: InstallProgress) => void,
+  ): Promise<void> {
     if (this.paths.kind && this.paths.kind !== kind)
       throw new Error(`This installer owns the ${this.paths.kind} runtime, not ${kind}`);
     this.cancelled = false;
     this.candidate = null;
-    this.validatedPython = null;
     this.validatedPython = null;
     const metal = kind === "speech" && this.metal;
     if (
@@ -537,8 +553,9 @@ export class RuntimeInstaller {
       { mode: 0o600 },
     );
     if (this.cancelled)
-      throw new Error(
+      throw new DomainError("CANCELLED",
         "Runtime setup cancelled. The previous environment is unchanged.",
+        { operationId: this.operationId, operation: "runtime:setup" },
       );
     this.recordSetupStage("Candidate imports validated; awaiting model load and warmup");
     this.candidate = { generation, python: candidatePython };

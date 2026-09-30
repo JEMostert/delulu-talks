@@ -1,5 +1,7 @@
 import { normalizeSpeechExecution } from "../../src/speechModels";
 import { splitForRewrite } from "../../src/personalization";
+import { DomainError, domainError, serializeDomainError } from "../../src/domainErrors";
+import { randomUUID } from "node:crypto";
 import { app } from "electron";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -272,6 +274,8 @@ export class AsrService {
   }
 
   private updateStatus(patch: Partial<DictationStatus>): void {
+    if ((patch.phase && patch.phase !== "error") || (patch.engine && patch.engine !== "error"))
+      patch = { ...patch, failure: null };
     this.status = {
       ...this.status,
       ...(["unloaded", "missing", "error"].includes(patch.engine ?? "") ? { setupStage: null } : {}),
@@ -286,6 +290,8 @@ export class AsrService {
   }
 
   private updateMagicStatus(patch: Partial<MagicStatus>): void {
+    if ((patch.phase && patch.phase !== "error") || (patch.engine && patch.engine !== "error"))
+      patch = { ...patch, failure: null };
     this.magicStatus = {
       ...this.magicStatus,
       ...(["unloaded", "missing", "error"].includes(patch.engine ?? "") ? { setupStage: null } : {}),
@@ -1192,9 +1198,11 @@ export class AsrService {
   }
 
   fail(error: unknown): void {
+    if (error instanceof DomainError && error.cancelled) return;
     this.clearSpeechIdle();
     this.speechFailureGeneration += 1;
-    const message = error instanceof Error ? error.message : String(error);
+    const failure = domainError(error, { operationId: randomUUID(), operation: "runtime:speech" });
+    const message = failure.message;
     try {
       writeFileSync(
         join(this.storage.dataDirectory, "last-asr-error.log"),
@@ -1211,13 +1219,16 @@ export class AsrService {
       message: conciseError(message),
       detail: message,
       progress: null,
+      failure: serializeDomainError(failure),
     });
   }
 
   failMagic(error: unknown): void {
+    if (error instanceof DomainError && error.cancelled) return;
     this.clearMagicIdle();
     this.magicFailureGeneration += 1;
-    const message = error instanceof Error ? error.message : String(error);
+    const failure = domainError(error, { operationId: randomUUID(), operation: "runtime:magic" });
+    const message = failure.message;
     try {
       writeFileSync(
         join(this.storage.dataDirectory, "last-magic-error.log"),
@@ -1234,6 +1245,7 @@ export class AsrService {
       message: conciseError(message),
       detail: message,
       progress: null,
+      failure: serializeDomainError(failure),
     });
   }
 }
