@@ -121,7 +121,6 @@ const historyDeletion = new HistoryBatchDeletion(
     storage.deleteHistorySelection(ids);
     for (const id of ids) sessionTranscripts.delete(id);
     if (lastTranscript && ids.includes(lastTranscript.id)) lastTranscript = null;
-    retentionPreview = null;
   },
   () => {
     const state = historyDeletion.getState();
@@ -850,7 +849,7 @@ async function start(): Promise<void> {
         };
       }
       lastTranscript = record;
-      rememberSessionTranscript(sessionTranscripts, record);
+      rememberSessionTranscript(sessionTranscripts, record, historyDeletion.getState()?.ids ?? []);
       broadcast("history:added", record);
       rebuildTrayMenu();
     },

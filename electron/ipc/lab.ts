@@ -137,6 +137,7 @@ function selectAudioFiles(value: unknown): AudioFileSelection[] {
     const file = (await chooseAudioFiles(false, false))[0];
     if (!file) return null;
     if (dictation.isActive || asr.isBusy) throw new Error("Relink cancelled because another operation started");
+    if (getImportQueue().get().jobs.some(job => ["running","cancelling"].includes(job.state))) throw new Error("Wait for the active queued import before relinking");
     const current = validateAudioFile(file.path);
     const updated = importJobs().relink(key, current);
     getImportQueue().replace(restoredJobs());
