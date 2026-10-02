@@ -411,8 +411,8 @@ if (process.env.DELULU_DICTATION_FIXTURE_ISOLATED !== "1") {
         expect(testHarness.pasted).toEqual(["Ship the release."]);
         expect(testHarness.hud.at(-1)).toMatchObject({
           state: "success",
-          title: "Paste attempted",
-          detail: "Destination unconfirmed",
+          title: "Paste sent",
+          detail: "Check your text at the cursor",
         });
       } finally {
         testHarness.cleanup();

@@ -80,7 +80,15 @@ export type ReadPersonalProfiles =
 
 const languages = new Set<string>(LANGUAGES.map(([code]) => code));
 const magicModels = new Set(["qwen35Small", "qwen35Medium", "qwen35Large"]);
-const presets = new Set(["polish", "concise", "structured", "prompt"]);
+const presets = new Set([
+  "spoken-corrections",
+  "polish",
+  "concise",
+  "structured",
+  "prompt",
+  "bullet-points",
+  "professional-message",
+]);
 
 function fail(path: string): never {
   throw new Error(

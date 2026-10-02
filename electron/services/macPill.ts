@@ -2,22 +2,22 @@ import { BrowserWindow, screen } from "electron";
 import type { PillCommand } from "./pill";
 
 const WIDTH = 320;
-const HEIGHT = 72;
+const HEIGHT = 84;
 const HTML = `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <style>
-html,body{margin:0;background:transparent;overflow:hidden;font:13px -apple-system,BlinkMacSystemFont,sans-serif;color:#eff8ff;user-select:none}
-.pill{margin:4px;padding:12px 16px;border:1px solid #577896;border-radius:24px;background:#102a43;box-shadow:0 2px 8px #0006}
-#title{font-weight:650;font-size:14px}#detail{font-size:11px;color:#c9ddeb;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.track{position:absolute;right:20px;top:23px;width:44px;height:7px;border-radius:4px;background:#35536e}
-#level{height:100%;width:0;background:#65c5ff;border-radius:4px}
+html,body{margin:0;background:transparent;overflow:hidden;font:13px -apple-system,BlinkMacSystemFont,sans-serif;color:#f0fff8;user-select:none}
+.pill{margin:4px;padding:14px 20px;border:1px solid #caffe933;border-radius:28px;background:#142a2b;box-shadow:0 3px 10px #0004}
+#title{font-weight:600;font-size:13px;padding-right:45px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#detail{font-size:11px;color:#a6c2b9;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track{position:absolute;right:20px;top:23px;width:44px;height:7px;border-radius:4px;background:#304941}
+#level{height:100%;width:0;background:#baffdf;border-radius:4px}
 </style></head><body><div class="pill" role="status"><div id="title">Listening</div><div id="detail">Recording locally</div><div class="track"><div id="level"></div></div></div></body></html>`;
 
 const TITLES: Record<PillCommand["state"], string> = {
   hidden: "",
   listening: "● Listening",
-  transcribing: "Transcribing",
-  magic: "Rewriting",
+  transcribing: "Finding your words",
+  magic: "Refining your words",
   delivering: "Delivering",
   success: "Done",
   error: "Needs attention",

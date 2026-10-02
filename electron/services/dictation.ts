@@ -621,9 +621,19 @@ export class DictationService {
       ) {
         this.asr.setActivity(
           "transcribing",
-          "Rewriting is polishing the transcript",
+          settings.magicPreset === "spoken-corrections"
+            ? "Resolving spoken corrections"
+            : "Rewriting is polishing the transcript",
         );
-        this.setHud({ state: "magic" });
+        this.setHud({
+          state: "magic",
+          ...(settings.magicPreset === "spoken-corrections"
+            ? {
+                title: "Keeping your final words",
+                detail: "Resolving spoken corrections",
+              }
+            : {}),
+        });
         try {
           const magic = await this.asr.rewriteMagic(
             {
@@ -658,8 +668,27 @@ export class DictationService {
       }
       record.sessionOnly =
         !settings.keepHistory || !this.storage.getSettings().keepHistory;
+      if (magicFailure && settings.magicPreset === "spoken-corrections") {
+        record.delivery = {
+          state: "transcribed",
+          updatedAt: Date.now(),
+          detail: `Spoken corrections need review: ${magicFailure}. Nothing sent.`,
+        };
+      }
       this.storage.addHistory(record);
       this.broadcastTranscript(record);
+      if (magicFailure && settings.magicPreset === "spoken-corrections") {
+        this.setHud({
+          state: "error",
+          title: "Review your words",
+          detail: "Original saved · nothing sent",
+        });
+        this.asr.setActivity(
+          "idle",
+          `Spoken corrections: ${magicFailure}. Original available in Latest output; nothing sent.`,
+        );
+        return true;
+      }
       const outputName = record.magicText ? "Rewrite result" : "Transcript";
       let completion = `${outputName} ready in Latest output`;
       let delivery: "ready" | "pasted" | "copied" | "failed" = "ready";
@@ -719,13 +748,13 @@ export class DictationService {
         state: delivery === "failed" ? "error" : "success",
         title:
           record.delivery?.state === "paste-attempted"
-            ? "Paste attempted"
+            ? "Paste sent"
             : record.delivery?.state === "copied"
               ? "Copied"
               : "Transcribed",
         detail:
           record.delivery?.state === "paste-attempted"
-            ? "Destination unconfirmed"
+            ? "Check your text at the cursor"
             : magicFailure
               ? "Rewriting skipped"
               : "Ready to keep talking",

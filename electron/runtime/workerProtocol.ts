@@ -3,6 +3,7 @@ import { StringDecoder } from "node:string_decoder";
 
 export const WORKER_PROTOCOL_VERSION = 1;
 const PRESETS = new Set([
+  "spoken-corrections",
   "polish",
   "concise",
   "structured",
