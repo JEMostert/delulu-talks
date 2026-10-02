@@ -38,6 +38,7 @@ export type SpeechModelId = "r2t2" | "r2t2Mlx";
 export type ModelId = SpeechModelId | "qwen3Asr";
 export type MagicModelId = "qwen35Small" | "qwen35Medium" | "qwen35Large";
 export type MagicPreset =
+  | "spoken-corrections"
   | "polish"
   | "concise"
   | "bullet-points"

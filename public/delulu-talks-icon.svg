@@ -1,14 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
   <title id="title">Delulu Talks</title>
-  <desc id="desc">An ocean-blue speech current surrounds three rounded voice pulses.</desc>
-  <defs>
-    <linearGradient id="voice" x1="48" y1="58" x2="208" y2="192" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#75e4ff"/><stop offset=".48" stop-color="#32baff"/><stop offset="1" stop-color="#237bff"/>
-    </linearGradient>
-  </defs>
-  <rect x="8" y="8" width="240" height="240" rx="58" fill="#071e34"/>
-  <g fill="none" stroke="url(#voice)" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M94 56h65c39 0 65 27 65 64s-26 65-65 65h-36l-43 30 7-35c-32-9-55-31-55-60 0-37 27-64 62-64Z" stroke-width="16"/>
-    <path d="M91 109v24M128 91v60M165 104v34" stroke-width="17"/>
-  </g>
+  <desc id="desc">A flowing voice ribbon forms a lowercase d and a speech tail.</desc>
+  <defs><linearGradient id="voice" x1="54" y1="64" x2="207" y2="207" gradientUnits="userSpaceOnUse"><stop stop-color="#cbffe8"/><stop offset="1" stop-color="#62dfc5"/></linearGradient></defs>
+  <rect x="8" y="8" width="240" height="240" rx="62" fill="#142a2b"/><rect x="9" y="9" width="238" height="238" rx="61" fill="none" stroke="#ffffff" stroke-opacity=".12" stroke-width="2"/>
+  <path d="M172 61v91c0 33-23 54-54 54s-53-21-53-51 22-51 51-51c15 0 27 5 36 14" fill="none" stroke="url(#voice)" stroke-width="27" stroke-linecap="round"/>
+  <path d="M167 180l29 26v-56" fill="url(#voice)"/>
+  <path d="M105 145v20m24-30v40" fill="none" stroke="url(#voice)" stroke-width="9" stroke-linecap="round"/>
 </svg>

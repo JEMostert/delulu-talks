@@ -134,7 +134,15 @@ function settingsSchema(value: unknown): "workflow-1" | "legacy" {
   for (const [key, allowed] of Object.entries({
     theme: ["system", "light", "dark"],
     shortcutMode: ["hold", "toggle"],
-    magicPreset: ["polish", "concise", "structured", "prompt"],
+    magicPreset: [
+      "spoken-corrections",
+      "polish",
+      "concise",
+      "structured",
+      "prompt",
+      "bullet-points",
+      "professional-message",
+    ],
   }))
     if (value[key] !== undefined && !allowed.includes(String(value[key])))
       throw new Error(`Unsupported settings ${key}`);

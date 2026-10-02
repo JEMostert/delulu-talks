@@ -83,6 +83,26 @@ export function QuickSettings({
           <kbd>{w.shortcutStatus.accelerator || s.shortcut}</kbd>
         </button>
       </div>
+      <div className="quick-row">
+        <span>Spoken corrections</span>
+        <Toggle
+          label="Spoken corrections"
+          value={s.magicEnabled && s.magicPreset === "spoken-corrections"}
+          disabled={busy || w.saving}
+          onChange={() =>
+            save(
+              !(s.magicEnabled && s.magicPreset === "spoken-corrections")
+                ? {
+                    magicEnabled: true,
+                    magicPreset: "spoken-corrections",
+                    magicAllowInferences: false,
+                    memoryPolicy: "balanced",
+                  }
+                : { magicEnabled: false },
+            )
+          }
+        />
+      </div>
       <div className="quick-divider" />
       <div className="quick-row">
         <span>Paste automatically</span>

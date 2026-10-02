@@ -1291,15 +1291,25 @@ export class AsrService {
       throw new Error("Wait for the active rewrite to finish");
     if (request.operationId !== undefined && !request.operationId.trim())
       throw new Error("Manual rewrite requires a nonempty operation ID");
-    const parts = splitTechnicalBlocks(request.text).flatMap((part) =>
-      part.protected
-        ? [part]
-        : splitForRewrite(
-            part.text,
-            settings.customWords,
-            request.sourceLanguage ?? settings.language,
-          ),
-    );
+    const cleanup = request.preset === "spoken-corrections";
+    if (cleanup)
+      request = {
+        ...request,
+        allowInferences: false,
+        instructions: undefined,
+        context: undefined,
+      };
+    const parts = cleanup
+      ? [{ text: request.text, protected: false }]
+      : splitTechnicalBlocks(request.text).flatMap((part) =>
+          part.protected
+            ? [part]
+            : splitForRewrite(
+                part.text,
+                settings.customWords,
+                request.sourceLanguage ?? settings.language,
+              ),
+        );
     if (parts.filter((part) => !part.protected && part.text.trim()).length > 16)
       throw new Error(
         "This text contains too many separate protected blocks or identifiers to rewrite at once. Rewrite a shorter selection.",
@@ -1372,6 +1382,15 @@ export class AsrService {
         );
       }
       const text = output.join("");
+      if (
+        cleanup &&
+        splitTechnicalBlocks(request.text).some(
+          (part) => part.protected && !text.includes(part.text.trim()),
+        )
+      )
+        throw new Error(
+          "Cleanup changed a protected code block. Review the original; nothing sent.",
+        );
       this.throwIfRewriteCancelled(operation);
       this.updateMagicStatus({
         phase: "idle",

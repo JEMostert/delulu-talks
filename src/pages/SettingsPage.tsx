@@ -572,10 +572,60 @@ export function SettingsPage(props: Props) {
               individual results on demand.
             </p>
           </div>
+          <div className="spoken-corrections-card">
+            <span className="cleanup-eyebrow">
+              YOUR WORDS, YOUR FINAL INTENT
+            </span>
+            <h3>Change your mind. Keep talking.</h3>
+            <p>
+              Take back a request or correct yourself naturally. Spoken
+              corrections removes what you explicitly withdraw, while keeping
+              your wording and the original transcript. Ambiguous corrections
+              can still need review.
+            </p>
+            <div className="cleanup-example">
+              <s>I want a new logo.</s> Also remake this feature.{" "}
+              <s>Never mind, don’t do the logo.</s>
+            </div>
+            <button
+              className="primary-button"
+              disabled={
+                saving ||
+                busy ||
+                (s.magicEnabled && s.magicPreset === "spoken-corrections")
+              }
+              onClick={() =>
+                save({
+                  magicEnabled: true,
+                  memoryPolicy: "balanced",
+                  magicPreset: "spoken-corrections",
+                  magicAllowInferences: false,
+                })
+              }
+            >
+              {s.magicEnabled && s.magicPreset === "spoken-corrections"
+                ? "Spoken corrections enabled"
+                : "Use spoken corrections"}
+            </button>
+            <p className="caption">
+              Runs locally with your writing model, before paste. Uses balanced
+              memory to load speech and writing in turn. If cleanup fails
+              validation, nothing is sent. Prose dictation only.
+            </p>
+            {magicStatus.engine === "missing" && (
+              <button
+                className="secondary-button"
+                disabled={busy}
+                onClick={props.onSetupMagic}
+              >
+                Set up local writing model
+              </button>
+            )}
+          </div>
           <SettingRow
             icon={Sparkles}
             title="Rewrite after dictation"
-            description="Polish each result through a second local model before delivery."
+            description="Apply the selected style locally before delivery. Original speech stays in history."
           >
             {toggle("magicEnabled", "Rewrite after dictation", busy)}
           </SettingRow>
@@ -586,6 +636,9 @@ export function SettingsPage(props: Props) {
               disabled={saving}
               onChange={(e) =>
                 save({
+                  ...(e.target.value === "spoken-corrections"
+                    ? { magicAllowInferences: false }
+                    : {}),
                   magicPreset: e.target.value as AppSettings["magicPreset"],
                 })
               }
@@ -601,7 +654,11 @@ export function SettingsPage(props: Props) {
             title="Allow added assumptions"
             description="Let rewriting suggest additional detail. Review the result before sending it."
           >
-            {toggle("magicAllowInferences", "Allow added assumptions")}
+            {toggle(
+              "magicAllowInferences",
+              "Allow added assumptions",
+              s.magicPreset === "spoken-corrections",
+            )}
           </SettingRow>
         </section>
       )}

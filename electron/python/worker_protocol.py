@@ -23,7 +23,7 @@ COMMANDS = frozenset({
     "ping", "status", "load", "unload", "magicStatus", "magicLoad",
     "magicUnload", "magicRewrite", "transcribe", "shutdown", "capabilities",
 })
-MAGIC_PRESETS = frozenset({"polish", "concise", "structured", "prompt", "bullet-points", "professional-message"})
+MAGIC_PRESETS = frozenset({"spoken-corrections", "polish", "concise", "structured", "prompt", "bullet-points", "professional-message"})
 MAGIC_MODELS = frozenset({"qwen35Small", "qwen35Medium", "qwen35Large"})
 # Keep aligned with the shared PipelineTimings contract; unknown stages are omitted.
 TIMING_FIELDS = frozenset({

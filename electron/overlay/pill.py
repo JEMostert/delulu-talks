@@ -15,126 +15,37 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
 
-from gi.repository import Gdk, GLib, Gtk, Gtk4LayerShell, Pango  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, Gtk4LayerShell, Pango  # noqa: E402
 
 
 CSS = b"""
 window { background: transparent; }
-
-.hud {
-  min-width: 312px;
-  border: 1px solid #23445e;
-  border-radius: 16px;
-  background: alpha(#0b2033, .95);
-  box-shadow: 0 16px 36px alpha(#000000, .46), inset 0 1px 0 alpha(#ffffff, .05);
-}
-
-.rail {
-  min-width: 3px;
-  min-height: 52px;
-  background: #52cafa;
-  border-top-left-radius: 15px;
-  border-bottom-left-radius: 15px;
-}
-.listening .rail { background: #ff8898; }
-.transcribing .rail, .magic .rail, .delivering .rail { background: #52cafa; }
-.success .rail { background: #52cafa; }
-.error .rail { background: #ff8898; }
-
-.body { padding: 9px 13px 9px 11px; }
-
-.header { min-height: 16px; }
-.footer { margin-top: 6px; min-height: 18px; }
-
-.beacon {
-  min-width: 16px;
-  min-height: 16px;
-  margin-right: 8px;
-}
-
-.dot {
-  min-width: 8px;
-  min-height: 8px;
-  border-radius: 4px;
-  background: #52cafa;
-}
-.listening .dot {
-  background: #ff8898;
-  box-shadow: 0 0 0 0 alpha(#ff8898, .5);
-  animation: ping 1.15s ease-out infinite;
-}
-.success .dot { background: #52cafa; }
-.error .dot { background: #ff8898; }
-
-.glyph {
-  color: #52cafa;
-  font-size: 11px;
-  font-weight: 600;
-}
-.success .glyph { color: #52cafa; }
-.error .glyph { color: #ff8898; }
-
-.title {
-  color: #e3f1fc;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .2px;
-}
-.detail { color: #9ebacf; font-size: 10px; font-weight: 500; }
-.clock {
-  color: #52cafa;
-  font-size: 10px;
-  font-weight: 700;
-  font-family: "IBM Plex Mono", "ui-monospace", monospace;
-  letter-spacing: .4px;
-}
-.listening .clock { color: #ff8898; }
-
-.wave { min-height: 16px; margin-left: 10px; }
-.bar {
-  min-width: 2px;
-  background: #52cafa;
-  border-radius: 1px;
-}
-.listening .bar { background: #ff8898; }
-.listening .wave.idle .bar { animation: meter .62s ease-in-out infinite alternate; }
-.listening .wave.idle .b0 { animation-delay: 0s; }
-.listening .wave.idle .b1 { animation-delay: .05s; }
-.listening .wave.idle .b2 { animation-delay: .1s; }
-.listening .wave.idle .b3 { animation-delay: .03s; }
-.listening .wave.idle .b4 { animation-delay: .14s; }
-.listening .wave.idle .b5 { animation-delay: .07s; }
-.listening .wave.idle .b6 { animation-delay: .16s; }
-.listening .wave.idle .b7 { animation-delay: .09s; }
-.listening .wave.idle .b8 { animation-delay: .18s; }
-.listening .wave.idle .b9 { animation-delay: .12s; }
-.listening .wave.idle .b10 { animation-delay: .2s; }
-
-spinner { min-width: 12px; min-height: 12px; color: #52cafa; }
-.hud.reduced-motion.listening .dot,
-.hud.reduced-motion .wave.idle .bar {
-  animation: none;
-  transition: none;
-}
-
-@keyframes ping {
-  0% { box-shadow: 0 0 0 0 alpha(#ff8898, .45); }
-  75% { box-shadow: 0 0 0 7px alpha(#ff8898, 0); }
-  100% { box-shadow: 0 0 0 0 alpha(#ff8898, 0); }
-}
-@keyframes meter {
-  from { min-height: 3px; }
-  to { min-height: 14px; }
-}
+.hud { min-width: 270px; border: 1px solid alpha(#caffe9, .2); border-radius: 28px; background: #142a2b; box-shadow: 0 8px 24px alpha(#000000, .25), inset 0 1px alpha(#ffffff, .06); }
+.body { padding: 14px 20px; }
+.header { min-height: 22px; }
+.footer { margin-top: 3px; min-height: 16px; margin-left: 29px; }
+.beacon { min-width: 22px; min-height: 22px; margin-right: 7px; border-radius: 11px; background: alpha(#baffdf, .1); }
+.dot { min-width: 7px; min-height: 7px; border-radius: 4px; background: #baffdf; }
+.listening .dot { background: #ffb8a0; }
+.glyph { color: #baffdf; font-size: 13px; font-weight: 600; }
+.error .glyph { color: #ffb8a0; }
+.title { color: #f0fff8; font-size: 13px; font-weight: 600; }
+.detail { color: #a6c2b9; font-size: 11px; }
+.profile { color: #78968d; font-size: 10px; margin-left: 29px; margin-top: 3px; }
+.clock { color: #baffdf; font-size: 12px; font-weight: 500; font-family: monospace; margin-left: 14px; }
+.wave { min-height: 16px; margin-left: 12px; }
+.bar { min-width: 2px; background: #baffdf; border-radius: 2px; }
+.listening .bar { background: #ffb8a0; }
+spinner { min-width: 13px; min-height: 13px; color: #baffdf; }
 """
 
 STATES = {
-    "listening": ("", "LISTENING", "Release to send"),
-    "transcribing": ("", "TRANSCRIBING", "On this device"),
-    "magic": ("✦", "MAGIC", "Rewriting locally"),
-    "delivering": ("↗", "DELIVERING", "To your cursor"),
-    "success": ("✓", "DONE", "Ready"),
-    "error": ("!", "COULD NOT FINISH", "Open Delulu Talks"),
+    "listening": ("", "Listening", "Release to send"),
+    "transcribing": ("", "Finding your words", "On this device"),
+    "magic": ("✦", "Refining your words", "Rewriting locally"),
+    "delivering": ("↗", "Sending to your cursor", "To your cursor"),
+    "success": ("✓", "All done", "Ready"),
+    "error": ("!", "Needs your attention", "Open Delulu Talks"),
 }
 
 WAVE_SHAPE = (0.22, 0.36, 0.54, 0.76, 0.92, 1.0, 0.84, 0.62, 0.44, 0.3, 0.18)
@@ -143,7 +54,7 @@ PREVIEW_STATES = ("listening", "transcribing", "magic", "delivering", "success",
 
 class PillApplication(Gtk.Application):
     def __init__(self, preview: str | None = None, preview_reduce_motion: bool = False) -> None:
-        super().__init__(application_id="com.joran.delulu_talks.pill")
+        super().__init__(application_id="com.joran.delulu_talks.pill", flags=Gio.ApplicationFlags.NON_UNIQUE if preview else Gio.ApplicationFlags.FLAGS_NONE)
         self.preview = preview
         self.force_reduced_motion = bool(preview and preview_reduce_motion)
         self.reduce_motion = False
@@ -176,7 +87,7 @@ class PillApplication(Gtk.Application):
         window.set_decorated(False)
         window.set_resizable(False)
         window.set_title("delulu-talks-pill")
-        window.set_default_size(320, 64)
+        window.set_default_size(300, 80)
         if layer_shell:
             Gtk4LayerShell.init_for_window(window)
             Gtk4LayerShell.set_namespace(window, "delulu-talks-pill")
@@ -195,11 +106,6 @@ class PillApplication(Gtk.Application):
 
         hud = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         hud.add_css_class("hud")
-        rail = Gtk.Box()
-        rail.add_css_class("rail")
-        rail.set_size_request(3, 52)
-        rail.set_vexpand(True)
-        rail.set_valign(Gtk.Align.FILL)
 
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         body.add_css_class("body")
@@ -228,7 +134,7 @@ class PillApplication(Gtk.Application):
         title.add_css_class("title")
         title.set_hexpand(True)
         title.set_ellipsize(Pango.EllipsizeMode.END)
-        title.set_max_width_chars(22)
+        title.set_max_width_chars(32)
         clock = Gtk.Label(label="0:00", xalign=1)
         clock.add_css_class("clock")
         header.append(beacon)
@@ -258,14 +164,13 @@ class PillApplication(Gtk.Application):
         footer.append(wave)
 
         profile = Gtk.Label(xalign=0)
-        profile.add_css_class("detail")
+        profile.add_css_class("profile")
         profile.set_ellipsize(Pango.EllipsizeMode.END)
         profile.set_max_width_chars(40)
         profile.set_visible(False)
         body.append(header)
-        body.append(profile)
         body.append(footer)
-        hud.append(rail)
+        body.append(profile)
         hud.append(body)
         window.set_child(hud)
         window.connect("realize", self._make_click_through)
@@ -393,11 +298,11 @@ class PillApplication(Gtk.Application):
         custom_title = payload.get("title")
         custom_detail = payload.get("detail")
         self.glyph.set_label(symbol)
-        self.title.set_label(str(custom_title)[:28].upper() if custom_title else title)
+        self.title.set_label(str(custom_title)[:48] if custom_title else title)
         self.detail.set_label(str(custom_detail)[:36] if custom_detail else detail)
         profile = payload.get("profile")
-        self.profile.set_visible(bool(profile))
-        self.profile.set_label(f"Profile: {str(profile)[:256]}" if profile else "")
+        self.profile.set_visible(bool(profile) and profile != "Global settings")
+        self.profile.set_label(str(profile)[:256] if profile else "")
         self.profile.set_tooltip_text(str(profile)[:256] if profile else None)
         for name in STATES:
             self.hud.remove_css_class(name)

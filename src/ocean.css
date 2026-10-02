@@ -1057,3 +1057,44 @@
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+/* Spoken corrections: a concrete before/after, next to its activation control. */
+.spoken-corrections-card {
+  padding: 24px;
+  margin: 16px 0;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface-soft);
+}
+.cleanup-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.spoken-corrections-card h3 {
+  font-size: 23px;
+  line-height: 1.2;
+  margin: 10px 0;
+  letter-spacing: -0.03em;
+}
+.spoken-corrections-card p {
+  max-width: 60ch;
+  line-height: 1.6;
+}
+.cleanup-example {
+  margin: 18px 0;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--input);
+  font-size: 15px;
+  line-height: 1.8;
+}
+.cleanup-example s {
+  opacity: 0.5;
+  text-decoration-thickness: 1px;
+}
+.spoken-corrections-card .caption {
+  margin-top: 12px;
+  font-size: 12px;
+}

@@ -8,6 +8,15 @@ export const REWRITE_PRESETS: ReadonlyArray<{
   exampleOutput: string;
 }> = [
   {
+    id: "spoken-corrections",
+    label: "Spoken corrections",
+    description:
+      "Keep your words. Remove only what you explicitly take back, plus the correction phrases. The original stays in history.",
+    exampleSource:
+      "I want a new logo. Also remake this feature. Oh no, never mind, don’t do the logo.",
+    exampleOutput: "Also remake this feature.",
+  },
+  {
     id: "concise",
     label: "Shorten",
     description:

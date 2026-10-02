@@ -131,7 +131,10 @@ export function RewriteDialog({
         text: source,
         preset,
         context: contextEnabled ? { language, fileType, selection } : undefined,
-        instructions: validateRewriteInstructions(instructions),
+        instructions:
+          preset === "spoken-corrections"
+            ? undefined
+            : validateRewriteInstructions(instructions),
         allowInferences: false,
       });
       if (
@@ -340,7 +343,7 @@ export function RewriteDialog({
             aria-describedby={instructionHelpId}
             rows={3}
             maxLength={MAX_REWRITE_INSTRUCTIONS}
-            disabled={busy}
+            disabled={busy || preset === "spoken-corrections"}
             value={instructions}
             onChange={(e) => {
               setInstructions(e.target.value);
