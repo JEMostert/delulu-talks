@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -74,7 +75,11 @@ function alive(pid: number): boolean {
 }
 
 function scenario(kind: Kind, platform: keyof typeof platforms = "linux") {
-  const profile = mkdtempSync(join(tmpdir(), "delulu-setup-process-"));
+  // Bun canonicalizes a script's argv[1]. Match that spelling when macOS's
+  // temporary directory (or a custom TMPDIR) contains a symlink.
+  const profile = realpathSync(
+    mkdtempSync(join(tmpdir(), "delulu-setup-process-")),
+  );
   const fixture = createSetupFixture(join(profile, "commands"));
   const root = join(profile, `${kind}-venv`);
   const otherRoot = join(
