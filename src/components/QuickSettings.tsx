@@ -1,5 +1,5 @@
 import { AudioLines, Keyboard, Mic, Moon, Sun } from "lucide-react";
-import { LANGUAGES } from "../data";
+import { speechLanguageCapability } from "../speechCapabilities";
 import { Toggle } from "./ui";
 import type { useWorkspace } from "../hooks/useWorkspace";
 import type { Page } from "../types";
@@ -15,6 +15,7 @@ export function QuickSettings({
   onNavigate: (page: Page) => void;
 }) {
   const s = w.settings;
+  const languageCapability = speechLanguageCapability(s.model);
   const save = (patch: Parameters<typeof w.saveSettings>[0]) =>
     void w.saveSettings(patch, null);
   return (
@@ -55,10 +56,10 @@ export function QuickSettings({
         <select
           aria-label="Dictation language"
           value={s.language}
-          disabled={busy || w.saving}
+          disabled={busy || w.saving || !languageCapability.canSelectLanguage}
           onChange={(e) => save({ language: e.target.value })}
         >
-          {LANGUAGES.map(([value, label]) => (
+          {languageCapability.languages.map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>
@@ -107,6 +108,7 @@ export function QuickSettings({
           className="sheet-icon"
           aria-label="Switch color theme"
           title="Switch color theme"
+          disabled={w.saving}
           onClick={() =>
             save({
               theme:

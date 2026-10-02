@@ -153,9 +153,9 @@ export function HistoryPage({
           />
         </label>
         <button
-          className={`sheet-icon ${showFilters ? "is-selected" : ""}`}
+          className={`sheet-icon ${showFilters || active ? "is-selected" : ""}`}
           aria-label="Filter history"
-          title="Filters"
+          title={active ? "Filters active" : "Filters"}
           aria-expanded={showFilters}
           onClick={() => setShowFilters(!showFilters)}
         >
@@ -174,6 +174,24 @@ export function HistoryPage({
           {selecting ? <X /> : <CheckSquare />}
         </button>
       </div>
+      {active && !showFilters && (
+        <div className="history-filter-summary">
+          <span className="caption" role="status">
+            {filtered.length} of {history.length} transcripts
+          </span>
+          <button
+            className="text-button"
+            onClick={() =>
+              onViewChange((previous) => ({
+                ...previous,
+                filters: EMPTY_HISTORY_FILTERS,
+              }))
+            }
+          >
+            Reset search and filters
+          </button>
+        </div>
+      )}
       {showFilters && (
         <fieldset className="rounded-panel border border-line p-4">
           <legend className="caption px-1">Filters</legend>
@@ -195,7 +213,7 @@ export function HistoryPage({
             </select>
           </label>
 
-          <div className="grid grid-cols-3 gap-3 max-[900px]:grid-cols-2 max-[560px]:grid-cols-1">
+          <div className="mt-3 grid grid-cols-3 gap-3 max-[900px]:grid-cols-2 max-[560px]:grid-cols-1">
             <label className="field min-w-0">
               Start date
               <input

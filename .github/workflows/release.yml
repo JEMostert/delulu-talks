@@ -21,12 +21,18 @@ jobs:
           - os: ubuntu-latest
             name: linux-x64
             args: --linux AppImage pacman tar.xz --x64
+            package-dir: release/linux-unpacked
+            platform: linux
           - os: macos-latest
             name: mac-arm64
             args: --mac dmg zip --arm64
+            package-dir: release/mac-arm64/Delulu Talks.app
+            platform: mac
           - os: windows-latest
             name: windows-x64
             args: --win nsis zip --x64
+            package-dir: release/win-unpacked
+            platform: win
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
@@ -63,6 +69,9 @@ jobs:
           test -f "release/mac-arm64/Delulu Talks.app/Contents/Resources/python/metal_speech.py"
           file "release/mac-arm64/Delulu Talks.app/Contents/MacOS/Delulu Talks" | grep arm64
 
+      - name: Verify packaged resources
+        run: bun scripts/package-resources.mjs "${{ matrix.package-dir }}" "${{ matrix.platform }}"
+
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
@@ -83,6 +92,12 @@ jobs:
     needs: package
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
       - name: Download packages
         uses: actions/download-artifact@v4
         with:
@@ -90,10 +105,21 @@ jobs:
           pattern: delulu-talks-*
           merge-multiple: true
 
-      - name: Publish GitHub release
+      - name: Verify complete release and updater checksums
+        run: bun scripts/verify-release.mjs artifacts
+
+      - name: Upload complete draft release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           generate_release_notes: true
+          body_path: docs/releases/${{ github.ref_name }}.md
           name: Delulu Talks ${{ github.ref_name }}
-          make_latest: true
+          draft: true
+          fail_on_unmatched_files: true
+
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest
