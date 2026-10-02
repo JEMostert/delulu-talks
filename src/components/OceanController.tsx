@@ -43,6 +43,7 @@ export function OceanController({
   panelOpen,
   canCopy,
   resultId,
+  message,
   onRecord,
   onCopy,
   onSettings,
@@ -58,6 +59,7 @@ export function OceanController({
   panelOpen: boolean;
   canCopy: boolean;
   resultId?: string;
+  message?: string;
   onRecord: () => Promise<boolean>;
   onCopy: () => Promise<boolean>;
   onSettings: () => void;
@@ -186,12 +188,17 @@ export function OceanController({
           </button>
         )}
       </div>
-      <span className="sr-only" role="status" aria-live="polite">
+      <span
+        className="controller-status"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         {copied
           ? "Copied to clipboard"
           : completed
             ? "Transcript ready"
-            : status.message}
+            : (message ?? status.message)}
       </span>
     </div>
   );

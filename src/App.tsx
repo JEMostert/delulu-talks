@@ -134,6 +134,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (
+        !w.ready ||
         event.defaultPrevented ||
         event.repeat ||
         event.isComposing ||
@@ -152,14 +153,19 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         )
       )
         return;
-      if (document.querySelector("[role='dialog'][aria-modal='true']")) return;
+      if (
+        document.querySelector(
+          "dialog[open], [role='dialog'][aria-modal='true']",
+        )
+      )
+        return;
       event.preventDefault();
       w.setPage("models");
       setModelTarget(key === "m" ? "decode" : "diagnostics");
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [w.setPage]);
+  }, [w.ready, w.setPage]);
   const recording =
     w.status.phase === "listening" || w.status.phase === "paused";
   const needsSetup =
@@ -389,151 +395,10 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
       >
         Skip to dictation controls
       </a>
-      <div className={`workspace-notices ${panelOpen ? "in-panel" : ""}`}>
-        {panelOpen && (
-          <UpdateNotice
-            status={w.updateStatus}
-            busy={busy}
-            onDownload={download}
-            onInstall={install}
-          />
-        )}
-        <HistoryDeletionNotice
-          state={w.historyDeletion}
-          onUndo={w.undoDeletion}
-          onHistory={() => w.setPage("history")}
-        />
-        {w.ready && <ServiceRecovery recovery={w.serviceRecovery} />}
-        {panelOpen && (
-          <OperationResumeNotice
-            operations={w.operations}
-            onImport={() => w.setPage("lab")}
-          />
-        )}
-        {w.status.captureInputNotice && (
-          <div className="px-6 pt-3 max-[900px]:px-4">
-            <div
-              role="status"
-              aria-live="polite"
-              className="rounded-xl border border-line bg-soft px-3.5 py-2.5 text-sm text-muted"
-            >
-              {w.status.captureInputNotice}
-            </div>
-          </div>
-        )}
-        <PasteRecoveryNotice
-          onCopied={() => w.setToast("Copied to clipboard — paste manually")}
-        />
-        {w.error && (
-          <div className="px-6 pt-3 max-[900px]:px-4">
-            <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>
-          </div>
-        )}
-        {(() => {
-          const retryAudio = w.status.retryAudio;
-          const retrying = retryAudio?.phase === "retrying";
-          const retained = retryAudio
-            ? retryAudio.byteLength > 0 && !retryAudio.discarded
-            : !!w.status.retryAvailable;
-          const available = retryAudio
-            ? retryAudio.phase === "available" && retained
-            : !!w.status.retryAvailable;
-          if (w.page === "models" && !available && !retrying) return null;
-          if (
-            w.status.phase !== "error" &&
-            !w.status.retryAvailable &&
-            !available &&
-            !retrying
-          )
-            return null;
-          return (
-            <div className="px-6 pt-3 max-[900px]:px-4">
-              <Alert
-                action={
-                  available || retrying ? (
-                    retained ? (
-                      <div className="panel-actions">
-                        <button
-                          className="secondary-button"
-                          disabled={busy || retrying}
-                          onClick={run(() => bridge.retryRecording())}
-                        >
-                          <RotateCcw />
-                          Retry transcription
-                        </button>
-                        <button
-                          className="tool-button"
-                          disabled={!retryAudio && busy}
-                          onClick={run(() => bridge.discardFailedRecording())}
-                        >
-                          Discard retained audio
-                        </button>
-                      </div>
-                    ) : undefined
-                  ) : (
-                    <button
-                      className="secondary-button"
-                      onClick={() => w.setPage("models")}
-                    >
-                      Open models
-                    </button>
-                  )
-                }
-              >
-                {retrying
-                  ? "Retrying transcription."
-                  : available && w.status.phase !== "error"
-                    ? "A previous recording is available to retry."
-                    : w.status.message}
-                {(available || retrying) && (
-                  <p className="caption">
-                    {retained ? (
-                      <>
-                        Audio is available only during this session.
-                        {retryAudio && (
-                          <>
-                            {retryAudio.durationMs !== null &&
-                              ` Duration: ${(retryAudio.durationMs / 1000).toFixed(1)} seconds.`}
-                            {` Size: ${
-                              retryAudio.byteLength >= 1024 * 1024
-                                ? `${(retryAudio.byteLength / (1024 * 1024)).toFixed(1)} MB`
-                                : `${Math.ceil(retryAudio.byteLength / 1024)} KB`
-                            }.`}
-                          </>
-                        )}
-                        {retrying &&
-                          " Discarding this backup will not interrupt the current transcription."}
-                      </>
-                    ) : (
-                      "Audio has been released. The current transcription continues."
-                    )}
-                  </p>
-                )}
-              </Alert>
-            </div>
-          );
-        })()}
-
-        <PasteLastNotice
-          status={w.pasteLastStatus}
-          onCancel={w.cancelPasteLast}
-        />
-        {w.startupError && (
-          <Alert
-            action={
-              <button className="secondary-button" onClick={w.retryStartup}>
-                <RotateCcw /> Retry opening workspace
-              </button>
-            }
-          >
-            {w.startupError}
-          </Alert>
-        )}
-      </div>
       <section
         ref={panelRef}
         className={`workspace-sheet ${quickOpen && w.page === "home" ? "quick-sheet" : "wide-sheet"}`}
-        hidden={!panelOpen}
+        data-open={panelOpen}
         aria-label={
           quickOpen && w.page === "home"
             ? "Quick settings"
@@ -541,7 +406,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         }
         tabIndex={-1}
       >
-        <header className="sheet-header">
+        <header className="sheet-header" hidden={!panelOpen}>
           {w.page !== "home" && (
             <button
               className="sheet-icon"
@@ -581,8 +446,150 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             <X />
           </button>
         </header>
+        <div className={`workspace-notices ${panelOpen ? "in-panel" : ""}`}>
+          {panelOpen && (
+            <UpdateNotice
+              status={w.updateStatus}
+              busy={busy}
+              onDownload={download}
+              onInstall={install}
+            />
+          )}
+          <HistoryDeletionNotice
+            state={w.historyDeletion}
+            onUndo={w.undoDeletion}
+            onHistory={() => w.setPage("history")}
+          />
+          {w.ready && <ServiceRecovery recovery={w.serviceRecovery} />}
+          {panelOpen && (
+            <OperationResumeNotice
+              operations={w.operations}
+              onImport={() => w.setPage("lab")}
+            />
+          )}
+          {w.status.captureInputNotice && (
+            <div className="px-6 pt-3 max-[900px]:px-4">
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-xl border border-line bg-soft px-3.5 py-2.5 text-sm text-muted"
+              >
+                {w.status.captureInputNotice}
+              </div>
+            </div>
+          )}
+          <PasteRecoveryNotice
+            onCopied={() => w.setToast("Copied to clipboard — paste manually")}
+          />
+          {w.error && (
+            <div className="px-6 pt-3 max-[900px]:px-4">
+              <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>
+            </div>
+          )}
+          {(() => {
+            const retryAudio = w.status.retryAudio;
+            const retrying = retryAudio?.phase === "retrying";
+            const retained = retryAudio
+              ? retryAudio.byteLength > 0 && !retryAudio.discarded
+              : !!w.status.retryAvailable;
+            const available = retryAudio
+              ? retryAudio.phase === "available" && retained
+              : !!w.status.retryAvailable;
+            if (w.page === "models" && !available && !retrying) return null;
+            if (
+              w.status.phase !== "error" &&
+              !w.status.retryAvailable &&
+              !available &&
+              !retrying
+            )
+              return null;
+            return (
+              <div className="px-6 pt-3 max-[900px]:px-4">
+                <Alert
+                  action={
+                    available || retrying ? (
+                      retained ? (
+                        <div className="panel-actions">
+                          <button
+                            className="secondary-button"
+                            disabled={busy || retrying}
+                            onClick={run(() => bridge.retryRecording())}
+                          >
+                            <RotateCcw />
+                            Retry transcription
+                          </button>
+                          <button
+                            className="tool-button"
+                            disabled={!retryAudio && busy}
+                            onClick={run(() => bridge.discardFailedRecording())}
+                          >
+                            Discard retained audio
+                          </button>
+                        </div>
+                      ) : undefined
+                    ) : (
+                      <button
+                        className="secondary-button"
+                        onClick={() => w.setPage("models")}
+                      >
+                        Open models
+                      </button>
+                    )
+                  }
+                >
+                  {retrying
+                    ? "Retrying transcription."
+                    : available && w.status.phase !== "error"
+                      ? "A previous recording is available to retry."
+                      : w.status.message}
+                  {(available || retrying) && (
+                    <p className="caption">
+                      {retained ? (
+                        <>
+                          Audio is available only during this session.
+                          {retryAudio && (
+                            <>
+                              {retryAudio.durationMs !== null &&
+                                ` Duration: ${(retryAudio.durationMs / 1000).toFixed(1)} seconds.`}
+                              {` Size: ${
+                                retryAudio.byteLength >= 1024 * 1024
+                                  ? `${(retryAudio.byteLength / (1024 * 1024)).toFixed(1)} MB`
+                                  : `${Math.ceil(retryAudio.byteLength / 1024)} KB`
+                              }.`}
+                            </>
+                          )}
+                          {retrying &&
+                            " Discarding this backup will not interrupt the current transcription."}
+                        </>
+                      ) : (
+                        "Audio has been released. The current transcription continues."
+                      )}
+                    </p>
+                  )}
+                </Alert>
+              </div>
+            );
+          })()}
+
+          <PasteLastNotice
+            status={w.pasteLastStatus}
+            onCancel={w.cancelPasteLast}
+          />
+          {w.startupError && (
+            <Alert
+              action={
+                <button className="secondary-button" onClick={w.retryStartup}>
+                  <RotateCcw /> Retry opening workspace
+                </button>
+              }
+            >
+              {w.startupError}
+            </Alert>
+          )}
+        </div>
         <div
           className="sheet-content page-scroll"
+          hidden={!panelOpen}
           id="page-content"
           tabIndex={-1}
           role="region"
@@ -803,6 +810,17 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         panelOpen={panelOpen}
         canCopy={!!latest}
         resultId={latest?.id}
+        message={
+          !w.ready
+            ? w.startupError
+              ? "Workspace unavailable"
+              : "Opening your workspace…"
+            : ["preparing", "loading", "rewriting"].includes(
+                  w.magicStatus.phase,
+                )
+              ? w.magicStatus.message
+              : w.status.message
+        }
         onRecord={() => w.action(() => bridge.toggleDictation())}
         onCopy={() =>
           latest
@@ -871,7 +889,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         />
       )}
       {w.toast && (
-        <div className={panelOpen ? "ocean-toast" : "sr-only"} role="status">
+        <div className="ocean-toast" role="status">
           <Check />
           <span>{w.toast}</span>
           <button

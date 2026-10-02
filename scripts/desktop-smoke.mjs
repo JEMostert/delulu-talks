@@ -131,7 +131,9 @@ try {
   console.log(
     "Built worklet passed: file:// asset, production CSP, synthetic Web Audio capture and flush; no microphone or inference.",
   );
-  await page.getByRole("button", { name: "Open settings", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Open settings", exact: true })
+    .click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Application", exact: true }).click();
   await page.getByRole("button", { name: "dark", exact: true }).click();
@@ -200,7 +202,7 @@ try {
     );
     await page.getByRole("button", { name: "Models", exact: true }).click();
     await expect(
-      page.getByRole("button", { name: "Install runtime", exact: true }),
+      page.getByRole("button", { name: "Download & set up", exact: true }),
     ).toBeVisible();
   } else {
     const audioPath = join(data, "sample.wav");
