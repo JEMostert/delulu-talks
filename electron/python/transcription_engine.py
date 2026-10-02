@@ -597,7 +597,8 @@ class Worker:
                 # never the model's text. Curly quote normalization cannot shift indices.
                 quotes = str.maketrans("’‘“”", "''\"\"")
                 comparable = source.translate(quotes)
-                quoted = [match.span() for match in re.finditer(r'"[^"\n]*"|“[^”\n]*”', source)]
+                quoted = [match.span() for match in re.finditer(
+                    r"\"[^\"\n]*\"|“[^”\n]*”|(?<!\w)'[^'\n]+'(?!\w)|(?<!\w)‘[^’\n]+’(?!\w)", source)]
                 for edit in edits:
                     if not isinstance(edit, dict) or set(edit) != {"remove", "cue"}:
                         raise ValueError()
@@ -622,6 +623,10 @@ class Worker:
                         raise ValueError()
                     spans.extend([(start, start + len(remove)), (cue_start, cue_start + len(cue))])
                 spans.sort()
+                for start, end in spans:
+                    if ((start > 0 and source[start - 1].isalnum() and source[start].isalnum()) or
+                            (end < len(source) and source[end - 1].isalnum() and source[end].isalnum())):
+                        raise ValueError()
                 if any(left[1] > right[0] for left, right in zip(spans, spans[1:])):
                     raise ValueError()
                 output = source
