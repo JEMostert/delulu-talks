@@ -72,22 +72,27 @@ export function ImportQueue() {
     (job) => job.state === "running" || job.state === "cancelling",
   );
 
+  // The drop zone above already says what to do; an empty queue adds nothing.
+  if (ready && !queue.jobs.length && !error) return null;
   return (
     <section
-      className="border border-line bg-surface rounded-panel shadow-panel min-w-0 p-5 content-stack"
+      className="card content-stack min-w-0"
       aria-label="Import queue"
       aria-busy={pending}
     >
-      <div>
-        <h3>Import queue</h3>
-        <p className="caption">
-          {queue.jobs.length}/{IMPORT_QUEUE_LIMIT} files
-        </p>
+      <div className="section-heading">
+        <div>
+          <h3>Import queue</h3>
+          <p>
+            {queue.jobs.length} of {IMPORT_QUEUE_LIMIT} files ·{" "}
+            {queue.paused ? "paused" : "one at a time"}
+          </p>
+        </div>
       </div>
       {(!!queue.jobs.length || !ready) && (
-        <div className="flex gap-2 flex-wrap">
+        <div className="panel-actions">
           <button
-            className="secondary-button"
+            className="secondary-button compact"
             disabled={disabled}
             onClick={() =>
               void command(() => bridge.pauseImportQueue(!queue.paused))
@@ -97,7 +102,7 @@ export function ImportQueue() {
             {queue.paused ? "Resume queue" : "Pause queue"}
           </button>
           <button
-            className="secondary-button"
+            className="tool-button compact"
             disabled={disabled || !finished}
             onClick={() => void command(() => bridge.clearFinishedImports())}
           >
@@ -105,7 +110,7 @@ export function ImportQueue() {
           </button>
           {!ready && (
             <button
-              className="secondary-button"
+              className="tool-button compact"
               disabled={pending}
               onClick={() => void command(() => bridge.getImportQueue())}
             >
@@ -116,8 +121,8 @@ export function ImportQueue() {
       )}
       {!!queue.jobs.length && (
         <details className="disclosure">
-          <summary>{queue.paused ? "Paused" : "Processing"}</summary>
-          <p className="text-muted text-[12px]">
+          <summary>How the queue works</summary>
+          <p className="caption">
             {queue.paused
               ? active
                 ? "Queue paused; current work finishes before the next job can start."
@@ -133,33 +138,31 @@ export function ImportQueue() {
           {error}
         </p>
       )}
-      {ready && !queue.jobs.length && (
-        <p className="caption">No files queued.</p>
-      )}
-      <ol className="content-stack" aria-label="Import jobs">
+      <ol className="queue-jobs" aria-label="Import jobs">
         {queue.jobs.map((job) => {
           const queuedIndex = queued.findIndex((item) => item.id === job.id);
           return (
-            <li
-              key={job.id}
-              className="border border-line rounded-lg p-3 min-w-0"
-            >
-              <div className="flex gap-2 items-center flex-wrap">
-                <strong className="break-words min-w-0">{job.name}</strong>
-                <span className="badge">
+            <li key={job.id} className="queue-job">
+              <div className="flex gap-2 items-center">
+                <strong className="min-w-0 flex-1 truncate">{job.name}</strong>
+                <span
+                  className={`badge ${job.state === "completed" ? "success" : job.state === "failed" ? "danger" : job.state === "queued" || job.state === "cancelled" ? "neutral" : ""}`}
+                >
                   {job.state === "cancelling"
-                    ? "Cancelling after current work"
-                    : job.state}
+                    ? "Cancelling…"
+                    : job.state === "running"
+                      ? "Transcribing"
+                      : job.state[0].toUpperCase() + job.state.slice(1)}
                 </span>
               </div>
               {job.error && (
                 <p className="field-error break-words mt-2">{job.error}</p>
               )}
-              <div className="flex gap-2 flex-wrap mt-2">
+              <div className="panel-actions mt-2 empty:hidden">
                 {job.state === "queued" && (
                   <>
                     <button
-                      className="secondary-button"
+                      className="tool-button compact"
                       disabled={disabled || queuedIndex === 0}
                       aria-label={`Move ${job.name} up`}
                       onClick={() =>
@@ -169,7 +172,7 @@ export function ImportQueue() {
                       <ArrowUp /> Move up
                     </button>
                     <button
-                      className="secondary-button"
+                      className="tool-button compact"
                       disabled={disabled || queuedIndex === queued.length - 1}
                       aria-label={`Move ${job.name} down`}
                       onClick={() =>
@@ -182,7 +185,7 @@ export function ImportQueue() {
                 )}
                 {(job.state === "queued" || job.state === "running") && (
                   <button
-                    className="secondary-button"
+                    className="tool-button compact"
                     disabled={disabled}
                     aria-label={`Cancel ${job.name}`}
                     onClick={() =>
@@ -194,7 +197,7 @@ export function ImportQueue() {
                 )}
                 {(job.state === "failed" || job.state === "cancelled") && (
                   <button
-                    className="secondary-button"
+                    className="secondary-button compact"
                     disabled={disabled}
                     aria-label={`Retry ${job.name}`}
                     onClick={() =>

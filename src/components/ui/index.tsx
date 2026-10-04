@@ -212,6 +212,7 @@ export function Modal({
   busy = false,
   visible = true,
   size = "md",
+  className = "",
 }: {
   title: string;
   children: ReactNode;
@@ -220,6 +221,7 @@ export function Modal({
   busy?: boolean;
   visible?: boolean;
   size?: "sm" | "md" | "lg";
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
@@ -258,7 +260,7 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      className={`modal modal-${size}`}
+      className={`modal modal-${size} ${className}`}
       aria-labelledby={id}
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;

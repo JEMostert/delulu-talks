@@ -1,6 +1,12 @@
 import { useId, useMemo, useState } from "react";
 import { BookOpenText, Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { ConfirmDialog, EmptyState, Modal, Toggle } from "../components/ui";
+import {
+  ConfirmDialog,
+  EmptyState,
+  Modal,
+  Tabs,
+  Toggle,
+} from "../components/ui";
 import { VocabularyBulk } from "../components/VocabularyBulk";
 import { VocabularyTransfer } from "../components/VocabularyTransfer";
 import {
@@ -16,6 +22,11 @@ import {
 import { LANGUAGES } from "../data";
 import type { CustomWord } from "../types";
 import { RuleUsagePanel } from "../components/RuleUsagePanel";
+
+const RULE_TABS = [
+  ["correction", "Corrections"],
+  ["shortcut", "Text shortcuts"],
+] as const;
 
 export function VocabularyPage({
   words,
@@ -55,29 +66,13 @@ export function VocabularyPage({
         ruleTriggers(draft).every((phrase) => phrase === draft.term.trim()));
   return (
     <div className="content-stack">
-      <div
-        className="page-tabs max-[900px]:gap-[15px] max-[900px]:flex-wrap"
-        role="tablist"
-        aria-label="Personalization rules"
-      >
-        <button
-          role="tab"
-          aria-selected={kind === "correction"}
-          className={kind === "correction" ? "active" : ""}
-          onClick={() => setKind("correction")}
-        >
-          Corrections
-        </button>
-        <button
-          role="tab"
-          aria-selected={kind === "shortcut"}
-          className={kind === "shortcut" ? "active" : ""}
-          onClick={() => setKind("shortcut")}
-        >
-          Text shortcuts
-        </button>
-      </div>
-      <section className="flex items-center justify-between gap-[30px] py-[18px] max-[700px]:flex-col max-[700px]:items-start max-[700px]:gap-3.5">
+      <div className="vocabulary-head">
+        <Tabs
+          label="Personalization rules"
+          tabs={RULE_TABS}
+          value={kind}
+          onChange={setKind}
+        />
         <button
           className="primary-button"
           disabled={saving || words.length >= 500}
@@ -96,7 +91,7 @@ export function VocabularyPage({
           <Plus />
           {kind === "correction" ? "Add correction" : "Add shortcut"}
         </button>
-      </section>
+      </div>
       <div className="flex items-center gap-3.5 max-[700px]:flex-wrap">
         <label className="search-box max-[700px]:basis-full">
           <Search />
@@ -109,26 +104,26 @@ export function VocabularyPage({
         </label>
         <span className="caption">{words.length} / 500 rules</span>
       </div>
-      <section className="border border-line rounded-panel bg-surface shadow-panel backdrop-blur-xl overflow-hidden">
+      <section className="settings-group">
         {filtered.map((word) => (
           <article
-            className="flex items-center px-[18px] py-4 gap-4 border-b border-line last:border-0 max-[700px]:flex-wrap max-[700px]:p-3.5"
+            className="setting-row items-center max-[600px]:flex-wrap"
             key={word.id}
           >
-            <span className="size-[38px] rounded-xl bg-accent-soft text-accent-ink grid place-items-center shrink-0 text-[16px]">
+            <span className="size-[34px] rounded-[10px] bg-accent-soft text-accent-ink grid place-items-center shrink-0 text-[14px] font-semibold">
               {ruleKind(word) === "shortcut" ? "↳" : "Aa"}
             </span>
             <div className="flex-1 min-w-0">
-              <h3 className="text-[15px] flex gap-2 items-center break-words">
+              <h3 className="text-[14px] flex flex-wrap gap-2 items-center break-words">
                 {word.term}
-                <span className="badge">
+                <span className="badge neutral">
                   {ruleLanguage(word) || "All languages"}
                 </span>
                 {!ruleTriggers(word).length && (
-                  <span className="badge">Needs a correction phrase</span>
+                  <span className="badge warning">Needs a phrase</span>
                 )}
               </h3>
-              <p className="text-[12px] text-muted mt-[5px] break-words">
+              <p className="text-[12px] text-muted mt-1 break-words">
                 {ruleKind(word) === "shortcut"
                   ? `Say “${word.term}”`
                   : word.soundsLike
@@ -141,7 +136,7 @@ export function VocabularyPage({
                 </blockquote>
               )}
               {!!word.aliases?.length && (
-                <p className="text-[12px] text-muted mt-[5px] break-words">
+                <p className="text-[12px] text-muted mt-1 break-words">
                   Aliases:{" "}
                   {word.aliases.map((alias) => `“${alias}”`).join(" · ")}
                 </p>

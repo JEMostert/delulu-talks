@@ -11,6 +11,8 @@
 @import "./features/editor.css";
 @import "./features/lab.css";
 @import "./features/settings.css";
+@import "./features/palette.css";
+@import "./features/vocabulary.css";
 
 /* Dark theme follows the data-theme attribute set by useTheme. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));

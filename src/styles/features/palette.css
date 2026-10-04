@@ -1,0 +1,84 @@
+/* Command palette: anchored near the top, compact keyboard-first rows. */
+.modal.palette {
+  width: min(560px, calc(100vw - 32px));
+  margin-top: max(48px, 12dvh);
+}
+.modal.palette > header {
+  padding: 16px 18px 10px;
+}
+.modal.palette h2 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.modal.palette .modal-body {
+  padding: 0 10px 10px;
+}
+.palette-search {
+  margin: 0 8px 8px;
+  min-height: 44px;
+}
+.palette-search input:not([type="checkbox"]) {
+  font-size: 15px;
+}
+.palette-list {
+  max-height: min(340px, calc(100dvh - 300px));
+  overflow: auto;
+  padding: 2px;
+}
+.palette-option {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1px 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+}
+.palette-option[aria-selected="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.palette-option[aria-disabled="true"] .palette-label {
+  color: var(--muted);
+}
+.palette-label {
+  font-size: 13.5px;
+  font-weight: 540;
+}
+.palette-detail {
+  grid-column: 1;
+  font-size: 12px;
+  color: var(--muted);
+}
+.palette-enter {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  width: 15px;
+  height: 15px;
+  color: var(--accent-ink);
+}
+.palette-empty {
+  padding: 18px 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.palette-hints {
+  margin: 6px 0 0;
+  padding: 10px 10px 2px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.palette-hints kbd {
+  padding: 1px 6px;
+  font-size: 10.5px;
+}

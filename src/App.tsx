@@ -208,10 +208,10 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const commands: PaletteCommand[] = [
     ...(
       [
-        ["settings", "Open settings"],
-        ["lab", "Open audio files"],
-        ["technical", "Open technical text"],
-        ["vocabulary", "Open personalization"],
+        ["settings", "Go to Settings"],
+        ["lab", "Go to Audio files"],
+        ["technical", "Go to Editor"],
+        ["vocabulary", "Go to Personalization"],
       ] as const
     ).map(([page, label]) => ({ id: page, label, run: () => w.setPage(page) })),
     ...profilePaletteCommands(
@@ -259,7 +259,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
     },
     {
       id: "models",
-      label: "Open model management",
+      label: "Go to Models",
       keywords: "speech rewriting runtime setup diagnostics",
       run: () => w.setPage("models"),
     },

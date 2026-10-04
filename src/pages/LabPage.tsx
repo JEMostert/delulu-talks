@@ -15,6 +15,14 @@ import type {
   TranscriptRecord,
 } from "../types";
 
+const JOB_STATES: Record<AudioImportJob["state"], [string, string]> = {
+  pending: ["Queued", "neutral"],
+  running: ["Transcribing", ""],
+  done: ["Done", "success"],
+  failed: ["Failed", "danger"],
+  cancelled: ["Cancelled", "neutral"],
+};
+
 export function LabPage({
   history,
   busy,
@@ -24,6 +32,7 @@ export function LabPage({
   const [selected, setSelected] = useState<string | null>(null);
   const [review, setReview] = useState<AudioImportJob | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [pending, setPending] = useState(false);
   const [metadata, setMetadata] = useState<AudioFileMetadata | null>(null);
   const [inspecting, setInspecting] = useState(false);
@@ -97,7 +106,10 @@ export function LabPage({
     <div className="content-stack">
       {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
       <button
-        className="file-drop flex items-center gap-3 p-5 border border-dashed border-line rounded-xl text-left"
+        className="file-drop"
+        data-dragging={dragging}
+        onDragEnter={() => setDragging(true)}
+        onDragLeave={() => setDragging(false)}
         disabled={pending || busy}
         onClick={() => void select(() => bridge.chooseAudioFiles())}
         onDragOver={(event) => {
@@ -105,39 +117,54 @@ export function LabPage({
           event.dataTransfer.dropEffect = pending || busy ? "none" : "copy";
         }}
         onDrop={(event) => {
+          setDragging(false);
           if (!pending && !busy) drop(event);
           else event.preventDefault();
         }}
       >
-        {pending ? <LoaderCircle className="spin" /> : <FileAudio />}
-        <span>
-          Drop audio or choose files
-          <br />
-          <small>Audio & video · up to {MAX_AUDIO_BATCH_FILES} files</small>
+        <span className="file-drop-icon" aria-hidden="true">
+          {pending ? <LoaderCircle className="spin" /> : <Upload />}
         </span>
-        <Upload />
+        <strong>Drop recordings here or choose files</strong>
+        <small>
+          Audio and video · up to {MAX_AUDIO_BATCH_FILES} files · transcribed on
+          this device
+        </small>
       </button>
       <ImportQueue />
-      <ul className="content-stack" aria-label="Linked source files">
+      {!jobs.length && !file && (
+        <p className="caption text-center">
+          Results appear here and in History. Nothing leaves this device.
+        </p>
+      )}
+      {!!jobs.length && <h3 className="lab-heading">Linked files</h3>}
+      <ul className="lab-files" aria-label="Linked source files">
         {jobs.map((job) => (
           <li
             key={job.path}
-            className="rounded-xl border border-line p-3 content-stack"
+            className={`lab-file ${selected === job.path ? "selected" : ""}`}
           >
             <button
-              className="text-left break-words"
+              className="lab-file-select"
               aria-pressed={selected === job.path}
               onClick={() => setSelected(job.path)}
             >
-              {job.name} · {job.state} · {(job.size / 1048576).toFixed(1)} MiB
+              <FileAudio aria-hidden="true" />
+              <span className="min-w-0 flex-1">
+                <strong>{job.name}</strong>
+                <small>{(job.size / 1048576).toFixed(1)} MiB</small>
+              </span>
+              <span className={`badge ${JOB_STATES[job.state][1]}`}>
+                {JOB_STATES[job.state][0]}
+              </span>
             </button>
             {job.sourceError && (
               <p className="field-error">{job.sourceError}</p>
             )}
             {job.error && <p className="field-error">{job.error}</p>}
-            <div className="flex gap-2 flex-wrap">
+            <div className="panel-actions">
               <button
-                className="tool-button"
+                className="tool-button compact"
                 disabled={job.sourceAvailable === false}
                 onClick={() => setReview(job)}
               >
@@ -145,7 +172,7 @@ export function LabPage({
               </button>
               {job.sourceAvailable === false && (
                 <button
-                  className="tool-button"
+                  className="tool-button compact"
                   disabled={pending || busy}
                   onClick={() =>
                     void select(() => bridge.relinkAudioJob(job.path))
@@ -155,37 +182,34 @@ export function LabPage({
                 </button>
               )}
               <button
-                className="tool-button"
+                className="tool-button compact"
                 disabled={pending || busy}
                 onClick={() =>
                   void select(() => bridge.removeAudioJob(job.path))
                 }
               >
-                Remove job reference
+                Remove from list
               </button>
             </div>
           </li>
         ))}
       </ul>
       {file && (
-        <section
-          className="border border-line rounded-xl p-4 content-stack"
-          aria-live="polite"
-        >
+        <section className="lab-detail" aria-live="polite">
           <h3>{file.name}</h3>
           {inspecting ? (
-            <p>Inspecting media…</p>
+            <p className="caption">Inspecting media…</p>
           ) : metadata ? (
             <>
-              <p>
+              <p className="caption">
                 {metadata.durationSeconds === null
                   ? "Duration unknown"
                   : `${metadata.durationSeconds.toFixed(1)} seconds`}{" "}
                 · {metadata.channels ?? "unknown"} channels ·{" "}
                 {metadata.sampleRate ?? "unknown"} Hz
               </p>
-              <p>{metadata.decoderDetail}</p>
-              <p>{metadata.processingTimeEstimate}</p>
+              <p className="caption">{metadata.decoderDetail}</p>
+              <p className="caption">{metadata.processingTimeEstimate}</p>
               {metadata.estimatedPcmBytes !== null && (
                 <p>
                   Estimated mono 16 kHz PCM:{" "}

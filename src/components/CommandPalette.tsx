@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { CornerDownLeft, Search } from "lucide-react";
 import { Modal } from "./ui";
 
 export type PaletteCommand = {
@@ -77,6 +78,7 @@ export function CommandPalette({
   return (
     <Modal
       title={confirmation?.label ?? "Commands"}
+      className={confirmation ? "" : "palette"}
       busy={busy}
       onClose={onClose}
       footer={
@@ -114,10 +116,7 @@ export function CommandPalette({
           </p>
           <div className="grid gap-3.5">
             {confirmation.preview?.map((row) => (
-              <section
-                key={row.label}
-                className="border border-line rounded-xl p-3.5"
-              >
+              <section key={row.label} className="well">
                 <h3 className="text-[13px]">{row.label}</h3>
                 <div className="grid grid-cols-2 gap-3.5 max-[700px]:grid-cols-1 text-[12px] mt-2">
                   <div>
@@ -139,13 +138,14 @@ export function CommandPalette({
         </>
       ) : (
         <>
-          <label className="field">
-            Find a command
+          <label className="search-box palette-search">
+            <Search aria-hidden="true" />
             <input
               autoFocus
               ref={searchInput}
               role="combobox"
               aria-label="Find a command"
+              placeholder="Type a command…"
               aria-expanded="true"
               aria-controls={`${id}-list`}
               aria-activedescendant={
@@ -158,6 +158,8 @@ export function CommandPalette({
                 setIndex(0);
               }}
               onKeyDown={(event) => {
+                // Keys confirm an input method's composition, not a command.
+                if (event.nativeEvent.isComposing) return;
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault();
                   setIndex(
@@ -180,7 +182,7 @@ export function CommandPalette({
             role="listbox"
             id={`${id}-list`}
             aria-label="Available commands"
-            className="max-h-[420px] overflow-auto"
+            className="palette-list"
             onKeyDown={(event) => {
               if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
               event.preventDefault();
@@ -204,27 +206,34 @@ export function CommandPalette({
                 role="option"
                 aria-selected={active === position}
                 aria-disabled={!!command.disabled || busy}
-                className={`w-full text-left rounded-xl border p-3 mb-2 ${active === position ? "border-accent bg-accent-soft" : "border-line bg-surface"}`}
+                className="palette-option"
                 disabled={busy}
                 onMouseEnter={() => setIndex(position)}
                 onFocus={() => setIndex(position)}
                 onClick={() => void execute(command)}
               >
-                <span className="block text-[13px] font-semibold">
-                  {command.label}
-                </span>
+                <span className="palette-label">{command.label}</span>
                 {(command.disabled || command.detail) && (
-                  <span className="block text-[11px] text-muted mt-1">
+                  <span className="palette-detail">
                     {command.disabled ?? command.detail}
                   </span>
+                )}
+                {active === position && !command.disabled && (
+                  <CornerDownLeft
+                    className="palette-enter"
+                    aria-hidden="true"
+                  />
                 )}
               </button>
             ))}
             {!visible.length && (
-              <p className="text-muted">No matching commands.</p>
+              <p className="palette-empty">No matching commands.</p>
             )}
           </div>
-          <p className="caption">↑ ↓ choose · Enter run · Escape close</p>
+          <p className="palette-hints">
+            <kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> run ·{" "}
+            <kbd>Esc</kbd> close
+          </p>
         </>
       )}
       {error && (
