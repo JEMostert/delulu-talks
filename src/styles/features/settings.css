@@ -46,3 +46,71 @@
 .spoken-corrections-card .caption {
   margin-top: 10px;
 }
+
+/* Section navigation: a strip on narrow windows, a rail on wide ones. */
+.settings-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.settings-saving {
+  min-width: 0;
+}
+.settings-saving:empty {
+  display: none;
+}
+@media (min-width: 760px) {
+  .settings-layout {
+    display: grid;
+    grid-template-columns: 168px minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+  }
+  .settings-tabs.page-tabs {
+    position: sticky;
+    top: 0;
+    flex-direction: column;
+    align-items: stretch;
+    width: auto;
+    padding: 4px;
+    gap: 2px;
+  }
+  .settings-tabs.page-tabs button {
+    justify-content: flex-start;
+    text-align: left;
+    min-height: 34px;
+    padding: 7px 12px;
+  }
+  .settings-tabs.page-tabs button[aria-selected="true"] {
+    box-shadow:
+      0 1px 3px rgba(4, 24, 46, 0.14),
+      var(--rim-highlight),
+      inset 3px 0 0 var(--accent);
+  }
+  .settings-tabs.page-tabs > span {
+    margin: 6px 0 2px;
+    padding: 0 12px;
+  }
+}
+.settings-panel {
+  min-width: 0;
+}
+.settings-panel .setting-control select {
+  min-width: 170px;
+}
+@media (max-width: 600px) {
+  .settings-panel .setting-row {
+    flex-wrap: wrap;
+  }
+  .settings-panel .setting-control {
+    max-width: 100%;
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .settings-panel .setting-icon {
+    display: none;
+  }
+}
+.settings-panel .spoken-corrections-card {
+  margin: 0;
+}

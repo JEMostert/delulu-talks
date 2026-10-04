@@ -1,4 +1,3 @@
-import { SelectedTextWorkflow } from "./components/SelectedTextWorkflow";
 import {
   deliveredText,
   transcriptText,
@@ -41,6 +40,7 @@ import { PasteRecoveryNotice } from "./components/PasteRecoveryNotice";
 import { HistoryDeletionNotice } from "./components/HistoryDeletionNotice";
 import { Alert } from "./components/ui";
 import { LatestResult } from "./components/LatestResult";
+import { ProjectVocabulary } from "./components/ProjectVocabulary";
 import { activityLabel, engineLabel, formatClock } from "./statusLabels";
 import { useRecordingClock } from "./hooks/useRecordingClock";
 const LabPage = lazy(() =>
@@ -722,6 +722,10 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                       w.saveSettings({ customWords }, "Rules saved")
                     }
                   />
+                  <details className="disclosure mt-6">
+                    <summary>Project vocabulary from a code repository</summary>
+                    <ProjectVocabulary />
+                  </details>
                 </div>
               </Activity>
             )}
@@ -772,20 +776,12 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                       () => bridge.resetPythonEnvironment(),
                       "Runtime removed",
                     )}
+                    onOpenModels={() => navigate("models")}
                   />
                 </div>
               </Activity>
             )}
           </Suspense>
-          {w.page === "settings" && (
-            <details className="disclosure">
-              <summary>Rewrite selected text</summary>
-              <SelectedTextWorkflow
-                status={w.magicStatus}
-                onSetup={() => navigate("models")}
-              />
-            </details>
-          )}
         </div>
       </section>
       <OceanController
