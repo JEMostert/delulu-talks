@@ -10,31 +10,13 @@ import {
 } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import electronUpdater from "electron-updater";
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import {
   HistoryBatchDeletion,
   historySelection,
 } from "./services/historyBatch";
-import {
-  basename,
-  dirname,
-  extname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { join, resolve } from "node:path";
 import type {
   AppSettings,
   MagicPreset,
@@ -67,6 +49,7 @@ import {
   type DesktopShortcutAdapter,
 } from "./services/desktopAdapters";
 import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
+import { deletedDespiteCleanup } from "./services/migrationBackups";
 import { UpdateService } from "./services/updates";
 import { registerMainIpc } from "./ipc";
 
@@ -120,10 +103,15 @@ let pasteRecovery: PasteRecovery | null = null;
 const historyDeletion = new HistoryBatchDeletion(
   (ids) => {
     // Publish the durable snapshot before invalidating any session records.
-    storage.deleteHistorySelection(ids);
+    const cleanupFailure = deletedDespiteCleanup(() =>
+      storage.deleteHistorySelection(ids),
+    );
     for (const id of ids) sessionTranscripts.delete(id);
     if (lastTranscript && ids.includes(lastTranscript.id))
       lastTranscript = null;
+    if (pasteRecovery && ids.includes(pasteRecovery.transcriptId))
+      setPasteRecovery(null);
+    if (cleanupFailure) throw cleanupFailure;
   },
   () => {
     const state = historyDeletion.getState();
@@ -143,7 +131,9 @@ function visibleHistory(): TranscriptRecord[] {
   const records = new Map(
     storage.getHistory().map((record) => [record.id, record]),
   );
-  for (const [id, record] of sessionTranscripts) records.set(id, record);
+  // Saved records are authoritative on disk; the session map only adds unsaved ones.
+  for (const [id, record] of sessionTranscripts)
+    if (record.sessionOnly && !records.has(id)) records.set(id, record);
   return [...records.values()]
     .filter((record) => !historyDeletion.hidden(record.id))
     .sort((a, b) => b.createdAt - a.createdAt);
@@ -157,40 +147,13 @@ function selectedHistory(ids: string[]): TranscriptRecord[] {
   return ids.map((id) => {
     if (historyDeletion.hidden(id))
       throw new Error("Undo deletion before using this transcript.");
-    const record = sessionTranscripts.get(id) ?? storage.findHistory(id);
+    const record = storage.findHistory(id) ?? sessionTranscripts.get(id);
     if (!record)
       throw new Error(
         "A selected transcript is no longer available. Select the records again.",
       );
     return record;
   });
-}
-
-function writeSelectionExport(outputPath: string, content: string): void {
-  const parent = realpathSync(dirname(outputPath));
-  const destination = join(parent, basename(outputPath));
-  const inside = relative(realpathSync(storage.dataDirectory), destination);
-  if (
-    !inside ||
-    (!isAbsolute(inside) && inside !== ".." && !inside.startsWith(`..${sep}`))
-  )
-    throw new Error(
-      "Export outside Delulu's data directory to preserve history, settings and runtimes.",
-    );
-  // Replacing a fresh file preserves existing exports on failed writes and
-  // avoids modifying another file through a final-component hard/symbolic link.
-  const temporary = join(parent, `.delulu-export-${randomUUID()}.tmp`);
-  const descriptor = openSync(temporary, "wx", 0o600);
-  try {
-    try {
-      writeFileSync(descriptor, content, "utf8");
-    } finally {
-      closeSync(descriptor);
-    }
-    renameSync(temporary, destination);
-  } finally {
-    rmSync(temporary, { force: true });
-  }
 }
 
 function preloadPath(): string {
@@ -434,7 +397,11 @@ function recordDelivery(
     delivery: { state, updatedAt: Date.now(), detail, method },
   };
   if (saved) storage.replaceHistory(updated);
-  sessionTranscripts.set(record.id, updated);
+  rememberSessionTranscript(
+    sessionTranscripts,
+    updated,
+    historyDeletion.getState()?.ids ?? [],
+  );
   if (lastTranscript?.id === record.id) lastTranscript = updated;
   broadcast("history:added", updated);
   rebuildTrayMenu();
@@ -877,7 +844,8 @@ async function start(): Promise<void> {
     { main: () => mainWindow, pill },
     (record: TranscriptRecord) => {
       // Delivery measurements may arrive after a user changes this transcript.
-      const current = sessionTranscripts.get(record.id);
+      const current =
+        storage.findHistory(record.id) ?? sessionTranscripts.get(record.id);
       if (current) {
         if (deliveredText(current) !== deliveredText(record)) return;
         record = {
@@ -989,7 +957,6 @@ async function start(): Promise<void> {
     visibleHistory,
     historyBatchSnapshot,
     selectedHistory,
-    writeSelectionExport,
   });
   if (!smokeTest) {
     if (app.isPackaged)

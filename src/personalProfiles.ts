@@ -27,6 +27,8 @@ export type ProfileVocabularyRuleV1 = {
   enabled: boolean;
   /** Omitted means all languages, matching legacy vocabulary rules. */
   language?: string;
+  /** Literal recognition variants carried from the vocabulary rule. */
+  aliases?: string[];
 };
 export type PersonalProfileV1 = {
   schemaVersion: 1;
@@ -144,7 +146,8 @@ function json(value: unknown, path: string, depth = 0): void {
   )
     fail(path);
   for (const [key, item] of Object.entries(source))
-    json(item, `${path}.${key}`, depth + 1);
+    // JSON omits undefined properties, so they cannot corrupt a stored document.
+    if (item !== undefined) json(item, `${path}.${key}`, depth + 1);
 }
 function rule(value: unknown, path: string): void {
   const source = object(value, path);

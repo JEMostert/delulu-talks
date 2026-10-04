@@ -86,11 +86,7 @@ function validateShortcutConflicts(profile: PersonalProfileV1): void {
     );
     for (const other of shortcuts.slice(index + 1)) {
       const overlaps =
-        !rule.language ||
-        rule.language === "auto" ||
-        !other.language ||
-        other.language === "auto" ||
-        rule.language === other.language;
+        !rule.language || !other.language || rule.language === other.language;
       if (
         overlaps &&
         [other.term, other.soundsLike]

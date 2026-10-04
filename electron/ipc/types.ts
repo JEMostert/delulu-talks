@@ -30,7 +30,6 @@ export interface IpcDependencies {
   visibleHistory: () => TranscriptRecord[];
   historyBatchSnapshot: () => import("../../src/types").HistoryBatchSnapshot;
   selectedHistory: (ids: string[]) => TranscriptRecord[];
-  writeSelectionExport: (path: string, text: string) => void;
   getMainWindow: () => BrowserWindow | null;
   storage: StorageService;
   asr: AsrService;

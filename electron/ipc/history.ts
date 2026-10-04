@@ -1,17 +1,9 @@
 import { encryptHistory, decryptHistory } from "../services/encryptedHistory";
-import {
-  openSync,
-  closeSync,
-  readFileSync,
-  realpathSync,
-  fstatSync,
-} from "node:fs";
-import { relative, isAbsolute, dirname, sep, join, basename } from "node:path";
+import { openSync, closeSync, readFileSync, fstatSync } from "node:fs";
+import { extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { historySelection } from "../services/historyBatch";
 import { dialog, session } from "electron";
-import { writeFileSync } from "node:fs";
-import { extname } from "node:path";
 import type {
   ExportFormat,
   HistoryRetentionPreview,
@@ -25,9 +17,10 @@ import {
 } from "../../src/transcriptText";
 import { normalizeTranscriptTitle } from "../../src/transcriptTitle";
 import {
-  rememberSessionTranscript,
-  retainSessionTranscripts,
-} from "../../src/sessionTranscriptRetention";
+  normalizeTimings,
+  withoutRewriteTimings,
+} from "../../src/pipelineTimings";
+import { rememberSessionTranscript } from "../../src/sessionTranscriptRetention";
 import { applyTranscriptEdit } from "../services/storage";
 import {
   affectedByRetention,
@@ -35,7 +28,8 @@ import {
   retentionEffects,
   validateRetentionPolicy,
 } from "../services/historyRetention";
-import { exportRecord, saveTemplateExport } from "../services/transcripts";
+import { exportRecord, writeExportFile } from "../services/transcripts";
+import { deletedDespiteCleanup } from "../services/migrationBackups";
 import {
   renderExportTemplate,
   validateExportTemplateRequest,
@@ -59,9 +53,30 @@ export function registerHistoryIpc(
     visibleHistory,
     historyBatchSnapshot,
     selectedHistory,
-    writeSelectionExport,
   }: IpcDependencies,
 ): void {
+  /** The native dialog confirms overwrites, so its exact path must be kept. */
+  const chooseExportPath = async (
+    options: Electron.SaveDialogOptions,
+    extension: string,
+  ): Promise<string | null> => {
+    const confirmed: Electron.SaveDialogOptions = {
+      ...options,
+      properties: ["showOverwriteConfirmation"],
+    };
+    const window = getMainWindow();
+    const result = window
+      ? await dialog.showSaveDialog(window, confirmed)
+      : await dialog.showSaveDialog(confirmed);
+    if (result.canceled || !result.filePath) return null;
+    // Appending a suffix afterwards would bypass the overwrite confirmation.
+    if (extname(result.filePath).toLowerCase() !== `.${extension}`)
+      throw new Error(`Choose a filename ending in .${extension}.`);
+    return result.filePath;
+  };
+  const saveExport = (outputPath: string, content: string) =>
+    writeExportFile(storage.dataDirectory, outputPath, content);
+
   handle("history:batchSnapshot", () => historyBatchSnapshot());
   handle("history:stageDeletion", (_event, value: unknown) => {
     const ids = historySelection(value);
@@ -79,15 +94,15 @@ export function registerHistoryIpc(
         throw new Error("Choose TXT or JSON export.");
       const records = selectedHistory(ids);
       const fingerprint = historyFingerprint(records);
-      const options: Electron.SaveDialogOptions = {
-        title: `Export ${records.length} transcripts as ${format.toUpperCase()}`,
-        defaultPath: `delulu-${records.length}-transcripts.${format}`,
-        filters: [{ name: format.toUpperCase(), extensions: [format] }],
-      };
-      const result = getMainWindow()
-        ? await dialog.showSaveDialog(getMainWindow()!, options)
-        : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) return null;
+      const outputPath = await chooseExportPath(
+        {
+          title: `Export ${records.length} transcripts as ${format.toUpperCase()}`,
+          defaultPath: `delulu-${records.length}-transcripts.${format}`,
+          filters: [{ name: format.toUpperCase(), extensions: [format] }],
+        },
+        format,
+      );
+      if (!outputPath) return null;
       if (historyFingerprint(selectedHistory(ids)) !== fingerprint)
         throw new Error(
           "Selected transcripts changed while choosing a file. Export the current selection again.",
@@ -101,10 +116,7 @@ export function registerHistoryIpc(
                   `=== Transcript ${index + 1} of ${records.length} · ${new Date(record.createdAt).toISOString()} · ${record.id} ===\n${exportRecord(record, "txt")}`,
               )
               .join("\n");
-      const outputPath = extname(result.filePath)
-        ? result.filePath
-        : `${result.filePath}.${format}`;
-      writeSelectionExport(outputPath, content);
+      saveExport(outputPath, content);
       return outputPath;
     },
   );
@@ -115,32 +127,17 @@ export function registerHistoryIpc(
     extension: string,
     title: string,
   ): Promise<string | null> => {
-    const options: Electron.SaveDialogOptions = {
-      title,
-      defaultPath: `delulu-history.${extension}`,
-      filters: [{ name: "History backup", extensions: [extension] }],
-      properties: ["showOverwriteConfirmation"],
-    };
-    const selected = getMainWindow()
-      ? await dialog.showSaveDialog(getMainWindow()!, options)
-      : await dialog.showSaveDialog(options);
-    if (selected.canceled || !selected.filePath) return null;
-    if (!selected.filePath.toLowerCase().endsWith(`.${extension}`))
-      throw new Error(`Choose a .${extension} filename.`);
-    const target = join(
-      realpathSync(dirname(selected.filePath)),
-      basename(selected.filePath),
+    const outputPath = await chooseExportPath(
+      {
+        title,
+        defaultPath: `delulu-history.${extension}`,
+        filters: [{ name: "History backup", extensions: [extension] }],
+      },
+      extension,
     );
-    const within = relative(realpathSync(storage.dataDirectory), target);
-    if (
-      !within ||
-      (!within.startsWith(`..${sep}`) && within !== ".." && !isAbsolute(within))
-    )
-      throw new Error(
-        "Choose a destination outside the active application profile.",
-      );
-    saveTemplateExport(target, text);
-    return selected.filePath;
+    if (!outputPath) return null;
+    saveExport(outputPath, text);
+    return outputPath;
   };
   handle("history:encryptedExport", async (_event, passphrase: unknown) => {
     if (encryptedHistoryBusy)
@@ -204,12 +201,8 @@ export function registerHistoryIpc(
     historyDeletion.assertNoPending();
     const policy = validateRetentionPolicy(value);
     const saved = storage.getHistory();
-    // Show the same current text as History for saved records also held in this session.
-    const current = saved.map(
-      (record) => sessionTranscripts.get(record.id) ?? record,
-    );
     const previewedAt = Date.now();
-    const affected = affectedByRetention(current, policy, previewedAt);
+    const affected = affectedByRetention(saved, policy, previewedAt);
     const preview: HistoryRetentionPreview = {
       token: randomUUID(),
       policy,
@@ -288,7 +281,11 @@ export function registerHistoryIpc(
         : null;
     if (!updated) throw new Error("Transcript not found");
     // A rejected saved-history write leaves session and last-record state intact.
-    sessionTranscripts.set(key, updated);
+    rememberSessionTranscript(
+      sessionTranscripts,
+      updated,
+      historyDeletion.getState()?.ids ?? [],
+    );
     if (getLastTranscript()?.id === key) setLastTranscript(updated);
     rebuildTrayMenu();
     return updated;
@@ -329,6 +326,7 @@ export function registerHistoryIpc(
           magicPreset: null,
           magicIncludedInferences: false,
           magicProcessingTimeMs: 0,
+          timings: withoutRewriteTimings(record.timings),
         };
       } else {
         if (!value || typeof value !== "object")
@@ -336,6 +334,7 @@ export function registerHistoryIpc(
         const rewrite = value as Record<string, unknown>;
         const text = validateText(rewrite.text, 500_000);
         if (!text.trim()) throw new Error("A rewrite cannot be empty");
+        const measured = normalizeTimings(rewrite.timings);
         updated = {
           ...record,
           magicText: text,
@@ -352,6 +351,12 @@ export function registerHistoryIpc(
           magicProcessingTimeMs: Number.isFinite(rewrite.processingTimeMs)
             ? Math.max(0, Number(rewrite.processingTimeMs))
             : 0,
+          // Earlier rewrite and delivery timings described different text.
+          timings: normalizeTimings({
+            ...withoutRewriteTimings(record.timings),
+            rewriteLoadMs: measured?.rewriteLoadMs,
+            rewritingMs: measured?.rewritingMs,
+          }),
         };
       }
       if (storage.findHistory(key)) storage.replaceHistory(updated);
@@ -370,19 +375,23 @@ export function registerHistoryIpc(
     if (historyDeletion.hidden(key))
       throw new Error("Undo deletion before using this transcript.");
     historyDeletion.assertNoPending();
-    storage.deleteHistory(key);
+    const cleanupFailure = deletedDespiteCleanup(() =>
+      storage.deleteHistory(key),
+    );
     sessionTranscripts.delete(key);
     if (getPasteRecovery()?.transcriptId === key) setPasteRecovery(null);
     if (getLastTranscript()?.id === key) setLastTranscript(null);
     rebuildTrayMenu();
+    if (cleanupFailure) throw cleanupFailure;
   });
   handle("history:clear", () => {
     historyDeletion.assertNoPending();
-    storage.clearHistory();
+    const cleanupFailure = deletedDespiteCleanup(() => storage.clearHistory());
     sessionTranscripts.clear();
     setPasteRecovery(null);
     setLastTranscript(null);
     rebuildTrayMenu();
+    if (cleanupFailure) throw cleanupFailure;
   });
   handle(
     "history:exportTemplate",
@@ -392,7 +401,7 @@ export function registerHistoryIpc(
         throw new Error("Undo deletion before using this transcript.");
       const request = validateExportTemplateRequest(input);
       const findRecord = () =>
-        sessionTranscripts.get(key) ?? storage.findHistory(key);
+        storage.findHistory(key) ?? sessionTranscripts.get(key);
       const renderCurrent = () => {
         const record = findRecord();
         if (!record) throw new Error("Transcript no longer exists");
@@ -408,23 +417,18 @@ export function registerHistoryIpc(
         .replace(/[/\\]/g, "-")
         .replace(/\.[^.]+$/, "");
       const extension = request.extension;
-      const options: Electron.SaveDialogOptions = {
-        title: "Save transcript template",
-        defaultPath: `${stem}.${extension}`,
-        filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
-        properties: ["showOverwriteConfirmation"],
-      };
-      const result = getMainWindow()
-        ? await dialog.showSaveDialog(getMainWindow()!, options)
-        : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) return null;
-      // The native dialog confirms the actual destination, including its suffix.
-      // Do not silently append a suffix after its overwrite confirmation.
-      if (extname(result.filePath).toLowerCase() !== `.${extension}`)
-        throw new Error(`Choose a filename ending in .${extension}.`);
+      const outputPath = await chooseExportPath(
+        {
+          title: "Save transcript template",
+          defaultPath: `${stem}.${extension}`,
+          filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
+        },
+        extension,
+      );
+      if (!outputPath) return null;
       const { text } = renderCurrent();
-      saveTemplateExport(result.filePath, text);
-      return result.filePath;
+      saveExport(outputPath, text);
+      return outputPath;
     },
   );
   handle(
@@ -433,52 +437,34 @@ export function registerHistoryIpc(
       const key = validateText(id, 128);
       if (historyDeletion.hidden(key))
         throw new Error("Undo deletion before using this transcript.");
-      const record = sessionTranscripts.get(key) ?? storage.findHistory(key);
+      const record = storage.findHistory(key) ?? sessionTranscripts.get(key);
       if (!record) throw new Error("Transcript not found");
       const format = ["txt", "json", "md"].includes(requestedFormat)
         ? requestedFormat
         : "txt";
       const defaultName = `${(record.sourceName ?? `delulu-${record.createdAt}`).replace(/\.[^.]+$/, "")}.${format}`;
-      const options: Electron.SaveDialogOptions = {
-        title:
-          format === "md"
-            ? "Export Markdown note"
-            : `Export ${format.toUpperCase()}`,
-        defaultPath: defaultName,
-        filters: [
-          {
-            name: format === "md" ? "Markdown notes" : format.toUpperCase(),
-            extensions: [format],
-          },
-        ],
-      };
-      const result = getMainWindow()
-        ? await dialog.showSaveDialog(getMainWindow()!, options)
-        : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) return null;
-      const outputPath = extname(result.filePath)
-        ? result.filePath
-        : `${result.filePath}.${format}`;
-      if (format === "md") {
-        try {
-          // A note export creates a new destination. Exclusive creation also
-          // protects against a file appearing after the native picker closes.
-          writeFileSync(outputPath, exportRecord(record, format), {
-            encoding: "utf8",
-            mode: 0o600,
-            flag: "wx",
-          });
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "EEXIST")
-            throw new Error(
-              "A note already exists at this destination. Export again with a different filename; the existing note was preserved.",
-              { cause: error },
-            );
-          throw error;
-        }
-      } else {
-        writeFileSync(outputPath, exportRecord(record, format), "utf8");
-      }
+      const outputPath = await chooseExportPath(
+        {
+          title:
+            format === "md"
+              ? "Export Markdown note"
+              : `Export ${format.toUpperCase()}`,
+          defaultPath: defaultName,
+          filters: [
+            {
+              name: format === "md" ? "Markdown notes" : format.toUpperCase(),
+              extensions: [format],
+            },
+          ],
+        },
+        format,
+      );
+      if (!outputPath) return null;
+      // Export the text as it is now, not as it was when the picker opened.
+      const current = storage.findHistory(key) ?? sessionTranscripts.get(key);
+      if (!current || historyDeletion.hidden(key))
+        throw new Error("Transcript no longer exists");
+      saveExport(outputPath, exportRecord(current, format));
       return outputPath;
     },
   );

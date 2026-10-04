@@ -140,6 +140,30 @@ export function backupProfileMigration(
     });
 }
 
+/** The history deletion itself is durable; only revoking backup copies failed. */
+export class HistoryBackupCleanupError extends Error {
+  constructor(cause: unknown) {
+    super(
+      `The deletion was saved, but older copies in migration backups could not be removed (${cause instanceof Error ? cause.message : String(cause)}). Delete another transcript to retry, or remove the migration-backups folder from the data directory.`,
+      { cause },
+    );
+    this.name = "HistoryBackupCleanupError";
+  }
+}
+
+/** Callers update session state after a durable deletion, then report a cleanup failure. */
+export function deletedDespiteCleanup(
+  remove: () => void,
+): HistoryBackupCleanupError | null {
+  try {
+    remove();
+    return null;
+  } catch (error) {
+    if (error instanceof HistoryBackupCleanupError) return error;
+    throw error;
+  }
+}
+
 /** Explicit history deletion also revokes historical backup copies of that content. */
 export function removeMigrationHistoryBackups(dataDirectory: string): void {
   const root = join(dataDirectory, "migration-backups");

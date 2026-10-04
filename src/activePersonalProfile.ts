@@ -2,6 +2,7 @@ import {
   readPersonalProfiles,
   type PersonalProfileV1,
 } from "./personalProfiles";
+import { normalizeAliases } from "./personalization";
 import type { AppSettings } from "./types";
 
 export type ProfileEffectiveSettings = Pick<
@@ -98,6 +99,9 @@ export function profileActivationSettings(
       replacement: rule.replacement,
       enabled: rule.enabled,
       ...(rule.language !== undefined ? { language: rule.language } : {}),
+      ...(rule.aliases !== undefined
+        ? { aliases: normalizeAliases(rule.aliases) }
+        : {}),
     })),
     magicEnabled: profile.rewrite.enabled,
     magicModel: profile.rewrite.model,

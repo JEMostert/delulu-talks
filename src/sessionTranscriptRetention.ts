@@ -47,7 +47,11 @@ export function rememberSessionTranscript(
   record: TranscriptRecord,
   pinnedIds: readonly string[] = [],
 ): void {
-  if (!record.sessionOnly) return;
+  if (!record.sessionOnly) {
+    // A cached copy of a saved record would shadow later edits on disk.
+    records.delete(record.id);
+    return;
+  }
   records.set(record.id, record);
   const retained = new Set(
     retainSessionTranscripts([...records.values()], pinnedIds).map(

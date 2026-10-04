@@ -11,7 +11,10 @@ import type {
 } from "./types";
 
 /** Runtime contracts for renderer requests; no Electron or platform dependencies. */
-type RequestSchema = { parse(args: readonly unknown[]): unknown[] };
+type RequestSchema = {
+  readonly count: number;
+  parse(args: readonly unknown[]): unknown[];
+};
 type ObjectInput = Record<string, unknown>;
 
 function object(value: unknown, label: string): ObjectInput {
@@ -52,6 +55,7 @@ function schema(
   parse: (args: readonly unknown[]) => unknown[] = () => [],
 ): RequestSchema {
   return {
+    count,
     parse(args) {
       if (args.length !== count)
         throw new Error(`Expected ${count} request arguments`);
@@ -238,7 +242,7 @@ export const ipcRequestSchemas = {
   "rules:usage": noArguments,
   "rules:resetUsage": noArguments,
   "dictation:pasteLastStatus": noArguments,
-  "dictation:cancelPasteLast": noArguments,
+  "dictation:cancelPasteLast": schema(1, ([id]) => [requestText(id, 128)]),
   "history:batchSnapshot": noArguments,
   "history:stageDeletion": schema(1, ([ids]) => [stringIds(ids)]),
   "history:undoDeletion": schema(1, ([token]) => [requestText(token, 128)]),
@@ -284,8 +288,8 @@ export const ipcRequestSchemas = {
   "lab:queueRetry": schema(1, ([id]) => [requestText(id, 128)]),
   "magic:cancelRewrite": schema(1, ([id]) => [requestText(id, 128)]),
   "paste:recovery": noArguments,
-  "paste:copyInstead": noArguments,
-  "paste:dismissRecovery": noArguments,
+  "paste:copyInstead": schema(1, ([id]) => [requestText(id, 128)]),
+  "paste:dismissRecovery": schema(1, ([id]) => [requestText(id, 128)]),
   "profiles:manage": schema(1, ([command]) => [jsonInput(command)]),
   "profiles:activate": schema(1, ([command]) => [jsonInput(command)]),
   "dictation:pause": noArguments,
@@ -304,7 +308,11 @@ export const ipcRequestSchemas = {
       throw new Error("Expected lost-input boolean");
     return [requestText(id, 128), requestText(message, 1000), lost];
   }),
-  "runtime:setupLog": noArguments,
+  "runtime:setupLog": schema(1, ([kind]) => {
+    if (kind !== "speech" && kind !== "rewrite")
+      throw new Error("Choose speech or rewriting setup logs");
+    return [kind];
+  }),
   "runtime:setupSnapshot": noArguments,
   "storage:overview": noArguments,
 

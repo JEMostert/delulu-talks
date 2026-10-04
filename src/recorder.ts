@@ -11,6 +11,7 @@ import type {
   RecorderCommand,
 } from "./types";
 import { TrailingSilenceStop } from "./trailingSilence";
+import { resample } from "./captureResample";
 
 function merge(chunks: Float32Array[]): Float32Array {
   const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
@@ -19,25 +20,6 @@ function merge(chunks: Float32Array[]): Float32Array {
   for (const chunk of chunks) {
     output.set(chunk, offset);
     offset += chunk.length;
-  }
-  return output;
-}
-
-function resample(
-  input: Float32Array,
-  sourceRate: number,
-  targetRate = 16_000,
-): Float32Array {
-  if (!input.length || sourceRate === targetRate) return input;
-  const ratio = sourceRate / targetRate;
-  const length = Math.max(1, Math.round(input.length / ratio));
-  const output = new Float32Array(length);
-  for (let index = 0; index < length; index += 1) {
-    const position = index * ratio;
-    const left = Math.floor(position);
-    const right = Math.min(input.length - 1, left + 1);
-    const fraction = position - left;
-    output[index] = input[left] * (1 - fraction) + input[right] * fraction;
   }
   return output;
 }

@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import {
   closeSync,
   openSync,
+  realpathSync,
   renameSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { ExportFormat, TranscriptRecord } from "../../src/types";
 import { deliveredText, transcriptText } from "../../src/transcriptText";
 
@@ -63,11 +64,29 @@ export function exportRecord(
     : `${output}\n`;
 }
 
-/** Replace only a fully written export; a failed write leaves the destination intact. */
-export function saveTemplateExport(outputPath: string, text: string): void {
+/**
+ * Replace only a fully written export outside the application profile. A
+ * failed write leaves the destination intact, and renaming a fresh file never
+ * writes through a final-component hard or symbolic link.
+ */
+export function writeExportFile(
+  dataDirectory: string,
+  outputPath: string,
+  text: string,
+): void {
+  const parent = realpathSync(dirname(outputPath));
+  const destination = join(parent, basename(outputPath));
+  const inside = relative(realpathSync(dataDirectory), destination);
+  if (
+    !inside ||
+    (!isAbsolute(inside) && inside !== ".." && !inside.startsWith(`..${sep}`))
+  )
+    throw new Error(
+      "Export outside Delulu's data directory to preserve history, settings and runtimes.",
+    );
   const temporaryPath = join(
-    dirname(outputPath),
-    `.${basename(outputPath)}.${randomUUID()}.tmp`,
+    parent,
+    `.${basename(destination)}.${randomUUID()}.tmp`,
   );
   let created = false;
   try {
@@ -78,7 +97,7 @@ export function saveTemplateExport(outputPath: string, text: string): void {
     } finally {
       closeSync(descriptor);
     }
-    renameSync(temporaryPath, outputPath);
+    renameSync(temporaryPath, destination);
   } finally {
     if (created) {
       try {

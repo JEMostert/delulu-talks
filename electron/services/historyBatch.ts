@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { HistoryDeletionState } from "../../src/types";
+import { HistoryBackupCleanupError } from "./migrationBackups";
 
 export function historySelection(value: unknown): string[] {
   if (!Array.isArray(value) || !value.length || value.length > 500)
@@ -77,15 +78,19 @@ export class HistoryBatchDeletion {
       this.commit(pending.ids);
       this.state = null;
     } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
       this.state = {
         ...pending,
         phase: "failed",
-        error:
-          `Deletion was not completed. ${error instanceof Error ? error.message : String(error)}`.slice(
-            0,
-            600,
-          ),
+        error: (error instanceof HistoryBackupCleanupError
+          ? detail
+          : `Deletion was not completed. ${detail}`
+        ).slice(0, 600),
       };
+      this.changed();
+      // Report a failure once; later snapshots must not revive a stale error.
+      this.state = null;
+      return;
     }
     this.changed();
   }

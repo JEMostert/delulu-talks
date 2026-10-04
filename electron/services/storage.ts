@@ -4,7 +4,10 @@ import {
   assertPersistedSchema,
   versionPersistedRecord,
 } from "../../src/persistedSchema";
-import { readActivePersonalProfile } from "../../src/activePersonalProfile";
+import {
+  readActivePersonalProfile,
+  type ActivePersonalProfile,
+} from "../../src/activePersonalProfile";
 import {
   assertPersonalProfilesUpdate,
   readPersonalProfiles,
@@ -18,6 +21,7 @@ import electron from "electron";
 import { isMagicPreset } from "../../src/rewritePresets";
 import {
   backupProfileMigration,
+  HistoryBackupCleanupError,
   removeMigrationHistoryBackups,
 } from "./migrationBackups";
 import { randomUUID } from "node:crypto";
@@ -209,36 +213,48 @@ function normalizeWords(value: unknown): CustomWord[] {
       throw new Error(
         "Vocabulary text block exceeds the supported limit. Existing settings are preserved.",
       );
-    return [
-      {
-        ...source,
-        schemaVersion: 1,
-        kind:
-          source.kind === "shortcut" || (!source.kind && !!source.replacement)
-            ? "shortcut"
-            : "correction",
-        id: safeString(source.id, `word-${Date.now()}-${index}`, 128),
-        term,
-        // Preserve nonempty scopes, including unknown codes: never widen a saved rule.
-        language:
-          typeof source.language === "string" && source.language.trim()
-            ? source.language.trim().toLowerCase().slice(0, 64)
-            : undefined,
-        soundsLike: safeString(source.soundsLike, "", 1024),
-        ...(source.aliases !== undefined
-          ? { aliases: normalizeAliases(source.aliases) }
-          : {}),
-        // Shortcut indentation and trailing whitespace are literal user text.
-        replacement:
-          typeof source.replacement === "string" && source.replacement.trim()
-            ? source.replacement
-            : "",
-        enabled:
-          source.enabled !== false &&
-          (source.language == null || typeof source.language === "string"),
-      },
-    ];
+    // Preserve nonempty scopes, including unknown codes: never widen a saved rule.
+    const language =
+      typeof source.language === "string" && source.language.trim()
+        ? source.language.trim().toLowerCase().slice(0, 64)
+        : undefined;
+    const rule: CustomWord = {
+      ...source,
+      schemaVersion: 1,
+      kind:
+        source.kind === "shortcut" || (!source.kind && !!source.replacement)
+          ? "shortcut"
+          : "correction",
+      id: safeString(source.id, `word-${Date.now()}-${index}`, 128),
+      term,
+      language,
+      soundsLike: safeString(source.soundsLike, "", 1024),
+      ...(source.aliases !== undefined
+        ? { aliases: normalizeAliases(source.aliases) }
+        : {}),
+      // Shortcut indentation and trailing whitespace are literal user text.
+      replacement:
+        typeof source.replacement === "string" && source.replacement.trim()
+          ? source.replacement
+          : "",
+      enabled:
+        source.enabled !== false &&
+        (source.language == null || typeof source.language === "string"),
+    };
+    // An unscoped rule omits the key, keeping the saved key order otherwise.
+    if (!language) delete rule.language;
+    return [rule];
   });
+}
+
+/** Snapshots store rules in the customWords shape so the active label compares like with like. */
+function normalizeProfileSnapshots(
+  active: ActivePersonalProfile | null,
+): ActivePersonalProfile | null {
+  if (!active) return null;
+  for (const snapshot of [active.appliedSettings, active.globalSettings])
+    snapshot.customWords = normalizeWords(snapshot.customWords);
+  return active;
 }
 
 function boolean(value: unknown, fallback: boolean): boolean {
@@ -404,8 +420,8 @@ export function normalizeSettings(value: unknown): AppSettings {
     customWords: normalizeWords(source.customWords),
     personalProfiles: readPersonalProfiles(source.personalProfiles)
       .document as AppSettings["personalProfiles"],
-    activePersonalProfile: readActivePersonalProfile(
-      source.activePersonalProfile,
+    activePersonalProfile: normalizeProfileSnapshots(
+      readActivePersonalProfile(source.activePersonalProfile),
     ),
   };
 }
@@ -833,8 +849,8 @@ export class StorageService {
   deleteHistory(id: string): void {
     const next = this.history.filter((item) => item.id !== id);
     this.writeProfile(join(this.dataDirectory, HISTORY_FILE), next);
-    removeMigrationHistoryBackups(this.dataDirectory);
     this.history = next;
+    this.revokeHistoryBackups();
   }
 
   deleteHistorySelection(ids: readonly string[]): void {
@@ -842,6 +858,19 @@ export class StorageService {
     const next = this.history.filter((record) => !removed.has(record.id));
     this.writeProfile(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
+    this.revokeHistoryBackups();
+  }
+
+  /**
+   * Runs after memory matches the published file, so a cleanup failure can
+   * never resurrect deleted records on the next history write.
+   */
+  private revokeHistoryBackups(): void {
+    try {
+      removeMigrationHistoryBackups(this.dataDirectory);
+    } catch (error) {
+      throw new HistoryBackupCleanupError(error);
+    }
   }
 
   applyHistoryRetention(
@@ -861,7 +890,7 @@ export class StorageService {
 
   clearHistory(): void {
     this.writeProfile(join(this.dataDirectory, HISTORY_FILE), []);
-    removeMigrationHistoryBackups(this.dataDirectory);
     this.history = [];
+    this.revokeHistoryBackups();
   }
 }
