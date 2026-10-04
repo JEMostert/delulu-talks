@@ -5,6 +5,7 @@ import { ModelSetupStatus } from "./ModelSetupStatus";
 import { ModelProvenance } from "./ModelProvenance";
 import { ModelLifecycle } from "./ModelLifecycle";
 import { BackendCapabilities } from "./BackendCapabilities";
+import { EngineBadge } from "./EngineBadge";
 
 export type RewriteSetupProps = {
   magicStatus: MagicStatus;
@@ -40,9 +41,12 @@ export function RewriteSetup({
         <WandSparkles />
         <div>
           <h2 id="rewrite-model-heading">Rewriting</h2>
-          <p>{writingModel.name}</p>
+          <p>{writingModel.name} · optional, runs locally</p>
         </div>
+        <EngineBadge engine={magicStatus.engine} />
       </div>
+      {(magicStatus.engine === "ready" || magicStatus.engine === "unloaded") &&
+        magicStatus.residency && <ModelLifecycle status={magicStatus} />}
       <div className="mt-4 flex flex-wrap items-end gap-4">
         <label className="field min-w-[180px] flex-1">
           Model
@@ -84,7 +88,7 @@ export function RewriteSetup({
               disabled={busy}
               onClick={onUnloadMagic}
             >
-              Release memory
+              Unload
             </button>
           ) : magicStatus.engine === "unloaded" ? (
             <button
@@ -92,9 +96,21 @@ export function RewriteSetup({
               disabled={busy || setupPending}
               onClick={onLoadMagic}
             >
-              <Play /> Load rewriting
+              <Play /> Load now
             </button>
           ) : null}
+          {(magicStatus.engine === "ready" ||
+            magicStatus.engine === "unloaded") && (
+            <button
+              className="tool-button"
+              disabled={busy || setupPending}
+              onClick={onSetupMagic}
+              title="Reinstall the runtime included with this app"
+            >
+              {writingBusy ? <LoaderCircle className="spin" /> : <Download />}
+              Repair
+            </button>
+          )}
           {(magicStatus.engine === "missing" ||
             magicStatus.engine === "error") && (
             <button
@@ -105,7 +121,7 @@ export function RewriteSetup({
               {writingBusy ? <LoaderCircle className="spin" /> : <Download />}
               {magicStatus.engine === "missing"
                 ? "Download & set up"
-                : "Fix setup"}
+                : "Repair"}
             </button>
           )}
         </div>
@@ -121,25 +137,10 @@ export function RewriteSetup({
           {magicStatus.message}
         </p>
       )}
-      {(magicStatus.engine === "ready" ||
-        magicStatus.engine === "unloaded") && (
-        <details className="disclosure">
-          <summary>Maintenance</summary>{" "}
-          <button
-            className="secondary-button"
-            disabled={busy || setupPending}
-            onClick={onSetupMagic}
-          >
-            {writingBusy ? <LoaderCircle className="spin" /> : <Download />}
-            Fix setup
-          </button>
-        </details>
-      )}
       <details className="setup-details">
         <summary>Model details & license</summary>
         <p className="setup-status-copy">{writingModel.description}</p>
         <ModelProvenance {...writingModel} />
-        <ModelLifecycle status={magicStatus} />
         <BackendCapabilities capabilities={magicStatus.capabilities} />
       </details>
     </section>

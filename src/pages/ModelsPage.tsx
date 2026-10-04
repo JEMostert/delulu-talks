@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
+import { Tabs } from "../components/ui";
 import { RuntimeSetupSnapshot } from "../components/RuntimeSetupSnapshot";
 import { DecodeControls } from "../components/models/DecodeControls";
 import { Diagnostics } from "../components/Diagnostics";
@@ -13,6 +14,12 @@ import {
   type RewriteSetupProps,
 } from "../components/models/RewriteSetup";
 
+const MODEL_TABS = [
+  ["speech", "Speech"],
+  ["rewrite", "Rewriting"],
+  ["details", "Runtime & storage"],
+] as const;
+
 type Props = SpeechSetupProps &
   RewriteSetupProps & {
     focusTarget?: "decode" | "diagnostics" | null;
@@ -20,7 +27,7 @@ type Props = SpeechSetupProps &
     onDone?: () => void;
   };
 export function ModelsPage(props: Props) {
-  const [tab, setTab] = useState("speech");
+  const [tab, setTab] = useState<(typeof MODEL_TABS)[number][0]>("speech");
   const [, setSnapshotPending] = useState(false);
   useEffect(() => {
     if (props.focusTarget) setTab("details");
@@ -36,31 +43,21 @@ export function ModelsPage(props: Props) {
   }, [tab, props.focusTarget, props.onTargetHandled]);
   return (
     <div className="content-stack">
-      <div className="setup-tabs" role="tablist" aria-label="Model settings">
-        {[
-          ["speech", "Speech"],
-          ["rewrite", "Rewriting"],
-          ["details", "Details"],
-        ].map(([value, label]) => (
-          <button
-            key={value}
-            role="tab"
-            aria-selected={tab === value}
-            onClick={() => setTab(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        label="Model settings"
+        tabs={MODEL_TABS}
+        value={tab}
+        onChange={setTab}
+      />
       {tab === "speech" && (
         <>
           <SpeechSetup {...props} />
           {props.status.engine === "ready" &&
             props.status.warmup === "complete" && (
               <div className="setup-finished">
-                <span>
-                  <Check className="inline mr-2" />
-                  Ready to dictate
+                <span className="flex items-center gap-2">
+                  <Check className="text-success" />
+                  Ready to dictate — press your shortcut anywhere.
                 </span>
                 <button className="primary-button" onClick={props.onDone}>
                   Done
@@ -72,29 +69,29 @@ export function ModelsPage(props: Props) {
       {tab === "rewrite" && <RewriteSetup {...props} />}
       {tab === "details" && (
         <>
-          <details className="disclosure">
-            <summary>Runtime</summary>
+          <section className="model-section">
+            <h3>Runtime</h3>
             <RuntimeSetupSnapshot
               pythonCommand={props.settings.pythonCommand}
               magicModel={props.settings.magicModel}
               busy={props.busy}
               onPending={setSnapshotPending}
             />
-          </details>
-          <details className="disclosure">
-            <summary>Storage</summary>
+          </section>
+          <section className="model-section">
+            <h3>Storage</h3>
             <ModelCachePanel
               status={props.status}
               magicStatus={props.magicStatus}
               busy={props.busy || props.saving}
             />
-          </details>
-          <details className="disclosure">
-            <summary>Speech options</summary>
+          </section>
+          <section className="model-section">
+            <h3>Speech options</h3>
             <DecodeControls {...props} />
-          </details>
-          <details className="disclosure">
-            <summary>Device diagnostics</summary>
+          </section>
+          <section className="model-section">
+            <h3>Device diagnostics</h3>
             <div
               id="models-diagnostics"
               tabIndex={-1}
@@ -102,7 +99,7 @@ export function ModelsPage(props: Props) {
             >
               <Diagnostics refreshButtonId="runtime-diagnostics-refresh" />
             </div>
-          </details>
+          </section>
         </>
       )}
     </div>

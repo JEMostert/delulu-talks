@@ -25,9 +25,9 @@ export function ModelLifecycle({ status }: { status: RuntimeLifecycle }) {
       ? deadline.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
       : "None scheduled";
   const rows = [
-    ["Model residency", RESIDENCY[status.residency ?? "unknown"]],
+    ["Memory", RESIDENCY[status.residency ?? "unknown"]],
     [
-      "Device reported",
+      "Device",
       status.device === "cuda"
         ? "CUDA"
         : status.device === "mlx"
@@ -35,17 +35,14 @@ export function ModelLifecycle({ status }: { status: RuntimeLifecycle }) {
           : status.device || "None reported",
     ],
     ["Warmup", WARMUP[status.warmup ?? "unknown"]],
-    ["Idle check", idleCheck],
+    ["Auto-unload", idleCheck],
   ];
   return (
-    <dl
-      className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 text-xs min-[700px]:grid-cols-4"
-      aria-label="Model runtime lifecycle"
-    >
+    <dl className="model-stats" aria-label="Model runtime lifecycle">
       {rows.map(([label, value]) => (
         <div key={label}>
-          <dt className="text-muted">{label}</dt>
-          <dd className="mt-1 font-medium [overflow-wrap:anywhere]">{value}</dd>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
         </div>
       ))}
     </dl>

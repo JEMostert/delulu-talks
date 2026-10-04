@@ -79,10 +79,15 @@ export function OceanController({
   const [copied, setCopied] = useState(false);
   const [completed, setCompleted] = useState(false);
   const previousResult = useRef(resultId);
+  const armed = useRef(false);
   useEffect(() => {
-    if (resultId && resultId !== previousResult.current) setCompleted(true);
+    // History loads with the workspace; only results that arrive later
+    // celebrate, never the newest record found at startup.
+    if (armed.current && resultId && resultId !== previousResult.current)
+      setCompleted(true);
     previousResult.current = resultId;
-  }, [resultId]);
+    if (ready) armed.current = true;
+  }, [resultId, ready]);
   useEffect(() => {
     if (!copied && !completed) return;
     const timer = setTimeout(() => {
