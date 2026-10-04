@@ -70,8 +70,8 @@ export function scenarioUpdateStatus(): UpdateStatus {
   return previewScenario === "update"
     ? {
         phase: "downloaded",
-        currentVersion: "0.11.0",
-        version: "0.11.1",
+        currentVersion: "0.12.0",
+        version: "0.12.1",
         message: "Update downloaded",
       }
     : {
