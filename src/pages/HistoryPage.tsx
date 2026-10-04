@@ -6,11 +6,13 @@ import {
   type SetStateAction,
 } from "react";
 import {
-  Clock3,
-  Search,
-  Trash2,
-  SlidersHorizontal,
+  ArrowLeft,
   CheckSquare,
+  Clock3,
+  FileAudio,
+  Mic,
+  Search,
+  WandSparkles,
   X,
 } from "lucide-react";
 import {
@@ -20,18 +22,13 @@ import {
 import { ConfirmDialog, EmptyState } from "../components/ui";
 import { HistorySearchMatches } from "../components/HistorySearchMatches";
 import type { ExportFormat, TranscriptRecord } from "../types";
-import { LANGUAGES } from "../data";
 import {
   EMPTY_HISTORY_FILTERS,
   filterHistory,
-  historyDateError,
   type HistoryFilters,
 } from "../historyFilters";
-import {
-  sortHistory,
-  type HistorySort,
-  type HistoryViewState,
-} from "../historyView";
+import { sortHistory, type HistoryViewState } from "../historyView";
+import { deliveredText } from "../transcriptText";
 
 function dayLabel(timestamp: number) {
   const date = new Date(timestamp);
@@ -43,13 +40,24 @@ function dayLabel(timestamp: number) {
     : date.toDateString() === yesterday.toDateString()
       ? "Yesterday"
       : date.toLocaleDateString(undefined, {
-          month: "long",
+          weekday: "long",
+          month: "short",
           day: "numeric",
-          year: "numeric",
         });
 }
+
+const CHIPS: readonly [string, string, Partial<HistoryFilters>][] = [
+  ["all", "All", { source: "all", rewritten: "all" }],
+  ["dictation", "Dictation", { source: "dictation", rewritten: "all" }],
+  ["file", "Files", { source: "file", rewritten: "all" }],
+  ["rewritten", "Rewritten", { source: "all", rewritten: "yes" }],
+];
+
+/** History as a list beside the selected transcript: scan left, act right. */
 export function HistoryPage({
   history,
+  historyLimit,
+  keepHistory,
   focusSearch,
   onSearchFocused,
   onClear,
@@ -58,9 +66,12 @@ export function HistoryPage({
   onExportSelection,
   onDeleteSelection,
   deletionPending,
+  onOpenSettings,
   ...actions
 }: TranscriptActions & {
   history: TranscriptRecord[];
+  historyLimit: number;
+  keepHistory: boolean;
   focusSearch?: boolean;
   onSearchFocused?: () => void;
   onClear: () => void;
@@ -69,6 +80,7 @@ export function HistoryPage({
   deletionPending: boolean;
   view: HistoryViewState;
   onViewChange: Dispatch<SetStateAction<HistoryViewState>>;
+  onOpenSettings?: () => void;
 }) {
   useEffect(() => {
     if (!focusSearch) return;
@@ -83,44 +95,48 @@ export function HistoryPage({
   const { filters, sort } = view;
   const [confirm, setConfirm] = useState(false);
   const [selecting, setSelecting] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
-  const update = <K extends keyof HistoryFilters>(
-    key: K,
-    value: HistoryFilters[K],
-  ) =>
-    onViewChange((previous) => ({
-      ...previous,
-      filters: { ...previous.filters, [key]: value },
-    }));
-  const dateError = historyDateError(filters);
-  const filtered = useMemo(
-    () => filterHistory(history, filters),
-    [history, filters],
-  );
-  const sorted = useMemo(() => sortHistory(filtered, sort), [filtered, sort]);
-  const languages = [
-    ...new Set([
-      ...history.map((item) => item.language),
-      ...(filters.language === "all" ? [] : [filters.language]),
-    ]),
-  ].sort();
-  const active = Object.keys(EMPTY_HISTORY_FILTERS).some(
-    (key) =>
-      filters[key as keyof HistoryFilters] !==
-      EMPTY_HISTORY_FILTERS[key as keyof HistoryFilters],
-  );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
   const [confirmSelection, setConfirmSelection] = useState<string[] | null>(
     null,
   );
-  const selectedIds = history
-    .filter((record) => selected.has(record.id))
-    .map((record) => record.id);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
+  const filtered = useMemo(
+    () => sortHistory(filterHistory(history, filters), sort),
+    [history, filters, sort],
+  );
+  const chip =
+    CHIPS.find(
+      ([, , patch]) =>
+        patch.source === filters.source &&
+        patch.rewritten === filters.rewritten,
+    )?.[0] ?? null;
+  const hiddenFilters =
+    !!filters.from ||
+    !!filters.through ||
+    filters.model !== "all" ||
+    filters.language !== "all" ||
+    filters.rewritten === "no";
+  const open =
+    filtered.find((record) => record.id === openId) ?? filtered[0] ?? null;
   useEffect(() => {
     const available = new Set(history.map((record) => record.id));
     setSelected((ids) => new Set([...ids].filter((id) => available.has(id))));
   }, [history]);
+  const groups = useMemo(() => {
+    const result = new Map<string, TranscriptRecord[]>();
+    for (const item of filtered) {
+      const day = dayLabel(item.createdAt);
+      const bucket = result.get(day);
+      if (bucket) bucket.push(item);
+      else result.set(day, [item]);
+    }
+    return [...result];
+  }, [filtered]);
+  const selectedIds = history
+    .filter((record) => selected.has(record.id))
+    .map((record) => record.id);
   const exportSelected = async (format: ExportFormat) => {
     setBatchBusy(true);
     try {
@@ -129,330 +145,243 @@ export function HistoryPage({
       setBatchBusy(false);
     }
   };
-  const groups = useMemo(() => {
-    const result = new Map<string, TranscriptRecord[]>();
-    sorted.forEach((item) => {
-      const day = dayLabel(item.createdAt);
-      const bucket = result.get(day);
-      if (bucket) bucket.push(item);
-      else result.set(day, [item]);
+  const setFilters = (patch: Partial<HistoryFilters>) =>
+    onViewChange((previous) => ({
+      ...previous,
+      filters: { ...previous.filters, ...patch },
+    }));
+  const toggle = (id: string) =>
+    setSelected((ids) => {
+      const next = new Set(ids);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < 500) next.add(id);
+      return next;
     });
-    return [...result];
-  }, [sorted]);
+
+  if (!history.length)
+    return (
+      <EmptyState icon={Clock3} title="No transcripts yet">
+        {keepHistory
+          ? "Your dictations and imported files will appear here."
+          : "Saving history is off, so only this session’s results appear here."}
+      </EmptyState>
+    );
+
   return (
-    <div className="content-stack">
-      <div className="history-toolbar">
-        <label className="search-box">
-          <Search />
-          <input
-            aria-label="Search transcript history"
-            data-history-search
-            placeholder="Search transcripts"
-            value={filters.query}
-            onChange={(e) => update("query", e.target.value)}
-          />
-        </label>
-        <button
-          className={`sheet-icon ${showFilters || active ? "is-selected" : ""}`}
-          aria-label="Filter history"
-          title={active ? "Filters active" : "Filters"}
-          aria-expanded={showFilters}
-          onClick={() => setShowFilters(!showFilters)}
-        >
-          <SlidersHorizontal />
-        </button>
-        <button
-          className="sheet-icon"
-          aria-label={selecting ? "Finish selection" : "Select transcripts"}
-          title={selecting ? "Done" : "Select"}
-          disabled={!history.length}
-          onClick={() => {
-            setSelecting(!selecting);
-            setSelected(new Set());
-          }}
-        >
-          {selecting ? <X /> : <CheckSquare />}
-        </button>
-      </div>
-      {active && !showFilters && (
-        <div className="history-filter-summary">
-          <span className="caption" role="status">
-            {filtered.length} of {history.length} transcripts
-          </span>
-          <button
-            className="text-button"
-            onClick={() =>
-              onViewChange((previous) => ({
-                ...previous,
-                filters: EMPTY_HISTORY_FILTERS,
-              }))
-            }
-          >
-            Reset search and filters
-          </button>
-        </div>
-      )}
-      {showFilters && (
-        <fieldset className="history-filters card">
-          <legend className="sr-only-text">Filters</legend>
-          <label className="field min-w-0">
-            Sort history
-            <select
-              aria-label="Sort history"
-              value={sort}
-              onChange={(e) => {
-                const nextSort = e.target.value as HistorySort;
-                onViewChange((previous) => ({
-                  ...previous,
-                  sort: nextSort,
-                }));
+    <div className={`history-shell ${showDetail ? "show-detail" : ""}`}>
+      <aside className="history-pane" aria-label="Transcripts">
+        <div className="history-pane-head">
+          <div className="history-search-row">
+            <label className="search-box">
+              <Search aria-hidden="true" />
+              <input
+                aria-label="Search transcript history"
+                data-history-search
+                placeholder="Search"
+                value={filters.query}
+                onChange={(e) => setFilters({ query: e.target.value })}
+              />
+              {filters.query && (
+                <button
+                  className="search-clear"
+                  aria-label="Clear search"
+                  onClick={() => setFilters({ query: "" })}
+                >
+                  <X />
+                </button>
+              )}
+            </label>
+            <button
+              className={`sheet-icon ${selecting ? "is-selected" : ""}`}
+              aria-label={selecting ? "Finish selection" : "Select transcripts"}
+              aria-pressed={selecting}
+              title={selecting ? "Done" : "Select"}
+              onClick={() => {
+                setSelecting(!selecting);
+                setSelected(new Set());
               }}
             >
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-            </select>
-          </label>
-
-          <div className="history-filter-grid">
-            <label className="field min-w-0">
-              Start date
-              <input
-                type="date"
-                value={filters.from}
-                aria-invalid={!!dateError}
-                aria-describedby="history-date-help"
-                onChange={(e) => update("from", e.target.value)}
-              />
-            </label>
-            <label className="field min-w-0">
-              End date
-              <input
-                type="date"
-                value={filters.through}
-                aria-invalid={!!dateError}
-                aria-describedby="history-date-help"
-                onChange={(e) => update("through", e.target.value)}
-              />
-            </label>
-            <label className="field min-w-0">
-              Speech model
-              <select
-                aria-label="Speech model"
-                value={filters.model}
-                onChange={(e) =>
-                  update("model", e.target.value as HistoryFilters["model"])
-                }
-              >
-                <option value="all">All models</option>
-                <option value="r2t2">R2T2 · CUDA</option>
-                <option value="r2t2Mlx">R2T2 · MLX</option>
-                <option value="qwen3Asr">Qwen3 ASR · historical</option>
-              </select>
-            </label>
-            <label className="field min-w-0">
-              Transcript language
-              <select
-                aria-label="Transcript language"
-                value={filters.language}
-                onChange={(e) => update("language", e.target.value)}
-              >
-                <option value="all">All languages</option>
-                {languages.map((code) => (
-                  <option key={code} value={code}>
-                    {LANGUAGES.find(([id]) => id === code)?.[1] ??
-                      (code || "Unspecified")}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field min-w-0">
-              Source
-              <select
-                aria-label="Recording/import source"
-                value={filters.source}
-                onChange={(e) =>
-                  update("source", e.target.value as HistoryFilters["source"])
-                }
-              >
-                <option value="all">All activity</option>
-                <option value="dictation">Dictation</option>
-                <option value="file">Imported files</option>
-              </select>
-            </label>
-            <label className="field min-w-0">
-              Rewriting
-              <select
-                aria-label="Rewrite status"
-                value={filters.rewritten}
-                onChange={(e) =>
-                  update(
-                    "rewritten",
-                    e.target.value as HistoryFilters["rewritten"],
-                  )
-                }
-              >
-                <option value="all">All results</option>
-                <option value="yes">Rewritten results</option>
-                <option value="no">Without rewrite</option>
-              </select>
-            </label>
-          </div>
-          <p
-            id="history-date-help"
-            className={dateError ? "field-error" : "caption"}
-            role={dateError ? "alert" : undefined}
-          >
-            {dateError ??
-              "Dates include the whole start and end days in your local timezone."}
-          </p>
-          <div className="history-filter-summary mt-1">
-            <span className="caption" role="status" aria-live="polite">
-              {filtered.length} of {history.length} transcripts
-            </span>
-            <button
-              className="text-button"
-              disabled={!active}
-              onClick={() =>
-                onViewChange((previous) => ({
-                  ...previous,
-                  filters: EMPTY_HISTORY_FILTERS,
-                }))
-              }
-            >
-              Reset search and filters
+              {selecting ? <X /> : <CheckSquare />}
             </button>
           </div>
-        </fieldset>
-      )}
-      {selecting && (
-        <div className="selection-bar well">
-          <strong role="status">{selectedIds.length} selected</strong>
-          <button
-            className="tool-button compact"
-            disabled={batchBusy || !groups.length}
-            onClick={() => {
-              setSelected(
-                (ids) =>
-                  new Set(
-                    [
-                      ...new Set([
-                        ...ids,
-                        ...groups.flatMap(([, records]) =>
-                          records.map((record) => record.id),
-                        ),
-                      ]),
-                    ].slice(0, 500),
-                  ),
-              );
-            }}
-          >
-            Select all
-          </button>
-          <button
-            className="tool-button compact"
-            disabled={batchBusy || !selectedIds.length}
-            onClick={() => setSelected(new Set())}
-          >
-            Deselect
-          </button>
-          {!!selectedIds.length && (
-            <>
-              <span className="selection-spacer" />
+          <div className="history-chips" role="group" aria-label="Show">
+            {CHIPS.map(([id, label, patch]) => (
               <button
-                className="secondary-button compact"
-                disabled={batchBusy || !selectedIds.length}
-                onClick={() => void exportSelected("txt")}
+                key={id}
+                className="chip"
+                aria-pressed={chip === id && !hiddenFilters}
+                onClick={() =>
+                  setFilters({
+                    ...EMPTY_HISTORY_FILTERS,
+                    query: filters.query,
+                    ...patch,
+                  })
+                }
               >
-                Export TXT
+                {label}
               </button>
-              <button
-                className="secondary-button compact"
-                disabled={batchBusy || !selectedIds.length}
-                onClick={() => void exportSelected("json")}
-              >
-                Export JSON
-              </button>
-              <button
-                className="danger-button compact"
-                disabled={batchBusy || deletionPending || !selectedIds.length}
-                onClick={() => setConfirmSelection([...selectedIds])}
-              >
-                Delete selected
-              </button>
-            </>
-          )}
-          <p className="caption basis-full">
-            Up to 500 per action, including transcripts hidden by filters. JSON
-            exports include originals and provenance.
-          </p>
-        </div>
-      )}
-      {groups.map(([day, records]) => (
-        <section className="history-day" key={day}>
-          <div className="history-day-heading">
-            <h3>{day}</h3>
-            <span className="caption">
-              {records.length}{" "}
-              {records.length === 1 ? "transcript" : "transcripts"}
-            </span>
+            ))}
           </div>
-          {records.map((record) => (
-            <div
-              key={record.id}
-              className={selecting ? "selectable-transcript" : undefined}
+          {hiddenFilters && (
+            <button
+              className="text-button compact"
+              onClick={() =>
+                setFilters({ ...EMPTY_HISTORY_FILTERS, query: filters.query })
+              }
             >
-              {selecting && (
-                <input
-                  type="checkbox"
-                  aria-label={`Select transcript from ${new Date(record.createdAt).toLocaleString()}`}
-                  checked={selected.has(record.id)}
-                  disabled={
-                    batchBusy ||
-                    (!selected.has(record.id) && selected.size >= 500)
-                  }
-                  onChange={() =>
-                    setSelected((ids) => {
-                      const next = new Set(ids);
-                      if (next.has(record.id)) next.delete(record.id);
-                      else next.add(record.id);
-                      return next;
-                    })
-                  }
-                />
-              )}
-              <TranscriptCard record={record} {...actions} />
-              <HistorySearchMatches record={record} query={filters.query} />
-            </div>
+              Older filters are active — show everything
+            </button>
+          )}
+        </div>
+        {selecting && (
+          <div className="history-selection" role="status">
+            <strong>{selectedIds.length} selected</strong>
+            <button
+              className="text-button compact"
+              disabled={batchBusy}
+              onClick={() =>
+                setSelected(
+                  new Set(filtered.slice(0, 500).map((record) => record.id)),
+                )
+              }
+            >
+              All
+            </button>
+            <span className="flex-1" />
+            <button
+              className="tool-button compact"
+              disabled={batchBusy || !selectedIds.length}
+              onClick={() => void exportSelected("txt")}
+            >
+              TXT
+            </button>
+            <button
+              className="tool-button compact"
+              disabled={batchBusy || !selectedIds.length}
+              onClick={() => void exportSelected("json")}
+            >
+              JSON
+            </button>
+            <button
+              className="tool-button compact danger"
+              disabled={batchBusy || deletionPending || !selectedIds.length}
+              onClick={() => setConfirmSelection([...selectedIds])}
+            >
+              Delete
+            </button>
+          </div>
+        )}
+        <div className="history-scroll">
+          {!filtered.length && (
+            <p className="history-none">No transcripts match.</p>
+          )}
+          {groups.map(([day, records]) => (
+            <section key={day} className="history-group">
+              <h3>{day}</h3>
+              <ol>
+                {records.map((record) => {
+                  const text = deliveredText(record).replace(/\s+/g, " ");
+                  const time = new Date(record.createdAt).toLocaleTimeString(
+                    [],
+                    { hour: "numeric", minute: "2-digit" },
+                  );
+                  return (
+                    <li key={record.id}>
+                      <button
+                        className="history-item"
+                        aria-current={
+                          !selecting && open?.id === record.id
+                            ? "true"
+                            : undefined
+                        }
+                        aria-pressed={
+                          selecting ? selected.has(record.id) : undefined
+                        }
+                        onClick={() => {
+                          if (selecting) return toggle(record.id);
+                          setOpenId(record.id);
+                          setShowDetail(true);
+                        }}
+                      >
+                        {selecting && (
+                          <span
+                            className={`history-check ${selected.has(record.id) ? "on" : ""}`}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span className="history-item-body">
+                          <span className="history-item-top">
+                            <span className="history-item-title">
+                              {record.title || record.sourceName || text}
+                            </span>
+                            <span className="history-item-time">{time}</span>
+                          </span>
+                          {(record.title || record.sourceName) && (
+                            <span className="history-item-text">{text}</span>
+                          )}
+                          <span className="history-item-meta">
+                            {record.source === "file" ? (
+                              <FileAudio aria-label="Imported file" />
+                            ) : (
+                              <Mic aria-label="Dictation" />
+                            )}
+                            {Math.max(1, Math.round(record.durationMs / 1000))}s
+                            {record.magicText && (
+                              <WandSparkles aria-label="Rewritten" />
+                            )}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
           ))}
-        </section>
-      ))}
-      {!groups.length && (
-        <EmptyState
-          icon={Clock3}
-          title={
-            history.length ? "No matching transcripts" : "No transcripts yet"
-          }
-        >
-          {history.length
-            ? "Try another phrase, adjust the filters, or reset search and filters."
-            : "Your dictations and imported transcripts will appear here."}
-        </EmptyState>
-      )}
-      {!!history.length && (
-        <details className="disclosure">
-          <summary>Manage history</summary>
-          <p className="caption mb-3">
-            Retention rules and encrypted backups live in Settings → Local data.
-          </p>
+        </div>
+        <footer className="history-pane-foot">
+          <span>
+            {keepHistory
+              ? `${history.length} of ${historyLimit} kept`
+              : "Session only — not saved"}
+          </span>
+          {onOpenSettings && (
+            <button className="text-button compact" onClick={onOpenSettings}>
+              Change
+            </button>
+          )}
           <button
-            className="danger-button"
-            disabled={!history.length || deletionPending || batchBusy}
+            className="text-button compact danger-text"
+            disabled={deletionPending || batchBusy}
             onClick={() => setConfirm(true)}
           >
-            <Trash2 /> Clear history
+            Clear all
           </button>
-        </details>
-      )}
+        </footer>
+      </aside>
+      <section className="history-detail" aria-label="Selected transcript">
+        <button
+          className="history-back text-button"
+          onClick={() => setShowDetail(false)}
+        >
+          <ArrowLeft /> All transcripts
+        </button>
+        {open ? (
+          <>
+            <TranscriptCard
+              key={open.id}
+              record={open}
+              variant="detail"
+              {...actions}
+            />
+            <HistorySearchMatches record={open} query={filters.query} />
+          </>
+        ) : (
+          <EmptyState icon={Search} title="Nothing selected">
+            Pick a transcript on the left.
+          </EmptyState>
+        )}
+      </section>
       {confirm && (
         <ConfirmDialog
           title="Clear your history?"
@@ -469,8 +398,8 @@ export function HistoryPage({
       )}
       {confirmSelection && (
         <ConfirmDialog
-          title={`Delete ${confirmSelection.length} selected transcripts?`}
-          confirmLabel={`Delete ${confirmSelection.length} transcripts`}
+          title={`Delete ${confirmSelection.length} transcripts?`}
+          confirmLabel={`Delete ${confirmSelection.length}`}
           onClose={() => setConfirmSelection(null)}
           onConfirm={() => {
             const ids = confirmSelection;
@@ -484,13 +413,8 @@ export function HistoryPage({
           }}
         >
           <p>
-            These {confirmSelection.length} transcripts will be hidden
-            immediately. You have 30 seconds to undo before originals,
-            corrections and rewrites are permanently removed from this device.
-          </p>
-          <p className="caption">
-            Export first if you need a separate copy. Other deletion and
-            retention actions wait until this window ends.
+            They disappear right away; you have 30 seconds to undo before they
+            are removed from this device.
           </p>
         </ConfirmDialog>
       )}

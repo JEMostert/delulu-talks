@@ -26,6 +26,7 @@ import {
   Download,
   FileAudio,
   Mic,
+  MoreHorizontal,
   Pencil,
   RotateCcw,
   Trash2,
@@ -38,7 +39,7 @@ import {
   transcriptSourceRevision,
 } from "../transcriptText";
 import { normalizeRuleLanguage } from "../personalization";
-import { ConfirmDialog, Modal } from "./ui";
+import { ConfirmDialog, MenuButton, Modal } from "./ui";
 import type {
   MagicRewriteRequest,
   MagicRewriteResult,
@@ -74,6 +75,7 @@ export type TranscriptActions = {
 };
 export function TranscriptCard({
   record,
+  variant = "card",
   onCopy,
   onUpdateTranscript,
   onSetTitle,
@@ -90,9 +92,12 @@ export function TranscriptCard({
   rewriteStatus,
 }: TranscriptActions & {
   record: TranscriptRecord;
+  /** "detail" is always expanded, for the History list/detail layout. */
+  variant?: "card" | "detail";
 }) {
   const pendingDraft = useCorrectionDraft(record.id);
-  const [open, setOpen] = useState(!!pendingDraft);
+  const [expanded, setOpen] = useState(!!pendingDraft);
+  const open = variant === "detail" || expanded;
   const [templateExport, setTemplateExport] = useState(false);
   const [showSource, setShowSource] = useState(false);
   const [rewriting, setRewriting] = useState(false);
@@ -163,6 +168,30 @@ export function TranscriptCard({
     }
   };
   const words = delivered.trim().split(/\s+/).filter(Boolean).length;
+  const undoRewrite = async () => {
+    if (!onSetRewrite) return;
+    setSaving(true);
+    try {
+      if (
+        await onSetRewrite(
+          record.id,
+          null,
+          deliveredText(record),
+          transcriptSourceRevision(record),
+        )
+      )
+        setShowSource(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const openRemember = () => {
+    if (!correctionSuggested) {
+      setHeard(window.getSelection()?.toString().trim().slice(0, 256) ?? "");
+      setCorrect("");
+    }
+    setRemember(true);
+  };
   const unsaved =
     pendingDraft &&
     (pendingDraft.error || pendingDraft.text.trim() !== transcriptText(record));
@@ -187,7 +216,9 @@ export function TranscriptCard({
         } · hint ${record.requestedLanguage || "not recorded"}`
       : record.language || "Unknown";
   return (
-    <article className={`transcript-card card ${open ? "expanded" : ""}`}>
+    <article
+      className={`transcript-card ${variant === "detail" ? "transcript-full" : "card"} ${open ? "expanded" : ""}`}
+    >
       <header className="transcript-head">
         <span className="transcript-icon" aria-hidden="true">
           {record.source === "dictation" ? <Mic /> : <FileAudio />}
@@ -252,7 +283,7 @@ export function TranscriptCard({
         </div>
       </header>
       {!open && <p className="transcript-preview">{delivered}</p>}
-      <footer className="transcript-foot">
+      <footer className="transcript-foot" hidden={variant === "detail"}>
         <span className="caption">
           {words} {words === 1 ? "word" : "words"}
           {record.magicIncludedInferences ? " · assumptions allowed" : ""}
@@ -382,6 +413,9 @@ export function TranscriptCard({
               </>
             ) : (
               <>
+                <button className="primary-button" onClick={() => onCopy(text)}>
+                  <Copy /> Copy {showSource ? "speech" : "result"}
+                </button>
                 <button
                   className="secondary-button"
                   onClick={() => {
@@ -395,12 +429,6 @@ export function TranscriptCard({
                 >
                   <Pencil /> {pendingDraft ? "Resume correction" : "Correct"}
                 </button>
-                <button
-                  className="secondary-button"
-                  onClick={() => onCopy(text)}
-                >
-                  <Copy /> Copy {showSource ? "speech" : "result"}
-                </button>
                 {onRewrite && onSetRewrite && (
                   <button
                     className="secondary-button"
@@ -412,98 +440,73 @@ export function TranscriptCard({
                     <WandSparkles /> Rewrite
                   </button>
                 )}
-                {record.magicText && onSetRewrite && (
-                  <button
-                    className="tool-button"
-                    disabled={saving}
-                    onClick={async () => {
-                      setSaving(true);
-                      try {
-                        if (
-                          await onSetRewrite(
-                            record.id,
-                            null,
-                            deliveredText(record),
-                            transcriptSourceRevision(record),
-                          )
+                <MenuButton
+                  label="More actions"
+                  icon={MoreHorizontal}
+                  items={[
+                    ...(record.magicText && onSetRewrite
+                      ? [
+                          {
+                            label: "Undo rewrite",
+                            icon: RotateCcw,
+                            disabled: saving,
+                            onSelect: () => void undoRewrite(),
+                          },
+                        ]
+                      : []),
+                    ...(edited
+                      ? [
+                          {
+                            label: "Restore original",
+                            icon: RotateCcw,
+                            onSelect: () =>
+                              void onUpdateTranscript(record.id, null),
+                          },
+                        ]
+                      : []),
+                    ...(onRemember
+                      ? [
+                          {
+                            label: "Remember a correction…",
+                            icon: BookPlus,
+                            onSelect: openRemember,
+                          },
+                        ]
+                      : []),
+                    {
+                      label: "Remove filler words…",
+                      disabled:
+                        saving || transcriptText(record).length > 50_000,
+                      onSelect: () => setFillerPreview(true),
+                    },
+                    {
+                      label: "Identifiers…",
+                      onSelect: () => setIdentifierPreview(true),
+                    },
+                    ...(onExport
+                      ? (["txt", "md", "json"] as ExportFormat[]).map(
+                          (format, index) => ({
+                            label: `Export ${format === "md" ? "Markdown" : format.toUpperCase()}`,
+                            icon: Download,
+                            separated: index === 0,
+                            onSelect: () => onExport(record.id, format),
+                          }),
                         )
-                          setShowSource(false);
-                      } finally {
-                        setSaving(false);
-                      }
-                    }}
-                  >
-                    <RotateCcw /> Undo rewrite
-                  </button>
-                )}
-                {edited && (
-                  <button
-                    className="tool-button"
-                    onClick={() => void onUpdateTranscript(record.id, null)}
-                  >
-                    <RotateCcw /> Restore original
-                  </button>
-                )}
+                      : []),
+                    ...(onExport && onExportTemplate
+                      ? [
+                          {
+                            label: "Export with template…",
+                            icon: Download,
+                            onSelect: () => setTemplateExport(true),
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
               </>
             )}
           </div>
-          {!editing && (
-            <div className="detail-actions secondary">
-              {onRemember && (
-                <button
-                  className="tool-button compact"
-                  onClick={() => {
-                    if (!correctionSuggested) {
-                      setHeard(
-                        window
-                          .getSelection()
-                          ?.toString()
-                          .trim()
-                          .slice(0, 256) ?? "",
-                      );
-                      setCorrect("");
-                    }
-                    setRemember(true);
-                  }}
-                >
-                  <BookPlus /> Remember a correction
-                </button>
-              )}
-              <button
-                className="tool-button compact"
-                onClick={() => setIdentifierPreview(true)}
-              >
-                Identifiers
-              </button>
-              <button
-                className="tool-button compact"
-                disabled={saving || transcriptText(record).length > 50_000}
-                title="Compare hesitation-word removal before opening a correction draft (up to 50,000 characters)"
-                onClick={() => setFillerPreview(true)}
-              >
-                Remove fillers…
-              </button>
-              {onExport &&
-                (["txt", "md", "json"] as ExportFormat[]).map((format) => (
-                  <button
-                    className="tool-button compact"
-                    key={format}
-                    onClick={() => onExport(record.id, format)}
-                  >
-                    <Download />
-                    {format === "md" ? "Markdown" : format.toUpperCase()}
-                  </button>
-                ))}
-              {onExport && onExportTemplate && (
-                <button
-                  className="tool-button compact"
-                  onClick={() => setTemplateExport(true)}
-                >
-                  <Download /> Template…
-                </button>
-              )}
-            </div>
-          )}
           {correctionSuggested && !remember && (
             <div className="correction-suggestion">
               <span>

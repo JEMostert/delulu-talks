@@ -491,3 +491,113 @@ export function RangeField({
     </div>
   );
 }
+
+export type MenuItem = {
+  label: string;
+  icon?: LucideIcon;
+  onSelect: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  /** Draw a separator above this item. */
+  separated?: boolean;
+};
+
+/** A small popover menu for secondary actions; closes on outside click and Escape. */
+export function MenuButton({
+  label,
+  items,
+  icon: Icon,
+  text,
+}: {
+  label: string;
+  items: MenuItem[];
+  icon?: LucideIcon;
+  text?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [upward, setUpward] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const id = useId();
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: Event) => {
+      if (event instanceof KeyboardEvent) {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        root.current?.querySelector<HTMLButtonElement>("button")?.focus();
+      } else if (root.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", close);
+    root.current
+      ?.querySelector<HTMLButtonElement>("[role='menuitem']:not(:disabled)")
+      ?.focus();
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", close);
+    };
+  }, [open]);
+  const visible = items.filter(Boolean);
+  return (
+    <div className="menu" ref={root}>
+      <button
+        className={text ? "secondary-button" : "icon-button"}
+        aria-label={text ? undefined : label}
+        title={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={(event) => {
+          // Open upward when the scrolling sheet has no room below.
+          const box = event.currentTarget.getBoundingClientRect();
+          setUpward(window.innerHeight - box.bottom < 300);
+          setOpen(!open);
+        }}
+      >
+        {Icon && <Icon />}
+        {text}
+      </button>
+      {open && (
+        <div
+          className={`menu-list ${upward ? "upward" : ""}`}
+          id={id}
+          role="menu"
+          aria-label={label}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            event.preventDefault();
+            const options = [
+              ...(event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                "[role='menuitem']:not(:disabled)",
+              ) ?? []),
+            ];
+            const index = options.indexOf(
+              document.activeElement as HTMLButtonElement,
+            );
+            const next =
+              (index + (event.key === "ArrowDown" ? 1 : -1) + options.length) %
+              options.length;
+            options[next]?.focus();
+          }}
+        >
+          {visible.map((item) => (
+            <button
+              key={item.label}
+              role="menuitem"
+              className={`menu-item ${item.danger ? "danger" : ""} ${item.separated ? "separated" : ""}`}
+              disabled={item.disabled}
+              onClick={() => {
+                setOpen(false);
+                item.onSelect();
+              }}
+            >
+              {item.icon && <item.icon aria-hidden="true" />}
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

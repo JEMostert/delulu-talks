@@ -635,6 +635,9 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
               >
                 <div className="workspace-view">
                   <HistoryPage
+                    historyLimit={w.settings.historyLimit}
+                    keepHistory={w.settings.keepHistory}
+                    onOpenSettings={() => navigate("settings")}
                     focusSearch={focusHistory && !paletteOpen}
                     onSearchFocused={() => setFocusHistory(false)}
                     history={w.history}
