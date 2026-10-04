@@ -243,3 +243,59 @@ test("a privacy change during inference prevents persistence while capture setti
   expect(f.records[0].delivery?.state).toBe("copied");
   expect(f.deliveries).toEqual(["Private words."]);
 });
+
+test("audio the renderer submits while paused is transcribed exactly once", async () => {
+  const f = fixture();
+  const sessionId = f.start();
+  f.service.recordingStarted(sessionId);
+  f.service.pause();
+  f.service.recordingPauseChanged(sessionId, true);
+  // The recording limit or a lost input stops the renderer on its own.
+  f.service.recordingLimitReached(sessionId);
+  await f.service.submitRecording({
+    sessionId,
+    durationMs: 1200,
+    wav: new Uint8Array(64).fill(9),
+  });
+  expect(f.deliveries).toEqual(["Ship the release."]);
+  expect(f.asr.getStatus().phase).toBe("idle");
+});
+
+test("presses during paste or processing never throw", async () => {
+  const f = fixture();
+  (f.paste as unknown as { isBusy: boolean }).isBusy = true;
+  expect(() => f.service.start()).not.toThrow();
+  expect(f.commands).toHaveLength(0);
+  (f.paste as unknown as { isBusy: boolean }).isBusy = false;
+  const result = deferred<{ text: string; recognizedLanguage: string }>();
+  f.inference(() => result.promise);
+  const submission = f.service.submitRecording(f.recording());
+  expect(() => f.service.toggle()).not.toThrow();
+  result.resolve({ text: "Done.", recognizedLanguage: "en" });
+  await submission;
+  expect(f.commands.filter((c) => c.action === "start")).toHaveLength(1);
+});
+
+test("silence is not a failure and keeps earlier retry audio", async () => {
+  const f = fixture();
+  f.inference(async () => ({ text: "   ", recognizedLanguage: "en" }));
+  await f.service.submitRecording(f.recording());
+  expect(f.records).toHaveLength(0);
+  expect(f.deliveries).toEqual([]);
+  expect(f.asr.getStatus()).toMatchObject({
+    phase: "idle",
+    message: "No speech detected — nothing was typed.",
+  });
+  expect(f.recovery.includes(true)).toBe(false);
+});
+
+test("a quick tap reports a short recording, not a microphone error", () => {
+  const f = fixture();
+  const sessionId = f.start();
+  f.service.recordingFailed(
+    "Recording too short — nothing was recorded.",
+    sessionId,
+  );
+  expect(f.asr.getStatus().phase).toBe("idle");
+  expect(f.service.isActive).toBe(false);
+});

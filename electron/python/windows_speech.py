@@ -23,6 +23,30 @@ CONVERSION_VERSION = "transformers-5.15.0-v1"
 CHUNK_SAMPLES = 30 * SAMPLE_RATE
 
 
+
+def chunk_bounds(samples, chunk: int, search: int = 2 * SAMPLE_RATE, frame: int = SAMPLE_RATE // 50):
+    """Split at the quietest 20 ms frame near each chunk boundary.
+
+    Fixed cuts split words across two model calls. Searching up to `search`
+    samples before the boundary keeps every chunk at most `chunk` long.
+    """
+    total = len(samples)
+    bounds = []
+    start = 0
+    while total - start > chunk:
+        target = start + chunk
+        best, best_energy = target, None
+        position = max(start + frame, target - search)
+        while position + frame <= target:
+            energy = sum(float(value) * float(value) for value in samples[position:position + frame])
+            if best_energy is None or energy < best_energy:
+                best, best_energy = position + frame // 2, energy
+            position += frame
+        bounds.append((start, best))
+        start = best
+    bounds.append((start, total))
+    return bounds
+
 class WindowsSpeech:
     def __init__(self):
         self.model = None
@@ -195,8 +219,8 @@ class WindowsSpeech:
                    "inferenceMs": 0.0}
         results = []
         try:
-            for offset in range(0, len(samples), CHUNK_SAMPLES):
-                results.append(self._generate(samples[offset:offset + CHUNK_SAMPLES], language, 4096, timings))
+            for start, end in chunk_bounds(samples, CHUNK_SAMPLES):
+                results.append(self._generate(samples[start:end], language, 4096, timings))
         except BaseException:
             with contextlib.suppress(Exception):
                 torch = sys.modules.get("torch")

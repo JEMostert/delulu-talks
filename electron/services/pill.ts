@@ -228,6 +228,8 @@ export class PillService {
       windowsHide: true,
     });
     this.child = child;
+    // Level updates arrive ~20/s; a helper that just exited must not crash main.
+    child.stdin.on("error", () => undefined);
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => {

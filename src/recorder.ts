@@ -2,7 +2,11 @@ import captureWorkletUrl from "./captureWorklet.js?url&no-inline";
 import { bridge } from "./bridge";
 import { acquireCaptureInput, watchCaptureInput } from "./captureInput";
 import { CaptureCuePlayer, type CaptureCue } from "./captureCues";
-import { MAX_CAPTURE_DURATION_MS, MAX_CAPTURE_SAMPLES } from "./captureLimits";
+import {
+  MAX_CAPTURE_DURATION_MS,
+  MAX_CAPTURE_SAMPLES,
+  TOO_SHORT,
+} from "./captureLimits";
 import { CLIPPING_THRESHOLD } from "./captureDiagnostics";
 import { beginCaptureLevel } from "./captureLevel";
 import type {
@@ -587,8 +591,12 @@ export class PcmRecorder {
         this.cueEpoch,
       );
       if (!captured.length) {
+        const tapped =
+          !session.startedAt || performance.now() - session.startedAt < 600;
         await bridge.recordingFailed(
-          "The microphone did not produce audio. Try another input.",
+          tapped
+            ? `${TOO_SHORT} — nothing was recorded.`
+            : "The microphone did not produce audio. Try another input.",
           session.sessionId,
         );
         return;

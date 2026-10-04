@@ -6,8 +6,9 @@ import contextlib
 from contextvars import ContextVar
 import json
 import math
+import os
 import sys
-from typing import Any
+from typing import Any, TextIO
 
 
 PROTOCOL_VERSION = 1
@@ -104,7 +105,7 @@ def emit_progress(detail: str, stage: str = "load", fraction: float | None = Non
     line = PROGRESS_PREFIX + json.dumps(payload, ensure_ascii=False, allow_nan=False)
     if len(line.encode("utf-8")) > MAX_PROGRESS_LINE_BYTES:
         raise ValueError("Worker progress line exceeds its byte limit")
-    stream = sys.__stdout__ if sys.__stdout__ is not None else sys.stdout
+    stream = protocol_stream()
     stream.write(line + "\n")
     stream.flush()
 
@@ -321,3 +322,30 @@ def terminal_response(payload: dict[str, Any], command: str | None = None) -> di
     elif "result" in response or not bounded_string(response.get("error"), MAX_ERROR_BYTES):
         raise ValueError("Worker failure requires a nonempty bounded error, without result")
     return response
+
+
+_private_stream: TextIO | None = None
+
+
+def protocol_stream() -> TextIO:
+    """The stream reserved for protocol lines (see isolate_protocol_output)."""
+    if _private_stream is not None:
+        return _private_stream
+    return sys.__stdout__ if sys.__stdout__ is not None else sys.stdout
+
+
+def isolate_protocol_output() -> None:
+    """Keep protocol lines on a private copy of fd 1.
+
+    Inference libraries start subprocesses (vLLM) that inherit fd 1 and can
+    write to it directly, which would corrupt the line protocol. Point fd 1 at
+    stderr for everything else.
+    """
+    global _private_stream
+    try:
+        sys.stdout.flush()
+        private = os.dup(1)
+        os.dup2(2, 1)
+    except OSError:
+        return
+    _private_stream = os.fdopen(private, "w", encoding="utf-8", buffering=1)

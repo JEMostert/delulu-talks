@@ -1018,6 +1018,12 @@ export class AsrService {
       await this.ensureLoaded(settings);
       const speechLoadMs = performance.now() - loadStarted;
       this.clearSpeechIdle();
+      // A cold load reports "ready"; the dictation is still being transcribed.
+      if (this.status.phase !== "transcribing")
+        this.updateStatus({
+          phase: "transcribing",
+          message: "Transcribing locally",
+        });
       const capabilities = this.status.capabilities;
       if (!capabilities) {
         throw new Error(

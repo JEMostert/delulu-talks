@@ -79,6 +79,9 @@ export class WorkerClient {
       detached: process.platform !== "win32",
     });
     this.child = child;
+    // A worker that exits mid-write raises EPIPE on stdin; the exit handler
+    // reports the failure, so the stream error must not crash the app.
+    child.stdin.on("error", () => undefined);
     this.diagnostics = new WorkerDiagnosticTail(this.limits.stderrBytes);
     const lines = new BoundedWorkerLines(this.limits.stdoutLineBytes);
     const receive = (line: string): boolean => {

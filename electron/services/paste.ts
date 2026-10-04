@@ -253,18 +253,32 @@ export class PasteService {
         child.stderr.on("data", (chunk: Buffer) => {
           stderr += chunk.toString();
         });
+        if (typeof child.stdin?.on === "function")
+          child.stdin.on("error", () => undefined);
         if (command.input) child.stdin.end(command.input);
-        child.once("error", reject);
-        child.once("exit", (code) =>
-          code === 0
-            ? resolvePaste()
-            : reject(
-                new Error(
-                  stderr.trim() ||
-                    `${command.program} exited with code ${code}`,
-                ),
+        // A stuck injector must not keep the paste (and dictation) busy forever.
+        const timeout = setTimeout(() => {
+          child.kill();
+          reject(
+            new Error(
+              `${command.program} did not finish; the transcript is on the clipboard`,
+            ),
+          );
+        }, 5_000);
+        child.once("error", (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+        child.once("exit", (code) => {
+          clearTimeout(timeout);
+          if (code === 0) resolvePaste();
+          else
+            reject(
+              new Error(
+                stderr.trim() || `${command.program} exited with code ${code}`,
               ),
-        );
+            );
+        });
       });
       finishRestore?.();
       return command.program;
@@ -275,7 +289,21 @@ export class PasteService {
     }
   }
 
+  /**
+   * A remote-desktop session closed by the user or a portal restart fails on
+   * the first key. Drop it so the next paste opens a fresh session; retrying
+   * now could paste twice if the compositor received part of the shortcut.
+   */
   private async pasteThroughPortal(shortcut: PasteShortcut): Promise<void> {
+    try {
+      await this.pasteThroughPortalOnce(shortcut);
+    } catch (error) {
+      void this.closePortal().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async pasteThroughPortalOnce(shortcut: PasteShortcut): Promise<void> {
     await this.ensurePortalSession();
     if (!this.remoteDesktop || !this.portalSession)
       throw new Error("Wayland paste permission is unavailable");

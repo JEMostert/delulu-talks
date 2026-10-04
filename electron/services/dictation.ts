@@ -1,3 +1,4 @@
+import { TOO_SHORT } from "../../src/captureLimits";
 import { renderTechnicalDictation } from "../../src/technicalDictation";
 import { personalizeWithUsage } from "../../src/personalization";
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
@@ -54,6 +55,22 @@ function numeric(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+const ACTIVE_CAPTURE: CaptureState[] = [
+  "opening",
+  "listening",
+  "pausing",
+  "paused",
+  "resuming",
+];
+const OPENING_DEADLINE_MS = 45_000;
+const STOPPING_DEADLINE_MS = 30_000;
+
+class NoSpeechError extends Error {
+  constructor() {
+    super("No speech detected — nothing was typed.");
+  }
+}
+
 export class DictationService {
   private readonly retryAudio = new RetryAudioStore();
   private captureSettings: AppSettings | null = null;
@@ -106,6 +123,7 @@ export class DictationService {
   private captureSessionId: string | null = null;
   private recorderReady = false;
   private busyNoticeTimer: NodeJS.Timeout | null = null;
+  private deadline: NodeJS.Timeout | null = null;
   private busyNotice = false;
   private hud:
     Parameters<DesktopIndicatorAdapter["show"]>[0] | { state: "hidden" } = {
@@ -158,7 +176,11 @@ export class DictationService {
   }
 
   recordingLevel(level: number): void {
-    if (this.hud.state === "listening" && this.settings().showOverlay)
+    // Called ~20 times a second: read the captured flag instead of cloning settings.
+    if (
+      this.hud.state === "listening" &&
+      (this.captureSettings ?? this.settings()).showOverlay
+    )
       this.windows.pill.level(level);
   }
 
@@ -217,6 +239,7 @@ export class DictationService {
 
   recorderUnavailable(): void {
     this.recorderReady = false;
+    this.clearDeadline();
     this.asr.setSilenceCountdown?.(null);
     if (this.captureState !== "idle" && this.captureState !== "processing") {
       this.captureState = "idle";
@@ -231,11 +254,14 @@ export class DictationService {
   }
 
   start(): void {
-    if (this.paste.isBusy)
-      throw new Error("Finish the clipboard operation before recording.");
     const status = this.asr.getStatus();
-    if (this.captureState !== "idle") return;
+    if (this.captureState !== "idle") {
+      // Processing a previous recording: say so instead of ignoring the press.
+      if (this.captureState === "processing") this.showBusyNotice();
+      return;
+    }
     if (
+      this.paste.isBusy ||
       this.asr.isBusy ||
       ["transcribing", "preparing", "loading"].includes(status.phase)
     ) {
@@ -290,6 +316,10 @@ export class DictationService {
     this.captureSettings = settings;
     this.captureSessionId = randomUUID();
     this.captureState = "opening";
+    this.armDeadline(
+      OPENING_DEADLINE_MS,
+      "The microphone did not start. Try again or choose another input.",
+    );
     this.asr.setCaptureInputNotice?.(null);
     this.asr.setSilenceCountdown?.(null);
     this.asr.setActivity("idle", "Opening microphone");
@@ -325,11 +355,45 @@ export class DictationService {
     )
       return;
     this.captureState = "stopping";
+    this.armDeadline(
+      STOPPING_DEADLINE_MS,
+      "The recording did not finish. Please dictate again.",
+    );
     this.sendRecorder({
       action: "stop",
       inputDeviceId: this.settings().inputDeviceId,
       sessionId: this.captureSessionId!,
     });
+  }
+
+  /**
+   * The renderer owns the microphone. If it never answers (crash, hang,
+   * thrown handler), fail the capture instead of staying "recording" forever.
+   */
+  private armDeadline(milliseconds: number, message: string): void {
+    this.clearDeadline();
+    const sessionId = this.captureSessionId;
+    this.deadline = setTimeout(() => {
+      this.deadline = null;
+      if (
+        !sessionId ||
+        sessionId !== this.captureSessionId ||
+        !["opening", "stopping"].includes(this.captureState)
+      )
+        return;
+      this.sendRecorder({
+        action: "cancel",
+        inputDeviceId: this.settings().inputDeviceId,
+        sessionId,
+      });
+      this.failCapture(message);
+    }, milliseconds);
+    this.deadline.unref?.();
+  }
+
+  private clearDeadline(): void {
+    if (this.deadline) clearTimeout(this.deadline);
+    this.deadline = null;
   }
 
   toggle(): void {
@@ -375,7 +439,13 @@ export class DictationService {
         ? "Paused — audio retained; microphone remains open. Resume or Stop to transcribe."
         : "Listening — resumed the same recording",
     );
-    if (paused) this.setHud({ state: "hidden" });
+    // The microphone stays open while paused, so the overlay stays visible.
+    if (paused)
+      this.setHud({
+        state: "listening",
+        title: "Paused",
+        detail: "Microphone open · Resume or Stop",
+      });
     else
       this.setHud({
         state: "listening",
@@ -389,6 +459,7 @@ export class DictationService {
     if (this.captureState === "idle" || this.captureState === "processing")
       return;
     const sessionId = this.captureSessionId!;
+    this.clearDeadline();
     this.captureState = "idle";
     this.captureSessionId = null;
     this.captureSettings = null;
@@ -439,7 +510,7 @@ export class DictationService {
   recordingLimitReached(sessionId: string): void {
     if (
       sessionId !== this.captureSessionId ||
-      !["opening", "listening"].includes(this.captureState)
+      !ACTIVE_CAPTURE.includes(this.captureState)
     )
       return;
     // Use the same ownership transition as a user Stop so bounded audio is
@@ -468,6 +539,7 @@ export class DictationService {
       return;
     }
     if (this.captureState !== "opening") return;
+    this.clearDeadline();
     this.captureState = "listening";
     const hold =
       (this.captureSettings ?? this.settings()).shortcutMode === "hold";
@@ -490,7 +562,7 @@ export class DictationService {
   ): void {
     if (
       sessionId !== this.captureSessionId ||
-      (this.captureState !== "opening" && this.captureState !== "listening")
+      !ACTIVE_CAPTURE.includes(this.captureState)
     )
       return;
     this.asr.setCaptureInputNotice?.(message);
@@ -503,10 +575,29 @@ export class DictationService {
       this.captureState === "processing"
     )
       return;
+    if (message.startsWith(TOO_SHORT)) {
+      // A quick tap is not a microphone failure.
+      this.clearDeadline();
+      this.asr.setSilenceCountdown?.(null);
+      this.captureState = "idle";
+      this.captureSessionId = null;
+      this.captureSettings = null;
+      this.setHud({
+        state: "error",
+        title: "Too short",
+        detail:
+          this.settings().shortcutMode === "hold"
+            ? "Hold the shortcut while you speak"
+            : "Speak, then press the shortcut again",
+      });
+      this.asr.setActivity("idle", message);
+      return;
+    }
     this.failCapture(message);
   }
 
   private failCapture(message: string): void {
+    this.clearDeadline();
     this.asr.setSilenceCountdown?.(null);
     this.captureState = "idle";
     this.captureSessionId = null;
@@ -514,7 +605,9 @@ export class DictationService {
     this.setHud({
       state: "error",
       title: "Could not finish",
-      detail: "Check the microphone",
+      detail: /microphone|input|audio/i.test(message)
+        ? "Check the microphone"
+        : "Open Delulu Talks for details",
     });
     this.asr.setActivity("error", message);
   }
@@ -528,12 +621,17 @@ export class DictationService {
       throw new Error("Invalid recording duration");
     // Cancellation/reload consumes the identity. A late callback cannot commit
     // audio into an idle or newer session, and duplicate submissions stay inert.
+    // The renderer can finish on its own (recording limit, lost input, a pause
+    // that never acknowledged); accept its audio in any active capture state.
     if (
-      this.captureState !== "stopping" ||
+      !(["stopping", ...ACTIVE_CAPTURE] as CaptureState[]).includes(
+        this.captureState,
+      ) ||
       !this.captureSessionId ||
       submission.sessionId !== this.captureSessionId
     )
       return;
+    this.clearDeadline();
     this.captureSessionId = null;
     this.asr.setSilenceCountdown?.(null);
     await this.processRecording(submission);
@@ -596,6 +694,8 @@ export class DictationService {
         { audioPath, durationMs: submission.durationMs },
         settings,
       );
+      if (typeof result.text === "string" && !result.text.trim())
+        throw new NoSpeechError();
       this.retryAudio.clearAvailable();
       this.publishRetryAudio();
       let record = this.createRecord(
@@ -763,6 +863,16 @@ export class DictationService {
       this.asr.setActivity("idle", completion);
       return true;
     } catch (error) {
+      if (error instanceof NoSpeechError && !retryLease) {
+        // Silence is not a failure, and must not replace audio kept for retry.
+        this.setHud({
+          state: "error",
+          title: "No speech detected",
+          detail: "Nothing was typed",
+        });
+        this.asr.setActivity("idle", error.message);
+        return false;
+      }
       if (deliveryStarted) {
         this.retryAudio.discard();
         this.retrySettings = null;
@@ -783,7 +893,15 @@ export class DictationService {
     } finally {
       this.captureState = "idle";
       this.captureSettings = null;
-      rmSync(audioPath, { force: true });
+      try {
+        rmSync(audioPath, { force: true });
+      } catch (cleanupError) {
+        // Windows can briefly lock the file; never let cleanup mask the result.
+        console.error(
+          "Could not remove temporary dictation audio",
+          cleanupError,
+        );
+      }
     }
   }
 

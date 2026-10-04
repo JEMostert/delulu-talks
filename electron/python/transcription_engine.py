@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from worker_protocol import correlation_id, emit_progress, operation_scope, terminal_response, validate_request, validate_result
+from worker_protocol import correlation_id, emit_progress, isolate_protocol_output, operation_scope, protocol_stream, terminal_response, validate_request, validate_result
 from spoken_corrections import SpokenCorrectionError, apply_spoken_corrections
 
 if TYPE_CHECKING:
@@ -178,8 +178,9 @@ def emit(payload: dict[str, Any], command: str | None = None) -> None:
             )
         encoded.extend(chunk)
     # Validate the entire response before writing any prefix or partial JSON.
-    sys.stdout.write(encoded.decode("utf-8") + "\n")
-    sys.stdout.flush()
+    stream = protocol_stream() if protocol_isolated() else sys.stdout
+    stream.write(encoded.decode("utf-8") + "\n")
+    stream.flush()
 
 
 def bounded_error(exc: Exception) -> str:
@@ -722,6 +723,11 @@ class Worker:
         raise ValueError(f"Unknown worker command: {command}")
 
 
+def protocol_isolated() -> bool:
+    import worker_protocol
+    return worker_protocol._private_stream is not None
+
+
 def main() -> int:
     worker = Worker()
     source = sys.stdin.buffer
@@ -769,4 +775,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    isolate_protocol_output()
     raise SystemExit(main())

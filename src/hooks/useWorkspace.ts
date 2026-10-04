@@ -171,6 +171,14 @@ export function useWorkspace() {
         if (command.action === "cancel") setCaptureProfile(null);
         void recorder.handle(command).catch((reason) => {
           if (isCurrent()) report(reason);
+          // Tell the main process, so its capture state never waits forever.
+          if (command.sessionId && command.action !== "cancel")
+            void bridge
+              .recordingFailed(
+                reason instanceof Error ? reason.message : String(reason),
+                command.sessionId,
+              )
+              .catch(() => undefined);
         });
       }),
       bridge.onTranscript((record) => {

@@ -66,6 +66,24 @@ class WorkerProtocolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             protocol.validate_progress({**events[-1], "downloadBytes": {"completed": 4, "total": 3, "kind": "transfer"}})
 
+    def test_isolated_protocol_ignores_raw_writes_from_child_processes(self):
+        import subprocess
+        import sys as system
+        from pathlib import Path
+        script = (
+            "import os, subprocess, sys, worker_protocol as p\n"
+            "p.isolate_protocol_output()\n"
+            "subprocess.run([sys.executable, '-c', 'import os; os.write(1, b\"vllm noise\\\\n\")'])\n"
+            "os.write(1, b'more noise\\n')\n"
+            "p.protocol_stream().write('@delulu:{}\\n')\n"
+        )
+        result = subprocess.run(
+            [system.executable, "-c", script],
+            cwd=Path(__file__).parent, capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(result.stdout, "@delulu:{}\n")
+        self.assertIn("vllm noise", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
