@@ -20,31 +20,33 @@ from gi.repository import Gdk, Gio, GLib, Gtk, Gtk4LayerShell, Pango  # noqa: E4
 
 CSS = b"""
 window { background: transparent; }
-.hud { min-width: 270px; border: 1px solid alpha(#caffe9, .2); border-radius: 28px; background: #142a2b; box-shadow: 0 8px 24px alpha(#000000, .25), inset 0 1px alpha(#ffffff, .06); }
+.hud { min-width: 270px; border: 1px solid alpha(#bee8ff, .22); border-radius: 28px; background: alpha(#06192b, .96); box-shadow: 0 10px 28px alpha(#000814, .45), inset 0 1px alpha(#bee8ff, .14); }
 .body { padding: 14px 20px; }
 .header { min-height: 22px; }
 .footer { margin-top: 3px; min-height: 16px; margin-left: 29px; }
-.beacon { min-width: 22px; min-height: 22px; margin-right: 7px; border-radius: 11px; background: alpha(#baffdf, .1); }
-.dot { min-width: 7px; min-height: 7px; border-radius: 4px; background: #baffdf; }
-.listening .dot { background: #ffb8a0; }
-.glyph { color: #baffdf; font-size: 13px; font-weight: 600; }
-.error .glyph { color: #ffb8a0; }
-.title { color: #f0fff8; font-size: 13px; font-weight: 600; }
-.detail { color: #a6c2b9; font-size: 11px; }
-.profile { color: #78968d; font-size: 10px; margin-left: 29px; margin-top: 3px; }
-.clock { color: #baffdf; font-size: 12px; font-weight: 500; font-family: monospace; margin-left: 14px; }
+.beacon { min-width: 22px; min-height: 22px; margin-right: 7px; border-radius: 11px; background: alpha(#32baff, .14); }
+.dot { min-width: 7px; min-height: 7px; border-radius: 4px; background: #75e4ff; }
+.listening .dot { background: #ff6f86; }
+.listening .beacon { background: alpha(#ff6f86, .16); }
+.glyph { color: #75e4ff; font-size: 13px; font-weight: 600; }
+.success .glyph { color: #5fdcbf; }
+.error .glyph { color: #f6c979; }
+.title { color: #eaf6ff; font-size: 13px; font-weight: 600; }
+.detail { color: #a3c2da; font-size: 11px; }
+.profile { color: #88a9c4; font-size: 11px; margin-left: 29px; margin-top: 3px; }
+.clock { color: #eaf6ff; font-size: 12px; font-weight: 500; font-family: monospace; margin-left: 14px; }
 .wave { min-height: 16px; margin-left: 12px; }
-.bar { min-width: 2px; background: #baffdf; border-radius: 2px; }
-.listening .bar { background: #ffb8a0; }
-spinner { min-width: 13px; min-height: 13px; color: #baffdf; }
+.bar { min-width: 2px; background: #75e4ff; border-radius: 2px; }
+.listening .bar { background: #ff8a9c; }
+spinner { min-width: 13px; min-height: 13px; color: #75e4ff; }
 """
 
 STATES = {
     "listening": ("", "Listening", "Release to send"),
     "transcribing": ("", "Finding your words", "On this device"),
     "magic": ("✦", "Refining your words", "Rewriting locally"),
-    "delivering": ("↗", "Sending to your cursor", "To your cursor"),
-    "success": ("✓", "All done", "Ready"),
+    "delivering": ("↗", "Delivering", "To your cursor"),
+    "success": ("✓", "Done", "Ready"),
     "error": ("!", "Needs your attention", "Open Delulu Talks"),
 }
 
@@ -54,7 +56,7 @@ PREVIEW_STATES = ("listening", "transcribing", "magic", "delivering", "success",
 
 class PillApplication(Gtk.Application):
     def __init__(self, preview: str | None = None, preview_reduce_motion: bool = False) -> None:
-        super().__init__(application_id="com.joran.delulu_talks.pill", flags=Gio.ApplicationFlags.NON_UNIQUE if preview else Gio.ApplicationFlags.FLAGS_NONE)
+        super().__init__(application_id="com.joran.delulu_talks.pill", flags=Gio.ApplicationFlags.NON_UNIQUE)
         self.preview = preview
         self.force_reduced_motion = bool(preview and preview_reduce_motion)
         self.reduce_motion = False

@@ -123,6 +123,9 @@ export class PillService {
 
   prepare(): void {
     if (!this.supportedEnvironment() || this.child) return;
+    // Turning the overlay back on is an explicit request to try again.
+    this.retryAfter = 0;
+    this.preloadAttempted = false;
     this.desired = { state: "hidden" };
     this.start();
   }
@@ -278,7 +281,14 @@ export class PillService {
         this.start();
         return;
       }
-      this.retryAfter = this.now() + 10_000;
+      // A compositor without layer-shell (GNOME/Mutter) never gains it while
+      // running; stop respawning a failing helper on every level update.
+      this.retryAfter =
+        /unsupported|No module named|Namespace .* not available/i.test(
+          `${this.unavailableReason ?? ""}\n${stderr}`,
+        )
+          ? Number.POSITIVE_INFINITY
+          : this.now() + 10_000;
       if (!started || (code && code !== 0)) {
         this.unavailableReason = (
           stderr.trim().split(/\r?\n/).at(-1) ||

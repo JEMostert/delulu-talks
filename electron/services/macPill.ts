@@ -6,11 +6,11 @@ const HEIGHT = 84;
 const HTML = `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <style>
-html,body{margin:0;background:transparent;overflow:hidden;font:13px -apple-system,BlinkMacSystemFont,sans-serif;color:#f0fff8;user-select:none}
-.pill{margin:4px;padding:14px 20px;border:1px solid #caffe933;border-radius:28px;background:#142a2b;box-shadow:0 3px 10px #0004}
-#title{font-weight:600;font-size:13px;padding-right:45px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#detail{font-size:11px;color:#a6c2b9;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.track{position:absolute;right:20px;top:23px;width:44px;height:7px;border-radius:4px;background:#304941}
-#level{height:100%;width:0;background:#baffdf;border-radius:4px}
+html,body{margin:0;background:transparent;overflow:hidden;font:13px -apple-system,BlinkMacSystemFont,sans-serif;color:#eaf6ff;user-select:none}
+.pill{margin:4px;padding:14px 20px;border:1px solid #bee8ff38;border-radius:28px;background:#06192bf5;box-shadow:0 3px 12px #00081466,inset 0 1px #bee8ff24}
+#title{font-weight:600;font-size:13px;padding-right:45px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#detail{font-size:11px;color:#a3c2da;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track{position:absolute;right:20px;top:23px;width:44px;height:7px;border-radius:4px;background:#173650}
+#level{height:100%;width:0;background:#ff8a9c;border-radius:4px}
 </style></head><body><div class="pill" role="status"><div id="title">Listening</div><div id="detail">Recording locally</div><div class="track"><div id="level"></div></div></div></body></html>`;
 
 const TITLES: Record<PillCommand["state"], string> = {
