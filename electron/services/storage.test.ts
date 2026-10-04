@@ -223,3 +223,27 @@ test("reopening a v0.10.0 profile preserves explicit settings, exact rules and e
     historyBytes,
   );
 });
+
+test("history keeps only the newest transcripts up to the chosen limit", () => {
+  const { application } = profile();
+  const storage = new StorageService(application);
+  for (let index = 0; index < 30; index++)
+    storage.addHistory({
+      ...transcript(),
+      id: `t${index}`,
+      createdAt: index + 1,
+    });
+  expect(storage.getHistory()).toHaveLength(30);
+  storage.pinHistory(["t0"]);
+  storage.updateSettings({ historyLimit: 25 });
+  const kept = storage.getHistory().map(({ id }) => id);
+  // Newest 25 plus a record held open by a pending undo.
+  expect(kept).toHaveLength(26);
+  expect(kept[0]).toBe("t29");
+  expect(kept).toContain("t0");
+  expect(kept).not.toContain("t1");
+  expect(new StorageService(application).getHistory()).toHaveLength(26);
+  // Unsupported limits fall back to the default rather than keeping everything.
+  storage.updateSettings({ historyLimit: 7 });
+  expect(storage.getSettings().historyLimit).toBe(50);
+});
