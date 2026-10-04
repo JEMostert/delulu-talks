@@ -17,6 +17,7 @@ export const REQUIRED_RESOURCES = [
   "python/r2t2_checkpoint.py",
   "python/nemotron_speech.py",
   "python/live_segments.py",
+  "python/stream_buffer.py",
   "python/constraints-linux-x64.txt",
   "python/THIRD_PARTY_NOTICES.md",
   "python/licenses/transformers-Apache-2.0.txt",

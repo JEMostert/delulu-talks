@@ -1106,6 +1106,7 @@ export class AsrService {
    */
   async liveStart(settings: AppSettings): Promise<boolean> {
     if (usesMetal() || this.shuttingDown) return false;
+    this.liveActive = false;
     this.speechOperations += 1;
     this.clearSpeechIdle();
     try {
@@ -1146,6 +1147,12 @@ export class AsrService {
         60_000,
       );
       return result.delta;
+    } catch (error) {
+      // A rejected streamFinish can leave a native decoder thread running.
+      // Release this worker before buffered transcription reloads the model.
+      await this.speechWorker.stopAndWait();
+      this.updateStatus({ ...UNLOADED_LIFECYCLE, engine: "unloaded" });
+      throw error;
     } finally {
       this.scheduleSpeechIdle();
     }
@@ -1164,6 +1171,7 @@ export class AsrService {
       throw new Error("Wait for speech to finish before unloading");
     this.clearSpeechIdle();
     this.speechUnloadPromise = (async () => {
+      this.liveActive = false;
       this.updateStatus({ residency: "unloading", idleUnloadAt: null });
       await this.speechWorker.stopAndWait();
       this.updateStatus({
@@ -1723,6 +1731,7 @@ export class AsrService {
 
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
+    this.liveActive = false;
     this.speechSetup?.controller.abort(
       new Error("Setup cancelled during shutdown"),
     );
@@ -1746,6 +1755,7 @@ export class AsrService {
   }
 
   fail(error: unknown): void {
+    this.liveActive = false;
     if (error instanceof DomainError && error.cancelled) return;
     this.clearSpeechIdle();
     this.speechFailureGeneration += 1;

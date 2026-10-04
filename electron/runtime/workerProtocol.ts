@@ -12,6 +12,23 @@ const PRESETS = new Set([
   "professional-message",
 ]);
 const MAGIC_MODELS = new Set(["qwen35Small", "qwen35Medium", "qwen35Large"]);
+const SPEECH_MODELS = new Set(["r2t2", "nemotron"]);
+const COMMANDS = new Set([
+  "ping",
+  "status",
+  "load",
+  "unload",
+  "magicStatus",
+  "magicLoad",
+  "magicUnload",
+  "magicRewrite",
+  "transcribe",
+  "shutdown",
+  "capabilities",
+  "streamStart",
+  "streamAudio",
+  "streamFinish",
+]);
 // Keep aligned with the shared PipelineTimings contract; unknown stages are omitted.
 const TIMING_FIELDS = new Set([
   "captureEndMs",
@@ -120,17 +137,39 @@ export function validateWorkerRequest(value: unknown): JsonObject {
     Buffer.byteLength(request.command as string, "utf8") > 64
   )
     throw new Error("Model worker request ID/command exceeds its byte limit");
-  if (
-    ["streamStart", "streamChunk", "streamFinalize", "streamCancel"].includes(
-      request.command as string,
-    )
-  )
-    throw new Error(
-      "Audio streaming is not enabled by the active speech runtime; use whole-recording transcription",
-    );
+  if (!COMMANDS.has(request.command as string))
+    throw new Error(`Unknown model worker command: ${request.command}`);
   jsonValue(request);
   if (request.command === "load" || request.command === "magicLoad")
     stringField(request, "cacheDir");
+  if (
+    request.command === "load" &&
+    request.device !== undefined &&
+    !["auto", "cpu"].includes(request.device as string)
+  )
+    throw new Error("Unsupported speech device preference");
+  if (request.command === "load" || request.command === "transcribe") {
+    stringField(request, "model");
+    if (
+      request.model !== undefined &&
+      !SPEECH_MODELS.has(request.model as string)
+    )
+      throw new Error("Invalid model worker speech model");
+  }
+  if (request.command === "streamStart") stringField(request, "language");
+  if (request.command === "streamAudio") {
+    stringField(request, "pcm", true);
+    if ((request.pcm as string).length > 2_600_000)
+      throw new Error("Live audio pieces are limited to five seconds");
+    numberField(request, "sampleRate");
+    if (
+      request.sampleRate !== undefined &&
+      (!Number.isSafeInteger(request.sampleRate) ||
+        (request.sampleRate as number) < 8_000 ||
+        (request.sampleRate as number) > 192_000)
+    )
+      throw new Error("Unsupported live sample rate");
+  }
   if (request.command === "magicLoad") {
     stringField(request, "model");
     if (
@@ -299,10 +338,12 @@ export function validateWorkerResult(command: string, value: unknown): void {
       throw new Error("Invalid model worker capability schema or engine");
     const speech = result.engine === "speech";
     if (
-      result.modelFamily !== (speech ? "r2t2" : "qwen3.5") ||
-      !(
-        speech ? ["mlx", "cuda-vllm", "cuda-transformers"] : ["transformers"]
-      ).includes(result.backend as string)
+      !(speech ? ["r2t2", "nemotron"] : ["qwen3.5"]).includes(
+        result.modelFamily as string,
+      ) ||
+      !(speech ? ["mlx", "cuda-transformers"] : ["transformers"]).includes(
+        result.backend as string,
+      )
     )
       throw new Error("Invalid model worker capability backend/model family");
     for (const key of ["timestamps", "streaming", "vocabularyBiasing"])
@@ -344,6 +385,12 @@ export function validateWorkerResult(command: string, value: unknown): void {
     for (const key of ["duration", "processingTime"])
       numberField(result, key, true);
     numberField(result, "inferenceTime");
+  } else if (command === "streamStart") {
+    if (resultObject.started !== true)
+      throw new Error("Model worker live session did not start");
+    if (resultObject.latencyMs !== null) numberField(resultObject, "latencyMs");
+  } else if (command === "streamAudio" || command === "streamFinish") {
+    stringField(resultObject, "delta", true);
   } else if (command === "magicRewrite") {
     const result = object(value, "rewrite result");
     lifecycleFields(result);

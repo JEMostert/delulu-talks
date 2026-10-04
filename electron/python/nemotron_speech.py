@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from worker_protocol import emit_progress
+from stream_buffer import StreamBuffer
 
 MODEL = "nvidia/nemotron-3.5-asr-streaming-0.6b"
 MODEL_REVISION = "ea30d66debe3740a08b573244286791d423d6b3e"
@@ -59,12 +60,11 @@ class StreamSession:
         self.np = np
         self.engine = engine
         self.language = language
-        self.audio = np.zeros(0, dtype=np.float32)
+        self.audio = StreamBuffer()
         self.closed = False
         self.flushed = False
         self.condition = threading.Condition()
         self.text: list[str] = []
-        self.delivered = 0
         self.error: BaseException | None = None
         processor = engine.processor
         self.first = processor.num_samples_first_audio_chunk
@@ -77,17 +77,14 @@ class StreamSession:
     def _wait_for(self, end: int) -> bool:
         """Block the generator until `end` samples exist; False once closed short."""
         with self.condition:
-            while len(self.audio) < end and not self.closed:
+            while self.audio.end < end and not self.closed:
                 self.condition.wait(timeout=0.5)
-            if len(self.audio) < end:
+            if self.audio.end < end:
                 # Flush the tail once by padding the final chunk with silence;
                 # chunks overlap, so padding again would never terminate.
                 if self.closed and not self.flushed:
                     self.flushed = True
-                    pad = end - len(self.audio)
-                    self.audio = self.np.concatenate(
-                        [self.audio, self.np.zeros(pad, dtype=self.np.float32)]
-                    )
+                    self.audio.append(self.np.zeros(end - self.audio.end, dtype=self.np.float32))
                     return True
                 return False
             return True
@@ -95,8 +92,10 @@ class StreamSession:
     def _features(self):
         processor = self.engine.processor
         model = self.engine.model
+        with self.condition:
+            first_audio = self.audio.slice(0, self.first).copy()
         first = processor(
-            self.audio[: self.first], sampling_rate=SAMPLE_RATE, is_streaming=True,
+            first_audio, sampling_rate=SAMPLE_RATE, is_streaming=True,
             is_first_audio_chunk=True, language=self.language, return_tensors="pt",
         ).to(model.device, dtype=model.dtype)
         self.first_inputs = first
@@ -104,8 +103,13 @@ class StreamSession:
         mel = processor.num_mel_frames_first_audio_chunk
         start = mel * self.hop - self.n_fft // 2
         while self._wait_for(start + self.per_chunk):
+            with self.condition:
+                audio = self.audio.slice(start, start + self.per_chunk).copy()
+                # Retain the overlapping samples needed by the next window.
+                next_start = (mel + processor.num_mel_frames_per_audio_chunk) * self.hop - self.n_fft // 2
+                self.audio.discard_before(next_start)
             inputs = processor(
-                self.audio[start : start + self.per_chunk], sampling_rate=SAMPLE_RATE,
+                audio, sampling_rate=SAMPLE_RATE,
                 is_streaming=True, is_first_audio_chunk=False, language=self.language,
                 return_tensors="pt",
             ).to(model.device, dtype=model.dtype)
@@ -149,37 +153,43 @@ class StreamSession:
 
     def push(self, samples) -> None:
         with self.condition:
-            self.audio = self.np.concatenate([self.audio, samples.astype(self.np.float32)])
+            if self.closed:
+                raise RuntimeError("The live session is closed")
+            if self.audio.size + len(samples) > 30 * SAMPLE_RATE:
+                raise RuntimeError("Live recognition fell behind; finish from the full recording")
+            self.audio.append(samples)
             self.condition.notify_all()
-        if self.thread is None and len(self.audio) >= self.first:
+        if self.thread is None and self.audio.end >= self.first:
             self.start()
 
     def delta(self) -> str:
         if self.error is not None:
             raise RuntimeError("Streaming recognition failed") from self.error
         with self.condition:
-            joined = "".join(self.text)
-        piece = joined[self.delivered :]
-        self.delivered = len(joined)
-        return piece
+            piece = "".join(self.text)
+            self.text.clear()
+            return piece
 
     def finish(self, timeout: float = 30.0) -> str:
         with self.condition:
-            if len(self.audio):
+            if self.audio.end and not self.closed:
                 # Trailing silence gives the encoder the right context it needs to
                 # emit the last word; also covers recordings shorter than one chunk.
-                tail = max(self.first - len(self.audio), 0) + 2 * self.per_chunk
-                self.audio = self.np.concatenate([self.audio, self.np.zeros(tail, dtype=self.np.float32)])
+                tail = max(self.first - self.audio.end, 0) + 2 * self.per_chunk
+                self.audio.append(self.np.zeros(tail, dtype=self.np.float32))
                 self.condition.notify_all()
-        if self.thread is None and len(self.audio):
+        if self.thread is None and self.audio.end:
             self.start()
         with self.condition:
             self.closed = True
             self.condition.notify_all()
+        deadline = time.monotonic() + timeout
         if self.thread is not None:
-            self.thread.join(timeout)
+            self.thread.join(max(0.0, deadline - time.monotonic()))
         if self.reader is not None:
-            self.reader.join(timeout)
+            self.reader.join(max(0.0, deadline - time.monotonic()))
+        if any(thread is not None and thread.is_alive() for thread in (self.thread, self.reader)):
+            raise RuntimeError("Live recognition did not stop; reload the speech worker before retrying")
         return self.delta()
 
 

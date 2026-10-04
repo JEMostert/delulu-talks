@@ -161,11 +161,15 @@ export class PasteService {
         {
           encoding: "utf8",
           windowsHide: true,
+          timeout: 2000,
+          killSignal: "SIGKILL",
         },
       );
-      if (result.status !== 0)
+      if (result.error || result.status !== 0)
         throw new Error(
-          result.stderr.trim() || "KDE clipboard rejected the transcript",
+          result.error?.message ||
+            result.stderr?.trim() ||
+            "KDE clipboard rejected the transcript",
         );
     }
   }

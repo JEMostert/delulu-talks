@@ -7,6 +7,7 @@ its text is final the moment it is returned.
 from __future__ import annotations
 
 from typing import Callable
+from stream_buffer import StreamBuffer
 
 SAMPLE_RATE = 16000
 FRAME = SAMPLE_RATE // 50  # 20 ms
@@ -23,7 +24,7 @@ class PauseStreamer:
         import numpy as np
         self.np = np
         self.transcribe = transcribe
-        self.audio = np.zeros(0, dtype=np.float32)
+        self.audio = StreamBuffer()
         self.start = 0  # first sample of the current phrase
         self.scanned = 0  # samples already classified
         self.speech_frames = 0
@@ -38,7 +39,7 @@ class PauseStreamer:
         return float(self.np.sqrt(self.np.mean(frame * frame))) if len(frame) else 0.0
 
     def _emit(self, end: int) -> str:
-        phrase = self.audio[self.start:end]
+        phrase = self.audio.slice(self.start, end)
         self.start = end
         self.speech_frames = 0
         self.silent_frames = 0
@@ -50,10 +51,10 @@ class PauseStreamer:
         return piece
 
     def push(self, samples) -> str:
-        self.audio = self.np.concatenate([self.audio, samples.astype(self.np.float32)])
+        self.audio.append(samples)
         out = ""
-        while self.scanned + FRAME <= len(self.audio):
-            frame = self.audio[self.scanned:self.scanned + FRAME]
+        while self.scanned + FRAME <= self.audio.end:
+            frame = self.audio.slice(self.scanned, self.scanned + FRAME)
             self.scanned += FRAME
             level = self._rms(frame)
             # Track the room's noise floor slowly; speech is well above it.
@@ -76,17 +77,18 @@ class PauseStreamer:
                 # Drop leading silence so it is never sent to the model.
                 self.start = self.scanned - FRAME * 10
                 self.silent_frames = 10
+        self.audio.discard_before(self.start)
         return out
 
     def _quietest(self, begin: int, end: int) -> int:
         best, best_level = end, None
         for position in range(max(begin, self.start + FRAME), end - FRAME + 1, FRAME):
-            level = self._rms(self.audio[position:position + FRAME])
+            level = self._rms(self.audio.slice(position, position + FRAME))
             if best_level is None or level < best_level:
                 best, best_level = position + FRAME // 2, level
         return best
 
     def finish(self) -> str:
         if self.speech_frames >= 3 or (self.emitted is False and self.speech_frames):
-            return self._emit(len(self.audio))
+            return self._emit(self.audio.end)
         return ""

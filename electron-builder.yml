@@ -32,6 +32,8 @@ extraResources:
     to: python/nemotron_speech.py
   - from: electron/python/live_segments.py
     to: python/live_segments.py
+  - from: electron/python/stream_buffer.py
+    to: python/stream_buffer.py
   - from: electron/python/cuda_preflight.py
     to: python/cuda_preflight.py
   - from: docs/THIRD_PARTY_NOTICES.md

@@ -152,28 +152,42 @@ export const OceanBackground = memo(function OceanBackground({
   useEffect(() => {
     const ocean = oceanRef.current;
     if (!ocean || !softwareCompositing()) return;
-    const offsets = new WeakMap<Animation, number>();
-    const started = performance.now();
-    let last = 0;
-    const timer = setInterval(() => {
+    const motion = matchMedia("(prefers-reduced-motion: reduce)");
+    const times = new WeakMap<Animation, { time: number; held: boolean }>();
+    let last = performance.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const step = () => {
+      clearTimeout(timer);
       const now = performance.now();
-      // A covered sea barely shows; refresh it less often still.
-      if (document.hidden || now - last < (coveredRef.current ? 330 : 120))
-        return;
-      last = now;
       for (const animation of ocean.getAnimations({ subtree: true })) {
-        if (!offsets.has(animation)) {
-          offsets.set(
-            animation,
-            Number(animation.currentTime ?? 0) - (now - started),
-          );
-          animation.pause();
-        }
-        animation.currentTime = offsets.get(animation)! + (now - started);
+        const target = (animation.effect as KeyframeEffect | null)?.target;
+        const held =
+          document.hidden ||
+          motion.matches ||
+          (coveredRef.current &&
+            target instanceof Element &&
+            target.hasAttribute("data-ocean-mote"));
+        const previous = times.get(animation);
+        const time =
+          (previous?.time ?? Number(animation.currentTime ?? 0)) +
+          (previous && !previous.held && !held ? now - last : 0);
+        times.set(animation, { time, held });
+        animation.pause();
+        animation.currentTime = time;
       }
-    }, 45);
+      last = now;
+      // Sleep completely while hidden or motion is disabled; visibility and
+      // preference events restart stepping. No 45 ms polling wakeups remain.
+      if (!document.hidden && !motion.matches)
+        timer = setTimeout(step, coveredRef.current ? 330 : 120);
+    };
+    step();
+    document.addEventListener("visibilitychange", step);
+    motion.addEventListener("change", step);
     return () => {
-      clearInterval(timer);
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", step);
+      motion.removeEventListener("change", step);
       for (const animation of ocean.getAnimations({ subtree: true }))
         animation.play();
     };
@@ -196,7 +210,8 @@ export const OceanBackground = memo(function OceanBackground({
       );
     });
     const timer = setInterval(() => {
-      glow.style.opacity = (0.15 + level * 0.85).toFixed(2);
+      if (!document.hidden)
+        glow.style.opacity = (0.15 + level * 0.85).toFixed(2);
     }, 100);
     return () => {
       unsubscribe();
@@ -209,6 +224,7 @@ export const OceanBackground = memo(function OceanBackground({
   useEffect(() => {
     const motion = matchMedia("(prefers-reduced-motion: reduce)");
     let next = 0;
+    const timers = new Set<ReturnType<typeof setTimeout>>();
     const touch = (event: PointerEvent) => {
       const target = event.target as Element | null;
       if (
@@ -220,16 +236,19 @@ export const OceanBackground = memo(function OceanBackground({
         return;
       const ripple = { id: next++, x: event.clientX, y: event.clientY };
       setRipples((current) => [...current.slice(-2), ripple]);
-      setTimeout(
-        () =>
-          setRipples((current) =>
-            current.filter((item) => item.id !== ripple.id),
-          ),
-        1700,
-      );
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        setRipples((current) =>
+          current.filter((item) => item.id !== ripple.id),
+        );
+      }, 1700);
+      timers.add(timer);
     };
     window.addEventListener("pointerdown", touch, { passive: true });
-    return () => window.removeEventListener("pointerdown", touch);
+    return () => {
+      window.removeEventListener("pointerdown", touch);
+      for (const timer of timers) clearTimeout(timer);
+    };
   }, []);
 
   return (
@@ -292,6 +311,7 @@ export const OceanBackground = memo(function OceanBackground({
       {MOTES.map(([left, top, duration, delay, size, drift], index) => (
         <span
           key={index}
+          data-ocean-mote
           className="absolute animate-ocean-rise will-change-transform rounded-full"
           style={
             {

@@ -56,11 +56,8 @@ test("invalid, oversized and envelope-altering requests are rejected before work
   ).toThrow("request envelope");
 });
 
-test("worker schemas reject unsupported streaming and malformed transcription results", () => {
+test("worker schemas reject legacy streaming flags and malformed transcription results", () => {
   const identity = { protocolVersion: 1, id: "request" };
-  expect(() =>
-    validateWorkerRequest({ ...identity, command: "streamStart" }),
-  ).toThrow("not enabled");
   expect(() =>
     validateWorkerRequest({
       ...identity,

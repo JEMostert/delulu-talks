@@ -34,7 +34,18 @@ export async function inspectLocalDataLocation(
         result.skippedLinks += 1;
       } else if (stat.isDirectory()) {
         const names = await fs.readdir(current);
-        pending.push(...names.map((name) => join(current, name)));
+        const available = Math.max(0, 100_000 - visited - pending.length);
+        for (let index = 0; index < Math.min(names.length, available); index++)
+          pending.push(join(current, names[index]));
+        if (names.length > available) {
+          result.status = "partial";
+          if (
+            !result.problems.includes(
+              "Scan limit reached; size is a lower bound.",
+            )
+          )
+            result.problems.push("Scan limit reached; size is a lower bound.");
+        }
       } else if (stat.isFile()) {
         result.bytes += stat.size;
         result.files += 1;

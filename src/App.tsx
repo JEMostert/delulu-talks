@@ -42,8 +42,8 @@ import { Alert } from "./components/ui";
 import { LatestResult } from "./components/LatestResult";
 import brandMark from "./assets/delulu-talks-mark.svg";
 import { ProjectVocabulary } from "./components/ProjectVocabulary";
-import { activityLabel, engineLabel, formatClock } from "./statusLabels";
-import { useRecordingClock } from "./hooks/useRecordingClock";
+import { activityLabel, engineLabel } from "./statusLabels";
+import { RecordingClock } from "./components/RecordingClock";
 const LabPage = lazy(() =>
   import("./pages/LabPage").then((module) => ({ default: module.LabPage })),
 );
@@ -385,7 +385,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const latest = w.history[0];
   const quickSheet = quickOpen && w.page === "home";
   const activity = activityLabel(w.status, w.magicStatus);
-  const elapsed = useRecordingClock(w.status.phase);
   const engine = engineLabel(w.status);
   return (
     <main
@@ -446,9 +445,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
               title={activity.detail}
             >
               <span className={`status-dot ${activity.tone}`} />
-              {elapsed !== null && (
-                <span className="recording-clock">{formatClock(elapsed)}</span>
-              )}
+              <RecordingClock phase={w.status.phase} />
               <span>{activity.label}</span>
             </span>
           )}

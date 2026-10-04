@@ -2,7 +2,7 @@
 
 Every recording is captured completely, whatever else happens. The renderer captures microphone audio, flushes the final worklet batch, releases capture resources and submits the complete recording through validated IPC. The main process writes a temporary WAV for the local worker and preserves the transcript before clipboard or paste delivery. That buffered path is the source of truth for History.
 
-## Live typing (v0.12.0)
+## Live typing (v0.12.1)
 
 When live typing is allowed, the same capture session also forwards audio while you speak:
 
@@ -13,6 +13,10 @@ When live typing is allowed, the same capture session also forwards audio while 
 
 Live typing is allowed only when automatic paste is on, rewriting is off, spoken punctuation commands are off, the paste method can type, and the backend reports `streaming: true` (CUDA and CPU; not MLX). Otherwise the recording is delivered as before.
 
-If the stream fails midway, nothing else is pasted: the full buffered transcript is copied to the clipboard instead, and the History record notes what happened. A cancelled recording drops the stream without pasting. The saved record carries delivery method `live`.
+If the stream fails after any paste attempt, nothing else is pasted: the full buffered transcript is copied to the clipboard instead, and the History record notes what happened. If no paste was attempted, normal buffered delivery remains available. Cancellation drops queued delivery and waits for the current decoder and paste before another capture can start. The saved record carries delivery method `live`.
+
+The desktop queue holds at most 25 waiting chunks and 4 MiB of encoded PCM. Python reuses sample storage and discards processed audio while preserving overlapping native windows; Nemotron limits unread audio to 30 seconds. Backlog overflow ends live delivery and uses the full recording. Decoder finish checks that both generator and reader threads stopped within one deadline; a failure closes the worker before buffered inference reloads it.
+
+After Stop, the renderer releases its microphone graph before a local worker merges, resamples and encodes the WAV. Encoding remains cancellation-owned until submission. Input chunks are retained until successful encoding so worker startup failure can use the existing synchronous fallback.
 
 [Worker transport bounds](worker-bounds.md) apply to stream requests as well. Unit tests cover ordering, coalescing, failure and fallback (`electron/services/liveTyping.test.ts`, `dictation.test.ts`, `electron/python/live_segments_test.py`).

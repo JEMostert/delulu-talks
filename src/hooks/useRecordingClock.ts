@@ -20,15 +20,20 @@ export function useRecordingClock(phase: DictationPhase): number | null {
     const current = (clock.current ??= { accumulated: 0, since: null });
     if (phase === "paused") {
       if (current.since !== null) {
-        current.accumulated += Date.now() - current.since;
+        current.accumulated += performance.now() - current.since;
         current.since = null;
       }
       setElapsed(current.accumulated);
       return;
     }
-    current.since ??= Date.now();
+    current.since ??= performance.now();
     const tick = () =>
-      setElapsed(current.accumulated + Date.now() - (current.since ?? 0));
+      setElapsed(
+        Math.floor(
+          (current.accumulated + performance.now() - (current.since ?? 0)) /
+            1000,
+        ) * 1000,
+      );
     tick();
     const timer = setInterval(tick, 250);
     return () => clearInterval(timer);

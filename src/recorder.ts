@@ -15,49 +15,8 @@ import type {
   RecorderCommand,
 } from "./types";
 import { TrailingSilenceStop } from "./trailingSilence";
-import { resample } from "./captureResample";
-
-function merge(chunks: Float32Array[]): Float32Array {
-  const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
-  const output = new Float32Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    output.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return output;
-}
-
-function wav(samples: Float32Array, sampleRate = 16_000): Uint8Array {
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(buffer);
-  const write = (offset: number, value: string) => {
-    for (let index = 0; index < value.length; index += 1)
-      view.setUint8(offset + index, value.charCodeAt(index));
-  };
-  write(0, "RIFF");
-  view.setUint32(4, 36 + samples.length * 2, true);
-  write(8, "WAVE");
-  write(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  write(36, "data");
-  view.setUint32(40, samples.length * 2, true);
-  for (let index = 0; index < samples.length; index += 1) {
-    const sample = Math.max(-1, Math.min(1, samples[index]));
-    view.setInt16(
-      44 + index * 2,
-      sample < 0 ? sample * 0x8000 : sample * 0x7fff,
-      true,
-    );
-  }
-  return new Uint8Array(buffer);
-}
+import { merge } from "./captureEncoding";
+import { encodeCapture } from "./captureEncoder";
 
 function audibleLevel(rms: number): number {
   return Math.min(1, Math.max(0, rms * 4.2));
@@ -101,6 +60,7 @@ type CaptureSession = {
 
 export class PcmRecorder {
   private session: CaptureSession | null = null;
+  private encodingSession: CaptureSession | null = null;
   private generation = 0;
   private requestedSessionId: string | null = null;
   private cueEpoch = 0;
@@ -126,7 +86,10 @@ export class PcmRecorder {
       sessionId ??= this.requestedSessionId ?? crypto.randomUUID();
       this.requestedSessionId = sessionId;
     } else {
-      const owner = this.requestedSessionId ?? this.session?.sessionId;
+      const owner =
+        this.requestedSessionId ??
+        this.session?.sessionId ??
+        this.encodingSession?.sessionId;
       sessionId ??= owner;
       if (sessionId && owner && sessionId !== owner) return Promise.resolve();
     }
@@ -136,7 +99,7 @@ export class PcmRecorder {
       this.requestedSessionId = null;
       this.cueEpoch += 1;
       void this.cuePlayer.dispose().catch(() => undefined);
-      const session = this.session;
+      const session = this.session ?? this.encodingSession;
       if (session) {
         // Invalidate immediately, including while acquisition or flush awaits.
         session.cancelled = true;
@@ -604,8 +567,8 @@ export class PcmRecorder {
       }
       if (!this.current(session)) return;
       this.flushLive(session);
-      const captured = merge(session.chunks);
-      const durationMs = Math.round((captured.length / sampleRate) * 1000);
+      const chunks = session.chunks;
+      const durationMs = Math.round((session.sampleCount / sampleRate) * 1000);
       const captureDiagnostics: CaptureDiagnostics = {
         sampleCount: session.sampleCount,
         sampleRate,
@@ -617,17 +580,19 @@ export class PcmRecorder {
         clippedSampleCount: session.clippedSampleCount,
         clippingThreshold: CLIPPING_THRESHOLD,
       };
+      // Keep cancellation ownership after the microphone graph is released.
+      this.encodingSession = session;
       await this.dispose(session);
       // Cancellation can arrive while AudioContext.close is still pending.
       if (session.cancelled || session.generation !== this.generation) return;
-      this.onDiagnostics?.(captured.length ? captureDiagnostics : null);
+      this.onDiagnostics?.(session.sampleCount ? captureDiagnostics : null);
       void this.playCue(
         "stop",
         session.sessionId,
         session.generation,
         this.cueEpoch,
       );
-      if (!captured.length) {
+      if (!session.sampleCount) {
         const tapped =
           !session.startedAt || performance.now() - session.startedAt < 600;
         await bridge.recordingFailed(
@@ -640,9 +605,12 @@ export class PcmRecorder {
       }
       const captureEndMs = performance.now() - captureEndStarted;
       const preprocessingStarted = performance.now();
+      const wav = await encodeCapture(chunks, sampleRate, session.cancellation);
+      if (!wav || session.cancelled || session.generation !== this.generation)
+        return;
       await bridge.submitRecording({
         sessionId: session.sessionId,
-        wav: wav(resample(captured, sampleRate)),
+        wav,
         durationMs,
         timings: {
           captureEndMs,
@@ -651,6 +619,7 @@ export class PcmRecorder {
         captureDiagnostics,
       });
     } finally {
+      if (this.encodingSession === session) this.encodingSession = null;
       await this.dispose(session);
     }
   }
@@ -698,6 +667,8 @@ export class PcmRecorder {
         session.source = null;
         session.sink = null;
         session.chunks = [];
+        session.liveChunks = [];
+        session.liveLength = 0;
         if (this.session === session) this.session = null;
         if (this.requestedSessionId === session.sessionId)
           this.requestedSessionId = null;

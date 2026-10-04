@@ -19,8 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { captureLevelStore } from "../captureLevel";
-import { useRecordingClock } from "../hooks/useRecordingClock";
-import { formatClock } from "../statusLabels";
+import { RecordingClock } from "./RecordingClock";
 import type { DictationStatus } from "../types";
 
 function AudioHalo() {
@@ -72,7 +71,6 @@ export function OceanController({
   const recording = status.phase === "listening" || status.phase === "paused";
   const paused = status.phase === "paused";
   const transcribing = status.phase === "transcribing";
-  const elapsed = useRecordingClock(status.phase);
   const countdown = status.silenceCountdownSeconds;
   const needsSetup = ["missing", "error"].includes(status.engine);
   const [pending, setPending] = useState(false);
@@ -199,10 +197,8 @@ export function OceanController({
         )}
       </div>
       <div className={`controller-status ${paused ? "is-paused-status" : ""}`}>
-        {elapsed !== null && (
-          // Outside the live region so the ticking clock is not re-announced.
-          <span className="recording-clock">{formatClock(elapsed)}</span>
-        )}
+        {/* Outside the live region so ticks are not re-announced. */}
+        <RecordingClock phase={status.phase} />
         <span role="status" aria-live="polite" aria-atomic="true">
           {copied
             ? "Copied to clipboard"

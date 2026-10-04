@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useDeferredValue,
   useMemo,
   useState,
   type Dispatch,
@@ -43,6 +44,8 @@ function dayLabel(timestamp: number) {
           weekday: "long",
           month: "short",
           day: "numeric",
+          year:
+            date.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
         });
 }
 
@@ -93,6 +96,7 @@ export function HistoryPage({
     return () => cancelAnimationFrame(frame);
   }, [focusSearch, onSearchFocused]);
   const { filters, sort } = view;
+  const deferredFilters = useDeferredValue(filters);
   const [confirm, setConfirm] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -103,8 +107,24 @@ export function HistoryPage({
   const [openId, setOpenId] = useState<string | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const filtered = useMemo(
-    () => sortHistory(filterHistory(history, filters), sort),
-    [history, filters, sort],
+    () => sortHistory(filterHistory(history, deferredFilters), sort),
+    [history, deferredFilters, sort],
+  );
+  const previews = useMemo(
+    () =>
+      new Map(
+        history.map((record) => [
+          record.id,
+          {
+            text: deliveredText(record).replace(/\s+/g, " ").slice(0, 240),
+            time: new Date(record.createdAt).toLocaleTimeString([], {
+              hour: "numeric",
+              minute: "2-digit",
+            }),
+          },
+        ]),
+      ),
+    [history],
   );
   const chip =
     CHIPS.find(
@@ -122,7 +142,10 @@ export function HistoryPage({
     filtered.find((record) => record.id === openId) ?? filtered[0] ?? null;
   useEffect(() => {
     const available = new Set(history.map((record) => record.id));
-    setSelected((ids) => new Set([...ids].filter((id) => available.has(id))));
+    setSelected((ids) => {
+      const next = [...ids].filter((id) => available.has(id));
+      return next.length === ids.size ? ids : new Set(next);
+    });
   }, [history]);
   const groups = useMemo(() => {
     const result = new Map<string, TranscriptRecord[]>();
@@ -280,11 +303,7 @@ export function HistoryPage({
               <h3>{day}</h3>
               <ol>
                 {records.map((record) => {
-                  const text = deliveredText(record).replace(/\s+/g, " ");
-                  const time = new Date(record.createdAt).toLocaleTimeString(
-                    [],
-                    { hour: "numeric", minute: "2-digit" },
-                  );
+                  const { text, time } = previews.get(record.id)!;
                   return (
                     <li key={record.id}>
                       <button
@@ -374,7 +393,7 @@ export function HistoryPage({
               variant="detail"
               {...actions}
             />
-            <HistorySearchMatches record={open} query={filters.query} />
+            <HistorySearchMatches record={open} query={deferredFilters.query} />
           </>
         ) : (
           <EmptyState icon={Search} title="Nothing selected">

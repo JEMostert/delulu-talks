@@ -189,7 +189,10 @@ export class ImportQueue {
       this.persist?.(this.get());
       this.durable = this.get();
     } catch (error) {
-      this.jobs = this.durable.jobs.map((job) => ({ ...job }));
+      const active = this.jobs.find((job) => job.id === this.active?.id);
+      this.jobs = this.durable.jobs.map((job) =>
+        active?.id === job.id ? Object.assign(active, job) : { ...job },
+      );
       this.paused = true;
       throw error;
     }

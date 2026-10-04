@@ -77,7 +77,7 @@ export class DictationService {
   private captureSettings: AppSettings | null = null;
   private retrySettings: AppSettings | null = null;
   get isActive(): boolean {
-    return this.captureState !== "idle";
+    return this.captureState !== "idle" || this.liveCleanup !== null;
   }
 
   get canStopRecording(): boolean {
@@ -127,6 +127,7 @@ export class DictationService {
   private deadline: NodeJS.Timeout | null = null;
   /** Live typing for the current capture, when its settings allow it. */
   private live: LiveTyping | null = null;
+  private liveCleanup: Promise<void> | null = null;
   private liveFallbackNote: string | null = null;
   private busyNotice = false;
   private hud:
@@ -157,6 +158,7 @@ export class DictationService {
   private sendRecorder(command: RecorderCommand): void {
     const window = this.windows.main();
     if (!window || window.isDestroyed() || !this.recorderReady) {
+      this.dropLive();
       this.captureState = "idle";
       this.captureSessionId = null;
       this.captureSettings = null;
@@ -266,6 +268,7 @@ export class DictationService {
       return;
     }
     if (
+      this.liveCleanup ||
       this.paste.isBusy ||
       this.asr.isBusy ||
       ["transcribing", "preparing", "loading"].includes(status.phase)
@@ -525,7 +528,16 @@ export class DictationService {
   private dropLive(): void {
     const live = this.live;
     this.live = null;
-    void live?.cancel();
+    this.cancelLive(live);
+  }
+
+  private cancelLive(live: LiveTyping | null): void {
+    if (!live) return;
+    const cleanup = live.cancel().catch(() => undefined);
+    this.liveCleanup = cleanup;
+    void cleanup.then(() => {
+      if (this.liveCleanup === cleanup) this.liveCleanup = null;
+    });
   }
 
   recordingSilence(
@@ -633,6 +645,7 @@ export class DictationService {
       return;
     if (message.startsWith(TOO_SHORT)) {
       // A quick tap is not a microphone failure.
+      this.dropLive();
       this.clearDeadline();
       this.asr.setSilenceCountdown?.(null);
       this.captureState = "idle";
@@ -712,19 +725,19 @@ export class DictationService {
       !(submission.wav instanceof Uint8Array) ||
       submission.wav.byteLength < 44
     ) {
-      void live?.cancel();
+      this.cancelLive(live);
       this.failCapture("The microphone returned an empty recording");
       return false;
     }
     if (submission.wav.byteLength > 500 * 1024 * 1024) {
-      void live?.cancel();
+      this.cancelLive(live);
       this.failCapture(
         "Recording is too large; keep dictation captures below 500 MB",
       );
       return false;
     }
     if (submission.durationMs < 180) {
-      void live?.cancel();
+      this.cancelLive(live);
       this.captureState = "idle";
       this.setHud({
         state: "error",
@@ -748,7 +761,7 @@ export class DictationService {
           this.captureSettings = null;
         }
       }
-      if (typedLive.typed) {
+      if (live.deliveryAttempted) {
         // Part of the text already reached the cursor: never paste it twice.
         settings.autoPaste = false;
         settings.copyToClipboard = true;

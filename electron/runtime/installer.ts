@@ -303,7 +303,8 @@ export class RuntimeInstaller {
         }
       }, 5000);
       escalation.unref();
-      child.once("close", () => clearTimeout(escalation));
+      // A build/download subprocess can outlive the installer parent. Keep
+      // escalation attached to this generation's process group after close.
     }
   }
   stop(): void {
