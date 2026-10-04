@@ -8,7 +8,7 @@ The [architecture decision records](decisions/README.md) explain the current tra
 
 ## Boundaries
 
-- `src/components/OceanController.tsx` provides the persistent icon-only capture controls. `QuickSettings.tsx` opens essential preferences; `OceanBackground.tsx` renders a bounded procedural GPU ocean without React frame updates. `src/ocean.css` defines the shell and working sheets.
+- `src/components/OceanController.tsx` provides the persistent icon-only capture controls. `QuickSettings.tsx` opens essential preferences; `OceanBackground.tsx` renders the sea from layered gradients with Tailwind animations: no images, canvas or GPU. `src/ocean.css` defines the shell and working sheets.
 - `src/App.tsx` assembles the shell and pages. `hooks/useWorkspace.ts` owns subscriptions, serialized settings patches, transcript actions and feedback. `hooks/useTheme.ts` applies system/light/dark appearance.
 - `src/components/ui` supplies shared switches, setting rows, alerts, empty states and native modal dialogs. `TranscriptCard` owns review/edit/restore/remember-word interactions for both Controls and History.
 - `src/index.css` defines semantic light/dark tokens and reusable controls; Tailwind utilities in the components handle shell and page layouts. All pages remain usable in compact desktop windows.

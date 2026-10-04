@@ -18,7 +18,7 @@ The reference is [Ocean Controller](design-concepts/04-ocean-controller.png). Th
 
 ## Performance
 
-The ocean runs outside React on one GPU canvas. It draws at most 30 frames per second and 900,000 pixels; known software renderers use 20 frames per second and 200,000 pixels. It pauses while the document is hidden, cleans up its GPU resources and recovers from context loss. Audio visualization subscribes locally rather than updating the entire application.
+The ocean is a React component of layered gradients (light shafts, dappled light, currents, motes) moved by Tailwind animations that change only transform and opacity. Without GPU compositing (Wayland disables the GPU), the component steps those animations itself about eight times a second, three while a sheet covers the water, because Chromium otherwise redraws the whole window in software every frame. It stops while the window is hidden and with reduced motion. Audio visualization subscribes locally rather than updating the entire application.
 
 Secondary pages load on demand. Optional service discovery does not block core startup, and runtime inventory is requested only when Details is opened. Broad full-window backdrop filters are avoided; the small controller and quick sheet retain glass effects.
 

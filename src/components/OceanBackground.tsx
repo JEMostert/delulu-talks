@@ -1,101 +1,134 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import { captureLevelStore } from "../captureLevel";
-import abyssStill from "../assets/ocean-abyss.webp";
-import shallowsStill from "../assets/ocean-shallows.webp";
 
-const vertex = `attribute vec2 position;
-void main() { gl_Position = vec4(position, 0.0, 1.0); }`;
+/**
+ * The sea behind the app, built from layered gradients: no images, canvas or
+ * GPU. Light rays sway from the surface, two ring fields drift against each
+ * other into moving caustics, currents and motes add depth, and the water
+ * glows with your voice while recording. Only transform and opacity animate.
+ */
 
-// Analytic waves and refracted light. No textures, image downloads or frame buffers.
-const fragment = `precision highp float;
-uniform vec2 resolution;
-uniform vec2 pointer;
-uniform float time;
-uniform float voice;
-uniform vec3 touch;
-uniform float shallow;
+type Palette = {
+  base: string;
+  ray: string;
+  caustic: string;
+  current: string;
+  glow: string;
+  mote: string;
+  voice: string;
+  ripple: string;
+};
 
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float noise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  f = f*f*(3.0-2.0*f);
-  return mix(mix(hash(i), hash(i+vec2(1.,0.)), f.x), mix(hash(i+vec2(0.,1.)), hash(i+vec2(1.,1.)), f.x), f.y);
+const PALETTES: Record<"light" | "dark", Palette> = {
+  dark: {
+    base: "radial-gradient(ellipse 120% 90% at 30% -10%, #0a7d96 0%, #07405c 32%, #04233f 62%, #020c1d 100%)",
+    ray: "143 232 245",
+    caustic: "120 225 240",
+    current: "20 120 150",
+    glow: "110 220 235",
+    mote: "170 235 245",
+    voice: "90 210 230",
+    ripple: "150 235 248",
+  },
+  light: {
+    base: "radial-gradient(ellipse 120% 90% at 30% -10%, #ffffff 0%, #d6f3fa 28%, #9fd9ec 60%, #5fb3d6 100%)",
+    ray: "255 255 255",
+    caustic: "255 255 255",
+    current: "255 255 255",
+    glow: "255 253 240",
+    mote: "255 255 255",
+    voice: "255 255 255",
+    ripple: "255 255 255",
+  },
+};
+
+const rgba = (rgb: string, alpha: number) => `rgb(${rgb} / ${alpha})`;
+
+/** Fades a layer out with depth: light lives near the surface. */
+const surfaceMask = (reach: number): CSSProperties => {
+  const mask = `linear-gradient(to bottom, #000 0%, rgb(0 0 0 / 0.55) ${reach * 0.45}%, transparent ${reach}%)`;
+  return { maskImage: mask, WebkitMaskImage: mask };
+};
+
+/** Light shafts fanning down from a bright patch of surface. */
+const rays = (rgb: string, period: number, strength: number): CSSProperties => {
+  const ray = `repeating-conic-gradient(from 150deg at 30% -18%, transparent 0deg ${period * 0.55}deg, ${rgba(rgb, strength)} ${period * 0.7}deg, transparent ${period * 0.85}deg ${period}deg)`;
+  const fan =
+    "radial-gradient(ellipse 70% 95% at 30% -18%, #000 20%, transparent 78%)";
+  return { backgroundImage: ray, maskImage: fan, WebkitMaskImage: fan };
+};
+
+/**
+ * Dappled light: a tile of soft, uneven light patches. Two tiles of unrelated
+ * sizes slide past each other, so where patches overlap the water shimmers.
+ */
+const dapples = (
+  rgb: string,
+  alpha: number,
+  tile: number,
+  patches: readonly (readonly [number, number, number, number])[],
+): CSSProperties => ({
+  backgroundImage: patches
+    .map(
+      ([x, y, rx, ry]) =>
+        `radial-gradient(${rx}px ${ry}px at ${x}px ${y}px, ${rgba(rgb, alpha)}, ${rgba(rgb, alpha * 0.35)} 45%, transparent)`,
+    )
+    .join(", "),
+  backgroundSize: `${tile}px ${tile}px`,
+});
+
+const DAPPLE_A = [
+  [52, 46, 34, 18],
+  [138, 98, 26, 14],
+  [64, 140, 20, 12],
+  [150, 24, 16, 10],
+  [24, 96, 14, 9],
+] as const;
+const DAPPLE_B = [
+  [70, 70, 40, 20],
+  [182, 150, 30, 16],
+  [176, 46, 22, 12],
+  [52, 190, 24, 13],
+  [116, 214, 14, 8],
+] as const;
+
+/** Fixed, hand-spread motes so the water never looks randomly reshuffled. */
+const MOTES = [
+  [8, 92, 26, 0, 1.5, 10],
+  [17, 78, 34, -9, 2, -14],
+  [26, 96, 29, -17, 1.5, 8],
+  [38, 86, 38, -4, 2.5, 16],
+  [47, 99, 31, -22, 1.5, -10],
+  [58, 82, 36, -13, 2, 12],
+  [66, 94, 27, -2, 1.5, -6],
+  [74, 88, 33, -26, 2.5, 14],
+  [83, 97, 30, -7, 2, -12],
+  [91, 84, 37, -19, 1.5, 9],
+  [33, 70, 42, -30, 1.5, -8],
+  [70, 72, 40, -35, 2, 10],
+] as const;
+
+type Ripple = { id: number; x: number; y: number };
+
+/**
+ * Without a GPU (Wayland disables it), Chromium redraws the whole window in
+ * software on every frame while any CSS animation runs. True when WebGL is
+ * missing or reports a software rasterizer.
+ */
+function softwareCompositing(): boolean {
+  try {
+    const gl = document.createElement("canvas").getContext("webgl");
+    if (!gl) return true;
+    const debug = gl.getExtension("WEBGL_debug_renderer_info");
+    const renderer = debug
+      ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL))
+      : "";
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+    return /swiftshader|llvmpipe|software/i.test(renderer);
+  } catch {
+    return true;
+  }
 }
-float water(vec2 p, float t) {
-  p += .65 * vec2(sin(p.y*1.12+t*.18), cos(p.x*1.23-t*.14));
-  float a = sin(p.x + sin(p.y*.93+t*.19));
-  float b = cos(p.y*1.13 + sin(p.x*.87-t*.17));
-  return pow(max(0., 1.-abs(a+b)*.56), 15.);
-}
-void main() {
-  vec2 uv = gl_FragCoord.xy / resolution;
-  float aspect = resolution.x/resolution.y;
-  vec2 p = vec2((uv.x-.5)*aspect, uv.y);
-  p += pointer * vec2(.025,.013);
-  float t = time;
-  // Abyss (dark) and Shallows (light) share one scene with different water.
-  vec3 deep = mix(vec3(.008,.033,.076), vec3(.30,.62,.76), shallow);
-  vec3 blue = mix(vec3(.009,.17,.29), vec3(.55,.82,.91), shallow);
-  vec3 teal = mix(vec3(.017,.36,.46), vec3(.82,.96,.99), shallow);
-  float depth = smoothstep(-.12,1.15,uv.y);
-  vec3 col = mix(deep, blue, depth);
-  col = mix(col, teal, pow(depth,3.)*.6);
-
-  // Broad underwater currents move on different time scales.
-  float swell = sin(p.x*2.2 + sin(p.y*3.8+t*.13) + t*.09);
-  float current = noise(vec2(p.x*2.4+t*.024,p.y*3.-t*.035));
-  col += vec3(.0,.028,.045) * (swell*.5+.5) * current;
-
-  // Perspective compresses the waves toward the surface at the top.
-  float perspective = 1.0 / max(.18, 1.30-p.y);
-  vec2 sea = vec2(p.x*3.3*perspective, perspective*3.4);
-  sea += vec2(t*.035,-t*.045);
-  float c1 = water(sea*2.1,t);
-  float c2 = water(sea*3.5+vec2(4.2,1.7),t*.8);
-  float surface = smoothstep(.38,1.,p.y);
-  float caustic = c1*.65+c2*.35;
-  col += mix(vec3(.055,.39,.49), vec3(.30,.26,.20), shallow) * caustic * mix(surface, .35+.65*surface, shallow) * (.45+.55*depth);
-  col += mix(vec3(.10,.35,.39), vec3(.20,.18,.14), shallow) * pow(c1*c2,2.) * surface;
-
-  // A luminous moving aperture casts long, soft shafts through the water.
-  vec2 light = vec2(.29*aspect + sin(t*.055)*.025,1.22);
-  float slope = (p.x-light.x)/(light.y-p.y+.15);
-  float beams = pow(max(0.,sin(slope*19.+t*.12+sin(slope*5.-t*.07))),12.);
-  beams += .5*pow(max(0.,sin(slope*31.-t*.09)),20.);
-  float cone = exp(-pow(slope*.55,2.));
-  float shaft = beams*cone*pow(depth,1.8)*.19;
-  col += mix(vec3(.10,.50,.60), vec3(.20,.22,.18), shallow)*shaft;
-  float glow = exp(-length((p-light)*vec2(.8,1.4))*3.3);
-  col += mix(vec3(.09,.43,.51), vec3(.16,.14,.10), shallow)*glow*.7;
-
-  // Soft submerged contours, gently displaced by voice energy.
-  vec2 ripple = vec2(p.x, (p.y-.42)*1.6);
-  float radius = length(ripple);
-  float ring = pow(max(0.,sin(radius*32.-t*.8)),18.);
-  col += vec3(.02,.23,.29)*ring*exp(-radius*4.)*voice*.22;
-
-  // A touch leaves a widening ring of light under the surface.
-  float age = time-touch.z;
-  float distanceToTouch = length((uv-touch.xy)*vec2(aspect,1.));
-  float front = distanceToTouch-age*.13;
-  float wake = exp(-front*front*1600.)*exp(-age*1.25)*step(0.,age);
-  col += vec3(.02,.22,.28)*wake;
-
-  // A handful of slow drifting motes, generated from a stable spatial grid.
-  vec2 dust = vec2(p.x*17.+t*.025,p.y*17.-t*.045);
-  vec2 cell = floor(dust), f = fract(dust);
-  float seed = hash(cell);
-  vec2 center = vec2(.2+.6*seed,.2+.6*hash(cell+3.));
-  float mote = exp(-length(f-center)*100.)*step(.955,seed);
-  col += vec3(.26,.58,.65)*mote*(.3+.7*depth);
-
-  float vignette = 1.-mix(.24,.12,shallow)*pow(length((uv-.5)*vec2(1.15,.8)),1.4);
-  col *= vignette;
-  col = min(col, vec3(1.));
-  // Dither prevents visible bands in the deep navy gradients.
-  col += (hash(gl_FragCoord.xy)-.5)/255.;
-  gl_FragColor = vec4(col,1.);
-}`;
 
 export const OceanBackground = memo(function OceanBackground({
   recording,
@@ -104,222 +137,217 @@ export const OceanBackground = memo(function OceanBackground({
 }: {
   recording: boolean;
   theme: "light" | "dark";
-  /** A workspace sheet hides most of the water; animate more slowly. */
+  /** A workspace sheet hides most of the water; hold the small details still. */
   covered: boolean;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const active = useRef(recording);
-  const shallow = useRef(theme === "light" ? 1 : 0);
-  const slow = useRef(covered);
-  const repaint = useRef<() => void>(() => {});
-  const [generation, setGeneration] = useState(0);
+  const palette = PALETTES[theme];
+  const oceanRef = useRef<HTMLDivElement>(null);
+  const voiceRef = useRef<HTMLDivElement>(null);
+  const coveredRef = useRef(covered);
+  coveredRef.current = covered;
+
+  // In software compositing, step the same Tailwind animations ourselves at a
+  // low frame rate: the water moves too slowly for anyone to see the
+  // difference, and the window is redrawn a fraction as often.
   useEffect(() => {
-    active.current = recording;
-  }, [recording]);
-  useEffect(() => {
-    slow.current = covered;
-  }, [covered]);
-  useEffect(() => {
-    shallow.current = theme === "light" ? 1 : 0;
-    repaint.current();
-  }, [theme]);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const gl = canvas.getContext("webgl", {
-      alpha: false,
-      antialias: false,
-      depth: false,
-      stencil: false,
-      powerPreference: "low-power",
-    });
-    if (!gl) return;
-    const shaders: WebGLShader[] = [];
-    const compile = (type: number, source: string) => {
-      const shader = gl.createShader(type);
-      if (!shader) throw new Error("Ocean shader unavailable");
-      shaders.push(shader);
-      gl.shaderSource(shader, source);
-      gl.compileShader(shader);
-      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
-        throw new Error("Ocean shader unsupported");
-      return shader;
+    const ocean = oceanRef.current;
+    if (!ocean || !softwareCompositing()) return;
+    const offsets = new WeakMap<Animation, number>();
+    const started = performance.now();
+    let last = 0;
+    const timer = setInterval(() => {
+      const now = performance.now();
+      // A covered sea barely shows; refresh it less often still.
+      if (document.hidden || now - last < (coveredRef.current ? 330 : 120))
+        return;
+      last = now;
+      for (const animation of ocean.getAnimations({ subtree: true })) {
+        if (!offsets.has(animation)) {
+          offsets.set(
+            animation,
+            Number(animation.currentTime ?? 0) - (now - started),
+          );
+          animation.pause();
+        }
+        animation.currentTime = offsets.get(animation)! + (now - started);
+      }
+    }, 45);
+    return () => {
+      clearInterval(timer);
+      for (const animation of ocean.getAnimations({ subtree: true }))
+        animation.play();
     };
-    const program = gl.createProgram();
-    if (!program) return;
-    let buffer: WebGLBuffer | null = null;
-    try {
-      gl.attachShader(program, compile(gl.VERTEX_SHADER, vertex));
-      gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragment));
-      gl.linkProgram(program);
-      if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-        throw new Error("Ocean program unsupported");
-      gl.useProgram(program);
-      buffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
-        gl.STATIC_DRAW,
-      );
-      const position = gl.getAttribLocation(program, "position");
-      gl.enableVertexAttribArray(position);
-      gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
-    } catch {
-      shaders.forEach((shader) => gl.deleteShader(shader));
-      gl.deleteProgram(program);
-      if (buffer) gl.deleteBuffer(buffer);
+  }, []);
+  const [ripples, setRipples] = useState<Ripple[]>([]);
+
+  // Voice energy brightens the water, ten updates a second and eased in CSS.
+  useEffect(() => {
+    const glow = voiceRef.current;
+    if (!glow) return;
+    if (!recording) {
+      glow.style.opacity = "0";
       return;
     }
-    const uniforms = {
-      resolution: gl.getUniformLocation(program, "resolution"),
-      pointer: gl.getUniformLocation(program, "pointer"),
-      time: gl.getUniformLocation(program, "time"),
-      voice: gl.getUniformLocation(program, "voice"),
-      touch: gl.getUniformLocation(program, "touch"),
-      shallow: gl.getUniformLocation(program, "shallow"),
-    };
-    const debug = gl.getExtension("WEBGL_debug_renderer_info");
-    const renderer = debug
-      ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL))
-      : "";
-    const software = /swiftshader|llvmpipe|software/i.test(renderer);
-    const pixelBudget = software ? 200_000 : 900_000;
-    const frameInterval = 1000 / (software ? 20 : 30);
-    let touchX = 0.5,
-      touchY = 0.5,
-      touchTime = -100;
-    const motion = matchMedia("(prefers-reduced-motion: reduce)");
-    let frame = 0,
-      last = 0,
-      elapsed = 14,
-      level = 0,
-      volume = 0;
-    let x = 0,
-      y = 0,
-      targetX = 0,
-      targetY = 0;
-    let lost = false;
-    const paint = () => {
-      gl.useProgram(program);
-      gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
-      gl.uniform2f(uniforms.pointer, x, y);
-      gl.uniform1f(uniforms.time, elapsed);
-      gl.uniform1f(uniforms.voice, volume);
-      gl.uniform3f(uniforms.touch, touchX, touchY, touchTime);
-      gl.uniform1f(uniforms.shallow, shallow.current);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-      if (!canvas.dataset.rendered) canvas.dataset.rendered = "true";
-    };
-    const animate = (now: number) => {
-      frame = 0;
-      if (lost || document.hidden || motion.matches) return;
-      if (!last || now - last >= (slow.current ? 1000 / 12 : frameInterval)) {
-        const delta = last ? Math.min((now - last) / 1000, 0.1) : 0;
-        elapsed += delta;
-        last = now;
-        x += (targetX - x) * 0.035;
-        y += (targetY - y) * 0.035;
-        volume += ((active.current ? level : 0) - volume) * 0.09;
-        paint();
-      }
-      frame = requestAnimationFrame(animate);
-    };
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = 0;
-      last = 0;
-      if (lost || document.hidden) return;
-      if (motion.matches) {
-        x = 0;
-        y = 0;
-        volume = 0;
-        paint();
-      } else frame = requestAnimationFrame(animate);
-    };
-    const resize = () => {
-      const rect = canvas.getBoundingClientRect();
-      // At most 900k pixels, independent of high-DPI monitor size.
-      const ratio = Math.min(
-        devicePixelRatio || 1,
-        1.25,
-        Math.sqrt(pixelBudget / Math.max(1, rect.width * rect.height)),
+    let level = 0;
+    const unsubscribe = captureLevelStore.subscribe(() => {
+      level = Math.min(
+        1,
+        Math.max(0, (captureLevelStore.getSnapshot().db + 55) / 45),
       );
-      canvas.width = Math.max(1, Math.round(rect.width * ratio));
-      canvas.height = Math.max(1, Math.round(rect.height * ratio));
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      if (!lost && !document.hidden) paint();
+    });
+    const timer = setInterval(() => {
+      glow.style.opacity = (0.15 + level * 0.85).toFixed(2);
+    }, 100);
+    return () => {
+      unsubscribe();
+      clearInterval(timer);
+      glow.style.opacity = "0";
     };
-    const move = (event: PointerEvent) => {
-      targetX = (event.clientX / innerWidth - 0.5) * 2;
-      targetY = (event.clientY / innerHeight - 0.5) * 2;
-    };
+  }, [recording]);
+
+  // Touching open water leaves a ring of light.
+  useEffect(() => {
+    const motion = matchMedia("(prefers-reduced-motion: reduce)");
+    let next = 0;
     const touch = (event: PointerEvent) => {
+      const target = event.target as Element | null;
       if (
         motion.matches ||
-        (event.target as Element).closest(".workspace-sheet, dialog")
+        target?.closest(
+          ".workspace-sheet, dialog, button, a, input, select, textarea, [role='menu']",
+        )
       )
         return;
-      touchX = event.clientX / innerWidth;
-      touchY = 1 - event.clientY / innerHeight;
-      touchTime = elapsed;
+      const ripple = { id: next++, x: event.clientX, y: event.clientY };
+      setRipples((current) => [...current.slice(-2), ripple]);
+      setTimeout(
+        () =>
+          setRipples((current) =>
+            current.filter((item) => item.id !== ripple.id),
+          ),
+        1700,
+      );
     };
-    const leave = () => {
-      targetX = 0;
-      targetY = 0;
-    };
-    const onLost = (event: Event) => {
-      event.preventDefault();
-      lost = true;
-      delete canvas.dataset.rendered;
-      cancelAnimationFrame(frame);
-    };
-    const onRestored = () => setGeneration((value) => value + 1);
-    const removeLevel = captureLevelStore.subscribe(() => {
-      level = (captureLevelStore.getSnapshot().db + 60) / 60;
-    });
-    const observer = new ResizeObserver(resize);
-    observer.observe(canvas);
-    document.addEventListener("visibilitychange", schedule);
-    motion.addEventListener("change", schedule);
-    window.addEventListener("pointermove", move, { passive: true });
     window.addEventListener("pointerdown", touch, { passive: true });
-    document.documentElement.addEventListener("pointerleave", leave);
-    canvas.addEventListener("webglcontextlost", onLost);
-    canvas.addEventListener("webglcontextrestored", onRestored);
-    repaint.current = () => {
-      if (!lost && !document.hidden) paint();
-    };
-    resize();
-    schedule();
-    return () => {
-      repaint.current = () => {};
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-      removeLevel();
-      document.removeEventListener("visibilitychange", schedule);
-      motion.removeEventListener("change", schedule);
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerdown", touch);
-      document.documentElement.removeEventListener("pointerleave", leave);
-      canvas.removeEventListener("webglcontextlost", onLost);
-      canvas.removeEventListener("webglcontextrestored", onRestored);
-      gl.deleteBuffer(buffer);
-      shaders.forEach((shader) => gl.deleteShader(shader));
-      gl.deleteProgram(program);
-    };
-  }, [generation]);
+    return () => window.removeEventListener("pointerdown", touch);
+  }, []);
+
   return (
-    <div className="ocean-background" aria-hidden="true">
-      {/* A pre-rendered sea for systems without WebGL (Wayland disables the GPU). */}
+    <div
+      className="pointer-events-none absolute inset-0 -z-20 overflow-hidden transition-[background] duration-700"
+      style={{ backgroundImage: palette.base }}
+      ref={oceanRef}
+      aria-hidden="true"
+      data-ocean
+    >
+      {/* Sunlit patch of surface the rays fan out from. */}
       <div
-        className="ocean-still"
+        className="absolute -top-[30%] left-[30%] size-[70vmax] -translate-x-1/2 animate-ocean-breathe will-change-transform rounded-full"
         style={{
-          backgroundImage: `url(${theme === "light" ? shallowsStill : abyssStill})`,
+          backgroundImage: `radial-gradient(circle, ${rgba(palette.glow, theme === "light" ? 0.7 : 0.32)} 0%, ${rgba(palette.glow, 0.08)} 40%, transparent 68%)`,
         }}
       />
-      <canvas ref={canvasRef} className="ocean-canvas" />
-      <div className="ocean-atmosphere" />
+
+      {/* Two fans of light shafts swaying at different speeds. */}
+      <div
+        className="absolute -inset-[10%] origin-[30%_-18%] animate-ocean-sway will-change-transform mix-blend-screen"
+        style={rays(palette.ray, 7, theme === "light" ? 0.32 : 0.11)}
+      />
+      <div
+        className="absolute -inset-[10%] origin-[30%_-18%] animate-ocean-sway-slow will-change-transform mix-blend-screen"
+        style={rays(palette.ray, 11, theme === "light" ? 0.22 : 0.07)}
+      />
+
+      {/* Dappled light: two patch fields slide past each other near the surface. */}
+      <div className="absolute inset-0" style={surfaceMask(72)}>
+        <div
+          className="absolute -inset-[25%] animate-ocean-caustic will-change-transform mix-blend-screen"
+          style={dapples(
+            palette.caustic,
+            theme === "light" ? 0.55 : 0.16,
+            186,
+            DAPPLE_A,
+          )}
+        />
+        <div
+          className="absolute -inset-[25%] animate-ocean-caustic-reverse will-change-transform mix-blend-screen"
+          style={dapples(
+            palette.caustic,
+            theme === "light" ? 0.5 : 0.14,
+            238,
+            DAPPLE_B,
+          )}
+        />
+      </div>
+
+      {/* Slow, broad currents of lighter water. */}
+      <div
+        className="absolute -inset-[20%] animate-ocean-current will-change-transform"
+        style={{
+          backgroundImage: `radial-gradient(ellipse 40% 26% at 72% 62%, ${rgba(palette.current, theme === "light" ? 0.28 : 0.16)}, transparent 70%), radial-gradient(ellipse 34% 22% at 22% 78%, ${rgba(palette.current, theme === "light" ? 0.22 : 0.12)}, transparent 70%)`,
+        }}
+      />
+
+      {/* Drifting motes, held still while a sheet covers the water. */}
+      {MOTES.map(([left, top, duration, delay, size, drift], index) => (
+        <span
+          key={index}
+          className="absolute animate-ocean-rise will-change-transform rounded-full"
+          style={
+            {
+              left: `${left}%`,
+              top: `${top}%`,
+              width: size * 2,
+              height: size * 2,
+              background: rgba(palette.mote, theme === "light" ? 0.9 : 0.6),
+              boxShadow: `0 0 ${size * 4}px ${rgba(palette.mote, 0.5)}`,
+              animationDuration: `${duration}s`,
+              animationDelay: `${delay}s`,
+              animationPlayState: covered ? "paused" : "running",
+              "--drift": `${drift}px`,
+            } as CSSProperties
+          }
+        />
+      ))}
+
+      {/* Voice glow around the pearl while recording. */}
+      <div
+        ref={voiceRef}
+        className="absolute inset-0 opacity-0 transition-opacity duration-150 ease-out"
+        style={{
+          backgroundImage: `radial-gradient(ellipse 45% 38% at 50% 46%, ${rgba(palette.voice, theme === "light" ? 0.45 : 0.2)}, transparent 70%)`,
+        }}
+      />
+
+      {ripples.map((ripple) => (
+        <span
+          key={ripple.id}
+          className="absolute size-72 animate-ocean-ripple will-change-transform rounded-full border"
+          style={{
+            left: ripple.x,
+            top: ripple.y,
+            borderColor: rgba(palette.ripple, theme === "light" ? 0.8 : 0.45),
+            boxShadow: `0 0 24px ${rgba(palette.ripple, 0.25)}, inset 0 0 24px ${rgba(palette.ripple, 0.15)}`,
+          }}
+        />
+      ))}
+
+      {/* Depth: darker edges, and a dim veil while a sheet is open. */}
+      <div
+        className={`absolute inset-0 transition-colors duration-500 ${
+          !covered
+            ? ""
+            : theme === "light"
+              ? "bg-[rgb(20_90_130/0.12)]"
+              : "bg-[rgb(1_11_24/0.28)]"
+        }`}
+        style={{
+          backgroundImage:
+            theme === "light"
+              ? "radial-gradient(ellipse at 50% 55%, transparent 30%, rgb(16 96 140 / 0.12))"
+              : "radial-gradient(ellipse at 50% 55%, transparent 18%, rgb(1 11 24 / 0.1) 65%, rgb(1 11 24 / 0.45)), linear-gradient(transparent 55%, rgb(0 10 24 / 0.35))",
+        }}
+      />
     </div>
   );
 });

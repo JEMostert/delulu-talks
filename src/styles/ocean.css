@@ -1,0 +1,79 @@
+/*
+ * Ocean motion for the React/Tailwind background (OceanBackground.tsx).
+ * Tailwind v4 turns each --animate-* into an `animate-*` utility. Only
+ * transform and opacity move, so the water stays cheap without a GPU.
+ */
+@theme {
+  --animate-ocean-sway: ocean-sway 19s ease-in-out infinite alternate;
+  --animate-ocean-sway-slow: ocean-sway 31s ease-in-out -11s infinite
+    alternate-reverse;
+  --animate-ocean-caustic: ocean-caustic 23s ease-in-out infinite alternate;
+  --animate-ocean-caustic-reverse: ocean-caustic 29s ease-in-out -7s infinite
+    alternate-reverse;
+  --animate-ocean-current: ocean-current 41s ease-in-out infinite alternate;
+  --animate-ocean-breathe: ocean-breathe 9s ease-in-out infinite alternate;
+  --animate-ocean-rise: ocean-rise linear infinite;
+  --animate-ocean-ripple: ocean-ripple 1.6s cubic-bezier(0.2, 0.7, 0.3, 1)
+    forwards;
+
+  @keyframes ocean-sway {
+    from {
+      transform: rotate(-2.5deg);
+      opacity: 0.75;
+    }
+    to {
+      transform: rotate(2.5deg);
+      opacity: 1;
+    }
+  }
+  @keyframes ocean-caustic {
+    from {
+      transform: translate3d(-3%, -1.5%, 0) scale(1);
+    }
+    to {
+      transform: translate3d(3%, 1.5%, 0) scale(1.04);
+    }
+  }
+  @keyframes ocean-current {
+    from {
+      transform: translate3d(-6%, 2%, 0) scale(1);
+    }
+    to {
+      transform: translate3d(6%, -3%, 0) scale(1.12);
+    }
+  }
+  @keyframes ocean-breathe {
+    from {
+      transform: scale(0.94);
+      opacity: 0.7;
+    }
+    to {
+      transform: scale(1.06);
+      opacity: 1;
+    }
+  }
+  @keyframes ocean-rise {
+    from {
+      transform: translate3d(0, 0, 0);
+      opacity: 0;
+    }
+    15%,
+    80% {
+      opacity: 1;
+    }
+    to {
+      transform: translate3d(var(--drift, 12px), -38vh, 0);
+      opacity: 0;
+    }
+  }
+  @keyframes ocean-ripple {
+    from {
+      transform: translate(-50%, -50%) scale(0.2);
+      opacity: 0.9;
+    }
+    to {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 0;
+    }
+  }
+}
