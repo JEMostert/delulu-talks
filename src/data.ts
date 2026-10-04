@@ -59,6 +59,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   captureSoundsMuted: true,
   speechEngine: "r2t2",
   liveTyping: true,
+  speechDevice: "auto",
   historyLimit: 50,
   captureSoundVolume: 0.15,
   preloadModel: true,

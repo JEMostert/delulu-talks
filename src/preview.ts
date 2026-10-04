@@ -513,6 +513,7 @@ export const previewApi: DeluluApi = {
   async recordingFailed() {},
   async recordingInputChanged() {},
   recordingLevel(_level: number) {},
+  recordingStream() {},
   async submitRecording(_recording: RecordingSubmission) {},
   onStatus(callback: (status: DictationStatus) => void) {
     statusListeners.add(callback);

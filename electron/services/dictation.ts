@@ -34,6 +34,7 @@ import type {
 import type { StorageService } from "./storage";
 import { getMicrophonePermission } from "./microphonePermission";
 import { RetryAudioStore, type RetryAudioLease } from "./retryAudio";
+import { LiveTyping } from "./liveTyping";
 
 type WindowProvider = {
   main(): BrowserWindow | null;
@@ -124,6 +125,9 @@ export class DictationService {
   private recorderReady = false;
   private busyNoticeTimer: NodeJS.Timeout | null = null;
   private deadline: NodeJS.Timeout | null = null;
+  /** Live typing for the current capture, when its settings allow it. */
+  private live: LiveTyping | null = null;
+  private liveFallbackNote: string | null = null;
   private busyNotice = false;
   private hud:
     Parameters<DesktopIndicatorAdapter["show"]>[0] | { state: "hidden" } = {
@@ -240,6 +244,7 @@ export class DictationService {
   recorderUnavailable(): void {
     this.recorderReady = false;
     this.clearDeadline();
+    if (this.captureState !== "processing") this.dropLive();
     this.asr.setSilenceCountdown?.(null);
     if (this.captureState !== "idle" && this.captureState !== "processing") {
       this.captureState = "idle";
@@ -315,6 +320,9 @@ export class DictationService {
     const settings = structuredClone(this.settings());
     this.captureSettings = settings;
     this.captureSessionId = randomUUID();
+    this.live = this.liveTypingAllowed(settings)
+      ? this.createLiveTyping(settings)
+      : null;
     this.captureState = "opening";
     this.armDeadline(
       OPENING_DEADLINE_MS,
@@ -328,6 +336,7 @@ export class DictationService {
       inputDeviceId: settings.inputDeviceId,
       sessionId: this.captureSessionId,
       captureProfile: captureProfileSnapshot(settings),
+      live: this.live !== null,
       trailingSilence: settings.trailingSilenceStopEnabled
         ? {
             seconds: settings.trailingSilenceSeconds,
@@ -460,6 +469,7 @@ export class DictationService {
       return;
     const sessionId = this.captureSessionId!;
     this.clearDeadline();
+    this.dropLive();
     this.captureState = "idle";
     this.captureSessionId = null;
     this.captureSettings = null;
@@ -470,6 +480,52 @@ export class DictationService {
     });
     this.setHud({ state: "hidden" });
     this.asr.setActivity("idle", "Recording cancelled");
+  }
+
+  /** Audio forwarded by the renderer while recording, for live typing. */
+  recordingStream(sessionId: string, sampleRate: number, pcm: string): void {
+    if (sessionId === this.captureSessionId) this.live?.audio(sampleRate, pcm);
+  }
+
+  /**
+   * Live typing needs automatic paste, prose dictation and no rewriting: a
+   * rewrite or code formatting must see the whole transcript before delivery.
+   */
+  private liveTypingAllowed(settings: AppSettings): boolean {
+    return (
+      settings.liveTyping &&
+      settings.autoPaste &&
+      !settings.magicEnabled &&
+      (!settings.dictationMode || settings.dictationMode === "prose") &&
+      settings.dictationFormatting !== "spoken" &&
+      this.paste.capabilities?.().pasteMethod !== "clipboard-only" &&
+      !!this.asr.liveStart
+    );
+  }
+
+  private createLiveTyping(settings: AppSettings): LiveTyping {
+    return new LiveTyping({
+      start: () => this.asr.liveStart(settings),
+      audio: (sampleRate, pcm) => this.asr.liveAudio(sampleRate, pcm),
+      finish: () => this.asr.liveFinish(),
+      shape: (text) => {
+        const formatted = settings.spokenFormattingCommands
+          ? formatSpokenCommands(text, settings.language)
+          : text;
+        return personalizeWithUsage(
+          formatted,
+          settings.customWords,
+          settings.language,
+        ).text;
+      },
+      paste: (text) => this.paste.paste(text, false, {}),
+    });
+  }
+
+  private dropLive(): void {
+    const live = this.live;
+    this.live = null;
+    void live?.cancel();
   }
 
   recordingSilence(
@@ -598,6 +654,7 @@ export class DictationService {
 
   private failCapture(message: string): void {
     this.clearDeadline();
+    this.dropLive();
     this.asr.setSilenceCountdown?.(null);
     this.captureState = "idle";
     this.captureSessionId = null;
@@ -644,6 +701,8 @@ export class DictationService {
     if (this.captureState === "processing")
       throw new Error("A recording is already being processed");
     this.captureState = "processing";
+    const live = retryLease ? null : this.live;
+    this.live = null;
     const settings =
       this.captureSettings ??
       (retryLease ? this.retrySettings : null) ??
@@ -653,16 +712,19 @@ export class DictationService {
       !(submission.wav instanceof Uint8Array) ||
       submission.wav.byteLength < 44
     ) {
+      void live?.cancel();
       this.failCapture("The microphone returned an empty recording");
       return false;
     }
     if (submission.wav.byteLength > 500 * 1024 * 1024) {
+      void live?.cancel();
       this.failCapture(
         "Recording is too large; keep dictation captures below 500 MB",
       );
       return false;
     }
     if (submission.durationMs < 180) {
+      void live?.cancel();
       this.captureState = "idle";
       this.setHud({
         state: "error",
@@ -674,6 +736,25 @@ export class DictationService {
       return true;
     }
 
+    if (live) {
+      this.asr.setActivity("transcribing", "Finishing live typing");
+      const typedLive = await live.finish();
+      if (!typedLive.failure && typedLive.raw) {
+        try {
+          this.finishLiveRecord(submission, settings, typedLive.raw);
+          return true;
+        } finally {
+          this.captureState = "idle";
+          this.captureSettings = null;
+        }
+      }
+      if (typedLive.typed) {
+        // Part of the text already reached the cursor: never paste it twice.
+        settings.autoPaste = false;
+        settings.copyToClipboard = true;
+        this.liveFallbackNote = `Live typing stopped (${typedLive.failure ?? "no text"}); the full transcript was copied`;
+      }
+    }
     const audioPath = join(
       this.storage.cacheDirectory,
       `dictation-${Date.now()}-${randomUUID()}.wav`,
@@ -845,6 +926,10 @@ export class DictationService {
         this.publishDeliveryTimings(record, output);
       if (magicFailure)
         completion = `${completion} · Rewriting unavailable: ${magicFailure}`;
+      if (this.liveFallbackNote) {
+        completion = this.liveFallbackNote;
+        this.liveFallbackNote = null;
+      }
       this.setHud({
         state: delivery === "failed" ? "error" : "success",
         title:
@@ -1073,6 +1158,46 @@ export class DictationService {
       this.removeImportDirectory(directory, error);
       throw error;
     }
+  }
+
+  /** Save a live-typed dictation; its text is already at the cursor. */
+  private finishLiveRecord(
+    submission: RecordingSubmission,
+    settings: AppSettings,
+    raw: string,
+  ): void {
+    this.retryAudio.clearAvailable();
+    this.publishRetryAudio();
+    let record = this.createRecord(
+      {
+        text: raw,
+        recognizedLanguage: settings.language,
+        speechExecution: this.asr.getStatus().speechExecution,
+      },
+      "dictation",
+      submission.durationMs,
+      null,
+      settings,
+      normalizeTimings(submission.timings) ?? {},
+    );
+    record.captureDiagnostics = normalizeCaptureDiagnostics(
+      submission.captureDiagnostics,
+    );
+    record.sessionOnly =
+      !settings.keepHistory || !this.storage.getSettings().keepHistory;
+    record = {
+      ...record,
+      delivery: {
+        state: "paste-attempted",
+        updatedAt: Date.now(),
+        detail: "Typed live while you spoke",
+        method: "live",
+      },
+    };
+    this.storage.addHistory(record);
+    this.broadcastTranscript(record);
+    this.setHud({ state: "success", title: "Typed", detail: "Live typing" });
+    this.asr.setActivity("idle", "Typed live — ready for the next dictation");
   }
 
   private createRecord(

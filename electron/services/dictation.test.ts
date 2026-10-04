@@ -299,3 +299,47 @@ test("a quick tap reports a short recording, not a microphone error", () => {
   expect(f.asr.getStatus().phase).toBe("idle");
   expect(f.service.isActive).toBe(false);
 });
+
+test("live typing pastes while recording and saves one transcript without pasting again", async () => {
+  const f = fixture({ liveTyping: true, autoPaste: true, magicEnabled: false });
+  const sent: string[] = [];
+  const deltas = ["Ship ", "the ", "release"];
+  Object.assign(f.asr, {
+    liveStart: async () => true,
+    liveAudio: async (_rate: number, pcm: string) => {
+      sent.push(pcm);
+      return deltas.shift() ?? "";
+    },
+    liveFinish: async () => ".",
+    getStatus: () => ({ phase: "idle", engine: "ready", message: "Ready" }),
+  });
+  Object.assign(f.paste, {
+    capabilities: () => ({ pasteMethod: "portal" }),
+  });
+  const sessionId = f.start();
+  expect(f.commands.at(-1)).toMatchObject({ action: "start", live: true });
+  f.service.recordingStarted(sessionId);
+  for (const pcm of ["a", "b", "c"])
+    f.service.recordingStream(sessionId, 48_000, pcm);
+  f.service.recordingStream("foreign", 48_000, "x");
+  f.service.stop();
+  await f.service.submitRecording({
+    sessionId,
+    durationMs: 1200,
+    wav: new Uint8Array(64).fill(9),
+  });
+  expect(sent).toEqual(["a", "b", "c"]);
+  expect(f.deliveries.join("")).toBe("Ship the release.");
+  expect(f.calls).toHaveLength(0);
+  expect(f.records).toHaveLength(1);
+  expect(f.records[0].text).toBe("Ship the release.");
+  expect(f.records[0].delivery?.method).toBe("live");
+});
+
+test("live typing is off when rewriting must see the whole transcript", () => {
+  const f = fixture({ liveTyping: true, autoPaste: true, magicEnabled: true });
+  Object.assign(f.asr, { liveStart: async () => true });
+  Object.assign(f.paste, { capabilities: () => ({ pasteMethod: "portal" }) });
+  f.start();
+  expect(f.commands.at(-1)).toMatchObject({ action: "start", live: false });
+});

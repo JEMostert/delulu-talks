@@ -958,6 +958,7 @@ export class AsrService {
       const runtime = await this.request<WorkerRuntime>("speech", "load", {
         cacheDir: this.storage.modelCacheDirectory,
         model: speechEngineId(settings),
+        device: settings.speechDevice,
       });
       this.loadedEngine = speechEngineId(settings);
       if (!runtime.loaded)
@@ -1123,12 +1124,12 @@ export class AsrService {
   }
 
   /** Send 16-bit PCM (base64) and receive text that became final. */
-  async liveAudio(pcm: string): Promise<string> {
+  async liveAudio(sampleRate: number, pcm: string): Promise<string> {
     if (!this.liveActive) return "";
     const result = await this.request<{ delta: string }>(
       "speech",
       "streamAudio",
-      { pcm },
+      { pcm, sampleRate: Math.round(sampleRate) },
       30_000,
     );
     return result.delta;

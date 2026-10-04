@@ -215,7 +215,6 @@ class NemotronSpeech:
         if self.model is not None:
             return self.status()
         import torch
-        from transformers import AutoModelForRNNT, AutoProcessor
         from verified_snapshot import verified_snapshot
 
         cache_root = request.get("cacheDir")
@@ -226,17 +225,30 @@ class NemotronSpeech:
             local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1",
             allow_patterns=["*.json", "*.safetensors"],
         )
-        emit_progress("Loading Nemotron weights…", stage="load")
-        cuda = torch.cuda.is_available()
+        cpu_only = request.get("device") == "cpu" or not torch.cuda.is_available()
+        try:
+            return self._load_on(source, torch, "cpu" if cpu_only else "cuda")
+        except BaseException as exc:
+            if cpu_only or "out of memory" not in str(exc).lower():
+                raise
+            # Another app holds the GPU; the 0.6B model runs fine on the CPU.
+            self.unload()
+            emit_progress("GPU memory is full — loading Nemotron on the CPU…", stage="load")
+            return self._load_on(source, torch, "cpu")
+
+    def _load_on(self, source, torch, device: str) -> dict[str, Any]:
+        from transformers import AutoModelForRNNT, AutoProcessor
+        emit_progress(f"Loading Nemotron weights on the {device.upper()}…", stage="load")
+        cuda = device == "cuda"
         dtype = (torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16) if cuda else torch.float32
         try:
             self.processor = AutoProcessor.from_pretrained(source)
             self.processor.set_num_lookahead_tokens(LOOKAHEAD_TOKENS)
             self.latency_ms = float(getattr(self.processor, "streaming_latency_ms", 0) or 0) or None
             self.model = AutoModelForRNNT.from_pretrained(
-                source, dtype=dtype, device_map={"": "cuda" if cuda else "cpu"},
+                source, dtype=dtype, device_map={"": device},
             ).eval()
-            self.device = "cuda" if cuda else "cpu"
+            self.device = device
             self.precision = {torch.bfloat16: "bf16", torch.float16: "fp16"}.get(dtype, "fp32")
             self.warmup = "warming"
             emit_progress("Warming up Nemotron speech inference…", stage="warmup")

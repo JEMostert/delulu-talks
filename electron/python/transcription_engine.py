@@ -226,6 +226,7 @@ class Worker:
         )
         self.speech_model = "r2t2"
         self.live: Any | None = None
+        self.live_resampler: Any | None = None
         self.magic_model: Any | None = None
         self.magic_processor: Any | None = None
         self.magic_model_name: str | None = None
@@ -534,6 +535,7 @@ class Worker:
         speech = self.speech_engine()
         if speech.status().get("loaded") is not True:
             raise RuntimeError("No model is loaded")
+        self.live_resampler = None
         if hasattr(speech, "stream_start"):
             self.live = "native"
             return speech.stream_start({"language": code})
@@ -547,19 +549,39 @@ class Worker:
         import base64
         import numpy as np
         raw = base64.b64decode(str(request.get("pcm", "")), validate=True)
-        if len(raw) % 2 or len(raw) > 2 * 16000 * 5:
+        rate = int(request.get("sampleRate", 16000))
+        if len(raw) % 2 or len(raw) > 2 * rate * 5:
             raise ValueError("Live audio must be 16-bit PCM, at most five seconds per piece")
-        samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
         if self.live is None:
             raise RuntimeError("No live session is active")
-        delta = self.speech.stream_audio(samples) if self.live == "native" else self.live.push(samples)
-        return {"delta": delta}
+        samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+        if rate != 16000:
+            # A stateful resampler keeps filter history across pieces: no clicks.
+            if self.live_resampler is None:
+                import soxr
+                self.live_resampler = (rate, soxr.ResampleStream(rate, 16000, 1, dtype="float32"))
+            if self.live_resampler[0] != rate:
+                raise ValueError("The live sample rate changed mid-recording")
+            samples = self.live_resampler[1].resample_chunk(samples)
+        return {"delta": self._live_push(samples)}
+
+    def _live_push(self, samples) -> str:
+        if not len(samples):
+            return ""
+        return self.speech.stream_audio(samples) if self.live == "native" else self.live.push(samples)
 
     def stream_finish(self) -> dict[str, Any]:
-        live, self.live = self.live, None
+        live, resampler = self.live, self.live_resampler
+        self.live_resampler = None
         if live is None:
             return {"delta": ""}
-        return {"delta": self.speech.stream_finish() if live == "native" else live.finish()}
+        delta = ""
+        if resampler is not None:
+            import numpy as np
+            delta = self._live_push(resampler[1].resample_chunk(np.zeros(0, dtype=np.float32), last=True))
+        self.live = None
+        tail = self.speech.stream_finish() if live == "native" else live.finish()
+        return {"delta": delta + tail}
 
     def capabilities(self, engine: str) -> dict[str, Any]:
         """Describe this pipeline without importing adapters or probing hardware."""

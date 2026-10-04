@@ -853,7 +853,8 @@ async function applySettings(
   const next = normalizeSettings({ ...previous, ...value });
   const runtimeChanged =
     next.model !== previous.model ||
-    next.speechEngine !== previous.speechEngine;
+    next.speechEngine !== previous.speechEngine ||
+    next.speechDevice !== previous.speechDevice;
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
   const assertEngineChangeIdle = () => {
     if (

@@ -208,6 +208,8 @@ const api: DeluluApi = {
   recordingInputChanged: (sessionId, message, inputLost) =>
     invoke("recorder:inputChanged", sessionId, message, inputLost),
   recordingLevel: (level: number) => send("recorder:level", level),
+  recordingStream: (sessionId: string, sampleRate: number, pcm: string) =>
+    send("recorder:stream", sessionId, sampleRate, pcm),
   submitRecording: (recording: RecordingSubmission) =>
     invoke("recorder:submit", recording),
   onStatus: (callback: (status: DictationStatus) => void) =>

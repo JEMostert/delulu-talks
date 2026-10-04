@@ -206,6 +206,8 @@ def validate_request(request: Any) -> dict[str, Any]:
             raise ValueError("Worker capabilities engine must be speech or writing")
     if command in ("load", "magicLoad") and "cacheDir" in request:
         require_string(request, "cacheDir")
+    if command == "load" and "device" in request and request["device"] not in ("auto", "cpu"):
+        raise ValueError("Unsupported speech device preference")
     if command in ("load", "transcribe") and "model" in request:
         require_string(request, "model")
         if request["model"] not in SPEECH_MODELS:
@@ -214,7 +216,11 @@ def validate_request(request: Any) -> dict[str, Any]:
         require_string(request, "language")
     if command == "streamAudio":
         require_string(request, "pcm")
-        if len(request["pcm"]) > 220_000:
+        if "sampleRate" in request:
+            require_number(request, "sampleRate", integer=True)
+            if not 8_000 <= request["sampleRate"] <= 192_000:
+                raise ValueError("Unsupported live sample rate")
+        if len(request["pcm"]) > 2_600_000:
             raise ValueError("Live audio pieces are limited to five seconds")
     if command == "magicLoad" and "model" in request:
         require_string(request, "model")

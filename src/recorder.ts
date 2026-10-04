@@ -84,6 +84,10 @@ type CaptureSession = {
   source: MediaStreamAudioSourceNode | null;
   sink: GainNode | null;
   chunks: Float32Array[];
+  /** Live typing: audio not yet forwarded to the main process. */
+  live: boolean;
+  liveChunks: Float32Array[];
+  liveLength: number;
   startedAt: number;
   lastLevelAt: number;
   stopping: boolean;
@@ -149,6 +153,7 @@ export class PcmRecorder {
           generation,
           command.sessionId!,
           command.trailingSilence,
+          command.live === true,
         );
       if (command.action === "pause" || command.action === "resume")
         await this.changePause(command.action === "pause", command.sessionId);
@@ -174,6 +179,7 @@ export class PcmRecorder {
     generation: number,
     sessionId: string,
     trailingSilence?: RecorderCommand["trailingSilence"],
+    live = false,
   ): Promise<void> {
     if (this.session || generation !== this.generation) return;
     let cancel!: () => void;
@@ -205,6 +211,9 @@ export class PcmRecorder {
       source: null,
       sink: null,
       chunks: [],
+      live,
+      liveChunks: [],
+      liveLength: 0,
       startedAt: 0,
       lastLevelAt: 0,
       stopping: false,
@@ -343,7 +352,15 @@ export class PcmRecorder {
     );
     if (accepted <= 0) return;
     samples = samples.subarray(0, accepted);
-    session.chunks.push(new Float32Array(samples));
+    const copy = new Float32Array(samples);
+    session.chunks.push(copy);
+    if (session.live) {
+      session.liveChunks.push(copy);
+      session.liveLength += copy.length;
+      // About five forwards a second keeps typing responsive and IPC light.
+      if (session.liveLength >= session.context!.sampleRate * 0.2)
+        this.flushLive(session);
+    }
     for (const sample of samples) {
       session.peakAmplitude = Math.max(session.peakAmplitude, Math.abs(sample));
       session.sumSquares += sample * sample;
@@ -385,6 +402,25 @@ export class PcmRecorder {
     }
     bridge.recordingLevel(audibleLevel(level));
     session.liveLevel?.sample(level);
+  }
+
+  private flushLive(session: CaptureSession): void {
+    if (!session.live || !session.liveLength || !session.context) return;
+    const samples = merge(session.liveChunks);
+    session.liveChunks = [];
+    session.liveLength = 0;
+    const pcm = new Int16Array(samples.length);
+    for (let index = 0; index < samples.length; index += 1)
+      pcm[index] = Math.max(-1, Math.min(1, samples[index])) * 0x7fff;
+    const bytes = new Uint8Array(pcm.buffer);
+    let binary = "";
+    for (let index = 0; index < bytes.length; index += 0x8000)
+      binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+    bridge.recordingStream(
+      session.sessionId,
+      session.context.sampleRate,
+      btoa(binary),
+    );
   }
 
   private async playCue(
@@ -567,6 +603,7 @@ export class PcmRecorder {
         });
       }
       if (!this.current(session)) return;
+      this.flushLive(session);
       const captured = merge(session.chunks);
       const durationMs = Math.round((captured.length / sampleRate) * 1000);
       const captureDiagnostics: CaptureDiagnostics = {

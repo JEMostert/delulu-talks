@@ -375,6 +375,12 @@ export const ipcRequestSchemas = {
     requestText(id, 128),
   ]),
   "recorder:submit": schema(1, ([value]) => [parseRecording(value)]),
+  "recorder:stream": schema(3, ([id, rate, pcm]) => {
+    const sampleRate = finiteNumber(rate, "stream sample rate");
+    if (sampleRate < 8_000 || sampleRate > 192_000)
+      throw new Error("Unsupported stream sample rate");
+    return [requestText(id, 128), sampleRate, requestText(pcm, 300_000)];
+  }),
   "recorder:level": schema(1, ([value]) => [
     Math.min(1, Math.max(0, finiteNumber(value, "recording level"))),
   ]),

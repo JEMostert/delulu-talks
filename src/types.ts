@@ -120,6 +120,8 @@ export type AppSettings = {
   speechEngine: "r2t2" | "nemotron";
   /** Type text into the focused app while you speak (needs paste, no rewriting). */
   liveTyping: boolean;
+  /** Where Nemotron runs; "cpu" keeps the GPU completely free. */
+  speechDevice: "auto" | "cpu";
   /** Saved transcripts beyond this many are removed, oldest first. */
   historyLimit: number;
   captureSoundVolume: number;
@@ -442,6 +444,8 @@ export type RecorderCommand = {
   /** Native commands identify their capture; standalone capture can omit this. */
   sessionId?: string;
   captureProfile?: CaptureProfileSnapshot;
+  /** Stream audio to the main process while recording, for live typing. */
+  live?: boolean;
 };
 
 export type RecordingSubmission = {
@@ -659,6 +663,8 @@ export type DeluluApi = SelectedTextApi & {
     inputLost: boolean,
   ): Promise<void>;
   recordingLevel(level: number): void;
+  /** Live typing: 16-bit PCM (base64) at the capture's native rate. */
+  recordingStream(sessionId: string, sampleRate: number, pcm: string): void;
   submitRecording(recording: RecordingSubmission): Promise<void>;
   onPasteLastStatus(callback: (status: PasteLastStatus) => void): () => void;
   onStatus(callback: (status: DictationStatus) => void): () => void;
