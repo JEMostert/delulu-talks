@@ -337,6 +337,7 @@ export async function nativeWorkerSources(
   const hashes: Record<string, string> = {};
   for (const name of [
     "transcription_engine.py",
+    "spoken_corrections.py",
     "speech_engine.py",
     "metal_speech.py",
     "windows_speech.py",

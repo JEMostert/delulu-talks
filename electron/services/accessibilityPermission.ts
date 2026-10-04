@@ -1,4 +1,4 @@
-import { systemPreferences } from "electron";
+import electron from "electron";
 import type { AccessibilityPermission } from "../../src/types";
 
 const accessibilitySettings =
@@ -16,7 +16,7 @@ export function getAccessibilityPermission(
   }
 
   try {
-    if (systemPreferences.isTrustedAccessibilityClient(false)) {
+    if (electron.systemPreferences.isTrustedAccessibilityClient(false)) {
       return {
         state: "granted",
         canAttemptPaste: true,

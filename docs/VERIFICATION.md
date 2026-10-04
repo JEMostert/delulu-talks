@@ -1,26 +1,18 @@
 # Testing
 
-Keep this hobby project's suite focused on failures that break dictation or lose data.
+Keep this hobby project's suite focused on failures that break dictation, paste incorrect text, leak private results, or lose data. The unit suite is rebuilt from scratch; the two existing browser tests are retained.
 
-| Command                | Scope                                                                                                                                                 |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bun run test`         | Storage corruption/write failures, dictation and paste safety, installer recovery, worker messages. Uses temporary files and mocked desktop adapters. |
-| `bun run test:python`  | Speech backend loading, transcription, cleanup and failure recovery with fake models. No downloads or GPU required.                                   |
-| `bun run test:e2e`     | Chromium microphone capture, final audio flush and resource cleanup using synthetic audio.                                                            |
-| `bun run test:desktop` | Optional real Electron/preload/IPC smoke check using an isolated temporary profile. Builds first.                                                     |
+| Command               | Scope                                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------- |
+| `bun run test`        | All high-value TypeScript and Python unit tests. The default quick check.                           |
+| `bun run test:unit`   | TypeScript units only, using Bun.                                                                   |
+| `bun run test:python` | Python units using standard-library unittest. No model dependencies required.                       |
+| `bun run test:e2e`    | Existing Chromium microphone tests: final partial audio delivery and cancellation/resource cleanup. |
 
-CI runs the unit, Python, browser and isolated desktop checks, plus formatting,
-typechecking and a build. Release jobs build native packages.
+Unit tests cover atomic persistence failures, corrupt/future profiles, history privacy and ownership, dictation retry/delivery, verified update download/restart safety, clipboard safety, protocol boundaries, runtime rollback, exact shortcut blocks, original/edit/rewrite preservation, technical editing undo, and bounded private transcript retention. They use direct calls, fake model/desktop adapters and small temporary profiles; they never start Electron, model workers or GPU runtimes. There are no snapshot or visual-variant unit tests, coverage percentage targets, or subprocess fixtures.
 
-For an optional real-model smoke check, use an existing runtime and model cache:
+Run `bun run test` during development. Run `bun run test:e2e` after capture/renderer changes; install its browser once with `bunx playwright install chromium`. Tests are not attached to dev-server startup, build commands or Git hooks. CI runs units, the existing browser tests, formatting, typechecking and a production build. Native CI jobs run TypeScript units on macOS and Windows too.
 
-```sh
-/path/to/runtime/python scripts/runtime-smoke.py --cache /path/to/models
-```
+The old installer process fixtures and desktop/native smoke test suites have been removed. Optional hardware investigations use the existing [native inference harness](NATIVE_HARNESS.md) or benchmark tools. Unit/browser results do not establish physical microphone recognition, native GPU inference, or paste into another application.
 
-Add `--magic` to exercise the optional rewriting model. This runs local inference
-on `test-audio.m4a`; it is not an accuracy benchmark. Check real microphone,
-shortcut and paste behavior manually on your target desktop before a release.
-
-Add a regression test when fixing a meaningful bug. Avoid exhaustive UI variants,
-repeated fixtures across layers, and tests of reporting machinery.
+Add a unit test when a meaningful bug threatens one of these behaviors. Prefer one scenario that asserts a user-visible outcome over exhaustive combinations or tests of constants, getters, styling and reporting machinery.

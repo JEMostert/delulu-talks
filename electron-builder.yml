@@ -16,6 +16,8 @@ files:
   - package.json
   - "!node_modules/usocket/**"
 extraResources:
+  - from: electron/python/spoken_corrections.py
+    to: python/spoken_corrections.py
   - from: electron/python/speech_engine.py
     to: python/speech_engine.py
   - from: electron/python/verified_snapshot.py

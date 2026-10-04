@@ -14,7 +14,7 @@ import {
   withoutRewriteTimings,
 } from "../../src/pipelineTimings";
 import { normalizeSpeechExecution } from "../../src/speechModels";
-import { app } from "electron";
+import electron from "electron";
 import { isMagicPreset } from "../../src/rewritePresets";
 import {
   backupProfileMigration,
@@ -160,10 +160,14 @@ function stageJson(path: string, value: unknown): string {
   }
 }
 
-function writeJson(path: string, value: unknown): void {
+export function writeProfileJson(
+  path: string,
+  value: unknown,
+  publish: typeof renameSync = renameSync,
+): void {
   const temporary = stageJson(path, value);
   try {
-    renameSync(temporary, path);
+    publish(temporary, path);
   } catch (error) {
     try {
       rmSync(temporary, { force: true });
@@ -582,8 +586,17 @@ export class StorageService {
   private history: TranscriptRecord[];
   private historyPins = new Set<string>();
 
-  constructor() {
-    this.dataDirectory = app.getPath("userData");
+  constructor(
+    private readonly application: Pick<
+      Electron.App,
+      "getPath" | "isPackaged"
+    > = electron.app,
+    private readonly writeProfile: (
+      path: string,
+      value: unknown,
+    ) => void = writeProfileJson,
+  ) {
+    this.dataDirectory = application.getPath("userData");
     this.cacheDirectory = join(this.dataDirectory, "audio-cache");
     this.venvDirectory = join(this.dataDirectory, "speech-venv");
     const dedicatedMagicVenv = join(this.dataDirectory, "magic-venv");
@@ -691,14 +704,15 @@ export class StorageService {
         if (stagedHistory) rmSync(stagedHistory, { force: true });
       }
     } else {
-      if (historyChanged) writeJson(historyPath, this.history);
-      writeJson(settingsPath, this.settings);
+      if (historyChanged) this.writeProfile(historyPath, this.history);
+      if (settingsChanged || !existsSync(settingsPath))
+        this.writeProfile(settingsPath, this.settings);
     }
   }
 
   private findLegacyDirectory(): string | null {
-    if (!app.isPackaged) return null;
-    const home = app.getPath("home");
+    if (!this.application.isPackaged) return null;
+    const home = this.application.getPath("home");
     const candidates =
       process.platform === "linux"
         ? [
@@ -741,7 +755,7 @@ export class StorageService {
       personalProfiles: document,
       activePersonalProfile,
     });
-    writeJson(join(this.dataDirectory, SETTINGS_FILE), next);
+    this.writeProfile(join(this.dataDirectory, SETTINGS_FILE), next);
     this.settings = next;
     return this.getSettings();
   }
@@ -765,7 +779,7 @@ export class StorageService {
         .slice(MAX_HISTORY)
         .filter((item) => this.historyPins.has(item.id)),
     ];
-    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.writeProfile(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
   }
 
@@ -774,7 +788,8 @@ export class StorageService {
   }
 
   findHistory(id: string): TranscriptRecord | undefined {
-    return this.history.find((item) => item.id === id);
+    const record = this.history.find((item) => item.id === id);
+    return record ? structuredClone(record) : undefined;
   }
 
   updateTranscript(id: string, text: string | null): TranscriptRecord {
@@ -784,7 +799,7 @@ export class StorageService {
     const next = this.history.map((item, itemIndex) =>
       itemIndex === index ? updated : item,
     );
-    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.writeProfile(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
     return structuredClone(updated);
   }
@@ -799,24 +814,25 @@ export class StorageService {
     const next = this.history.map((item, itemIndex) =>
       itemIndex === index ? updated : item,
     );
-    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.writeProfile(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
     return structuredClone(updated);
   }
 
   replaceHistory(record: TranscriptRecord): void {
     record = versionPersistedRecord(record, "transcript");
-    if (!this.findHistory(record.id)) throw new Error("Transcript not found");
+    if (!this.history.some((item) => item.id === record.id))
+      throw new Error("Transcript not found");
     const next = this.history.map((item) =>
       item.id === record.id ? record : item,
     );
-    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.writeProfile(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
   }
 
   deleteHistory(id: string): void {
     const next = this.history.filter((item) => item.id !== id);
-    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.writeProfile(join(this.dataDirectory, HISTORY_FILE), next);
     removeMigrationHistoryBackups(this.dataDirectory);
     this.history = next;
   }
@@ -824,7 +840,7 @@ export class StorageService {
   deleteHistorySelection(ids: readonly string[]): void {
     const removed = new Set(ids);
     const next = this.history.filter((record) => !removed.has(record.id));
-    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.writeProfile(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
   }
 
@@ -839,12 +855,12 @@ export class StorageService {
     const removed = new Set(ids);
     const next = this.history.filter((record) => !removed.has(record.id));
     // Publish the complete filtered snapshot before changing memory; retained records are untouched.
-    writeJson(join(this.dataDirectory, HISTORY_FILE), next);
+    this.writeProfile(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
   }
 
   clearHistory(): void {
-    writeJson(join(this.dataDirectory, HISTORY_FILE), []);
+    this.writeProfile(join(this.dataDirectory, HISTORY_FILE), []);
     removeMigrationHistoryBackups(this.dataDirectory);
     this.history = [];
   }

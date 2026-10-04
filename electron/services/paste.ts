@@ -1,5 +1,9 @@
-import { clipboard } from "electron";
-import { ClipboardRestore } from "./clipboardRestore";
+import electron from "electron";
+import {
+  ClipboardRestore,
+  type ClipboardIo,
+  type ClipboardRestoreClock,
+} from "./clipboardRestore";
 import { spawn, spawnSync } from "node:child_process";
 import {
   sessionBus,
@@ -34,6 +38,10 @@ export type PasteIo = {
   spawn?: typeof spawn;
   spawnSync?: typeof spawnSync;
   getShortcut?: () => PasteShortcut;
+  clipboard?: ClipboardIo;
+  restoreClock?: ClipboardRestoreClock;
+  delay?: (milliseconds: number) => Promise<void>;
+  accessibilityPermission?: typeof getAccessibilityPermission;
 };
 
 const APP_ID = "delulu-talks";
@@ -53,7 +61,7 @@ export class PasteService {
   private readonly kdeWayland: boolean;
   private readonly qdbus: string | null;
   private readonly command: PasteCommand | null;
-  private readonly clipboardRestore = new ClipboardRestore();
+  private readonly clipboardRestore: ClipboardRestore;
   private bus: ConnectedBus | null = null;
   private remoteDesktop: PortalInterface | null = null;
   private portalSession: string | null = null;
@@ -66,6 +74,7 @@ export class PasteService {
       undefined,
     private readonly io: PasteIo = {},
   ) {
+    this.clipboardRestore = new ClipboardRestore(io.clipboard, io.restoreClock);
     this.platform = io.platform ?? process.platform;
     this.env = io.env ?? process.env;
     this.waylandPortal =
@@ -140,7 +149,7 @@ export class PasteService {
   }
 
   private publishClipboard(text: string): void {
-    clipboard.writeText(text);
+    (this.io.clipboard ?? electron.clipboard).writeText(text);
     // Native-Wayland Electron can retain clipboard ownership without Klipper
     // observing the new text, causing Ctrl+V in another app to paste the
     // previous clipboard item. Publish through Plasma's clipboard service as
@@ -219,7 +228,9 @@ export class PasteService {
     const finishRestore = prepareRestore?.();
     try {
       if (this.platform === "darwin") {
-        const accessibility = getAccessibilityPermission(this.platform);
+        const accessibility = (
+          this.io.accessibilityPermission ?? getAccessibilityPermission
+        )(this.platform);
         if (!accessibility.canAttemptPaste)
           throw new Error(`The transcript was copied; ${accessibility.detail}`);
       }
@@ -233,7 +244,7 @@ export class PasteService {
         throw new Error(
           "no compatible input injector is available; the transcript is on the clipboard",
         );
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 120));
+      await this.delay(120);
       await new Promise<void>((resolvePaste, reject) => {
         const child = (this.io.spawn ?? spawn)(command.program, command.args, {
           windowsHide: true,
@@ -271,7 +282,7 @@ export class PasteService {
     const remoteDesktop = this.remoteDesktop;
     const session = this.portalSession;
     // Let the portal dialog close and restore focus before emitting paste.
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 220));
+    await this.delay(220);
     const keys = [KEYSYM_LEFTCTRL];
     if (shortcut === "terminal") keys.push(KEYSYM_LEFTSHIFT);
     keys.push(KEYSYM_V);
@@ -300,6 +311,13 @@ export class PasteService {
       // Attempt every release without masking the original injection failure.
       if (!pressFailed && releaseFailed) throw releaseError;
     }
+  }
+
+  private delay(milliseconds: number): Promise<void> {
+    return (
+      this.io.delay?.(milliseconds) ??
+      new Promise((resolve) => setTimeout(resolve, milliseconds))
+    );
   }
 
   private ensurePortalSession(): Promise<void> {

@@ -1,4 +1,3 @@
-import { session } from "electron";
 import type { RecordingSubmission } from "../../src/types";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";

@@ -198,16 +198,20 @@ export function previewPersonalization(
     if (!rules.has(trigger)) rules.set(trigger, { output, rule });
   }
   const literals = technicalRanges(text);
+  let literalIndex = 0;
   const matches: RuleMatch[] = [];
   let result = "";
   let cursor = 0;
   if (rules.size) {
     for (const match of phraseMatches(text, rules)) {
+      while (
+        literalIndex < literals.length &&
+        literals[literalIndex].end <= match.index
+      )
+        literalIndex++;
       if (
-        literals.some(
-          (range) =>
-            range.start < match.index + match.length && range.end > match.index,
-        )
+        literalIndex < literals.length &&
+        literals[literalIndex].start < match.index + match.length
       )
         continue;
       result += text.slice(cursor, match.index) + match.output.output;

@@ -1,7 +1,7 @@
 {
   "name": "delulu-talks",
   "private": true,
-  "version": "0.10.0",
+  "version": "0.10.1",
   "type": "module",
   "description": "Private, local-first system-wide R2T2 dictation with MLX and CUDA acceleration",
   "author": {
@@ -19,18 +19,17 @@
     "build": "bun run typecheck && electron-vite build",
     "preview": "electron-vite preview",
     "preview:web": "vite preview",
-    "test": "bun test",
+    "test": "bun run test:unit && bun run test:python",
     "dist": "bun run build && electron-builder",
     "dist:linux": "bun run build && electron-builder --linux AppImage pacman tar.xz",
     "dist:mac": "bun run build && electron-builder --mac dmg zip",
     "dist:win": "bun run build && electron-builder --win nsis zip",
     "test:e2e": "playwright test",
-    "test:desktop": "bun run build && node scripts/desktop-smoke.mjs",
     "backup:dry-run": "node scripts/backup-restore-dry-run.mjs",
     "format": "prettier --write src electron/**/*.ts electron/*.ts tests scripts/*.mjs playwright.config.ts",
     "format:check": "prettier --check src electron/**/*.ts electron/*.ts tests scripts/*.mjs playwright.config.ts",
-    "test:python": "python3 -m unittest discover -s electron/python -p \"*_test.py\"",
-    "test:native": "python3 scripts/runtime-smoke.py"
+    "test:python": "bun scripts/python-unit-tests.mjs",
+    "test:unit": "bun test ./src ./electron ./tests/unit"
   },
   "dependencies": {
     "dbus-next": "^0.10.2",

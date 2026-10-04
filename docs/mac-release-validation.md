@@ -1,5 +1,7 @@
 # Historical Apple Silicon validation — v0.9.4
 
+Historical validation record. The desktop smoke commands below were removed when the test suite was rebuilt; current commands are in [testing](VERIFICATION.md) and [native inference](NATIVE_HARNESS.md).
+
 > This record covers the previous **Qwen3-ASR-0.6B / vLLM Metal** implementation. The current R2T2 MLX adapter has not yet passed native validation. See [current Mac support and acceptance steps](MAC_SUPPORT.md).
 
 This historical record reports validation on an arm64 Mac running macOS 26.6.2 on 2026-09-21. Its requirements were macOS 15+ and native arm64 Python 3.12. Its model, server dependencies, language behavior and test counts describe that older implementation. They are not acceptance results for the current direct R2T2 MLX adapter.

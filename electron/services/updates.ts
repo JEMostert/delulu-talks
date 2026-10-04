@@ -130,6 +130,9 @@ export class UpdateService {
       this.stageCompletedDownload(attempt);
     });
     this.updater.on("error", (error) => {
+      // A late update-check/network error cannot invalidate an artifact that
+      // already passed the updater's download validation.
+      if (this.readyVersion && !this.downloadAttempt) return;
       this.downloadAttempt = null;
       this.readyVersion = null;
       this.update({ phase: "error", message: errorMessage(error) });

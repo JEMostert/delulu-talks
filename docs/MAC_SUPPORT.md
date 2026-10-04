@@ -49,20 +49,4 @@ On a real Apple Silicon Mac:
 6. Exercise permission denial/re-grant, shortcut behavior, sleep/wake, and paste into actual applications.
 7. Build the package and run the isolated package replacement check. Record native evidence in a new document before publishing this backend as validated.
 
-After Models finishes setup, close the ordinary app before sharing its runtime with smoke checks. Use an absolute `DELULU_TEST_DATA_DIR` pointing to that existing data directory:
-
-```sh
-bun run build
-bun run test:desktop -- --metadata /path/to/mac-native-metadata.json "$DELULU_TEST_DATA_DIR" --lifecycle
-bun run test:mac-package -- "release/mac-arm64/Delulu Talks.app"
-```
-
-For offline worker-only inference, use the **active speech generation's Python**, not a rewriting-only environment:
-
-```sh
-bun run test:native -- --metadata /path/to/mac-native-metadata.json --python /path/to/speech-venv/generations/active-generation/bin/python --cache /path/to/models
-```
-
-Supply actual Mac hardware, installed checkpoint and runtime revisions in the metadata file, with `modelId: "r2t2"` and `backend: "mlx"`; [verification reporting](VERIFICATION.md#opt-in-native-checks) documents the full shape and separate manual observations. Here the model id identifies R2T2 independently of the application's `r2t2Mlx` backend choice. The wrapper requires an actual nonempty R2T2 result and matching backend, so a historical Qwen result cannot become current native evidence. Metadata itself is supplied provenance, not independently discovered hardware evidence.
-
-The linked-profile Electron inference check uses temporary settings/history and the existing runtime/cache. It does not repair or install that runtime. The real-inference commands require already-cached weights. The package command intentionally accepts no runtime argument and reports fixture-only evidence. Its successful replacement/relaunch does not establish Metal inference. Keep reports from a clean tested revision, and record microphone, permissions and paste into actual applications separately as manual evidence. Mocked test success is not a substitute for these runs.
+After Models finishes setup, use the active speech generation’s Python and already-cached weights with the [native inference harness](NATIVE_HARNESS.md). The previous desktop/package smoke test commands were removed from the focused test suite. Record actual hardware, checkpoint/runtime revisions, permission behavior, microphone recognition and delivery into applications separately; passing unit/browser tests does not establish native inference.

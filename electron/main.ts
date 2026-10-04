@@ -859,7 +859,11 @@ async function start(): Promise<void> {
       broadcast("updates:statusChanged", status);
       rebuildTrayMenu();
     },
-    () => !dictation?.isActive && !asr.isBusy,
+    () =>
+      !dictation?.isActive &&
+      !asr.isBusy &&
+      !paste.isBusy &&
+      !settingsQueue.busy,
     process.platform === "darwin"
       ? "This unsigned Mac build uses manual updates. Download the new DMG from Releases, quit Delulu, replace the app, and reopen it. Your settings and models are preserved."
       : undefined,

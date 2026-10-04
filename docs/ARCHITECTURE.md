@@ -56,13 +56,10 @@ App updates are explicit downloads. The updater disables automatic installation 
 
 ## Verification
 
-- `bun test`: state, storage normalization, delivery/retry, export, portal, worker transport, update and queue regressions.
-- `bun run test:e2e`: browser navigation/layout checks in both themes, editable personalization persistence, transcript corrections, modal focus, contextual rewrites, startup recovery, recording Stop availability, personalized search and real browser PCM capture using a synthetic microphone.
-- `bun run test:desktop`: builds and launches Electron with isolated temporary user data. Checks sandboxed preload, settings IPC, diagnostics and setup dialogs without registering global shortcuts or changing login/desktop integration.
-- `node scripts/renderer-recovery-smoke.mjs`: real Electron render failure, recovery diagnostics and guarded reload using isolated fixture settings/history; no model download or native inference. Run under Xvfb on headless Linux.
-- `node scripts/desktop-smoke.mjs "/path/to/existing/user-data"`: opt-in real Electron inference using an existing runtime and cached models, with temporary settings/history and no clipboard/paste; checks correction/export/deletion with history saving disabled.
-- `scripts/runtime-smoke.py`: opt-in offline inference using the committed audio sample and already-downloaded models. Reports timings and output sizes without printing transcript contents.
-- `bun run format:check`, `bun run typecheck`, `bun run build`, Python syntax validation, and Linux packaging complete the local checks.
+- `bun run test`: fast TypeScript and dependency-free Python unit tests for data preservation, exact text blocks, delivery/retry, worker validation, and runtime rollback.
+- `bun run test:e2e`: the two existing Chromium capture tests, using synthetic microphone audio to check final worklet flushing and cancellation cleanup.
+- `bun run format:check`, `bun run typecheck`, and `bun run build`: source and production build checks.
+- The [native inference harness](NATIVE_HARNESS.md) remains an optional manual hardware check using already-cached models. It does not run in the test suite.
 
 ## Architecture review
 

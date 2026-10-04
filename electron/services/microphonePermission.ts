@@ -1,4 +1,4 @@
-import { systemPreferences } from "electron";
+import electron from "electron";
 import type { MicrophonePermission } from "../../src/types";
 
 const microphoneSettings = "System Settings → Privacy & Security → Microphone";
@@ -13,7 +13,7 @@ export function getMicrophonePermission(): MicrophonePermission {
   }
 
   try {
-    const state = systemPreferences.getMediaAccessStatus("microphone");
+    const state = electron.systemPreferences.getMediaAccessStatus("microphone");
     switch (state) {
       case "not-determined":
         return {

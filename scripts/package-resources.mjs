@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 export const REQUIRED_RESOURCES = [
   "python/transcription_engine.py",
   "python/speech_engine.py",
+  "python/spoken_corrections.py",
   "python/verified_snapshot.py",
   "python/cuda_preflight.py",
   "python/worker_protocol.py",

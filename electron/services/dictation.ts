@@ -125,6 +125,7 @@ export class DictationService {
     private readonly recordRuleUsage: (
       counts: Record<string, number>,
     ) => void = () => {},
+    private readonly microphonePermission = getMicrophonePermission,
   ) {}
 
   private settings(): AppSettings {
@@ -263,7 +264,7 @@ export class DictationService {
       );
       return;
     }
-    const microphone = getMicrophonePermission();
+    const microphone = this.microphonePermission();
     if (!microphone.canRequestCapture) {
       this.asr.setActivity("error", microphone.detail);
       this.setHud({

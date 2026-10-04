@@ -87,7 +87,7 @@ Speech stays ready by default. The optional writing model loads on demand; you c
 
 On Apple Silicon with macOS 15+, Delulu selects the approximately 4.1 GB [R2T2 BF16 MLX conversion](https://huggingface.co/mlx-community/Confucius4-R2T2-bf16). This preserves the preferred fine-tune instead of substituting Qwen3-ASR-0.6B. The checkpoint revision and runtime packages are pinned. Language hints are available; missing or mixed detected language stays unknown. Existing vLLM Metal installations need **Update setup/Repair** for the new runtime.
 
-**The new R2T2 Mac route is implemented but has not passed native Apple Silicon inference validation in this development pass.** See [Mac support, evidence boundaries and acceptance steps](docs/MAC_SUPPORT.md#native-release-acceptance). The [historical v0.9.4 validation](docs/mac-release-validation.md) applies to Qwen3-ASR-0.6B through vLLM Metal, not the current direct R2T2 MLX Audio route. Speech is currently buffered until recording stops; true R2T2 streaming remains roadmap work.
+**The new R2T2 Mac route is implemented but has not passed native Apple Silicon inference validation in this development pass.** See [Mac support, evidence boundaries and acceptance steps](docs/MAC_SUPPORT.md#native-release-acceptance). The [historical v0.9.4 validation](docs/mac-release-validation.md) applies to Qwen3-ASR-0.6B through vLLM Metal, not the current direct R2T2 MLX Audio route. Dictation is buffered on all platforms: capture completes before transcription and paste. See [the capture boundary](docs/audio-stream-protocol.md).
 
 Linux CUDA retains the existing R2T2/vLLM backend. Windows CUDA uses a separate PyTorch/Transformers adapter because upstream vLLM does not support native Windows. **The Windows adapter also requires native hardware validation.** See [Windows support](docs/WINDOWS_SUPPORT.md). Intel Macs and Rosetta Python are unsupported. R2T2 is the only speech model offered; [model research](docs/MODEL_RESEARCH.md) keeps alternatives as external benchmark references. Optional Qwen 3.5 rewriting remains available.
 
@@ -163,15 +163,13 @@ Electron main process
 ```bash
 bun run typecheck
 bun run test
-bun run test:python
 bun run test:e2e
-bun run test:desktop
 bun run build
 python3 -m py_compile electron/python/transcription_engine.py
 bun run dist:linux
 ```
 
-Linux packaging produces AppImage, pacman, and `tar.xz` artifacts. The release workflow verifies browser and isolated desktop workflows, then builds native Linux, macOS, and Windows packages on version tags. A tag must match the package version before it can publish.
+Linux packaging produces AppImage, pacman, and `tar.xz` artifacts. The release workflow runs the focused unit and existing browser tests, then builds native Linux, macOS, and Windows packages on version tags. A tag must match the package version before it can publish.
 
 </details>
 
@@ -209,10 +207,10 @@ Delulu Talks is [MIT licensed](LICENSE). Vendored conversion helpers and their l
 
 ## Development checks
 
-The small regression suite covers data persistence, dictation and paste safety,
-installer recovery, worker messages, and speech backend failure handling. One
-browser test file checks actual microphone capture and cleanup with synthetic
-audio. An optional Electron smoke check exercises the desktop IPC path.
+The focused unit suite covers data preservation, dictation recovery, paste safety,
+worker messages, exact text blocks, and runtime rollback.
+`bun run test` runs both TypeScript and dependency-free Python units; the existing
+browser tests run separately and check microphone capture and cleanup with synthetic audio.
 See [testing](docs/VERIFICATION.md) for commands and scope.
 
 Development uses its own **Delulu Talks Dev** profile, audio cache, and Linux desktop entry. It does not import production history, overwrite the installed launcher, automatically bind the production shortcut, or change login startup. `DELULU_USER_DATA_DIR` is an explicit development/test override; do not point it at your everyday profile.
@@ -225,25 +223,13 @@ Cold starts load model weights into GPU memory. **Settings → Runtime → Keep 
 bun run format:check
 bun run typecheck
 bun run test
-bun run test:python
 bunx playwright install chromium
 bun run test:e2e
-bun run test:desktop
 ```
 
-The desktop smoke check uses temporary user data and skips global desktop integration. For opt-in real model verification with an existing runtime and cached models:
-
-```bash
-/path/to/active-speech-generation/bin/python scripts/runtime-smoke.py --cache /path/to/models
-```
-
-To exercise the full Electron transcription, correction and export path with the same existing runtime:
-
-```bash
-bun run test:desktop -- "/path/to/Delulu Talks user data"
-```
-
-Add `--lifecycle --writing` to test three real speech unload/reload/transcribe cycles, Writing, and a return to speech. Close the everyday app first so the test has enough GPU memory. The test uses temporary settings/history and the existing cached models; it does not install or repair the linked runtimes.
+For optional real-model validation with an existing runtime and cached models,
+use the [native inference harness](docs/NATIVE_HARNESS.md). These hardware checks
+are separate from the fast test suite.
 
 For cold-start and first-response latency, close the everyday app and run:
 
@@ -255,6 +241,6 @@ This reports startup including synthetic inference warm-up, then first, changed-
 
 Ready now follows a bounded synthetic transcription warm-up. Recording timings include worker communication and any on-demand model load, rather than just GPU inference; they do not include microphone capture, optional Writing, or paste delivery. Short dictations time out after two minutes, longer captures scale up to fifteen minutes, and imported files allow fifteen minutes. Model installation/loading retains a separate download-sized deadline. Busy shortcut notices dismiss on release, cancellation, readiness, or after two seconds, without queuing an unexpected recording.
 
-This uses temporary settings/history, disables clipboard/paste, and runs offline against cached models. The Python command uses the active speech runtime; rewriting is separate. It also runs offline against the included short audio sample. It is a smoke check, not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
+The benchmark uses the active speech runtime and cached models, with no clipboard/paste delivery. It measures a supplied audio sample; it is not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
 
-The [historical roadmap](https://github.com/JEMostert/delulu-talks/issues/14) now serves as a record of the broader plan. The current scope is the desktop dictation app: R2T2 speech, explicit profiles and vocabulary, a technical text buffer, optional local Qwen 3.5 rewrite previews, and local history and audio imports. CLI/API servers, editor extensions, watched folders, cloud/account features and meeting-summary pipelines are outside this scope. Acoustic streaming and experimental GPU tuning are deferred. Automated fixtures do not establish native MLX/CUDA inference, physical microphone behavior or delivery into another application. Native platform acceptance remains pending.
+The [historical roadmap](https://github.com/JEMostert/delulu-talks/issues/14) now serves as a record of the broader plan. The current scope is the desktop dictation app: R2T2 speech, explicit profiles and vocabulary, a technical text buffer, optional local Qwen 3.5 rewrite previews, and local history and audio imports. CLI/API servers, editor extensions, watched folders, cloud/account features and meeting-summary pipelines are outside this scope. The unfinished live streaming experiment has been removed; all platforms use buffered capture. Automated fixtures do not establish native MLX/CUDA inference, physical microphone behavior or delivery into another application. Native platform acceptance remains pending.
