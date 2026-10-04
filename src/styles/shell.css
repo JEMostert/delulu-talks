@@ -1000,9 +1000,6 @@ button.engine-chip:hover {
 .workspace-notices.in-panel > :last-child {
   margin-bottom: 4px;
 }
-.workspace-notices > div {
-  padding: 0;
-}
 .workspace-notices:not(.in-panel) .alert {
   box-shadow: var(--shadow-3);
 }

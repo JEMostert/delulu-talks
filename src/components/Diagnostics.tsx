@@ -78,7 +78,7 @@ export function Diagnostics({
           <div className="mt-[22px] mb-[18px] grid grid-cols-3 gap-[15px] max-[1150px]:grid-cols-1">
             <div className="flex gap-2.5 rounded-xl bg-soft p-[15px] text-muted">
               <HardDrive />
-              <span className="text-[10px]">
+              <span className="text-[11px]">
                 Memory
                 <strong className="mt-[5px] block text-xs text-ink">
                   {data.memoryGB} GB total · {data.freeMemoryGB} GB free
@@ -87,7 +87,7 @@ export function Diagnostics({
             </div>
             <div className="flex gap-2.5 rounded-xl bg-soft p-[15px] text-muted">
               <Terminal />
-              <span className="text-[10px]">
+              <span className="text-[11px]">
                 Python
                 <strong className="mt-[5px] block text-xs text-ink">
                   {data.python}
@@ -96,7 +96,7 @@ export function Diagnostics({
             </div>
             <div className="flex gap-2.5 rounded-xl bg-soft p-[15px] text-muted">
               <Check />
-              <span className="text-[10px]">
+              <span className="text-[11px]">
                 Media imports
                 <strong className="mt-[5px] block text-xs text-ink">
                   {data.ffmpeg === "Not available"
