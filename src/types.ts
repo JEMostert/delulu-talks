@@ -116,6 +116,12 @@ export type AppSettings = {
   historyRetention?: HistoryRetentionPolicy;
   showOverlay: boolean;
   captureSoundsMuted: boolean;
+  /** CUDA speech engine: R2T2 (accuracy) or Nemotron (light, native streaming). */
+  speechEngine: "r2t2" | "nemotron";
+  /** Type text into the focused app while you speak (needs paste, no rewriting). */
+  liveTyping: boolean;
+  /** Saved transcripts beyond this many are removed, oldest first. */
+  historyLimit: number;
   captureSoundVolume: number;
   preloadModel: boolean;
   magicEnabled: boolean;

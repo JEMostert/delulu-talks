@@ -74,8 +74,8 @@ export class WorkerClient {
     const child = spawn(python, ["-u", script], {
       windowsHide: true,
       env,
-      // vLLM starts GPU-owning subprocesses. Give each runtime its own group
-      // so stopping it also releases those descendants on Linux/macOS.
+      // Give each runtime its own process group so stopping it also releases
+      // any GPU-owning descendants on Linux/macOS.
       detached: process.platform !== "win32",
     });
     this.child = child;

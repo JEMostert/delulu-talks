@@ -34,7 +34,7 @@ import { WorkerClient, transcriptionTimeout } from "../runtime/workerClient";
 import { SerialQueue } from "../runtime/serialQueue";
 import { RuntimeInstaller } from "../runtime/installer";
 import { runtimeEnvironment } from "../runtime/environment";
-import { speechModelForPlatform } from "../runtime/platform";
+import { speechModelForPlatform, usesMetal } from "../runtime/platform";
 import { privateFailureLog } from "../runtime/privateDiagnostics";
 
 function modelSetupStage(stage: string): SetupStage | null {
@@ -142,6 +142,19 @@ type SetupOperation = {
   termination?: Promise<void>;
 };
 
+/** The speech model the worker runs; Apple Silicon always uses R2T2 on MLX. */
+export function speechEngineId(settings: AppSettings): "r2t2" | "nemotron" {
+  return !usesMetal() && settings.speechEngine === "nemotron"
+    ? "nemotron"
+    : "r2t2";
+}
+
+export function speechModelName(settings: AppSettings): string {
+  return speechEngineId(settings) === "nemotron"
+    ? "Nemotron 3.5"
+    : modelById(settings.model).name;
+}
+
 export class AsrService {
   private readonly speechWorker: WorkerClient;
   private readonly magicWorker: WorkerClient;
@@ -209,6 +222,8 @@ export class AsrService {
   private speechFailureGeneration = 0;
   private magicFailureGeneration = 0;
   private speechIdleTimer: NodeJS.Timeout | null = null;
+  private loadedEngine: "r2t2" | "nemotron" | null = null;
+  private liveActive = false;
   private magicIdleTimer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -812,6 +827,9 @@ export class AsrService {
             "unload",
             "status",
             "transcribe",
+            "streamStart",
+            "streamAudio",
+            "streamFinish",
             "shutdown",
           ]
         : [
@@ -845,13 +863,13 @@ export class AsrService {
         ? "transformers"
         : speechModelForPlatform() === "r2t2Mlx"
           ? "mlx"
-          : process.platform === "win32"
-            ? "cuda-transformers"
-            : "cuda-vllm";
+          : "cuda-transformers";
     const modelFamily = kind === "speech" ? "r2t2" : "qwen3.5";
     if (
       capabilities.engine !== engine ||
-      capabilities.modelFamily !== modelFamily ||
+      (kind === "speech"
+        ? !["r2t2", "nemotron"].includes(capabilities.modelFamily)
+        : capabilities.modelFamily !== modelFamily) ||
       capabilities.backend !== backend
     ) {
       throw new Error(
@@ -920,7 +938,7 @@ export class AsrService {
         throw new Error(
           "Speech runtime setup is required before loading the speech model",
         );
-      const model = modelById(settings.model);
+      const model = { name: speechModelName(settings) };
       this.updateStatus({
         phase: "loading",
         engine: "loading",
@@ -939,7 +957,9 @@ export class AsrService {
       if (!eligible()) return;
       const runtime = await this.request<WorkerRuntime>("speech", "load", {
         cacheDir: this.storage.modelCacheDirectory,
+        model: speechEngineId(settings),
       });
+      this.loadedEngine = speechEngineId(settings);
       if (!runtime.loaded)
         throw new Error("Speech model load did not report loaded weights");
       if (!eligible()) return;
@@ -991,7 +1011,11 @@ export class AsrService {
     if (!eligible()) return;
     if (this.shuttingDown)
       throw new Error("The speech model worker is shutting down");
-    if (this.status.engine === "ready" && this.status.model === settings.model)
+    if (
+      this.status.engine === "ready" &&
+      this.status.model === settings.model &&
+      this.loadedEngine === speechEngineId(settings)
+    )
       return;
     await this.performLoadModel(settings, false, eligible);
   }
@@ -1053,6 +1077,7 @@ export class AsrService {
         {
           ...payload,
           language: settings.language,
+          model: speechEngineId(settings),
         },
         transcriptionTimeout(payload.durationMs),
       );
@@ -1071,6 +1096,57 @@ export class AsrService {
       this.speechOperations -= 1;
       this.scheduleSpeechIdle();
       this.applyDeferredResidency();
+    }
+  }
+
+  /**
+   * Live typing: open a streaming session on the loaded speech model. Returns
+   * false when the model cannot stream right now; dictation then stays buffered.
+   */
+  async liveStart(settings: AppSettings): Promise<boolean> {
+    if (usesMetal() || this.shuttingDown) return false;
+    this.speechOperations += 1;
+    this.clearSpeechIdle();
+    try {
+      await this.releaseMagicForSpeech(settings);
+      await this.ensureLoaded(settings);
+      await this.request("speech", "streamStart", {
+        language: settings.language,
+      });
+      this.liveActive = true;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      this.speechOperations -= 1;
+    }
+  }
+
+  /** Send 16-bit PCM (base64) and receive text that became final. */
+  async liveAudio(pcm: string): Promise<string> {
+    if (!this.liveActive) return "";
+    const result = await this.request<{ delta: string }>(
+      "speech",
+      "streamAudio",
+      { pcm },
+      30_000,
+    );
+    return result.delta;
+  }
+
+  async liveFinish(): Promise<string> {
+    if (!this.liveActive) return "";
+    this.liveActive = false;
+    try {
+      const result = await this.request<{ delta: string }>(
+        "speech",
+        "streamFinish",
+        {},
+        60_000,
+      );
+      return result.delta;
+    } finally {
+      this.scheduleSpeechIdle();
     }
   }
 

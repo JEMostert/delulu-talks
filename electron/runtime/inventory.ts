@@ -40,12 +40,12 @@ print(json.dumps({
 export type RuntimeKind = "speech" | "magic";
 export type TargetPlatform = { platform: string; arch: string };
 export type InventoryBackend = {
-  engine: "mlx-audio" | "qwen-asr-vllm" | "transformers";
+  engine: "mlx-audio" | "transformers";
   // Selection policy, not an observed GPU capability or inference result.
   devicePreference: ("metal" | "cuda" | "mps" | "cpu")[];
 };
 export type RequestedInstallStage = {
-  name: "installer" | "windows-cuda" | "runtime";
+  name: "installer" | "windows-cuda" | "linux-cuda" | "runtime";
   requirements: string[];
   pipArguments: string[];
   constraint: { path: string; contents: string } | null;
@@ -95,7 +95,7 @@ export function inventoryBackend(
   return metal
     ? { engine: "mlx-audio", devicePreference: ["metal"] }
     : {
-        engine: windows ? "transformers" : "qwen-asr-vllm",
+        engine: "transformers",
         devicePreference: ["cuda"],
       };
 }

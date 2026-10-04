@@ -32,7 +32,7 @@ import {
   SPEECH_PACKAGES,
   METAL_PACKAGES,
   WINDOWS_CUDA_PACKAGES,
-  WINDOWS_SPEECH_PACKAGES,
+  LINUX_CUDA_PACKAGES,
 } from "./manifest";
 
 export type InstallProgress = {
@@ -592,15 +592,21 @@ export class RuntimeInstaller {
         "Installing the native Windows CUDA runtime",
         0.32,
       );
+    } else if (kind === "speech" && !metal) {
+      await installPackages(
+        "linux-cuda",
+        LINUX_CUDA_PACKAGES,
+        constraints,
+        "Installing the CUDA runtime",
+        0.32,
+      );
     }
     await installPackages(
       "runtime",
       kind === "speech"
         ? metal
           ? METAL_PACKAGES
-          : this.windows
-            ? WINDOWS_SPEECH_PACKAGES
-            : SPEECH_PACKAGES
+          : SPEECH_PACKAGES
         : MAGIC_PACKAGES,
       constraints,
       kind === "speech"

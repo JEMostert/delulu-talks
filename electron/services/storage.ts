@@ -384,6 +384,11 @@ export function normalizeSettings(value: unknown): AppSettings {
     keepHistory: boolean(source.keepHistory, DEFAULT_SETTINGS.keepHistory),
     historyRetention: savedRetentionPolicy(source.historyRetention),
     showOverlay: boolean(source.showOverlay, DEFAULT_SETTINGS.showOverlay),
+    speechEngine: source.speechEngine === "nemotron" ? "nemotron" : "r2t2",
+    liveTyping: boolean(source.liveTyping, DEFAULT_SETTINGS.liveTyping),
+    historyLimit: [25, 50, 100, 250, 500].includes(Number(source.historyLimit))
+      ? Number(source.historyLimit)
+      : DEFAULT_SETTINGS.historyLimit,
     captureSoundsMuted: boolean(
       source.captureSoundsMuted,
       DEFAULT_SETTINGS.captureSoundsMuted,
@@ -773,7 +778,25 @@ export class StorageService {
     });
     this.writeProfile(join(this.dataDirectory, SETTINGS_FILE), next);
     this.settings = next;
+    this.enforceHistoryLimit();
     return this.getSettings();
+  }
+
+  /** Keep only the newest `historyLimit` saved transcripts (pinned undo records stay). */
+  enforceHistoryLimit(): void {
+    const next = this.limited(this.history);
+    if (next.length === this.history.length) return;
+    this.writeProfile(join(this.dataDirectory, HISTORY_FILE), next);
+    this.history = next;
+  }
+
+  private limited(ordered: TranscriptRecord[]): TranscriptRecord[] {
+    // A pending undo window must survive eviction; ordinary limits resume after it.
+    const limit = Math.min(MAX_HISTORY, this.settings.historyLimit);
+    return [
+      ...ordered.slice(0, limit),
+      ...ordered.slice(limit).filter((item) => this.historyPins.has(item.id)),
+    ];
   }
 
   getHistory(): TranscriptRecord[] {
@@ -787,14 +810,7 @@ export class StorageService {
       record,
       ...this.history.filter((item) => item.id !== record.id),
     ];
-    // A pending undo window must survive the normal newest-500 eviction.
-    // At most 500 additional pinned records; ordinary retention resumes after it.
-    const next = [
-      ...ordered.slice(0, MAX_HISTORY),
-      ...ordered
-        .slice(MAX_HISTORY)
-        .filter((item) => this.historyPins.has(item.id)),
-    ];
+    const next = this.limited(ordered);
     this.writeProfile(join(this.dataDirectory, HISTORY_FILE), next);
     this.history = next;
   }

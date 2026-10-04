@@ -36,7 +36,6 @@ export function runtimeEnvironment(
     TORCH_HOME: join(generated, "torch"),
     TORCH_EXTENSIONS_DIR: join(generated, "torch-extensions"),
     TRITON_CACHE_DIR: join(generated, "triton"),
-    VLLM_CACHE_ROOT: join(generated, "vllm"),
     PATH: `${bin}${delimiter}${inherited.PATH ?? ""}`,
   };
 }

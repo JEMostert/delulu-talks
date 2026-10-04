@@ -167,9 +167,7 @@ async function runtime(
       ? ["torch", "torchvision", "transformers"]
       : metal
         ? ["mlx", "mlx_audio"]
-        : process.platform === "win32"
-          ? ["torch", "transformers", "soundfile", "soxr"]
-          : ["qwen_asr", "torch", "vllm"];
+        : ["torch", "transformers", "soundfile", "soxr"];
   const result: SetupRuntimeObservation = {
     kind,
     root,

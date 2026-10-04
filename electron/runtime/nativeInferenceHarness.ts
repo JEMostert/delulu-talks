@@ -340,8 +340,10 @@ export async function nativeWorkerSources(
     "spoken_corrections.py",
     "speech_engine.py",
     "metal_speech.py",
-    "windows_speech.py",
-    "windows_checkpoint.py",
+    "r2t2_speech.py",
+    "r2t2_checkpoint.py",
+    "nemotron_speech.py",
+    "live_segments.py",
   ]) {
     const path =
       name === "transcription_engine.py"

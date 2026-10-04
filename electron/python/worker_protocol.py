@@ -23,7 +23,9 @@ _active_operation: ContextVar[tuple[str, str] | None] = ContextVar("worker_opera
 COMMANDS = frozenset({
     "ping", "status", "load", "unload", "magicStatus", "magicLoad",
     "magicUnload", "magicRewrite", "transcribe", "shutdown", "capabilities",
+    "streamStart", "streamAudio", "streamFinish",
 })
+SPEECH_MODELS = frozenset({"r2t2", "nemotron"})
 MAGIC_PRESETS = frozenset({"spoken-corrections", "polish", "concise", "structured", "prompt", "bullet-points", "professional-message"})
 MAGIC_MODELS = frozenset({"qwen35Small", "qwen35Medium", "qwen35Large"})
 # Keep aligned with the shared PipelineTimings contract; unknown stages are omitted.
@@ -204,6 +206,16 @@ def validate_request(request: Any) -> dict[str, Any]:
             raise ValueError("Worker capabilities engine must be speech or writing")
     if command in ("load", "magicLoad") and "cacheDir" in request:
         require_string(request, "cacheDir")
+    if command in ("load", "transcribe") and "model" in request:
+        require_string(request, "model")
+        if request["model"] not in SPEECH_MODELS:
+            raise ValueError(f"Unsupported speech model: {request['model']}")
+    if command == "streamStart" and "language" in request:
+        require_string(request, "language")
+    if command == "streamAudio":
+        require_string(request, "pcm")
+        if len(request["pcm"]) > 220_000:
+            raise ValueError("Live audio pieces are limited to five seconds")
     if command == "magicLoad" and "model" in request:
         require_string(request, "model")
         if request["model"] not in MAGIC_MODELS:
@@ -261,10 +273,10 @@ def validate_result(command: str, result: Any) -> None:
         engine = result.get("engine")
         if engine not in ("speech", "writing"):
             raise ValueError("Worker capabilities engine must be speech or writing")
-        backends = ("mlx", "cuda-vllm", "cuda-transformers") if engine == "speech" else ("transformers",)
+        backends = ("mlx", "cuda-transformers") if engine == "speech" else ("transformers",)
         if result.get("backend") not in backends:
             raise ValueError("Worker capabilities backend does not match engine")
-        if result.get("modelFamily") != ("r2t2" if engine == "speech" else "qwen3.5"):
+        if result.get("modelFamily") not in (("r2t2", "nemotron") if engine == "speech" else ("qwen3.5",)):
             raise ValueError("Worker capabilities modelFamily does not match engine")
         for key in ("timestamps", "streaming", "vocabularyBiasing"):
             require_boolean(result, key)
@@ -289,6 +301,13 @@ def validate_result(command: str, result: Any) -> None:
         require_number(result, "processingTime")
         if "inferenceTime" in result:
             require_number(result, "inferenceTime")
+    elif command == "streamStart":
+        if result.get("started") is not True:
+            raise ValueError("Worker live session did not start")
+        if result.get("latencyMs") is not None:
+            require_number(result, "latencyMs")
+    elif command in ("streamAudio", "streamFinish"):
+        require_string(result, "delta")
     elif command == "magicRewrite":
         require_string(result, "text")
         require_string(result, "model")

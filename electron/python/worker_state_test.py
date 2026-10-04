@@ -12,33 +12,40 @@ import transcription_engine as engine
 class WorkerStateTests(unittest.TestCase):
     def test_failed_speech_load_rolls_back_partial_state_and_allows_explicit_retry(self):
         worker = engine.Worker()
-        worker.speech_backend = "linux"
         rewrite_model = worker.magic_model = object()
         failure = RuntimeError("inference failed")
 
-        def acquire(request):
-            worker.model = object()
-            worker.model_name = "r2t2"
-            worker.device = "cuda"
-            worker.speech_warmup = "warming"
-            raise failure
+        class Adapter:
+            calls = 0
 
-        with patch.object(worker, "load_speech", side_effect=acquire), patch.object(worker, "clear_allocator"):
+            def load(self, request):
+                Adapter.calls += 1
+                if Adapter.calls == 1:
+                    raise failure
+                return {"loaded": True}
+
+            def unload(self):
+                return {"loaded": False}
+
+        def engine_for(model=None):
+            if worker.speech is None:
+                worker.speech = Adapter()
+            return worker.speech
+
+        with patch.object(worker, "speech_engine", side_effect=engine_for), \
+                patch.object(worker, "clear_allocator"):
+            worker.speech = None
             with self.assertRaises(RuntimeError) as caught:
                 worker.load({})
-        self.assertIs(caught.exception, failure)
-        self.assertIsNone(worker.model)
-        self.assertIsNone(worker.speech)
-        self.assertEqual(worker.status()["residency"], "unloaded")
-        self.assertEqual(worker.status()["warmup"], "not-started")
-        self.assertIs(worker.magic_model, rewrite_model)
-        with patch.object(worker, "load_speech", return_value={"loaded": True}) as retry:
+            self.assertIs(caught.exception, failure)
+            self.assertIsNone(worker.speech)
+            self.assertEqual(worker.status()["residency"], "unloaded")
+            self.assertIs(worker.magic_model, rewrite_model)
             self.assertTrue(worker.load({})["loaded"])
-        retry.assert_called_once_with({})
 
     def test_failed_inference_cleans_transient_memory_preserves_models_and_original_cause(self):
         worker = engine.Worker()
-        speech = worker.model = object()
+        speech = worker.speech = object()
         rewrite = worker.magic_model = object()
         for boundary, method, fields in (("transcribe_speech", worker.transcribe, {"speech": True}),
                                          ("generate_rewrite", worker.rewrite_magic, {})):
@@ -50,7 +57,7 @@ class WorkerStateTests(unittest.TestCase):
                 self.assertIs(caught.exception, failure)
                 cleanup.assert_called_once_with(**fields)
                 self.assertEqual(method({})["text"], "retry succeeded")
-            self.assertIs(worker.model, speech)
+            self.assertIs(worker.speech, speech)
             self.assertIs(worker.magic_model, rewrite)
 
     def test_runtime_role_blocks_cross_engine_commands_before_model_access(self):
@@ -62,10 +69,10 @@ class WorkerStateTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "does not match"):
                     worker.dispatch({"command": "capabilities", "engine": engine_name})
                 self.assertFalse(worker.dispatch({"command": "ping"})["loaded"])
-        for backend in ("linux", "mlx", "windows"):
+        for backend, streaming in (("cuda", True), ("mlx", False)):
             worker.speech_backend = backend
             capabilities = worker.capabilities("speech")
-            self.assertFalse(capabilities["streaming"])
+            self.assertEqual(capabilities["streaming"], streaming)
             engine.validate_result("capabilities", capabilities)
 
     def test_bad_input_produces_private_error_then_worker_accepts_next_request(self):

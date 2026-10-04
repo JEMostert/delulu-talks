@@ -17,7 +17,7 @@ class WorkerProtocolTests(unittest.TestCase):
         self.assertIs(protocol.validate_request(valid), valid)
         invalid = [None, [], {**valid, "protocolVersion": True},
                    {**valid, "id": "😀" * 33}, {**valid, "id": "\ud800"},
-                   {**valid, "command": "execute"}, {**valid, "command": "streamStart"}, {**valid, "audioPath": ""},
+                   {**valid, "command": "execute"}, {**valid, "model": "whisper"}, {**valid, "audioPath": ""},
                    {**valid, "durationMs": float("nan")}, {**valid, "durationMs": True},
                    {**valid, "timestamps": True}, {**valid, "streaming": True},
                    {**valid, "extra": float("inf")}]

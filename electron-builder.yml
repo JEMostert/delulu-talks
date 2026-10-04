@@ -24,10 +24,14 @@ extraResources:
     to: python/verified_snapshot.py
   - from: electron/python/metal_speech.py
     to: python/metal_speech.py
-  - from: electron/python/windows_speech.py
-    to: python/windows_speech.py
-  - from: electron/python/windows_checkpoint.py
-    to: python/windows_checkpoint.py
+  - from: electron/python/r2t2_speech.py
+    to: python/r2t2_speech.py
+  - from: electron/python/r2t2_checkpoint.py
+    to: python/r2t2_checkpoint.py
+  - from: electron/python/nemotron_speech.py
+    to: python/nemotron_speech.py
+  - from: electron/python/live_segments.py
+    to: python/live_segments.py
   - from: electron/python/cuda_preflight.py
     to: python/cuda_preflight.py
   - from: docs/THIRD_PARTY_NOTICES.md

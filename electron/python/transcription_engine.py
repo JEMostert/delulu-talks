@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Persistent JSON-lines worker for Delulu Talks local speech and writing models.
 
-The speech engine is R2T2 (Confucius4-R2T2), a streaming-capable Qwen3-ASR model
-served through vLLM on Linux CUDA, native Transformers on Windows CUDA, or
-direct MLX Audio on Apple Silicon. The desktop starts a dedicated process per
+Speech uses R2T2 (Confucius4-R2T2, a Qwen3-ASR fine-tune) through Transformers on
+CUDA or MLX Audio on Apple Silicon, or NVIDIA Nemotron 3.5 ASR Streaming through
+Transformers on CUDA or the CPU. Live typing streams audio into the loaded model. The desktop starts a dedicated process per
 runtime role, each accepting only its own model commands. Protocol messages are prefixed so library progress output can
 never be mistaken for a response by Electron.
 """
@@ -222,39 +222,40 @@ class Worker:
         # Both runtime processes use this worker, including writing-only ones.
         # Select the platform now, but import its adapter only for speech work.
         self.speech_backend = (
-            "mlx" if sys.platform == "darwin" and platform.machine() == "arm64"
-            else "windows" if sys.platform == "win32"
-            else "linux"
+            "mlx" if sys.platform == "darwin" and platform.machine() == "arm64" else "cuda"
         )
-        self.model: Any | None = None
-        self.model_name: str | None = None
-        self.device: str | None = None
-        self.speech_warmup = "not-started"
-        self.cuda_preflight: dict[str, Any] | None = None
+        self.speech_model = "r2t2"
+        self.live: Any | None = None
         self.magic_model: Any | None = None
         self.magic_processor: Any | None = None
         self.magic_model_name: str | None = None
         self.magic_device: str | None = None
         self.magic_warmup = "not-started"
 
-    def speech_engine(self) -> SpeechEngine | None:
+    def speech_engine(self, model: str | None = None) -> SpeechEngine:
+        """Return the adapter for the requested speech model, switching if needed."""
+        wanted = model or self.speech_model
+        if self.speech is not None and wanted != self.speech_model:
+            with contextlib.suppress(Exception):
+                self.speech.unload()
+            self.speech = None
+        self.speech_model = wanted
         if self.speech is None:
-            if self.speech_backend == "mlx":
+            if wanted == "nemotron":
+                from nemotron_speech import NemotronSpeech
+                self.speech = NemotronSpeech()
+            elif self.speech_backend == "mlx":
                 from metal_speech import MetalSpeech
                 self.speech = MetalSpeech()
-            elif self.speech_backend == "windows":
-                from windows_speech import WindowsSpeech
-                self.speech = WindowsSpeech()
+            else:
+                from r2t2_speech import R2T2Speech
+                self.speech = R2T2Speech()
         return self.speech
 
     def unload(self) -> dict[str, Any]:
-        self.speech_warmup = "not-started"
+        self.live = None
         if self.speech is not None:
             return self.speech.unload()
-        self.model = None
-        self.model_name = None
-        self.device = None
-        self.cuda_preflight = None
         self.clear_allocator(speech=True)
         return self.status()
 
@@ -291,116 +292,26 @@ class Worker:
 
     def load(self, request: dict[str, Any]) -> dict[str, Any]:
         try:
-            return self.load_speech(request)
+            return self.speech_engine(request.get("model")).load(request)
         except BaseException:
             with contextlib.suppress(Exception):
                 self.unload()
             # Discard an adapter whose initialization did not complete; the
             # next explicit load reacquires it, rather than trusting its state.
             self.speech = None
-            self.model = None
-            self.model_name = None
-            self.device = None
-            self.speech_warmup = "not-started"
             self.clear_allocator(speech=True)
             raise
-
-    def load_speech(self, request: dict[str, Any]) -> dict[str, Any]:
-        speech = self.speech_engine()
-        if speech is not None:
-            return speech.load(request)
-        if self.model is not None:
-            return self.status()
-        try:
-            import torch
-
-            from cuda_preflight import ensure_cuda_compatible
-            self.cuda_preflight = None
-            self.cuda_preflight = ensure_cuda_compatible(torch)
-        except ImportError as exc:
-            raise RuntimeError(
-                "The speech runtime is incomplete. Run Repair in Models."
-            ) from exc
-
-        from r2t2 import R2T2ASRModel
-        from verified_snapshot import verified_snapshot
-        emit_progress("Retrieving pinned R2T2 checkpoint…", stage="download")
-        checkpoint = verified_snapshot(
-            SPEECH_MODEL, "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9",
-            cache_dir=str(Path(request["cacheDir"]) / "hub") if request.get("cacheDir") else None,
-            local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1",
-        )
-        emit_progress("Loading R2T2 weights into the CUDA runtime…", stage="load")
-        self.model = R2T2ASRModel.LLM(
-            model=checkpoint,
-            # R2T2 advertises a 65k context by default, which makes vLLM reserve
-            # a 7+ GiB KV cache before a single audio request is processed. A
-            # 32k ASR context is ample for Delulu's bounded dictation/file flow
-            # and keeps the engine viable alongside the optional writing model.
-            gpu_memory_utilization=0.7,
-            max_model_len=32768,
-            max_new_tokens=4096,
-        )
-        self.model_name = SPEECH_MODEL
-        self.device = "cuda"
-        # Exercise preprocessing and GPU decoding before the UI reports Ready.
-        # Keep this synthetic, private, and bounded; never publish its transcript.
-        import copy
-        import numpy as np
-        original_sampling = self.model.sampling_params
-        warmup_sampling = copy.copy(original_sampling)
-        warmup_sampling.max_tokens = 8
-        self.model.sampling_params = warmup_sampling
-        self.speech_warmup = "warming"
-        emit_progress("Warming up R2T2 speech inference…", stage="warmup")
-        try:
-            self.model.transcribe(
-                audio=[(np.zeros(16000, dtype=np.float32), 16000)],
-                language=["English"], return_time_stamps=False,
-            )
-        except BaseException:
-            # A failed restore must not replace the inference cause. The outer
-            # load transaction discards this model before an explicit retry.
-            with contextlib.suppress(Exception):
-                self.model.sampling_params = original_sampling
-            raise
-        else:
-            # Restoration on success is required before reporting Ready.
-            self.model.sampling_params = original_sampling
-        self.speech_warmup = "complete"
-        return self.status()
 
     def status(self) -> dict[str, Any]:
         if self.speech is not None:
             return self.speech.status()
-        if self.speech_backend != "linux":
-            return {
-                "loaded": False,
-                "model": MLX_SPEECH_MODEL if self.speech_backend == "mlx" else SPEECH_MODEL,
-                "device": None,
-                "residency": "unloaded",
-                "warmup": "not-started",
-            }
-        status = {
-            "loaded": self.model is not None,
-            "model": self.model_name,
-            "device": self.device if self.model is not None else None,
-            "residency": "resident" if self.model is not None else "unloaded",
-            "warmup": self.speech_warmup,
-            **({"cudaPreflight": self.cuda_preflight}
-               if getattr(self, "cuda_preflight", None) is not None else {}),
+        return {
+            "loaded": False,
+            "model": MLX_SPEECH_MODEL if self.speech_backend == "mlx" else SPEECH_MODEL,
+            "device": None,
+            "residency": "unloaded",
+            "warmup": "not-started",
         }
-        if self.model is not None:
-            status["speechExecution"] = {
-                "modelId": "r2t2",
-                "backendId": "vllm-cuda",
-                # vLLM selects its dtype internally; do not guess from weights.
-                "precision": None,
-                "checkpoint": {"repository": SPEECH_MODEL, "revision": "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9"},
-                "platform": "linux",
-                "device": "cuda",
-            }
-        return status
 
     def magic_status(self) -> dict[str, Any]:
         return {
@@ -610,72 +521,60 @@ class Worker:
             raise
 
     def transcribe_speech(self, request: dict[str, Any]) -> dict[str, Any]:
-        language_code, language = language_hint(request)
-        speech = self.speech_engine()
-        if speech is not None:
-            return speech.transcribe(request)
-        started = time.perf_counter()
-        if self.model is None:
+        language_hint(request)
+        speech = self.speech_engine(request.get("model"))
+        if speech.status().get("loaded") is not True:
             raise RuntimeError("No model is loaded")
-        audio = Path(str(request["audioPath"])).resolve()
-        if not audio.is_file():
-            raise FileNotFoundError("The selected audio file no longer exists")
-        # Dictation and imported media already arrive as 16 kHz mono WAV.
-        # Avoid librosa's lazy initialization on this latency-sensitive path.
-        import soundfile as sf
-        try:
-            wav, sample_rate = sf.read(str(audio), dtype="float32", always_2d=False)
-        except RuntimeError:
-            # Preserve the flexible decoder for unusual imported formats.
-            import librosa
-            wav, sample_rate = librosa.load(str(audio), sr=16000, mono=True)
-        if wav.ndim > 1:
-            wav = wav.mean(axis=1)
-        if sample_rate != 16000:
-            import soxr
-            wav = soxr.resample(wav, sample_rate, 16000)
-        if not len(wav):
-            raise ValueError("The selected audio file contains no samples")
-        inference_started = time.perf_counter()
-        results = self.model.transcribe(
-            audio=[(wav, 16000)],
-            language=[language],
-            return_time_stamps=False,
-        )
-        finished = time.perf_counter()
-        # A returned label may reflect a forced prompt; it is not an independent
-        # detector. Missing model metadata remains unknown even with a hint.
-        language_metadata = recognized_language_metadata(getattr(results[0], "language", None))
-        return {
-            "text": str(results[0].text).strip(),
-            "language": language_metadata["recognizedLanguage"] or "und",
-            "requestedLanguage": language_code,
-            **language_metadata,
-            "duration": len(wav) / 16000.0,
-            "processingTime": finished - started,
-            "inferenceTime": finished - inference_started,
-            "timings": {
-                "backendPreprocessingMs": (inference_started - started) * 1000,
-                "inferenceMs": (finished - inference_started) * 1000,
-            },
-        }
+        return speech.transcribe(request)
+
+    # Live typing: audio arrives while the user talks; text is returned as soon
+    # as it is final. Native streaming models stream; others cut at pauses.
+    def stream_start(self, request: dict[str, Any]) -> dict[str, Any]:
+        code, _ = language_hint(request)
+        speech = self.speech_engine()
+        if speech.status().get("loaded") is not True:
+            raise RuntimeError("No model is loaded")
+        if hasattr(speech, "stream_start"):
+            self.live = "native"
+            return speech.stream_start({"language": code})
+        if not hasattr(speech, "transcribe_samples"):
+            raise RuntimeError("Live typing is not available for this speech model")
+        from live_segments import PauseStreamer
+        self.live = PauseStreamer(lambda samples: speech.transcribe_samples(samples, code))
+        return {"started": True, "latencyMs": None}
+
+    def stream_audio(self, request: dict[str, Any]) -> dict[str, Any]:
+        import base64
+        import numpy as np
+        raw = base64.b64decode(str(request.get("pcm", "")), validate=True)
+        if len(raw) % 2 or len(raw) > 2 * 16000 * 5:
+            raise ValueError("Live audio must be 16-bit PCM, at most five seconds per piece")
+        samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+        if self.live is None:
+            raise RuntimeError("No live session is active")
+        delta = self.speech.stream_audio(samples) if self.live == "native" else self.live.push(samples)
+        return {"delta": delta}
+
+    def stream_finish(self) -> dict[str, Any]:
+        live, self.live = self.live, None
+        if live is None:
+            return {"delta": ""}
+        return {"delta": self.speech.stream_finish() if live == "native" else live.finish()}
 
     def capabilities(self, engine: str) -> dict[str, Any]:
         """Describe this pipeline without importing adapters or probing hardware."""
         if engine not in ("speech", "writing"):
             raise ValueError("Worker capabilities engine must be speech or writing")
         speech = engine == "speech"
-        backend = {
-            "mlx": "mlx", "windows": "cuda-transformers", "linux": "cuda-vllm",
-        }[self.speech_backend] if speech else "transformers"
+        backend = ("mlx" if self.speech_backend == "mlx" else "cuda-transformers") if speech else "transformers"
         return {
             "schemaVersion": 1,
             "engine": engine,
             "backend": backend,
-            "modelFamily": "r2t2" if speech else "qwen3.5",
+            "modelFamily": ("nemotron" if self.speech_model == "nemotron" else "r2t2") if speech else "qwen3.5",
             "timestamps": False,
             "languageHints": {"supported": speech, "languages": list(LANGUAGE_NAMES) if speech else []},
-            "streaming": False,
+            "streaming": speech and self.speech_backend != "mlx",
             "vocabularyBiasing": False,
         }
 
@@ -685,7 +584,7 @@ class Worker:
         role = os.environ.get("DELULU_RUNTIME_KIND")
         if role:
             allowed = {
-                "speech": {"capabilities", "ping", "load", "unload", "status", "transcribe", "shutdown"},
+                "speech": {"capabilities", "ping", "load", "unload", "status", "transcribe", "streamStart", "streamAudio", "streamFinish", "shutdown"},
                 "magic": {"capabilities", "ping", "magicLoad", "magicUnload", "magicStatus", "magicRewrite", "shutdown"},
             }
             if role not in allowed or command not in allowed[role]:
@@ -714,6 +613,12 @@ class Worker:
             return self.rewrite_magic(request)
         if command == "transcribe":
             return self.transcribe(request)
+        if command == "streamStart":
+            return self.stream_start(request)
+        if command == "streamAudio":
+            return self.stream_audio(request)
+        if command == "streamFinish":
+            return self.stream_finish()
         if command == "shutdown":
             if role != "magic":
                 self.unload()

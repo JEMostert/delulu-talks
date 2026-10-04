@@ -851,7 +851,9 @@ async function applySettings(
       : previous.personalProfiles,
   );
   const next = normalizeSettings({ ...previous, ...value });
-  const runtimeChanged = next.model !== previous.model;
+  const runtimeChanged =
+    next.model !== previous.model ||
+    next.speechEngine !== previous.speechEngine;
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
   const assertEngineChangeIdle = () => {
     if (
@@ -929,6 +931,7 @@ function assertRuntimeIdle(): void {
 async function start(): Promise<void> {
   if (!smokeTest) ensureDevelopmentDesktopEntry();
   storage = new StorageService();
+  storage.enforceHistoryLimit();
   ruleUsage = new RuleUsageService(storage.dataDirectory);
   modelCache = new ModelCacheService(storage.modelCacheDirectory);
   // start() is entered only by the instance holding the user-data singleton lock.

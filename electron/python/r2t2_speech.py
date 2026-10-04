@@ -1,7 +1,8 @@
-"""Native Windows CUDA R2T2 inference using Transformers, without vLLM.
+"""R2T2 inference on CUDA with Transformers (Linux and Windows).
 
-The original R2T2 checkpoint is strictly converted in memory using the official
-HuggingFace mappings. Native Windows hardware inference still needs validation.
+The original R2T2 checkpoint is strictly converted using the official
+HuggingFace mappings and cached. Memory use is the model itself (about 4 GB in
+BF16); there is no serving engine reserving GPU memory up front.
 """
 from __future__ import annotations
 
@@ -47,7 +48,7 @@ def chunk_bounds(samples, chunk: int, search: int = 2 * SAMPLE_RATE, frame: int 
     bounds.append((start, total))
     return bounds
 
-class WindowsSpeech:
+class R2T2Speech:
     def __init__(self):
         self.model = None
         self.processor = None
@@ -67,7 +68,7 @@ class WindowsSpeech:
                 "backendId": "transformers-cuda",
                 "precision": self.precision,
                 "checkpoint": {"repository": MODEL, "revision": MODEL_REVISION},
-                "platform": "win32",
+                "platform": sys.platform,
                 "device": "cuda",
             }
         return status
@@ -86,7 +87,7 @@ class WindowsSpeech:
         from transformers import (AutoTokenizer, GenerationConfig, Qwen3ASRConfig,
                                   Qwen3ASRFeatureExtractor, Qwen3ASRForConditionalGeneration,
                                   Qwen3ASRProcessor)
-        from windows_checkpoint import (ASR_CHAT_TEMPLATE, STATE_DICT_MAPPING_ASR,
+        from r2t2_checkpoint import (ASR_CHAT_TEMPLATE, STATE_DICT_MAPPING_ASR,
                                         clean_config, convert_state_dict)
 
         cache_root = request.get("cacheDir")
@@ -109,7 +110,7 @@ class WindowsSpeech:
                 self._warmup()
                 self.precision = "bf16" if dtype == torch.bfloat16 else "fp16"
                 return self.status()
-            emit_progress("Converting R2T2 for native Windows CUDA (first load only)…", stage="conversion")
+            emit_progress("Converting R2T2 for CUDA (first load only)…", stage="conversion")
             self.processor = Qwen3ASRProcessor(
                 feature_extractor=Qwen3ASRFeatureExtractor(),
                 tokenizer=AutoTokenizer.from_pretrained(source), chat_template=ASR_CHAT_TEMPLATE,
@@ -190,6 +191,17 @@ class WindowsSpeech:
         if not isinstance(parsed, dict) or not isinstance(parsed.get("transcription"), str):
             raise RuntimeError("R2T2 returned an invalid transcription response")
         return parsed
+
+    def transcribe_samples(self, samples, code="en"):
+        """Transcribe 16 kHz mono samples; used for live typing phrases."""
+        from transcription_engine import LANGUAGE_NAMES
+        if self.model is None:
+            raise RuntimeError("R2T2 is not loaded. Load the model to try again.")
+        language = LANGUAGE_NAMES.get(code, "English")
+        return " ".join(
+            self._generate(samples[start:end], language, 1024)["transcription"].strip()
+            for start, end in chunk_bounds(samples, CHUNK_SAMPLES)
+        ).strip()
 
     def transcribe(self, request):
         from transcription_engine import LANGUAGE_NAMES, language_hint

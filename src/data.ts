@@ -57,6 +57,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   historyRetention: { maxAgeDays: null, maxCount: null },
   showOverlay: true,
   captureSoundsMuted: true,
+  speechEngine: "r2t2",
+  liveTyping: true,
+  historyLimit: 50,
   captureSoundVolume: 0.15,
   preloadModel: true,
   magicEnabled: false,
@@ -77,30 +80,24 @@ export const MODELS: ModelInfo[] = [
   {
     id: "r2t2",
     identity: "r2t2",
-    backendIds: ["vllm-cuda", "transformers-cuda"],
-    runtime: "CUDA · vLLM / PyTorch",
+    backendIds: ["transformers-cuda"],
+    runtime: "CUDA · Transformers",
     downloadSize: "~4 GB",
     hfId: "netease-youdao/Confucius4-R2T2",
     name: "R2T2",
     description:
-      "R2T2 speech recognition on NVIDIA GPUs. Linux uses vLLM; Windows uses native PyTorch with CUDA. Speech is currently processed after recording stops. Windows hardware validation is pending.",
+      "R2T2 speech recognition on NVIDIA GPUs through Transformers on Linux and Windows. About 4 GB of GPU memory; live typing cuts phrases at your pauses.",
     recommended: true,
     provenance: {
       ...R2T2_LICENSE,
       variants: [
         {
-          label: "Linux CUDA",
-          revision: null,
-          conversion:
-            "Original R2T2 fine-tune of Qwen3-ASR-1.7B, loaded through qwen-asr and vLLM.",
-        },
-        {
-          label: "Windows CUDA",
+          label: "Linux and Windows CUDA",
           revision: "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9",
           conversion:
             "Delulu converts original R2T2 keys in memory using the official Transformers mappings, with strict weight loading. Conversion cache: transformers-5.15.0-v1.",
           attributionUrl:
-            "https://github.com/JEMostert/delulu-talks/blob/master/electron/python/windows_checkpoint.py",
+            "https://github.com/JEMostert/delulu-talks/blob/main/electron/python/r2t2_checkpoint.py",
         },
       ],
     },

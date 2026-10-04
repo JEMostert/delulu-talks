@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from windows_speech import SAMPLE_RATE, chunk_bounds
+from r2t2_speech import SAMPLE_RATE, chunk_bounds
 
 
 class WindowsChunkingTests(unittest.TestCase):
