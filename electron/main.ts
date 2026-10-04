@@ -352,24 +352,22 @@ function patchTraySettings(patch: Partial<AppSettings>): void {
   runTrayAction(() => persistSettings(patch));
 }
 
-function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
+function speechMenu(settings: AppSettings): MenuItemConstructorOptions[] {
   const speech = asr.getStatus();
-  const magic = asr.getMagicStatus();
-  const speechBusy = ["preparing", "loading", "transcribing"].includes(
-    speech.phase,
-  );
-  const magicBusy = ["preparing", "loading", "rewriting"].includes(magic.phase);
-  const speechAction: MenuItemConstructorOptions =
+  const busy =
+    dictation.isActive ||
+    ["preparing", "loading", "transcribing"].includes(speech.phase);
+  const action: MenuItemConstructorOptions =
     speech.engine === "ready"
       ? {
-          label: "Unload speech model",
-          enabled: !speechBusy,
+          label: "Unload model",
+          enabled: !busy,
           click: () => runTrayAction(() => asr.unload(), "speech"),
         }
       : speech.engine === "unloaded"
         ? {
-            label: "Load speech model now",
-            enabled: !speechBusy,
+            label: "Load model now",
+            enabled: !busy,
             click: () =>
               runTrayAction(
                 () => asr.loadModel(storage.getSettings()),
@@ -380,20 +378,77 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
             label: speech.migrationRequired
               ? "Update speech runtime…"
               : "Set up speech…",
-            enabled: !speechBusy,
+            enabled: !busy,
             click: () => showMainWindow("models"),
           };
-  const magicAction: MenuItemConstructorOptions =
+  const engines: MenuItemConstructorOptions[] =
+    process.platform === "darwin"
+      ? []
+      : [
+          ...(
+            [
+              ["r2t2", "R2T2 — most accurate"],
+              ["nemotron", "Nemotron 3.5 — light, word by word"],
+            ] as const
+          ).map(([engine, label]): MenuItemConstructorOptions => ({
+            type: "radio",
+            label,
+            checked: settings.speechEngine === engine,
+            enabled: !busy,
+            click: () =>
+              settings.speechEngine !== engine &&
+              patchTraySettings({ speechEngine: engine }),
+          })),
+          ...(settings.speechEngine === "nemotron"
+            ? [
+                {
+                  type: "checkbox" as const,
+                  label: "Run on CPU only",
+                  checked: settings.speechDevice === "cpu",
+                  enabled: !busy,
+                  click: () =>
+                    patchTraySettings({
+                      speechDevice:
+                        settings.speechDevice === "cpu" ? "auto" : "cpu",
+                    }),
+                },
+              ]
+            : []),
+          { type: "separator" },
+        ];
+  return [
+    { label: engineLabel(speech), enabled: false },
+    ...engines,
+    {
+      type: "checkbox",
+      label: "Type live while speaking",
+      checked: settings.liveTyping,
+      click: () => patchTraySettings({ liveTyping: !settings.liveTyping }),
+    },
+    {
+      type: "checkbox",
+      label: "Keep model ready",
+      checked: settings.preloadModel,
+      click: () => patchTraySettings({ preloadModel: !settings.preloadModel }),
+    },
+    action,
+  ];
+}
+
+function rewriteMenu(settings: AppSettings): MenuItemConstructorOptions[] {
+  const magic = asr.getMagicStatus();
+  const busy = ["preparing", "loading", "rewriting"].includes(magic.phase);
+  const action: MenuItemConstructorOptions =
     magic.engine === "ready"
       ? {
-          label: "Unload rewriting model",
-          enabled: !magicBusy,
+          label: "Unload model",
+          enabled: !busy,
           click: () => runTrayAction(() => asr.unloadMagic(), "rewrite"),
         }
       : magic.engine === "unloaded"
         ? {
-            label: "Load rewriting model now",
-            enabled: !magicBusy,
+            label: "Load model now",
+            enabled: !busy,
             click: () =>
               runTrayAction(
                 () => asr.loadMagic(storage.getSettings()),
@@ -402,29 +457,49 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
           }
         : {
             label: "Set up rewriting…",
-            enabled: !magicBusy,
+            enabled: !busy,
             click: () => showMainWindow("models"),
           };
-
   return [
-    { label: `Speech: ${engineLabel(speech)}`, enabled: false },
-    speechAction,
     {
-      type: "checkbox",
-      label: "Keep speech model ready",
-      checked: settings.preloadModel,
-      click: () => patchTraySettings({ preloadModel: !settings.preloadModel }),
+      type: "radio",
+      label: "Off",
+      checked: !settings.magicEnabled,
+      click: () => patchTraySettings({ magicEnabled: false }),
     },
+    ...REWRITE_PRESETS.map(({ id, label }): MenuItemConstructorOptions => ({
+      type: "radio",
+      label,
+      checked: settings.magicEnabled && settings.magicPreset === id,
+      click: () =>
+        patchTraySettings({
+          magicEnabled: true,
+          magicPreset: id as AppSettings["magicPreset"],
+          ...(id === "spoken-corrections"
+            ? { magicAllowInferences: false }
+            : {}),
+        }),
+    })),
     { type: "separator" },
-    { label: `Rewriting: ${engineLabel(magic)}`, enabled: false },
-    magicAction,
     {
       type: "checkbox",
-      label: "Keep rewriting model ready",
+      label: "Allow helpful assumptions",
+      checked: settings.magicAllowInferences,
+      enabled: settings.magicPreset !== "spoken-corrections",
+      click: () =>
+        patchTraySettings({
+          magicAllowInferences: !settings.magicAllowInferences,
+        }),
+    },
+    {
+      type: "checkbox",
+      label: "Keep model ready",
       checked: settings.preloadMagicModel,
       click: () =>
         patchTraySettings({ preloadMagicModel: !settings.preloadMagicModel }),
     },
+    { label: `Model: ${engineLabel(magic)}`, enabled: false },
+    action,
   ];
 }
 
@@ -552,11 +627,7 @@ function renderTrayMenu(): void {
     process.platform === "darwin" || !shortcutStatus?.registered
       ? ""
       : ` (${shortcutStatus.accelerator})`;
-  const presets: Array<[AppSettings["magicPreset"], string]> =
-    REWRITE_PRESETS.map(({ id, label }) => [
-      id as AppSettings["magicPreset"],
-      label,
-    ]);
+  const recent = visibleHistory().slice(0, 5);
   const template: MenuItemConstructorOptions[] = [
     { label: state.statusLine, enabled: false },
     { type: "separator" },
@@ -594,7 +665,6 @@ function renderTrayMenu(): void {
           },
         ] satisfies MenuItemConstructorOptions[])
       : []),
-    { label: "Open Delulu Talks", click: () => showMainWindow() },
     { type: "separator" },
     {
       label: latest
@@ -606,6 +676,21 @@ function renderTrayMenu(): void {
         paste.copy(deliveredText(latest));
         recordDelivery(latest, "copied");
       },
+    },
+    {
+      label: "Recent",
+      enabled: recent.length > 1,
+      submenu: [
+        ...recent.slice(1).map((record): MenuItemConstructorOptions => ({
+          label: menuPreview(deliveredText(record), 48),
+          click: () => {
+            paste.copy(deliveredText(record));
+            recordDelivery(record, "copied");
+          },
+        })),
+        { type: "separator" },
+        { label: "Open history", click: () => showMainWindow("history") },
+      ],
     },
     pending?.phase === "pending"
       ? {
@@ -622,35 +707,13 @@ function renderTrayMenu(): void {
           click: () => runTrayAction(async () => void schedulePasteLast()),
         },
     { type: "separator" },
+    { label: "Speech", submenu: speechMenu(settings) },
     {
-      type: "checkbox",
-      label: "Rewrite after dictation",
-      checked: settings.magicEnabled,
-      click: () => patchTraySettings({ magicEnabled: !settings.magicEnabled }),
+      label: settings.magicEnabled
+        ? `Rewriting: ${REWRITE_PRESETS.find((preset) => preset.id === settings.magicPreset)?.label ?? "On"}`
+        : "Rewriting: Off",
+      submenu: rewriteMenu(settings),
     },
-    {
-      label: "Rewrite style",
-      enabled: settings.magicEnabled,
-      submenu: [
-        ...presets.map(([preset, label]): MenuItemConstructorOptions => ({
-          type: "radio",
-          label,
-          checked: settings.magicPreset === preset,
-          click: () => patchTraySettings({ magicPreset: preset }),
-        })),
-        { type: "separator" },
-        {
-          type: "checkbox",
-          label: "Allow helpful assumptions",
-          checked: settings.magicAllowInferences,
-          click: () =>
-            patchTraySettings({
-              magicAllowInferences: !settings.magicAllowInferences,
-            }),
-        },
-      ],
-    },
-    { type: "separator" },
     {
       label: "Preferences",
       submenu: [
@@ -669,7 +732,7 @@ function renderTrayMenu(): void {
         },
         {
           type: "checkbox",
-          label: "Show recording overlay",
+          label: "Show recording pill",
           checked: settings.showOverlay,
           click: () =>
             patchTraySettings({ showOverlay: !settings.showOverlay }),
@@ -710,7 +773,8 @@ function renderTrayMenu(): void {
           : []),
       ],
     },
-    { label: "Models & runtimes", submenu: runtimeMenu(settings) },
+    { type: "separator" },
+    { label: "Open Delulu Talks", click: () => showMainWindow() },
     {
       label: "Go to",
       submenu: [
