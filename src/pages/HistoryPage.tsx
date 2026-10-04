@@ -193,9 +193,9 @@ export function HistoryPage({
         </div>
       )}
       {showFilters && (
-        <fieldset className="rounded-panel border border-line p-4">
-          <legend className="caption px-1">Filters</legend>
-          <label className="field min-w-0 max-[700px]:flex-1">
+        <fieldset className="history-filters card">
+          <legend className="sr-only-text">Filters</legend>
+          <label className="field min-w-0">
             Sort history
             <select
               aria-label="Sort history"
@@ -213,7 +213,7 @@ export function HistoryPage({
             </select>
           </label>
 
-          <div className="mt-3 grid grid-cols-3 gap-3 max-[900px]:grid-cols-2 max-[560px]:grid-cols-1">
+          <div className="history-filter-grid">
             <label className="field min-w-0">
               Start date
               <input
@@ -266,7 +266,7 @@ export function HistoryPage({
               </select>
             </label>
             <label className="field min-w-0">
-              Recording/import source
+              Source
               <select
                 aria-label="Recording/import source"
                 value={filters.source}
@@ -275,12 +275,12 @@ export function HistoryPage({
                 }
               >
                 <option value="all">All activity</option>
-                <option value="dictation">Recording · dictation</option>
+                <option value="dictation">Dictation</option>
                 <option value="file">Imported files</option>
               </select>
             </label>
             <label className="field min-w-0">
-              Rewrite status
+              Rewriting
               <select
                 aria-label="Rewrite status"
                 value={filters.rewritten}
@@ -305,7 +305,7 @@ export function HistoryPage({
             {dateError ??
               "Dates include the whole start and end days in your local timezone."}
           </p>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="history-filter-summary mt-1">
             <span className="caption" role="status" aria-live="polite">
               {filtered.length} of {history.length} transcripts
             </span>
@@ -325,12 +325,10 @@ export function HistoryPage({
         </fieldset>
       )}
       {selecting && (
-        <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-line bg-soft">
-          <span className="text-sm" role="status">
-            {selectedIds.length} selected
-          </span>
+        <div className="selection-bar well">
+          <strong role="status">{selectedIds.length} selected</strong>
           <button
-            className="tool-button"
+            className="tool-button compact"
             disabled={batchBusy || !groups.length}
             onClick={() => {
               setSelected(
@@ -351,7 +349,7 @@ export function HistoryPage({
             Select all
           </button>
           <button
-            className="tool-button"
+            className="tool-button compact"
             disabled={batchBusy || !selectedIds.length}
             onClick={() => setSelected(new Set())}
           >
@@ -359,22 +357,23 @@ export function HistoryPage({
           </button>
           {!!selectedIds.length && (
             <>
+              <span className="selection-spacer" />
               <button
-                className="secondary-button"
+                className="secondary-button compact"
                 disabled={batchBusy || !selectedIds.length}
                 onClick={() => void exportSelected("txt")}
               >
-                Export {selectedIds.length} TXT
+                Export TXT
               </button>
               <button
-                className="secondary-button"
+                className="secondary-button compact"
                 disabled={batchBusy || !selectedIds.length}
                 onClick={() => void exportSelected("json")}
               >
-                Export {selectedIds.length} JSON
+                Export JSON
               </button>
               <button
-                className="tool-button danger"
+                className="danger-button compact"
                 disabled={batchBusy || deletionPending || !selectedIds.length}
                 onClick={() => setConfirmSelection([...selectedIds])}
               >
@@ -382,21 +381,19 @@ export function HistoryPage({
               </button>
             </>
           )}
-          <details className="disclosure">
-            <summary>Selection details</summary>
-            <p>
-              Up to 500 per action. Selection includes transcripts hidden by
-              filters. JSON exports include originals and provenance.
-            </p>
-          </details>
+          <p className="caption basis-full">
+            Up to 500 per action, including transcripts hidden by filters. JSON
+            exports include originals and provenance.
+          </p>
         </div>
       )}
       {groups.map(([day, records]) => (
-        <section className="content-stack gap-3.5" key={day}>
-          <div className="section-heading px-0.5 py-1.5">
+        <section className="history-day" key={day}>
+          <div className="history-day-heading">
             <h3>{day}</h3>
             <span className="caption">
-              {records.length} {records.length === 1 ? "capture" : "captures"}
+              {records.length}{" "}
+              {records.length === 1 ? "transcript" : "transcripts"}
             </span>
           </div>
           {records.map((record) => (
@@ -443,9 +440,12 @@ export function HistoryPage({
       )}
       {!!history.length && (
         <details className="disclosure">
-          <summary>Manage history</summary>{" "}
+          <summary>Manage history</summary>
+          <p className="caption mb-3">
+            Retention rules and encrypted backups live in Settings → Local data.
+          </p>
           <button
-            className="tool-button danger"
+            className="danger-button"
             disabled={!history.length || deletionPending || batchBusy}
             onClick={() => setConfirm(true)}
           >

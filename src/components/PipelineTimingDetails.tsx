@@ -9,16 +9,16 @@ export function PipelineTimingDetails({
   const measured = normalizeTimings(timings);
   if (!measured) return null;
   return (
-    <details className="mt-3 text-xs text-muted">
-      <summary className="cursor-pointer">Local processing timings</summary>
-      <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+    <section className="fact-block" aria-label="Local processing timings">
+      <h4>Processing timings</h4>
+      <dl className="fact-grid">
         {(Object.keys(TIMING_LABELS) as (keyof PipelineTimings)[]).map((key) =>
           measured[key] === undefined ? null : (
             <div key={key} className="contents">
               <dt>{TIMING_LABELS[key]}</dt>
-              <dd>
+              <dd className="tabular-nums">
                 {measured[key]!.toLocaleString(undefined, {
-                  maximumFractionDigits: 2,
+                  maximumFractionDigits: 0,
                 })}{" "}
                 ms
               </dd>
@@ -26,11 +26,10 @@ export function PipelineTimingDetails({
           ),
         )}
       </dl>
-      <p className="mt-2">
-        Measured stages can overlap; do not add them to estimate total latency.
-        Missing stages were not measured. Paste dispatch does not confirm
-        insertion in another application.
+      <p className="caption">
+        Stages can overlap, so they do not add up to total latency. Paste
+        dispatch does not confirm insertion in another app.
       </p>
-    </details>
+    </section>
   );
 }

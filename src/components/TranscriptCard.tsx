@@ -74,8 +74,6 @@ export type TranscriptActions = {
 };
 export function TranscriptCard({
   record,
-  defaultOpen = false,
-  inspector = false,
   onCopy,
   onUpdateTranscript,
   onSetTitle,
@@ -92,11 +90,9 @@ export function TranscriptCard({
   rewriteStatus,
 }: TranscriptActions & {
   record: TranscriptRecord;
-  defaultOpen?: boolean;
-  inspector?: boolean;
 }) {
   const pendingDraft = useCorrectionDraft(record.id);
-  const [open, setOpen] = useState(defaultOpen || inspector || !!pendingDraft);
+  const [open, setOpen] = useState(!!pendingDraft);
   const [templateExport, setTemplateExport] = useState(false);
   const [showSource, setShowSource] = useState(false);
   const [rewriting, setRewriting] = useState(false);
@@ -130,7 +126,7 @@ export function TranscriptCard({
   }, [record.magicText]);
   useEffect(() => {
     setEditing(!!pendingDraft);
-    setOpen(defaultOpen || inspector || !!pendingDraft);
+    setOpen(!!pendingDraft);
     setShowSource(!!pendingDraft);
   }, [record.id]);
   const date = new Intl.DateTimeFormat(undefined, {
@@ -166,116 +162,88 @@ export function TranscriptCard({
       setSaving(false);
     }
   };
+  const words = delivered.trim().split(/\s+/).filter(Boolean).length;
+  const unsaved =
+    pendingDraft &&
+    (pendingDraft.error || pendingDraft.text.trim() !== transcriptText(record));
+  const delivery =
+    record.delivery?.state === "paste-attempted"
+      ? "Paste attempted · destination unconfirmed"
+      : record.delivery?.state === "confirmed"
+        ? "Delivered"
+        : record.delivery?.state === "copied"
+          ? "Copied to clipboard"
+          : record.delivery?.state === "transcribed"
+            ? "Transcribed, not delivered"
+            : "Not recorded";
+  const language =
+    record.recognizedLanguage !== undefined ||
+    record.requestedLanguage !== undefined ||
+    record.languageStatus !== undefined
+      ? `${
+          languageMetadata.languageStatus === "mixed"
+            ? `Mixed (${languageMetadata.recognizedLanguages.join(", ")})`
+            : languageMetadata.recognizedLanguage || "Unknown"
+        } · hint ${record.requestedLanguage || "not recorded"}`
+      : record.language || "Unknown";
   return (
-    <article
-      className={`transcript-card ${open ? "expanded" : ""} ${
-        inspector
-          ? "inspector-card rounded-none border-0 p-[14px] shadow-none"
-          : "rounded-panel border border-line bg-surface shadow-panel backdrop-blur-xl p-[15px_18px]"
-      }`}
-    >
-      <header className="flex items-center gap-2.5">
-        <span className="transcript-icon grid size-8 place-items-center rounded-md bg-soft text-muted [&_svg]:size-[15px]">
+    <article className={`transcript-card card ${open ? "expanded" : ""}`}>
+      <header className="transcript-head">
+        <span className="transcript-icon" aria-hidden="true">
           {record.source === "dictation" ? <Mic /> : <FileAudio />}
         </span>
-        <div className="transcript-meta flex-1 min-w-0">
-          <strong className="block text-[12px] wrap-anywhere">
-            {record.title || record.sourceName || "Dictation"}
-          </strong>
-          {pendingDraft &&
-            (pendingDraft.error ||
-              pendingDraft.text.trim() !== transcriptText(record)) && (
-              <span className="text-[10px] text-muted">
-                Unsaved correction · session only
-              </span>
-            )}
-          {record.title &&
+        <div className="transcript-meta">
+          <strong>{record.title || record.sourceName || "Dictation"}</strong>
+          <span>
+            {date} · {Math.max(1, Math.round(record.durationMs / 1000))}s
+            {record.dictationMode && record.dictationMode !== "prose"
+              ? record.dictationMode === "code"
+                ? " · Code"
+                : " · Command"
+              : ""}
+            {record.title &&
             record.sourceName &&
-            record.title !== record.sourceName && (
-              <span className="block text-[10px] text-muted wrap-anywhere">
-                {record.sourceName}
-              </span>
-            )}
-          <span className="mt-[3px] flex items-center gap-1 text-[10px] text-muted">
-            {date} · {Math.max(1, Math.round(record.durationMs / 1000))}s{" "}
-            {record.dictationMode && record.dictationMode !== "prose" && (
-              <>
-                {" "}
-                ·{" "}
-                {record.dictationMode === "code"
-                  ? "Code symbols"
-                  : "Command text"}
-              </>
-            )}
-            {record.magicText && (
-              <>
-                · <WandSparkles className="size-[11px]" /> Rewritten
-              </>
-            )}
-          </span>
-          <span
-            className="block text-[10px] text-muted"
-            title={record.delivery?.detail}
-          >
-            {record.delivery?.state === "paste-attempted"
-              ? "Paste attempted · destination unconfirmed"
-              : record.delivery?.state === "confirmed"
-                ? "Delivery confirmed"
-                : record.delivery?.state === "copied"
-                  ? "Copied to clipboard"
-                  : record.delivery?.state === "transcribed"
-                    ? "Transcribed · no delivery recorded"
-                    : "Delivery not recorded"}
-          </span>
-          <span
-            className="mt-1 block text-[10px] text-muted break-words"
-            aria-label="Transcript language metadata"
-            title="The backend language label may reflect a forced decoder hint; it is not an independent language detection result."
-          >
-            {record.recognizedLanguage !== undefined ||
-            record.requestedLanguage !== undefined ||
-            record.languageStatus !== undefined ? (
-              <>
-                {languageMetadata.languageStatus === "mixed"
-                  ? `Backend languages: Mixed (${languageMetadata.recognizedLanguages.join(", ")})`
-                  : `Backend language: ${languageMetadata.recognizedLanguage || "Unknown"}`}
-                {" · "}Requested hint:{" "}
-                {record.requestedLanguage || "Not recorded"}
-              </>
-            ) : (
-              <>Legacy language: {record.language || "Unknown"}</>
-            )}
+            record.title !== record.sourceName
+              ? ` · ${record.sourceName}`
+              : ""}
           </span>
         </div>
-        <div className="panel-actions">
+        <div className="transcript-badges">
+          {unsaved && <span className="badge warning">Unsaved draft</span>}
+          {record.magicText && (
+            <span className="badge">
+              <WandSparkles aria-hidden="true" /> Rewritten
+            </span>
+          )}
+          {edited && <span className="badge neutral">Corrected</span>}
+        </div>
+        <div className="transcript-actions">
+          <button
+            className="sheet-icon"
+            aria-label="Copy delivered text"
+            title="Copy"
+            onClick={() => onCopy(deliveredText(record))}
+          >
+            <Copy />
+          </button>
           {onSetTitle && (
             <button
-              className="icon-button"
+              className="sheet-icon"
               aria-label={
                 record.title ? "Edit transcript title" : "Add transcript title"
               }
-              title={
-                record.title ? "Edit transcript title" : "Add transcript title"
-              }
+              title={record.title ? "Rename" : "Add a title"}
               disabled={saving}
               onClick={() => setNaming(true)}
             >
               <Pencil />
             </button>
           )}
-          <button
-            className="icon-button"
-            aria-label="Copy delivered text"
-            title="Copy delivered text"
-            onClick={() => onCopy(deliveredText(record))}
-          >
-            <Copy />
-          </button>
           {onDelete && (
             <button
-              className="icon-button"
+              className="sheet-icon danger"
               aria-label="Delete transcript"
-              title="Delete transcript"
+              title="Delete"
               onClick={() => setDeleting(true)}
             >
               <Trash2 />
@@ -283,49 +251,27 @@ export function TranscriptCard({
           )}
         </div>
       </header>
-      {open && <CaptureDiagnostics value={record.captureDiagnostics} />}
-      {!inspector && (
-        <p
-          className={`transcript-preview mt-4 text-[15px] leading-[1.85] text-ink whitespace-pre-wrap wrap-anywhere ${
-            open ? "block line-clamp-none" : "line-clamp-3"
-          }`}
+      {!open && <p className="transcript-preview">{delivered}</p>}
+      <footer className="transcript-foot">
+        <span className="caption">
+          {words} {words === 1 ? "word" : "words"}
+          {record.magicIncludedInferences ? " · assumptions allowed" : ""}
+        </span>
+        <button
+          className="text-button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
         >
-          {deliveredText(record)}
-        </p>
-      )}
-      {!inspector && (
-        <footer className="mt-4 flex items-center justify-between gap-3">
-          <span className="caption text-[10px]">
-            {deliveredText(record).trim().split(/\s+/).filter(Boolean).length}{" "}
-            words
-            {record.magicIncludedInferences
-              ? " · Added assumptions were allowed"
-              : ""}
-            {edited ? " · Corrected" : ""}
-          </span>
-          <button
-            className="text-button min-h-[26px] py-0 text-[11px]"
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-          >
-            {open ? "Close details" : "Review transcript"}
-            <ChevronDown className={`size-[13px] ${open ? "rotated" : ""}`} />
-          </button>
-        </footer>
-      )}
+          {open ? "Hide details" : "Review"}
+          <ChevronDown
+            aria-hidden="true"
+            className={`size-[14px] transition-transform ${open ? "rotated" : ""}`}
+          />
+        </button>
+      </footer>
       {open && (
-        <div
-          className={`transcript-detail ${
-            inspector ? "mt-1 border-0" : "mt-4 border-t border-line"
-          }`}
-        >
-          <div
-            className={`panel-toolbar ${
-              inspector
-                ? "flex-wrap pt-2.5"
-                : "border-b-0 px-0 pb-2.5 pt-[18px]"
-            }`}
-          >
+        <div className="transcript-detail">
+          <div className="transcript-view">
             <div
               className="segmented"
               role="group"
@@ -354,8 +300,8 @@ export function TranscriptCard({
                   ? "Your correction"
                   : "Original speech"
                 : record.magicText
-                  ? "Optional rewrite"
-                  : "Corrections & shortcuts applied"}
+                  ? "Rewritten result"
+                  : "Corrections and shortcuts applied"}
             </span>
           </div>
           {pendingDraft?.error && (
@@ -370,10 +316,6 @@ export function TranscriptCard({
                 the current speech before replacing it.
               </p>
             )}
-          <p className="caption mt-2.5">
-            No calibrated confidence score is available for this transcript.
-            Review the text before using it.
-          </p>
           {!editing &&
             record.dictationMode &&
             record.dictationMode !== "prose" && (
@@ -386,11 +328,7 @@ export function TranscriptCard({
           {editing ? (
             <textarea
               aria-label="Correct transcript"
-              className={`transcript-editor w-full whitespace-pre-wrap wrap-anywhere text-[14px] leading-[1.8] ${
-                inspector
-                  ? "min-h-[260px] max-h-[460px] overflow-y-auto rounded-[5px] border border-line bg-input p-4 max-[1150px]:min-h-[120px]"
-                  : "min-h-[150px] rounded-md bg-soft p-4"
-              }`}
+              className="transcript-editor"
               maxLength={500_000}
               value={draft}
               disabled={saving}
@@ -408,35 +346,11 @@ export function TranscriptCard({
               }}
             />
           ) : (
-            <div
-              className={`transcript-original w-full whitespace-pre-wrap wrap-anywhere text-[14px] leading-[1.8] ${
-                inspector
-                  ? "min-h-[260px] max-h-[460px] overflow-y-auto rounded-[5px] border border-line bg-input p-4 max-[1150px]:min-h-[120px]"
-                  : "rounded-md bg-soft p-4"
-              }`}
-            >
-              {text}
-            </div>
+            <div className="transcript-text well">{text}</div>
           )}
-          <div
-            className={`detail-actions mt-3 ${
-              inspector
-                ? "gap-[3px] [&_.tool-button]:min-h-[30px] [&_.tool-button]:p-1.5 [&_.tool-button]:text-[10px] [&_svg]:size-[13px]"
-                : ""
-            }`}
-          >
+          <div className="detail-actions">
             {editing ? (
               <>
-                <button
-                  className="secondary-button"
-                  disabled={saving}
-                  onClick={() => {
-                    discardCorrectionDraft(record.id);
-                    setEditing(false);
-                  }}
-                >
-                  Discard draft
-                </button>
                 <button
                   className="primary-button"
                   disabled={
@@ -454,11 +368,22 @@ export function TranscriptCard({
                       ? "Retry saving"
                       : "Save correction"}
                 </button>
+                <button
+                  className="secondary-button"
+                  disabled={saving}
+                  onClick={() => {
+                    discardCorrectionDraft(record.id);
+                    setEditing(false);
+                  }}
+                >
+                  Discard draft
+                </button>
+                <span className="caption">Ctrl+Enter saves · Esc closes</span>
               </>
             ) : (
               <>
                 <button
-                  className="tool-button"
+                  className="secondary-button"
                   onClick={() => {
                     setShowSource(true);
                     setEditSource(
@@ -468,28 +393,17 @@ export function TranscriptCard({
                     setEditing(true);
                   }}
                 >
-                  <Pencil /> {pendingDraft ? "Resume correction" : "Edit"}
-                </button>
-                <button className="tool-button" onClick={() => onCopy(text)}>
-                  <Copy /> Copy {showSource ? "speech" : "result"}
+                  <Pencil /> {pendingDraft ? "Resume correction" : "Correct"}
                 </button>
                 <button
-                  className="tool-button"
-                  onClick={() => setIdentifierPreview(true)}
+                  className="secondary-button"
+                  onClick={() => onCopy(text)}
                 >
-                  Identifiers
+                  <Copy /> Copy {showSource ? "speech" : "result"}
                 </button>
-                {edited && (
-                  <button
-                    className="tool-button"
-                    onClick={() => void onUpdateTranscript(record.id, null)}
-                  >
-                    <RotateCcw /> Restore
-                  </button>
-                )}
                 {onRewrite && onSetRewrite && (
                   <button
-                    className="tool-button"
+                    className="secondary-button"
                     disabled={saving}
                     onClick={() =>
                       onOpenRewrite ? onOpenRewrite(record) : setRewriting(true)
@@ -522,37 +436,74 @@ export function TranscriptCard({
                     <RotateCcw /> Undo rewrite
                   </button>
                 )}
-                <button
-                  className="tool-button"
-                  disabled={saving || transcriptText(record).length > 50_000}
-                  title="Compare hesitation-word removal before opening a correction draft (up to 50,000 characters)"
-                  onClick={() => setFillerPreview(true)}
-                >
-                  Preview filler removal
-                </button>
-                {onRemember && (
+                {edited && (
                   <button
                     className="tool-button"
-                    onClick={() => {
-                      if (!correctionSuggested) {
-                        setHeard(
-                          window
-                            .getSelection()
-                            ?.toString()
-                            .trim()
-                            .slice(0, 256) ?? "",
-                        );
-                        setCorrect("");
-                      }
-                      setRemember(true);
-                    }}
+                    onClick={() => void onUpdateTranscript(record.id, null)}
                   >
-                    <BookPlus /> Remember correction
+                    <RotateCcw /> Restore original
                   </button>
                 )}
               </>
             )}
           </div>
+          {!editing && (
+            <div className="detail-actions secondary">
+              {onRemember && (
+                <button
+                  className="tool-button compact"
+                  onClick={() => {
+                    if (!correctionSuggested) {
+                      setHeard(
+                        window
+                          .getSelection()
+                          ?.toString()
+                          .trim()
+                          .slice(0, 256) ?? "",
+                      );
+                      setCorrect("");
+                    }
+                    setRemember(true);
+                  }}
+                >
+                  <BookPlus /> Remember a correction
+                </button>
+              )}
+              <button
+                className="tool-button compact"
+                onClick={() => setIdentifierPreview(true)}
+              >
+                Identifiers
+              </button>
+              <button
+                className="tool-button compact"
+                disabled={saving || transcriptText(record).length > 50_000}
+                title="Compare hesitation-word removal before opening a correction draft (up to 50,000 characters)"
+                onClick={() => setFillerPreview(true)}
+              >
+                Remove fillers…
+              </button>
+              {onExport &&
+                (["txt", "md", "json"] as ExportFormat[]).map((format) => (
+                  <button
+                    className="tool-button compact"
+                    key={format}
+                    onClick={() => onExport(record.id, format)}
+                  >
+                    <Download />
+                    {format === "md" ? "Markdown" : format.toUpperCase()}
+                  </button>
+                ))}
+              {onExport && onExportTemplate && (
+                <button
+                  className="tool-button compact"
+                  onClick={() => setTemplateExport(true)}
+                >
+                  <Download /> Template…
+                </button>
+              )}
+            </div>
+          )}
           {correctionSuggested && !remember && (
             <div className="correction-suggestion">
               <span>
@@ -571,34 +522,25 @@ export function TranscriptCard({
           )}
           {record.dictationFormatting === "spoken" && (
             <p className="caption">
-              Explicit spoken formatting applied; original recognition remains
-              in Speech.
+              Spoken formatting commands were applied; the original recognition
+              is under Speech.
             </p>
           )}
-          <PipelineTimingDetails timings={record.timings} />
-          {onExport && (
-            <div className="export-row mt-3.5 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted [&_.tool-button]:min-h-[28px] [&_.tool-button]:px-2 [&_.tool-button]:py-[5px] [&_svg]:size-3">
-              <span>Export</span>
-              {(["txt", "json", "md"] as ExportFormat[]).map((format) => (
-                <button
-                  className="tool-button"
-                  key={format}
-                  onClick={() => onExport(record.id, format)}
-                >
-                  <Download />
-                  {format === "md" ? "Markdown" : format.toUpperCase()}
-                </button>
-              ))}
-              {onExportTemplate && (
-                <button
-                  className="tool-button"
-                  onClick={() => setTemplateExport(true)}
-                >
-                  <Download /> Template…
-                </button>
-              )}
-            </div>
-          )}
+          <details className="disclosure transcript-facts">
+            <summary>Details</summary>
+            <dl>
+              <dt>Delivery</dt>
+              <dd title={record.delivery?.detail}>{delivery}</dd>
+              <dt>Language</dt>
+              <dd title="The backend label may reflect a forced decoder hint; it is not an independent language detection.">
+                {language}
+              </dd>
+              <dt>Confidence</dt>
+              <dd>No calibrated score — review the text before using it.</dd>
+            </dl>
+            <CaptureDiagnostics value={record.captureDiagnostics} />
+            <PipelineTimingDetails timings={record.timings} />
+          </details>
         </div>
       )}
       {templateExport && onExportTemplate && (

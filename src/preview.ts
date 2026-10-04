@@ -1,4 +1,11 @@
 import { emptyImportQueue } from "./importQueue";
+import {
+  previewScenario,
+  scenarioHistory,
+  scenarioMagicStatus,
+  scenarioStatus,
+  scenarioUpdateStatus,
+} from "./previewScenarios";
 import { activatePersonalProfile } from "./activePersonalProfile";
 import { changePersonalProfiles } from "./personalProfileCommands";
 import { emptyProjectVocabulary } from "./projectVocabulary";
@@ -26,24 +33,16 @@ import type {
   UpdateStatus,
 } from "./types";
 
-let demoHistory: TranscriptRecord[] = [
-  {
-    id: "demo-1",
-    createdAt: Date.now() - 1000 * 60 * 18,
-    durationMs: 24_000,
-    text: "Move the design review to Thursday and add the new onboarding notes.",
-    magicText:
-      "Move the design review to Thursday and include the new onboarding notes.",
-    magicModel: "qwen35Medium",
-    magicPreset: "polish",
-    magicIncludedInferences: false,
-    magicProcessingTimeMs: 640,
-    model: "r2t2",
-    language: "en",
-    source: "dictation",
-    processingTimeMs: 1800,
-  },
-];
+let demoHistory: TranscriptRecord[] =
+  previewScenario === "empty" ? [] : scenarioHistory();
+
+let liveStatus: DictationStatus = scenarioStatus();
+const statusListeners = new Set<(status: DictationStatus) => void>();
+const transcriptListeners = new Set<(record: TranscriptRecord) => void>();
+function setLiveStatus(patch: Partial<DictationStatus>) {
+  liveStatus = { ...liveStatus, ...patch };
+  for (const listener of statusListeners) listener(liveStatus);
+}
 
 function mockSettings(): AppSettings {
   try {
@@ -223,21 +222,10 @@ export const previewApi: DeluluApi = {
     return next;
   },
   async getStatus() {
-    return {
-      phase: "idle",
-      engine: "ready",
-      message: "Browser preview · Speech model status",
-      model: "r2t2" as const,
-    };
+    return liveStatus;
   },
   async getMagicStatus() {
-    return {
-      phase: "idle",
-      engine: "ready",
-      message: "Browser preview · Rewrite model status (Qwen 3.5 · 2B)",
-      model: "qwen35Medium",
-      device: "cuda",
-    };
+    return scenarioMagicStatus();
   },
   async getShortcutStatus() {
     return {
@@ -266,11 +254,7 @@ export const previewApi: DeluluApi = {
     };
   },
   async getUpdateStatus() {
-    return {
-      phase: "unsupported",
-      currentVersion: "browser",
-      message: "Updates are available in the installed app",
-    };
+    return scenarioUpdateStatus();
   },
   async checkForUpdates() {
     return this.getUpdateStatus();
@@ -282,14 +266,34 @@ export const previewApi: DeluluApi = {
     desktopOnly();
   },
   async pauseDictation() {
-    throw new Error("Pause requires the desktop recorder");
+    setLiveStatus({ phase: "paused", message: "Paused — microphone open" });
   },
   async resumeDictation() {
-    throw new Error("Resume requires the desktop recorder");
+    setLiveStatus({ phase: "listening", message: "Listening — resumed" });
   },
   async recordingPauseChanged() {},
   async toggleDictation() {
-    desktopOnly();
+    // The preview simulates a short dictation so the shell can be reviewed.
+    if (liveStatus.phase === "listening" || liveStatus.phase === "paused") {
+      setLiveStatus({ phase: "transcribing", message: "Transcribing locally" });
+      setTimeout(() => {
+        const record: TranscriptRecord = {
+          ...scenarioHistory()[2],
+          id: `demo-${Date.now()}`,
+          createdAt: Date.now(),
+          title: null,
+          editedText: null,
+          text: "This is a simulated dictation from the browser preview.",
+        };
+        demoHistory = [record, ...demoHistory];
+        for (const listener of transcriptListeners) listener(record);
+        setLiveStatus({ phase: "idle", message: "Ready" });
+      }, 1400);
+    } else if (liveStatus.phase === "idle")
+      setLiveStatus({
+        phase: "listening",
+        message: "Listening — press the shortcut again to finish",
+      });
   },
   async startDictation() {
     desktopOnly();
@@ -298,7 +302,7 @@ export const previewApi: DeluluApi = {
     desktopOnly();
   },
   async cancelDictation() {
-    desktopOnly();
+    setLiveStatus({ phase: "idle", message: "Recording cancelled" });
   },
   async setupModel() {
     desktopOnly();
@@ -510,8 +514,9 @@ export const previewApi: DeluluApi = {
   async recordingInputChanged() {},
   recordingLevel(_level: number) {},
   async submitRecording(_recording: RecordingSubmission) {},
-  onStatus(_callback: (status: DictationStatus) => void) {
-    return () => undefined;
+  onStatus(callback: (status: DictationStatus) => void) {
+    statusListeners.add(callback);
+    return () => statusListeners.delete(callback);
   },
   onMagicStatus(_callback: (status: MagicStatus) => void) {
     return () => undefined;
@@ -525,8 +530,9 @@ export const previewApi: DeluluApi = {
   onShortcutStatus(_callback: (status: ShortcutStatus) => void) {
     return () => undefined;
   },
-  onTranscript(_callback: (record: TranscriptRecord) => void) {
-    return () => undefined;
+  onTranscript(callback: (record: TranscriptRecord) => void) {
+    transcriptListeners.add(callback);
+    return () => transcriptListeners.delete(callback);
   },
   onRecorderCommand(_callback: (command: RecorderCommand) => void) {
     return () => undefined;

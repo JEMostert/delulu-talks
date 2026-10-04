@@ -33,3 +33,230 @@
 .selectable-transcript > :last-child {
   grid-column: 2;
 }
+
+/* Transcript cards */
+.transcript-card {
+  padding: 14px 16px 10px 16px;
+}
+.transcript-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.transcript-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+.transcript-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.transcript-meta {
+  flex: 1;
+  min-width: 0;
+}
+.transcript-meta strong {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13.5px;
+}
+.transcript-meta span {
+  display: block;
+  margin-top: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--muted);
+}
+.transcript-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.transcript-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0.75;
+  transition: opacity var(--t-base);
+}
+.transcript-card:hover .transcript-actions,
+.transcript-card:focus-within .transcript-actions {
+  opacity: 1;
+}
+.transcript-actions .sheet-icon {
+  width: 32px;
+  height: 32px;
+}
+.transcript-actions .sheet-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.sheet-icon.danger:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.transcript-preview {
+  margin: 10px 0 0 45px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+.transcript-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 0 0 45px;
+}
+.transcript-foot .text-button {
+  font-size: 12.5px;
+}
+.transcript-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.transcript-view {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.transcript-text,
+.transcript-editor {
+  width: 100%;
+  min-height: 120px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14.5px;
+  line-height: 1.75;
+}
+.transcript-text {
+  max-height: 46dvh;
+  overflow: auto;
+  padding: 14px 16px;
+}
+.transcript-editor {
+  min-height: 160px;
+}
+.detail-actions.secondary {
+  gap: 4px;
+  margin-top: -4px;
+}
+.transcript-facts dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 12px;
+  font-size: 12.5px;
+}
+.transcript-facts dt,
+.transcript-facts dd {
+  margin: 0;
+}
+.fact-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.fact-block h4 {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.fact-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0 0 6px;
+  font-size: 12.5px;
+}
+.fact-grid dt,
+.fact-grid dd {
+  margin: 0;
+}
+@media (max-width: 600px) {
+  .transcript-preview,
+  .transcript-foot {
+    margin-left: 0;
+  }
+  .transcript-badges {
+    display: none;
+  }
+}
+
+.history-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 16px 18px;
+}
+.history-filters .field {
+  margin-top: 10px;
+}
+.history-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0 12px;
+}
+.selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  position: sticky;
+  top: -20px;
+  z-index: 3;
+  box-shadow: var(--shadow-2);
+}
+.selection-bar strong {
+  font-size: 13px;
+  margin-right: 4px;
+}
+.selection-spacer {
+  flex: 1;
+}
+.history-day {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.history-day-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 2px 0;
+}
+.history-day-heading h3 {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
