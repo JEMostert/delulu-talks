@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/readme-header.svg" width="100%" alt="Delulu Talks — private desktop dictation, with the ocean-blue voice mark" />
+  <img src="docs/assets/readme-header.svg" width="100%" alt="Delulu Talks — private desktop dictation, with the deep-sea voice ribbon" />
   <p><strong>Native clean dictation. Personal corrections. Optional local rewriting.</strong></p>
   <p>
     <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><img src="https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&amp;label=release&amp;color=16b3e8&amp;labelColor=0a2942" alt="Latest release" /></a>
@@ -50,30 +50,30 @@ On supported Wayland desktops, the recording pill stays above your apps without 
 
 ### Corrections and text shortcuts
 
-Open **Settings → Personalization** or the shortcut on Controls. Corrections replace specific recognized text; text shortcuts expand a spoken trigger into an exact saved block. Each rule has a live text preview and conflicting triggers are rejected. Editing a transcript can suggest a correction to remember, with explicit confirmation.
+Open **Personalization** from the dock or the command palette. Corrections replace specific recognized text; text shortcuts expand a spoken trigger into an exact saved block. Each rule has a live text preview and conflicting triggers are rejected. Editing a transcript can suggest a correction to remember, with explicit confirmation.
 
 Speech output stays untouched. Personalization creates a separate result, and exact shortcut blocks stay outside the writing model; only the surrounding text is rewritten. Failed automatic rewriting delivers the preserved transcript instead.
 
 Upgrading from an older release turns automatic rewriting and writing-model preloading off once, because earlier defaults did not establish an explicit choice. You can enable either independently afterward. Existing history and rules are retained. Old spelling-only entries are marked as needing a recognized phrase; historical transcripts cannot recover speech text already replaced by an older version.
 
-## Controls on launch
+## The interface
 
-The app opens directly into dictation controls. Microphone, language, shortcut, and delivery switches are immediately accessible. The latest result sits beside them, with editing, correction capture, optional rewriting, and export.
+Delulu Talks opens onto a living ocean with one pearl record button. Press it — or your shortcut from any app — and the pearl turns coral with a voice-level halo and a running clock; when you stop, your words are pasted where you were typing and the latest transcript floats beneath the controls with copy and open-in-history actions.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/controls-dark.png" />
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/controls-light.png" />
-  <img src="docs/assets/controls-dark.png" width="100%" alt="Delulu Talks controls: capture, transcription, personalization, and delivery settings beside the latest transcript" />
+  <img src="docs/assets/controls-dark.png" width="100%" alt="Delulu Talks home: a pearl record button on a deep-sea background with the latest transcript beneath it" />
 </picture>
 
-_Current interface captured from the browser preview with demo text. The image follows your light or dark theme._
+_Captured from the browser preview with demo text. The image follows your light or dark theme._
 
-The interface uses ocean-blue and navy panels with light/dark/system themes. Controls, Settings, and Models lead the navigation. Transcript rewriting, file transcription, model management, history and personalization share the same compact visual system. The application icon is an abstract ocean-blue voice mark. See the [editable brand assets](docs/BRAND.md).
+The **Deep Sea** design system has two themes — _Abyss_ (dark) and _Shallows_ (sunlit, light) — and follows your system by default. A glass sheet rises above a compact dock for History, Audio files, Models, Personalization, the Editor and Settings; <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd> opens the command palette. The tray icon shows whether you are recording, busy, need attention or have an update. See the [design system](docs/DESIGN-SYSTEM.md) and [brand assets](docs/BRAND.md).
 
-- **Configure quickly:** priority controls fit above the fold in compact desktop windows.
+- **Configure quickly:** the gear opens quick settings for microphone, language, shortcut, paste and theme.
 - **Recover results:** paste the latest transcript, retry failed audio from memory, or discard it explicitly.
 - **Preserve originals:** corrections stay separate from model output and optional rewrites.
-- **Manage locally:** Settings → Runtime covers memory choices; Settings → Application covers appearance and app updates.
+- **Manage locally:** Settings → Performance covers memory and runtimes; Settings → App covers appearance, launch at login and updates.
 
 ## Local speech and writing models
 
@@ -114,16 +114,16 @@ Supported installed packages check GitHub Releases for updates. Downloads are ex
 
 ## Your first minute
 
-1. Open Delulu Talks. Controls are immediately available; the inline setup notice points you to model installation.
+1. Open Delulu Talks. The pearl record button is ready immediately; the “Set up speech” chip and the Models page guide model installation.
 2. Choose **Install engine**. The app installs the local runtime and downloads the model weights.
-3. Focus a text field and use the shortcut shown in Controls. On supported Wayland desktops, hold <kbd>Meta</kbd> + <kbd>Z</kbd>, speak, then release; toggle mode uses a second press to finish.
+3. Focus a text field and use the shortcut shown in quick settings. On supported Wayland desktops, hold <kbd>Meta</kbd> + <kbd>Z</kbd>, speak, then release; toggle mode uses a second press to finish.
 4. Dictate immediately with native clean output. Optionally install the rewriting engine in **Models**, then use **Rewrite** beside any result to preview, apply, or undo it. Automatic rewriting is a separate opt-in setting.
 
-The app manages separate isolated Python environments for platform-selected speech and Magic rewriting, plus a shared model cache, inside the platform application-data directory. Existing shared runtimes are detected as an “Update setup” migration instead of failing with a package conflict. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → Application offers repair and update controls.
+The app manages separate isolated Python environments for platform-selected speech and rewriting, plus a shared model cache, inside the platform application-data directory. Existing shared runtimes are detected as an “Update setup” migration instead of failing with a package conflict. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → Performance offers repair controls and Settings → App handles updates.
 
 ## Run from source
 
-You will need [Bun](https://bun.sh/), **Python 3.12 on Windows and native arm64 Python 3.12 on Apple Silicon** (Python 3.11–3.13 for Linux CUDA), and FFmpeg for compressed audio or video imports. On Mac, install Python using `brew install python@3.12` or `uv python install 3.12`; set its full path under Settings → Runtime if necessary. The Mac speech environment installs pinned MLX, MLX Audio, and Transformers packages; it does not install a vLLM server.
+You will need [Bun](https://bun.sh/), **Python 3.12 on Windows and native arm64 Python 3.12 on Apple Silicon** (Python 3.11–3.13 for Linux CUDA), and FFmpeg for compressed audio or video imports. On Mac, install Python using `brew install python@3.12` or `uv python install 3.12`; set its full path under Settings → Performance if necessary. The Mac speech environment installs pinned MLX, MLX Audio, and Transformers packages; it does not install a vLLM server.
 
 ```bash
 bun install
@@ -152,7 +152,7 @@ Electron main process
 │   ├── R2T2 speech runtime
 │   └── Qwen writing runtime
 └── sandboxed React renderer
-    ├── Controls + contextual transcript rewriting
+    ├── ocean shell, dock + contextual transcript rewriting
     ├── Audio files + History + Personalization
     └── Models + Settings + onboarding
 ```
@@ -182,10 +182,11 @@ electron/
   preload.ts          isolated renderer API
   services/           ASR, dictation, overlay, shortcuts, storage, paste, export
   overlay/            GTK4 layer-shell recording pill helper
-  python/             persistent speech + Magic worker
+  python/             persistent speech + rewriting worker
 src/
   components/         Electron app shell components
-  pages/              Controls, Audio files, History, Models, Settings
+  pages/              Audio files, History, Models, Personalization, Editor, Settings
+  styles/             Deep Sea tokens, primitives, shell and feature styles
   bridge.ts           typed Electron/browser boundary
   recorder.ts         microphone capture and 16 kHz WAV encoder
   data.ts             R2T2, Qwen, and language catalogs
@@ -217,7 +218,7 @@ Development uses its own **Delulu Talks Dev** profile, audio cache, and Linux de
 
 Repairs build a fresh environment under `speech-venv/generations/` (or the Writing runtime root), validate dependencies and imports, then atomically activate it. Virtualenv directories are never renamed. Failed installation leaves the previous runtime selected; a failed initial model load rolls activation back. Previous and interrupted generations are retained for recovery, so repairs temporarily require extra disk space. The existing `asr-venv` can still be the active Writing runtime; do not delete it merely because its name is old.
 
-Cold starts load model weights into GPU memory. **Settings → Runtime → Keep speech ready** keeps speech resident between recordings; turn it off when you prefer to reclaim VRAM after the idle delay. Unload stops the worker process tree, including vLLM's GPU subprocesses.
+Cold starts load model weights into GPU memory. **Settings → Performance → Keep speech ready** keeps speech resident between recordings; turn it off when you prefer to reclaim VRAM after the idle delay. Unload stops the worker process tree, including vLLM's GPU subprocesses.
 
 ```bash
 bun run format:check

@@ -108,13 +108,17 @@ export function ProfileActivationControls({
     }
   }
   return (
-    <div className="grid gap-2 px-3.5 py-2.5 border-t border-line">
-      <p className="text-[12px]" title={label}>
-        {captureProfile ? "Capture profile" : "Active profile"}:{" "}
-        <strong>{label}</strong>
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <label className="text-[11px] text-muted flex items-center gap-2">
+    <div className="card grid gap-3">
+      <div>
+        <span className="eyebrow">
+          {captureProfile ? "Capture profile" : "Active profile"}
+        </span>
+        <strong className="text-[15px]" title={label}>
+          {label}
+        </strong>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-[13px] text-muted flex items-center gap-2">
           Switch to
           <select
             aria-label="Profile to activate"
@@ -131,7 +135,7 @@ export function ProfileActivationControls({
           </select>
         </label>
         <button
-          className="secondary-button text-[11px]"
+          className="secondary-button"
           disabled={
             disabled || (choice === "global" && !settings.activePersonalProfile)
           }

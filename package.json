@@ -1,7 +1,7 @@
 {
   "name": "delulu-talks",
   "private": true,
-  "version": "0.10.2",
+  "version": "0.11.0",
   "type": "module",
   "description": "Private, local-first system-wide R2T2 dictation with MLX and CUDA acceleration",
   "author": {
