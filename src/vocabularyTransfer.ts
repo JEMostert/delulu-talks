@@ -2,7 +2,12 @@ import {
   assertPersistedSchema,
   versionPersistedRecord,
 } from "./persistedSchema";
-import { ruleConflict, ruleKind } from "./personalization";
+import {
+  aliasError,
+  normalizeAliases,
+  ruleConflict,
+  ruleKind,
+} from "./personalization";
 import type { CustomWord } from "./types";
 
 export const MAX_VOCABULARY_FILE_BYTES = 32 * 1024 * 1024;
@@ -69,6 +74,8 @@ export function parseVocabularyBundle(raw: string): VocabularyBundle {
             "soundsLike",
             "replacement",
             "enabled",
+            "aliases",
+            "language",
           ].includes(key),
       )
     )
@@ -100,12 +107,33 @@ export function parseVocabularyBundle(raw: string): VocabularyBundle {
       throw new Error(
         `Rule ${index + 1} correction must not contain a shortcut replacement.`,
       );
+    if (
+      row.aliases !== undefined &&
+      (!Array.isArray(row.aliases) ||
+        row.aliases.some((alias) => typeof alias !== "string") ||
+        aliasError(row.aliases as string[]))
+    )
+      throw new Error(
+        `Rule ${index + 1} aliases: ${aliasError((row.aliases as string[]) ?? []) ?? "expected a list of phrases"}`,
+      );
+    if (
+      row.language !== undefined &&
+      (typeof row.language !== "string" ||
+        !/^[a-z]{2,3}(-[a-z0-9]{2,8})*$/i.test(row.language))
+    )
+      throw new Error(`Rule ${index + 1} has an invalid language code.`);
     return {
       schemaVersion: 1,
       id,
       kind: row.kind,
       term,
+      ...(typeof row.language === "string"
+        ? { language: row.language.toLowerCase() }
+        : {}),
       soundsLike,
+      ...(row.aliases !== undefined
+        ? { aliases: normalizeAliases(row.aliases) }
+        : {}),
       replacement,
       enabled: row.enabled,
     };

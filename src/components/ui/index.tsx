@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type React from "react";
 import {
   AlertCircle,
@@ -366,5 +366,126 @@ export function ConfirmDialog({
     >
       {children}
     </Modal>
+  );
+}
+
+/**
+ * A number input that edits a local draft and saves once, on blur or Enter,
+ * so typing "12" never saves "1" and a save in flight never locks the field.
+ */
+export function NumberField({
+  value,
+  min,
+  max,
+  step = 1,
+  label,
+  disabled,
+  onCommit,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  label: string;
+  disabled?: boolean;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const editing = useRef(false);
+  useEffect(() => {
+    if (!editing.current) setDraft(String(value));
+  }, [value]);
+  const commit = () => {
+    editing.current = false;
+    const parsed = Number(draft);
+    if (!draft.trim() || !Number.isFinite(parsed)) {
+      setDraft(String(value));
+      return;
+    }
+    const next = Math.min(max, Math.max(min, parsed));
+    setDraft(String(next));
+    if (next !== value) onCommit(next);
+  };
+  return (
+    <input
+      type="number"
+      className="w-24"
+      aria-label={label}
+      min={min}
+      max={max}
+      step={step}
+      value={draft}
+      disabled={disabled}
+      onFocus={() => {
+        editing.current = true;
+      }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") commit();
+        if (event.key === "Escape") {
+          editing.current = false;
+          setDraft(String(value));
+        }
+      }}
+    />
+  );
+}
+
+/** A slider that previews locally and saves when the drag or key press ends. */
+export function RangeField({
+  value,
+  min,
+  max,
+  step,
+  label,
+  format,
+  disabled,
+  onCommit,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  label: string;
+  format: (value: number) => string;
+  disabled?: boolean;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const dragging = useRef(false);
+  useEffect(() => {
+    if (!dragging.current) setDraft(value);
+  }, [value]);
+  const commit = () => {
+    dragging.current = false;
+    if (draft !== value) onCommit(draft);
+  };
+  return (
+    <div className="inline-control">
+      <input
+        type="range"
+        aria-label={label}
+        aria-valuetext={format(draft)}
+        min={min}
+        max={max}
+        step={step}
+        value={draft}
+        disabled={disabled}
+        onPointerDown={() => {
+          dragging.current = true;
+        }}
+        onChange={(event) => {
+          dragging.current = true;
+          setDraft(Number(event.target.value));
+        }}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={() => dragging.current && commit()}
+      />
+      <span className="w-10 text-right tabular-nums text-muted">
+        {format(draft)}
+      </span>
+    </div>
   );
 }

@@ -4,6 +4,8 @@ import {
   dialog,
   Menu,
   nativeImage,
+  nativeTheme,
+  Notification,
   session,
   shell,
   Tray,
@@ -51,6 +53,13 @@ import {
 import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { deletedDespiteCleanup } from "./services/migrationBackups";
 import { UpdateService } from "./services/updates";
+import { setLinuxAutostart } from "./services/autostart";
+import { linuxTrayHostAvailable } from "./services/trayHost";
+import {
+  menuPreview,
+  trayState,
+  type TrayIconState,
+} from "./services/trayState";
 import { registerMainIpc } from "./ipc";
 
 const { autoUpdater } = electronUpdater;
@@ -81,6 +90,11 @@ const smokeTest =
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+/** Launch-at-login starts in the tray; any explicit reopen shows the window. */
+const startHidden = process.argv.includes("--hidden");
+/** False on Linux desktops with no StatusNotifier host, where a tray is invisible. */
+let trayVisible = true;
+let hiddenNoticeShown = false;
 let quitting = false;
 let storage: StorageService;
 
@@ -200,6 +214,14 @@ function syncMacDock(): void {
     });
 }
 
+/** Matches the renderer canvas so the first frame never flashes the wrong theme. */
+function windowBackground(): string {
+  const theme = storage?.getSettings().theme ?? "system";
+  const dark =
+    theme === "dark" || (theme === "system" && nativeTheme.shouldUseDarkColors);
+  return dark ? "#031424" : "#cfeaf4";
+}
+
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
     title: "Delulu Talks",
@@ -210,7 +232,7 @@ function createMainWindow(): BrowserWindow {
     minHeight: 420,
     center: true,
     show: false,
-    backgroundColor: "#091c2d",
+    backgroundColor: windowBackground(),
     autoHideMenuBar: true,
     webPreferences: {
       preload: preloadPath(),
@@ -223,7 +245,7 @@ function createMainWindow(): BrowserWindow {
   const reveal = () => {
     // Keep the renderer alive for capture, but require an installed tray before
     // suppressing startup visibility. Explicit reopen actions still show it.
-    if (menuBarOnlyActive()) return;
+    if (menuBarOnlyActive() || (startHidden && !!tray && trayVisible)) return;
     if (!window.isDestroyed() && !window.isVisible()) window.show();
   };
   window.once("ready-to-show", reveal);
@@ -237,11 +259,22 @@ function createMainWindow(): BrowserWindow {
       details.reason,
       details.exitCode,
     );
+    // The renderer owns the microphone: end any capture it was running and
+    // bring the workspace back instead of leaving dictation stuck.
+    dictation?.recorderUnavailable();
+    if (!quitting && details.reason !== "clean-exit" && !window.isDestroyed())
+      window.webContents.reload();
   });
   window.on("close", (event) => {
     if (quitting) return;
     event.preventDefault();
     window.hide();
+    if (!trayVisible && !hiddenNoticeShown) {
+      hiddenNoticeShown = true;
+      notify(
+        "Delulu Talks is still running, so your shortcut keeps working. Open it again from your app launcher.",
+      );
+    }
   });
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -261,6 +294,7 @@ function iconPath(): string {
 
 function showMainWindow(page?: Page): void {
   if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow();
+  if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
   if (!page) return;
@@ -286,23 +320,36 @@ function engineLabel(status: {
   }[status.engine];
 }
 
+type TrayActionScope = "speech" | "rewrite" | "app";
+
+/**
+ * Model actions report through their engine status. Everything else (settings,
+ * updates, paste) is shown as a notification, so a refused tray click never
+ * marks the speech engine broken and blocks dictation.
+ */
 function runTrayAction(
   action: () => unknown | Promise<unknown>,
-  magic = false,
+  scope: TrayActionScope = "app",
 ): void {
   void Promise.resolve()
     .then(action)
-    .catch((error) => (magic ? asr.failMagic(error) : asr.fail(error)));
+    .catch((error) => {
+      if (scope === "speech") asr.fail(error);
+      else if (scope === "rewrite") asr.failMagic(error);
+      else notify(error instanceof Error ? error.message : String(error));
+      rebuildTrayMenu();
+    });
+}
+
+function notify(body: string): void {
+  if (smokeTest) return;
+  if (Notification.isSupported())
+    new Notification({ title: "Delulu Talks", body, silent: true }).show();
+  else console.error(body);
 }
 
 function patchTraySettings(patch: Partial<AppSettings>): void {
-  runTrayAction(
-    () => persistSettings(patch),
-    "magicEnabled" in patch ||
-      "magicPreset" in patch ||
-      "magicAllowInferences" in patch ||
-      "preloadMagicModel" in patch,
-  );
+  runTrayAction(() => persistSettings(patch));
 }
 
 function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
@@ -317,48 +364,50 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
       ? {
           label: "Unload speech model",
           enabled: !speechBusy,
-          click: () => runTrayAction(() => asr.unload()),
+          click: () => runTrayAction(() => asr.unload(), "speech"),
         }
       : speech.engine === "unloaded"
         ? {
             label: "Load speech model now",
             enabled: !speechBusy,
             click: () =>
-              runTrayAction(() => asr.loadModel(storage.getSettings())),
+              runTrayAction(
+                () => asr.loadModel(storage.getSettings()),
+                "speech",
+              ),
           }
         : {
             label: speech.migrationRequired
               ? "Update speech runtime…"
-              : "Set up speech runtime…",
+              : "Set up speech…",
             enabled: !speechBusy,
             click: () => showMainWindow("models"),
           };
   const magicAction: MenuItemConstructorOptions =
     magic.engine === "ready"
       ? {
-          label: "Unload rewrite model",
+          label: "Unload rewriting model",
           enabled: !magicBusy,
-          click: () => runTrayAction(() => asr.unloadMagic(), true),
+          click: () => runTrayAction(() => asr.unloadMagic(), "rewrite"),
         }
       : magic.engine === "unloaded"
         ? {
-            label: "Load rewrite model now",
+            label: "Load rewriting model now",
             enabled: !magicBusy,
             click: () =>
-              runTrayAction(() => asr.loadMagic(storage.getSettings()), true),
+              runTrayAction(
+                () => asr.loadMagic(storage.getSettings()),
+                "rewrite",
+              ),
           }
         : {
-            label: "Set up rewrite runtime…",
+            label: "Set up rewriting…",
             enabled: !magicBusy,
             click: () => showMainWindow("models"),
           };
 
   return [
-    {
-      label: `Speech · ${engineLabel(speech)}`,
-      sublabel: speech.message,
-      enabled: false,
-    },
+    { label: `Speech: ${engineLabel(speech)}`, enabled: false },
     speechAction,
     {
       type: "checkbox",
@@ -367,15 +416,11 @@ function runtimeMenu(settings: AppSettings): MenuItemConstructorOptions[] {
       click: () => patchTraySettings({ preloadModel: !settings.preloadModel }),
     },
     { type: "separator" },
-    {
-      label: `Rewriting · ${engineLabel(magic)}`,
-      sublabel: magic.message,
-      enabled: false,
-    },
+    { label: `Rewriting: ${engineLabel(magic)}`, enabled: false },
     magicAction,
     {
       type: "checkbox",
-      label: "Keep rewrite model ready",
+      label: "Keep rewriting model ready",
       checked: settings.preloadMagicModel,
       click: () =>
         patchTraySettings({ preloadMagicModel: !settings.preloadMagicModel }),
@@ -420,7 +465,69 @@ function schedulePasteLast() {
   );
 }
 
+let trayRebuild: ReturnType<typeof setTimeout> | null = null;
+let trayMenuKey = "";
+let trayIconState: TrayIconState | null = null;
+
+/** Coalesces bursts (download progress, countdowns) into one menu update. */
 function rebuildTrayMenu(): void {
+  if (!tray || trayRebuild) return;
+  trayRebuild = setTimeout(() => {
+    trayRebuild = null;
+    renderTrayMenu();
+  }, 80);
+}
+
+function updateMenuItem(): MenuItemConstructorOptions {
+  const update = updates?.getStatus();
+  if (!update || update.phase === "unsupported")
+    return {
+      label: "Get updates on GitHub…",
+      click: () =>
+        void shell.openExternal(
+          "https://github.com/JEMostert/delulu-talks/releases/latest",
+        ),
+    };
+  const version = update.version ? ` ${update.version}` : "";
+  switch (update.phase) {
+    case "checking":
+      return { label: "Checking for updates…", enabled: false };
+    case "available":
+      return {
+        label: `Download update${version}`,
+        click: () => runTrayAction(() => updates.download()),
+      };
+    case "downloading":
+      return {
+        label: `Downloading update · ${Math.round(update.percent ?? 0)}%`,
+        enabled: false,
+      };
+    case "downloaded":
+      return updates.installable()
+        ? {
+            label: `Restart to update${version}`,
+            click: () => runTrayAction(() => updates.install()),
+          }
+        : { label: "Update ready — finish your current task", enabled: false };
+    case "upToDate":
+      return {
+        label: `Up to date (${update.currentVersion})`,
+        click: () => runTrayAction(() => updates.check()),
+      };
+    case "error":
+      return {
+        label: "Update failed — try again",
+        click: () => runTrayAction(() => updates.check()),
+      };
+    default:
+      return {
+        label: "Check for updates",
+        click: () => runTrayAction(() => updates.check()),
+      };
+  }
+}
+
+function renderTrayMenu(): void {
   if (!tray) return;
   const settings = storage.getSettings();
   const status = asr.getStatus();
@@ -430,103 +537,122 @@ function rebuildTrayMenu(): void {
   const dictationBusy = ["preparing", "loading", "transcribing"].includes(
     status.phase,
   );
-  const update = updates?.getStatus();
   const speechUnavailable =
     status.engine === "missing" || status.engine === "error";
+  const shortcutStatus = shortcut?.getStatus();
+  const pending = pasteLast?.getStatus();
+  const state = trayState({
+    speech: status,
+    rewrite: magic,
+    shortcut: shortcutStatus,
+    update: updates?.getStatus(),
+    delivering: paste?.isBusy,
+  });
+  const shortcutHint =
+    process.platform === "darwin" || !shortcutStatus?.registered
+      ? ""
+      : ` (${shortcutStatus.accelerator})`;
   const presets: Array<[AppSettings["magicPreset"], string]> =
     REWRITE_PRESETS.map(({ id, label }) => [
       id as AppSettings["magicPreset"],
       label,
     ]);
   const template: MenuItemConstructorOptions[] = [
-    { label: "DELULU TALKS", enabled: false },
+    { label: state.statusLine, enabled: false },
+    { type: "separator" },
+    listening
+      ? {
+          label: "Stop & transcribe",
+          click: () => runTrayAction(() => dictation.toggle()),
+        }
+      : speechUnavailable
+        ? {
+            label: status.migrationRequired
+              ? "Update speech runtime…"
+              : "Set up speech…",
+            click: () => showMainWindow("models"),
+          }
+        : {
+            label: `Start dictation${shortcutHint}`,
+            enabled: !dictationBusy,
+            click: () => runTrayAction(() => dictation.toggle()),
+          },
+    ...(listening
+      ? ([
+          {
+            label: status.phase === "paused" ? "Resume" : "Pause",
+            click: () =>
+              runTrayAction(() =>
+                status.phase === "paused"
+                  ? dictation.resume()
+                  : dictation.pause(),
+              ),
+          },
+          {
+            label: "Cancel recording",
+            click: () => runTrayAction(() => dictation.cancel()),
+          },
+        ] satisfies MenuItemConstructorOptions[])
+      : []),
+    { label: "Open Delulu Talks", click: () => showMainWindow() },
+    { type: "separator" },
     {
-      label: listening
-        ? "■  Stop & transcribe"
-        : dictationBusy
-          ? `●  ${status.message}`
-          : speechUnavailable
-            ? "!  Speech setup needs attention…"
-            : "●  Start dictation",
-      sublabel: speechUnavailable
-        ? status.message
-        : `Shortcut: ${settings.shortcut}`,
-      enabled: listening || !dictationBusy,
-      click: () =>
-        speechUnavailable ? showMainWindow("models") : dictation.toggle(),
-    },
-    {
-      label: status.phase === "paused" ? "Resume recording" : "Pause recording",
-      enabled: listening,
-      click: () =>
-        status.phase === "paused" ? dictation.resume() : dictation.pause(),
-    },
-    { label: "Open Delulu Talks", click: () => showMainWindow("home") },
-    {
-      label: "Paste latest result",
-      enabled:
-        Boolean(latest) &&
-        !dictation.isActive &&
-        !["pending", "delivering"].includes(
-          pasteLast?.getStatus().phase ?? "idle",
-        ),
-      click: () =>
-        runTrayAction(async () => {
-          schedulePasteLast();
-        }),
-    },
-    {
-      label:
-        pasteLast?.getStatus().phase === "pending"
-          ? `Cancel scheduled paste (${pasteLast.getStatus().remainingSeconds}s)`
-          : "Cancel scheduled paste",
-      enabled: pasteLast?.getStatus().phase === "pending",
-      click: () =>
-        pasteLast.cancelPending("Scheduled paste cancelled from the tray."),
-    },
-    {
-      label: "Copy latest result",
-      sublabel: latest
-        ? deliveredText(latest).replace(/\s+/g, " ").slice(0, 72)
-        : "Your most recent dictation appears here",
+      label: latest
+        ? `Copy “${menuPreview(deliveredText(latest))}”`
+        : "Copy latest result",
       enabled: Boolean(latest),
       click: () => {
-        if (latest) {
-          paste.copy(deliveredText(latest));
-          recordDelivery(latest, "copied");
-        }
+        if (!latest) return;
+        paste.copy(deliveredText(latest));
+        recordDelivery(latest, "copied");
       },
     },
+    pending?.phase === "pending"
+      ? {
+          label: `Cancel scheduled paste (${pending.remainingSeconds}s)`,
+          click: () =>
+            pasteLast.cancelPending("Scheduled paste cancelled from the tray."),
+        }
+      : {
+          label: `Paste latest in ${settings.pasteLastDelaySeconds}s`,
+          enabled:
+            Boolean(latest) &&
+            !dictation.isActive &&
+            pending?.phase !== "delivering",
+          click: () => runTrayAction(async () => void schedulePasteLast()),
+        },
     { type: "separator" },
     {
       type: "checkbox",
-      label: "✦  Rewrite after dictation",
+      label: "Rewrite after dictation",
       checked: settings.magicEnabled,
       click: () => patchTraySettings({ magicEnabled: !settings.magicEnabled }),
     },
     {
       label: "Rewrite style",
       enabled: settings.magicEnabled,
-      submenu: presets.map(([preset, label]) => ({
-        type: "radio",
-        label,
-        checked: settings.magicPreset === preset,
-        click: () => patchTraySettings({ magicPreset: preset }),
-      })),
-    },
-    {
-      type: "checkbox",
-      label: "Allow helpful assumptions",
-      checked: settings.magicAllowInferences,
-      enabled: settings.magicEnabled,
-      click: () =>
-        patchTraySettings({
-          magicAllowInferences: !settings.magicAllowInferences,
-        }),
+      submenu: [
+        ...presets.map(([preset, label]): MenuItemConstructorOptions => ({
+          type: "radio",
+          label,
+          checked: settings.magicPreset === preset,
+          click: () => patchTraySettings({ magicPreset: preset }),
+        })),
+        { type: "separator" },
+        {
+          type: "checkbox",
+          label: "Allow helpful assumptions",
+          checked: settings.magicAllowInferences,
+          click: () =>
+            patchTraySettings({
+              magicAllowInferences: !settings.magicAllowInferences,
+            }),
+        },
+      ],
     },
     { type: "separator" },
     {
-      label: "Delivery & capture",
+      label: "Preferences",
       submenu: [
         {
           type: "checkbox",
@@ -543,7 +669,7 @@ function rebuildTrayMenu(): void {
         },
         {
           type: "checkbox",
-          label: "Show recording pill",
+          label: "Show recording overlay",
           checked: settings.showOverlay,
           click: () =>
             patchTraySettings({ showOverlay: !settings.showOverlay }),
@@ -555,61 +681,51 @@ function rebuildTrayMenu(): void {
           click: () =>
             patchTraySettings({ keepHistory: !settings.keepHistory }),
         },
+        { type: "separator" },
+        {
+          type: "checkbox",
+          label: "Launch at login",
+          checked: settings.launchAtLogin,
+          click: () =>
+            patchTraySettings({ launchAtLogin: !settings.launchAtLogin }),
+        },
+        ...(process.platform === "darwin"
+          ? [
+              {
+                type: "checkbox" as const,
+                label: "Menu bar only (hide Dock icon)",
+                checked: settings.menuBarOnly,
+                click: () =>
+                  patchTraySettings({ menuBarOnly: !settings.menuBarOnly }),
+              },
+            ]
+          : []),
+        ...(shortcutStatus?.method === "portal"
+          ? [
+              {
+                label: "Change shortcut…",
+                click: () => runTrayAction(() => shortcut.configure()),
+              },
+            ]
+          : []),
       ],
     },
     { label: "Models & runtimes", submenu: runtimeMenu(settings) },
     {
-      label: "Open workspace",
+      label: "Go to",
       submenu: [
         { label: "History", click: () => showMainWindow("history") },
-        { label: "Models & runtimes", click: () => showMainWindow("models") },
+        { label: "Audio files", click: () => showMainWindow("lab") },
+        {
+          label: "Personalization",
+          click: () => showMainWindow("vocabulary"),
+        },
+        { label: "Models", click: () => showMainWindow("models") },
         { label: "Settings", click: () => showMainWindow("settings") },
       ],
     },
     { type: "separator" },
-    {
-      type: "checkbox",
-      label: "Launch at login",
-      checked: settings.launchAtLogin,
-      click: () =>
-        patchTraySettings({ launchAtLogin: !settings.launchAtLogin }),
-    },
-    ...(process.platform === "darwin"
-      ? [
-          {
-            type: "checkbox" as const,
-            label: "Menu bar only (hide Dock icon)",
-            checked: settings.menuBarOnly,
-            click: () =>
-              patchTraySettings({ menuBarOnly: !settings.menuBarOnly }),
-          },
-        ]
-      : []),
-    update
-      ? {
-          label:
-            update.phase === "downloaded"
-              ? `Restart to install ${update.version}`
-              : update.phase === "available"
-                ? `Download update ${update.version}`
-                : update.phase === "downloading"
-                  ? `Downloading update · ${Math.round(update.percent ?? 0)}%`
-                  : update.phase === "checking"
-                    ? "Checking for updates…"
-                    : "Check for updates",
-          enabled:
-            update.phase !== "checking" &&
-            update.phase !== "downloading" &&
-            update.phase !== "unsupported",
-          click: () => {
-            if (update.phase === "downloaded")
-              runTrayAction(() => updates.install());
-            else if (update.phase === "available")
-              runTrayAction(() => updates.download());
-            else runTrayAction(() => updates.check());
-          },
-        }
-      : { label: "Check for updates", enabled: false },
+    updateMenuItem(),
     {
       label: "Quit Delulu Talks",
       click: () => {
@@ -618,36 +734,48 @@ function rebuildTrayMenu(): void {
       },
     },
   ];
-  tray.setContextMenu(Menu.buildFromTemplate(template));
-  const state = listening
-    ? status.phase === "paused"
-      ? "Paused — microphone open"
-      : "Listening"
-    : status.phase === "transcribing"
-      ? "Transcribing"
-      : status.engine === "ready"
-        ? "Ready"
-        : engineLabel(status);
-  tray.setToolTip(
-    `Delulu Talks — ${state}${settings.magicEnabled ? ` · Rewriting ${engineLabel(magic)}` : " · Rewriting off"}`,
-  );
+  // Rebuilding resends the whole menu over D-Bus on Linux; skip no-op updates
+  // so an open menu does not flicker.
+  const key = `${latest?.id ?? ""}:${JSON.stringify(template)}`;
+  if (key !== trayMenuKey) {
+    trayMenuKey = key;
+    tray.setContextMenu(Menu.buildFromTemplate(template));
+  }
+  tray.setToolTip(state.tooltip);
+  if (state.icon !== trayIconState) {
+    trayIconState = state.icon;
+    tray.setImage(trayImage(state.icon));
+  }
+}
+
+const trayImages = new Map<TrayIconState, Electron.NativeImage>();
+
+function trayImage(state: TrayIconState): Electron.NativeImage {
+  const cached = trayImages.get(state);
+  if (cached) return cached;
+  const filename =
+    process.platform === "darwin"
+      ? `tray-${state}Template.png`
+      : process.platform === "win32"
+        ? `tray-${state}.ico`
+        : `tray-${state}.png`;
+  const path = app.isPackaged
+    ? join(process.resourcesPath, "tray", filename)
+    : resolve(app.getAppPath(), "build", "tray", filename);
+  // createFromPath loads the @2x companion for HiDPI panels automatically.
+  const image = nativeImage.createFromPath(path);
+  if (process.platform === "darwin") image.setTemplateImage(true);
+  trayImages.set(state, image);
+  return image;
 }
 
 function installTray(): void {
-  const filename =
-    process.platform === "darwin" ? "trayTemplate.png" : "tray.png";
-  const path = app.isPackaged
-    ? join(process.resourcesPath, filename)
-    : resolve(app.getAppPath(), "build", filename);
-  const icon = nativeImage.createFromPath(path);
-  if (process.platform === "darwin") icon.setTemplateImage(true);
-  const trayIcon =
-    process.platform === "darwin"
-      ? icon
-      : icon.resize({ width: 20, height: 20 });
-  tray = new Tray(trayIcon);
-  rebuildTrayMenu();
-  tray.on("click", () => showMainWindow("home"));
+  tray = new Tray(trayImage("idle"));
+  trayIconState = "idle";
+  renderTrayMenu();
+  // On macOS a click opens the menu; also opening the window would steal
+  // focus from the app the user wants to dictate into.
+  if (process.platform !== "darwin") tray.on("click", () => showMainWindow());
   syncMacDock();
 }
 
@@ -749,12 +877,8 @@ async function applySettings(
       ? await shortcut.change(next.shortcut, previous.shortcut, persist)
       : persist();
   if (saved.menuBarOnly !== previous.menuBarOnly) syncMacDock();
-  if (
-    !smokeTest &&
-    app.isPackaged &&
-    saved.launchAtLogin !== previous.launchAtLogin
-  )
-    app.setLoginItemSettings({ openAtLogin: saved.launchAtLogin });
+  if (saved.launchAtLogin !== previous.launchAtLogin)
+    syncLoginItem(saved.launchAtLogin);
   if (runtimeChanged) await asr.unload();
   if (magicRuntimeChanged) await asr.unloadMagic();
   const residencyChanged =
@@ -772,6 +896,22 @@ async function applySettings(
   broadcast("settings:changed", saved);
   rebuildTrayMenu();
   return saved;
+}
+
+function syncLoginItem(enabled: boolean): void {
+  if (smokeTest || !app.isPackaged) return;
+  try {
+    if (process.platform === "linux") setLinuxAutostart(enabled);
+    else
+      app.setLoginItemSettings({
+        openAtLogin: enabled,
+        args: process.platform === "win32" ? ["--hidden"] : undefined,
+      });
+  } catch (error) {
+    notify(
+      `Could not change launch at login: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function assertRuntimeIdle(): void {
@@ -924,7 +1064,10 @@ async function start(): Promise<void> {
     broadcast("magic:statusChanged", status);
     rebuildTrayMenu();
   });
-  shortcut.onStatus((status) => broadcast("shortcut:statusChanged", status));
+  shortcut.onStatus((status) => {
+    broadcast("shortcut:statusChanged", status);
+    rebuildTrayMenu();
+  });
   setupPermissions();
   labIpc = registerMainIpc({
     getMainWindow: () => mainWindow,
@@ -964,13 +1107,16 @@ async function start(): Promise<void> {
         .register(storage.getSettings().shortcut)
         .catch(() => undefined);
     installTray();
+    void linuxTrayHostAvailable().then((available) => {
+      trayVisible = available;
+      if (!available && startHidden) showMainWindow();
+    });
   }
   const updateTimer = setTimeout(() => void updates.check(), 8_000);
   updateTimer.unref();
-  if (!smokeTest && app.isPackaged)
-    app.setLoginItemSettings({
-      openAtLogin: storage.getSettings().launchAtLogin,
-    });
+  // A tray app can run for weeks; check again every six hours.
+  setInterval(() => void updates.check(), 6 * 60 * 60 * 1000).unref();
+  syncLoginItem(storage.getSettings().launchAtLogin);
   await asr.initialize(storage.getSettings());
 }
 
@@ -981,7 +1127,16 @@ if (!hasLock) {
   );
   app.quit();
 } else {
-  app.on("second-instance", () => showMainWindow());
+  app.on("second-instance", (_event, argv) => {
+    // `--toggle-dictation` lets desktops without a shortcut portal bind the
+    // app itself to a custom keyboard shortcut.
+    if (argv.includes("--toggle-dictation") && dictation)
+      runTrayAction(() => dictation.toggle());
+    else showMainWindow();
+  });
+  if (process.platform === "win32")
+    app.setAppUserModelId("com.joran.delulu-talks");
+  if (app.isPackaged) installApplicationMenu();
   app
     .whenReady()
     .then(start)
@@ -995,8 +1150,28 @@ if (!hasLock) {
 }
 
 app.on("activate", () => showMainWindow());
-app.on("before-quit", () => {
+
+/**
+ * Production windows have no reload or developer-tools shortcuts: a reload
+ * would abort a recording. macOS keeps the standard app and edit menus.
+ */
+function installApplicationMenu(): void {
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      { role: "appMenu" },
+      { role: "editMenu" },
+      { role: "windowMenu" },
+    ]),
+  );
+}
+let shutdownComplete = false;
+app.on("before-quit", (event) => {
   quitting = true;
+  if (shutdownComplete) return;
   try {
     labIpc?.shutdown();
   } catch (error) {
@@ -1007,7 +1182,18 @@ app.on("before-quit", () => {
   pasteLast?.shutdown();
   paste?.shutdown();
   void shortcut?.shutdown();
-  void asr?.shutdown();
+  tray?.destroy();
+  tray = null;
+  if (!asr) return;
+  // Wait for model workers (and their GPU children) to exit, but never hang quit.
+  event.preventDefault();
+  void Promise.race([
+    asr.shutdown().catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, 6_000)),
+  ]).finally(() => {
+    shutdownComplete = true;
+    app.quit();
+  });
 });
 app.on("window-all-closed", () => {
   // Delulu Talks is tray-first and intentionally remains available.

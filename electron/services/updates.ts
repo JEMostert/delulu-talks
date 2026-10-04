@@ -224,6 +224,11 @@ export class UpdateService {
     });
   }
 
+  /** Whether a downloaded update could restart right now. */
+  installable(): boolean {
+    return this.canInstall();
+  }
+
   install(): void {
     if (
       !this.updater ||

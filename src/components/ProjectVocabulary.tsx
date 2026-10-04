@@ -44,7 +44,8 @@ export function ProjectVocabulary() {
           error instanceof Error ? error.message : "Repository scan failed.",
         );
     } finally {
-      if (generation.current === request) setBusy(false);
+      // Hidden pages run effect cleanups; the button must not stay disabled.
+      setBusy(false);
     }
   }
   const matches = scope.symbols.filter((symbol) =>

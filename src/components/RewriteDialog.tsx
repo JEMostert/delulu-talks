@@ -57,14 +57,6 @@ export function RewriteDialog({
   onCancelRewrite?: (operationId: string) => Promise<boolean>;
 }) {
   const instructionHelpId = useId();
-  const active = useRef(true);
-  const requestGeneration = useRef(0);
-  useEffect(() => {
-    active.current = true;
-    return () => {
-      active.current = false;
-    };
-  }, []);
   const [source, setSource] = useState(text);
   const [expectedOutput, setExpectedOutput] = useState(baseline);
   const [expectedRevision, setExpectedRevision] = useState(sourceRevision);
@@ -85,7 +77,6 @@ export function RewriteDialog({
     );
   }, [busy, error, result, onOperationState]);
   const closeDialog = () => {
-    requestGeneration.current += 1;
     setBusy(false);
     setInstructions("");
     setResult(null);
@@ -101,6 +92,13 @@ export function RewriteDialog({
 
   useEffect(() => {
     mounted.current = true;
+    // A hidden <Activity> runs this cleanup and cancels the request but keeps
+    // state; when shown again, release controls the cancelled request held.
+    if (!activeSession.current) {
+      setBusy(false);
+      setGenerating(false);
+      setCancelling(false);
+    }
     return () => {
       mounted.current = false;
       const session = activeSession.current;

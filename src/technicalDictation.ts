@@ -293,6 +293,8 @@ const identifierStyles: Record<string, IdentifierStyle> = {
 const identifierPattern = `(camel[ \\t]+case|pascal[ \\t]+case|snake[ \\t]+case|kebab[ \\t]+case|literal[ \\t]+spelling)[ \\t]+([^\\r\\n]*?)[ \\t]+(?:end[ \\t]+identifier|einde[ \\t]+naam)`;
 const tokenPattern = `(?<![\\p{L}\\p{M}\\p{N}_])(?:${identifierPattern}|(?:literal|literally|literaal)[ \\t]+([\\p{L}\\p{N}_]+(?:['’][\\p{L}\\p{N}_]+)*)|(${phrasePattern}))(?![\\p{L}\\p{M}\\p{N}_])`;
 
+const OPENERS = new Set(["(", "[", "{"]);
+
 /**
  * Prose is byte-for-byte unchanged. Code and command share an explicit grammar.
  * Join symbols consume adjacent ordinary spaces; operators use one space
@@ -338,15 +340,20 @@ export function renderTechnicalDictation(
   chunks.push({ text: text.slice(cursor) });
 
   let rendered = "";
+  let afterOperator = false;
   for (let index = 0; index < chunks.length; index += 1) {
     const chunk = chunks[index];
     if (!chunk.entry) {
       rendered += chunk.text;
+      if (chunk.text) afterOperator = false;
       continue;
     }
     const { output, spacing } = chunk.entry;
     // Only regular spaces are consumed here: existing tabs remain indentation.
-    if (spacing !== "prefix") rendered = rendered.replace(/ +$/, "");
+    // An opening bracket keeps the space an operator placed before it: `x = (a)`.
+    if (spacing !== "prefix" && !(afterOperator && OPENERS.has(output)))
+      rendered = rendered.replace(/ +$/, "");
+    afterOperator = spacing === "operator";
     const next = chunks[index + 1];
     if (next) next.text = next.text.replace(/^ +/, "");
     if (spacing === "operator") {

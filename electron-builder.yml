@@ -46,12 +46,56 @@ extraResources:
     to: overlay/pill.py
   - from: build/icon.png
     to: icon.png
-  - from: build/tray.png
-    to: tray.png
-  - from: build/trayTemplate.png
-    to: trayTemplate.png
-  - from: build/trayTemplate@2x.png
-    to: trayTemplate@2x.png
+  - from: build/tray/tray-idle.png
+    to: tray/tray-idle.png
+  - from: build/tray/tray-idle@2x.png
+    to: tray/tray-idle@2x.png
+  - from: build/tray/tray-idle.ico
+    to: tray/tray-idle.ico
+  - from: build/tray/tray-idleTemplate.png
+    to: tray/tray-idleTemplate.png
+  - from: build/tray/tray-idleTemplate@2x.png
+    to: tray/tray-idleTemplate@2x.png
+  - from: build/tray/tray-recording.png
+    to: tray/tray-recording.png
+  - from: build/tray/tray-recording@2x.png
+    to: tray/tray-recording@2x.png
+  - from: build/tray/tray-recording.ico
+    to: tray/tray-recording.ico
+  - from: build/tray/tray-recordingTemplate.png
+    to: tray/tray-recordingTemplate.png
+  - from: build/tray/tray-recordingTemplate@2x.png
+    to: tray/tray-recordingTemplate@2x.png
+  - from: build/tray/tray-busy.png
+    to: tray/tray-busy.png
+  - from: build/tray/tray-busy@2x.png
+    to: tray/tray-busy@2x.png
+  - from: build/tray/tray-busy.ico
+    to: tray/tray-busy.ico
+  - from: build/tray/tray-busyTemplate.png
+    to: tray/tray-busyTemplate.png
+  - from: build/tray/tray-busyTemplate@2x.png
+    to: tray/tray-busyTemplate@2x.png
+  - from: build/tray/tray-attention.png
+    to: tray/tray-attention.png
+  - from: build/tray/tray-attention@2x.png
+    to: tray/tray-attention@2x.png
+  - from: build/tray/tray-attention.ico
+    to: tray/tray-attention.ico
+  - from: build/tray/tray-attentionTemplate.png
+    to: tray/tray-attentionTemplate.png
+  - from: build/tray/tray-attentionTemplate@2x.png
+    to: tray/tray-attentionTemplate@2x.png
+  - from: build/tray/tray-update.png
+    to: tray/tray-update.png
+  - from: build/tray/tray-update@2x.png
+    to: tray/tray-update@2x.png
+  - from: build/tray/tray-update.ico
+    to: tray/tray-update.ico
+  - from: build/tray/tray-updateTemplate.png
+    to: tray/tray-updateTemplate.png
+  - from: build/tray/tray-updateTemplate@2x.png
+    to: tray/tray-updateTemplate@2x.png
 linux:
   category: AudioVideo
   executableName: delulu-talks
@@ -83,7 +127,6 @@ pacman:
     - re2
     - snappy
     - libnotify
-    - libappindicator-gtk3
     - gtk4-layer-shell
     - python-gobject
     - python-cairo

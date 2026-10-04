@@ -82,3 +82,12 @@ describe("technical editing preserves exact user text", () => {
     ).toBe("camel case invalid-name end identifier");
   });
 });
+
+test("an operator keeps its space before an opening bracket", () => {
+  expect(
+    renderTechnicalDictation(
+      "x equals open paren a plus b close paren",
+      "code",
+    ),
+  ).toBe("x = (a + b)");
+});

@@ -20,9 +20,13 @@ export const REQUIRED_RESOURCES = [
   "python/licenses/transformers-Apache-2.0.txt",
   "overlay/pill.py",
   "icon.png",
-  "tray.png",
-  "trayTemplate.png",
-  "trayTemplate@2x.png",
+  ...["idle", "recording", "busy", "attention", "update"].flatMap((state) => [
+    `tray/tray-${state}.png`,
+    `tray/tray-${state}@2x.png`,
+    `tray/tray-${state}.ico`,
+    `tray/tray-${state}Template.png`,
+    `tray/tray-${state}Template@2x.png`,
+  ]),
 ];
 
 function hash(bytes) {
@@ -155,14 +159,18 @@ export function sourceManifest(root = process.cwd()) {
   const linuxSize = pngSize(bytes(inside(root, icons.linux)));
   icns(bytes(inside(root, icons.mac)));
   icoImages(bytes(inside(root, icons.win)));
-  const tray = pngSize(bytes(join(root, "build/trayTemplate.png")));
-  const retina = pngSize(bytes(join(root, "build/trayTemplate@2x.png")));
-  assert.deepEqual(
-    retina,
-    tray.map((value) => value * 2),
-    "macOS tray template must include an exact 2x companion",
-  );
-  pngSize(bytes(join(root, "build/tray.png")));
+  for (const state of ["idle", "recording", "busy", "attention", "update"]) {
+    for (const base of [`tray-${state}`, `tray-${state}Template`]) {
+      const tray = pngSize(bytes(join(root, `build/tray/${base}.png`)));
+      const retina = pngSize(bytes(join(root, `build/tray/${base}@2x.png`)));
+      assert.deepEqual(
+        retina,
+        tray.map((value) => value * 2),
+        `Tray image ${base} must include an exact 2x companion`,
+      );
+    }
+    icoImages(bytes(join(root, `build/tray/tray-${state}.ico`)));
+  }
   return { config, resources, icons, linuxSize };
 }
 

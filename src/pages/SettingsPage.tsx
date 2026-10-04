@@ -21,7 +21,13 @@ import {
 } from "lucide-react";
 import { MAGIC_MODELS } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
-import { ConfirmDialog, SettingRow, Toggle } from "../components/ui";
+import {
+  ConfirmDialog,
+  NumberField,
+  RangeField,
+  SettingRow,
+  Toggle,
+} from "../components/ui";
 import { LocalData } from "../components/LocalData";
 import { HistoryRetention } from "../components/HistoryRetention";
 import { MicrophoneNotice } from "../components/MicrophoneNotice";
@@ -85,6 +91,8 @@ export function SettingsPage(props: Props) {
   const [remove, setRemove] = useState(false);
   const [python, setPython] = useState(s.pythonCommand);
   const [shortcut, setShortcut] = useState(s.shortcut);
+  useEffect(() => setPython(s.pythonCommand), [s.pythonCommand]);
+  useEffect(() => setShortcut(s.shortcut), [s.shortcut]);
   const languageCapability = speechLanguageCapability(s.model);
   const busy =
     ["preparing", "loading", "listening", "paused", "transcribing"].includes(
@@ -342,50 +350,30 @@ export function SettingsPage(props: Props) {
                   title="Trailing silence duration"
                   description="Seconds below the threshold before stopping. Each recording uses the settings chosen when it starts; manual Stop is always available."
                 >
-                  <input
-                    type="number"
-                    aria-label="Trailing silence duration in seconds"
+                  <NumberField
+                    label="Trailing silence duration in seconds"
                     min={2}
                     max={30}
-                    step={1}
                     value={s.trailingSilenceSeconds}
-                    disabled={saving || busy || !s.trailingSilenceStopEnabled}
-                    onChange={(e) => {
-                      const value = e.target.valueAsNumber;
-                      if (Number.isFinite(value)) {
-                        save({
-                          trailingSilenceSeconds: Math.min(
-                            30,
-                            Math.max(2, value),
-                          ),
-                        });
-                      }
-                    }}
+                    disabled={busy || !s.trailingSilenceStopEnabled}
+                    onCommit={(trailingSilenceSeconds) =>
+                      save({ trailingSilenceSeconds })
+                    }
                   />
                 </SettingRow>
                 <SettingRow
                   title="Silence energy threshold"
                   description="Audio below this level in dB counts as silence. A lower threshold requires quieter audio."
                 >
-                  <input
-                    type="number"
-                    aria-label="Silence energy threshold in dB"
+                  <NumberField
+                    label="Silence energy threshold in dB"
                     min={-60}
                     max={-20}
-                    step={1}
                     value={s.trailingSilenceThresholdDb}
-                    disabled={saving || busy || !s.trailingSilenceStopEnabled}
-                    onChange={(e) => {
-                      const value = e.target.valueAsNumber;
-                      if (Number.isFinite(value)) {
-                        save({
-                          trailingSilenceThresholdDb: Math.min(
-                            -20,
-                            Math.max(-60, value),
-                          ),
-                        });
-                      }
-                    }}
+                    disabled={busy || !s.trailingSilenceStopEnabled}
+                    onCommit={(trailingSilenceThresholdDb) =>
+                      save({ trailingSilenceThresholdDb })
+                    }
                   />
                 </SettingRow>
               </>
@@ -413,22 +401,15 @@ export function SettingsPage(props: Props) {
               title="Capture sound volume"
               description="Adjust the start and stop cues, even while muted."
             >
-              <div className="inline-control">
-                <input
-                  type="range"
-                  aria-label="Capture sound volume"
-                  aria-valuetext={`${Math.round(s.captureSoundVolume * 100)}%`}
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={s.captureSoundVolume}
-                  disabled={saving}
-                  onChange={(e) =>
-                    save({ captureSoundVolume: Number(e.target.value) })
-                  }
-                />
-                <span>{Math.round(s.captureSoundVolume * 100)}%</span>
-              </div>
+              <RangeField
+                label="Capture sound volume"
+                min={0}
+                max={1}
+                step={0.01}
+                value={s.captureSoundVolume}
+                format={(value) => `${Math.round(value * 100)}%`}
+                onCommit={(captureSoundVolume) => save({ captureSoundVolume })}
+              />
             </SettingRow>
             <SettingRow
               title="Launch at login"
