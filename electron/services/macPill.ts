@@ -1,26 +1,37 @@
 import { BrowserWindow, screen } from "electron";
 import type { PillCommand } from "./pill";
 
-const WIDTH = 320;
-const HEIGHT = 84;
+const WIDTH = 240;
+const HEIGHT = 56;
+const BARS = Array.from(
+  { length: 9 },
+  (_, index) =>
+    `<i style="--env:${Math.sin((Math.PI * (index + 0.5)) / 9).toFixed(2)};animation-delay:-${(index * 0.11).toFixed(2)}s"></i>`,
+).join("");
+// A tiny Deep Sea pill: a pearl and wave bars; words only for results/problems.
 const HTML = `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <style>
-html,body{margin:0;background:transparent;overflow:hidden;font:13px -apple-system,BlinkMacSystemFont,sans-serif;color:#eaf6ff;user-select:none}
-.pill{margin:4px;padding:14px 20px;border:1px solid #bee8ff38;border-radius:28px;background:#06192bf5;box-shadow:0 3px 12px #00081466,inset 0 1px #bee8ff24}
-#title{font-weight:600;font-size:13px;padding-right:45px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#detail{font-size:11px;color:#a3c2da;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.track{position:absolute;right:20px;top:23px;width:44px;height:7px;border-radius:4px;background:#173650}
-#level{height:100%;width:0;background:#ff8a9c;border-radius:4px}
-</style></head><body><div class="pill" role="status"><div id="title">Listening</div><div id="detail">Recording locally</div><div class="track"><div id="level"></div></div></div></body></html>`;
+html,body{margin:0;height:100%;background:transparent;overflow:hidden;font:600 12.5px -apple-system,BlinkMacSystemFont,sans-serif;color:#eaf6ff;user-select:none}
+body{display:flex;align-items:center;justify-content:center;--accent:#75e4ff;--level:0}
+.pill{display:flex;align-items:center;gap:10px;height:40px;padding:0 14px 0 9px;border-radius:20px;background:#06192bf2;border:1px solid #bee8ff38;box-shadow:inset 0 1px #bee8ff24,0 6px 18px #00081455}
+.pearl{position:relative;width:22px;height:22px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#fff 0 12%,#f3eee8 40%,#c4ced9 100%);box-shadow:inset 0 -3px 5px color-mix(in srgb,var(--accent) 45%,transparent),0 0 calc(6px + 10px*var(--level)) color-mix(in srgb,var(--accent) 60%,transparent);transition:box-shadow .12s}
+.pearl::after{content:"";position:absolute;inset:0;border-radius:50%;background:linear-gradient(135deg,#ffa8c738,#9ee0ff2e,#bca8ff33)}
+.bars{display:flex;align-items:center;gap:3px;height:24px}
+.bars i{display:block;width:3px;border-radius:2px;height:calc(3px + 19px*var(--env)*(0.2 + 0.8*var(--level)));background:linear-gradient(var(--accent),#75e4ffcc);animation:wave .8s ease-in-out infinite alternate;transition:height .1s}
+@keyframes wave{from{transform:scaleY(.45)}to{transform:scaleY(1)}}
+.label:empty,.bars[hidden]{display:none}
+@media (prefers-reduced-motion:reduce){.bars i{animation:none}}
+</style></head><body><div class="pill" role="status"><div class="pearl"></div><div class="bars">${BARS}</div><div class="label" id="label"></div></div></body></html>`;
 
-const TITLES: Record<PillCommand["state"], string> = {
-  hidden: "",
-  listening: "● Listening",
-  transcribing: "Finding your words",
-  magic: "Refining your words",
-  delivering: "Delivering",
-  success: "Done",
-  error: "Needs attention",
+const ACCENTS: Record<PillCommand["state"], string> = {
+  hidden: "#75e4ff",
+  listening: "#ff6f86",
+  transcribing: "#75e4ff",
+  magic: "#75e4ff",
+  delivering: "#75e4ff",
+  success: "#5fdcbf",
+  error: "#f6c979",
 };
 
 /** A nonactivating, click-through panel; it never hosts transcript content. */
@@ -114,26 +125,39 @@ export class MacPill {
     const area = display.workArea;
     window.setPosition(
       Math.round(area.x + (area.width - WIDTH) / 2),
-      Math.round(area.y + area.height - HEIGHT - 20),
+      Math.round(area.y + area.height - HEIGHT - 16),
       false,
     );
     const level = Number.isFinite(command.level)
       ? Math.min(1, Math.max(0, command.level!))
       : 0;
+    const paused = (command.title ?? "").toLowerCase() === "paused";
     const payload = JSON.stringify({
-      title: command.title || TITLES[command.state],
-      detail:
-        command.detail ||
-        (command.state === "listening" ? "Recording locally" : ""),
-      level: command.state === "listening" ? level * 100 : 0,
+      accent: paused ? "#c2aedb" : ACCENTS[command.state],
+      level: command.state === "listening" ? level : 0.35,
+      bars:
+        !paused &&
+        ["listening", "transcribing", "magic", "delivering"].includes(
+          command.state,
+        ),
+      label:
+        command.state === "success" || command.state === "error"
+          ? (
+              command.title ??
+              (command.state === "success" ? "Done" : "Needs attention")
+            ).slice(0, 28)
+          : paused
+            ? "Paused"
+            : "",
     });
     void window.webContents
       .executeJavaScript(
         `(() => {
       const data = ${payload};
-      document.getElementById('title').textContent = data.title;
-      document.getElementById('detail').textContent = data.detail;
-      document.getElementById('level').style.width = data.level + '%';
+      document.body.style.setProperty('--accent', data.accent);
+      document.body.style.setProperty('--level', String(data.level));
+      document.querySelector('.bars').hidden = !data.bars;
+      document.getElementById('label').textContent = data.label;
     })()`,
       )
       .then(() => {

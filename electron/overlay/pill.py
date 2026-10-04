@@ -1,9 +1,14 @@
 #!/usr/bin/python3
-"""Click-through Wayland dictation HUD driven by newline-delimited JSON on stdin."""
+"""Click-through Wayland dictation pill driven by newline-delimited JSON on stdin.
+
+A tiny Deep Sea pill: a pearl and a few wave bars that follow your voice. Text
+appears only when something needs a word (done, too short, an error).
+"""
 
 from __future__ import annotations
 
 import json
+import math
 import sys
 import threading
 import time
@@ -15,43 +20,31 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
 
-from gi.repository import Gdk, Gio, GLib, Gtk, Gtk4LayerShell, Pango  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, Gtk4LayerShell  # noqa: E402
 
-
-CSS = b"""
-window { background: transparent; }
-.hud { min-width: 270px; border: 1px solid alpha(#bee8ff, .22); border-radius: 28px; background: alpha(#06192b, .96); box-shadow: 0 10px 28px alpha(#000814, .45), inset 0 1px alpha(#bee8ff, .14); }
-.body { padding: 14px 20px; }
-.header { min-height: 22px; }
-.footer { margin-top: 3px; min-height: 16px; margin-left: 29px; }
-.beacon { min-width: 22px; min-height: 22px; margin-right: 7px; border-radius: 11px; background: alpha(#32baff, .14); }
-.dot { min-width: 7px; min-height: 7px; border-radius: 4px; background: #75e4ff; }
-.listening .dot { background: #ff6f86; }
-.listening .beacon { background: alpha(#ff6f86, .16); }
-.glyph { color: #75e4ff; font-size: 13px; font-weight: 600; }
-.success .glyph { color: #5fdcbf; }
-.error .glyph { color: #f6c979; }
-.title { color: #eaf6ff; font-size: 13px; font-weight: 600; }
-.detail { color: #a3c2da; font-size: 11px; }
-.profile { color: #88a9c4; font-size: 11px; margin-left: 29px; margin-top: 3px; }
-.clock { color: #eaf6ff; font-size: 12px; font-weight: 500; font-family: monospace; margin-left: 14px; }
-.wave { min-height: 16px; margin-left: 12px; }
-.bar { min-width: 2px; background: #75e4ff; border-radius: 2px; }
-.listening .bar { background: #ff8a9c; }
-spinner { min-width: 13px; min-height: 13px; color: #75e4ff; }
-"""
-
-STATES = {
-    "listening": ("", "Listening", "Release to send"),
-    "transcribing": ("", "Finding your words", "On this device"),
-    "magic": ("✦", "Refining your words", "Rewriting locally"),
-    "delivering": ("↗", "Delivering", "To your cursor"),
-    "success": ("✓", "Done", "Ready"),
-    "error": ("!", "Needs your attention", "Open Delulu Talks"),
-}
-
-WAVE_SHAPE = (0.22, 0.36, 0.54, 0.76, 0.92, 1.0, 0.84, 0.62, 0.44, 0.3, 0.18)
+STATES = {"listening", "transcribing", "magic", "delivering", "success", "error"}
 PREVIEW_STATES = ("listening", "transcribing", "magic", "delivering", "success", "error")
+BARS = 9
+HEIGHT = 40
+# Deep Sea palette (see src/styles/tokens.css).
+SHELL = (0.024, 0.098, 0.169, 0.95)
+RIM = (0.745, 0.91, 1.0, 0.22)
+INK = (0.918, 0.965, 1.0)
+CORAL = (1.0, 0.435, 0.525)
+FOAM = (0.459, 0.894, 1.0)
+SEAGLASS = (0.373, 0.863, 0.749)
+AMBER = (0.965, 0.788, 0.475)
+LAVENDER = (0.76, 0.68, 0.86)
+
+
+def rounded(cr: cairo.Context, x: float, y: float, w: float, h: float, r: float) -> None:
+    r = min(r, w / 2, h / 2)
+    cr.new_sub_path()
+    cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+    cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+    cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+    cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+    cr.close_path()
 
 
 class PillApplication(Gtk.Application):
@@ -60,36 +53,30 @@ class PillApplication(Gtk.Application):
         self.preview = preview
         self.force_reduced_motion = bool(preview and preview_reduce_motion)
         self.reduce_motion = False
-        self.current_state = "hidden"
+        self.state = "hidden"
+        self.label = ""
+        self.paused = False
+        self.level = 0.0
+        self.shown_level = 0.0
+        self.phase = 0.0
+        self.started = time.monotonic()
+        self.window: Gtk.ApplicationWindow | None = None
+        self.area: Gtk.DrawingArea | None = None
         self.animation_settings: Gtk.Settings | None = None
         self.animation_listener: int | None = None
-        self.window: Gtk.ApplicationWindow | None = None
-        self.hud: Gtk.Box | None = None
-        self.dot: Gtk.Box | None = None
-        self.glyph: Gtk.Label | None = None
-        self.spinner: Gtk.Spinner | None = None
-        self.title: Gtk.Label | None = None
-        self.detail: Gtk.Label | None = None
-        self.profile: Gtk.Label | None = None
-        self.clock: Gtk.Label | None = None
-        self.wave: Gtk.Box | None = None
-        self.bars: list[Gtk.Box] = []
+        self.tick: int | None = None
         self.hide_timer: int | None = None
-        self.clock_timer: int | None = None
-        self.listen_started = 0.0
-        self.live_level = False
 
+    # Lifecycle -------------------------------------------------------------
     def do_activate(self) -> None:
         layer_shell = Gtk4LayerShell.is_supported()
         if not layer_shell and not self.preview:
             print(json.dumps({"type": "error", "message": "layer-shell is unsupported"}), flush=True)
             raise SystemExit(1)
-
         window = Gtk.ApplicationWindow(application=self)
         window.set_decorated(False)
         window.set_resizable(False)
         window.set_title("delulu-talks-pill")
-        window.set_default_size(300, 80)
         if layer_shell:
             Gtk4LayerShell.init_for_window(window)
             Gtk4LayerShell.set_namespace(window, "delulu-talks-pill")
@@ -99,95 +86,18 @@ class PillApplication(Gtk.Application):
             Gtk4LayerShell.set_margin(window, Gtk4LayerShell.Edge.BOTTOM, 28)
             Gtk4LayerShell.set_exclusive_zone(window, 0)
             Gtk4LayerShell.set_keyboard_mode(window, Gtk4LayerShell.KeyboardMode.NONE)
-
         provider = Gtk.CssProvider()
-        provider.load_from_data(CSS)
+        provider.load_from_data(b"window, window.background { background: transparent; }")
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
-
-        hud = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        hud.add_css_class("hud")
-
-        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        body.add_css_class("body")
-        body.set_hexpand(True)
-
-        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        header.add_css_class("header")
-        beacon = Gtk.Overlay()
-        beacon.add_css_class("beacon")
-        beacon.set_valign(Gtk.Align.CENTER)
-        dot = Gtk.Box()
-        dot.add_css_class("dot")
-        dot.set_size_request(8, 8)
-        dot.set_halign(Gtk.Align.CENTER)
-        dot.set_valign(Gtk.Align.CENTER)
-        glyph = Gtk.Label()
-        glyph.add_css_class("glyph")
-        glyph.set_halign(Gtk.Align.CENTER)
-        spinner = Gtk.Spinner()
-        spinner.set_halign(Gtk.Align.CENTER)
-        spinner.set_valign(Gtk.Align.CENTER)
-        beacon.set_child(dot)
-        beacon.add_overlay(glyph)
-        beacon.add_overlay(spinner)
-        title = Gtk.Label(xalign=0)
-        title.add_css_class("title")
-        title.set_hexpand(True)
-        title.set_ellipsize(Pango.EllipsizeMode.END)
-        title.set_max_width_chars(32)
-        clock = Gtk.Label(label="0:00", xalign=1)
-        clock.add_css_class("clock")
-        header.append(beacon)
-        header.append(title)
-        header.append(clock)
-
-        footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        footer.add_css_class("footer")
-        detail = Gtk.Label(xalign=0)
-        detail.add_css_class("detail")
-        detail.set_hexpand(True)
-        detail.set_ellipsize(Pango.EllipsizeMode.END)
-        detail.set_max_width_chars(24)
-        wave = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
-        wave.add_css_class("wave")
-        wave.set_valign(Gtk.Align.CENTER)
-        bars: list[Gtk.Box] = []
-        for index in range(11):
-            bar = Gtk.Box()
-            bar.add_css_class("bar")
-            bar.add_css_class(f"b{index}")
-            bar.set_valign(Gtk.Align.CENTER)
-            bar.set_size_request(2, 4)
-            wave.append(bar)
-            bars.append(bar)
-        footer.append(detail)
-        footer.append(wave)
-
-        profile = Gtk.Label(xalign=0)
-        profile.add_css_class("profile")
-        profile.set_ellipsize(Pango.EllipsizeMode.END)
-        profile.set_max_width_chars(40)
-        profile.set_visible(False)
-        body.append(header)
-        body.append(footer)
-        body.append(profile)
-        hud.append(body)
-        window.set_child(hud)
+        area = Gtk.DrawingArea()
+        area.set_draw_func(self._draw)
+        window.set_child(area)
         window.connect("realize", self._make_click_through)
-
         self.window = window
-        self.hud = hud
-        self.dot = dot
-        self.glyph = glyph
-        self.spinner = spinner
-        self.title = title
-        self.detail = detail
-        self.profile = profile
-        self.clock = clock
-        self.wave = wave
-        self.bars = bars
+        self.area = area
+        self._resize()
         self.animation_settings = Gtk.Settings.get_default()
         if self.animation_settings is not None:
             self.animation_listener = self.animation_settings.connect(
@@ -195,45 +105,26 @@ class PillApplication(Gtk.Application):
             )
         self._sync_motion_preference()
         if self.preview:
-            self._set_state({"state": self.preview, "level": 0.62})
-            GLib.timeout_add(280, self._export_preview)
+            self._set_state({"state": self.preview, "level": 0.62,
+                             "title": {"error": "Too short", "success": "Typed"}.get(self.preview)})
+            GLib.timeout_add(320, self._export_preview)
         else:
             self._set_state({"state": "hidden"})
             print(json.dumps({"type": "ready"}), flush=True)
             threading.Thread(target=self._read_commands, daemon=True).start()
 
-    def _sync_motion_preference(self) -> None:
-        enabled = self.animation_settings.get_property("gtk-enable-animations") if self.animation_settings is not None else True
-        self.reduce_motion = self.force_reduced_motion or not enabled
-        if self.hud is not None:
-            if self.reduce_motion:
-                self.hud.add_css_class("reduced-motion")
-            else:
-                self.hud.remove_css_class("reduced-motion")
-        self._update_beacon()
-
-    def _update_beacon(self) -> None:
-        if self.spinner is None or self.dot is None or self.glyph is None:
-            return
-        busy = self.current_state in {"transcribing", "magic", "delivering"}
-        symbol = STATES.get(self.current_state, ("", "", ""))[0]
-        animate = busy and not self.reduce_motion
-        self.spinner.set_visible(animate)
-        if animate:
-            self.spinner.start()
-        else:
-            self.spinner.stop()
-        self.glyph.set_label("…" if busy and self.reduce_motion else symbol)
-        self.glyph.set_visible((busy and self.reduce_motion) or (not busy and bool(symbol)))
-        self.dot.set_visible(not busy and not symbol)
-
     def do_shutdown(self) -> None:
         self._clear_hide_timer()
-        self._clear_clock_timer()
+        self._stop_tick()
         if self.animation_settings is not None and self.animation_listener is not None:
             self.animation_settings.disconnect(self.animation_listener)
             self.animation_listener = None
         Gtk.Application.do_shutdown(self)
+
+    def _sync_motion_preference(self) -> None:
+        enabled = self.animation_settings.get_property("gtk-enable-animations") if self.animation_settings else True
+        self.reduce_motion = self.force_reduced_motion or not enabled
+        self._sync_tick()
 
     def _make_click_through(self, window: Gtk.Window) -> None:
         surface = window.get_surface()
@@ -244,127 +135,248 @@ class PillApplication(Gtk.Application):
         try:
             for line in sys.stdin:
                 try:
-                    payload = json.loads(line)
-                    GLib.idle_add(self._set_state, payload)
+                    GLib.idle_add(self._set_state, json.loads(line))
                 except (json.JSONDecodeError, TypeError):
                     continue
         finally:
             GLib.idle_add(self.quit)
+
+    # State -----------------------------------------------------------------
+    def _set_state(self, payload: object) -> bool:
+        if not isinstance(payload, dict) or self.window is None:
+            return GLib.SOURCE_REMOVE
+        state = str(payload.get("state", "hidden"))
+        self._clear_hide_timer()
+        if state == "hidden" or state not in STATES:
+            self.state = "hidden"
+            self._sync_tick()
+            self.window.set_visible(False)
+            return GLib.SOURCE_REMOVE
+        if "level" in payload:
+            try:
+                self.level = max(0.0, min(1.0, float(payload.get("level"))))
+            except (TypeError, ValueError):
+                pass
+        if state != self.state:
+            self.started = time.monotonic()
+            if state != "listening":
+                self.level = 0.0
+        self.state = state
+        title = payload.get("title")
+        self.paused = state == "listening" and str(title or "").lower() == "paused"
+        # Words only where they help: results and problems, never while talking.
+        self.label = (
+            str(title)[:28] if title and state in {"success", "error"}
+            else ("Paused" if self.paused else "")
+        )
+        self._resize()
+        self._sync_tick()
+        if not self.window.get_visible():
+            self.window.present()
+        self._make_click_through(self.window)
+        if self.area is not None:
+            self.area.queue_draw()
+        if state in {"success", "error"}:
+            self.hide_timer = GLib.timeout_add(1300 if state == "success" else 2600, self._auto_hide)
+        return GLib.SOURCE_REMOVE
+
+    def _label_width(self) -> int:
+        if not self.label:
+            return 0
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1, 1)
+        cr = cairo.Context(surface)
+        cr.select_font_face("Inter", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        cr.set_font_size(12.5)
+        return int(cr.text_extents(self.label).x_advance) + 12
+
+    def _resize(self) -> None:
+        if self.window is None or self.area is None:
+            return
+        show_bars = self.state in {"listening", "transcribing", "magic", "delivering"} and not self.paused
+        width = 8 + 28 + (BARS * 6 + 10 if show_bars else 0) + self._label_width() + 8
+        width = max(width, 52)
+        self.area.set_content_width(width)
+        self.area.set_content_height(HEIGHT)
+        self.window.set_default_size(width, HEIGHT)
+
+    def _auto_hide(self) -> bool:
+        self.hide_timer = None
+        self.state = "hidden"
+        self._sync_tick()
+        if self.window is not None:
+            self.window.set_visible(False)
+        return GLib.SOURCE_REMOVE
 
     def _clear_hide_timer(self) -> None:
         if self.hide_timer is not None:
             GLib.source_remove(self.hide_timer)
             self.hide_timer = None
 
-    def _clear_clock_timer(self) -> None:
-        if self.clock_timer is not None:
-            GLib.source_remove(self.clock_timer)
-            self.clock_timer = None
+    # Animation ---------------------------------------------------------------
+    def _sync_tick(self) -> None:
+        animate = self.state in {"listening", "transcribing", "magic", "delivering"} and not self.reduce_motion
+        if animate and self.tick is None and self.area is not None:
+            self.tick = self.area.add_tick_callback(self._on_tick)
+        elif not animate:
+            self._stop_tick()
 
-    def _tick_clock(self) -> bool:
-        if self.clock is None or self.listen_started <= 0:
-            return GLib.SOURCE_REMOVE
-        elapsed = max(0, int(time.monotonic() - self.listen_started))
-        self.clock.set_label(f"{elapsed // 60}:{elapsed % 60:02d}")
+    def _stop_tick(self) -> None:
+        if self.tick is not None and self.area is not None:
+            self.area.remove_tick_callback(self.tick)
+        self.tick = None
+
+    def _on_tick(self, area: Gtk.Widget, _clock: object) -> bool:
+        self.phase = time.monotonic() - self.started
+        # Rise quickly with the voice, fall back gently like water.
+        rate = 0.45 if self.level > self.shown_level else 0.12
+        self.shown_level += (self.level - self.shown_level) * rate
+        area.queue_draw()
         return GLib.SOURCE_CONTINUE
 
-    def _apply_level(self, level: object) -> None:
-        if self.wave is None:
-            return
-        try:
-            value = max(0.0, min(1.0, float(level)))
-        except (TypeError, ValueError):
-            return
-        self.live_level = True
-        self.wave.remove_css_class("idle")
-        for index, bar in enumerate(self.bars):
-            height = max(3, int(16 * WAVE_SHAPE[index] * (0.16 + 0.84 * value)))
-            bar.set_size_request(2, height)
+    # Drawing -----------------------------------------------------------------
+    def _accent(self) -> tuple[float, float, float]:
+        if self.state == "listening":
+            return LAVENDER if self.paused else CORAL
+        if self.state == "success":
+            return SEAGLASS
+        if self.state == "error":
+            return AMBER
+        return FOAM
 
-    def _set_state(self, payload: object) -> bool:
-        if not isinstance(payload, dict) or self.window is None or self.hud is None:
-            return GLib.SOURCE_REMOVE
-        state = str(payload.get("state", "hidden"))
-        self._clear_hide_timer()
-        if state == "hidden":
-            self.current_state = state
-            self._update_beacon()
-            self._clear_clock_timer()
-            self.window.set_visible(False)
-            return GLib.SOURCE_REMOVE
-        if state not in STATES:
-            return GLib.SOURCE_REMOVE
-        self.current_state = state
+    def _draw(self, _area: Gtk.DrawingArea, cr: cairo.Context, width: int, height: int) -> None:
+        cr.set_operator(cairo.OPERATOR_SOURCE)
+        cr.set_source_rgba(0, 0, 0, 0)
+        cr.paint()
+        cr.set_operator(cairo.OPERATOR_OVER)
+        accent = self._accent()
+        # Shell: smoked navy glass with a cool rim and a soft accent glow.
+        rounded(cr, 0.5, 0.5, width - 1, height - 1, height / 2)
+        cr.set_source_rgba(*SHELL)
+        cr.fill_preserve()
+        cr.set_source_rgba(*RIM)
+        cr.set_line_width(1)
+        cr.stroke()
+        top = cairo.LinearGradient(0, 0, 0, height / 2)
+        top.add_color_stop_rgba(0, 1, 1, 1, 0.08)
+        top.add_color_stop_rgba(1, 1, 1, 1, 0)
+        rounded(cr, 1.5, 1.5, width - 3, height / 2, height / 2 - 1)
+        cr.set_source(top)
+        cr.fill()
+        self._draw_pearl(cr, 22, height / 2, accent)
+        x = 44
+        if self.state in {"listening", "transcribing", "magic", "delivering"} and not self.paused:
+            self._draw_bars(cr, x, height / 2, accent)
+            x += BARS * 6 + 10
+        if self.label:
+            cr.select_font_face("Inter", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+            cr.set_font_size(12.5)
+            extents = cr.text_extents(self.label)
+            cr.set_source_rgb(*INK)
+            cr.move_to(x - 2, height / 2 - extents.y_bearing - extents.height / 2)
+            cr.show_text(self.label)
 
-        symbol, title, detail = STATES[state]
-        custom_title = payload.get("title")
-        custom_detail = payload.get("detail")
-        self.glyph.set_label(symbol)
-        self.title.set_label(str(custom_title)[:48] if custom_title else title)
-        self.detail.set_label(str(custom_detail)[:36] if custom_detail else detail)
-        profile = payload.get("profile")
-        self.profile.set_visible(bool(profile) and profile != "Global settings")
-        self.profile.set_label(str(profile)[:256] if profile else "")
-        self.profile.set_tooltip_text(str(profile)[:256] if profile else None)
-        for name in STATES:
-            self.hud.remove_css_class(name)
-        self.hud.add_css_class(state)
+    def _draw_pearl(self, cr: cairo.Context, cx: float, cy: float, accent: tuple[float, float, float]) -> None:
+        radius = 11.0
+        if self.state == "listening" and not self.paused:
+            # A halo that breathes with the voice.
+            halo = radius + 2 + 5 * self.shown_level
+            glow = cairo.RadialGradient(cx, cy, radius, cx, cy, halo + 3)
+            glow.add_color_stop_rgba(0, *accent, 0.55)
+            glow.add_color_stop_rgba(1, *accent, 0)
+            cr.arc(cx, cy, halo + 3, 0, 2 * math.pi)
+            cr.set_source(glow)
+            cr.fill()
+        elif self.state in {"transcribing", "magic", "delivering"} and not self.reduce_motion:
+            pulse = 0.5 + 0.5 * math.sin(self.phase * 3.2)
+            glow = cairo.RadialGradient(cx, cy, radius, cx, cy, radius + 6)
+            glow.add_color_stop_rgba(0, *accent, 0.25 + 0.3 * pulse)
+            glow.add_color_stop_rgba(1, *accent, 0)
+            cr.arc(cx, cy, radius + 6, 0, 2 * math.pi)
+            cr.set_source(glow)
+            cr.fill()
+        # Mother-of-pearl body: warm white core, cool rim, a tint of the state.
+        body = cairo.RadialGradient(cx - 3.5, cy - 4, 1, cx, cy, radius)
+        body.add_color_stop_rgb(0, 1, 1, 1)
+        body.add_color_stop_rgb(0.45, 0.95, 0.93, 0.91)
+        body.add_color_stop_rgb(1, 0.77, 0.81, 0.86)
+        cr.arc(cx, cy, radius, 0, 2 * math.pi)
+        cr.set_source(body)
+        cr.fill()
+        tint = cairo.RadialGradient(cx, cy + 5, 1, cx, cy + 2, radius + 1)
+        tint.add_color_stop_rgba(0, *accent, 0.55 if self.state == "listening" else 0.35)
+        tint.add_color_stop_rgba(1, *accent, 0)
+        cr.arc(cx, cy, radius, 0, 2 * math.pi)
+        cr.set_source(tint)
+        cr.fill()
+        # Iridescent sheen and a crisp highlight.
+        sheen = cairo.LinearGradient(cx - radius, cy - radius, cx + radius, cy + radius)
+        sheen.add_color_stop_rgba(0, 1.0, 0.66, 0.78, 0.22)
+        sheen.add_color_stop_rgba(0.5, 0.62, 0.88, 1.0, 0.18)
+        sheen.add_color_stop_rgba(1, 0.74, 0.66, 1.0, 0.2)
+        cr.arc(cx, cy, radius, 0, 2 * math.pi)
+        cr.set_source(sheen)
+        cr.fill()
+        cr.arc(cx - 3.8, cy - 4.2, 2.6, 0, 2 * math.pi)
+        cr.set_source_rgba(1, 1, 1, 0.95)
+        cr.fill()
+        cr.arc(cx, cy, radius, 0, 2 * math.pi)
+        cr.set_source_rgba(1, 1, 1, 0.55)
+        cr.set_line_width(0.8)
+        cr.stroke()
+        if self.state == "success":
+            cr.set_source_rgb(0.03, 0.32, 0.27)
+            cr.set_line_width(2.2)
+            cr.set_line_cap(cairo.LINE_CAP_ROUND)
+            cr.set_line_join(cairo.LINE_JOIN_ROUND)
+            cr.move_to(cx - 4.5, cy + 0.5)
+            cr.line_to(cx - 1.2, cy + 3.8)
+            cr.line_to(cx + 4.8, cy - 3.2)
+            cr.stroke()
+        glyph = {"error": "!"}.get(self.state)
+        if glyph:
+            cr.select_font_face("Inter", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+            cr.set_font_size(12)
+            extents = cr.text_extents(glyph)
+            cr.set_source_rgb(0.03, 0.15, 0.25)
+            cr.move_to(cx - extents.width / 2 - extents.x_bearing, cy - extents.y_bearing - extents.height / 2)
+            cr.show_text(glyph)
 
-        self._update_beacon()
-
-        listening = state == "listening"
-        self.clock.set_visible(listening)
-        self.wave.set_visible(listening)
-        if listening:
-            if "level" in payload:
-                self._apply_level(payload.get("level"))
-            elif not self.live_level:
-                self.wave.add_css_class("idle")
-            if self.clock_timer is None:
-                self.listen_started = time.monotonic()
-                self.clock.set_label("0:00")
-                self.clock_timer = GLib.timeout_add(200, self._tick_clock)
-        else:
-            self._clear_clock_timer()
-            self.live_level = False
-            self.wave.add_css_class("idle")
-
-        if self.window.get_visible():
-            self._make_click_through(self.window)
-        else:
-            self.window.present()
-            self._make_click_through(self.window)
-        if state in {"success", "error"}:
-            delay = 1600 if state == "success" else 2600
-            self.hide_timer = GLib.timeout_add(delay, self._auto_hide)
-        return GLib.SOURCE_REMOVE
-
-    def _auto_hide(self) -> bool:
-        self.hide_timer = None
-        if self.window is not None:
-            self.window.set_visible(False)
-        return GLib.SOURCE_REMOVE
+    def _draw_bars(self, cr: cairo.Context, x: float, cy: float, accent: tuple[float, float, float]) -> None:
+        listening = self.state == "listening"
+        for index in range(BARS):
+            # A travelling wave; while listening its swell follows the voice.
+            envelope = math.sin(math.pi * (index + 0.5) / BARS) ** 0.8
+            wave = 0.5 + 0.5 * math.sin(self.phase * (5.0 if listening else 3.0) - index * 0.75)
+            if listening:
+                amount = 0.12 + envelope * (0.25 + 0.75 * self.shown_level) * (0.55 + 0.45 * wave)
+            else:
+                amount = 0.15 + 0.35 * envelope * wave
+            if self.reduce_motion:
+                amount = 0.15 + 0.5 * envelope * (self.shown_level if listening else 0.4)
+            bar = max(3.0, min(22.0, 22.0 * amount))
+            left = x + index * 6
+            gradient = cairo.LinearGradient(0, cy - bar / 2, 0, cy + bar / 2)
+            gradient.add_color_stop_rgba(0, *accent, 0.95)
+            gradient.add_color_stop_rgba(1, *FOAM, 0.75 if listening else 0.95)
+            rounded(cr, left, cy - bar / 2, 3, bar, 1.5)
+            cr.set_source(gradient)
+            cr.fill()
 
     def _export_preview(self) -> bool:
         try:
-            gi.require_version("Graphene", "1.0")
-            from gi.repository import Graphene
-            if self.window is None or self.hud is None:
+            if self.area is None:
                 return GLib.SOURCE_REMOVE
-            width = max(1, self.hud.get_width())
-            height = max(1, self.hud.get_height())
-            paintable = Gtk.WidgetPaintable.new(self.hud)
-            snapshot = Gtk.Snapshot()
-            paintable.snapshot(snapshot, float(width), float(height))
-            node = snapshot.to_node()
-            native = self.window.get_native()
-            renderer = native.get_renderer() if native is not None else None
-            if node is not None and renderer is not None:
-                texture = renderer.render_texture(node, Graphene.Rect().init(0, 0, float(width), float(height)))
-                suffix = "-reduced-motion" if self.reduce_motion else ""
-                path = f"/tmp/delulu-pill-{self.preview}{suffix}.png"
-                texture.save_to_png(path)
-                print(json.dumps({"type": "export", "path": path, "width": width, "height": height}), flush=True)
+            width = self.area.get_content_width()
+            surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width * 2, HEIGHT * 2)
+            cr = cairo.Context(surface)
+            cr.scale(2, 2)
+            self.phase = 0.9
+            self.shown_level = 0.62
+            self._draw(self.area, cr, width, HEIGHT)
+            suffix = "-reduced-motion" if self.reduce_motion else ""
+            path = f"/tmp/delulu-pill-{self.preview}{suffix}.png"
+            surface.write_to_png(path)
+            print(json.dumps({"type": "export", "path": path, "width": width, "height": HEIGHT}), flush=True)
         finally:
             self.quit()
         return GLib.SOURCE_REMOVE
