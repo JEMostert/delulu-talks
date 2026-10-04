@@ -51,7 +51,51 @@
     rgba(40, 120, 170, 0.16)
   );
 }
+.ocean-still,
+.ocean-still::after {
+  position: absolute;
+  inset: -6%;
+  background-size: cover;
+  background-position: center top;
+  animation: ocean-drift 48s var(--ease-in-out) infinite alternate;
+}
+.ocean-still::after {
+  content: "";
+  inset: 0;
+  background-image: inherit;
+  transform: scaleX(-1);
+  opacity: 0.32;
+  mix-blend-mode: screen;
+  animation: ocean-shimmer 17s var(--ease-in-out) infinite alternate;
+}
+@keyframes ocean-drift {
+  from {
+    transform: translate3d(-1.5%, 0, 0) scale(1.02);
+  }
+  to {
+    transform: translate3d(1.5%, 1%, 0) scale(1.06);
+  }
+}
+@keyframes ocean-shimmer {
+  from {
+    transform: scaleX(-1) translate3d(-2%, 0, 0);
+    opacity: 0.18;
+  }
+  to {
+    transform: scaleX(-1) translate3d(2%, 1.5%, 0);
+    opacity: 0.4;
+  }
+}
+/* The live shader covers the still; stop animating what nobody can see. */
+.ocean-background:has(.ocean-canvas[data-rendered="true"]) .ocean-still {
+  visibility: hidden;
+  animation: none;
+}
+.ocean-background:has(.ocean-canvas[data-rendered="true"]) .ocean-still::after {
+  animation: none;
+}
 .ocean-canvas {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;

@@ -40,6 +40,7 @@ import { PasteRecoveryNotice } from "./components/PasteRecoveryNotice";
 import { HistoryDeletionNotice } from "./components/HistoryDeletionNotice";
 import { Alert } from "./components/ui";
 import { LatestResult } from "./components/LatestResult";
+import brandMark from "./assets/delulu-talks-mark.svg";
 import { ProjectVocabulary } from "./components/ProjectVocabulary";
 import { activityLabel, engineLabel, formatClock } from "./statusLabels";
 import { useRecordingClock } from "./hooks/useRecordingClock";
@@ -397,7 +398,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         covered={panelOpen && !quickSheet}
       />
       <div className="ocean-brand" aria-hidden="true">
-        <img src="/delulu-talks-mark.svg" alt="" />
+        <img src={brandMark} alt="" />
         Delulu Talks
       </div>
       {w.ready && !panelOpen && (

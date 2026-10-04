@@ -1,5 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { captureLevelStore } from "../captureLevel";
+import abyssStill from "../assets/ocean-abyss.webp";
+import shallowsStill from "../assets/ocean-shallows.webp";
 
 const vertex = `attribute vec2 position;
 void main() { gl_Position = vec4(position, 0.0, 1.0); }`;
@@ -309,6 +311,13 @@ export const OceanBackground = memo(function OceanBackground({
   }, [generation]);
   return (
     <div className="ocean-background" aria-hidden="true">
+      {/* A pre-rendered sea for systems without WebGL (Wayland disables the GPU). */}
+      <div
+        className="ocean-still"
+        style={{
+          backgroundImage: `url(${theme === "light" ? shallowsStill : abyssStill})`,
+        }}
+      />
       <canvas ref={canvasRef} className="ocean-canvas" />
       <div className="ocean-atmosphere" />
     </div>
