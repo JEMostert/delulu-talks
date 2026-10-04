@@ -98,7 +98,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
   },
   settings: {
     title: "Settings",
-    subtitle: "Capture, output, runtime and application",
+    subtitle: "How Delulu listens, types and keeps your words",
   },
 };
 function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {

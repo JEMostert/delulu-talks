@@ -114,3 +114,111 @@
 .settings-panel .spoken-corrections-card {
   margin: 0;
 }
+
+/* One structure for every section: a title, then titled lists of rows. */
+.pref-head {
+  margin-bottom: 22px;
+}
+.pref-head h2 {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+.pref-head p {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.settings-panel > * + * {
+  margin-top: 22px;
+}
+.settings-panel > .pref-head + * {
+  margin-top: 0;
+}
+.pref-group > h3 {
+  margin: 0 0 8px 2px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pref-list {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-1), var(--rim-highlight);
+  overflow: hidden;
+}
+.pref-note {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.settings-panel .disclosure {
+  margin-top: 18px;
+}
+
+/* Components that bring their own group: same quiet heading as a list. */
+.settings-panel .settings-group > .group-heading {
+  background: transparent;
+}
+
+/* Speech model: two choices side by side, the selected one lit. */
+.engine-choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.engine-option {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-soft);
+  text-align: left;
+  color: var(--ink);
+  transition:
+    border-color var(--t-base),
+    background-color var(--t-base),
+    box-shadow var(--t-base);
+}
+.engine-option:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+}
+.engine-option[aria-checked="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.engine-option > svg:first-child {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--accent-ink);
+}
+.engine-option strong {
+  display: block;
+  font-size: 13.5px;
+}
+.engine-option small {
+  display: block;
+  margin-top: 3px;
+  padding-right: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.engine-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 15px;
+  height: 15px;
+  color: var(--accent-ink);
+}
