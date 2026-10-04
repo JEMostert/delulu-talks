@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { bridge } from "../bridge";
+import { Alert } from "./ui";
 import type { PasteRecovery } from "../types";
 
 export function PasteRecoveryNotice({ onCopied }: { onCopied: () => void }) {
@@ -55,37 +56,35 @@ export function PasteRecoveryNotice({ onCopied }: { onCopied: () => void }) {
   };
 
   return (
-    <div className="px-6 pt-3 max-[900px]:px-4">
-      <div
-        role="alert"
-        className="rounded-xl border border-line-strong bg-surface p-4"
-      >
-        <p className="font-medium">Automatic paste failed</p>
-        <p className="mt-1 break-words text-sm text-muted">{recovery.detail}</p>
-        <p className="mt-1 text-sm text-muted">
-          Use Copy instead, then paste manually in your intended text field.
-          Your transcript is also available in History.
-        </p>
-        {failure?.id === id && (
-          <p className="mt-2 text-sm text-danger">{failure.message}</p>
-        )}
-        <div className="mt-3 flex flex-wrap gap-2">
+    <Alert
+      tone="warning"
+      action={
+        <div className="panel-actions">
           <button
-            className="secondary-button"
+            className="secondary-button compact"
             disabled={pending}
             onClick={() => void act(true)}
           >
             {pending ? "Working…" : "Copy instead"}
           </button>
           <button
-            className="tool-button"
+            className="tool-button compact"
             disabled={pending}
             onClick={() => void act(false)}
           >
             Dismiss
           </button>
         </div>
-      </div>
-    </div>
+      }
+    >
+      <strong>Automatic paste failed</strong>
+      <p className="caption break-words">{recovery.detail}</p>
+      <p className="caption">
+        Copy the transcript and paste it yourself. It is also in History.
+      </p>
+      {failure?.id === id && (
+        <p className="caption text-danger">{failure.message}</p>
+      )}
+    </Alert>
   );
 }

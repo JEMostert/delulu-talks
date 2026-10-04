@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Alert } from "./ui";
 import type { HistoryDeletionState } from "../types";
 
 export function HistoryDeletionNotice({
@@ -23,54 +24,51 @@ export function HistoryDeletionNotice({
     return null;
   const remaining = Math.max(0, Math.ceil((state.deadline - now) / 1000));
   return (
-    <div className="mx-6 mt-3 p-3 rounded-xl border border-line bg-soft max-[900px]:mx-4">
-      <p
-        role={state.phase === "failed" ? "alert" : "status"}
-        className="text-sm"
-      >
+    <Alert
+      tone={state.phase === "failed" ? "danger" : "info"}
+      action={
+        state.phase === "pending" ? (
+          <button
+            className="secondary-button compact"
+            disabled={busy || remaining === 0}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onUndo(state.token);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Undo
+          </button>
+        ) : (
+          <div className="panel-actions">
+            <button className="secondary-button compact" onClick={onHistory}>
+              Open history
+            </button>
+            <button
+              className="tool-button compact"
+              onClick={() => setDismissed(state.token)}
+            >
+              Dismiss
+            </button>
+          </div>
+        )
+      }
+    >
+      <strong>
         {state.phase === "failed"
           ? state.error
-          : `${state.ids.length} transcripts queued for deletion.`}
-      </p>
-      {state.phase === "pending" ? (
-        <>
-          <div className="flex items-center gap-3 mt-2">
-            <button
-              className="secondary-button"
-              disabled={busy || remaining === 0}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  await onUndo(state.token);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              Undo deletion
-            </button>
-            <span className="caption">
-              {remaining > 0 ? `${remaining}s to undo` : "Finishing deletion…"}
-            </span>
-          </div>
-          <p className="caption mt-2">
-            Durable records stay saved during the window. Quitting cancels their
-            pending deletion; session-only records still disappear on quit.
-          </p>
-        </>
-      ) : (
-        <div className="flex gap-3 mt-2">
-          <button className="secondary-button" onClick={onHistory}>
-            Open history
-          </button>
-          <button
-            className="tool-button"
-            onClick={() => setDismissed(state.token)}
-          >
-            Dismiss
-          </button>
-        </div>
+          : `${state.ids.length} ${state.ids.length === 1 ? "transcript" : "transcripts"} queued for deletion`}
+      </strong>
+      {state.phase === "pending" && (
+        <p className="caption">
+          {remaining > 0
+            ? `${remaining}s to undo. Quitting now cancels the deletion of saved transcripts.`
+            : "Finishing deletion…"}
+        </p>
       )}
-    </div>
+    </Alert>
   );
 }

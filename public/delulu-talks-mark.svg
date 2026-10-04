@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
   <title id="title">Delulu Talks</title>
-  <desc id="desc">A flowing voice ribbon forms a lowercase d and a speech tail.</desc>
-  <defs><linearGradient id="voice" x1="54" y1="64" x2="207" y2="207" gradientUnits="userSpaceOnUse"><stop stop-color="#cbffe8"/><stop offset="1" stop-color="#62dfc5"/></linearGradient></defs>
+  <desc id="desc">A luminous voice ribbon forms a lowercase d and a speech tail.</desc>
+  <defs><linearGradient id="voice" x1="54" y1="64" x2="207" y2="207" gradientUnits="userSpaceOnUse"><stop stop-color="#75e4ff"/><stop offset=".5" stop-color="#32baff"/><stop offset="1" stop-color="#237bff"/></linearGradient></defs>
   <path d="M172 61v91c0 33-23 54-54 54s-53-21-53-51 22-51 51-51c15 0 27 5 36 14" fill="none" stroke="url(#voice)" stroke-width="27" stroke-linecap="round"/>
   <path d="M167 180l29 26v-56" fill="url(#voice)"/>
   <path d="M105 145v20m24-30v40" fill="none" stroke="url(#voice)" stroke-width="9" stroke-linecap="round"/>

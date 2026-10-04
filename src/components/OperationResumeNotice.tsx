@@ -1,3 +1,4 @@
+import { Alert } from "./ui";
 import type { useWorkspaceOperations } from "../hooks/useWorkspaceOperations";
 
 export function OperationResumeNotice({
@@ -30,33 +31,27 @@ export function OperationResumeNotice({
           ? "Rewrite needs attention"
           : "Rewrite draft saved for this session";
   return (
-    <div
-      className="px-6 pt-3 max-[900px]:px-4"
-      aria-label="Resumable operations"
-    >
-      <div
-        className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface p-3 text-sm"
-        role="status"
-      >
+    <Alert tone="info">
+      <div className="flex flex-col gap-2" aria-label="Resumable operations">
         {hasImport && (
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <span className="break-words">
               {importLabel}
               {imported.file ? ` · ${imported.file.name}` : ""}
             </span>
-            <button className="secondary-button" onClick={onImport}>
-              Resume import in Audio files
+            <button className="secondary-button compact" onClick={onImport}>
+              Open Audio files
             </button>
           </div>
         )}
         {rewrite && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <span className="break-words">
               {rewriteLabel} · {rewrite.label}
             </span>
             {!rewrite.visible && (
               <button
-                className="secondary-button"
+                className="secondary-button compact"
                 onClick={operations.showRewrite}
               >
                 Resume rewrite
@@ -65,6 +60,6 @@ export function OperationResumeNotice({
           </div>
         )}
       </div>
-    </div>
+    </Alert>
   );
 }

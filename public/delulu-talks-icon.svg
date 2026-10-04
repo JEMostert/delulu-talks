@@ -1,8 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
   <title id="title">Delulu Talks</title>
-  <desc id="desc">A flowing voice ribbon forms a lowercase d and a speech tail.</desc>
-  <defs><linearGradient id="voice" x1="54" y1="64" x2="207" y2="207" gradientUnits="userSpaceOnUse"><stop stop-color="#cbffe8"/><stop offset="1" stop-color="#62dfc5"/></linearGradient></defs>
-  <rect x="8" y="8" width="240" height="240" rx="62" fill="#142a2b"/><rect x="9" y="9" width="238" height="238" rx="61" fill="none" stroke="#ffffff" stroke-opacity=".12" stroke-width="2"/>
+  <desc id="desc">A luminous voice ribbon forms a lowercase d and a speech tail on a deep-sea tile.</desc>
+  <defs>
+    <linearGradient id="voice" x1="54" y1="64" x2="207" y2="207" gradientUnits="userSpaceOnUse"><stop stop-color="#c4f8ff"/><stop offset=".5" stop-color="#6ad9ff"/><stop offset="1" stop-color="#32baff"/></linearGradient>
+    <linearGradient id="depth" x1="128" y1="8" x2="128" y2="248" gradientUnits="userSpaceOnUse"><stop stop-color="#11406a"/><stop offset=".52" stop-color="#082742"/><stop offset="1" stop-color="#041424"/></linearGradient>
+    <radialGradient id="light" cx="86" cy="18" r="190" gradientUnits="userSpaceOnUse"><stop stop-color="#75e4ff" stop-opacity=".3"/><stop offset="1" stop-color="#75e4ff" stop-opacity="0"/></radialGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="7"/></filter>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="62" fill="url(#depth)"/>
+  <rect x="8" y="8" width="240" height="240" rx="62" fill="url(#light)"/>
+  <rect x="9" y="9" width="238" height="238" rx="61" fill="none" stroke="#bfeaff" stroke-opacity=".18" stroke-width="2"/>
+  <g opacity=".45" filter="url(#glow)">
+    <path d="M172 61v91c0 33-23 54-54 54s-53-21-53-51 22-51 51-51c15 0 27 5 36 14" fill="none" stroke="#32baff" stroke-width="27" stroke-linecap="round"/>
+  </g>
   <path d="M172 61v91c0 33-23 54-54 54s-53-21-53-51 22-51 51-51c15 0 27 5 36 14" fill="none" stroke="url(#voice)" stroke-width="27" stroke-linecap="round"/>
   <path d="M167 180l29 26v-56" fill="url(#voice)"/>
   <path d="M105 145v20m24-30v40" fill="none" stroke="url(#voice)" stroke-width="9" stroke-linecap="round"/>

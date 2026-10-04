@@ -1,5 +1,7 @@
 import { Download, RotateCw } from "lucide-react";
+import { Alert } from "./ui";
 import type { UpdateStatus } from "../types";
+
 export function UpdateNotice({
   status,
   busy,
@@ -14,42 +16,44 @@ export function UpdateNotice({
   if (!["available", "downloading", "downloaded"].includes(status.phase))
     return null;
   return (
-    <aside
-      className="update-notice mx-6 mt-3 flex items-center gap-3.5 rounded-[14px] border border-line-strong bg-accent-soft px-4 py-3 backdrop-blur-md max-[700px]:flex-wrap"
-      aria-live="polite"
+    <Alert
+      tone={status.phase === "downloaded" ? "success" : "info"}
+      action={
+        status.phase === "available" ? (
+          <button className="secondary-button compact" onClick={onDownload}>
+            <Download /> Download
+          </button>
+        ) : status.phase === "downloaded" ? (
+          <button
+            className="primary-button compact"
+            disabled={busy}
+            onClick={onInstall}
+          >
+            <RotateCw /> Restart & update
+          </button>
+        ) : undefined
+      }
     >
-      <Download />
-      <div className="flex-1">
-        <strong className="text-[13px]">
-          {status.phase === "downloaded"
-            ? "A fresh version is ready"
-            : `Delulu Talks ${status.version ?? "update"}`}
-        </strong>
-        <p className="text-xs text-muted">
-          {status.phase === "downloaded"
-            ? busy
-              ? "Finish your current task before restarting."
-              : "Restart when you’re ready. Your words and models stay put."
-            : status.message}
-        </p>
-        {status.phase === "downloading" && (
-          <progress
-            max={100}
-            value={status.percent ?? 0}
-            aria-label="Update download"
-          />
-        )}
-      </div>
-      {status.phase === "available" && (
-        <button className="secondary-button" onClick={onDownload}>
-          Download
-        </button>
+      <strong>
+        {status.phase === "downloaded"
+          ? "A new version is ready"
+          : `Delulu Talks ${status.version ?? "update"} is available`}
+      </strong>
+      <p className="caption">
+        {status.phase === "downloaded"
+          ? busy
+            ? "Finish your current task before restarting."
+            : "Restart when you’re ready. Your words and models stay put."
+          : status.message}
+      </p>
+      {status.phase === "downloading" && (
+        <progress
+          className="mt-2"
+          max={100}
+          value={status.percent ?? 0}
+          aria-label="Update download"
+        />
       )}
-      {status.phase === "downloaded" && (
-        <button className="primary-button" disabled={busy} onClick={onInstall}>
-          <RotateCw /> Restart & update
-        </button>
-      )}
-    </aside>
+    </Alert>
   );
 }
