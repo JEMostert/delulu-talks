@@ -1,0 +1,35 @@
+/* History: search, filters, selectable transcript list. */
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.history-toolbar .search-box {
+  flex: 1;
+  min-width: 0;
+}
+.history-toolbar .sheet-icon.is-selected {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.history-filter-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.selectable-transcript {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+.selectable-transcript > input {
+  margin-top: 22px;
+  width: 17px;
+  height: 17px;
+}
+.selectable-transcript > :last-child {
+  grid-column: 2;
+}

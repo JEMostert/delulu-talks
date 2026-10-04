@@ -11,6 +11,7 @@ uniform vec2 pointer;
 uniform float time;
 uniform float voice;
 uniform vec3 touch;
+uniform float shallow;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
@@ -30,9 +31,10 @@ void main() {
   vec2 p = vec2((uv.x-.5)*aspect, uv.y);
   p += pointer * vec2(.025,.013);
   float t = time;
-  vec3 deep = vec3(.008,.033,.076);
-  vec3 blue = vec3(.009,.17,.29);
-  vec3 teal = vec3(.017,.36,.46);
+  // Abyss (dark) and Shallows (light) share one scene with different water.
+  vec3 deep = mix(vec3(.008,.033,.076), vec3(.30,.62,.76), shallow);
+  vec3 blue = mix(vec3(.009,.17,.29), vec3(.55,.82,.91), shallow);
+  vec3 teal = mix(vec3(.017,.36,.46), vec3(.82,.96,.99), shallow);
   float depth = smoothstep(-.12,1.15,uv.y);
   vec3 col = mix(deep, blue, depth);
   col = mix(col, teal, pow(depth,3.)*.6);
@@ -50,8 +52,8 @@ void main() {
   float c2 = water(sea*3.5+vec2(4.2,1.7),t*.8);
   float surface = smoothstep(.38,1.,p.y);
   float caustic = c1*.65+c2*.35;
-  col += vec3(.055,.39,.49) * caustic * surface * (.45+.55*depth);
-  col += vec3(.10,.35,.39) * pow(c1*c2,2.) * surface;
+  col += mix(vec3(.055,.39,.49), vec3(.30,.26,.20), shallow) * caustic * mix(surface, .35+.65*surface, shallow) * (.45+.55*depth);
+  col += mix(vec3(.10,.35,.39), vec3(.20,.18,.14), shallow) * pow(c1*c2,2.) * surface;
 
   // A luminous moving aperture casts long, soft shafts through the water.
   vec2 light = vec2(.29*aspect + sin(t*.055)*.025,1.22);
@@ -60,9 +62,9 @@ void main() {
   beams += .5*pow(max(0.,sin(slope*31.-t*.09)),20.);
   float cone = exp(-pow(slope*.55,2.));
   float shaft = beams*cone*pow(depth,1.8)*.19;
-  col += vec3(.10,.50,.60)*shaft;
+  col += mix(vec3(.10,.50,.60), vec3(.20,.22,.18), shallow)*shaft;
   float glow = exp(-length((p-light)*vec2(.8,1.4))*3.3);
-  col += vec3(.09,.43,.51)*glow*.7;
+  col += mix(vec3(.09,.43,.51), vec3(.16,.14,.10), shallow)*glow*.7;
 
   // Soft submerged contours, gently displaced by voice energy.
   vec2 ripple = vec2(p.x, (p.y-.42)*1.6);
@@ -85,8 +87,9 @@ void main() {
   float mote = exp(-length(f-center)*100.)*step(.955,seed);
   col += vec3(.26,.58,.65)*mote*(.3+.7*depth);
 
-  float vignette = 1.-.24*pow(length((uv-.5)*vec2(1.15,.8)),1.4);
+  float vignette = 1.-mix(.24,.12,shallow)*pow(length((uv-.5)*vec2(1.15,.8)),1.4);
   col *= vignette;
+  col = min(col, vec3(1.));
   // Dither prevents visible bands in the deep navy gradients.
   col += (hash(gl_FragCoord.xy)-.5)/255.;
   gl_FragColor = vec4(col,1.);
@@ -94,15 +97,30 @@ void main() {
 
 export const OceanBackground = memo(function OceanBackground({
   recording,
+  theme,
+  covered,
 }: {
   recording: boolean;
+  theme: "light" | "dark";
+  /** A workspace sheet hides most of the water; animate more slowly. */
+  covered: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const active = useRef(recording);
+  const shallow = useRef(theme === "light" ? 1 : 0);
+  const slow = useRef(covered);
+  const repaint = useRef<() => void>(() => {});
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
     active.current = recording;
   }, [recording]);
+  useEffect(() => {
+    slow.current = covered;
+  }, [covered]);
+  useEffect(() => {
+    shallow.current = theme === "light" ? 1 : 0;
+    repaint.current();
+  }, [theme]);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -157,6 +175,7 @@ export const OceanBackground = memo(function OceanBackground({
       time: gl.getUniformLocation(program, "time"),
       voice: gl.getUniformLocation(program, "voice"),
       touch: gl.getUniformLocation(program, "touch"),
+      shallow: gl.getUniformLocation(program, "shallow"),
     };
     const debug = gl.getExtension("WEBGL_debug_renderer_info");
     const renderer = debug
@@ -186,13 +205,14 @@ export const OceanBackground = memo(function OceanBackground({
       gl.uniform1f(uniforms.time, elapsed);
       gl.uniform1f(uniforms.voice, volume);
       gl.uniform3f(uniforms.touch, touchX, touchY, touchTime);
+      gl.uniform1f(uniforms.shallow, shallow.current);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       if (!canvas.dataset.rendered) canvas.dataset.rendered = "true";
     };
     const animate = (now: number) => {
       frame = 0;
       if (lost || document.hidden || motion.matches) return;
-      if (!last || now - last >= frameInterval) {
+      if (!last || now - last >= (slow.current ? 1000 / 12 : frameInterval)) {
         const delta = last ? Math.min((now - last) / 1000, 0.1) : 0;
         elapsed += delta;
         last = now;
@@ -265,9 +285,13 @@ export const OceanBackground = memo(function OceanBackground({
     document.documentElement.addEventListener("pointerleave", leave);
     canvas.addEventListener("webglcontextlost", onLost);
     canvas.addEventListener("webglcontextrestored", onRestored);
+    repaint.current = () => {
+      if (!lost && !document.hidden) paint();
+    };
     resize();
     schedule();
     return () => {
+      repaint.current = () => {};
       cancelAnimationFrame(frame);
       observer.disconnect();
       removeLevel();

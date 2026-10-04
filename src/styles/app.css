@@ -1,0 +1,27 @@
+/* Renderer stylesheet entry. Order: tokens → base → primitives → shell → features. */
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "./tokens.css";
+@import "./base.css";
+@import "./primitives.css";
+@import "./shell.css";
+@import "./features/models.css";
+@import "./features/history.css";
+@import "./features/editor.css";
+@import "./features/lab.css";
+@import "./features/settings.css";
+
+/* Dark theme follows the data-theme attribute set by useTheme. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

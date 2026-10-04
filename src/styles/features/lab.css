@@ -1,0 +1,25 @@
+/* Audio files: drop zone and import queue. */
+.file-drop {
+  position: relative;
+  min-height: 150px;
+  justify-content: center;
+  border-radius: var(--r-lg);
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 35%, var(--line-strong));
+  background:
+    radial-gradient(
+      ellipse at 50% 0%,
+      color-mix(in srgb, var(--accent) 10%, transparent),
+      transparent 70%
+    ),
+    var(--surface);
+  transition:
+    border-color var(--t-base),
+    background-color var(--t-base),
+    box-shadow var(--t-base);
+}
+.file-drop:hover,
+.file-drop:focus-within,
+.file-drop[data-dragging="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}

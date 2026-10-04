@@ -1,4 +1,4 @@
-import { AudioLines, Keyboard, Mic, Moon, Sun } from "lucide-react";
+import { AudioLines, Keyboard, Mic, Moon, Sun, SunMoon } from "lucide-react";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { Toggle } from "./ui";
 import type { useWorkspace } from "../hooks/useWorkspace";
@@ -123,23 +123,36 @@ export function QuickSettings({
         />
       </div>
       <div className="quick-row">
-        <span>Appearance</span>
-        <button
-          className="sheet-icon"
-          aria-label="Switch color theme"
-          title="Switch color theme"
-          disabled={w.saving}
-          onClick={() =>
-            save({
-              theme:
-                document.documentElement.dataset.theme === "dark"
-                  ? "light"
-                  : "dark",
-            })
-          }
-        >
-          {s.theme === "light" ? <Moon /> : <Sun />}
-        </button>
+        <span>
+          {s.theme === "dark" ? (
+            <Moon />
+          ) : s.theme === "light" ? (
+            <Sun />
+          ) : (
+            <SunMoon />
+          )}
+          Appearance
+        </span>
+        <div className="segmented" role="group" aria-label="Color theme">
+          {(
+            [
+              ["system", "Auto"],
+              ["light", "Light"],
+              ["dark", "Dark"],
+            ] as const
+          ).map(([theme, label]) => (
+            <button
+              key={theme}
+              type="button"
+              aria-pressed={s.theme === theme}
+              className={s.theme === theme ? "active" : ""}
+              disabled={w.saving}
+              onClick={() => s.theme !== theme && save({ theme })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

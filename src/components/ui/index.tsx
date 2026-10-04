@@ -1,5 +1,13 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
-import { AlertCircle, Info, X, type LucideIcon } from "lucide-react";
+import type React from "react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  Info,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
 export function Toggle({
   value,
@@ -31,30 +39,102 @@ export function SettingRow({
   icon: Icon,
   title,
   description,
+  help,
   children,
 }: {
   icon?: LucideIcon;
   title: string;
+  /** One short, always-visible line under the title. */
   description?: string;
+  /** Longer guidance behind an info toggle. */
+  help?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="setting-row">
-      {Icon && <Icon className="setting-icon" />}
+      {Icon && <Icon className="setting-icon" aria-hidden="true" />}
       <div className="setting-copy">
         <strong>{title}</strong>
-        {description && (
+        {help && (
           <details className="setting-help">
             <summary aria-label={`About ${title}`} title={`About ${title}`}>
               <Info />
             </summary>
-            <p>{description}</p>
+            <p>{help}</p>
           </details>
         )}
+        {description && <p>{description}</p>}
       </div>
-      <div className="setting-control max-[900px]:max-w-[47%] max-[700px]:max-w-full">
-        {children}
-      </div>
+      <div className="setting-control">{children}</div>
+    </div>
+  );
+}
+
+/** Accessible tab strip: roving focus, arrow keys, Home/End. */
+export function Tabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+  label,
+  idPrefix,
+  className = "",
+  trailing,
+}: {
+  tabs: readonly (readonly [T, string])[];
+  value: T;
+  onChange: (value: T) => void;
+  label: string;
+  /** When set, tabs reference `${idPrefix}-panel` via aria-controls. */
+  idPrefix?: string;
+  className?: string;
+  trailing?: ReactNode;
+}) {
+  const refs = useRef(new Map<T, HTMLButtonElement>());
+  const move = (event: React.KeyboardEvent, index: number) => {
+    const last = tabs.length - 1;
+    const next =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? index === last
+          ? 0
+          : index + 1
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? index === 0
+            ? last
+            : index - 1
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? last
+              : null;
+    if (next === null) return;
+    event.preventDefault();
+    const [id] = tabs[next];
+    onChange(id);
+    refs.current.get(id)?.focus();
+  };
+  return (
+    <div className={`page-tabs ${className}`} role="tablist" aria-label={label}>
+      {tabs.map(([id, text], index) => (
+        <button
+          key={id}
+          ref={(element) => {
+            if (element) refs.current.set(id, element);
+            else refs.current.delete(id);
+          }}
+          type="button"
+          role="tab"
+          id={idPrefix ? `${idPrefix}-tab-${id}` : undefined}
+          aria-controls={idPrefix ? `${idPrefix}-panel` : undefined}
+          aria-selected={value === id}
+          tabIndex={value === id ? 0 : -1}
+          className={value === id ? "active" : ""}
+          onClick={() => onChange(id)}
+          onKeyDown={(event) => move(event, index)}
+        >
+          {text}
+        </button>
+      ))}
+      {trailing}
     </div>
   );
 }
@@ -82,18 +162,32 @@ export function EmptyState({
   );
 }
 
+const ALERT_ICONS = {
+  danger: AlertCircle,
+  warning: AlertTriangle,
+  info: Info,
+  success: CheckCircle2,
+} satisfies Record<string, LucideIcon>;
+
 export function Alert({
   children,
   action,
   onDismiss,
+  tone = "danger",
 }: {
   children: ReactNode;
   action?: ReactNode;
   onDismiss?: () => void;
+  /** Danger interrupts assistive technology; other tones are polite status. */
+  tone?: keyof typeof ALERT_ICONS;
 }) {
+  const Icon = ALERT_ICONS[tone];
   return (
-    <div className="alert" role="alert">
-      <AlertCircle />
+    <div
+      className={`alert ${tone === "danger" ? "" : tone}`}
+      role={tone === "danger" ? "alert" : "status"}
+    >
+      <Icon aria-hidden="true" />
       <div>{children}</div>
       {action}
       {onDismiss && (
@@ -117,6 +211,7 @@ export function Modal({
   footer,
   busy = false,
   visible = true,
+  size = "md",
 }: {
   title: string;
   children: ReactNode;
@@ -124,6 +219,7 @@ export function Modal({
   footer?: ReactNode;
   busy?: boolean;
   visible?: boolean;
+  size?: "sm" | "md" | "lg";
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
@@ -162,7 +258,7 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      className="modal"
+      className={`modal modal-${size}`}
       aria-labelledby={id}
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;

@@ -7,8 +7,8 @@ import {
 import { createTranscriptCommands } from "./transcriptCommands";
 import { Activity, lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
-  ArrowLeft,
   AudioLines,
+  BookA,
   Check,
   Clock3,
   Code2,
@@ -40,6 +40,9 @@ import { RewriteDialog } from "./components/RewriteDialog";
 import { PasteRecoveryNotice } from "./components/PasteRecoveryNotice";
 import { HistoryDeletionNotice } from "./components/HistoryDeletionNotice";
 import { Alert } from "./components/ui";
+import { LatestResult } from "./components/LatestResult";
+import { activityLabel, engineLabel, formatClock } from "./statusLabels";
+import { useRecordingClock } from "./hooks/useRecordingClock";
 const LabPage = lazy(() =>
   import("./pages/LabPage").then((module) => ({ default: module.LabPage })),
 );
@@ -71,7 +74,7 @@ const SettingsPage = lazy(() =>
 import type { Page } from "./types";
 
 const pages: Record<Page, { title: string; subtitle: string }> = {
-  home: { title: "Controls", subtitle: "Capture · transcribe · deliver" },
+  home: { title: "Home", subtitle: "Capture · transcribe · deliver" },
   history: {
     title: "History",
     subtitle: "Search, review and export transcripts",
@@ -98,7 +101,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
   },
 };
 function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
-  useTheme(w.settings.theme);
+  const theme = useTheme(w.settings.theme);
   const [modelTarget, setModelTarget] = useState<
     "decode" | "diagnostics" | null
   >(null);
@@ -379,12 +382,35 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
     return () => window.removeEventListener("keydown", escape);
   });
   const latest = w.history[0];
+  const quickSheet = quickOpen && w.page === "home";
+  const activity = activityLabel(w.status, w.magicStatus);
+  const elapsed = useRecordingClock(w.status.phase);
+  const engine = engineLabel(w.status);
   return (
     <main
       className={`ocean-app ${panelOpen ? "panel-open" : ""}`}
       data-visible={visible}
     >
-      <OceanBackground recording={w.status.phase === "listening"} />
+      <OceanBackground
+        recording={w.status.phase === "listening"}
+        theme={theme}
+        covered={panelOpen && !quickSheet}
+      />
+      <div className="ocean-brand" aria-hidden="true">
+        <img src="/delulu-talks-mark.svg" alt="" />
+        Delulu Talks
+      </div>
+      {w.ready && !panelOpen && (
+        <button
+          className="engine-chip"
+          title={engine.detail}
+          aria-label={`${engine.label}. Open models`}
+          onClick={() => navigate("models")}
+        >
+          <span className={`status-dot ${engine.tone}`} />
+          <span>{engine.label}</span>
+        </button>
+      )}
       <a
         className="ocean-skip"
         href={
@@ -397,42 +423,43 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
       </a>
       <section
         ref={panelRef}
-        className={`workspace-sheet ${quickOpen && w.page === "home" ? "quick-sheet" : "wide-sheet"}`}
+        className={`workspace-sheet ${quickSheet ? "quick-sheet" : "wide-sheet"}`}
         data-open={panelOpen}
         aria-label={
-          quickOpen && w.page === "home"
-            ? "Quick settings"
-            : `${pages[w.page].title} panel`
+          quickSheet ? "Quick settings" : `${pages[w.page].title} panel`
         }
         tabIndex={-1}
       >
         <header className="sheet-header" hidden={!panelOpen}>
-          {w.page !== "home" && (
-            <button
-              className="sheet-icon"
-              aria-label="Back to quick settings"
-              title="Quick settings"
-              onClick={() => {
-                w.setPage("home");
-                setQuickOpen(true);
-              }}
+          <div className="sheet-title">
+            <h1>{quickSheet ? "Quick settings" : pages[w.page].title}</h1>
+            <p>
+              {quickSheet
+                ? "Microphone, language and delivery"
+                : pages[w.page].subtitle}
+            </p>
+          </div>
+          {activity && (
+            <span
+              className={`sheet-status ${activity.tone}`}
+              title={activity.detail}
             >
-              <ArrowLeft />
-            </button>
+              <span className={`status-dot ${activity.tone}`} />
+              {elapsed !== null && (
+                <span className="recording-clock">{formatClock(elapsed)}</span>
+              )}
+              <span>{activity.label}</span>
+            </span>
           )}
-          <h1>
-            {quickOpen && w.page === "home" ? "Settings" : pages[w.page].title}
-          </h1>
-          {w.page !== "home" && (
-            <button
-              className="sheet-icon"
-              aria-label="Open command palette"
-              title="Commands"
-              onClick={() => setPaletteOpen(true)}
-            >
-              <Terminal />
-            </button>
-          )}
+          <button
+            className="sheet-icon"
+            aria-label="Open command palette"
+            aria-keyshortcuts="Control+Shift+P"
+            title="Commands (Ctrl+Shift+P)"
+            onClick={() => setPaletteOpen(true)}
+          >
+            <Terminal />
+          </button>
           <button
             className="sheet-icon"
             aria-label={
@@ -440,7 +467,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                 ? "Dismiss setup"
                 : "Close panel"
             }
-            title="Close"
+            title="Close (Esc)"
             onClick={closePanel}
           >
             <X />
@@ -468,23 +495,13 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             />
           )}
           {w.status.captureInputNotice && (
-            <div className="px-6 pt-3 max-[900px]:px-4">
-              <div
-                role="status"
-                aria-live="polite"
-                className="rounded-xl border border-line bg-soft px-3.5 py-2.5 text-sm text-muted"
-              >
-                {w.status.captureInputNotice}
-              </div>
-            </div>
+            <Alert tone="info">{w.status.captureInputNotice}</Alert>
           )}
           <PasteRecoveryNotice
             onCopied={() => w.setToast("Copied to clipboard — paste manually")}
           />
           {w.error && (
-            <div className="px-6 pt-3 max-[900px]:px-4">
-              <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>
-            </div>
+            <Alert onDismiss={() => w.setError(null)}>{w.error}</Alert>
           )}
           {(() => {
             const retryAudio = w.status.retryAudio;
@@ -504,70 +521,69 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             )
               return null;
             return (
-              <div className="px-6 pt-3 max-[900px]:px-4">
-                <Alert
-                  action={
-                    available || retrying ? (
-                      retained ? (
-                        <div className="panel-actions">
-                          <button
-                            className="secondary-button"
-                            disabled={busy || retrying}
-                            onClick={run(() => bridge.retryRecording())}
-                          >
-                            <RotateCcw />
-                            Retry transcription
-                          </button>
-                          <button
-                            className="tool-button"
-                            disabled={!retryAudio && busy}
-                            onClick={run(() => bridge.discardFailedRecording())}
-                          >
-                            Discard retained audio
-                          </button>
-                        </div>
-                      ) : undefined
+              <Alert
+                tone={available || retrying ? "warning" : "danger"}
+                action={
+                  available || retrying ? (
+                    retained ? (
+                      <div className="panel-actions">
+                        <button
+                          className="secondary-button"
+                          disabled={busy || retrying}
+                          onClick={run(() => bridge.retryRecording())}
+                        >
+                          <RotateCcw />
+                          Retry transcription
+                        </button>
+                        <button
+                          className="tool-button"
+                          disabled={!retryAudio && busy}
+                          onClick={run(() => bridge.discardFailedRecording())}
+                        >
+                          Discard retained audio
+                        </button>
+                      </div>
+                    ) : undefined
+                  ) : (
+                    <button
+                      className="secondary-button"
+                      onClick={() => w.setPage("models")}
+                    >
+                      Open models
+                    </button>
+                  )
+                }
+              >
+                {retrying
+                  ? "Retrying transcription."
+                  : available && w.status.phase !== "error"
+                    ? "A previous recording is available to retry."
+                    : w.status.message}
+                {(available || retrying) && (
+                  <p className="caption">
+                    {retained ? (
+                      <>
+                        Audio is available only during this session.
+                        {retryAudio && (
+                          <>
+                            {retryAudio.durationMs !== null &&
+                              ` Duration: ${(retryAudio.durationMs / 1000).toFixed(1)} seconds.`}
+                            {` Size: ${
+                              retryAudio.byteLength >= 1024 * 1024
+                                ? `${(retryAudio.byteLength / (1024 * 1024)).toFixed(1)} MB`
+                                : `${Math.ceil(retryAudio.byteLength / 1024)} KB`
+                            }.`}
+                          </>
+                        )}
+                        {retrying &&
+                          " Discarding this backup will not interrupt the current transcription."}
+                      </>
                     ) : (
-                      <button
-                        className="secondary-button"
-                        onClick={() => w.setPage("models")}
-                      >
-                        Open models
-                      </button>
-                    )
-                  }
-                >
-                  {retrying
-                    ? "Retrying transcription."
-                    : available && w.status.phase !== "error"
-                      ? "A previous recording is available to retry."
-                      : w.status.message}
-                  {(available || retrying) && (
-                    <p className="caption">
-                      {retained ? (
-                        <>
-                          Audio is available only during this session.
-                          {retryAudio && (
-                            <>
-                              {retryAudio.durationMs !== null &&
-                                ` Duration: ${(retryAudio.durationMs / 1000).toFixed(1)} seconds.`}
-                              {` Size: ${
-                                retryAudio.byteLength >= 1024 * 1024
-                                  ? `${(retryAudio.byteLength / (1024 * 1024)).toFixed(1)} MB`
-                                  : `${Math.ceil(retryAudio.byteLength / 1024)} KB`
-                              }.`}
-                            </>
-                          )}
-                          {retrying &&
-                            " Discarding this backup will not interrupt the current transcription."}
-                        </>
-                      ) : (
-                        "Audio has been released. The current transcription continues."
-                      )}
-                    </p>
-                  )}
-                </Alert>
-              </div>
+                      "Audio has been released. The current transcription continues."
+                    )}
+                  </p>
+                )}
+              </Alert>
             );
           })()}
 
@@ -594,12 +610,10 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
           tabIndex={-1}
           role="region"
           aria-label={
-            quickOpen && w.page === "home"
-              ? "Quick settings controls"
-              : pages[w.page].title
+            quickSheet ? "Quick settings controls" : pages[w.page].title
           }
         >
-          {quickOpen && w.page === "home" && (
+          {quickSheet && (
             <QuickSettings workspace={w} busy={busy} onNavigate={navigate} />
           )}
           <Suspense
@@ -780,25 +794,32 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             <nav className="panel-navigation" aria-label="Workspace">
               {(
                 [
-                  { page: "home", label: "Controls", Icon: Home },
+                  { page: "home", label: "Home", Icon: Home },
                   { page: "history", label: "History", Icon: Clock3 },
                   { page: "lab", label: "Audio files", Icon: AudioLines },
                   { page: "models", label: "Models", Icon: Cpu },
+                  { page: "vocabulary", label: "Personalization", Icon: BookA },
                   { page: "technical", label: "Editor", Icon: Code2 },
                   { page: "settings", label: "Settings", Icon: Settings2 },
                 ] as const
               ).map(({ page, label, Icon }) => (
                 <button
                   key={page}
-                  className="sheet-icon"
-                  title={label}
+                  className="dock-item"
                   aria-label={label}
-                  aria-current={w.page === page ? "page" : undefined}
+                  aria-current={
+                    w.page === page && !(page === "home" && !quickSheet)
+                      ? "page"
+                      : undefined
+                  }
                   onClick={() =>
                     page === "home" ? closePanel() : navigate(page)
                   }
                 >
-                  <Icon />
+                  <Icon aria-hidden="true" />
+                  <span className="dock-tip" aria-hidden="true">
+                    {label}
+                  </span>
                 </button>
               ))}
             </nav>
@@ -844,6 +865,19 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         }
         onCancel={() => w.action(() => bridge.cancelDictation())}
       />
+      {latest &&
+        w.ready &&
+        !panelOpen &&
+        !busy &&
+        !w.status.captureInputNotice && (
+          <LatestResult
+            record={latest}
+            onCopy={() =>
+              w.action(() => bridge.copyText(deliveredText(latest)))
+            }
+            onOpen={() => navigate("history")}
+          />
+        )}
       {rewrite && (
         <RewriteDialog
           key={rewrite.key}
@@ -890,7 +924,11 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
       )}
       {w.toast && (
         <div className="ocean-toast" role="status">
-          <Check />
+          {/…$|\.\.\.$/.test(w.toast) ? (
+            <LoaderCircle className="spin toast-pending" aria-hidden="true" />
+          ) : (
+            <Check aria-hidden="true" />
+          )}
           <span>{w.toast}</span>
           <button
             className="sheet-icon"

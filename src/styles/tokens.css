@@ -1,0 +1,193 @@
+/* Deep Sea tokens. See docs/DESIGN-SYSTEM.md. Light is "Shallows", dark is "Abyss". */
+:root {
+  color-scheme: light;
+  --font-ui:
+    "Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui,
+    -apple-system, sans-serif;
+  --font-code:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SFMono-Regular",
+    "Cascadia Mono", monospace;
+
+  /* Water and glass */
+  --canvas: #cfeaf4;
+  --surface-sheet: rgba(244, 250, 253, 0.94);
+  --surface: #ffffff;
+  --surface-soft: #eef6fb;
+  --surface-hover: #e6f1f9;
+  --input: #f7fbfe;
+  --hero: #e9f4fb;
+  --panel-heading: #f4f9fd;
+  --sidebar: rgba(10, 41, 66, 0.62);
+  --header: rgba(255, 255, 255, 0.5);
+
+  /* Ink */
+  --ink: #0a2540;
+  --muted: #43617e;
+  --subtle: #4d6984;
+
+  /* Lines */
+  --line: rgba(14, 64, 104, 0.12);
+  --line-strong: rgba(14, 64, 104, 0.22);
+
+  /* Bioluminescence */
+  --accent: #1673e0;
+  --accent-hover: #2283f0;
+  --accent-soft: rgba(28, 125, 235, 0.1);
+  --accent-ink: #0b5fc4;
+  --on-accent: #ffffff;
+  --accent-grad: linear-gradient(165deg, #1f7ae4 0%, #1469d6 52%, #0e55c0 100%);
+  --success: #06775a;
+  --success-soft: rgba(7, 128, 95, 0.1);
+  --warning: #935700;
+  --warning-soft: rgba(214, 140, 20, 0.13);
+  --danger: #c8323f;
+  --danger-soft: rgba(200, 50, 63, 0.09);
+  --record: #e5485f;
+
+  /* Light from above */
+  --rim: rgba(255, 255, 255, 0.95);
+  --rim-soft: rgba(255, 255, 255, 0.6);
+  --glow: rgba(28, 125, 235, 0.2);
+  --glow-strong: rgba(28, 125, 235, 0.34);
+  --focus-ring: 0 0 0 3px rgba(28, 125, 235, 0.28);
+  --rim-highlight: inset 0 1px 0 var(--rim);
+  --shadow-1: 0 1px 2px rgba(10, 45, 80, 0.08);
+  --shadow-2:
+    0 1px 2px rgba(10, 45, 80, 0.05), 0 8px 24px rgba(10, 45, 80, 0.08);
+  --shadow-3:
+    0 2px 6px rgba(6, 40, 70, 0.08), 0 28px 70px rgba(6, 40, 70, 0.22);
+  --shadow: var(--shadow-3);
+  --sheet-border: rgba(255, 255, 255, 0.85);
+  --scrim: rgba(8, 40, 66, 0.32);
+
+  /* Shape */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+  --radius: var(--r-lg);
+  --control-radius: var(--r-sm);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --t-fast: 120ms;
+  --t-base: 200ms;
+  --t-slow: 320ms;
+
+  /* Controller (always glass on water) */
+  --dock-ink: #0d3556;
+  --dock-ink-muted: #3f6687;
+  --dock-bg: linear-gradient(
+    170deg,
+    rgba(255, 255, 255, 0.82),
+    rgba(232, 245, 252, 0.72) 55%,
+    rgba(214, 236, 248, 0.78)
+  );
+  --dock-border: rgba(255, 255, 255, 0.9);
+  --dock-shadow:
+    inset 0 1px 0 #ffffff, inset 0 -1px 2px rgba(20, 90, 140, 0.08),
+    0 18px 44px rgba(6, 50, 88, 0.22), 0 2px 6px rgba(6, 50, 88, 0.1);
+  --dock-active: rgba(28, 125, 235, 0.12);
+  --status-ink: #0b3253;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2343617e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --status-shadow: 0 1px 6px rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #031424;
+  --surface-sheet: rgba(5, 23, 40, 0.95);
+  --surface: #0a2137;
+  --surface-soft: #0e2943;
+  --surface-hover: #12304d;
+  --input: #061a2d;
+  --hero: #0d2a44;
+  --panel-heading: #0c253d;
+  --sidebar: rgba(7, 20, 36, 0.55);
+  --header: rgba(10, 24, 42, 0.5);
+
+  --ink: #eaf6ff;
+  --muted: #a3c2da;
+  --subtle: #88a9c4;
+
+  --line: rgba(150, 205, 245, 0.12);
+  --line-strong: rgba(150, 205, 245, 0.24);
+
+  --accent: #32baff;
+  --accent-hover: #5ccaff;
+  --accent-soft: rgba(50, 186, 255, 0.14);
+  --accent-ink: #8fd8ff;
+  --on-accent: #032038;
+  --accent-grad: linear-gradient(165deg, #8ae6ff 0%, #43c3ff 48%, #2a9cff 100%);
+  --success: #5fdcbf;
+  --success-soft: rgba(95, 220, 191, 0.12);
+  --warning: #f6c979;
+  --warning-soft: rgba(246, 201, 121, 0.12);
+  --danger: #ff8a94;
+  --danger-soft: rgba(255, 110, 125, 0.12);
+  --record: #ff6f86;
+
+  --rim: rgba(190, 232, 255, 0.14);
+  --rim-soft: rgba(190, 232, 255, 0.07);
+  --glow: rgba(50, 186, 255, 0.24);
+  --glow-strong: rgba(50, 186, 255, 0.4);
+  --focus-ring: 0 0 0 3px rgba(50, 186, 255, 0.32);
+  --shadow-1: 0 1px 2px rgba(0, 6, 16, 0.4);
+  --shadow-2: 0 1px 2px rgba(0, 6, 16, 0.3), 0 10px 28px rgba(0, 6, 16, 0.32);
+  --shadow-3: 0 2px 8px rgba(0, 6, 16, 0.35), 0 32px 90px rgba(0, 8, 20, 0.62);
+  --sheet-border: rgba(150, 210, 250, 0.2);
+  --scrim: rgba(1, 10, 22, 0.58);
+
+  --dock-ink: #dbf3ff;
+  --dock-ink-muted: #a7cee6;
+  --dock-bg: linear-gradient(
+    160deg,
+    rgba(90, 170, 215, 0.3),
+    rgba(6, 34, 58, 0.86) 42%,
+    rgba(14, 56, 86, 0.84)
+  );
+  --dock-border: rgba(170, 228, 255, 0.36);
+  --dock-shadow:
+    inset 0 1px 1px rgba(213, 245, 255, 0.5),
+    inset 0 -2px 6px rgba(164, 229, 255, 0.12),
+    0 22px 50px rgba(0, 16, 35, 0.55), 0 3px 8px rgba(0, 16, 28, 0.35);
+  --dock-active: rgba(110, 213, 255, 0.16);
+  --status-ink: #d4ecf9;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3c2da' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --status-shadow: 0 1px 6px #001020;
+}
+
+@theme inline {
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-code);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-soft: var(--surface-soft);
+  --color-sidebar: var(--sidebar);
+  --color-header: var(--header);
+  --color-heading: var(--panel-heading);
+  --color-input: var(--input);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-on-accent: var(--on-accent);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-hero: var(--hero);
+  --radius-panel: var(--r-lg);
+  --radius-control: var(--r-sm);
+  --shadow-panel: var(--shadow-2), var(--rim-highlight);
+  --shadow-pop: var(--shadow-3);
+}

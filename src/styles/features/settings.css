@@ -1,0 +1,48 @@
+/* Settings: spoken corrections showcase and grouped rows. */
+.spoken-corrections-card {
+  padding: 22px;
+  margin: 16px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(
+      ellipse at 100% 0%,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      transparent 60%
+    ),
+    var(--surface);
+  box-shadow: var(--shadow-1), var(--rim-highlight);
+}
+.cleanup-eyebrow {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+.spoken-corrections-card h3 {
+  font-size: 20px;
+  line-height: 1.25;
+  margin: 8px 0;
+  letter-spacing: -0.02em;
+}
+.spoken-corrections-card p {
+  max-width: 62ch;
+  line-height: 1.6;
+}
+.cleanup-example {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--input);
+  font-size: 14.5px;
+  line-height: 1.8;
+}
+.cleanup-example s {
+  opacity: 0.5;
+  text-decoration-thickness: 1px;
+}
+.spoken-corrections-card .caption {
+  margin-top: 10px;
+}

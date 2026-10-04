@@ -19,6 +19,8 @@ import {
   X,
 } from "lucide-react";
 import { captureLevelStore } from "../captureLevel";
+import { useRecordingClock } from "../hooks/useRecordingClock";
+import { formatClock } from "../statusLabels";
 import type { DictationStatus } from "../types";
 
 function AudioHalo() {
@@ -69,6 +71,9 @@ export function OceanController({
 }) {
   const recording = status.phase === "listening" || status.phase === "paused";
   const paused = status.phase === "paused";
+  const transcribing = status.phase === "transcribing";
+  const elapsed = useRecordingClock(status.phase);
+  const countdown = status.silenceCountdownSeconds;
   const needsSetup = ["missing", "error"].includes(status.engine);
   const [pending, setPending] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -106,7 +111,7 @@ export function OceanController({
   return (
     <div className={`controller-anchor ${panelOpen ? "with-panel" : ""}`}>
       <div
-        className={`ocean-controller ${recording ? "is-recording" : ""} ${paused ? "is-paused" : ""} ${completed ? "is-complete" : ""} ${navigation ? "has-navigation" : ""}`}
+        className={`ocean-controller ${recording ? "is-recording" : ""} ${paused ? "is-paused" : ""} ${transcribing ? "is-transcribing" : ""} ${completed ? "is-complete" : ""} ${navigation ? "has-navigation" : ""}`}
         role="toolbar"
         aria-label="Dictation controls"
       >
@@ -188,18 +193,21 @@ export function OceanController({
           </button>
         )}
       </div>
-      <span
-        className="controller-status"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {copied
-          ? "Copied to clipboard"
-          : completed
-            ? "Transcript ready"
-            : (message ?? status.message)}
-      </span>
+      <div className={`controller-status ${paused ? "is-paused-status" : ""}`}>
+        {elapsed !== null && (
+          // Outside the live region so the ticking clock is not re-announced.
+          <span className="recording-clock">{formatClock(elapsed)}</span>
+        )}
+        <span role="status" aria-live="polite" aria-atomic="true">
+          {copied
+            ? "Copied to clipboard"
+            : completed
+              ? "Transcript ready"
+              : recording && typeof countdown === "number" && countdown > 0
+                ? `Silence detected — stopping in ${countdown}s`
+                : (message ?? status.message)}
+        </span>
+      </div>
     </div>
   );
 }
