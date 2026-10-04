@@ -57,32 +57,19 @@ def bind_worker(args):
     sys.path.insert(0, str(ROOT / "electron/python"))
     import transcription_engine as engine
     worker = engine.Worker()
-    expected = {"mlx": "mlx", "cuda-windows": "windows", "cuda-linux": "linux", "external-qwen3-asr": "linux"}[args.backend]
+    expected = {"mlx": "mlx", "cuda-windows": "cuda", "cuda-linux": "cuda", "external-qwen3-asr": "cuda"}[args.backend]
     if worker.speech_backend != expected:
         raise ValueError("Selected runner must execute on its native platform; cross-platform emulation is not supported")
     if args.backend == "mlx":
         import metal_speech as adapter
         identity = (adapter.MODEL, adapter.MODEL_REVISION)
-    elif args.backend == "cuda-windows":
-        import windows_speech as adapter
+    elif args.backend in ("cuda-windows", "cuda-linux"):
+        import r2t2_speech as adapter
         identity = (adapter.MODEL, adapter.MODEL_REVISION)
     else:
-        from huggingface_hub import snapshot_download
-        if args.backend == "external-qwen3-asr":
-            repository = require_text(args.control_repository, "control repository")
-            revision = require_text(args.control_revision, "control revision")
-            if not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
-                raise ValueError("External control revision must be a full immutable commit SHA")
-            if not repository.startswith("Qwen/Qwen3-ASR-"):
-                raise ValueError("External fine-tune controls must explicitly identify a base Qwen3-ASR repository")
-        else:
-            repository, revision = "netease-youdao/Confucius4-R2T2", "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9"
-        # Resolve cached pinned weights before vLLM starts. The application
-        # constant is modified only in this standalone observer process.
-        model_path = snapshot_download(repo_id=repository, revision=revision,
-                                       cache_dir=str(args.cache_dir / "hub"), local_files_only=True)
-        engine.SPEECH_MODEL = model_path
-        identity = (repository, revision)
+        # The external base-Qwen control ran through the Linux vLLM worker,
+        # which v0.12.0 removed; it needs its own runner before it can return.
+        raise ValueError("The external Qwen3-ASR control is unavailable since v0.12.0 removed vLLM")
     return worker, identity
 
 
@@ -109,7 +96,7 @@ def run(args) -> None:
                "provenance_supplied": provenance, "repetitions": args.repetitions,
                "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                "adapter_source_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-                  for path in (ROOT / "electron/python").glob("*.py") if path.name in {"transcription_engine.py", "metal_speech.py", "windows_speech.py", "windows_checkpoint.py"}},
+                  for path in (ROOT / "electron/python").glob("*.py") if path.name in {"transcription_engine.py", "metal_speech.py", "r2t2_speech.py", "r2t2_checkpoint.py", "nemotron_speech.py"}},
                "status": "running", "native_inference_run": False}
     try:
         started = time.perf_counter()

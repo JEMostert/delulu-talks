@@ -14,7 +14,7 @@ The Linux readiness probe and worker use `r2t2.R2T2ASRModel`, matching the [exam
 
 ## Excluded acoustic streaming and remaining native evidence (#94, #96, #97, #98, #101, #104)
 
-The [upstream R2T2 API](https://github.com/netease-youdao/Confucius4-R2T2#python-api) accepts incremental audio with `init_streaming_state`, `streaming_transcribe` and `finish_streaming_transcribe`. This establishes feasibility for its Linux vLLM adapter, but does not establish compatibility with the app's Windows converted Transformers adapter or MLX adapter.
+The [upstream R2T2 API](https://github.com/netease-youdao/Confucius4-R2T2#python-api) accepts incremental audio with `init_streaming_state`, `streaming_transcribe` and `finish_streaming_transcribe`. That API depends on vLLM, which v0.12.0 removed; live typing for R2T2 therefore cuts phrases at pauses, and true incremental decoding comes from Nemotron 3.5 Streaming.
 
 MLX Audio's [current Qwen-ASR implementation](https://github.com/Blaizzy/mlx-audio/blob/main/mlx_audio/stt/models/qwen3_asr/qwen3_asr.py) exposes token output from already supplied audio. That source is newer than the pinned package and is not proof of an incremental microphone API, R2T2 committed-prefix behavior or native performance. It must not be advertised as acoustic streaming.
 

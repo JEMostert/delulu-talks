@@ -27,15 +27,18 @@ actual generation parameters, chunking, preprocessing and sample rate.
   "runtime": {
     "backend": "r2t2-mlx",
     "revision": "unknown",
-    "dependencies": {"mlx-audio": "0.5.7"}
+    "dependencies": { "mlx-audio": "0.5.7" }
   },
   "hardware": {
-    "os": "unknown", "processor": "unknown",
-    "accelerator": "unknown", "memory": "unknown"
+    "os": "unknown",
+    "processor": "unknown",
+    "accelerator": "unknown",
+    "memory": "unknown"
   },
   "decode": {
-    "language": "nl", "precision": "bfloat16",
-    "settings": {"sample_rate": 16000, "max_tokens": 4096}
+    "language": "nl",
+    "precision": "bfloat16",
+    "settings": { "sample_rate": 16000, "max_tokens": 4096 }
   },
   "hypothesis_origin": "unknown"
 }
@@ -64,8 +67,16 @@ limitations; the tool does not invent conclusions or select a winner.
   "tradeoffs": "Describe observed accuracy/resource tradeoffs; state unavailable measurements.",
   "limitations": "Supplied transcripts only; native execution and resources not verified here.",
   "participants": [
-    {"label": "R2T2 MLX", "role": "supported-r2t2-adapter", "reports": ["r2t2-report.json"]},
-    {"label": "External reference", "role": "external-benchmark-control", "reports": ["control-report.json"]}
+    {
+      "label": "R2T2 MLX",
+      "role": "supported-r2t2-adapter",
+      "reports": ["r2t2-report.json"]
+    },
+    {
+      "label": "External reference",
+      "role": "external-benchmark-control",
+      "reports": ["control-report.json"]
+    }
   ]
 }
 ```
@@ -94,12 +105,20 @@ hardware or synthesize benchmark evidence. Its manifest requires the same
   "measurement_method": "Describe the actual clock, memory sampler and execution order.",
   "limitations": "Describe noise, missing samples and native evidence limitations.",
   "runs": [
-    {"run_id": "warm-1", "case_id": "nl-short-001", "phase": "warm",
-     "measurements": {"wall_time": {"value": 1.2, "unit": "seconds"}}},
-    {"run_id": "warm-2", "case_id": "nl-short-001", "phase": "warm",
-     "measurements": {"wall_time": {"value": 1.3, "unit": "seconds"}}}
+    {
+      "run_id": "warm-1",
+      "case_id": "nl-short-001",
+      "phase": "warm",
+      "measurements": { "wall_time": { "value": 1.2, "unit": "seconds" } }
+    },
+    {
+      "run_id": "warm-2",
+      "case_id": "nl-short-001",
+      "phase": "warm",
+      "measurements": { "wall_time": { "value": 1.3, "unit": "seconds" } }
+    }
   ],
-  "artifacts": [{"role": "runner-log", "path": "runner-log.jsonl"}]
+  "artifacts": [{ "role": "runner-log", "path": "runner-log.jsonl" }]
 }
 ```
 
@@ -209,14 +228,23 @@ entity recognizer, spoken-number interpretation or semantic hallucination judge.
 {
   "normalization": "wer-basic-v1",
   "cases": [
-    {"case_id": "nl-entity-001", "reference": "reference.txt",
-     "annotations": {"speech_present": true, "named_entities": ["Amsterdam"]}}
+    {
+      "case_id": "nl-entity-001",
+      "reference": "reference.txt",
+      "annotations": { "speech_present": true, "named_entities": ["Amsterdam"] }
+    }
   ],
   "participants": [
-    {"label": "R2T2", "provenance": "r2t2-provenance.json",
-     "hypotheses": {"nl-entity-001": {"path": "r2t2-hypothesis.txt"}}},
-    {"label": "External control", "provenance": "control-provenance.json",
-     "hypotheses": {"nl-entity-001": {"path": "control-hypothesis.txt"}}}
+    {
+      "label": "R2T2",
+      "provenance": "r2t2-provenance.json",
+      "hypotheses": { "nl-entity-001": { "path": "r2t2-hypothesis.txt" } }
+    },
+    {
+      "label": "External control",
+      "provenance": "control-provenance.json",
+      "hypotheses": { "nl-entity-001": { "path": "control-hypothesis.txt" } }
+    }
   ]
 }
 ```
@@ -248,12 +276,12 @@ and a `traces` array. Each trace requires a unique `trace_id`, `case_id`,
 `worker_generation`, `clock_id`, `stage` and `events` object of timestamps in
 seconds from that same clock.
 
-| Stage | Start event | End event |
-| --- | --- | --- |
-| `cold-startup` | `cold_start_started` | `speech_ready` |
-| `first-request` | `request_started` | `request_completed` |
-| `warm-request` | `request_started` | `request_completed` |
-| `speech-end-to-delivery` | `speech_ended` | `delivery_completed` |
+| Stage                    | Start event          | End event            |
+| ------------------------ | -------------------- | -------------------- |
+| `cold-startup`           | `cold_start_started` | `speech_ready`       |
+| `first-request`          | `request_started`    | `request_completed`  |
+| `warm-request`           | `request_started`    | `request_completed`  |
+| `speech-end-to-delivery` | `speech_ended`       | `delivery_completed` |
 
 First and warm traces also require `request_ordinal` within the same worker
 generation: one for first, at least two for warm. Record cold startup before
@@ -286,12 +314,24 @@ or changes app settings/history. Run each native adapter separately on its
 actual hardware; copy the same corpus files unchanged between machines.
 
 ```json
-{"cases": [
-  {"case_id": "nl-001", "audio": "nl-001.wav", "reference": "nl-001.txt",
-   "language": "nl", "consent_recorded": true},
-  {"case_id": "mixed-001", "audio": "mixed-001.wav", "reference": "mixed-001.txt",
-   "language": "auto", "consent_recorded": true}
-]}
+{
+  "cases": [
+    {
+      "case_id": "nl-001",
+      "audio": "nl-001.wav",
+      "reference": "nl-001.txt",
+      "language": "nl",
+      "consent_recorded": true
+    },
+    {
+      "case_id": "mixed-001",
+      "audio": "mixed-001.wav",
+      "reference": "mixed-001.txt",
+      "language": "auto",
+      "consent_recorded": true
+    }
+  ]
+}
 ```
 
 Inputs must already be nonempty 16 kHz mono PCM16 WAV. No runner-specific
@@ -339,11 +379,19 @@ Each source case uses this shape (paths relative to the manifest):
 
 ```json
 {
-  "case_id": "nl-quiet-001", "audio": "recording.wav", "reference": "reference.txt",
-  "speaker_id": "speaker-01", "languages": ["nl"], "categories": ["quiet", "names"],
+  "case_id": "nl-quiet-001",
+  "audio": "recording.wav",
+  "reference": "reference.txt",
+  "speaker_id": "speaker-01",
+  "languages": ["nl"],
+  "categories": ["quiet", "names"],
   "named_entities": ["Amsterdam"],
-  "consent": {"record_id": "local-consent-01", "recorded_at": "2026-09-30T12:00:00Z",
-              "local_evaluation_allowed": true, "revoked": false}
+  "consent": {
+    "record_id": "local-consent-01",
+    "recorded_at": "2026-09-30T12:00:00Z",
+    "local_evaluation_allowed": true,
+    "revoked": false
+  }
 }
 ```
 

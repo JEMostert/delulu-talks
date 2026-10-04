@@ -30,7 +30,7 @@ then a decoding failure followed by an explicit retry. Opt-in real decoder
 verification is separate:
 
 ```sh
-/path/to/prepared-speech-python scripts/decoder-contract.py --backend linux
+/path/to/prepared-speech-python scripts/decoder-contract.py --backend cuda
 ```
 
 Issue #229 integration evidence: all ten Linux installed-decoder fixtures passed

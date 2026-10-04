@@ -4,7 +4,7 @@ Current implementation, 29 September 2026. **Native R2T2 inference has not been 
 
 ## What changed
 
-The previous Mac route substituted Qwen3-ASR-0.6B and served it through vLLM Metal. The new route selects `r2t2Mlx` on native Apple Silicon, loads the R2T2 BF16 MLX conversion directly, and keeps R2T2 on Linux vLLM CUDA and Windows native PyTorch CUDA. CUDA is NVIDIA's backend; its absence on a Mac does not mean the underlying Qwen-derived weights cannot run through another implementation.
+The previous Mac route substituted Qwen3-ASR-0.6B and served it through vLLM Metal. The new route selects `r2t2Mlx` on native Apple Silicon, loads the R2T2 BF16 MLX conversion directly, and keeps R2T2 on PyTorch/Transformers CUDA on Linux and Windows. CUDA is NVIDIA's backend; its absence on a Mac does not mean the underlying Qwen-derived weights cannot run through another implementation.
 
 The checkpoint is [`mlx-community/Confucius4-R2T2-bf16`](https://huggingface.co/mlx-community/Confucius4-R2T2-bf16), pinned to revision `747f5fc5f84bc9976baa2f02714e2fed67ed8611`. It is an unquantized conversion of the user's preferred fine-tune. The download is approximately 4.1 GB; inference and runtime installation require additional memory/disk space. No local HTTP service is needed.
 

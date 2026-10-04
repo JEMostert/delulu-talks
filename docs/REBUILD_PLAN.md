@@ -18,11 +18,13 @@ A quiet, local voice companion: invoke a shortcut, speak, and receive useful tex
 ## Milestones
 
 ### 1. Foundations and design
+
 - [x] Add shared UI primitives, semantic tokens, themes, responsive layout and reduced-motion support.
 - [x] Rebuild navigation, app header, status feedback, onboarding and dialogs.
 - [x] Extract workspace state/actions from the visual shell; serialize settings updates and surface failures consistently.
 
 ### 2. Daily workflows
+
 - [x] Redesign Home and History around recent results, review, search and copy/recovery.
 - [x] Preserve original transcripts and corrections; add an explicit remember-correction flow.
 - [x] Add paste-last from the tray and a delayed paste action in the app.
@@ -30,12 +32,14 @@ A quiet, local voice companion: invoke a shortcut, speak, and receive useful tex
 - [x] Refine Wordbook into an editable, searchable collection with voice expansions.
 
 ### 3. Runtime and maintenance
+
 - [x] Extract worker transport, serialize shared-environment setup, and prevent conflicting runtime operations.
 - [x] Introduce runtime dependency manifests and installed-version diagnostics.
 - [x] Add hardware/system checks, copyable diagnostics, setup progress, and actionable repair UI.
 - [x] Guard updater operations and expose manual releases for unsupported installs.
 
 ### 4. Finish
+
 - [x] Restyle every page using shared primitives and purposeful copy.
 - [x] Extend regression tests for concurrency, update safety and data behavior.
 - [x] Run browser workflows at desktop and compact sizes, both themes, and keyboard/dialog checks.
@@ -50,7 +54,6 @@ Warm neutral surfaces, restrained green accent, generous whitespace, quiet borde
 The user authorized pushing the completed rebuild to `master` and updating the release automation. Version tags run the verification workflow before native packaging and publication. The user's installed application and model data are not replaced by the development checks.
 
 Package signing and native runtime verification on unavailable operating systems require their respective environments. Avoid speculative accuracy promises; performance claims require real-audio measurements.
-
 
 ## Validation record — 0.6.0, 6 September 2026
 

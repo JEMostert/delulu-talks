@@ -6,7 +6,7 @@ Each completed transcript may carry optional `timings` in milliseconds, retained
 - Audio preparation measures PCM merging/resampling/WAV encoding plus local recording writes, or imported-file decoding.
 - Speech/writing readiness waits measure the service awaiting readiness, including any required load; a warm resident model can report a small wait.
 - Worker round trips measure request completion and include protocol/processing overhead. They are not pure native inference measurements.
-- Backend preprocessing and speech inference are measured at adapter boundaries. Internal vLLM preprocessing is opaque and is not reported as a separate measured stage.
+- Backend preprocessing and speech inference are measured at adapter boundaries. Model-internal preprocessing is not reported as a separate measured stage.
 - Clipboard publication measures Electron and any required desktop clipboard publication. Paste dispatch excludes that copy and includes permission/injection delays; it does not establish that the target application accepted the text.
 
 Nested stages overlap. Do not sum the fields to obtain end-to-end latency. Missing fields mean unmeasured, and legacy aggregate processing-time fields keep their existing meaning. Measurements use process-local monotonic clocks; no cross-process timestamps are subtracted. No content, paths or telemetry are added by these fields.

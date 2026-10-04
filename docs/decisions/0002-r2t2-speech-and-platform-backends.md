@@ -20,4 +20,8 @@ Platform-specific adapters and decoder contracts are maintained independently, w
 
 Mocked contracts and the static MLX weight audit do not establish native recognition quality, warmup, allocator release, memory minimum, or permission/paste behavior. Mac/Windows acceptance remains a hardware gate.
 
-Owners: [platform selection](../../electron/runtime/platform.ts), [catalog](../../src/data.ts), [MLX adapter](../../electron/python/metal_speech.py), [Windows adapter](../../electron/python/windows_speech.py), [Linux worker](../../electron/python/transcription_engine.py). See [model provenance](../model-provenance.md), [Mac support](../MAC_SUPPORT.md), and [Windows support](../WINDOWS_SUPPORT.md).
+Owners: [platform selection](../../electron/runtime/platform.ts), [catalog](../../src/data.ts), [MLX adapter](../../electron/python/metal_speech.py), [CUDA adapter](../../electron/python/r2t2_speech.py), [Nemotron adapter](../../electron/python/nemotron_speech.py), [Linux worker](../../electron/python/transcription_engine.py). See [model provenance](../model-provenance.md), [Mac support](../MAC_SUPPORT.md), and [Windows support](../WINDOWS_SUPPORT.md).
+
+## Amendment (v0.12.0)
+
+Linux no longer uses vLLM. Its server reserved most of the GPU's memory for a 1.7B model, which is unacceptable for a background dictation app. Linux now uses the same PyTorch/Transformers R2T2 adapter as Windows. NVIDIA Nemotron 3.5 ASR Streaming 0.6B is added as an optional second speech identity on CUDA platforms: it streams natively, needs about 1.3 GB of GPU memory and can run on the CPU. R2T2 stays the default because it is more accurate in Dutch.

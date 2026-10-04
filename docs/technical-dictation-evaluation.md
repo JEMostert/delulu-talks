@@ -8,7 +8,9 @@ Capture each candidate pipeline's output in a separate JSON file:
 {
   "schemaVersion": 1,
   "system": "R2T2 raw output, revision and decode settings recorded separately",
-  "outputs": [{ "id": "case-id-from-corpus", "text": "actual unmodified output" }]
+  "outputs": [
+    { "id": "case-id-from-corpus", "text": "actual unmodified output" }
+  ]
 }
 ```
 
@@ -31,10 +33,26 @@ Implementation is UNVERIFIED: tests, builds, typechecks, formatting, benchmark e
 ```json
 {
   "schemaVersion": 1,
-  "raw": { "schemaVersion": 1, "system": "R2T2 raw; revision/decode recorded", "outputs": [] },
-  "deterministic": { "schemaVersion": 1, "system": "technical grammar revision", "outputs": [] },
-  "vocabulary": { "schemaVersion": 1, "system": "saved rules snapshot", "outputs": [] },
-  "rewrite": { "schemaVersion": 1, "system": "optional Qwen model/preset/revision", "outputs": [] }
+  "raw": {
+    "schemaVersion": 1,
+    "system": "R2T2 raw; revision/decode recorded",
+    "outputs": []
+  },
+  "deterministic": {
+    "schemaVersion": 1,
+    "system": "technical grammar revision",
+    "outputs": []
+  },
+  "vocabulary": {
+    "schemaVersion": 1,
+    "system": "saved rules snapshot",
+    "outputs": []
+  },
+  "rewrite": {
+    "schemaVersion": 1,
+    "system": "optional Qwen model/preset/revision",
+    "outputs": []
+  }
 }
 ```
 

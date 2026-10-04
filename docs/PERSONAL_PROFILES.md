@@ -12,15 +12,15 @@ profile or change current language/delivery/vocabulary/rewrite settings. Explici
 preview/confirmation. Automatic selection, context capture and custom runtime
 decode control remain separate work.
 
-| Field | Contract |
-| --- | --- |
-| `language` | A supported configured recognition language code, not detected language. |
-| `decode` | `backend-default`, or `explicit` with finite `temperature` in 0–2 and integer `maxTokens` in 1–32768. These express desired controls; future activation must check actual backend support and must not silently ignore unsupported controls. |
-| `delivery` | Boolean `autoPaste`, `copyToClipboard`, and `keepHistory`. |
-| `vocabulary.rules` | Up to 500 uniquely identified corrections/shortcuts, with exact `term`, `soundsLike`, `replacement`, `enabled`, and optional language code. Omitted language means all languages; invalid language rejects the document. Saved block whitespace is retained. |
-| `technicalGrammar` | Boolean `preserveIdentifiers` and up to 500 nonblank `literalTerms`. Future activation must connect these to the technical protection workflow. |
-| `context` | `none`; `manual` text with capture/session scope; or `native` with capture scope, an explicit list of foreground-app/window-title/selected-text sources, and `requiresExplicitPermission: true`. The profile grants no native permissions. Activation must obtain runtime authorization and honor capture scope. |
-| `rewrite` | Boolean enabled, Qwen rewriting model ID, existing preset, boolean allowInferences, optional instructions. Independent from R2T2 recognition. |
+| Field              | Contract                                                                                                                                                                                                                                                                                                         |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `language`         | A supported configured recognition language code, not detected language.                                                                                                                                                                                                                                         |
+| `decode`           | `backend-default`, or `explicit` with finite `temperature` in 0–2 and integer `maxTokens` in 1–32768. These express desired controls; future activation must check actual backend support and must not silently ignore unsupported controls.                                                                     |
+| `delivery`         | Boolean `autoPaste`, `copyToClipboard`, and `keepHistory`.                                                                                                                                                                                                                                                       |
+| `vocabulary.rules` | Up to 500 uniquely identified corrections/shortcuts, with exact `term`, `soundsLike`, `replacement`, `enabled`, and optional language code. Omitted language means all languages; invalid language rejects the document. Saved block whitespace is retained.                                                     |
+| `technicalGrammar` | Boolean `preserveIdentifiers` and up to 500 nonblank `literalTerms`. Future activation must connect these to the technical protection workflow.                                                                                                                                                                  |
+| `context`          | `none`; `manual` text with capture/session scope; or `native` with capture scope, an explicit list of foreground-app/window-title/selected-text sources, and `requiresExplicitPermission: true`. The profile grants no native permissions. Activation must obtain runtime authorization and honor capture scope. |
+| `rewrite`          | Boolean enabled, Qwen rewriting model ID, existing preset, boolean allowInferences, optional instructions. Independent from R2T2 recognition.                                                                                                                                                                    |
 
 `personalProfileFromSettings` produces a validated snapshot for future consumers;
 it neither stores nor activates it. Defaults are backend decoding, identifier

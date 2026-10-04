@@ -2,12 +2,12 @@
 
 With the technical editor focused, Ctrl/Command + Alt provides four explicit actions:
 
-| Key | Action |
-| --- | --- |
-| I | Preview replacement of the last complete identifier before the caret |
-| W | Preview correction of the selected text, or the word at/immediately before the caret |
+| Key   | Action                                                                                      |
+| ----- | ------------------------------------------------------------------------------------------- |
+| I     | Preview replacement of the last complete identifier before the caret                        |
+| W     | Preview correction of the selected text, or the word at/immediately before the caret        |
 | Enter | Insert a newline using the draft's first existing line-ending style (LF for an empty draft) |
-| P | Return the saved dictation mode to prose, retaining the draft |
+| P     | Return the saved dictation mode to prose, retaining the draft                               |
 
 The same actions have visible buttons. Replacement opens a preview of the exact target and an editable replacement; Cancel preserves draft text, and Replace requires confirmation. Each replacement uses the buffer's privately issued document/selection target. Changes to the draft or selection invalidate the preview; stale edits cannot overwrite newer content. A successful replacement is one undoable transaction. Originals in transcript history are never edited by these buffer actions.
 

@@ -2,7 +2,7 @@
 
 ## Hugging Face Transformers Qwen3-ASR conversion helpers
 
-`electron/python/windows_checkpoint.py` contains helpers adapted from Hugging Face Transformers' `convert_qwen3_asr_to_hf.py` at commit `f4410762062c274fb53471e551e62b377df44cc1`.
+`electron/python/r2t2_checkpoint.py` contains helpers adapted from Hugging Face Transformers' `convert_qwen3_asr_to_hf.py` at commit `f4410762062c274fb53471e551e62b377df44cc1`.
 
 Copyright 2026 The HuggingFace Inc. team. All rights reserved.
 

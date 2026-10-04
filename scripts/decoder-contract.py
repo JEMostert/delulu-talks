@@ -33,28 +33,15 @@ def make_probe(backend):
             captured.append(samples)
             return types.SimpleNamespace(text="decoder probe", language=["English"])
         engine.model = types.SimpleNamespace(generate=generate)
-    elif backend == "windows":
-        from windows_speech import WindowsSpeech
-        engine = WindowsSpeech()
+    else:
+        # Linux and Windows share the Transformers R2T2 adapter since v0.12.0.
+        from r2t2_speech import R2T2Speech
+        engine = R2T2Speech()
         engine.model = object()
-        def generate(samples, language, limit):
+        def generate(samples, language, limit, timings=None):
             captured.append(samples)
             return {"transcription": "decoder probe", "language": "English"}
         engine._generate = generate
-    else:
-        from transcription_engine import Worker
-        # Select the Linux buffered adapter without altering platform globals.
-        # Construction is lazy and imports no inference dependencies. Preserve
-        # all worker invariants before explicitly choosing this decoder path.
-        engine = Worker()
-        engine.speech_backend = "linux"
-        def transcribe(**kwargs):
-            samples, rate = kwargs["audio"][0]
-            if rate != RATE:
-                raise AssertionError("Recognition received a wrong declared sample rate")
-            captured.append(samples)
-            return [types.SimpleNamespace(text="decoder probe")]
-        engine.model = types.SimpleNamespace(transcribe=transcribe)
     return engine, captured
 
 
@@ -162,7 +149,7 @@ def run_contracts(backend):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", choices=("linux", "windows", "mlx"), required=True)
+    parser.add_argument("--backend", choices=("cuda", "mlx"), required=True)
     args = parser.parse_args()
     try:
         report = run_contracts(args.backend)

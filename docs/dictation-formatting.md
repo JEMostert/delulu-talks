@@ -12,12 +12,12 @@ Balanced straight or curly quoted spans and balanced inline or fenced backtick s
 
 These examples are illustrative inputs and expected formatting, not recorded dictation or native inference evidence:
 
-| Language | Before | After |
-| --- | --- | --- |
-| English | `hello insert comma world insert period` | `hello, world.` |
-| Dutch | `hallo voeg komma in wereld voeg punt in` | `hallo, wereld.` |
-| English | `first insert new line second` | `first` followed by one line break, then `second` |
-| Dutch | `eerste voeg nieuwe alinea in tweede` | `eerste` followed by two line breaks, then `tweede` |
-| English | `say “insert comma” insert period` | `say “insert comma”.` |
+| Language | Before                                    | After                                               |
+| -------- | ----------------------------------------- | --------------------------------------------------- |
+| English  | `hello insert comma world insert period`  | `hello, world.`                                     |
+| Dutch    | `hallo voeg komma in wereld voeg punt in` | `hallo, wereld.`                                    |
+| English  | `first insert new line second`            | `first` followed by one line break, then `second`   |
+| Dutch    | `eerste voeg nieuwe alinea in tweede`     | `eerste` followed by two line breaks, then `tweede` |
+| English  | `say “insert comma” insert period`        | `say “insert comma”.`                               |
 
 Real dictation examples and hardware validation remain queued. Checks have not been run for this implementation under the current issues-only instruction.

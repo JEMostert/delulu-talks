@@ -20,15 +20,15 @@ Research snapshot: 11 August 2026. Sources are the vendors' own product pages an
 
 ## Market baseline
 
-| Product | Publicly documented strengths | Delulu Talks response |
-| --- | --- | --- |
-| [Wispr Flow](https://wisprflow.ai/features) | Cross-app dictation, automatic cleanup, snippets, personal dictionary, styles, context, developer formatting, and broad language support | Global shortcut/paste, intended cleanup, deterministic expansions, explicit language/model controls, all local |
-| [Wispr Flow context](https://wisprflow.ai/context) | Uses surrounding content and optional screen context to tune output | Delulu stays screen-blind by design today; privacy is predictable and no unrelated app content is captured |
-| [Superwhisper modes](https://superwhisper.com/docs/modes/modes) | App/site modes, custom AI instructions, system audio, speaker workflows, and context-aware processing | Dual transcript modes are model-native and deterministic; context/LLM rewriting remains an optional future layer, never part of the speech truth |
-| [Superwhisper vocabulary](https://superwhisper.com/docs/get-started/interface-vocabulary) | Recognition vocabulary plus reliable post-transcription replacements | Standard Nyra weights do not safely support hotword hints, so Delulu implements the reliable replacement half and labels the limitation honestly |
-| [VoiceInk](https://github.com/Beingpax/VoiceInk) | Open-source local dictation, modes, contextual awareness, custom commands, and model choice | Cross-platform Electron shell, local Crisper engine family, vocabulary rules, history, model lifecycle, and Speech Lab |
-| [OpenWhispr](https://github.com/OpenWhispr/openwhispr) | Open-source cross-platform dictation, local/cloud choice, meetings, diarization, notes, audio import, agents, API/MCP | Delulu takes the focused local specialist position: no accounts or cloud, but unusually rich verbatim fidelity, alignment, paired transcripts, timing, and export |
-| [Superwhisper Meeting](https://superwhisper.com/docs/modes/meeting) | Meeting recording, summaries/action items, and optional speaker separation | Meeting/system-audio capture and diarization are the largest remaining competitive gap; they should be a separate subsystem instead of being faked with a single-speaker ASR model |
+| Product                                                                                   | Publicly documented strengths                                                                                                            | Delulu Talks response                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Wispr Flow](https://wisprflow.ai/features)                                               | Cross-app dictation, automatic cleanup, snippets, personal dictionary, styles, context, developer formatting, and broad language support | Global shortcut/paste, intended cleanup, deterministic expansions, explicit language/model controls, all local                                                                     |
+| [Wispr Flow context](https://wisprflow.ai/context)                                        | Uses surrounding content and optional screen context to tune output                                                                      | Delulu stays screen-blind by design today; privacy is predictable and no unrelated app content is captured                                                                         |
+| [Superwhisper modes](https://superwhisper.com/docs/modes/modes)                           | App/site modes, custom AI instructions, system audio, speaker workflows, and context-aware processing                                    | Dual transcript modes are model-native and deterministic; context/LLM rewriting remains an optional future layer, never part of the speech truth                                   |
+| [Superwhisper vocabulary](https://superwhisper.com/docs/get-started/interface-vocabulary) | Recognition vocabulary plus reliable post-transcription replacements                                                                     | Standard Nyra weights do not safely support hotword hints, so Delulu implements the reliable replacement half and labels the limitation honestly                                   |
+| [VoiceInk](https://github.com/Beingpax/VoiceInk)                                          | Open-source local dictation, modes, contextual awareness, custom commands, and model choice                                              | Cross-platform Electron shell, local Crisper engine family, vocabulary rules, history, model lifecycle, and Speech Lab                                                             |
+| [OpenWhispr](https://github.com/OpenWhispr/openwhispr)                                    | Open-source cross-platform dictation, local/cloud choice, meetings, diarization, notes, audio import, agents, API/MCP                    | Delulu takes the focused local specialist position: no accounts or cloud, but unusually rich verbatim fidelity, alignment, paired transcripts, timing, and export                  |
+| [Superwhisper Meeting](https://superwhisper.com/docs/modes/meeting)                       | Meeting recording, summaries/action items, and optional speaker separation                                                               | Meeting/system-audio capture and diarization are the largest remaining competitive gap; they should be a separate subsystem instead of being faked with a single-speaker ASR model |
 
 ## Why CrisperWhisper is the product edge
 
@@ -46,18 +46,18 @@ The 2.0 rework turns those primitives into user features: paired history, select
 
 ## Implemented competitive system
 
-| User need | Implementation |
-| --- | --- |
-| Instant access | Portal-aware system shortcut, tray action, resident-model default, focus-free overlay |
-| Fast local inference | CT2 Auto on Linux x64, FP16 CUDA selection, Large/Turbo speculative path, persistent worker |
-| Clean text without losing truth | Intended + verbatim default, per-result tabs, selectable paste variant |
-| Imported recordings | Speech Lab accepts common audio/video formats and uses FFmpeg normalization where needed |
-| Precision workflows | Per-word timing, interactive word timeline, forced alignment, SRT/VTT/JSON/TXT export |
-| Personal terminology | Case-insensitive aliases and deterministic expansions without unsupported standard-model hotword prompting |
-| Feedback on speaking | Local filler, repetition, cut-off, vocal-event, pace, and speaking-time insights |
-| Privacy/control | Local inference, no telemetry, temporary audio deletion, optional history, isolated runtime reset |
-| Hardware choice | Small/Medium/Turbo/Large catalog, backend and compute controls, load/unload/preload toggle |
-| CachyOS/KDE | Chromium audio stack, Electron Wayland shortcut portal, pacman package target, layered Linux paste detection |
+| User need                       | Implementation                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Instant access                  | Portal-aware system shortcut, tray action, resident-model default, focus-free overlay                        |
+| Fast local inference            | CT2 Auto on Linux x64, FP16 CUDA selection, Large/Turbo speculative path, persistent worker                  |
+| Clean text without losing truth | Intended + verbatim default, per-result tabs, selectable paste variant                                       |
+| Imported recordings             | Speech Lab accepts common audio/video formats and uses FFmpeg normalization where needed                     |
+| Precision workflows             | Per-word timing, interactive word timeline, forced alignment, SRT/VTT/JSON/TXT export                        |
+| Personal terminology            | Case-insensitive aliases and deterministic expansions without unsupported standard-model hotword prompting   |
+| Feedback on speaking            | Local filler, repetition, cut-off, vocal-event, pace, and speaking-time insights                             |
+| Privacy/control                 | Local inference, no telemetry, temporary audio deletion, optional history, isolated runtime reset            |
+| Hardware choice                 | Small/Medium/Turbo/Large catalog, backend and compute controls, load/unload/preload toggle                   |
+| CachyOS/KDE                     | Chromium audio stack, Electron Wayland shortcut portal, pacman package target, layered Linux paste detection |
 
 ## Next product bets
 
