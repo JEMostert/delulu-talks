@@ -177,3 +177,43 @@ test("repeated checks and late check errors preserve a verified update instead o
   f.service.install();
   expect(f.installations).toEqual([[false, true]]);
 });
+
+test("an installation request is idempotent until exit or failure, and asynchronous or thrown installer errors enable a verified retry", async () => {
+  for (const source of ["event", "throw"] as const) {
+    const f = fixture();
+    await ready(f);
+    let requests = 0;
+    f.updater.quitAndInstall = () => {
+      requests++;
+      if (source === "throw") throw new Error("Installer unavailable");
+    };
+    if (source === "throw")
+      expect(() => f.service.install()).toThrow("Installer unavailable");
+    else {
+      f.service.install();
+      f.service.install();
+      expect(requests).toBe(1);
+      // The error arrives on a later turn, after quitAndInstall returned.
+      await Promise.resolve();
+      f.events.emit("error", new Error("Installer unavailable"));
+    }
+    expect(f.service.getStatus()).toMatchObject({ phase: "error" });
+    expect(f.service.getStatus().message).toContain("Installer unavailable");
+    expect(f.service.getStatus().message).toContain("retry");
+    f.service.install();
+    expect(requests).toBe(1);
+    const retry = deferred<void>();
+    f.updater.downloadUpdate = () => retry.promise;
+    await f.service.check();
+    const pending = f.service.download();
+    f.events.emit("update-downloaded", { version: "0.11.0" });
+    retry.resolve();
+    await pending;
+    f.updater.quitAndInstall = () => {
+      requests++;
+    };
+    f.service.install();
+    f.service.install();
+    expect(requests).toBe(2);
+  }
+});

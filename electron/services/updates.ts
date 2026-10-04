@@ -47,6 +47,7 @@ export class UpdateService {
   private downloading: Promise<UpdateStatus> | null = null;
   private downloadAttempt: DownloadAttempt | null = null;
   private readyVersion: string | null = null;
+  private installRequested = false;
 
   constructor(
     private readonly updater: UpdaterPort | null,
@@ -130,12 +131,7 @@ export class UpdateService {
       this.stageCompletedDownload(attempt);
     });
     this.updater.on("error", (error) => {
-      // A late update-check/network error cannot invalidate an artifact that
-      // already passed the updater's download validation.
-      if (this.readyVersion && !this.downloadAttempt) return;
-      this.downloadAttempt = null;
-      this.readyVersion = null;
-      this.update({ phase: "error", message: errorMessage(error) });
+      this.handleUpdaterError(error);
     });
   }
 
@@ -231,6 +227,7 @@ export class UpdateService {
   install(): void {
     if (
       !this.updater ||
+      this.installRequested ||
       this.status.phase !== "downloaded" ||
       !this.readyVersion ||
       this.status.version !== this.readyVersion
@@ -240,7 +237,32 @@ export class UpdateService {
       throw new Error(
         "Finish recording, processing, or model setup before restarting",
       );
-    this.updater.quitAndInstall(false, true);
+    // Installer failures can arrive after quitAndInstall returns (for example,
+    // an asynchronous NSIS spawn failure). Keep ownership until exit or error.
+    this.installRequested = true;
+    try {
+      this.updater.quitAndInstall(false, true);
+    } catch (error) {
+      this.handleUpdaterError(error);
+      throw error;
+    }
+  }
+
+  private handleUpdaterError(error: unknown): void {
+    // A late update-check/network error cannot invalidate a verified artifact,
+    // but an error after an installation request must remain visible.
+    if (this.readyVersion && !this.downloadAttempt && !this.installRequested)
+      return;
+    const installing = this.installRequested;
+    this.installRequested = false;
+    this.downloadAttempt = null;
+    this.readyVersion = null;
+    this.update({
+      phase: "error",
+      message: installing
+        ? `Could not install the update: ${errorMessage(error)}. Check for updates and retry, or install from GitHub Releases.`
+        : errorMessage(error),
+    });
   }
 
   private update(patch: Partial<UpdateStatus>): void {
