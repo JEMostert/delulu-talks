@@ -130,6 +130,30 @@ export const MODELS: ModelInfo[] = [
   },
 ];
 
+/** The light engine: chosen in Settings → Speech, not through `model`. */
+export const NEMOTRON_MODEL: Omit<ModelInfo, "id"> = {
+  identity: "nemotron",
+  backendIds: ["transformers-cuda", "transformers-cpu"],
+  runtime: "Transformers · GPU or CPU",
+  downloadSize: "~2.6 GB",
+  hfId: "nvidia/nemotron-3.5-asr-streaming-0.6b",
+  name: "Nemotron 3.5 Streaming",
+  description:
+    "NVIDIA's 0.6B streaming recognizer types word by word with about half a second of delay. About 1.3 GB of GPU memory, or runs on the CPU; less accurate than R2T2 in Dutch.",
+  provenance: {
+    licenseName: "OpenMDW 1.1",
+    licenseUrl: "https://openmdw.ai/license/1-1/",
+    variants: [
+      {
+        label: "Linux and Windows",
+        revision: "ea30d66debe3740a08b573244286791d423d6b3e",
+        conversion:
+          "Original safetensors checkpoint loaded through Transformers; no Delulu format conversion.",
+      },
+    ],
+  },
+};
+
 export const MAGIC_MODELS: MagicModelInfo[] = [
   {
     id: "qwen35Small",
