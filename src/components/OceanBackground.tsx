@@ -3,7 +3,7 @@ import { captureLevelStore } from "../captureLevel";
 
 /**
  * The sea behind the app, built from layered gradients: no images, canvas or
- * GPU. Light rays sway from the surface, two ring fields drift against each
+ * shader. Light rays sway from the surface, two ring fields drift against each
  * other into moving caustics, currents and motes add depth, and the water
  * glows with your voice while recording. Only transform and opacity animate.
  */
@@ -110,26 +110,6 @@ const MOTES = [
 
 type Ripple = { id: number; x: number; y: number };
 
-/**
- * Without a GPU (Wayland disables it), Chromium redraws the whole window in
- * software on every frame while any CSS animation runs. True when WebGL is
- * missing or reports a software rasterizer.
- */
-function softwareCompositing(): boolean {
-  try {
-    const gl = document.createElement("canvas").getContext("webgl");
-    if (!gl) return true;
-    const debug = gl.getExtension("WEBGL_debug_renderer_info");
-    const renderer = debug
-      ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL))
-      : "";
-    gl.getExtension("WEBGL_lose_context")?.loseContext();
-    return /swiftshader|llvmpipe|software/i.test(renderer);
-  } catch {
-    return true;
-  }
-}
-
 export const OceanBackground = memo(function OceanBackground({
   recording,
   theme,
@@ -143,62 +123,14 @@ export const OceanBackground = memo(function OceanBackground({
   const palette = PALETTES[theme];
   const oceanRef = useRef<HTMLDivElement>(null);
   const voiceRef = useRef<HTMLDivElement>(null);
-  const coveredRef = useRef(covered);
-  coveredRef.current = covered;
 
-  // In software compositing, step the same Tailwind animations ourselves at a
-  // low frame rate: the water moves too slowly for anyone to see the
-  // difference, and the window is redrawn a fraction as often.
-  useEffect(() => {
-    const ocean = oceanRef.current;
-    if (!ocean || !softwareCompositing()) return;
-    const motion = matchMedia("(prefers-reduced-motion: reduce)");
-    const times = new WeakMap<Animation, { time: number; held: boolean }>();
-    let last = performance.now();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const step = () => {
-      clearTimeout(timer);
-      const now = performance.now();
-      for (const animation of ocean.getAnimations({ subtree: true })) {
-        const target = (animation.effect as KeyframeEffect | null)?.target;
-        const held =
-          document.hidden ||
-          motion.matches ||
-          (coveredRef.current &&
-            target instanceof Element &&
-            target.hasAttribute("data-ocean-mote"));
-        const previous = times.get(animation);
-        const time =
-          (previous?.time ?? Number(animation.currentTime ?? 0)) +
-          (previous && !previous.held && !held ? now - last : 0);
-        times.set(animation, { time, held });
-        animation.pause();
-        animation.currentTime = time;
-      }
-      last = now;
-      // Sleep completely while hidden or motion is disabled; visibility and
-      // preference events restart stepping. No 45 ms polling wakeups remain.
-      if (!document.hidden && !motion.matches)
-        timer = setTimeout(step, coveredRef.current ? 330 : 120);
-    };
-    step();
-    document.addEventListener("visibilitychange", step);
-    motion.addEventListener("change", step);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("visibilitychange", step);
-      motion.removeEventListener("change", step);
-      for (const animation of ocean.getAnimations({ subtree: true }))
-        animation.play();
-    };
-  }, []);
   const [ripples, setRipples] = useState<Ripple[]>([]);
 
   // Voice energy brightens the water, ten updates a second and eased in CSS.
   useEffect(() => {
     const glow = voiceRef.current;
     if (!glow) return;
-    if (!recording) {
+    if (!recording || covered) {
       glow.style.opacity = "0";
       return;
     }
@@ -210,7 +142,10 @@ export const OceanBackground = memo(function OceanBackground({
       );
     });
     const timer = setInterval(() => {
-      if (!document.hidden)
+      if (
+        !document.hidden &&
+        document.documentElement.dataset.rendering === "hardware"
+      )
         glow.style.opacity = (0.15 + level * 0.85).toFixed(2);
     }, 100);
     return () => {
@@ -218,7 +153,7 @@ export const OceanBackground = memo(function OceanBackground({
       clearInterval(timer);
       glow.style.opacity = "0";
     };
-  }, [recording]);
+  }, [recording, covered]);
 
   // Touching open water leaves a ring of light.
   useEffect(() => {
@@ -229,6 +164,8 @@ export const OceanBackground = memo(function OceanBackground({
       const target = event.target as Element | null;
       if (
         motion.matches ||
+        oceanRef.current?.dataset.covered === "true" ||
+        document.documentElement.dataset.rendering !== "hardware" ||
         target?.closest(
           ".workspace-sheet, dialog, button, a, input, select, textarea, [role='menu']",
         )
@@ -258,6 +195,7 @@ export const OceanBackground = memo(function OceanBackground({
       ref={oceanRef}
       aria-hidden="true"
       data-ocean
+      data-covered={covered}
     >
       {/* Sunlit patch of surface the rays fan out from. */}
       <div

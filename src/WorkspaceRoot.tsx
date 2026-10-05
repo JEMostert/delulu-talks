@@ -3,9 +3,11 @@ import App from "./App";
 import { useWorkspace } from "./hooks/useWorkspace";
 import { RendererErrorBoundary } from "./components/RendererErrorBoundary";
 import { RecoveryDrafts } from "./rendererRecovery";
+import { useRenderingMode } from "./hooks/useRenderingMode";
 
 /** Capture and pending saves survive a failure in the presentation subtree. */
 export function WorkspaceRoot() {
+  useRenderingMode();
   const workspace = useWorkspace();
   const drafts = useRef(new RecoveryDrafts());
   const fieldIds = useRef(new WeakMap<HTMLElement, string>());

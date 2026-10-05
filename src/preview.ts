@@ -61,6 +61,12 @@ function desktopOnly(): never {
 }
 
 export const previewApi: DeluluApi = {
+  async getRenderingMode() {
+    return "hardware";
+  },
+  onRenderingModeChanged() {
+    return () => {};
+  },
   getSelectedTextState: async () => ({
     enabled: false,
     supported: false,

@@ -577,7 +577,6 @@ button.engine-chip:hover {
   border-radius: var(--r-xl);
   border: 1px solid var(--sheet-border);
   background: var(--surface-sheet);
-  backdrop-filter: blur(20px) saturate(1.2);
   box-shadow: var(--shadow-3), var(--rim-highlight);
   overflow: hidden;
   animation: sheet-in var(--t-slow) var(--ease-out);
@@ -606,6 +605,7 @@ button.engine-chip:hover {
   display: none;
 }
 .workspace-sheet.quick-sheet {
+  backdrop-filter: blur(16px) saturate(1.2);
   width: min(440px, calc(100% - 2 * var(--stage-gap)));
   height: auto;
   max-height: calc(

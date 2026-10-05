@@ -6,6 +6,7 @@ import { isMagicPreset } from "../../src/rewritePresets";
 import { validateRewriteInstructions } from "../../src/rewriteInstructions";
 import { runtimeSetupSnapshot } from "../runtime/setupSnapshot";
 import { runtimeDiagnostics } from "../runtime/diagnostics";
+import { getRenderingMode } from "../runtime/graphics";
 import { localDataOverview } from "../services/localData";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
@@ -33,6 +34,7 @@ export function registerRuntimeIpc(
       );
   };
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
+  handle("runtime:renderingMode", getRenderingMode);
   handle("cache:preview", () => modelCache.preview());
   handle("cache:cleanup", (_event, token: unknown, ids: unknown) => {
     assertRuntimeIdle();

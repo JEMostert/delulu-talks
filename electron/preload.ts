@@ -70,6 +70,9 @@ const api: DeluluApi = {
     invoke("history:encryptedRecover", passphrase),
   rendererControllerFailed: () => invoke("renderer:controllerFailed"),
   getDiagnostics: () => invoke("runtime:diagnostics"),
+  getRenderingMode: () => invoke("runtime:renderingMode"),
+  onRenderingModeChanged: (callback) =>
+    listener("runtime:renderingModeChanged", callback),
   getRuntimeSetupSnapshot: () => invoke("runtime:setupSnapshot"),
   getSetupLog: (kind) => invoke("runtime:setupLog", kind),
   getLocalDataOverview: () => invoke("storage:overview"),

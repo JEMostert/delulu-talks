@@ -336,6 +336,7 @@ export const ipcRequestSchemas = {
   "renderer:reload": noArguments,
   "renderer:controllerFailed": noArguments,
   "runtime:diagnostics": noArguments,
+  "runtime:renderingMode": noArguments,
   "dictation:pasteLast": noArguments,
   "dictation:discardFailed": noArguments,
   "dictation:retry": noArguments,

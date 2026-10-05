@@ -394,7 +394,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
       <OceanBackground
         recording={w.status.phase === "listening"}
         theme={theme}
-        covered={panelOpen && !quickSheet}
+        covered={panelOpen}
       />
       <div className="ocean-brand" aria-hidden="true">
         <img src={brandMark} alt="" />

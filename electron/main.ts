@@ -61,16 +61,14 @@ import {
   type TrayIconState,
 } from "./services/trayState";
 import { registerMainIpc } from "./ipc";
+import { getRenderingMode } from "./runtime/graphics";
 
 const { autoUpdater } = electronUpdater;
 
-if (
-  process.platform === "linux" &&
-  process.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland"
-) {
-  // ASR CUDA runs in Python and is unaffected by Chromium's compositor.
-  app.commandLine.appendSwitch("disable-gpu");
-}
+// Let Chromium select the compositor on every desktop, including Wayland.
+// Keep a targeted escape hatch for drivers that cannot render this window.
+if (process.env.DELULU_SOFTWARE_RENDERING === "1")
+  app.disableHardwareAcceleration();
 app.setName(app.isPackaged ? "Delulu Talks" : "Delulu Talks Dev");
 if (process.platform === "linux")
   app.setDesktopName(
@@ -89,6 +87,13 @@ const smokeTest =
   (!app.isPackaged || !!process.env.DELULU_USER_DATA_DIR);
 
 let mainWindow: BrowserWindow | null = null;
+app.on("gpu-info-update", () => {
+  if (mainWindow && !mainWindow.isDestroyed())
+    mainWindow.webContents.send(
+      "runtime:renderingModeChanged",
+      getRenderingMode(),
+    );
+});
 let tray: Tray | null = null;
 /** Launch-at-login starts in the tray; any explicit reopen shows the window. */
 const startHidden = process.argv.includes("--hidden");

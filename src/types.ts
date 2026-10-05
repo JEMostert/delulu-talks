@@ -522,7 +522,11 @@ export type ModelCacheCleanupResult = {
   failures: { id: string; message: string }[];
 };
 
+export type RenderingMode = "hardware" | "software";
+
 export type DeluluApi = SelectedTextApi & {
+  getRenderingMode(): Promise<RenderingMode>;
+  onRenderingModeChanged(callback: (mode: RenderingMode) => void): () => void;
   previewModelCache(): Promise<ModelCachePreview>;
   cleanupModelCache(
     token: string,

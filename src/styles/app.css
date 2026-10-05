@@ -18,6 +18,23 @@
 /* Dark theme follows the data-theme attribute set by useTheme. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* The ocean stays still behind workspaces and with a software compositor.
+   Stepping large blended layers slowly still competes with typing and scrolling. */
+[data-ocean][data-covered="true"] *,
+:root:not([data-rendering="hardware"]) [data-ocean] * {
+  animation-play-state: paused !important;
+  will-change: auto !important;
+}
+:root:not([data-rendering="hardware"]) [data-ocean] * {
+  transition: none !important;
+}
+:root:not([data-rendering="hardware"]) *,
+:root:not([data-rendering="hardware"]) *::before,
+:root:not([data-rendering="hardware"]) *::after,
+:root:not([data-rendering="hardware"]) dialog::backdrop {
+  backdrop-filter: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
