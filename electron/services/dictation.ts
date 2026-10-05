@@ -491,12 +491,15 @@ export class DictationService {
   }
 
   /**
+   * Hold-to-talk must not inject paste keys while the activation chord is
+   * held: changing modifiers can deactivate a desktop shortcut mid-capture.
    * Live typing needs automatic paste, prose dictation and no rewriting: a
    * rewrite or code formatting must see the whole transcript before delivery.
    */
   private liveTypingAllowed(settings: AppSettings): boolean {
     return (
       settings.liveTyping &&
+      settings.shortcutMode !== "hold" &&
       settings.autoPaste &&
       !settings.magicEnabled &&
       (!settings.dictationMode || settings.dictationMode === "prose") &&

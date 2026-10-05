@@ -301,7 +301,12 @@ test("a quick tap reports a short recording, not a microphone error", () => {
 });
 
 test("live typing pastes while recording and saves one transcript without pasting again", async () => {
-  const f = fixture({ liveTyping: true, autoPaste: true, magicEnabled: false });
+  const f = fixture({
+    liveTyping: true,
+    autoPaste: true,
+    magicEnabled: false,
+    shortcutMode: "toggle",
+  });
   const sent: string[] = [];
   const deltas = ["Ship ", "the ", "release"];
   Object.assign(f.asr, {
@@ -345,7 +350,12 @@ test("live typing is off when rewriting must see the whole transcript", () => {
 });
 
 test("live fallback waits for clipboard failure and never claims the transcript was copied", async () => {
-  const f = fixture({ liveTyping: true, autoPaste: true, magicEnabled: false });
+  const f = fixture({
+    liveTyping: true,
+    autoPaste: true,
+    magicEnabled: false,
+    shortcutMode: "toggle",
+  });
   Object.assign(f.asr, {
     liveStart: async () => true,
     liveAudio: async () => "Hello ",
@@ -373,4 +383,41 @@ test("live fallback waits for clipboard failure and never claims the transcript 
   expect(f.records.at(-1)?.delivery?.state).toBe("transcribed");
   expect(f.asr.getStatus().message).toContain("clipboard copy failed");
   expect(f.asr.getStatus().message).not.toContain("was copied");
+});
+
+test("holding a shortcut never injects live paste keys before release, even with live typing enabled", async () => {
+  const f = fixture({
+    shortcutMode: "hold",
+    liveTyping: true,
+    autoPaste: true,
+    magicEnabled: false,
+  });
+  let streamsStarted = 0;
+  Object.assign(f.asr, {
+    liveStart: async () => {
+      streamsStarted++;
+      return true;
+    },
+    liveAudio: async () => "Premature paste",
+  });
+  Object.assign(f.paste, { capabilities: () => ({ pasteMethod: "portal" }) });
+  const sessionId = f.start();
+  f.service.recordingStarted(sessionId);
+  for (let seconds = 0; seconds < 20; seconds++) {
+    f.service.recordingStream(sessionId, 48_000, "audio");
+    await Promise.resolve();
+  }
+  expect(f.commands.at(-1)).toMatchObject({ action: "start", live: false });
+  expect(streamsStarted).toBe(0);
+  expect(f.deliveries).toEqual([]);
+  expect(f.service.isActive).toBe(true);
+  f.service.stop();
+  await f.service.submitRecording({
+    sessionId,
+    durationMs: 20_000,
+    wav: new Uint8Array(64).fill(9),
+  });
+  expect(f.deliveries).toEqual(["Ship the release."]);
+  expect(f.records).toHaveLength(1);
+  expect(f.service.isActive).toBe(false);
 });

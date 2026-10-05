@@ -426,8 +426,12 @@ function speechMenu(settings: AppSettings): MenuItemConstructorOptions[] {
     ...engines,
     {
       type: "checkbox",
-      label: "Type live while speaking",
-      checked: settings.liveTyping,
+      label:
+        settings.shortcutMode === "hold"
+          ? "Live typing (requires press-to-toggle)"
+          : "Type live while speaking",
+      enabled: settings.shortcutMode !== "hold",
+      checked: settings.liveTyping && settings.shortcutMode !== "hold",
       click: () => patchTraySettings({ liveTyping: !settings.liveTyping }),
     },
     {

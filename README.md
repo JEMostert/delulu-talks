@@ -36,7 +36,7 @@ Hold your shortcut → Speak → Release
                   Review · edit · optionally rewrite
 ```
 
-With **live typing** (on by default), your words appear at the cursor while you are still speaking: Nemotron types word by word, R2T2 types each phrase when you pause. Live typing waits for the finished text when automatic rewriting or spoken punctuation commands are on.
+With **live typing** in press-to-toggle mode, your words appear at the cursor while you are still speaking: Nemotron types word by word, R2T2 types each phrase when you pause. Hold-to-talk waits until you release the shortcut before pasting, so live paste keys cannot interrupt the held shortcut. Live typing also waits for the finished text when automatic rewriting or spoken punctuation commands are on.
 
 Automatic rewriting is off; use **Rewrite** beside a result when you want to shorten or restructure it.
 
