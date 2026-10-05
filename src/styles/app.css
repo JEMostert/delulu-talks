@@ -18,8 +18,10 @@
 /* Dark theme follows the data-theme attribute set by useTheme. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* The ocean stays still behind workspaces and with a software compositor.
+/* The ocean stays still when capture is idle, hidden, behind workspaces, or
+   using a software compositor.
    Stepping large blended layers slowly still competes with typing and scrolling. */
+[data-ocean][data-active="false"] *,
 [data-ocean][data-covered="true"] *,
 :root:not([data-rendering="hardware"]) [data-ocean] * {
   animation-play-state: paused !important;

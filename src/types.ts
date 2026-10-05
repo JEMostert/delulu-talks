@@ -674,6 +674,8 @@ export type DeluluApi = SelectedTextApi & {
   onStatus(callback: (status: DictationStatus) => void): () => void;
   onMagicStatus(callback: (status: MagicStatus) => void): () => void;
   onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
+  getWindowVisibility(): Promise<boolean>;
+  onWindowVisibility(callback: (visible: boolean) => void): () => void;
   onNavigate(callback: (page: Page) => void): () => void;
   onShortcutStatus(callback: (status: ShortcutStatus) => void): () => void;
   onTranscript(callback: (record: TranscriptRecord) => void): () => void;

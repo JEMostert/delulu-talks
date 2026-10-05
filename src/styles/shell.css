@@ -718,6 +718,9 @@ button.engine-chip:hover {
   min-height: 0;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  scroll-behavior: smooth;
+  contain: layout paint;
+  transform: translateZ(0);
 }
 .wide-sheet .sheet-content {
   flex: 1;

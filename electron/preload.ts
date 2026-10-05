@@ -221,6 +221,9 @@ const api: DeluluApi = {
     listener("magic:statusChanged", callback),
   onSettingsChanged: (callback: (settings: AppSettings) => void) =>
     listener("settings:changed", callback),
+  getWindowVisibility: () => invoke("app:visibility"),
+  onWindowVisibility: (callback: (visible: boolean) => void) =>
+    listener("app:visibility", callback),
   onNavigate: (callback: (page: Page) => void) =>
     listener("app:navigate", callback),
   onShortcutStatus: (callback: (status: ShortcutStatus) => void) =>

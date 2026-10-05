@@ -15,6 +15,7 @@ export function registerRendererIpc(
     shortcut,
     updates,
     settingsBusy,
+    getMainWindow,
   }: Pick<
     IpcDependencies,
     | "pasteLast"
@@ -24,8 +25,18 @@ export function registerRendererIpc(
     | "shortcut"
     | "updates"
     | "settingsBusy"
+    | "getMainWindow"
   >,
 ): void {
+  handle("app:visibility", () => {
+    const window = getMainWindow();
+    return (
+      !!window &&
+      !window.isDestroyed() &&
+      window.isVisible() &&
+      !window.isMinimized()
+    );
+  });
   const recoveryInput = () => ({
     captureActive: dictation.isActive,
     canStopRecording: dictation.canStopRecording,

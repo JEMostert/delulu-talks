@@ -357,6 +357,7 @@ export const ipcRequestSchemas = {
   "magic:unload": noArguments,
   "magic:rewrite": schema(1, ([value]) => [parseMagicRequest(value)]),
   "platform:capabilities": noArguments,
+  "app:visibility": noArguments,
   "updates:get": noArguments,
   "updates:check": noArguments,
   "updates:download": noArguments,

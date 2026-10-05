@@ -331,9 +331,29 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const onboardingShown = useRef(false);
   const [visible, setVisible] = useState(!document.hidden);
   useEffect(() => {
-    const change = () => setVisible(!document.hidden);
+    let desktopVisible = true;
+    let received = false;
+    let mounted = true;
+    const change = () => setVisible(desktopVisible && !document.hidden);
+    const remove = bridge.onWindowVisibility((value) => {
+      received = true;
+      desktopVisible = value;
+      change();
+    });
+    void bridge
+      .getWindowVisibility()
+      .then((value) => {
+        if (!mounted || received) return;
+        desktopVisible = value;
+        change();
+      })
+      .catch(() => {});
     document.addEventListener("visibilitychange", change);
-    return () => document.removeEventListener("visibilitychange", change);
+    return () => {
+      mounted = false;
+      remove();
+      document.removeEventListener("visibilitychange", change);
+    };
   }, []);
   useEffect(() => {
     if (w.ready && !w.settings.onboardingComplete && !onboardingShown.current) {
@@ -395,6 +415,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         recording={w.status.phase === "listening"}
         theme={theme}
         covered={panelOpen}
+        visible={visible}
       />
       <div className="ocean-brand" aria-hidden="true">
         <img src={brandMark} alt="" />
