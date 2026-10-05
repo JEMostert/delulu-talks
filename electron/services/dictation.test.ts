@@ -343,3 +343,34 @@ test("live typing is off when rewriting must see the whole transcript", () => {
   f.start();
   expect(f.commands.at(-1)).toMatchObject({ action: "start", live: false });
 });
+
+test("live fallback waits for clipboard failure and never claims the transcript was copied", async () => {
+  const f = fixture({ liveTyping: true, autoPaste: true, magicEnabled: false });
+  Object.assign(f.asr, {
+    liveStart: async () => true,
+    liveAudio: async () => "Hello ",
+    liveFinish: async () => {
+      throw new Error("Stream interrupted");
+    },
+  });
+  Object.assign(f.paste, {
+    capabilities: () => ({ pasteMethod: "portal" }),
+    copy: async () => {
+      throw new Error("Clipboard unavailable");
+    },
+  });
+  const sessionId = f.start();
+  f.service.recordingStarted(sessionId);
+  f.service.recordingStream(sessionId, 48_000, "audio");
+  // Let the live delivery complete before the stream failure.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  f.service.stop();
+  await f.service.submitRecording({
+    sessionId,
+    durationMs: 1200,
+    wav: new Uint8Array(64).fill(9),
+  });
+  expect(f.records.at(-1)?.delivery?.state).toBe("transcribed");
+  expect(f.asr.getStatus().message).toContain("clipboard copy failed");
+  expect(f.asr.getStatus().message).not.toContain("was copied");
+});

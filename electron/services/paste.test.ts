@@ -129,7 +129,7 @@ test("clipboard restoration preserves the previous text while newer writes, fail
       );
     } else await f.service.paste("Transcript", true);
     if (action === "overwrite") f.io.clipboard!.writeText("New user clipboard");
-    if (action === "copy-identical") f.service.copy("Transcript");
+    if (action === "copy-identical") await f.service.copy("Transcript");
     if (action === "shutdown") f.service.shutdown();
     f.advance(2500);
     expect(f.io.clipboard!.readText()).toBe(
@@ -199,4 +199,41 @@ test("Wayland releases every possibly pressed key despite injection failure and 
   // Avoid opening a real portal while shutting down the synthetic session.
   Object.assign(f.service, { portalSession: null });
   f.service.shutdown();
+});
+
+test("KDE clipboard publication yields to the event loop and holds delivery until acknowledgement", async () => {
+  const f = fixture("linux", true);
+  f.service.shutdown();
+  f.io.env = { XDG_SESSION_TYPE: "wayland", XDG_CURRENT_DESKTOP: "KDE" };
+  const sync = f.io.spawnSync!;
+  f.io.spawnSync = ((program: string, ...args: unknown[]) => {
+    if (program === "qdbus6")
+      throw new Error("Clipboard publication must not block Wayland events");
+    return (sync as Function)(program, ...args);
+  }) as PasteIo["spawnSync"];
+  let acknowledge!: () => void;
+  let published = "";
+  f.io.spawn = ((_program: string, args: string[]) => {
+    published = args[3];
+    const child = new EventEmitter();
+    acknowledge = () => child.emit("exit", 0);
+    return child;
+  }) as PasteIo["spawn"];
+  const service = new PasteService(undefined, undefined, f.io);
+  let completed = false;
+  const pending = service.copy(dangerousText).then(() => {
+    completed = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(published).toBe(dangerousText);
+  expect(completed).toBe(false);
+  expect(service.isBusy).toBe(true);
+  await expect(service.copy("Overwrite")).rejects.toThrow(
+    "already in progress",
+  );
+  acknowledge();
+  await pending;
+  expect(completed).toBe(true);
+  expect(service.isBusy).toBe(false);
+  service.shutdown();
 });

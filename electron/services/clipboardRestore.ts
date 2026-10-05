@@ -69,7 +69,7 @@ export class ClipboardRestore {
 
   begin(
     enabled: boolean,
-    restore: (text: string) => void,
+    restore: (text: string) => void | Promise<void>,
   ): (() => (() => void) | null) | null {
     this.cancel();
     if (!enabled) return null;
@@ -115,7 +115,7 @@ export class ClipboardRestore {
           }
           if (this.clock.now() >= deadline) {
             this.cancel();
-            restore(previous);
+            void Promise.resolve(restore(previous)).catch(() => undefined);
           }
         } catch {
           this.cancel();

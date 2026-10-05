@@ -765,7 +765,7 @@ export class DictationService {
         // Part of the text already reached the cursor: never paste it twice.
         settings.autoPaste = false;
         settings.copyToClipboard = true;
-        this.liveFallbackNote = `Live typing stopped (${typedLive.failure ?? "no text"}); the full transcript was copied`;
+        this.liveFallbackNote = `Live typing stopped (${typedLive.failure ?? "no text"})`;
       }
     }
     const audioPath = join(
@@ -922,7 +922,7 @@ export class DictationService {
         }
       } else if (settings.copyToClipboard) {
         try {
-          this.paste.copy(output, (record.timings ??= {}));
+          await this.paste.copy(output, (record.timings ??= {}));
           delivery = "copied";
           record = this.recordDelivery(record, "copied");
           completion = `${outputName} copied to clipboard`;
@@ -940,7 +940,7 @@ export class DictationService {
       if (magicFailure)
         completion = `${completion} · Rewriting unavailable: ${magicFailure}`;
       if (this.liveFallbackNote) {
-        completion = this.liveFallbackNote;
+        completion = `${this.liveFallbackNote}. ${completion}`;
         this.liveFallbackNote = null;
       }
       this.setHud({

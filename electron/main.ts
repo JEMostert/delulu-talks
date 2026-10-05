@@ -676,11 +676,12 @@ function renderTrayMenu(): void {
         ? `Copy “${menuPreview(deliveredText(latest))}”`
         : "Copy latest result",
       enabled: Boolean(latest),
-      click: () => {
-        if (!latest) return;
-        paste.copy(deliveredText(latest));
-        recordDelivery(latest, "copied");
-      },
+      click: () =>
+        runTrayAction(async () => {
+          if (!latest) return;
+          await paste.copy(deliveredText(latest));
+          recordDelivery(latest, "copied");
+        }),
     },
     {
       label: "Recent",
@@ -688,10 +689,11 @@ function renderTrayMenu(): void {
       submenu: [
         ...recent.slice(1).map((record): MenuItemConstructorOptions => ({
           label: menuPreview(deliveredText(record), 48),
-          click: () => {
-            paste.copy(deliveredText(record));
-            recordDelivery(record, "copied");
-          },
+          click: () =>
+            runTrayAction(async () => {
+              await paste.copy(deliveredText(record));
+              recordDelivery(record, "copied");
+            }),
         })),
         { type: "separator" },
         { label: "Open history", click: () => showMainWindow("history") },

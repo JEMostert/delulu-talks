@@ -136,41 +136,63 @@ export class PasteService {
     return null;
   }
 
-  copy(text: string, timings?: PipelineTimings): void {
+  async copy(text: string, timings?: PipelineTimings): Promise<void> {
     if (this.deliveryInFlight)
       throw new Error("A clipboard operation is already in progress.");
+    this.deliveryInFlight = true;
     const started = performance.now();
     try {
       this.clipboardRestore.cancel();
-      this.publishClipboard(text);
+      await this.publishClipboard(text);
     } finally {
+      this.deliveryInFlight = false;
       if (timings) timings.clipboardMs = performance.now() - started;
     }
   }
 
-  private publishClipboard(text: string): void {
+  private async publishClipboard(text: string): Promise<void> {
     (this.io.clipboard ?? electron.clipboard).writeText(text);
     // Native-Wayland Electron can retain clipboard ownership without Klipper
     // observing the new text, causing Ctrl+V in another app to paste the
     // previous clipboard item. Publish through Plasma's clipboard service as
     // well so the destination sees the transcript after focus has moved.
     if (this.kdeWayland && this.qdbus) {
-      const result = (this.io.spawnSync ?? spawnSync)(
-        this.qdbus,
-        ["org.kde.klipper", "/klipper", "setClipboardContents", text],
-        {
-          encoding: "utf8",
-          windowsHide: true,
-          timeout: 2000,
-          killSignal: "SIGKILL",
-        },
-      );
-      if (result.error || result.status !== 0)
-        throw new Error(
-          result.error?.message ||
-            result.stderr?.trim() ||
-            "KDE clipboard rejected the transcript",
+      // Klipper may ask Electron to serve its current selection before it
+      // acknowledges this call. Blocking the main thread here deadlocks that
+      // exchange, so keep Wayland events flowing until publication completes.
+      await new Promise<void>((resolve, reject) => {
+        const child = (this.io.spawn ?? spawn)(
+          this.qdbus!,
+          ["org.kde.klipper", "/klipper", "setClipboardContents", text],
+          { windowsHide: true, stdio: "ignore" },
         );
+        const timer = setTimeout(() => {
+          child.kill("SIGKILL");
+          reject(
+            new Error(
+              "KDE clipboard did not respond. Your transcript remains in History; try Copy again.",
+            ),
+          );
+        }, 2000);
+        child.once("error", () => {
+          clearTimeout(timer);
+          reject(
+            new Error(
+              "Could not contact the KDE clipboard. Your transcript remains in History.",
+            ),
+          );
+        });
+        child.once("exit", (code) => {
+          clearTimeout(timer);
+          if (code === 0) resolve();
+          else
+            reject(
+              new Error(
+                "KDE clipboard rejected the transcript. Try Copy again from History.",
+              ),
+            );
+        });
+      });
     }
   }
 
@@ -225,7 +247,7 @@ export class PasteService {
     );
     const generation = this.clipboardRestore.generation;
     try {
-      this.publishClipboard(text);
+      await this.publishClipboard(text);
     } catch (error) {
       throw new ClipboardCopyError(error);
     }

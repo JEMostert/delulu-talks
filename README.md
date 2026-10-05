@@ -20,7 +20,7 @@
 
 Delulu Talks turns speech into text in the app you are using. R2T2 produces dictation locally through MLX on Apple Silicon and Transformers on NVIDIA GPUs; the lighter Nemotron 3.5 Streaming types word by word as you speak and can run on the CPU. Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
 
-[v0.12.2](docs/releases/v0.12.2.md) restores hardware compositing on Wayland and reduces background drawing while using workspaces. The [native rendering review](docs/performance-review-v0.12.2.md) records the diagnosis, measurements and verification limits. [v0.12.1](docs/releases/v0.12.1.md) fixed desktop streaming validation, bounded live-audio buffers and moved recording encoding off the interface thread.
+[v0.12.3](docs/releases/v0.12.3.md) fixes KDE clipboard timeouts after successful recognition and makes delivery failures clearer. [v0.12.2](docs/releases/v0.12.2.md) restores hardware compositing on Wayland and reduces background drawing while using workspaces. The [native rendering review](docs/performance-review-v0.12.2.md) records the diagnosis, measurements and verification limits. [v0.12.1](docs/releases/v0.12.1.md) fixed desktop streaming validation, bounded live-audio buffers and moved recording encoding off the interface thread.
 
 ## Dictate, review, keep working
 
