@@ -392,6 +392,7 @@ function speechMenu(settings: AppSettings): MenuItemConstructorOptions[] {
       : [
           ...(
             [
+              ["redux", "Parakeet Redux — CPU, 178 MB"],
               ["r2t2", "R2T2 — most accurate"],
               ["nemotron", "Nemotron 3.5 — light, word by word"],
             ] as const

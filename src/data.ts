@@ -154,6 +154,29 @@ export const NEMOTRON_MODEL: Omit<ModelInfo, "id"> = {
   },
 };
 
+export const REDUX_MODEL: Omit<ModelInfo, "id"> = {
+  identity: "redux",
+  backendIds: ["photon-cpu"],
+  runtime: "Photon · CPU",
+  downloadSize: "178 MB",
+  hfId: "moondream/parakeet-redux",
+  name: "Parakeet Redux",
+  description:
+    "Local CPU dictation in 25 languages, including Dutch. Packed 1.58-bit weights; language is detected automatically. Speak, then release to transcribe.",
+  provenance: {
+    licenseName: "CC BY 4.0",
+    licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+    variants: [
+      {
+        label: "Moondream / NVIDIA · CPU",
+        revision: "2bf128600aac4b16946f7ed8372e56117fe5e23b",
+        conversion:
+          "Original Moondream packed ternary checkpoint, based on NVIDIA Parakeet v3. No conversion.",
+      },
+    ],
+  },
+};
+
 export const MAGIC_MODELS: MagicModelInfo[] = [
   {
     id: "qwen35Small",

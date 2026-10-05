@@ -117,7 +117,7 @@ export type AppSettings = {
   showOverlay: boolean;
   captureSoundsMuted: boolean;
   /** CUDA speech engine: R2T2 (accuracy) or Nemotron (light, native streaming). */
-  speechEngine: "r2t2" | "nemotron";
+  speechEngine: "r2t2" | "nemotron" | "redux";
   /** Type text into the focused app while you speak (needs paste, no rewriting). */
   liveTyping: boolean;
   /** Where Nemotron runs; "cpu" keeps the GPU completely free. */
@@ -163,8 +163,9 @@ export type WarmupState = "unknown" | "not-started" | "warming" | "complete";
 export type BackendCapabilities = {
   schemaVersion: 1;
   engine: "speech" | "writing";
-  backend: "mlx" | "cuda-vllm" | "cuda-transformers" | "transformers";
-  modelFamily: "r2t2" | "qwen3.5";
+  backend:
+    "mlx" | "cuda-vllm" | "cuda-transformers" | "transformers" | "photon-cpu";
+  modelFamily: "r2t2" | "nemotron" | "redux" | "qwen3.5";
   timestamps: boolean;
   languageHints: { supported: boolean; languages: string[] };
   streaming: boolean;

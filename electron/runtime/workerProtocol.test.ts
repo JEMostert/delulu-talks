@@ -80,3 +80,34 @@ test("worker schemas reject legacy streaming flags and malformed transcription r
     validateWorkerResult("transcribe", { ...result, duration: NaN }),
   ).toThrow();
 });
+
+test("Redux CPU speech negotiation supports automatic language without weakening writing isolation", () => {
+  expect(() =>
+    validateWorkerRequest({
+      protocolVersion: 1,
+      id: "redux-load",
+      command: "load",
+      model: "redux",
+      device: "cpu",
+    }),
+  ).not.toThrow();
+  const capabilities = {
+    schemaVersion: 1,
+    engine: "speech",
+    backend: "photon-cpu",
+    modelFamily: "redux",
+    timestamps: false,
+    languageHints: { supported: false, languages: [] },
+    streaming: false,
+    vocabularyBiasing: false,
+  };
+  expect(() =>
+    validateWorkerResult("capabilities", capabilities),
+  ).not.toThrow();
+  expect(() =>
+    validateWorkerResult("capabilities", {
+      ...capabilities,
+      engine: "writing",
+    }),
+  ).toThrow();
+});

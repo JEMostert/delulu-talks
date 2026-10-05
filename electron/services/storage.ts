@@ -384,7 +384,12 @@ export function normalizeSettings(value: unknown): AppSettings {
     keepHistory: boolean(source.keepHistory, DEFAULT_SETTINGS.keepHistory),
     historyRetention: savedRetentionPolicy(source.historyRetention),
     showOverlay: boolean(source.showOverlay, DEFAULT_SETTINGS.showOverlay),
-    speechEngine: source.speechEngine === "nemotron" ? "nemotron" : "r2t2",
+    speechEngine:
+      source.speechEngine === "redux"
+        ? "redux"
+        : source.speechEngine === "nemotron"
+          ? "nemotron"
+          : "r2t2",
     liveTyping: boolean(source.liveTyping, DEFAULT_SETTINGS.liveTyping),
     speechDevice: source.speechDevice === "cpu" ? "cpu" : "auto",
     historyLimit: [25, 50, 100, 250, 500].includes(Number(source.historyLimit))

@@ -103,6 +103,8 @@ export class RuntimeInstaller {
     },
   ) {}
   private readiness(kind: "speech" | "magic"): string {
+    if (kind === "speech" && process.env.DELULU_REDUX_CPU === "1")
+      return "import soundfile, soxr; from kestrel.config import RuntimeConfig; from kestrel.models.parakeet_tdt.runtime import ParakeetTdtRuntime";
     return runtimeReadinessScript(
       kind,
       this.target,
@@ -578,14 +580,24 @@ export class RuntimeInstaller {
       "Preparing the package installer",
       0.22,
     );
+    const redux = kind === "speech" && process.env.DELULU_REDUX_CPU === "1";
     const constraints =
+      !redux &&
       this.constraintsPath &&
       !this.windows &&
       this.target.platform === "linux" &&
       this.target.arch === "x64"
         ? ["--constraint", this.constraintsPath]
         : [];
-    if (this.windows) {
+    if (redux) {
+      await installPackages(
+        "linux-cuda",
+        ["torch==2.14.1+cpu"],
+        ["--index-url", "https://download.pytorch.org/whl/cpu"],
+        "Installing CPU runtime",
+        0.32,
+      );
+    } else if (this.windows) {
       await installPackages(
         "windows-cuda",
         WINDOWS_CUDA_PACKAGES,
@@ -605,9 +617,16 @@ export class RuntimeInstaller {
     await installPackages(
       "runtime",
       kind === "speech"
-        ? metal
-          ? METAL_PACKAGES
-          : SPEECH_PACKAGES
+        ? redux
+          ? [
+              "moondream==2.6.1",
+              "kestrel==0.9.1",
+              "soundfile==0.14.0",
+              "soxr==1.1.0",
+            ]
+          : metal
+            ? METAL_PACKAGES
+            : SPEECH_PACKAGES
         : MAGIC_PACKAGES,
       constraints,
       kind === "speech"
@@ -672,7 +691,9 @@ export class RuntimeInstaller {
         revision: RUNTIME_REVISION,
         kind,
         generation,
-        backend: inventoryBackend(kind, metal, this.windows),
+        backend: redux
+          ? { engine: "photon-cpu", devicePreference: ["cpu"] }
+          : inventoryBackend(kind, metal, this.windows),
         target: this.target,
         python: candidatePython,
         directory: candidate,

@@ -143,13 +143,17 @@ type SetupOperation = {
 };
 
 /** The speech model the worker runs; Apple Silicon always uses R2T2 on MLX. */
-export function speechEngineId(settings: AppSettings): "r2t2" | "nemotron" {
+export function speechEngineId(
+  settings: AppSettings,
+): "r2t2" | "nemotron" | "redux" {
+  if (settings.speechEngine === "redux") return "redux";
   return !usesMetal() && settings.speechEngine === "nemotron"
     ? "nemotron"
     : "r2t2";
 }
 
 export function speechModelName(settings: AppSettings): string {
+  if (speechEngineId(settings) === "redux") return "Parakeet Redux";
   return speechEngineId(settings) === "nemotron"
     ? "Nemotron 3.5"
     : modelById(settings.model).name;
@@ -222,7 +226,7 @@ export class AsrService {
   private speechFailureGeneration = 0;
   private magicFailureGeneration = 0;
   private speechIdleTimer: NodeJS.Timeout | null = null;
-  private loadedEngine: "r2t2" | "nemotron" | null = null;
+  private loadedEngine: "r2t2" | "nemotron" | "redux" | null = null;
   private liveActive = false;
   private magicIdleTimer: NodeJS.Timeout | null = null;
 
@@ -861,14 +865,16 @@ export class AsrService {
     const backend =
       kind === "magic"
         ? "transformers"
-        : speechModelForPlatform() === "r2t2Mlx"
-          ? "mlx"
-          : "cuda-transformers";
+        : process.env.DELULU_REDUX_CPU === "1"
+          ? "photon-cpu"
+          : speechModelForPlatform() === "r2t2Mlx"
+            ? "mlx"
+            : "cuda-transformers";
     const modelFamily = kind === "speech" ? "r2t2" : "qwen3.5";
     if (
       capabilities.engine !== engine ||
       (kind === "speech"
-        ? !["r2t2", "nemotron"].includes(capabilities.modelFamily)
+        ? !["r2t2", "nemotron", "redux"].includes(capabilities.modelFamily)
         : capabilities.modelFamily !== modelFamily) ||
       capabilities.backend !== backend
     ) {
@@ -1056,7 +1062,7 @@ export class AsrService {
         );
       }
       if (
-        !capabilities.languageHints.supported ||
+        capabilities.languageHints.supported &&
         !capabilities.languageHints.languages.includes(settings.language)
       ) {
         const choices = capabilities.languageHints.languages.join(", ");

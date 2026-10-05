@@ -1,5 +1,5 @@
 import { Cpu, Download, LoaderCircle, Play } from "lucide-react";
-import { modelById, NEMOTRON_MODEL } from "../../data";
+import { modelById, NEMOTRON_MODEL, REDUX_MODEL } from "../../data";
 import { speechBackendById } from "../../speechModels";
 import type { AppSettings, DictationStatus } from "../../types";
 import { ModelSetupStatus } from "./ModelSetupStatus";
@@ -34,9 +34,11 @@ export function SpeechSetup({
   const execution = status.speechExecution;
   const r2t2 = modelById(status.speechModel ?? status.model ?? settings.model);
   const model =
-    settings.speechEngine === "nemotron" && r2t2.id !== "r2t2Mlx"
-      ? NEMOTRON_MODEL
-      : r2t2;
+    settings.speechEngine === "redux"
+      ? REDUX_MODEL
+      : settings.speechEngine === "nemotron" && r2t2.id !== "r2t2Mlx"
+        ? NEMOTRON_MODEL
+        : r2t2;
   const backend = execution ? speechBackendById(execution.backendId) : null;
   const speechBusy = ["preparing", "loading", "transcribing"].includes(
     status.phase,
@@ -72,6 +74,7 @@ export function SpeechSetup({
         >
           {(
             [
+              ["redux", "Parakeet Redux · CPU"],
               ["r2t2", "R2T2"],
               ["nemotron", "Nemotron 3.5"],
             ] as const

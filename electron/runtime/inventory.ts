@@ -40,7 +40,7 @@ print(json.dumps({
 export type RuntimeKind = "speech" | "magic";
 export type TargetPlatform = { platform: string; arch: string };
 export type InventoryBackend = {
-  engine: "mlx-audio" | "transformers";
+  engine: "mlx-audio" | "transformers" | "photon-cpu";
   // Selection policy, not an observed GPU capability or inference result.
   devicePreference: ("metal" | "cuda" | "mps" | "cpu")[];
 };

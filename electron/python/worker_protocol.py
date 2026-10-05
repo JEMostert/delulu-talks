@@ -25,7 +25,7 @@ COMMANDS = frozenset({
     "magicUnload", "magicRewrite", "transcribe", "shutdown", "capabilities",
     "streamStart", "streamAudio", "streamFinish",
 })
-SPEECH_MODELS = frozenset({"r2t2", "nemotron"})
+SPEECH_MODELS = frozenset({"r2t2", "nemotron", "redux"})
 MAGIC_PRESETS = frozenset({"spoken-corrections", "polish", "concise", "structured", "prompt", "bullet-points", "professional-message"})
 MAGIC_MODELS = frozenset({"qwen35Small", "qwen35Medium", "qwen35Large"})
 # Keep aligned with the shared PipelineTimings contract; unknown stages are omitted.
@@ -279,10 +279,10 @@ def validate_result(command: str, result: Any) -> None:
         engine = result.get("engine")
         if engine not in ("speech", "writing"):
             raise ValueError("Worker capabilities engine must be speech or writing")
-        backends = ("mlx", "cuda-transformers") if engine == "speech" else ("transformers",)
+        backends = ("mlx", "cuda-transformers", "photon-cpu") if engine == "speech" else ("transformers",)
         if result.get("backend") not in backends:
             raise ValueError("Worker capabilities backend does not match engine")
-        if result.get("modelFamily") not in (("r2t2", "nemotron") if engine == "speech" else ("qwen3.5",)):
+        if result.get("modelFamily") not in (("r2t2", "nemotron", "redux") if engine == "speech" else ("qwen3.5",)):
             raise ValueError("Worker capabilities modelFamily does not match engine")
         for key in ("timestamps", "streaming", "vocabularyBiasing"):
             require_boolean(result, key)

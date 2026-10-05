@@ -343,3 +343,29 @@ test("live typing is off when rewriting must see the whole transcript", () => {
   f.start();
   expect(f.commands.at(-1)).toMatchObject({ action: "start", live: false });
 });
+
+test("Redux buffers CPU dictation even when a legacy profile enables live typing", async () => {
+  const f = fixture({
+    speechEngine: "redux",
+    liveTyping: true,
+    autoPaste: true,
+    shortcutMode: "toggle",
+  });
+  Object.assign(f.asr, {
+    liveStart: async () => {
+      throw new Error("Redux must not start a stream");
+    },
+  });
+  Object.assign(f.paste, { capabilities: () => ({ pasteMethod: "portal" }) });
+  const sessionId = f.start();
+  expect(f.commands.at(-1)).toMatchObject({ action: "start", live: false });
+  f.service.recordingStarted(sessionId);
+  f.service.stop();
+  await f.service.submitRecording({
+    sessionId,
+    durationMs: 1200,
+    wav: new Uint8Array(64).fill(9),
+  });
+  expect(f.calls).toHaveLength(1);
+  expect(f.deliveries).toEqual(["Ship the release."]);
+});

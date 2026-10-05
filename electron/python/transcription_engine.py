@@ -224,7 +224,7 @@ class Worker:
         self.speech_backend = (
             "mlx" if sys.platform == "darwin" and platform.machine() == "arm64" else "cuda"
         )
-        self.speech_model = "r2t2"
+        self.speech_model = "redux" if os.environ.get("DELULU_REDUX_CPU") == "1" else "r2t2"
         self.live: Any | None = None
         self.live_resampler: Any | None = None
         self.magic_model: Any | None = None
@@ -242,7 +242,10 @@ class Worker:
             self.speech = None
         self.speech_model = wanted
         if self.speech is None:
-            if wanted == "nemotron":
+            if wanted == "redux":
+                from redux_speech import ReduxSpeech
+                self.speech = ReduxSpeech()
+            elif wanted == "nemotron":
                 from nemotron_speech import NemotronSpeech
                 self.speech = NemotronSpeech()
             elif self.speech_backend == "mlx":
@@ -588,6 +591,8 @@ class Worker:
         if engine not in ("speech", "writing"):
             raise ValueError("Worker capabilities engine must be speech or writing")
         speech = engine == "speech"
+        if speech and os.environ.get("DELULU_REDUX_CPU") == "1":
+            return {"schemaVersion": 1, "engine": "speech", "backend": "photon-cpu", "modelFamily": "redux", "timestamps": False, "languageHints": {"supported": False, "languages": []}, "streaming": False, "vocabularyBiasing": False}
         backend = ("mlx" if self.speech_backend == "mlx" else "cuda-transformers") if speech else "transformers"
         return {
             "schemaVersion": 1,
