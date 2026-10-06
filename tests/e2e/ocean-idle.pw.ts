@@ -16,15 +16,37 @@ async function phase(
   }, action);
 }
 async function oceanTimes(page: Page) {
-  return page.locator("[data-ocean]").evaluate((ocean) =>
-    ocean
+  return page.locator("[data-ocean]").evaluate(async (ocean) => {
+    const animations = ocean
       .getAnimations({ subtree: true })
-      .filter((animation) => animation instanceof CSSAnimation)
-      .map((animation) => ({
-        state: animation.playState,
-        time: Number(animation.currentTime),
-      })),
+      .filter((animation) => animation instanceof CSSAnimation);
+    // CSS playState can change before the compositor commits its pending pause
+    // or resume. Sample only after that transition has settled.
+    await Promise.all(animations.map((animation) => animation.ready));
+    return animations.map((animation) => ({
+      state: animation.playState,
+      time: Number(animation.currentTime),
+    }));
+  });
+}
+async function expectMoving(page: Page) {
+  await expect(page.locator("[data-ocean]")).toHaveAttribute(
+    "data-active",
+    "true",
   );
+  const before = await oceanTimes(page);
+  expect(before.some((animation) => animation.state === "running")).toBe(true);
+  // Runner load can delay a rendered frame beyond a fixed 250 ms sample.
+  // Still require real timeline progress, including after recording resumes.
+  await expect
+    .poll(async () => {
+      const after = await oceanTimes(page);
+      return after.some(
+        (animation, index) =>
+          animation.state === "running" && animation.time > before[index].time,
+      );
+    })
+    .toBe(true);
 }
 async function expectStill(page: Page) {
   await expect(page.locator("[data-ocean]")).toHaveAttribute(
@@ -54,24 +76,11 @@ test("ocean stays still in idle and pause, animates during recording, and stops 
 }) => {
   await expectStill(page);
   await phase(page, "toggleDictation");
-  await expect(page.locator("[data-ocean]")).toHaveAttribute(
-    "data-active",
-    "true",
-  );
-  const before = await oceanTimes(page);
-  expect(before.some((animation) => animation.state === "running")).toBe(true);
-  await page.waitForTimeout(250);
-  const after = await oceanTimes(page);
-  expect(
-    after.some((animation, index) => animation.time > before[index].time),
-  ).toBe(true);
+  await expectMoving(page);
   await phase(page, "pauseDictation");
   await expectStill(page);
   await phase(page, "resumeDictation");
-  await expect(page.locator("[data-ocean]")).toHaveAttribute(
-    "data-active",
-    "true",
-  );
+  await expectMoving(page);
   await phase(page, "cancelDictation");
   await expectStill(page);
 });
