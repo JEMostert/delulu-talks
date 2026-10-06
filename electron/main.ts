@@ -69,6 +69,7 @@ const { autoUpdater } = electronUpdater;
 // Keep a targeted escape hatch for drivers that cannot render this window.
 if (process.env.DELULU_SOFTWARE_RENDERING === "1")
   app.disableHardwareAcceleration();
+app.commandLine.appendSwitch("enable-smooth-scrolling");
 app.setName(app.isPackaged ? "Delulu Talks" : "Delulu Talks Dev");
 if (process.platform === "linux")
   app.setDesktopName(
@@ -253,6 +254,18 @@ function createMainWindow(): BrowserWindow {
     if (menuBarOnlyActive() || (startHidden && !!tray && trayVisible)) return;
     if (!window.isDestroyed() && !window.isVisible()) window.show();
   };
+  const publishVisibility = () => {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed())
+      window.webContents.send(
+        "app:visibility",
+        window.isVisible() && !window.isMinimized(),
+      );
+  };
+  window.on("show", publishVisibility);
+  window.on("hide", publishVisibility);
+  window.on("minimize", publishVisibility);
+  window.on("restore", publishVisibility);
+  window.webContents.on("did-finish-load", publishVisibility);
   window.once("ready-to-show", reveal);
   // Some packaged Linux/Wayland builds never emit ready-to-show even though the
   // renderer is ready. did-finish-load keeps first launch from becoming a

@@ -114,12 +114,15 @@ export const OceanBackground = memo(function OceanBackground({
   recording,
   theme,
   covered,
+  visible,
 }: {
   recording: boolean;
   theme: "light" | "dark";
   /** A workspace sheet hides most of the water; hold the small details still. */
   covered: boolean;
+  visible: boolean;
 }) {
+  const active = recording && !covered && visible;
   const palette = PALETTES[theme];
   const oceanRef = useRef<HTMLDivElement>(null);
   const voiceRef = useRef<HTMLDivElement>(null);
@@ -130,7 +133,7 @@ export const OceanBackground = memo(function OceanBackground({
   useEffect(() => {
     const glow = voiceRef.current;
     if (!glow) return;
-    if (!recording || covered) {
+    if (!active) {
       glow.style.opacity = "0";
       return;
     }
@@ -153,7 +156,7 @@ export const OceanBackground = memo(function OceanBackground({
       clearInterval(timer);
       glow.style.opacity = "0";
     };
-  }, [recording, covered]);
+  }, [active]);
 
   // Touching open water leaves a ring of light.
   useEffect(() => {
@@ -164,6 +167,7 @@ export const OceanBackground = memo(function OceanBackground({
       const target = event.target as Element | null;
       if (
         motion.matches ||
+        oceanRef.current?.dataset.active !== "true" ||
         oceanRef.current?.dataset.covered === "true" ||
         document.documentElement.dataset.rendering !== "hardware" ||
         target?.closest(
@@ -196,6 +200,7 @@ export const OceanBackground = memo(function OceanBackground({
       aria-hidden="true"
       data-ocean
       data-covered={covered}
+      data-active={active}
     >
       {/* Sunlit patch of surface the rays fan out from. */}
       <div

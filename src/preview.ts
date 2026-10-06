@@ -531,6 +531,14 @@ export const previewApi: DeluluApi = {
   onSettingsChanged(_callback: (settings: AppSettings) => void) {
     return () => undefined;
   },
+  async getWindowVisibility() {
+    return !document.hidden;
+  },
+  onWindowVisibility(callback: (visible: boolean) => void) {
+    const change = () => callback(!document.hidden);
+    document.addEventListener("visibilitychange", change);
+    return () => document.removeEventListener("visibilitychange", change);
+  },
   onNavigate(_callback: (page: Page) => void) {
     return () => undefined;
   },
