@@ -113,7 +113,7 @@ export class WorkerClient {
           request.reject(
             new DomainError(
               "BACKEND_FAILURE",
-              `Model operation ${request.command} failed. Check runtime diagnostics for the backend cause.`,
+              backendFailure(response.error).message,
               {
                 operationId: response.id,
                 operation: request.command,

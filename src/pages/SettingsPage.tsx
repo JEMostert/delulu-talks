@@ -158,13 +158,16 @@ export function SettingsPage(props: Props) {
     />
   );
   const mac = capabilities?.platform === "darwin";
-  const liveBlocker = !s.autoPaste
-    ? "Turn on Paste automatically (Output) to type live."
-    : s.magicEnabled
-      ? "Live typing pauses while Rewriting is on: a rewrite needs the whole text."
-      : s.dictationFormatting === "spoken"
-        ? "Live typing pauses while spoken punctuation commands are on."
-        : null;
+  const liveBlocker =
+    s.shortcutMode === "hold"
+      ? "Hold to talk pastes after you release the shortcut. Choose Press to toggle in General to type live."
+      : !s.autoPaste
+        ? "Turn on Paste automatically (Output) to type live."
+        : s.magicEnabled
+          ? "Live typing pauses while Rewriting is on: a rewrite needs the whole text."
+          : s.dictationFormatting === "spoken"
+            ? "Live typing pauses while spoken punctuation commands are on."
+            : null;
   const [, title, blurb] = SECTIONS.find(([id]) => id === section)!;
 
   return (

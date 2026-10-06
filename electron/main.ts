@@ -440,8 +440,12 @@ function speechMenu(settings: AppSettings): MenuItemConstructorOptions[] {
     ...engines,
     {
       type: "checkbox",
-      label: "Type live while speaking",
-      checked: settings.liveTyping,
+      label:
+        settings.shortcutMode === "hold"
+          ? "Live typing (requires press-to-toggle)"
+          : "Type live while speaking",
+      enabled: settings.shortcutMode !== "hold",
+      checked: settings.liveTyping && settings.shortcutMode !== "hold",
       click: () => patchTraySettings({ liveTyping: !settings.liveTyping }),
     },
     {
@@ -690,11 +694,12 @@ function renderTrayMenu(): void {
         ? `Copy “${menuPreview(deliveredText(latest))}”`
         : "Copy latest result",
       enabled: Boolean(latest),
-      click: () => {
-        if (!latest) return;
-        paste.copy(deliveredText(latest));
-        recordDelivery(latest, "copied");
-      },
+      click: () =>
+        runTrayAction(async () => {
+          if (!latest) return;
+          await paste.copy(deliveredText(latest));
+          recordDelivery(latest, "copied");
+        }),
     },
     {
       label: "Recent",
@@ -702,10 +707,11 @@ function renderTrayMenu(): void {
       submenu: [
         ...recent.slice(1).map((record): MenuItemConstructorOptions => ({
           label: menuPreview(deliveredText(record), 48),
-          click: () => {
-            paste.copy(deliveredText(record));
-            recordDelivery(record, "copied");
-          },
+          click: () =>
+            runTrayAction(async () => {
+              await paste.copy(deliveredText(record));
+              recordDelivery(record, "copied");
+            }),
         })),
         { type: "separator" },
         { label: "Open history", click: () => showMainWindow("history") },

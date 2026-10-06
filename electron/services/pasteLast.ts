@@ -16,7 +16,7 @@ export class PasteLastService {
       captureActive(): boolean;
       currentText(id: string): string | null;
       paste(text: string): Promise<string>;
-      copy(text: string): void;
+      copy(text: string): void | Promise<void>;
       clipboardOnly(): boolean;
       changed(status: PasteLastStatus): void;
       delivery?(
@@ -112,7 +112,7 @@ export class PasteLastService {
   private async deliver(operationId: string, text: string, recordId: string) {
     try {
       if (this.ports.clipboardOnly()) {
-        this.ports.copy(text);
+        await this.ports.copy(text);
         this.ports.delivery?.(recordId, "copied");
         this.publish({
           phase: "copied",

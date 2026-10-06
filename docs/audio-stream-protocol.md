@@ -11,7 +11,7 @@ When live typing is allowed, the same capture session also forwards audio while 
 3. Nemotron 3.5 Streaming decodes cache-aware RNNT chunks natively (560 ms look-ahead) and returns each new word. R2T2 has no incremental decoder in Transformers, so `PauseStreamer` cuts the audio at pauses of about 450 ms (or 12 s of continuous speech) and transcribes each phrase.
 4. `LiveTyping` in the main process shapes every delta with the user's corrections and pastes it at the cursor. Pastes are serialized and coalesced, so text always lands in spoken order.
 
-Live typing is allowed only when automatic paste is on, rewriting is off, spoken punctuation commands are off, the paste method can type, and the backend reports `streaming: true` (CUDA and CPU; not MLX). Otherwise the recording is delivered as before.
+Live typing is allowed only in press-to-toggle mode, when automatic paste is on, rewriting is off, spoken punctuation commands are off, the paste method can type, and the backend reports `streaming: true` (CUDA and CPU; not MLX). Otherwise the recording is delivered as before. Hold-to-talk never injects paste shortcuts during capture: adding Ctrl/Shift to a held activation chord can deactivate a desktop shortcut before its physical release.
 
 If the stream fails after any paste attempt, nothing else is pasted: the full buffered transcript is copied to the clipboard instead, and the History record notes what happened. If no paste was attempted, normal buffered delivery remains available. Cancellation drops queued delivery and waits for the current decoder and paste before another capture can start. The saved record carries delivery method `live`.
 

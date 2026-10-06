@@ -491,6 +491,8 @@ export class DictationService {
   }
 
   /**
+   * Hold-to-talk must not inject paste keys while the activation chord is
+   * held: changing modifiers can deactivate a desktop shortcut mid-capture.
    * Live typing needs automatic paste, prose dictation and no rewriting: a
    * rewrite or code formatting must see the whole transcript before delivery.
    */
@@ -498,6 +500,7 @@ export class DictationService {
     return (
       settings.speechEngine !== "redux" &&
       settings.liveTyping &&
+      settings.shortcutMode !== "hold" &&
       settings.autoPaste &&
       !settings.magicEnabled &&
       (!settings.dictationMode || settings.dictationMode === "prose") &&
@@ -766,7 +769,7 @@ export class DictationService {
         // Part of the text already reached the cursor: never paste it twice.
         settings.autoPaste = false;
         settings.copyToClipboard = true;
-        this.liveFallbackNote = `Live typing stopped (${typedLive.failure ?? "no text"}); the full transcript was copied`;
+        this.liveFallbackNote = `Live typing stopped (${typedLive.failure ?? "no text"})`;
       }
     }
     const audioPath = join(
@@ -923,7 +926,7 @@ export class DictationService {
         }
       } else if (settings.copyToClipboard) {
         try {
-          this.paste.copy(output, (record.timings ??= {}));
+          await this.paste.copy(output, (record.timings ??= {}));
           delivery = "copied";
           record = this.recordDelivery(record, "copied");
           completion = `${outputName} copied to clipboard`;
@@ -941,7 +944,7 @@ export class DictationService {
       if (magicFailure)
         completion = `${completion} · Rewriting unavailable: ${magicFailure}`;
       if (this.liveFallbackNote) {
-        completion = this.liveFallbackNote;
+        completion = `${this.liveFallbackNote}. ${completion}`;
         this.liveFallbackNote = null;
       }
       this.setHud({

@@ -26,7 +26,7 @@ export function registerPasteIpc(
     const key = validateText(id, 128);
     if (getPasteRecovery()?.transcriptId === key) setPasteRecovery(null);
   });
-  handle("paste:copyInstead", (_event, id: unknown) => {
+  handle("paste:copyInstead", async (_event, id: unknown) => {
     const key = validateText(id, 128);
     if (getPasteRecovery()?.transcriptId !== key)
       throw new Error(
@@ -39,7 +39,7 @@ export function registerPasteIpc(
       throw new Error("The transcript was removed. Nothing was copied.");
     }
     try {
-      paste.copy(deliveredText(record));
+      await paste.copy(deliveredText(record));
     } catch (error) {
       const detail = (
         error instanceof Error ? error.message : String(error)

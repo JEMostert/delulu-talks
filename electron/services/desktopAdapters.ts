@@ -11,7 +11,10 @@ import { ShortcutService } from "./shortcut";
 export interface DesktopPasteAdapter {
   readonly isBusy: boolean;
   withClipboardLease<T>(operation: () => Promise<T>): Promise<T>;
-  copy(text: string, timings?: import("../../src/types").PipelineTimings): void;
+  copy(
+    text: string,
+    timings?: import("../../src/types").PipelineTimings,
+  ): Promise<void>;
   paste(
     text: string,
     restoreClipboard?: boolean,
