@@ -55,10 +55,18 @@ export function QuickSettings({
         </span>
         <select
           aria-label="Dictation language"
-          value={s.language}
-          disabled={busy || w.saving || !languageCapability.canSelectLanguage}
+          value={s.speechEngine === "redux" ? "auto" : s.language}
+          disabled={
+            busy ||
+            w.saving ||
+            s.speechEngine === "redux" ||
+            !languageCapability.canSelectLanguage
+          }
           onChange={(e) => save({ language: e.target.value })}
         >
+          {s.speechEngine === "redux" && (
+            <option value="auto">Automatic detection</option>
+          )}
           {languageCapability.languages.map(([value, label]) => (
             <option key={value} value={value}>
               {label}

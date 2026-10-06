@@ -1,3 +1,4 @@
+import { reduxCpuEnabled } from "../runtime/redux";
 import {
   normalizeRewriteContext,
   splitTechnicalBlocks,
@@ -865,7 +866,7 @@ export class AsrService {
     const backend =
       kind === "magic"
         ? "transformers"
-        : process.env.DELULU_REDUX_CPU === "1"
+        : reduxCpuEnabled()
           ? "photon-cpu"
           : speechModelForPlatform() === "r2t2Mlx"
             ? "mlx"
@@ -927,6 +928,12 @@ export class AsrService {
     fromSetup = false,
     eligible: () => boolean = () => true,
   ): Promise<void> {
+    if ((settings.speechEngine === "redux") !== reduxCpuEnabled())
+      throw new Error(
+        reduxCpuEnabled()
+          ? "This experimental CPU runtime supports Parakeet Redux only. Select Redux, or restart without DELULU_REDUX_CPU to use R2T2 or Nemotron."
+          : "Parakeet Redux is experimental and requires Linux x64, DELULU_REDUX_CPU=1 and a manually prepared checkpoint. Select R2T2 or Nemotron for normal setup.",
+      );
     if (!eligible()) return;
     if (this.shuttingDown)
       throw new Error("The speech model worker is shutting down");

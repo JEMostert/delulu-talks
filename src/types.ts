@@ -465,6 +465,7 @@ export type MicrophoneDevice = {
 };
 
 export type PlatformCapabilities = {
+  reduxCpuAvailable?: boolean;
   platform: "linux" | "darwin" | "win32";
   desktop: string;
   sessionType: string;

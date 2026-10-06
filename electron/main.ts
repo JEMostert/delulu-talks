@@ -1,3 +1,4 @@
+import { reduxCpuEnabled } from "./runtime/redux";
 import {
   app,
   BrowserWindow,
@@ -409,15 +410,17 @@ function speechMenu(settings: AppSettings): MenuItemConstructorOptions[] {
               ["r2t2", "R2T2 — most accurate"],
               ["nemotron", "Nemotron 3.5 — light, word by word"],
             ] as const
-          ).map(([engine, label]): MenuItemConstructorOptions => ({
-            type: "radio",
-            label,
-            checked: settings.speechEngine === engine,
-            enabled: !busy,
-            click: () =>
-              settings.speechEngine !== engine &&
-              patchTraySettings({ speechEngine: engine }),
-          })),
+          )
+            .filter(([engine]) => engine !== "redux" || reduxCpuEnabled())
+            .map(([engine, label]): MenuItemConstructorOptions => ({
+              type: "radio",
+              label,
+              checked: settings.speechEngine === engine,
+              enabled: !busy && (!reduxCpuEnabled() || engine === "redux"),
+              click: () =>
+                settings.speechEngine !== engine &&
+                patchTraySettings({ speechEngine: engine }),
+            })),
           ...(settings.speechEngine === "nemotron"
             ? [
                 {

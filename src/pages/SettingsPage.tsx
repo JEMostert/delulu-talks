@@ -159,15 +159,17 @@ export function SettingsPage(props: Props) {
   );
   const mac = capabilities?.platform === "darwin";
   const liveBlocker =
-    s.shortcutMode === "hold"
-      ? "Hold to talk pastes after you release the shortcut. Choose Press to toggle in General to type live."
-      : !s.autoPaste
-        ? "Turn on Paste automatically (Output) to type live."
-        : s.magicEnabled
-          ? "Live typing pauses while Rewriting is on: a rewrite needs the whole text."
-          : s.dictationFormatting === "spoken"
-            ? "Live typing pauses while spoken punctuation commands are on."
-            : null;
+    s.speechEngine === "redux"
+      ? "Parakeet Redux transcribes after recording ends; live typing is unavailable."
+      : s.shortcutMode === "hold"
+        ? "Hold to talk pastes after you release the shortcut. Choose Press to toggle in General to type live."
+        : !s.autoPaste
+          ? "Turn on Paste automatically (Output) to type live."
+          : s.magicEnabled
+            ? "Live typing pauses while Rewriting is on: a rewrite needs the whole text."
+            : s.dictationFormatting === "spoken"
+              ? "Live typing pauses while spoken punctuation commands are on."
+              : null;
   const [, title, blurb] = SECTIONS.find(([id]) => id === section)!;
 
   return (
@@ -231,16 +233,26 @@ export function SettingsPage(props: Props) {
               <SettingRow
                 icon={Languages}
                 title="Language"
-                help="A hint for the speech model, not a detected-language report."
+                help={
+                  s.speechEngine === "redux"
+                    ? "Parakeet Redux detects the language automatically."
+                    : "A hint for the speech model, not a detected-language report."
+                }
               >
                 <select
                   aria-label="Language"
-                  value={s.language}
+                  value={s.speechEngine === "redux" ? "auto" : s.language}
                   disabled={
-                    saving || busy || !languageCapability.canSelectLanguage
+                    saving ||
+                    busy ||
+                    s.speechEngine === "redux" ||
+                    !languageCapability.canSelectLanguage
                   }
                   onChange={(e) => save({ language: e.target.value })}
                 >
+                  {s.speechEngine === "redux" && (
+                    <option value="auto">Automatic detection</option>
+                  )}
                   {languageCapability.languages.map(([code, label]) => (
                     <option key={code} value={code}>
                       {label}
@@ -375,7 +387,7 @@ export function SettingsPage(props: Props) {
                         "redux",
                         "Parakeet Redux",
                         Feather,
-                        "178 MB. Runs on the CPU. Automatically detects Dutch and 24 other languages.",
+                        "Experimental Linux CPU engine. 178 MB checkpoint; manual model setup required.",
                       ],
                       [
                         "r2t2",
@@ -390,27 +402,36 @@ export function SettingsPage(props: Props) {
                         "Light and truly live, word by word. About 1.3 GB of GPU memory, or none on the CPU.",
                       ],
                     ] as const
-                  ).map(([id, name, Icon, detail]) => (
-                    <button
-                      key={id}
-                      role="radio"
-                      aria-checked={s.speechEngine === id}
-                      className="engine-option"
-                      disabled={saving || busy}
-                      onClick={() =>
-                        s.speechEngine !== id && save({ speechEngine: id })
-                      }
-                    >
-                      <Icon aria-hidden="true" />
-                      <span>
-                        <strong>{name}</strong>
-                        <small>{detail}</small>
-                      </span>
-                      {s.speechEngine === id && (
-                        <Check className="engine-check" aria-hidden="true" />
-                      )}
-                    </button>
-                  ))}
+                  )
+                    .filter(
+                      ([id]) =>
+                        id !== "redux" || capabilities?.reduxCpuAvailable,
+                    )
+                    .map(([id, name, Icon, detail]) => (
+                      <button
+                        key={id}
+                        role="radio"
+                        aria-checked={s.speechEngine === id}
+                        className="engine-option"
+                        disabled={
+                          saving ||
+                          busy ||
+                          (!!capabilities?.reduxCpuAvailable && id !== "redux")
+                        }
+                        onClick={() =>
+                          s.speechEngine !== id && save({ speechEngine: id })
+                        }
+                      >
+                        <Icon aria-hidden="true" />
+                        <span>
+                          <strong>{name}</strong>
+                          <small>{detail}</small>
+                        </span>
+                        {s.speechEngine === id && (
+                          <Check className="engine-check" aria-hidden="true" />
+                        )}
+                      </button>
+                    ))}
                 </div>
                 {s.speechEngine === "nemotron" && (
                   <SettingRow

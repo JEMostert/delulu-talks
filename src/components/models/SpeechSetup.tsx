@@ -9,6 +9,7 @@ import { BackendCapabilities } from "./BackendCapabilities";
 import { EngineBadge } from "./EngineBadge";
 
 export type SpeechSetupProps = {
+  reduxCpuAvailable?: boolean;
   status: DictationStatus;
   settings: AppSettings;
   busy: boolean;
@@ -21,6 +22,7 @@ export type SpeechSetupProps = {
   onUpdateSettings?: (patch: Partial<AppSettings>) => void;
 };
 export function SpeechSetup({
+  reduxCpuAvailable = false,
   status,
   settings,
   busy,
@@ -78,21 +80,34 @@ export function SpeechSetup({
               ["r2t2", "R2T2"],
               ["nemotron", "Nemotron 3.5"],
             ] as const
-          ).map(([engine, label]) => (
-            <button
-              key={engine}
-              aria-pressed={settings.speechEngine === engine}
-              className={settings.speechEngine === engine ? "active" : ""}
-              disabled={busy || speechBusy}
-              onClick={() =>
-                settings.speechEngine !== engine &&
-                onUpdateSettings({ speechEngine: engine })
-              }
-            >
-              {label}
-            </button>
-          ))}
+          )
+            .filter(([engine]) => engine !== "redux" || reduxCpuAvailable)
+            .map(([engine, label]) => (
+              <button
+                key={engine}
+                aria-pressed={settings.speechEngine === engine}
+                className={settings.speechEngine === engine ? "active" : ""}
+                disabled={
+                  busy ||
+                  speechBusy ||
+                  (reduxCpuAvailable && engine !== "redux")
+                }
+                onClick={() =>
+                  settings.speechEngine !== engine &&
+                  onUpdateSettings({ speechEngine: engine })
+                }
+              >
+                {label}
+              </button>
+            ))}
         </div>
+      )}
+      {settings.speechEngine === "redux" && (
+        <p className="setup-status-copy">
+          Experimental Linux CPU engine. Prepare the checkpoint manually before
+          loading; Download &amp; set up installs the runtime only. To use R2T2
+          or Nemotron, restart without the CPU preview flag.
+        </p>
       )}
       {(status.engine === "ready" || status.engine === "unloaded") &&
         status.residency && <ModelLifecycle status={status} />}

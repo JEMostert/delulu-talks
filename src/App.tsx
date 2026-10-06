@@ -708,6 +708,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
               >
                 <div className="workspace-view">
                   <ModelsPage
+                    reduxCpuAvailable={w.capabilities?.reduxCpuAvailable}
                     onDone={closePanel}
                     focusTarget={modelTarget}
                     onTargetHandled={() => setModelTarget(null)}

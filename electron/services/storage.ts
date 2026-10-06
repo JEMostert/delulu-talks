@@ -1,3 +1,4 @@
+import { reduxCpuEnabled } from "../runtime/redux";
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { transcriptSourceRevision } from "../../src/transcriptText";
 import {
@@ -625,7 +626,10 @@ export class StorageService {
   ) {
     this.dataDirectory = application.getPath("userData");
     this.cacheDirectory = join(this.dataDirectory, "audio-cache");
-    this.venvDirectory = join(this.dataDirectory, "speech-venv");
+    this.venvDirectory = join(
+      this.dataDirectory,
+      reduxCpuEnabled() ? "speech-redux-venv" : "speech-venv",
+    );
     const dedicatedMagicVenv = join(this.dataDirectory, "magic-venv");
     this.legacyVenvDirectory = join(this.dataDirectory, "asr-venv");
     // Releases before split runtimes installed Magic into asr-venv. Preserve a

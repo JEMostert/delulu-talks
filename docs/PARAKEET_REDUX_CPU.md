@@ -1,4 +1,4 @@
-# Parakeet Redux CPU adapter (draft)
+# Parakeet Redux CPU adapter (experimental)
 
 This prototype adds an opt-in Parakeet Redux engine for Linux CPU dictation.
 The default speech engine remains R2T2. Redux uses the original packed ternary
@@ -10,8 +10,8 @@ telemetry reporter. Attribution: Moondream and NVIDIA Parakeet TDT v3;
 ## Current setup boundary
 
 Launch with `DELULU_REDUX_CPU=1`, then select **Parakeet Redux** in Models or
-Settings. This flag selects CPU-only speech dependency installation and
-capability negotiation. Redux detects the spoken language automatically;
+Settings. The option is hidden in normal launches and on unsupported platforms; this preview supports Linux x64 only. Other engines require restarting without the flag. This flag selects CPU-only speech dependency installation and
+capability negotiation. Its dependencies use a separate `speech-redux-venv` cache so installing the preview does not replace the normal speech runtime. Redux detects the spoken language automatically;
 its decoder does not accept a forced language. Dictation is buffered until
 capture ends, including when an older profile enables live typing.
 
@@ -57,5 +57,5 @@ not a language accuracy benchmark or validation of pasting into another app.
 - Remove the environment flag requirement and negotiate/install by selected engine.
 - Integrate checkpoint download, progress, integrity checks and cache management.
 - Complete automatic-language messaging in remaining controls and diagnostics.
-- Review runtime generation isolation when switching between Redux and CUDA engines.
+- Add in-app engine switching; the preview currently uses an isolated runtime and requires a restart to return to CUDA engines.
 - Validate supported CPU architectures and platforms; current native evidence is Linux x86_64 only.

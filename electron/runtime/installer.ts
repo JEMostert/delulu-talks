@@ -1,3 +1,4 @@
+import { reduxCpuEnabled } from "./redux";
 import { SetupLog } from "./setupLog";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -103,7 +104,7 @@ export class RuntimeInstaller {
     },
   ) {}
   private readiness(kind: "speech" | "magic"): string {
-    if (kind === "speech" && process.env.DELULU_REDUX_CPU === "1")
+    if (kind === "speech" && reduxCpuEnabled())
       return "import soundfile, soxr; from kestrel.config import RuntimeConfig; from kestrel.models.parakeet_tdt.runtime import ParakeetTdtRuntime";
     return runtimeReadinessScript(
       kind,
@@ -580,7 +581,7 @@ export class RuntimeInstaller {
       "Preparing the package installer",
       0.22,
     );
-    const redux = kind === "speech" && process.env.DELULU_REDUX_CPU === "1";
+    const redux = kind === "speech" && reduxCpuEnabled();
     const constraints =
       !redux &&
       this.constraintsPath &&

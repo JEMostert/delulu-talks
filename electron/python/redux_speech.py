@@ -45,7 +45,7 @@ class ReduxSpeech:
         directory = Path(os.environ.get("DELULU_REDUX_MODEL_DIR", str(DEFAULT_DIRECTORY)))
         for name in ("config.json", "tokenizer.json", "ternary.json", "model.safetensors", "revision.txt"):
             if not (directory / name).is_file():
-                raise FileNotFoundError("Required Parakeet Redux checkpoint file missing")
+                raise FileNotFoundError("Parakeet Redux requires a manually prepared checkpoint. See docs/PARAKEET_REDUX_CPU.md or set DELULU_REDUX_MODEL_DIR.")
         if (directory / "revision.txt").read_text().strip() != REVISION:
             raise ValueError("Parakeet Redux checkpoint revision mismatch")
         emit_progress("Loading Parakeet Redux packed weights on CPU…", stage="load")
