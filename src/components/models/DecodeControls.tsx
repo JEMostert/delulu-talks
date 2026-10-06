@@ -27,11 +27,20 @@ export function DecodeControls({
         </div>
       </div>
       <label className="mt-4 flex items-center justify-between gap-4">
-        <span>Recognition language</span>
+        <span>
+          {settings.speechEngine === "redux"
+            ? "Language (automatically detected)"
+            : "Recognition language"}
+        </span>
         <select
           aria-label="Model recognition language"
           value={settings.language}
-          disabled={busy || saving || !capability.canSelectLanguage}
+          disabled={
+            busy ||
+            saving ||
+            settings.speechEngine === "redux" ||
+            !capability.canSelectLanguage
+          }
           onChange={(event) =>
             onUpdateSettings({ language: event.target.value })
           }
@@ -48,14 +57,17 @@ export function DecodeControls({
         <dd>4,096 · fixed by the speech backend</dd>
         <dt>Generation</dt>
         <dd>
-          {settings.model === "r2t2Mlx"
-            ? "MLX · temperature 0"
-            : "CUDA · backend defaults (native Transformers disables sampling)"}
+          {settings.speechEngine === "redux"
+            ? "CPU · packed ternary · deterministic decoding"
+            : settings.model === "r2t2Mlx"
+              ? "MLX · temperature 0"
+              : "CUDA · backend defaults (native Transformers disables sampling)"}
         </dd>
       </dl>
       <p className="caption mt-3">
-        Language affects recognition. Token limit, precision and sampling are
-        currently backend defaults; adjustable controls require backend support.
+        {settings.speechEngine === "redux"
+          ? "Parakeet Redux detects the spoken language automatically. Dutch and English are supported."
+          : "Language affects recognition. Token limit, precision and sampling are currently backend defaults; adjustable controls require backend support."}
       </p>
     </section>
   );

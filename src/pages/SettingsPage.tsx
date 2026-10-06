@@ -369,6 +369,12 @@ export function SettingsPage(props: Props) {
                   {(
                     [
                       [
+                        "redux",
+                        "Parakeet Redux",
+                        Feather,
+                        "178 MB. Runs on the CPU. Automatically detects Dutch and 24 other languages.",
+                      ],
+                      [
                         "r2t2",
                         "R2T2",
                         Gauge,
@@ -465,7 +471,11 @@ export function SettingsPage(props: Props) {
                     : "Each phrase appears at your cursor when you pause.")
                 }
               >
-                {toggle("liveTyping", "Live typing", mac)}
+                {toggle(
+                  "liveTyping",
+                  "Live typing",
+                  mac || s.speechEngine === "redux",
+                )}
               </SettingRow>
               <SettingRow
                 icon={AudioWaveform}

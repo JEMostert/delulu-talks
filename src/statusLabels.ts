@@ -53,6 +53,7 @@ const BACKEND_NAMES: Record<
   "cuda-vllm": "CUDA",
   "cuda-transformers": "CUDA",
   transformers: "Transformers",
+  "photon-cpu": "CPU",
 };
 
 /** Speech engine readiness, phrased for the home screen chip. */

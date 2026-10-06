@@ -1,8 +1,12 @@
 /** Model identity is independent of the execution adapter or stored selection key. */
-export type SpeechIdentity = "r2t2" | "nemotron";
+export type SpeechIdentity = "r2t2" | "nemotron" | "redux";
 /** Historical records may name vLLM; current runtimes never select it. */
 export type SpeechBackendId =
-  "vllm-cuda" | "transformers-cuda" | "transformers-cpu" | "mlx-audio";
+  | "vllm-cuda"
+  | "transformers-cuda"
+  | "transformers-cpu"
+  | "mlx-audio"
+  | "photon-cpu";
 export type SpeechPrecision = "bf16" | "fp16" | "fp32";
 export type SpeechExecution = {
   modelId: SpeechIdentity;
@@ -27,6 +31,13 @@ export const NEMOTRON_IDENTITY = {
 };
 
 export const SPEECH_BACKENDS = [
+  {
+    id: "photon-cpu" as const,
+    label: "Photon · CPU · packed ternary",
+    platforms: ["linux"] as const,
+    device: "cpu" as const,
+    models: ["redux"] as const,
+  },
   {
     id: "vllm-cuda" as const,
     label: "vLLM · CUDA (previous releases)",
@@ -63,6 +74,7 @@ const REPOSITORIES: Record<SpeechIdentity, readonly string[]> = {
     "mlx-community/Confucius4-R2T2-bf16",
   ],
   nemotron: [NEMOTRON_IDENTITY.upstreamRepository],
+  redux: ["moondream/parakeet-redux"],
 };
 
 export function speechBackendById(id: SpeechBackendId) {

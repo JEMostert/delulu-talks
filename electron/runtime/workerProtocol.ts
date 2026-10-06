@@ -12,7 +12,7 @@ const PRESETS = new Set([
   "professional-message",
 ]);
 const MAGIC_MODELS = new Set(["qwen35Small", "qwen35Medium", "qwen35Large"]);
-const SPEECH_MODELS = new Set(["r2t2", "nemotron"]);
+const SPEECH_MODELS = new Set(["r2t2", "nemotron", "redux"]);
 const COMMANDS = new Set([
   "ping",
   "status",
@@ -338,12 +338,12 @@ export function validateWorkerResult(command: string, value: unknown): void {
       throw new Error("Invalid model worker capability schema or engine");
     const speech = result.engine === "speech";
     if (
-      !(speech ? ["r2t2", "nemotron"] : ["qwen3.5"]).includes(
+      !(speech ? ["r2t2", "nemotron", "redux"] : ["qwen3.5"]).includes(
         result.modelFamily as string,
       ) ||
-      !(speech ? ["mlx", "cuda-transformers"] : ["transformers"]).includes(
-        result.backend as string,
-      )
+      !(
+        speech ? ["mlx", "cuda-transformers", "photon-cpu"] : ["transformers"]
+      ).includes(result.backend as string)
     )
       throw new Error("Invalid model worker capability backend/model family");
     for (const key of ["timestamps", "streaming", "vocabularyBiasing"])

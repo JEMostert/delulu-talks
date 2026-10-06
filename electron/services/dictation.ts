@@ -496,6 +496,7 @@ export class DictationService {
    */
   private liveTypingAllowed(settings: AppSettings): boolean {
     return (
+      settings.speechEngine !== "redux" &&
       settings.liveTyping &&
       settings.autoPaste &&
       !settings.magicEnabled &&
