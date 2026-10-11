@@ -20,7 +20,7 @@
 
 Delulu Talks turns speech into text in the app you are using. R2T2 produces dictation locally through MLX on Apple Silicon and Transformers on NVIDIA GPUs; Parakeet Redux runs on the CPU on Linux x64 and transcribes after you stop recording. Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
 
-[v0.13.0](docs/releases/v0.13.0.md) makes Parakeet Redux a normal CPU engine on Linux, removes Nemotron and live typing, and drops several unused features. [v0.12.3](docs/releases/v0.12.3.md) fixes KDE clipboard timeouts after successful recognition and makes delivery failures clearer. [v0.12.2](docs/releases/v0.12.2.md) restores hardware compositing on Wayland and reduces background drawing while using workspaces. The [native rendering review](docs/performance-review-v0.12.2.md) records the diagnosis, measurements and verification limits. [v0.12.1](docs/releases/v0.12.1.md) fixed desktop streaming validation, bounded live-audio buffers and moved recording encoding off the interface thread.
+[v0.14.0](docs/releases/v0.14.0.md) lets R2T2 detect the spoken language and use your vocabulary as recognition hints. [v0.13.0](docs/releases/v0.13.0.md) makes Parakeet Redux a normal CPU engine on Linux, removes Nemotron and live typing, and drops several unused features. [v0.12.3](docs/releases/v0.12.3.md) fixes KDE clipboard timeouts after successful recognition and makes delivery failures clearer. [v0.12.2](docs/releases/v0.12.2.md) restores hardware compositing on Wayland and reduces background drawing while using workspaces. The [native rendering review](docs/performance-review-v0.12.2.md) records the diagnosis, measurements and verification limits. [v0.12.1](docs/releases/v0.12.1.md) fixed desktop streaming validation, bounded live-audio buffers and moved recording encoding off the interface thread.
 
 ## Dictate, review, keep working
 
@@ -84,12 +84,12 @@ The **Deep Sea** design system has two themes — _Abyss_ (dark) and _Shallows_ 
 
 Speech stays ready by default. The optional writing model loads on demand; you can keep either model loaded or let it unload after a configurable idle period.
 
-| Runtime                         | Available models                   | Good for                                                                                                 |
-| ------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| **R2T2 MLX** (Apple Silicon)    | BF16 conversion of Confucius4-R2T2 | Direct local MLX speech inference with language hints; native validation pending.                        |
-| **R2T2 CUDA** (Linux / Windows) | Confucius4-R2T2                    | Most accurate, especially in Dutch. About 4 GB of GPU memory through Transformers. The default.          |
-| **Parakeet Redux** (Linux x64)  | moondream/parakeet-redux           | CPU only; buffered, so text appears after you stop. Detects the language automatically. About 178 MB.    |
-| **Qwen 3.5 writing**            | 0.8B · 2B · 4B                     | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default. |
+| Runtime                         | Available models                   | Good for                                                                                                                                                       |
+| ------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **R2T2 MLX** (Apple Silicon)    | BF16 conversion of Confucius4-R2T2 | Direct local MLX speech inference with language hints; native validation pending.                                                                              |
+| **R2T2 CUDA** (Linux / Windows) | Confucius4-R2T2                    | Most accurate, especially in Dutch. Detects the language (or force one) and takes your vocabulary as recognition hints. About 4 GB of GPU memory. The default. |
+| **Parakeet Redux** (Linux x64)  | moondream/parakeet-redux           | CPU only; buffered, so text appears after you stop. Detects the language automatically. About 178 MB.                                                          |
+| **Qwen 3.5 writing**            | 0.8B · 2B · 4B                     | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default.                                                       |
 
 On Apple Silicon with macOS 15+, Delulu selects the approximately 4.1 GB [R2T2 BF16 MLX conversion](https://huggingface.co/mlx-community/Confucius4-R2T2-bf16). This preserves the preferred fine-tune instead of substituting Qwen3-ASR-0.6B. The checkpoint revision and runtime packages are pinned. Language hints are available; missing or mixed detected language stays unknown. Older Mac installations need **Update setup/Repair** for the new runtime.
 

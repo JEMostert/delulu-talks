@@ -167,11 +167,12 @@ class R2T2Speech:
         self._generate(np.zeros(SAMPLE_RATE, dtype=np.float32), "English", 8)
         self.warmup = "complete"
 
-    def _generate(self, samples, language, max_tokens, timings=None):
+    def _generate(self, samples, language, max_tokens, timings=None, hotwords=None):
         import torch
         preprocessing_started = time.perf_counter()
+        # language None lets R2T2 detect it; hotwords become the system prompt.
         inputs = self.processor.apply_transcription_request(
-            audio=samples, language=language, return_tensors="pt",
+            audio=samples, language=language, prompt=hotwords or None, return_tensors="pt",
             processor_kwargs={"audio_kwargs": {"sampling_rate": SAMPLE_RATE}},
         ).to(self.model.device).to(self.model.dtype)
         length = int(inputs["input_ids"].shape[-1])
@@ -218,10 +219,11 @@ class R2T2Speech:
         inference_started = time.perf_counter()
         timings = {"backendPreprocessingMs": (inference_started - started) * 1000,
                    "inferenceMs": 0.0}
+        hotwords = str(request.get("hotwords") or "").strip() or None
         results = []
         try:
             for start, end in chunk_bounds(samples, CHUNK_SAMPLES):
-                results.append(self._generate(samples[start:end], language, 4096, timings))
+                results.append(self._generate(samples[start:end], language, 4096, timings, hotwords))
         except BaseException:
             with contextlib.suppress(Exception):
                 torch = sys.modules.get("torch")

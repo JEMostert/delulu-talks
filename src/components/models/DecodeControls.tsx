@@ -1,4 +1,5 @@
 import { speechLanguageCapability } from "../../speechCapabilities";
+import { AUTO_LANGUAGE } from "../../data";
 import type { AppSettings } from "../../types";
 
 export function DecodeControls({
@@ -34,7 +35,11 @@ export function DecodeControls({
         </span>
         <select
           aria-label="Model recognition language"
-          value={settings.language}
+          value={
+            settings.speechEngine === "redux"
+              ? AUTO_LANGUAGE
+              : settings.language
+          }
           disabled={
             busy ||
             saving ||
@@ -45,6 +50,10 @@ export function DecodeControls({
             onUpdateSettings({ language: event.target.value })
           }
         >
+          {(settings.speechEngine === "redux" ||
+            capability.canRequestAutomaticLanguage) && (
+            <option value={AUTO_LANGUAGE}>Automatic detection</option>
+          )}
           {capability.languages.map(([code, label]) => (
             <option key={code} value={code}>
               {label}
@@ -67,7 +76,9 @@ export function DecodeControls({
       <p className="caption mt-3">
         {settings.speechEngine === "redux"
           ? "Parakeet Redux detects the spoken language automatically, including Dutch and English."
-          : "Language affects recognition. Token limit, precision and sampling are currently backend defaults; adjustable controls require backend support."}
+          : settings.language === AUTO_LANGUAGE
+            ? "R2T2 detects the spoken language, also when you switch between languages. Token limit, precision and sampling are backend defaults."
+            : "Language affects recognition. Token limit, precision and sampling are currently backend defaults; adjustable controls require backend support."}
       </p>
     </section>
   );

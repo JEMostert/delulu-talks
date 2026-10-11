@@ -1,4 +1,5 @@
 import { AudioLines, Keyboard, Mic, Moon, Sun, SunMoon } from "lucide-react";
+import { AUTO_LANGUAGE } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
 import { Toggle } from "./ui";
 import type { useWorkspace } from "../hooks/useWorkspace";
@@ -55,7 +56,7 @@ export function QuickSettings({
         </span>
         <select
           aria-label="Dictation language"
-          value={s.speechEngine === "redux" ? "auto" : s.language}
+          value={s.speechEngine === "redux" ? AUTO_LANGUAGE : s.language}
           disabled={
             busy ||
             w.saving ||
@@ -64,8 +65,9 @@ export function QuickSettings({
           }
           onChange={(e) => save({ language: e.target.value })}
         >
-          {s.speechEngine === "redux" && (
-            <option value="auto">Automatic detection</option>
+          {(s.speechEngine === "redux" ||
+            languageCapability.canRequestAutomaticLanguage) && (
+            <option value={AUTO_LANGUAGE}>Automatic detection</option>
           )}
           {languageCapability.languages.map(([value, label]) => (
             <option key={value} value={value}>

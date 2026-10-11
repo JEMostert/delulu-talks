@@ -14,6 +14,8 @@ from typing import Any, TextIO
 PROTOCOL_VERSION = 1
 MAX_ID_BYTES = 128
 MAX_COMMAND_BYTES = 64
+# Comma-separated vocabulary terms for R2T2 recognition hints.
+MAX_HOTWORDS_CHARS = 1000
 MAX_ERROR_BYTES = 8_000
 PROGRESS_PREFIX = "@delulu-progress:"
 MAX_PROGRESS_STAGE_BYTES = 64
@@ -223,6 +225,10 @@ def validate_request(request: Any) -> dict[str, Any]:
         require_string(request, "audioPath", nonempty=True)
         if "language" in request:
             require_string(request, "language")
+        if "hotwords" in request:
+            require_string(request, "hotwords")
+            if len(request["hotwords"]) > MAX_HOTWORDS_CHARS:
+                raise ValueError(f"Speech hotwords exceed {MAX_HOTWORDS_CHARS} characters")
         if "durationMs" in request:
             require_number(request, "durationMs")
         for control in ("timestamps", "vocabularyBiasing"):

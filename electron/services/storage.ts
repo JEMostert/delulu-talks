@@ -27,6 +27,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { validateProfileWrite } from "./profileWriteValidation";
 import { speechModelForPlatform } from "../runtime/platform";
+import { speechLanguageCapability } from "../../src/speechCapabilities";
 import { reduxSupported } from "../runtime/redux";
 import { normalizeAliases } from "../../src/personalization";
 import { historyFingerprint, savedRetentionPolicy } from "./historyRetention";
@@ -49,6 +50,7 @@ import {
 import { basename, dirname, join } from "node:path";
 import {
   DEFAULT_SETTINGS,
+  AUTO_LANGUAGE,
   LANGUAGES,
   LEGACY_DEFAULT_SHORTCUT,
   MAGIC_MODELS,
@@ -73,6 +75,9 @@ const validHistoryModels = new Set<ModelId>([
 ]);
 const validMagicModels = new Set(MAGIC_MODELS.map((model) => model.id));
 const validLanguages = new Set<string>(LANGUAGES.map(([code]) => code));
+const automaticLanguage = () =>
+  speechLanguageCapability(speechModelForPlatform())
+    .canRequestAutomaticLanguage;
 
 function readJson(path: string): unknown {
   try {
@@ -317,9 +322,11 @@ export function normalizeSettings(value: unknown): AppSettings {
         : requestedShortcut,
     shortcutMode: source.shortcutMode === "toggle" ? "toggle" : "hold",
     model: speechModelForPlatform(),
-    language: validLanguages.has(requestedLanguage)
-      ? requestedLanguage
-      : DEFAULT_SETTINGS.language,
+    language:
+      validLanguages.has(requestedLanguage) ||
+      (requestedLanguage === AUTO_LANGUAGE && automaticLanguage())
+        ? requestedLanguage
+        : DEFAULT_SETTINGS.language,
     dictationFormatting:
       source.dictationFormatting === "spoken" ? "spoken" : "preserve",
     pythonCommand: safeString(
@@ -425,6 +432,10 @@ export function normalizeSettings(value: unknown): AppSettings {
     ),
     menuBarOnly: boolean(source.menuBarOnly, DEFAULT_SETTINGS.menuBarOnly),
     customWords: normalizeWords(source.customWords),
+    vocabularyHints: boolean(
+      source.vocabularyHints,
+      DEFAULT_SETTINGS.vocabularyHints,
+    ),
     personalProfiles: readPersonalProfiles(source.personalProfiles)
       .document as AppSettings["personalProfiles"],
     activePersonalProfile: normalizeProfileSnapshots(

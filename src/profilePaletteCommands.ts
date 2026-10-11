@@ -9,14 +9,14 @@ import {
   profileActivationSettings,
   type ProfileEffectiveSettings,
 } from "./activePersonalProfile";
-import { LANGUAGES } from "./data";
+import { SETTING_LANGUAGES } from "./data";
 
 function preview(
   before: ProfileEffectiveSettings,
   after: ProfileEffectiveSettings,
 ) {
   const language = (settings: ProfileEffectiveSettings) =>
-    LANGUAGES.find(([code]) => code === settings.language)?.[1] ??
+    SETTING_LANGUAGES.find(([code]) => code === settings.language)?.[1] ??
     settings.language;
   const delivery = (settings: ProfileEffectiveSettings) =>
     `${settings.autoPaste ? "Automatic paste requested" : "Automatic paste off"} · ${settings.copyToClipboard ? "Copy on" : "Copy off"} · ${settings.keepHistory ? "History on" : "History off"}`;

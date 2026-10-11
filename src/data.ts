@@ -70,6 +70,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchAtLogin: false,
   menuBarOnly: false,
   customWords: [],
+  vocabularyHints: true,
   personalProfiles: { schemaVersion: 1, profiles: [] },
   activePersonalProfile: null,
 };
@@ -190,6 +191,9 @@ export const MAGIC_MODELS: MagicModelInfo[] = [
   },
 ];
 
+/** Recognition-language setting that lets the speech engine detect the language. */
+export const AUTO_LANGUAGE = "auto";
+
 export const LANGUAGES = [
   ["en", "English"],
   ["de", "German"],
@@ -215,6 +219,12 @@ export const LANGUAGES = [
   ["ja", "Japanese"],
   ["ko", "Korean"],
   ["vi", "Vietnamese"],
+] as const;
+
+/** Values the recognition-language setting accepts: automatic detection or a language. */
+export const SETTING_LANGUAGES = [
+  [AUTO_LANGUAGE, "Automatic"],
+  ...LANGUAGES,
 ] as const;
 
 export function modelById(id: AppSettings["model"]) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LANGUAGES } from "../data";
+import { SETTING_LANGUAGES } from "../data";
 import {
   readPersonalProfiles,
   type PersonalProfileV1,
@@ -15,7 +15,7 @@ import { Modal } from "./ui";
 
 function ProfileSummary({ profile }: { profile: PersonalProfileV1 }) {
   const language =
-    LANGUAGES.find(([code]) => code === profile.language)?.[1] ??
+    SETTING_LANGUAGES.find(([code]) => code === profile.language)?.[1] ??
     profile.language;
   return (
     <p className="text-[12px] text-muted leading-relaxed">
@@ -53,7 +53,7 @@ function EffectiveProfileSettings({
   settings: AppSettings;
 }) {
   const languageName = (code: string) =>
-    LANGUAGES.find(([value]) => value === code)?.[1] ?? code;
+    SETTING_LANGUAGES.find(([value]) => value === code)?.[1] ?? code;
   const yesNo = (value: boolean) => (value ? "On" : "Off");
   const saved: [string, string, string][] = [
     [

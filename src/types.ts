@@ -86,6 +86,7 @@ export type AppSettings = {
   shortcut: string;
   shortcutMode: "hold" | "toggle";
   model: SpeechModelId;
+  /** A language code, or "auto" where the speech engine detects it. */
   language: string;
   dictationFormatting: DictationFormatting;
   pythonCommand: string;
@@ -121,6 +122,8 @@ export type AppSettings = {
   launchAtLogin: boolean;
   menuBarOnly: boolean;
   customWords: CustomWord[];
+  /** Send enabled vocabulary corrections to R2T2 as recognition hints. */
+  vocabularyHints: boolean;
   /** Saved profiles change behavior only through explicit activation. */
   personalProfiles?: PersonalProfileDocument;
   activePersonalProfile?: ActivePersonalProfile | null;

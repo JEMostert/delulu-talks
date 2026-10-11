@@ -150,3 +150,21 @@ test("speech engines are limited to R2T2 and Redux in requests and capability re
     }),
   ).toThrow("Invalid model worker capability backend/model family");
 });
+
+test("transcription hotwords must be a bounded string", () => {
+  const identity = { protocolVersion: 1, id: "hints" };
+  const transcribe = {
+    ...identity,
+    command: "transcribe",
+    audioPath: "/tmp/a.wav",
+    language: "auto",
+    hotwords: "Kestrel, Moondream",
+  };
+  expect(validateWorkerRequest(transcribe)).toEqual(transcribe);
+  expect(() =>
+    validateWorkerRequest({ ...transcribe, hotwords: ["Kestrel"] }),
+  ).toThrow();
+  expect(() =>
+    validateWorkerRequest({ ...transcribe, hotwords: "x".repeat(1001) }),
+  ).toThrow("too long");
+});

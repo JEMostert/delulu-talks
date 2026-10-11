@@ -1,4 +1,5 @@
 import type { DownloadBytes } from "../../src/types";
+import { MAX_RECOGNITION_HINT_CHARS } from "../../src/recognitionHints";
 import { StringDecoder } from "node:string_decoder";
 
 export const WORKER_PROTOCOL_VERSION = 1;
@@ -162,6 +163,12 @@ export function validateWorkerRequest(value: unknown): JsonObject {
   if (request.command === "transcribe") {
     stringField(request, "audioPath", true, true);
     stringField(request, "language");
+    stringField(request, "hotwords");
+    if (
+      typeof request.hotwords === "string" &&
+      request.hotwords.length > MAX_RECOGNITION_HINT_CHARS
+    )
+      throw new Error("Model worker speech hotwords are too long");
     numberField(request, "durationMs");
     for (const key of ["timestamps", "vocabularyBiasing"]) {
       booleanField(request, key);

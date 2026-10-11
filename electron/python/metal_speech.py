@@ -95,7 +95,7 @@ class MetalSpeech:
 
     def transcribe(self, request):
         from transcription_engine import LANGUAGE_NAMES, language_hint
-        language_code, language = language_hint(request)
+        language_code, language = language_hint(request, allow_auto=False)
         if self.model is None:
             raise RuntimeError("R2T2 is not loaded. Load the model to try again.")
         audio = Path(request["audioPath"])

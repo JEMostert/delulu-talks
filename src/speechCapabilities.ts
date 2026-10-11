@@ -11,7 +11,7 @@ export type SpeechLanguageCapability = {
 export type SpeechBackendLanguageCapability = {
   readonly backend: "mlx" | "cuda-vllm" | "cuda-transformers";
   readonly hintCodes: readonly string[];
-  readonly automaticLanguage: false;
+  readonly automaticLanguage: boolean;
 };
 
 // Adapter input contract, not a measured recognition-quality guarantee. Keep
@@ -49,12 +49,13 @@ export const speechBackendLanguageCapabilities = Object.freeze({
   "cuda-vllm": Object.freeze({
     backend: "cuda-vllm",
     hintCodes,
-    automaticLanguage: false,
+    automaticLanguage: true,
   }),
+  // The Transformers R2T2 processor detects the language when none is forced.
   "cuda-transformers": Object.freeze({
     backend: "cuda-transformers",
     hintCodes,
-    automaticLanguage: false,
+    automaticLanguage: true,
   }),
 } satisfies Record<string, SpeechBackendLanguageCapability>);
 

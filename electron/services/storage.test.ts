@@ -298,3 +298,22 @@ test("history records with removed technical fields load without them and keep t
     expect(record).not.toHaveProperty("dictationMode");
   }
 });
+
+test("automatic language is kept where the speech engine detects it, and vocabulary hints default on", () => {
+  const automatic =
+    speechModelForPlatform() === "r2t2" ? "auto" : DEFAULT_SETTINGS.language;
+  const settings = normalizeSettings({
+    ...DEFAULT_SETTINGS,
+    language: "AUTO",
+    vocabularyHints: undefined,
+  });
+  expect(settings.language).toBe(automatic);
+  expect(settings.vocabularyHints).toBe(true);
+  expect(
+    normalizeSettings({ ...DEFAULT_SETTINGS, vocabularyHints: false })
+      .vocabularyHints,
+  ).toBe(false);
+  expect(
+    normalizeSettings({ ...DEFAULT_SETTINGS, language: "klingon" }).language,
+  ).toBe(DEFAULT_SETTINGS.language);
+});

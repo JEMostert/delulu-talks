@@ -17,9 +17,10 @@ import {
   Mic,
   Monitor,
   RefreshCw,
+  SpellCheck,
   Trash2,
 } from "lucide-react";
-import { MAGIC_MODELS } from "../data";
+import { AUTO_LANGUAGE, MAGIC_MODELS } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
 import {
   ConfirmDialog,
@@ -220,12 +221,16 @@ export function SettingsPage(props: Props) {
                 help={
                   s.speechEngine === "redux"
                     ? "Parakeet Redux detects the language automatically."
-                    : "A hint for the speech model, not a detected-language report."
+                    : s.language === AUTO_LANGUAGE
+                      ? "R2T2 detects the language, also when you switch between languages. Choose one to force it."
+                      : "Forces the speech model to this language. Automatic detection handles mixed languages."
                 }
               >
                 <select
                   aria-label="Language"
-                  value={s.speechEngine === "redux" ? "auto" : s.language}
+                  value={
+                    s.speechEngine === "redux" ? AUTO_LANGUAGE : s.language
+                  }
                   disabled={
                     saving ||
                     busy ||
@@ -234,8 +239,9 @@ export function SettingsPage(props: Props) {
                   }
                   onChange={(e) => save({ language: e.target.value })}
                 >
-                  {s.speechEngine === "redux" && (
-                    <option value="auto">Automatic detection</option>
+                  {(s.speechEngine === "redux" ||
+                    languageCapability.canRequestAutomaticLanguage) && (
+                    <option value={AUTO_LANGUAGE}>Automatic detection</option>
                   )}
                   {languageCapability.languages.map(([code, label]) => (
                     <option key={code} value={code}>
@@ -244,6 +250,15 @@ export function SettingsPage(props: Props) {
                   ))}
                 </select>
               </SettingRow>
+              {s.speechEngine === "r2t2" && !mac && (
+                <SettingRow
+                  icon={SpellCheck}
+                  title="Vocabulary hints"
+                  description="Tell R2T2 the spellings from your vocabulary corrections, so names and terms are recognized correctly the first time."
+                >
+                  {toggle("vocabularyHints", "Vocabulary hints")}
+                </SettingRow>
+              )}
             </Group>
             <Group title="Shortcut">
               <SettingRow

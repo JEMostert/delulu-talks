@@ -1,6 +1,6 @@
 import {
   DEFAULT_SETTINGS,
-  LANGUAGES,
+  SETTING_LANGUAGES,
   MAGIC_MODELS,
   MODELS,
 } from "../../src/data";
@@ -143,7 +143,7 @@ export function validateProfileWrite(kind: ProfileKind, value: unknown): void {
     enumeration(
       settings.language,
       "settings.language",
-      LANGUAGES.map(([code]) => code),
+      SETTING_LANGUAGES.map(([code]) => code),
     );
     for (const [key, max, nonblank] of [
       ["shortcut", 96, true],

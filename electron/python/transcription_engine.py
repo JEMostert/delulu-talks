@@ -60,12 +60,20 @@ LANGUAGE_NAMES = {
     "ko": "Korean",
     "vi": "Vietnamese",
 }
-def language_hint(request):
+AUTO_LANGUAGE = "auto"
+
+
+def language_hint(request, allow_auto=True):
+    """Return (code, model language name); automatic detection maps to None."""
     code = request.get("language", "en")
+    if isinstance(code, str) and code.lower() == AUTO_LANGUAGE:
+        if not allow_auto:
+            raise ValueError("This speech adapter needs a selected language; automatic detection is unavailable.")
+        return AUTO_LANGUAGE, None
     if not isinstance(code, str) or code.lower() not in LANGUAGE_NAMES:
         raise ValueError(
             "Unsupported language hint. Select one of the adapter's supported "
-            "language controls; automatic language selection is not offered."
+            "language controls."
         )
     normalized = code.lower()
     return normalized, LANGUAGE_NAMES[normalized]
@@ -544,14 +552,17 @@ class Worker:
                 raise ValueError("Parakeet Redux requires Linux x64")
             return {"schemaVersion": 1, "engine": "speech", "backend": "photon-cpu", "modelFamily": "redux", "timestamps": False, "languageHints": {"supported": False, "languages": []}, "vocabularyBiasing": False}
         backend = ("mlx" if self.speech_backend == "mlx" else "cuda-transformers") if speech else "transformers"
+        # The Transformers R2T2 processor detects the language and takes a
+        # hotword prompt; the MLX adapter's equivalents are unvalidated.
+        cuda = speech and backend == "cuda-transformers"
         return {
             "schemaVersion": 1,
             "engine": engine,
             "backend": backend,
             "modelFamily": "r2t2" if speech else "qwen3.5",
             "timestamps": False,
-            "languageHints": {"supported": speech, "languages": list(LANGUAGE_NAMES) if speech else []},
-            "vocabularyBiasing": False,
+            "languageHints": {"supported": speech, "languages": [*LANGUAGE_NAMES, *([AUTO_LANGUAGE] if cuda else [])] if speech else []},
+            "vocabularyBiasing": cuda,
         }
 
     def dispatch(self, request: dict[str, Any]) -> Any:

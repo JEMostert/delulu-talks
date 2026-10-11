@@ -1,4 +1,5 @@
 import { reduxSupported } from "../runtime/redux";
+import { recognitionHints } from "../../src/recognitionHints";
 import {
   normalizeRewriteContext,
   splitTechnicalBlocks,
@@ -1054,6 +1055,14 @@ export class AsrService {
           ...payload,
           language: settings.language,
           model: speechEngineId(settings),
+          ...(capabilities.vocabularyBiasing && settings.vocabularyHints
+            ? {
+                hotwords: recognitionHints(
+                  settings.customWords,
+                  settings.language,
+                ),
+              }
+            : {}),
         },
         transcriptionTimeout(payload.durationMs),
       );

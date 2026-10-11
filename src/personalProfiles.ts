@@ -2,7 +2,7 @@ import {
   assertPersistedSchema,
   versionPersistedRecord,
 } from "./persistedSchema";
-import { LANGUAGES } from "./data";
+import { SETTING_LANGUAGES } from "./data";
 import type { AppSettings, MagicModelId, MagicPreset } from "./types";
 
 export type ProfileJson =
@@ -80,7 +80,7 @@ export type ReadPersonalProfiles =
   | { status: "supported"; document: PersonalProfileCollectionV1 }
   | { status: "unsupported"; document: PersonalProfileDocument };
 
-const languages = new Set<string>(LANGUAGES.map(([code]) => code));
+const languages = new Set<string>(SETTING_LANGUAGES.map(([code]) => code));
 const magicModels = new Set(["qwen35Small", "qwen35Medium", "qwen35Large"]);
 const presets = new Set([
   "spoken-corrections",

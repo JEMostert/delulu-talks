@@ -1,3 +1,4 @@
+import { AUTO_LANGUAGE } from "../../src/data";
 import { TOO_SHORT } from "../../src/captureLimits";
 import { personalizeWithUsage } from "../../src/personalization";
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
@@ -1097,10 +1098,13 @@ export class DictationService {
       throw new Error(
         "The speech model returned no text. Check the recording and retry.",
       );
+    // With automatic detection, rules and formatting follow the language the
+    // model reported; an unreported one stays unknown rather than "auto".
     const language =
-      normalizeReportedLanguage(result.recognizedLanguage) ?? settings.language;
+      normalizeReportedLanguage(result.recognizedLanguage) ??
+      (settings.language === AUTO_LANGUAGE ? "und" : settings.language);
     const formatted = settings.spokenFormattingCommands
-      ? formatSpokenCommands(text, settings.language)
+      ? formatSpokenCommands(text, language)
       : text;
     const personalized = personalizeWithUsage(
       formatted,
@@ -1133,13 +1137,13 @@ export class DictationService {
               text,
               settings.customWords,
               settings.dictationFormatting,
-              settings.language,
+              language,
             )
           : personalized.text,
       dictationFormatting:
         source === "dictation" &&
         settings.dictationFormatting === "spoken" &&
-        (settings.language === "en" || settings.language === "nl")
+        (language === "en" || language === "nl")
           ? "spoken"
           : "preserve",
       model: settings.model,
