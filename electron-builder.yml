@@ -30,8 +30,6 @@ extraResources:
     to: python/r2t2_speech.py
   - from: electron/python/r2t2_checkpoint.py
     to: python/r2t2_checkpoint.py
-  - from: electron/python/nemotron_speech.py
-    to: python/nemotron_speech.py
   - from: electron/python/live_segments.py
     to: python/live_segments.py
   - from: electron/python/stream_buffer.py

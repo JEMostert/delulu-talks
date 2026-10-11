@@ -1,4 +1,3 @@
-import { reduxCpuEnabled } from "../runtime/redux";
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { transcriptSourceRevision } from "../../src/transcriptText";
 import {
@@ -28,6 +27,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { validateProfileWrite } from "./profileWriteValidation";
 import { speechModelForPlatform } from "../runtime/platform";
+import { reduxSupported } from "../runtime/redux";
 import { normalizeAliases } from "../../src/personalization";
 import { historyFingerprint, savedRetentionPolicy } from "./historyRetention";
 import {
@@ -274,10 +274,12 @@ function boundedNumber(
 }
 
 export function normalizeSettings(value: unknown): AppSettings {
-  const source =
+  const source: Record<string, unknown> =
     value && typeof value === "object"
-      ? (value as Record<string, unknown>)
+      ? { ...(value as Record<string, unknown>) }
       : {};
+  // Removed CPU device setting: never carried into normalized settings.
+  delete source.speechDevice;
   assertPersistedSchema(source, "settings");
   const magicModel = validMagicModels.has(source.magicModel as MagicModelId)
     ? (source.magicModel as MagicModelId)
@@ -385,14 +387,10 @@ export function normalizeSettings(value: unknown): AppSettings {
     keepHistory: boolean(source.keepHistory, DEFAULT_SETTINGS.keepHistory),
     historyRetention: savedRetentionPolicy(source.historyRetention),
     showOverlay: boolean(source.showOverlay, DEFAULT_SETTINGS.showOverlay),
+    // Nemotron and unsupported-platform Redux profiles fall back to R2T2.
     speechEngine:
-      source.speechEngine === "redux"
-        ? "redux"
-        : source.speechEngine === "nemotron"
-          ? "nemotron"
-          : "r2t2",
+      source.speechEngine === "redux" && reduxSupported() ? "redux" : "r2t2",
     liveTyping: boolean(source.liveTyping, DEFAULT_SETTINGS.liveTyping),
-    speechDevice: source.speechDevice === "cpu" ? "cpu" : "auto",
     historyLimit: [25, 50, 100, 250, 500].includes(Number(source.historyLimit))
       ? Number(source.historyLimit)
       : DEFAULT_SETTINGS.historyLimit,
@@ -626,10 +624,7 @@ export class StorageService {
   ) {
     this.dataDirectory = application.getPath("userData");
     this.cacheDirectory = join(this.dataDirectory, "audio-cache");
-    this.venvDirectory = join(
-      this.dataDirectory,
-      reduxCpuEnabled() ? "speech-redux-venv" : "speech-venv",
-    );
+    this.venvDirectory = join(this.dataDirectory, "speech-venv");
     const dedicatedMagicVenv = join(this.dataDirectory, "magic-venv");
     this.legacyVenvDirectory = join(this.dataDirectory, "asr-venv");
     // Releases before split runtimes installed Magic into asr-venv. Preserve a

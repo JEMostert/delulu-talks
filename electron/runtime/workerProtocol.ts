@@ -12,7 +12,7 @@ const PRESETS = new Set([
   "professional-message",
 ]);
 const MAGIC_MODELS = new Set(["qwen35Small", "qwen35Medium", "qwen35Large"]);
-const SPEECH_MODELS = new Set(["r2t2", "nemotron", "redux"]);
+const SPEECH_MODELS = new Set(["r2t2", "redux"]);
 const COMMANDS = new Set([
   "ping",
   "status",
@@ -197,6 +197,14 @@ export function validateWorkerRequest(value: unknown): JsonObject {
     throw new Error(
       "Model worker capability query requires speech or writing engine",
     );
+  if (request.command === "capabilities") {
+    stringField(request, "model");
+    if (
+      request.model !== undefined &&
+      !SPEECH_MODELS.has(request.model as string)
+    )
+      throw new Error("Invalid model worker speech model");
+  }
   if (request.command === "magicRewrite") {
     stringField(request, "text", true);
     stringField(request, "preset");
@@ -338,7 +346,7 @@ export function validateWorkerResult(command: string, value: unknown): void {
       throw new Error("Invalid model worker capability schema or engine");
     const speech = result.engine === "speech";
     if (
-      !(speech ? ["r2t2", "nemotron", "redux"] : ["qwen3.5"]).includes(
+      !(speech ? ["r2t2", "redux"] : ["qwen3.5"]).includes(
         result.modelFamily as string,
       ) ||
       !(

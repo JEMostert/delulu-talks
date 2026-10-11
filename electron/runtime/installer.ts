@@ -1,4 +1,3 @@
-import { reduxCpuEnabled } from "./redux";
 import { SetupLog } from "./setupLog";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -29,6 +28,7 @@ import {
 import {
   INSTALLER_PACKAGES,
   MAGIC_PACKAGES,
+  REDUX_PACKAGES,
   RUNTIME_REVISION,
   SPEECH_PACKAGES,
   METAL_PACKAGES,
@@ -104,8 +104,6 @@ export class RuntimeInstaller {
     },
   ) {}
   private readiness(kind: "speech" | "magic"): string {
-    if (kind === "speech" && reduxCpuEnabled())
-      return "import soundfile, soxr; from kestrel.config import RuntimeConfig; from kestrel.models.parakeet_tdt.runtime import ParakeetTdtRuntime";
     return runtimeReadinessScript(
       kind,
       this.target,
@@ -581,24 +579,14 @@ export class RuntimeInstaller {
       "Preparing the package installer",
       0.22,
     );
-    const redux = kind === "speech" && reduxCpuEnabled();
     const constraints =
-      !redux &&
       this.constraintsPath &&
       !this.windows &&
       this.target.platform === "linux" &&
       this.target.arch === "x64"
         ? ["--constraint", this.constraintsPath]
         : [];
-    if (redux) {
-      await installPackages(
-        "linux-cuda",
-        ["torch==2.14.1+cpu"],
-        ["--index-url", "https://download.pytorch.org/whl/cpu"],
-        "Installing CPU runtime",
-        0.32,
-      );
-    } else if (this.windows) {
+    if (this.windows) {
       await installPackages(
         "windows-cuda",
         WINDOWS_CUDA_PACKAGES,
@@ -618,15 +606,10 @@ export class RuntimeInstaller {
     await installPackages(
       "runtime",
       kind === "speech"
-        ? redux
-          ? [
-              "moondream==2.6.1",
-              "kestrel==0.9.1",
-              "soundfile==0.14.0",
-              "soxr==1.1.0",
-            ]
-          : metal
-            ? METAL_PACKAGES
+        ? metal
+          ? METAL_PACKAGES
+          : this.target.platform === "linux" && this.target.arch === "x64"
+            ? [...SPEECH_PACKAGES, ...REDUX_PACKAGES]
             : SPEECH_PACKAGES
         : MAGIC_PACKAGES,
       constraints,
@@ -692,9 +675,7 @@ export class RuntimeInstaller {
         revision: RUNTIME_REVISION,
         kind,
         generation,
-        backend: redux
-          ? { engine: "photon-cpu", devicePreference: ["cpu"] }
-          : inventoryBackend(kind, metal, this.windows),
+        backend: inventoryBackend(kind, metal, this.windows),
         target: this.target,
         python: candidatePython,
         directory: candidate,

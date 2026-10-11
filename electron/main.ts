@@ -1,4 +1,4 @@
-import { reduxCpuEnabled } from "./runtime/redux";
+import { reduxSupported } from "./runtime/redux";
 import {
   app,
   BrowserWindow,
@@ -408,34 +408,18 @@ function speechMenu(settings: AppSettings): MenuItemConstructorOptions[] {
             [
               ["redux", "Parakeet Redux — CPU, 178 MB"],
               ["r2t2", "R2T2 — most accurate"],
-              ["nemotron", "Nemotron 3.5 — light, word by word"],
             ] as const
           )
-            .filter(([engine]) => engine !== "redux" || reduxCpuEnabled())
+            .filter(([engine]) => engine !== "redux" || reduxSupported())
             .map(([engine, label]): MenuItemConstructorOptions => ({
               type: "radio",
               label,
               checked: settings.speechEngine === engine,
-              enabled: !busy && (!reduxCpuEnabled() || engine === "redux"),
+              enabled: !busy,
               click: () =>
                 settings.speechEngine !== engine &&
                 patchTraySettings({ speechEngine: engine }),
             })),
-          ...(settings.speechEngine === "nemotron"
-            ? [
-                {
-                  type: "checkbox" as const,
-                  label: "Run on CPU only",
-                  checked: settings.speechDevice === "cpu",
-                  enabled: !busy,
-                  click: () =>
-                    patchTraySettings({
-                      speechDevice:
-                        settings.speechDevice === "cpu" ? "auto" : "cpu",
-                    }),
-                },
-              ]
-            : []),
           { type: "separator" },
         ];
   return [
@@ -945,8 +929,7 @@ async function applySettings(
   const next = normalizeSettings({ ...previous, ...value });
   const runtimeChanged =
     next.model !== previous.model ||
-    next.speechEngine !== previous.speechEngine ||
-    next.speechDevice !== previous.speechDevice;
+    next.speechEngine !== previous.speechEngine;
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
   const assertEngineChangeIdle = () => {
     if (

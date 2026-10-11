@@ -1,5 +1,5 @@
 import { Cpu, Download, LoaderCircle, Play } from "lucide-react";
-import { modelById, NEMOTRON_MODEL, REDUX_MODEL } from "../../data";
+import { modelById, REDUX_MODEL } from "../../data";
 import { speechBackendById } from "../../speechModels";
 import type { AppSettings, DictationStatus } from "../../types";
 import { ModelSetupStatus } from "./ModelSetupStatus";
@@ -35,12 +35,7 @@ export function SpeechSetup({
 }: SpeechSetupProps) {
   const execution = status.speechExecution;
   const r2t2 = modelById(status.speechModel ?? status.model ?? settings.model);
-  const model =
-    settings.speechEngine === "redux"
-      ? REDUX_MODEL
-      : settings.speechEngine === "nemotron" && r2t2.id !== "r2t2Mlx"
-        ? NEMOTRON_MODEL
-        : r2t2;
+  const model = settings.speechEngine === "redux" ? REDUX_MODEL : r2t2;
   const backend = execution ? speechBackendById(execution.backendId) : null;
   const speechBusy = ["preparing", "loading", "transcribing"].includes(
     status.phase,
@@ -76,9 +71,8 @@ export function SpeechSetup({
         >
           {(
             [
-              ["redux", "Parakeet Redux · CPU"],
               ["r2t2", "R2T2"],
-              ["nemotron", "Nemotron 3.5"],
+              ["redux", "Parakeet Redux · CPU"],
             ] as const
           )
             .filter(([engine]) => engine !== "redux" || reduxCpuAvailable)
@@ -87,11 +81,7 @@ export function SpeechSetup({
                 key={engine}
                 aria-pressed={settings.speechEngine === engine}
                 className={settings.speechEngine === engine ? "active" : ""}
-                disabled={
-                  busy ||
-                  speechBusy ||
-                  (reduxCpuAvailable && engine !== "redux")
-                }
+                disabled={busy || speechBusy}
                 onClick={() =>
                   settings.speechEngine !== engine &&
                   onUpdateSettings({ speechEngine: engine })
@@ -104,9 +94,7 @@ export function SpeechSetup({
       )}
       {settings.speechEngine === "redux" && (
         <p className="setup-status-copy">
-          Experimental Linux CPU engine. Prepare the checkpoint manually before
-          loading; Download &amp; set up installs the runtime only. To use R2T2
-          or Nemotron, restart without the CPU preview flag.
+          Runs on the CPU and downloads 178 MB on first load. No live typing.
         </p>
       )}
       {(status.engine === "ready" || status.engine === "unloaded") &&

@@ -342,7 +342,7 @@ export async function nativeWorkerSources(
     "metal_speech.py",
     "r2t2_speech.py",
     "r2t2_checkpoint.py",
-    "nemotron_speech.py",
+    "redux_speech.py",
     "live_segments.py",
   ]) {
     const path =

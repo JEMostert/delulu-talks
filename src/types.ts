@@ -116,12 +116,10 @@ export type AppSettings = {
   historyRetention?: HistoryRetentionPolicy;
   showOverlay: boolean;
   captureSoundsMuted: boolean;
-  /** CUDA speech engine: R2T2 (accuracy) or Nemotron (light, native streaming). */
-  speechEngine: "r2t2" | "nemotron" | "redux";
+  /** Speech engine: R2T2 (accuracy, GPU) or Parakeet Redux (light, CPU, Linux x64). */
+  speechEngine: "r2t2" | "redux";
   /** Type text into the focused app while you speak (needs paste, no rewriting). */
   liveTyping: boolean;
-  /** Where Nemotron runs; "cpu" keeps the GPU completely free. */
-  speechDevice: "auto" | "cpu";
   /** Saved transcripts beyond this many are removed, oldest first. */
   historyLimit: number;
   captureSoundVolume: number;
@@ -165,7 +163,7 @@ export type BackendCapabilities = {
   engine: "speech" | "writing";
   backend:
     "mlx" | "cuda-vllm" | "cuda-transformers" | "transformers" | "photon-cpu";
-  modelFamily: "r2t2" | "nemotron" | "redux" | "qwen3.5";
+  modelFamily: "r2t2" | "redux" | "qwen3.5";
   timestamps: boolean;
   languageHints: { supported: boolean; languages: string[] };
   streaming: boolean;
@@ -465,6 +463,7 @@ export type MicrophoneDevice = {
 };
 
 export type PlatformCapabilities = {
+  /** Parakeet Redux runs on this platform (Linux x64). */
   reduxCpuAvailable?: boolean;
   platform: "linux" | "darwin" | "win32";
   desktop: string;

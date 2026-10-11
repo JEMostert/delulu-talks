@@ -1,4 +1,5 @@
-/** Model identity is independent of the execution adapter or stored selection key. */
+/** Model identity is independent of the execution adapter or stored selection key.
+ * Nemotron was removed in v0.13.0; it stays only to read older history records. */
 export type SpeechIdentity = "r2t2" | "nemotron" | "redux";
 /** Historical records may name vLLM; current runtimes never select it. */
 export type SpeechBackendId =
@@ -21,13 +22,6 @@ export const SPEECH_IDENTITY = {
   id: "r2t2" as const,
   name: "R2T2",
   upstreamRepository: "netease-youdao/Confucius4-R2T2",
-};
-
-export const NEMOTRON_IDENTITY = {
-  id: "nemotron" as const,
-  name: "Nemotron 3.5",
-  upstreamRepository: "nvidia/nemotron-3.5-asr-streaming-0.6b",
-  revision: "ea30d66debe3740a08b573244286791d423d6b3e",
 };
 
 export const SPEECH_BACKENDS = [
@@ -54,7 +48,7 @@ export const SPEECH_BACKENDS = [
   },
   {
     id: "transformers-cpu" as const,
-    label: "Transformers · CPU",
+    label: "Transformers · CPU (previous releases)",
     platforms: ["linux", "win32"] as const,
     device: "cpu" as const,
     models: ["nemotron"] as const,
@@ -73,7 +67,7 @@ const REPOSITORIES: Record<SpeechIdentity, readonly string[]> = {
     SPEECH_IDENTITY.upstreamRepository,
     "mlx-community/Confucius4-R2T2-bf16",
   ],
-  nemotron: [NEMOTRON_IDENTITY.upstreamRepository],
+  nemotron: ["nvidia/nemotron-3.5-asr-streaming-0.6b"],
   redux: ["moondream/parakeet-redux"],
 };
 

@@ -59,7 +59,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   captureSoundsMuted: true,
   speechEngine: "r2t2",
   liveTyping: true,
-  speechDevice: "auto",
   historyLimit: 50,
   captureSoundVolume: 0.15,
   preloadModel: true,
@@ -130,30 +129,6 @@ export const MODELS: ModelInfo[] = [
   },
 ];
 
-/** The light engine: chosen in Settings → Speech, not through `model`. */
-export const NEMOTRON_MODEL: Omit<ModelInfo, "id"> = {
-  identity: "nemotron",
-  backendIds: ["transformers-cuda", "transformers-cpu"],
-  runtime: "Transformers · GPU or CPU",
-  downloadSize: "~2.6 GB",
-  hfId: "nvidia/nemotron-3.5-asr-streaming-0.6b",
-  name: "Nemotron 3.5 Streaming",
-  description:
-    "NVIDIA's 0.6B streaming recognizer types word by word with about half a second of delay. About 1.3 GB of GPU memory, or runs on the CPU; less accurate than R2T2 in Dutch.",
-  provenance: {
-    licenseName: "OpenMDW 1.1",
-    licenseUrl: "https://openmdw.ai/license/1-1/",
-    variants: [
-      {
-        label: "Linux and Windows",
-        revision: "ea30d66debe3740a08b573244286791d423d6b3e",
-        conversion:
-          "Original safetensors checkpoint loaded through Transformers; no Delulu format conversion.",
-      },
-    ],
-  },
-};
-
 export const REDUX_MODEL: Omit<ModelInfo, "id"> = {
   identity: "redux",
   backendIds: ["photon-cpu"],
@@ -162,7 +137,7 @@ export const REDUX_MODEL: Omit<ModelInfo, "id"> = {
   hfId: "moondream/parakeet-redux",
   name: "Parakeet Redux",
   description:
-    "Local CPU dictation in 25 languages, including Dutch. Packed 1.58-bit weights; language is detected automatically. Speak, then release to transcribe.",
+    "Light local dictation on the CPU in 25 languages, including Dutch. Packed 1.58-bit weights; language is detected automatically. Speak, then stop to transcribe.",
   provenance: {
     licenseName: "CC BY 4.0",
     licenseUrl: "https://creativecommons.org/licenses/by/4.0/",

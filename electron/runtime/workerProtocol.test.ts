@@ -111,3 +111,49 @@ test("Redux CPU speech negotiation supports automatic language without weakening
     }),
   ).toThrow();
 });
+
+test("speech engines are limited to R2T2 and Redux in requests and capability results", () => {
+  const identity = { protocolVersion: 1, id: "request" };
+  expect(() =>
+    validateWorkerRequest({ ...identity, command: "load", model: "redux" }),
+  ).not.toThrow();
+  expect(() =>
+    validateWorkerRequest({ ...identity, command: "load", model: "nemotron" }),
+  ).toThrow("Invalid model worker speech model");
+  expect(() =>
+    validateWorkerRequest({
+      ...identity,
+      command: "capabilities",
+      engine: "speech",
+      model: "redux",
+    }),
+  ).not.toThrow();
+  expect(() =>
+    validateWorkerRequest({
+      ...identity,
+      command: "capabilities",
+      engine: "speech",
+      model: "nemotron",
+    }),
+  ).toThrow("Invalid model worker speech model");
+  const capabilities = {
+    schemaVersion: 1,
+    engine: "speech",
+    backend: "cuda-transformers",
+    modelFamily: "r2t2",
+    timestamps: false,
+    languageHints: { supported: true, languages: ["en"] },
+    streaming: false,
+    vocabularyBiasing: false,
+  };
+  expect(() =>
+    validateWorkerResult("capabilities", capabilities),
+  ).not.toThrow();
+  expect(() =>
+    validateWorkerResult("capabilities", {
+      ...capabilities,
+      backend: "photon-cpu",
+      modelFamily: "nemotron",
+    }),
+  ).toThrow("Invalid model worker capability backend/model family");
+});

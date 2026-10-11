@@ -2,10 +2,9 @@
 """Persistent JSON-lines worker for Delulu Talks local speech and writing models.
 
 Speech uses R2T2 (Confucius4-R2T2, a Qwen3-ASR fine-tune) through Transformers on
-CUDA or MLX Audio on Apple Silicon, or NVIDIA Nemotron 3.5 ASR Streaming through
-Transformers on CUDA or the CPU. Live typing streams audio into the loaded model. The desktop starts a dedicated process per
-runtime role, each accepting only its own model commands. Protocol messages are prefixed so library progress output can
-never be mistaken for a response by Electron.
+CUDA or MLX Audio on Apple Silicon, or Parakeet Redux through Kestrel on the CPU (buffered, no live typing). Live typing
+streams audio into the loaded model. The desktop starts a dedicated process per runtime role, each accepting only its own
+model commands. Protocol messages are prefixed so library progress output can never be mistaken for a response by Electron.
 """
 
 from __future__ import annotations
@@ -224,7 +223,7 @@ class Worker:
         self.speech_backend = (
             "mlx" if sys.platform == "darwin" and platform.machine() == "arm64" else "cuda"
         )
-        self.speech_model = "redux" if (sys.platform == "linux" and platform.machine() in ("x86_64", "AMD64") and os.environ.get("DELULU_REDUX_CPU") == "1") else "r2t2"
+        self.speech_model = "r2t2"
         self.live: Any | None = None
         self.live_resampler: Any | None = None
         self.magic_model: Any | None = None
@@ -245,9 +244,6 @@ class Worker:
             if wanted == "redux":
                 from redux_speech import ReduxSpeech
                 self.speech = ReduxSpeech()
-            elif wanted == "nemotron":
-                from nemotron_speech import NemotronSpeech
-                self.speech = NemotronSpeech()
             elif self.speech_backend == "mlx":
                 from metal_speech import MetalSpeech
                 self.speech = MetalSpeech()
@@ -586,19 +582,21 @@ class Worker:
         tail = self.speech.stream_finish() if live == "native" else live.finish()
         return {"delta": delta + tail}
 
-    def capabilities(self, engine: str) -> dict[str, Any]:
+    def capabilities(self, engine: str, model: str | None = None) -> dict[str, Any]:
         """Describe this pipeline without importing adapters or probing hardware."""
         if engine not in ("speech", "writing"):
             raise ValueError("Worker capabilities engine must be speech or writing")
         speech = engine == "speech"
-        if speech and (sys.platform == "linux" and platform.machine() in ("x86_64", "AMD64") and os.environ.get("DELULU_REDUX_CPU") == "1"):
+        if speech and model == "redux":
+            if not (sys.platform == "linux" and platform.machine() in ("x86_64", "AMD64")):
+                raise ValueError("Parakeet Redux requires Linux x64")
             return {"schemaVersion": 1, "engine": "speech", "backend": "photon-cpu", "modelFamily": "redux", "timestamps": False, "languageHints": {"supported": False, "languages": []}, "streaming": False, "vocabularyBiasing": False}
         backend = ("mlx" if self.speech_backend == "mlx" else "cuda-transformers") if speech else "transformers"
         return {
             "schemaVersion": 1,
             "engine": engine,
             "backend": backend,
-            "modelFamily": ("nemotron" if self.speech_model == "nemotron" else "r2t2") if speech else "qwen3.5",
+            "modelFamily": "r2t2" if speech else "qwen3.5",
             "timestamps": False,
             "languageHints": {"supported": speech, "languages": list(LANGUAGE_NAMES) if speech else []},
             "streaming": speech and self.speech_backend != "mlx",
@@ -620,7 +618,7 @@ class Worker:
             expected = "writing" if role == "magic" else "speech"
             if role and request.get("engine") != expected:
                 raise ValueError("Capabilities engine does not match runtime role")
-            return self.capabilities(request["engine"])
+            return self.capabilities(request["engine"], request.get("model"))
         if command == "ping":
             status = self.magic_status() if role == "magic" else self.status()
             return {"python": sys.version.split()[0], **status}

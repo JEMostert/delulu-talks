@@ -10,7 +10,6 @@ import type React from "react";
 import {
   AudioWaveform,
   Check,
-  Cpu,
   Download,
   Feather,
   Gauge,
@@ -387,19 +386,13 @@ export function SettingsPage(props: Props) {
                         "redux",
                         "Parakeet Redux",
                         Feather,
-                        "Experimental Linux CPU engine. 178 MB checkpoint; manual model setup required.",
+                        "Light, runs on the CPU. 178 MB download. Detects the language automatically and transcribes after you stop, with no live typing.",
                       ],
                       [
                         "r2t2",
                         "R2T2",
                         Gauge,
                         "Most accurate, especially in Dutch. About 4 GB of GPU memory.",
-                      ],
-                      [
-                        "nemotron",
-                        "Nemotron 3.5",
-                        Feather,
-                        "Light and truly live, word by word. About 1.3 GB of GPU memory, or none on the CPU.",
                       ],
                     ] as const
                   )
@@ -413,11 +406,7 @@ export function SettingsPage(props: Props) {
                         role="radio"
                         aria-checked={s.speechEngine === id}
                         className="engine-option"
-                        disabled={
-                          saving ||
-                          busy ||
-                          (!!capabilities?.reduxCpuAvailable && id !== "redux")
-                        }
+                        disabled={saving || busy}
                         onClick={() =>
                           s.speechEngine !== id && save({ speechEngine: id })
                         }
@@ -433,33 +422,6 @@ export function SettingsPage(props: Props) {
                       </button>
                     ))}
                 </div>
-                {s.speechEngine === "nemotron" && (
-                  <SettingRow
-                    icon={Cpu}
-                    title="Run on"
-                    description="The CPU keeps your graphics card completely free."
-                    help="With the GPU option, Nemotron moves to the CPU automatically when another app has filled the graphics memory."
-                  >
-                    <div className="segmented" role="group" aria-label="Run on">
-                      {(
-                        [
-                          ["auto", "GPU"],
-                          ["cpu", "CPU only"],
-                        ] as const
-                      ).map(([device, label]) => (
-                        <button
-                          key={device}
-                          aria-pressed={s.speechDevice === device}
-                          className={s.speechDevice === device ? "active" : ""}
-                          disabled={saving || busy}
-                          onClick={() => save({ speechDevice: device })}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </SettingRow>
-                )}
                 <SettingRow
                   title="Keep the model ready"
                   description="No wait before your first word; uses memory while idle."
@@ -490,9 +452,7 @@ export function SettingsPage(props: Props) {
                 title="Live typing"
                 description={
                   liveBlocker ??
-                  (s.speechEngine === "nemotron"
-                    ? "Words appear at your cursor as you say them."
-                    : "Each phrase appears at your cursor when you pause.")
+                  "Each phrase appears at your cursor when you pause."
                 }
               >
                 {toggle(

@@ -16,7 +16,6 @@ from worker_protocol import emit_progress
 
 MODEL = "moondream/parakeet-redux"
 REVISION = "2bf128600aac4b16946f7ed8372e56117fe5e23b"
-DEFAULT_DIRECTORY = Path.home() / ".local/share/models/parakeet-redux"
 
 
 class ReduxSpeech:
@@ -41,17 +40,20 @@ class ReduxSpeech:
         import torch
         from kestrel.config import RuntimeConfig
         from kestrel.models.parakeet_tdt.runtime import ParakeetTdtRuntime
+        from verified_snapshot import verified_snapshot
 
-        directory = Path(os.environ.get("DELULU_REDUX_MODEL_DIR", str(DEFAULT_DIRECTORY)))
-        for name in ("config.json", "tokenizer.json", "ternary.json", "model.safetensors", "revision.txt"):
-            if not (directory / name).is_file():
-                raise FileNotFoundError("Parakeet Redux requires a manually prepared checkpoint. See docs/PARAKEET_REDUX_CPU.md or set DELULU_REDUX_MODEL_DIR.")
-        if (directory / "revision.txt").read_text().strip() != REVISION:
-            raise ValueError("Parakeet Redux checkpoint revision mismatch")
+        cache_root = request.get("cacheDir")
+        emit_progress("Downloading the pinned Parakeet Redux checkpoint…", stage="download")
+        directory = verified_snapshot(
+            repo_id=MODEL, revision=REVISION,
+            cache_dir=str(Path(cache_root) / "hub") if cache_root else None,
+            local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1",
+            allow_patterns=["config.json", "tokenizer.json", "ternary.json", "model.safetensors"],
+        )
         emit_progress("Loading Parakeet Redux packed weights on CPU…", stage="load")
         try:
             self.runtime = ParakeetTdtRuntime(RuntimeConfig(
-                model=MODEL, model_path=str(directory), device="cpu", dtype=torch.float32,
+                model=MODEL, model_path=directory, device="cpu", dtype=torch.float32,
                 cpu_threads=min(4, os.cpu_count() or 1), single_pass_batch_capacity=1,
                 enable_cuda_graphs=False,
             ))

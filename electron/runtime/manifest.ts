@@ -2,7 +2,7 @@
  * Linux transitive constraints live beside the Python worker. Portable platforms
  * share direct pins; their platform-specific wheels are resolved by pip.
  */
-export const RUNTIME_REVISION = "2026-10-05.1";
+export const RUNTIME_REVISION = "2026-10-11.1";
 export const INSTALLER_PACKAGES = [
   "pip==26.2.1",
   "wheel==0.47.0",
@@ -21,7 +21,7 @@ export const WINDOWS_CUDA_PACKAGES = [
 ];
 // Linux PyPI wheels of torch already bundle CUDA.
 export const LINUX_CUDA_PACKAGES = ["torch==2.13.0", "torchvision==0.28.0"];
-// R2T2 and Nemotron both run on Transformers; no serving engine reserves VRAM.
+// R2T2 runs on Transformers; no serving engine reserves VRAM.
 export const SPEECH_PACKAGES = [
   "transformers==5.15.0",
   "accelerate==1.14.0",
@@ -40,3 +40,6 @@ export const MAGIC_PACKAGES = [
   "sentencepiece==0.2.2",
   "pillow==12.3.0",
 ];
+// Parakeet Redux runs on Photon's Kestrel CPU runtime inside the Linux x64
+// speech environment, beside the CUDA torch build that R2T2 uses.
+export const REDUX_PACKAGES = ["kestrel==0.9.1", "moondream==2.6.1"];

@@ -66,7 +66,7 @@ export function DecodeControls({
       </dl>
       <p className="caption mt-3">
         {settings.speechEngine === "redux"
-          ? "Parakeet Redux detects the spoken language automatically. Dutch and English are supported."
+          ? "Parakeet Redux detects the spoken language automatically, including Dutch and English."
           : "Language affects recognition. Token limit, precision and sampling are currently backend defaults; adjustable controls require backend support."}
       </p>
     </section>

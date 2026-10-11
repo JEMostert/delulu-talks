@@ -18,7 +18,7 @@
 
 ---
 
-Delulu Talks turns speech into text in the app you are using. R2T2 produces dictation locally through MLX on Apple Silicon and Transformers on NVIDIA GPUs; the lighter Nemotron 3.5 Streaming types word by word as you speak and can run on the CPU. Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
+Delulu Talks turns speech into text in the app you are using. R2T2 produces dictation locally through MLX on Apple Silicon and Transformers on NVIDIA GPUs; Parakeet Redux runs on the CPU on Linux x64 and transcribes after you stop recording. Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
 
 [v0.12.3](docs/releases/v0.12.3.md) fixes KDE clipboard timeouts after successful recognition and makes delivery failures clearer. [v0.12.2](docs/releases/v0.12.2.md) restores hardware compositing on Wayland and reduces background drawing while using workspaces. The [native rendering review](docs/performance-review-v0.12.2.md) records the diagnosis, measurements and verification limits. [v0.12.1](docs/releases/v0.12.1.md) fixed desktop streaming validation, bounded live-audio buffers and moved recording encoding off the interface thread.
 
@@ -36,7 +36,7 @@ Hold your shortcut → Speak → Release
                   Review · edit · optionally rewrite
 ```
 
-With **live typing** in press-to-toggle mode, your words appear at the cursor while you are still speaking: Nemotron types word by word, R2T2 types each phrase when you pause. Hold-to-talk waits until you release the shortcut before pasting, so live paste keys cannot interrupt the held shortcut. Live typing also waits for the finished text when automatic rewriting or spoken punctuation commands are on.
+With **live typing** in press-to-toggle mode, your words appear at the cursor while you are still speaking: R2T2 types each phrase when you pause. Parakeet Redux is buffered and has no live typing. Hold-to-talk waits until you release the shortcut before pasting, so live paste keys cannot interrupt the held shortcut. Live typing also waits for the finished text when automatic rewriting or spoken punctuation commands are on.
 
 Automatic rewriting is off; use **Rewrite** beside a result when you want to shorten or restructure it.
 
@@ -84,18 +84,18 @@ The **Deep Sea** design system has two themes — _Abyss_ (dark) and _Shallows_ 
 
 Speech stays ready by default. The optional writing model loads on demand; you can keep either model loaded or let it unload after a configurable idle period.
 
-| Runtime                            | Available models                   | Good for                                                                                                 |
-| ---------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| **R2T2 MLX** (Apple Silicon)       | BF16 conversion of Confucius4-R2T2 | Direct local MLX speech inference with language hints; native validation pending.                        |
-| **R2T2 CUDA** (Linux / Windows)    | Confucius4-R2T2                    | Most accurate, especially in Dutch. About 4 GB of GPU memory through Transformers. The default.          |
-| **Nemotron 3.5** (Linux / Windows) | nemotron-3.5-asr-streaming-0.6b    | True word-by-word streaming. About 1.3 GB of GPU memory, or CPU only; less accurate in Dutch.            |
-| **Qwen 3.5 writing**               | 0.8B · 2B · 4B                     | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default. |
+| Runtime                         | Available models                   | Good for                                                                                                 |
+| ------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **R2T2 MLX** (Apple Silicon)    | BF16 conversion of Confucius4-R2T2 | Direct local MLX speech inference with language hints; native validation pending.                        |
+| **R2T2 CUDA** (Linux / Windows) | Confucius4-R2T2                    | Most accurate, especially in Dutch. About 4 GB of GPU memory through Transformers. The default.          |
+| **Parakeet Redux** (Linux x64)  | moondream/parakeet-redux           | CPU only; buffered, so text appears after you stop. Detects the language automatically. About 178 MB.    |
+| **Qwen 3.5 writing**            | 0.8B · 2B · 4B                     | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default. |
 
 On Apple Silicon with macOS 15+, Delulu selects the approximately 4.1 GB [R2T2 BF16 MLX conversion](https://huggingface.co/mlx-community/Confucius4-R2T2-bf16). This preserves the preferred fine-tune instead of substituting Qwen3-ASR-0.6B. The checkpoint revision and runtime packages are pinned. Language hints are available; missing or mixed detected language stays unknown. Older Mac installations need **Update setup/Repair** for the new runtime.
 
 **The new R2T2 Mac route is implemented but has not passed native Apple Silicon inference validation in this development pass.** See [Mac support, evidence boundaries and acceptance steps](docs/MAC_SUPPORT.md#native-release-acceptance). The [historical v0.9.4 validation](docs/mac-release-validation.md) applies to Qwen3-ASR-0.6B through vLLM Metal, not the current direct R2T2 MLX Audio route. Live typing is available with CUDA and CPU speech; on Mac, capture completes before transcription and paste. See [the capture boundary](docs/audio-stream-protocol.md).
 
-Linux and Windows share one PyTorch/Transformers speech runtime; v0.12.0 removed the earlier Linux vLLM server, which reserved most of the GPU's memory. Existing Linux installations need **Update setup** once. **Native Windows inference still requires hardware validation.** See [Windows support](docs/WINDOWS_SUPPORT.md). Intel Macs and Rosetta Python are unsupported. R2T2 is the default; Nemotron 3.5 is the light alternative on Linux and Windows. [Model research](docs/MODEL_RESEARCH.md) keeps other models as external benchmark references. Optional Qwen 3.5 rewriting remains available.
+Linux and Windows share one PyTorch/Transformers speech runtime; v0.12.0 removed the earlier Linux vLLM server, which reserved most of the GPU's memory. Existing Linux installations need **Update setup** once. **Native Windows inference still requires hardware validation.** See [Windows support](docs/WINDOWS_SUPPORT.md). Intel Macs and Rosetta Python are unsupported. R2T2 is the default; Parakeet Redux is the CPU-only alternative on Linux x64. [Model research](docs/MODEL_RESEARCH.md) keeps other models as external benchmark references. Optional Qwen 3.5 rewriting remains available.
 
 ## Install
 
@@ -210,7 +210,7 @@ With **Keep local history** off, new dictation and imported-file results are ses
 
 Temporary microphone WAVs and converted import audio still use the app audio-cache directory while processing, regardless of the history setting; normal success and failure paths delete them. An abrupt process exit can leave temporary audio behind. The app does not automatically write transcript-text sidecars for these files.
 
-Delulu Talks is [MIT licensed](LICENSE). Vendored conversion helpers and their license are recorded in [third-party notices](docs/THIRD_PARTY_NOTICES.md). R2T2 inference code is Apache-2.0; the [model weights](https://huggingface.co/netease-youdao/Confucius4-R2T2) use the [NetEase Model Use License](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE); R2T2 on Linux and Windows requires an NVIDIA CUDA GPU; [Nemotron 3.5 Streaming](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b) weights use the [OpenMDW 1.1 license](https://openmdw.ai/license/1-1/) and also run on the CPU, while the MLX conversion targets Apple Silicon. Delulu Talks does not bundle weights. Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
+Delulu Talks is [MIT licensed](LICENSE). Vendored conversion helpers and their license are recorded in [third-party notices](docs/THIRD_PARTY_NOTICES.md). R2T2 inference code is Apache-2.0; the [model weights](https://huggingface.co/netease-youdao/Confucius4-R2T2) use the [NetEase Model Use License](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE); R2T2 on Linux and Windows requires an NVIDIA CUDA GPU; [Parakeet Redux](https://huggingface.co/moondream/parakeet-redux) weights (Moondream's packed ternary checkpoint of NVIDIA Parakeet TDT v3) use [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and run on the CPU; the MLX conversion targets Apple Silicon. Delulu Talks does not bundle weights. Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
 
 ## Development checks
 
@@ -224,7 +224,7 @@ Development uses its own **Delulu Talks Dev** profile, audio cache, and Linux de
 
 Repairs build a fresh environment under `speech-venv/generations/` (or the Writing runtime root), validate dependencies and imports, then atomically activate it. Virtualenv directories are never renamed. Failed installation leaves the previous runtime selected; a failed initial model load rolls activation back. Previous and interrupted generations are retained for recovery, so repairs temporarily require extra disk space. The existing `asr-venv` can still be the active Writing runtime; do not delete it merely because its name is old.
 
-Cold starts load model weights into GPU memory. **Settings → Speech → Keep the model ready** keeps speech resident between recordings; turn it off when you prefer to reclaim VRAM after the idle delay. Unload stops the worker process tree. Nemotron falls back to the CPU automatically when another app has filled the GPU.
+Cold starts load model weights into GPU memory. **Settings → Speech → Keep the model ready** keeps speech resident between recordings; turn it off when you prefer to reclaim VRAM after the idle delay. Unload stops the worker process tree.
 
 ```bash
 bun run format:check

@@ -1,4 +1,4 @@
-import { reduxCpuEnabled } from "../runtime/redux";
+import { reduxSupported } from "../runtime/redux";
 import {
   normalizeRewriteContext,
   splitTechnicalBlocks,
@@ -144,19 +144,15 @@ type SetupOperation = {
 };
 
 /** The speech model the worker runs; Apple Silicon always uses R2T2 on MLX. */
-export function speechEngineId(
-  settings: AppSettings,
-): "r2t2" | "nemotron" | "redux" {
-  if (settings.speechEngine === "redux") return "redux";
-  return !usesMetal() && settings.speechEngine === "nemotron"
-    ? "nemotron"
+export function speechEngineId(settings: AppSettings): "r2t2" | "redux" {
+  return settings.speechEngine === "redux" && reduxSupported() && !usesMetal()
+    ? "redux"
     : "r2t2";
 }
 
 export function speechModelName(settings: AppSettings): string {
-  if (speechEngineId(settings) === "redux") return "Parakeet Redux";
-  return speechEngineId(settings) === "nemotron"
-    ? "Nemotron 3.5"
+  return speechEngineId(settings) === "redux"
+    ? "Parakeet Redux"
     : modelById(settings.model).name;
 }
 
@@ -227,7 +223,7 @@ export class AsrService {
   private speechFailureGeneration = 0;
   private magicFailureGeneration = 0;
   private speechIdleTimer: NodeJS.Timeout | null = null;
-  private loadedEngine: "r2t2" | "nemotron" | "redux" | null = null;
+  private loadedEngine: "r2t2" | "redux" | null = null;
   private liveActive = false;
   private magicIdleTimer: NodeJS.Timeout | null = null;
 
@@ -856,27 +852,27 @@ export class AsrService {
 
   private async negotiateCapabilities(
     kind: "speech" | "magic",
+    model?: "r2t2" | "redux",
   ): Promise<BackendCapabilities> {
     const engine = kind === "speech" ? "speech" : "writing";
     const capabilities = await this.request<BackendCapabilities>(
       kind,
       "capabilities",
-      { engine },
+      { engine, ...(model ? { model } : {}) },
     );
     const backend =
       kind === "magic"
         ? "transformers"
-        : reduxCpuEnabled()
+        : model === "redux"
           ? "photon-cpu"
           : speechModelForPlatform() === "r2t2Mlx"
             ? "mlx"
             : "cuda-transformers";
-    const modelFamily = kind === "speech" ? "r2t2" : "qwen3.5";
+    const modelFamily =
+      kind === "speech" ? (model === "redux" ? "redux" : "r2t2") : "qwen3.5";
     if (
       capabilities.engine !== engine ||
-      (kind === "speech"
-        ? !["r2t2", "nemotron", "redux"].includes(capabilities.modelFamily)
-        : capabilities.modelFamily !== modelFamily) ||
+      capabilities.modelFamily !== modelFamily ||
       capabilities.backend !== backend
     ) {
       throw new Error(
@@ -928,12 +924,6 @@ export class AsrService {
     fromSetup = false,
     eligible: () => boolean = () => true,
   ): Promise<void> {
-    if ((settings.speechEngine === "redux") !== reduxCpuEnabled())
-      throw new Error(
-        reduxCpuEnabled()
-          ? "This experimental CPU runtime supports Parakeet Redux only. Select Redux, or restart without DELULU_REDUX_CPU to use R2T2 or Nemotron."
-          : "Parakeet Redux is experimental and requires Linux x64, DELULU_REDUX_CPU=1 and a manually prepared checkpoint. Select R2T2 or Nemotron for normal setup.",
-      );
     if (!eligible()) return;
     if (this.shuttingDown)
       throw new Error("The speech model worker is shutting down");
@@ -965,13 +955,15 @@ export class AsrService {
         model: settings.model,
         progress: 0.85,
       });
-      const capabilities = await this.negotiateCapabilities("speech");
+      const capabilities = await this.negotiateCapabilities(
+        "speech",
+        speechEngineId(settings),
+      );
       this.updateStatus({ capabilities });
       if (!eligible()) return;
       const runtime = await this.request<WorkerRuntime>("speech", "load", {
         cacheDir: this.storage.modelCacheDirectory,
         model: speechEngineId(settings),
-        device: settings.speechDevice,
       });
       this.loadedEngine = speechEngineId(settings);
       if (!runtime.loaded)
@@ -1187,6 +1179,7 @@ export class AsrService {
       this.liveActive = false;
       this.updateStatus({ residency: "unloading", idleUnloadAt: null });
       await this.speechWorker.stopAndWait();
+      this.loadedEngine = null;
       this.updateStatus({
         phase: "idle",
         engine: existsSync(this.venvPython()) ? "unloaded" : "missing",

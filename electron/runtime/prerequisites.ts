@@ -145,12 +145,13 @@ export function runtimeReadinessScript(
       : target.arch === "arm64"
         ? "platform.machine().lower() in ('arm64', 'aarch64')"
         : "True";
+  const parakeetRedux = target.platform === "linux" && target.arch === "x64";
   const imports =
     kind === "magic"
       ? "import torch, torchvision, transformers\n    from transformers import AutoModelForMultimodalLM, AutoProcessor\n    if int(transformers.__version__.split('.')[0]) < 5:\n        fail('PACKAGE_IMPORT', 'Magic requires transformers 5 or later')"
       : metal
         ? "import mlx.core as mx\n    from mlx_audio.stt.utils import load_model, load_audio"
-        : "import torch, soundfile, soxr, librosa\n    from transformers import AutoModelForRNNT, Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor";
+        : `import torch, soundfile, soxr, librosa\n    from transformers import Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor${parakeetRedux ? "\n    from kestrel.models.parakeet_tdt.runtime import ParakeetTdtRuntime" : ""}`;
   const hardware =
     kind !== "speech"
       ? ""

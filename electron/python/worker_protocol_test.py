@@ -12,7 +12,7 @@ def request(command, **fields):
 
 
 class WorkerProtocolTests(unittest.TestCase):
-    def test_redux_cpu_capabilities_preserve_writing_role_isolation(self):
+    def test_redux_capabilities_preserve_writing_role_isolation(self):
         valid = request("load", model="redux", device="cpu")
         self.assertIs(protocol.validate_request(valid), valid)
         capabilities = {"schemaVersion": 1, "engine": "speech", "backend": "photon-cpu",
@@ -22,6 +22,25 @@ class WorkerProtocolTests(unittest.TestCase):
         protocol.validate_result("capabilities", capabilities)
         with self.assertRaises(ValueError):
             protocol.validate_result("capabilities", {**capabilities, "engine": "writing"})
+
+    def test_speech_models_are_closed_to_r2t2_and_redux(self):
+        redux_probe = request("capabilities", engine="speech", model="redux")
+        self.assertIs(protocol.validate_request(redux_probe), redux_probe)
+        protocol.validate_request(request("capabilities", engine="speech"))
+        protocol.validate_request(request("load", model="r2t2", cacheDir="cache"))
+        for model in ("legacy-asr", "", None):
+            with self.subTest(model=model), self.assertRaises(ValueError):
+                protocol.validate_request(request("load", model=model))
+            with self.subTest(model=model), self.assertRaises(ValueError):
+                protocol.validate_request(request("capabilities", engine="speech", model=model))
+        with self.assertRaises(ValueError):
+            protocol.validate_request(request("load", model="redux", device="gpu"))
+        base = {"schemaVersion": 1, "engine": "speech", "backend": "cuda-transformers",
+                "timestamps": False, "languageHints": {"supported": True, "languages": ["en"]},
+                "streaming": True, "vocabularyBiasing": False}
+        protocol.validate_result("capabilities", {**base, "modelFamily": "r2t2"})
+        with self.assertRaises(ValueError):
+            protocol.validate_result("capabilities", {**base, "modelFamily": "legacy-asr"})
 
     def test_untrusted_requests_require_correlatable_finite_versioned_data(self):
         valid = request("transcribe", audioPath="recording.wav", durationMs=12)
