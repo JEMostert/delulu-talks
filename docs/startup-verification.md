@@ -1,6 +1,6 @@
 # Renderer startup failure evidence
 
-These tests use the real React workspace with desktop-shaped mocked IPC and a virtual browser clock. They verify renderer behavior rather than native inference, platform authorization, or actual service availability. All settings/history are browser fixture data; personal profiles and runtimes are untouched.
+These tests use the real React workspace with desktop-shaped mocked IPC and a virtual browser clock. They verify renderer behavior rather than native inference, platform authorization, or actual service availability. All settings/history are browser fixture data; the user data directory and runtimes are untouched.
 
 | Journey                                                      | Regression evidence                                                                                                           |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |

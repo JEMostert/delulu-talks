@@ -20,7 +20,7 @@
 
 Delulu Talks turns speech into text in the app you are using. R2T2 produces dictation locally through MLX on Apple Silicon and Transformers on NVIDIA GPUs; Parakeet Redux runs on the CPU on Linux x64 and transcribes after you stop recording. Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
 
-[v0.14.0](docs/releases/v0.14.0.md) lets R2T2 detect the spoken language and use your vocabulary as recognition hints. [v0.13.0](docs/releases/v0.13.0.md) makes Parakeet Redux a normal CPU engine on Linux, removes Nemotron and live typing, and drops several unused features. [v0.12.3](docs/releases/v0.12.3.md) fixes KDE clipboard timeouts after successful recognition and makes delivery failures clearer. [v0.12.2](docs/releases/v0.12.2.md) restores hardware compositing on Wayland and reduces background drawing while using workspaces. The [native rendering review](docs/performance-review-v0.12.2.md) records the diagnosis, measurements and verification limits. [v0.12.1](docs/releases/v0.12.1.md) fixed desktop streaming validation, bounded live-audio buffers and moved recording encoding off the interface thread.
+[v0.15.0](docs/releases/v0.15.0.md) replaces profiles with one-toggle word packs for programming and gaming, and makes adding your own words a single field. [v0.14.0](docs/releases/v0.14.0.md) lets R2T2 detect the spoken language and use your vocabulary as recognition hints. [v0.13.0](docs/releases/v0.13.0.md) makes Parakeet Redux a normal CPU engine on Linux, removes Nemotron and live typing, and drops several unused features. [v0.12.3](docs/releases/v0.12.3.md) fixes KDE clipboard timeouts after successful recognition and makes delivery failures clearer. [v0.12.2](docs/releases/v0.12.2.md) restores hardware compositing on Wayland and reduces background drawing while using workspaces. The [native rendering review](docs/performance-review-v0.12.2.md) records the diagnosis, measurements and verification limits. [v0.12.1](docs/releases/v0.12.1.md) fixed desktop streaming validation, bounded live-audio buffers and moved recording encoding off the interface thread.
 
 ## Dictate, review, keep working
 
@@ -54,7 +54,7 @@ On supported Wayland desktops, a small pearl pill with wave bars stays above you
 
 ### Corrections and text shortcuts
 
-Open **Personalization** from the dock or the command palette. Corrections replace specific recognized text; text shortcuts expand a spoken trigger into an exact saved block. Each rule has a live text preview and conflicting triggers are rejected. Editing a transcript can suggest a correction to remember, with explicit confirmation.
+Open **Personalization** from the dock or the command palette. Turn on a **word pack** (Programming or Gaming) to get its terms recognized and spelled right, and add your own names and terms by just typing them. Up to 150 words, packs and your own together, are used at once; the page shows how many are in use. On R2T2 CUDA the words are recognition hints; on every engine, known misspellings such as "git hub" are fixed afterwards. Text shortcuts expand a spoken trigger into an exact saved block. Editing a transcript can suggest a word to remember, with explicit confirmation.
 
 Speech output stays untouched. Personalization creates a separate result, and exact shortcut blocks stay outside the writing model; only the surrounding text is rewritten. Failed automatic rewriting delivers the preserved transcript instead.
 
@@ -78,7 +78,7 @@ The **Deep Sea** design system has two themes — _Abyss_ (dark) and _Shallows_ 
 - **Recover results:** paste the latest transcript, retry failed audio from memory, or discard it explicitly.
 - **Preserve originals:** corrections stay separate from model output and optional rewrites.
 - **Keep history small:** History keeps your latest 50 transcripts by default (25–500 in Settings → Privacy), shown as a list beside the selected transcript.
-- **Manage locally:** Settings is organized as General, Speech, Output, Rewriting, Profiles, Privacy and Advanced; Advanced covers runtimes and updates.
+- **Manage locally:** Settings is organized as General, Speech, Output, Rewriting, Privacy and Advanced; Advanced covers runtimes and updates.
 
 ## Local speech and writing models
 
@@ -250,4 +250,4 @@ Ready now follows a bounded synthetic transcription warm-up. Recording timings i
 
 The benchmark uses the active speech runtime and cached models, with no clipboard/paste delivery. It measures a supplied audio sample; it is not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
 
-The [historical roadmap](https://github.com/JEMostert/delulu-talks/issues/14) now serves as a record of the broader plan. The current scope is the desktop dictation app: R2T2 speech, explicit profiles and vocabulary, optional local Qwen 3.5 rewrite previews, and local history and audio imports. CLI/API servers, editor extensions, watched folders, cloud/account features and meeting-summary pipelines are outside this scope. The unfinished live streaming experiment has been removed; all platforms use buffered capture. Automated fixtures do not establish native MLX/CUDA inference, physical microphone behavior or delivery into another application. Native platform acceptance remains pending.
+The [historical roadmap](https://github.com/JEMostert/delulu-talks/issues/14) now serves as a record of the broader plan. The current scope is the desktop dictation app: R2T2 speech, word packs and vocabulary, optional local Qwen 3.5 rewrite previews, and local history and audio imports. CLI/API servers, editor extensions, watched folders, cloud/account features and meeting-summary pipelines are outside this scope. The unfinished live streaming experiment has been removed; all platforms use buffered capture. Automated fixtures do not establish native MLX/CUDA inference, physical microphone behavior or delivery into another application. Native platform acceptance remains pending.

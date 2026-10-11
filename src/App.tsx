@@ -28,8 +28,6 @@ import {
   CommandPalette,
   type PaletteCommand,
 } from "./components/CommandPalette";
-import { profilePaletteCommands } from "./profilePaletteCommands";
-import { effectiveProfileSettings } from "./activePersonalProfile";
 import { PasteLastNotice } from "./components/PasteLastNotice";
 import { ServiceRecovery } from "./components/ServiceRecovery";
 import { UpdateNotice } from "./components/UpdateNotice";
@@ -75,7 +73,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
   },
   vocabulary: {
     title: "Personalization",
-    subtitle: "Corrections and voice shortcuts",
+    subtitle: "Word packs, your own words and text shortcuts",
   },
   lab: {
     title: "Audio files",
@@ -203,28 +201,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         ["vocabulary", "Go to Personalization"],
       ] as const
     ).map(([page, label]) => ({ id: page, label, run: () => w.setPage(page) })),
-    ...profilePaletteCommands(
-      w.settings,
-      (profile) =>
-        w.activateProfile({
-          action: "activate",
-          id: profile.id,
-          expectedProfile: profile,
-          expectedCurrentSettings: effectiveProfileSettings(w.settings),
-        }),
-      {
-        disabled:
-          busy || w.saving
-            ? "Finish the current capture, model operation, or settings save before switching profiles."
-            : undefined,
-        activeId: w.settings.activePersonalProfile?.id,
-        global: () =>
-          w.activateProfile({
-            action: "global",
-            expectedCurrentSettings: effectiveProfileSettings(w.settings),
-          }),
-      },
-    ),
     {
       id: "record",
       label: recording ? "Stop dictation" : "Start dictation",
@@ -711,9 +687,18 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                 <div className="workspace-view">
                   <VocabularyPage
                     words={w.settings.customWords}
+                    packs={w.settings.wordPacks}
+                    hintsActive={
+                      w.settings.vocabularyHints &&
+                      w.settings.speechEngine === "r2t2" &&
+                      w.capabilities?.platform !== "darwin"
+                    }
                     saving={w.saving}
                     onChange={(customWords) =>
-                      w.saveSettings({ customWords }, "Rules saved")
+                      w.saveSettings({ customWords }, "Words saved")
+                    }
+                    onPacksChange={(wordPacks) =>
+                      w.saveSettings({ wordPacks }, "Word packs saved")
                     }
                   />
                 </div>
@@ -737,8 +722,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     magicStatus={w.magicStatus}
                     saving={w.saving}
                     onSave={w.saveSettings}
-                    onManagePersonalProfile={w.managePersonalProfile}
-                    onActivateProfile={w.activateProfile}
                     onConfigureShortcut={run(() => bridge.configureShortcut())}
                     onAuthorizePaste={run(
                       () => bridge.authorizePaste(),

@@ -10,6 +10,7 @@ import {
   transcriptText,
 } from "../../src/transcriptText";
 import type { TranscriptRecord } from "../../src/types";
+import { guessTextLanguage } from "../../src/transcriptLanguage";
 
 const transcript: TranscriptRecord = {
   id: "record",
@@ -86,4 +87,24 @@ describe("transcript data cannot silently lose its source", () => {
         );
     }
   });
+});
+
+test("text language guesses follow R2T2 output that reported no language", () => {
+  expect(
+    guessTextLanguage(
+      "Ik heb de typescript code naar github gepusht en daarna kubectl appie gedraaid op het kubernetes cluster met postgresql en redis",
+    ),
+  ).toBe("nl");
+  expect(
+    guessTextLanguage(
+      "I was AFK, but my teammate hit a clutch in ranked Valorant. GG, the cooldown on his ult was really OP.",
+    ),
+  ).toBe("en");
+  expect(
+    guessTextLanguage(
+      "Ik was Eka, maar mijn teammate had een clutch in ranked van Orant",
+    ),
+  ).toBe("nl");
+  expect(guessTextLanguage("GitHub Kubernetes PostgreSQL")).toBeNull();
+  expect(guessTextLanguage("Ik push the code")).toBeNull();
 });

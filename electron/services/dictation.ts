@@ -1,13 +1,14 @@
 import { AUTO_LANGUAGE } from "../../src/data";
 import { TOO_SHORT } from "../../src/captureLimits";
 import { personalizeWithUsage } from "../../src/personalization";
+import { activeRules } from "../../src/wordPacks";
 import { normalizeCaptureDiagnostics } from "../../src/captureDiagnostics";
 import { formatSpokenCommands } from "../../src/spokenFormatting";
-import { captureProfileSnapshot } from "../../src/activePersonalProfile";
 import { normalizeSpeechExecution } from "../../src/speechModels";
 import { deliveredText } from "../../src/transcriptText";
 import {
   normalizeLanguageMetadata,
+  guessTextLanguage,
   normalizeReportedLanguage,
 } from "../../src/transcriptLanguage";
 import { formatDictation } from "../../src/dictationFormatting";
@@ -192,13 +193,7 @@ export class DictationService {
     if (this.busyNoticeTimer) clearTimeout(this.busyNoticeTimer);
     this.busyNoticeTimer = null;
     this.busyNotice = false;
-    this.hud =
-      command.state !== "hidden" && this.captureSettings
-        ? {
-            ...command,
-            profile: captureProfileSnapshot(this.captureSettings).label,
-          }
-        : command;
+    this.hud = command;
     this.applyHud();
   }
 
@@ -328,7 +323,6 @@ export class DictationService {
       action: "start",
       inputDeviceId: settings.inputDeviceId,
       sessionId: this.captureSessionId,
-      captureProfile: captureProfileSnapshot(settings),
       trailingSilence: settings.trailingSilenceStopEnabled
         ? {
             seconds: settings.trailingSilenceSeconds,
@@ -1099,18 +1093,21 @@ export class DictationService {
         "The speech model returned no text. Check the recording and retry.",
       );
     // With automatic detection, rules and formatting follow the language the
-    // model reported; an unreported one stays unknown rather than "auto".
+    // model reported. When it reports none, as for Dutch full of English
+    // terms, guess Dutch or English from the text; otherwise it stays unknown.
+    const guessed =
+      settings.language === AUTO_LANGUAGE
+        ? (guessTextLanguage(text) ?? "und")
+        : null;
     const language =
       normalizeReportedLanguage(result.recognizedLanguage) ??
-      (settings.language === AUTO_LANGUAGE ? "und" : settings.language);
+      guessed ??
+      settings.language;
     const formatted = settings.spokenFormattingCommands
       ? formatSpokenCommands(text, language)
       : text;
-    const personalized = personalizeWithUsage(
-      formatted,
-      settings.customWords,
-      language,
-    );
+    const rules = activeRules(settings);
+    const personalized = personalizeWithUsage(formatted, rules, language);
     this.recordRuleUsage(personalized.counts);
     const durationMs =
       durationOverride ?? Math.round(numeric(result.duration) * 1000);
@@ -1133,12 +1130,7 @@ export class DictationService {
       rewriteSourceRevision: null,
       personalizedText:
         source === "dictation" && settings.dictationFormatting === "spoken"
-          ? formatDictation(
-              text,
-              settings.customWords,
-              settings.dictationFormatting,
-              language,
-            )
+          ? formatDictation(text, rules, settings.dictationFormatting, language)
           : personalized.text,
       dictationFormatting:
         source === "dictation" &&
@@ -1147,7 +1139,7 @@ export class DictationService {
           ? "spoken"
           : "preserve",
       model: settings.model,
-      language: languageMetadata.recognizedLanguage ?? "und",
+      language: languageMetadata.recognizedLanguage ?? guessed ?? "und",
       ...languageMetadata,
       requestedLanguage: settings.language,
       speechExecution: normalizeSpeechExecution(result.speechExecution),

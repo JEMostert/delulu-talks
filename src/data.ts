@@ -70,9 +70,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchAtLogin: false,
   menuBarOnly: false,
   customWords: [],
+  wordPacks: [],
   vocabularyHints: true,
-  personalProfiles: { schemaVersion: 1, profiles: [] },
-  activePersonalProfile: null,
 };
 
 export const MODELS: ModelInfo[] = [

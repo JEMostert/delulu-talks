@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { MAX_RECOGNITION_HINT_CHARS } from "../../src/recognitionHints";
 import {
   BoundedWorkerLines,
   WorkerDiagnosticTail,
@@ -165,6 +166,9 @@ test("transcription hotwords must be a bounded string", () => {
     validateWorkerRequest({ ...transcribe, hotwords: ["Kestrel"] }),
   ).toThrow();
   expect(() =>
-    validateWorkerRequest({ ...transcribe, hotwords: "x".repeat(1001) }),
+    validateWorkerRequest({
+      ...transcribe,
+      hotwords: "x".repeat(MAX_RECOGNITION_HINT_CHARS + 1),
+    }),
   ).toThrow("too long");
 });

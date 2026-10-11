@@ -87,8 +87,6 @@ const api: DeluluApi = {
   getSettings: () => invoke("settings:get"),
   updateSettings: (settings: Partial<AppSettings>) =>
     invoke("settings:update", settings),
-  managePersonalProfile: (command) => invoke("profiles:manage", command),
-  activatePersonalProfile: (command) => invoke("profiles:activate", command),
   getStatus: () => invoke("runtime:status"),
   getMagicStatus: () => invoke("magic:status"),
   getShortcutStatus: () => invoke("shortcut:status"),

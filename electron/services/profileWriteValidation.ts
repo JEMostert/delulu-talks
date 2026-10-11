@@ -8,6 +8,7 @@ import {
 type ProfileKind = "settings" | "history";
 type ObjectValue = Record<string, unknown>;
 import { REWRITE_PRESETS } from "../../src/rewritePresets";
+import { WORD_PACKS } from "../../src/wordPacks";
 const presets = REWRITE_PRESETS.map((preset) => preset.id);
 
 /** Validate the original value before serialization; never normalize user text. */
@@ -164,6 +165,15 @@ export function validateProfileWrite(kind: ProfileKind, value: unknown): void {
       fail(
         "settings.pasteLastDelaySeconds",
         "must be an integer from 1 through 30",
+      );
+    for (const [index, pack] of array(
+      settings.wordPacks,
+      "settings.wordPacks",
+    ).entries())
+      enumeration(
+        pack,
+        `settings.wordPacks[${index}]`,
+        WORD_PACKS.map((item) => item.id),
       );
     const ids = new Set<unknown>();
     for (const [index, item] of array(

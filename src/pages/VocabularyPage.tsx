@@ -1,5 +1,13 @@
 import { useId, useMemo, useState } from "react";
-import { BookOpenText, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import {
+  BookOpenText,
+  CodeXml,
+  Gamepad2,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import {
   ConfirmDialog,
   EmptyState,
@@ -8,191 +16,378 @@ import {
   Toggle,
 } from "../components/ui";
 import {
-  aliasError,
-  normalizeAliases,
-  personalize,
   previewPersonalization,
   ruleConflict,
   ruleKind,
   ruleLanguage,
-  ruleTriggers,
 } from "../personalization";
-import { LANGUAGES } from "../data";
+import { MAX_HINT_WORDS, hintWords } from "../recognitionHints";
+import { WORD_PACKS, activeRules, type WordPackId } from "../wordPacks";
 import type { CustomWord } from "../types";
 import { RuleUsagePanel } from "../components/RuleUsagePanel";
 
 const RULE_TABS = [
-  ["correction", "Corrections"],
+  ["correction", "My words"],
   ["shortcut", "Text shortcuts"],
 ] as const;
+const PACK_ICONS = { programming: CodeXml, gaming: Gamepad2 };
+
+const splitPhrases = (text: string) =>
+  text
+    .split(",")
+    .map((phrase) => phrase.trim())
+    .filter(Boolean);
+/** Legacy aliases are edited together with the comma-separated phrases. */
+const heardAs = (word: CustomWord) =>
+  [...splitPhrases(word.soundsLike), ...(word.aliases ?? [])].join(", ");
+
+/** Aliases are folded into the phrases field, so the saved rule drops them. */
+function editedRule(draft: CustomWord, phrases: string): CustomWord {
+  const rule = {
+    ...draft,
+    term: draft.term.trim(),
+    soundsLike: splitPhrases(phrases).join(", "),
+  };
+  delete rule.aliases;
+  return rule;
+}
 
 export function VocabularyPage({
   words,
+  packs,
+  hintsActive,
   saving,
   onChange,
+  onPacksChange,
 }: {
   words: CustomWord[];
+  packs: WordPackId[];
+  /** Whether the current engine receives the words as recognition hints. */
+  hintsActive: boolean;
   saving: boolean;
   onChange: (words: CustomWord[]) => Promise<boolean>;
+  onPacksChange: (packs: WordPackId[]) => Promise<boolean>;
 }) {
   const [kind, setKind] = useState<"correction" | "shortcut">("correction");
   const [query, setQuery] = useState("");
+  const [newWord, setNewWord] = useState("");
   const [draft, setDraft] = useState<CustomWord | null>(null);
+  const [phrases, setPhrases] = useState("");
   const [remove, setRemove] = useState<CustomWord | null>(null);
-  const [sample, setSample] = useState("");
   const [testPhrase, setTestPhrase] = useState("");
   const previewTitleId = useId();
-  const preview = useMemo(
-    () => previewPersonalization(testPhrase, words),
-    [testPhrase, words],
+  const rules = useMemo(
+    () => activeRules({ customWords: words, wordPacks: packs }),
+    [words, packs],
   );
+  const preview = useMemo(
+    () => previewPersonalization(testPhrase, rules),
+    [testPhrase, rules],
+  );
+  const used = useMemo(() => hintWords(rules).length, [rules]);
+  const usedWith = (nextWords: CustomWord[], nextPacks = packs) =>
+    hintWords(activeRules({ customWords: nextWords, wordPacks: nextPacks }))
+      .length;
+  const fits = (nextWords: CustomWord[], nextPacks = packs) =>
+    usedWith(nextWords, nextPacks) <= Math.max(MAX_HINT_WORDS, used);
+
   const filtered = words.filter(
     (word) =>
       ruleKind(word) === kind &&
-      `${word.term} ${word.soundsLike} ${(word.aliases ?? []).join(" ")} ${word.replacement}`
+      `${word.term} ${heardAs(word)} ${word.replacement}`
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
-  const conflict = draft ? ruleConflict(draft, words) : null;
+  const typed = newWord.trim().replace(/\s+/gu, " ");
+  const duplicate = words.some(
+    (word) =>
+      ruleKind(word) === "correction" &&
+      word.term.toLowerCase() === typed.toLowerCase(),
+  );
+  const quickWord: CustomWord = {
+    id: "",
+    kind: "correction",
+    term: typed,
+    soundsLike: "",
+    replacement: "",
+    enabled: true,
+  };
+  const quickFits = fits([...words, quickWord]);
+
+  const drafted = draft && editedRule(draft, phrases);
+  const conflict = drafted ? ruleConflict(drafted, words) : null;
   const shortcut = draft && ruleKind(draft) === "shortcut";
-  const aliasesError = draft ? aliasError(draft.aliases) : null;
   const invalid =
-    !draft?.term.trim() ||
-    (shortcut
-      ? !draft.replacement.trim()
-      : !ruleTriggers(draft).length ||
-        ruleTriggers(draft).every((phrase) => phrase === draft.term.trim()));
+    !drafted?.term || (shortcut && !drafted.replacement.trim()) || !!conflict;
+  const save = async (rule: CustomWord) => {
+    const next = words.some((word) => word.id === rule.id)
+      ? words.map((word) => (word.id === rule.id ? rule : word))
+      : [rule, ...words];
+    return onChange(next);
+  };
+
   return (
     <div className="content-stack">
+      <section className="settings-group">
+        <div className="group-heading">
+          <h3>Word packs</h3>
+          <p>
+            Turn on a pack and its words are recognized and spelled right. Your
+            own words always come first.
+          </p>
+        </div>
+        {WORD_PACKS.map((pack) => {
+          const on = packs.includes(pack.id);
+          const nextPacks = on
+            ? packs.filter((id) => id !== pack.id)
+            : [...packs, pack.id];
+          const needed = on ? 0 : usedWith(words, nextPacks) - used;
+          const blocked = !on && !fits(words, nextPacks);
+          const Icon = PACK_ICONS[pack.id];
+          return (
+            <article
+              className="setting-row items-center max-[600px]:flex-wrap"
+              key={pack.id}
+            >
+              <span className="size-[34px] rounded-[10px] bg-accent-soft text-accent-ink grid place-items-center shrink-0">
+                <Icon className="size-[18px]" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-[14px] flex flex-wrap gap-2 items-center">
+                  {pack.name}
+                  <span className="badge neutral">
+                    {pack.words.length} words
+                  </span>
+                </h3>
+                <p className="text-[12px] text-muted mt-1">
+                  {pack.description}
+                </p>
+                <p className="text-[12px] text-muted mt-1 break-words">
+                  {pack.words
+                    .slice(0, 10)
+                    .map(([term]) => term)
+                    .join(" · ")}{" "}
+                  …
+                </p>
+                {blocked && (
+                  <p className="text-[12px] text-warning mt-1">
+                    Needs {needed} words, {Math.max(0, MAX_HINT_WORDS - used)}{" "}
+                    left. Turn off another pack or remove some of your words.
+                  </p>
+                )}
+              </div>
+              <Toggle
+                value={on}
+                label={`Use the ${pack.name} pack`}
+                disabled={saving || blocked}
+                onChange={() => void onPacksChange(nextPacks)}
+              />
+            </article>
+          );
+        })}
+        <div className="grid gap-2 p-4 border-t border-line">
+          <div className="flex justify-between gap-3 text-[12px]">
+            <span>Words in use</span>
+            <span className={used > MAX_HINT_WORDS ? "text-warning" : ""}>
+              {used} / {MAX_HINT_WORDS}
+            </span>
+          </div>
+          <div
+            className="h-1.5 rounded-full bg-soft overflow-hidden"
+            role="meter"
+            aria-label="Words in use"
+            aria-valuemin={0}
+            aria-valuemax={MAX_HINT_WORDS}
+            aria-valuenow={used}
+          >
+            <div
+              className="h-full bg-accent"
+              style={{
+                width: `${Math.min(100, (used / MAX_HINT_WORDS) * 100)}%`,
+              }}
+            />
+          </div>
+          <p className="caption">
+            {used > MAX_HINT_WORDS
+              ? `Only the first ${MAX_HINT_WORDS} words are sent to the speech model. Turn off a pack or some of your words.`
+              : hintsActive
+                ? "R2T2 listens for these words while it recognizes your speech. Known misspellings are fixed afterwards."
+                : "Known misspellings are fixed after recognition. R2T2 on an NVIDIA GPU with Vocabulary hints on also listens for these words."}
+          </p>
+        </div>
+      </section>
+
       <div className="vocabulary-head">
         <Tabs
-          label="Personalization rules"
+          label="Your words and shortcuts"
           tabs={RULE_TABS}
           value={kind}
           onChange={setKind}
         />
-        <button
-          className="primary-button"
-          disabled={saving || words.length >= 500}
-          onClick={() => {
-            setSample("");
-            setDraft({
-              id: crypto.randomUUID(),
-              kind,
-              term: "",
-              soundsLike: "",
-              replacement: "",
-              enabled: true,
-            });
+        {kind === "shortcut" && (
+          <button
+            className="primary-button"
+            disabled={saving || words.length >= 500}
+            onClick={() => {
+              setPhrases("");
+              setDraft({
+                id: crypto.randomUUID(),
+                kind: "shortcut",
+                term: "",
+                soundsLike: "",
+                replacement: "",
+                enabled: true,
+              });
+            }}
+          >
+            <Plus />
+            Add shortcut
+          </button>
+        )}
+      </div>
+      {kind === "correction" && (
+        <form
+          className="flex items-start gap-2.5 max-[600px]:flex-wrap"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!typed || duplicate || !quickFits) return;
+            void onChange([
+              { ...quickWord, id: crypto.randomUUID() },
+              ...words,
+            ]).then((saved) => saved && setNewWord(""));
           }}
         >
-          <Plus />
-          {kind === "correction" ? "Add correction" : "Add shortcut"}
-        </button>
-      </div>
-      <div className="flex items-center gap-3.5 max-[700px]:flex-wrap">
-        <label className="search-box max-[700px]:basis-full">
+          <label className="field flex-1 min-w-[220px] m-0">
+            <input
+              aria-label="New word"
+              value={newWord}
+              maxLength={256}
+              onChange={(event) => setNewWord(event.target.value)}
+              placeholder="Add a word, name or term, such as Delulu…"
+            />
+            {duplicate && <small>That word is already in your list.</small>}
+            {typed && !duplicate && !quickFits && (
+              <small className="text-warning">
+                All {MAX_HINT_WORDS} words are in use. Turn off a pack or remove
+                a word first.
+              </small>
+            )}
+          </label>
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={
+              saving || !typed || duplicate || !quickFits || words.length >= 500
+            }
+          >
+            <Plus />
+            Add word
+          </button>
+        </form>
+      )}
+      {words.length > 8 && (
+        <label className="search-box">
           <Search />
           <input
-            aria-label="Search rules"
+            aria-label="Search your words"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search phrases and replacements…"
+            placeholder="Search your words…"
           />
         </label>
-        <span className="caption">{words.length} / 500 rules</span>
-      </div>
+      )}
       <section className="settings-group">
-        {filtered.map((word) => (
-          <article
-            className="setting-row items-center max-[600px]:flex-wrap"
-            key={word.id}
-          >
-            <span className="size-[34px] rounded-[10px] bg-accent-soft text-accent-ink grid place-items-center shrink-0 text-[14px] font-semibold">
-              {ruleKind(word) === "shortcut" ? "↳" : "Aa"}
-            </span>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-[14px] flex flex-wrap gap-2 items-center break-words">
-                {word.term}
-                <span className="badge neutral">
-                  {ruleLanguage(word) || "All languages"}
-                </span>
-                {!ruleTriggers(word).length && (
-                  <span className="badge warning">Needs a phrase</span>
-                )}
-              </h3>
-              <p className="text-[12px] text-muted mt-1 break-words">
-                {ruleKind(word) === "shortcut"
-                  ? `Say “${word.term}”`
-                  : word.soundsLike
-                    ? `Replace “${word.soundsLike}”`
-                    : "Add the text the recognizer gets wrong to activate this rule."}
-              </p>
-              {word.replacement && (
-                <blockquote className="text-[12px] text-muted break-words my-3 mx-0 px-3.5 py-2.5 border-l-2 border-line-strong whitespace-pre-wrap">
-                  {word.replacement}
-                </blockquote>
-              )}
-              {!!word.aliases?.length && (
-                <p className="text-[12px] text-muted mt-1 break-words">
-                  Aliases:{" "}
-                  {word.aliases.map((alias) => `“${alias}”`).join(" · ")}
-                </p>
-              )}
-            </div>
-            <div className="panel-actions max-[700px]:ml-auto">
-              <Toggle
-                value={word.enabled}
-                label={`Enable ${word.term}`}
-                disabled={saving || !ruleTriggers(word).length}
-                onChange={() =>
-                  void onChange(
-                    words.map((item) =>
-                      item.id === word.id
-                        ? { ...item, enabled: !item.enabled }
-                        : item,
-                    ),
+        {filtered.map((word) => {
+          const fixes = heardAs(word);
+          const enabling = !word.enabled;
+          const blocked =
+            enabling &&
+            !fits(
+              words.map((item) =>
+                item.id === word.id ? { ...item, enabled: true } : item,
+              ),
+            );
+          return (
+            <article
+              className="setting-row items-center max-[600px]:flex-wrap"
+              key={word.id}
+            >
+              <span className="size-[34px] rounded-[10px] bg-accent-soft text-accent-ink grid place-items-center shrink-0 text-[14px] font-semibold">
+                {ruleKind(word) === "shortcut" ? "↳" : "Aa"}
+              </span>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-[14px] flex flex-wrap gap-2 items-center break-words">
+                  {word.term}
+                  {ruleLanguage(word) && (
+                    <span className="badge neutral">{ruleLanguage(word)}</span>
+                  )}
+                </h3>
+                {ruleKind(word) === "shortcut" ? (
+                  <blockquote className="text-[12px] text-muted break-words my-2 mx-0 px-3.5 py-2 border-l-2 border-line-strong whitespace-pre-wrap">
+                    {word.replacement}
+                  </blockquote>
+                ) : (
+                  fixes && (
+                    <p className="text-[12px] text-muted mt-1 break-words">
+                      Fixes “{fixes.split(", ").join("”, “")}”
+                    </p>
                   )
-                }
-              />
-              <button
-                className="icon-button"
-                aria-label={`Edit ${word.term}`}
-                disabled={saving}
-                onClick={() => {
-                  setDraft({ ...word, kind: ruleKind(word) });
-                  setSample("");
-                }}
-              >
-                <Pencil />
-              </button>
-              <button
-                className="icon-button"
-                aria-label={`Delete ${word.term}`}
-                disabled={saving}
-                onClick={() => setRemove(word)}
-              >
-                <Trash2 />
-              </button>
-            </div>
-          </article>
-        ))}
+                )}
+              </div>
+              <div className="panel-actions max-[700px]:ml-auto">
+                <Toggle
+                  value={word.enabled}
+                  label={`Enable ${word.term}`}
+                  disabled={saving || blocked}
+                  onChange={() =>
+                    void onChange(
+                      words.map((item) =>
+                        item.id === word.id
+                          ? { ...item, enabled: !item.enabled }
+                          : item,
+                      ),
+                    )
+                  }
+                />
+                <button
+                  className="icon-button"
+                  aria-label={`Edit ${word.term}`}
+                  disabled={saving}
+                  onClick={() => {
+                    setPhrases(heardAs(word));
+                    setDraft({ ...word, kind: ruleKind(word) });
+                  }}
+                >
+                  <Pencil />
+                </button>
+                <button
+                  className="icon-button"
+                  aria-label={`Delete ${word.term}`}
+                  disabled={saving}
+                  onClick={() => setRemove(word)}
+                >
+                  <Trash2 />
+                </button>
+              </div>
+            </article>
+          );
+        })}
         {!filtered.length && (
           <EmptyState
             icon={BookOpenText}
             title={
               query
-                ? "No matching rules"
+                ? "Nothing found"
                 : kind === "correction"
-                  ? "No corrections yet"
+                  ? "No words of your own yet"
                   : "No text shortcuts yet"
             }
           >
             {query
               ? "Try a different search."
               : kind === "correction"
-                ? "Correct a transcript and remember the change, or add a rule here."
-                : "Add a trigger such as “my signature” and the exact text to insert."}
+                ? "Add names and terms the word packs don't cover. Correcting a transcript can also remember a word."
+                : "Say a trigger such as “my signature” to insert a saved block of text."}
           </EmptyState>
         )}
       </section>
@@ -203,10 +398,10 @@ export function VocabularyPage({
           aria-labelledby={previewTitleId}
         >
           <div>
-            <h3 id={previewTitleId}>Try your saved rules</h3>
+            <h3 id={previewTitleId}>Try your words</h3>
             <p className="text-[12px] text-muted mt-2">
-              See how enabled corrections and text shortcuts work together.
-              Testing a phrase does not save it or change your transcripts.
+              Type text as the recognizer might write it to see what gets fixed.
+              Nothing is saved.
             </p>
           </div>
           <label className="field">
@@ -216,7 +411,7 @@ export function VocabularyPage({
               maxLength={2000}
               value={testPhrase}
               onChange={(event) => setTestPhrase(event.target.value)}
-              placeholder="Type a recognized phrase to try your saved rules…"
+              placeholder="push it to git hub and run cube control apply…"
             />
           </label>
           {testPhrase && (
@@ -239,60 +434,29 @@ export function VocabularyPage({
                   {preview.result}
                 </output>
               </div>
-              <div className="col-span-full">
-                <h4 className="caption">Matched rules</h4>
-                {preview.matches.length ? (
-                  <ol
-                    aria-label="Matched saved rules"
-                    className="list-none p-0 m-0 mt-2 content-stack gap-2"
-                  >
-                    {preview.matches.map((match) => (
-                      <li
-                        key={`${match.ruleId}-${match.index}`}
-                        className="border border-line rounded-lg p-3 text-[12px] break-words"
-                      >
-                        <span className="badge">
-                          {match.kind === "shortcut"
-                            ? "Text shortcut"
-                            : "Correction"}
-                        </span>{" "}
-                        <strong>{match.term}</strong>
-                        <p className="text-muted mt-2">
-                          Matched “{match.matchedText}” · trigger “
-                          {match.trigger}”
-                        </p>
-                        <p className="whitespace-pre-wrap mt-2">
-                          {match.replacement}
-                        </p>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="text-[12px] text-muted mt-2">
-                    No enabled rules matched this phrase.
-                  </p>
-                )}
-              </div>
+              <p className="col-span-full text-[12px] text-muted">
+                {preview.matches.length
+                  ? `Fixed: ${preview.matches
+                      .map((match) => `“${match.matchedText}” → ${match.term}`)
+                      .join(", ")}`
+                  : "Nothing to fix in this phrase."}
+              </p>
             </div>
           )}
         </section>
       </details>
       <details className="disclosure">
-        <summary>Usage & details</summary>
-        <RuleUsagePanel words={words} />{" "}
-        <p className="flex items-center justify-center gap-[7px] text-[11px] text-muted">
-          Rules apply to clean output. Original speech and word timings stay
-          untouched. These rules do not train the speech model.
-        </p>
+        <summary>Usage</summary>
+        <RuleUsagePanel words={words} />
       </details>
-      {draft && (
+      {draft && drafted && (
         <Modal
           title={
             words.some((word) => word.id === draft.id)
-              ? "Edit rule"
-              : shortcut
-                ? "New text shortcut"
-                : "New correction"
+              ? shortcut
+                ? "Edit shortcut"
+                : "Edit word"
+              : "New text shortcut"
           }
           onClose={() => setDraft(null)}
           busy={saving}
@@ -307,78 +471,21 @@ export function VocabularyPage({
               </button>
               <button
                 className="primary-button"
-                disabled={saving || !!invalid || !!conflict || !!aliasesError}
+                disabled={saving || invalid}
                 onClick={async () => {
-                  const normalized = {
-                    ...draft,
-                    term: draft.term.trim(),
-                    soundsLike: draft.soundsLike.trim(),
-                    replacement: draft.replacement,
-                    aliases: normalizeAliases(draft.aliases),
-                  };
-                  if (
-                    await onChange(
-                      words.some((word) => word.id === draft.id)
-                        ? words.map((word) =>
-                            word.id === draft.id ? normalized : word,
-                          )
-                        : [normalized, ...words],
-                    )
-                  )
-                    setDraft(null);
+                  if (await save(drafted)) setDraft(null);
                 }}
               >
-                Save rule
+                Save
               </button>
             </>
           }
         >
           <label className="field">
-            Rule language
-            <select
-              aria-label="Rule language"
-              value={draft.language ?? ""}
-              onChange={(e) =>
-                setDraft({ ...draft, language: e.target.value || undefined })
-              }
-            >
-              <option value="">All languages</option>
-              {draft.language &&
-                !LANGUAGES.some(([code]) => code === draft.language) && (
-                  <option value={draft.language}>{draft.language}</option>
-                )}
-              {LANGUAGES.map(([code, label]) => (
-                <option key={code} value={code}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <small>
-              Scoped rules apply only to results in this language. Unknown
-              languages use global rules only.
-            </small>
-          </label>
-          {!shortcut && (
-            <label className="field">
-              Recognized text{" "}
-              <small>Separate alternative mistakes with commas</small>
-              <input
-                autoFocus
-                aria-label="Recognized text"
-                maxLength={1024}
-                value={draft.soundsLike}
-                onChange={(e) =>
-                  setDraft({ ...draft, soundsLike: e.target.value })
-                }
-                placeholder="the lulu, de loo loo"
-              />
-            </label>
-          )}
-          <label className="field">
-            {shortcut ? "Trigger phrase" : "Replace with"}
+            {shortcut ? "When I say" : "Word"}
             <input
-              autoFocus={!!shortcut}
-              aria-label={shortcut ? "Trigger phrase" : "Replace with"}
+              autoFocus
+              aria-label={shortcut ? "Trigger phrase" : "Word"}
               maxLength={256}
               value={draft.term}
               onChange={(e) => setDraft({ ...draft, term: e.target.value })}
@@ -386,104 +493,49 @@ export function VocabularyPage({
             />
           </label>
           {shortcut && (
-            <>
-              <label className="field">
-                Exact text to insert
-                <textarea
-                  aria-label="Expanded output"
-                  maxLength={4096}
-                  value={draft.replacement}
-                  onChange={(e) =>
-                    setDraft({ ...draft, replacement: e.target.value })
-                  }
-                  placeholder="Your reusable text…"
-                />
-              </label>
-              <label className="field">
-                Alternative triggers <small>Optional · comma-separated</small>
-                <input
-                  aria-label="Alternative triggers"
-                  value={draft.soundsLike}
-                  maxLength={1024}
-                  onChange={(e) =>
-                    setDraft({ ...draft, soundsLike: e.target.value })
-                  }
-                />
-              </label>
-            </>
+            <label className="field">
+              Insert this text
+              <textarea
+                aria-label="Expanded output"
+                maxLength={4096}
+                value={draft.replacement}
+                onChange={(e) =>
+                  setDraft({ ...draft, replacement: e.target.value })
+                }
+                placeholder="Your reusable text…"
+              />
+            </label>
           )}
           <label className="field">
-            Pronunciation & recognition aliases
-            <small>
-              Optional · one exact phrase per line, up to 32. Commas stay
-              literal.
-            </small>
-            <textarea
-              aria-label="Pronunciation and recognition aliases"
-              maxLength={16_384}
-              value={(draft.aliases ?? []).join("\n")}
-              onChange={(e) =>
-                setDraft({ ...draft, aliases: e.target.value.split("\n") })
+            {shortcut ? "Or when I say" : "Often written as"}
+            <small>Optional · separate phrases with commas</small>
+            <input
+              aria-label={
+                shortcut ? "Alternative triggers" : "Often written as"
               }
-              placeholder={
-                shortcut
-                  ? "my sign off\nmy closing text"
-                  : "de loo loo\ndel loo loo"
-              }
+              maxLength={1024}
+              value={phrases}
+              onChange={(e) => setPhrases(e.target.value)}
+              placeholder={shortcut ? "my sign off" : "de lulu, the lulu"}
             />
           </label>
-          {aliasesError && (
-            <p className="field-error" role="alert">
-              {aliasesError}
-            </p>
-          )}
           {conflict && (
             <p className="field-error break-words" role="alert">
               {conflict}
             </p>
           )}
-          <div className="border border-line rounded-lg p-3 my-3">
-            <label className="field">
-              Try this rule
-              <input
-                aria-label="Test phrase"
-                value={sample}
-                onChange={(e) => setSample(e.target.value)}
-                placeholder={
-                  shortcut
-                    ? `Please insert ${draft.term || "my signature"}`
-                    : ruleTriggers(draft)[0] || "Type a recognized phrase"
-                }
-              />
-            </label>
-            <output
-              className="block whitespace-pre-wrap break-words text-[14px] leading-[1.6] mt-3 p-2.5 rounded-[5px] bg-soft"
-              aria-label="Rule preview"
-            >
-              {sample
-                ? personalize(
-                    sample,
-                    [{ ...draft, enabled: true }],
-                    draft.language,
-                  )
-                : "Enter a phrase to preview the exact replacement."}
-            </output>
-          </div>
         </Modal>
       )}
       {remove && (
         <ConfirmDialog
           title={`Delete “${remove.term}”?`}
-          confirmLabel="Delete rule"
+          confirmLabel="Delete"
           onClose={() => setRemove(null)}
           onConfirm={() =>
             void onChange(words.filter((word) => word.id !== remove.id))
           }
         >
-          <p>
-            Future clean results will no longer use this rule. Saved transcripts
-            stay unchanged.
-          </p>
+          <p>Saved transcripts stay unchanged.</p>
         </ConfirmDialog>
       )}
     </div>

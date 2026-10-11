@@ -1,13 +1,7 @@
 export type SetupState =
   "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { ImportQueueSnapshot } from "./importQueue";
-import type {
-  ActivePersonalProfile,
-  CaptureProfileSnapshot,
-  ProfileActivationCommand,
-} from "./activePersonalProfile";
-import type { PersonalProfileCommand } from "./personalProfileCommands";
-import type { PersonalProfileDocument } from "./personalProfiles";
+import type { WordPackId } from "./wordPacks";
 import type {
   SpeechBackendId,
   SpeechExecution,
@@ -122,11 +116,10 @@ export type AppSettings = {
   launchAtLogin: boolean;
   menuBarOnly: boolean;
   customWords: CustomWord[];
+  /** Built-in word packs whose words apply alongside customWords. */
+  wordPacks: WordPackId[];
   /** Send enabled vocabulary corrections to R2T2 as recognition hints. */
   vocabularyHints: boolean;
-  /** Saved profiles change behavior only through explicit activation. */
-  personalProfiles?: PersonalProfileDocument;
-  activePersonalProfile?: ActivePersonalProfile | null;
 };
 
 export type SetupStage =
@@ -429,7 +422,6 @@ export type RecorderCommand = {
   inputDeviceId: string;
   /** Native commands identify their capture; standalone capture can omit this. */
   sessionId?: string;
-  captureProfile?: CaptureProfileSnapshot;
 };
 
 export type RecordingSubmission = {
@@ -542,10 +534,6 @@ export type DeluluApi = {
   retryRecording(): Promise<void>;
   discardFailedRecording(): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
-  managePersonalProfile(command: PersonalProfileCommand): Promise<AppSettings>;
-  activatePersonalProfile(
-    command: ProfileActivationCommand,
-  ): Promise<AppSettings>;
   getStatus(): Promise<DictationStatus>;
   getMagicStatus(): Promise<MagicStatus>;
   getShortcutStatus(): Promise<ShortcutStatus>;

@@ -5,14 +5,6 @@ import {
   versionPersistedRecord,
 } from "../../src/persistedSchema";
 import {
-  readActivePersonalProfile,
-  type ActivePersonalProfile,
-} from "../../src/activePersonalProfile";
-import {
-  assertPersonalProfilesUpdate,
-  readPersonalProfiles,
-} from "../../src/personalProfiles";
-import {
   normalizeTimings,
   withoutRewriteTimings,
 } from "../../src/pipelineTimings";
@@ -27,6 +19,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { validateProfileWrite } from "./profileWriteValidation";
 import { speechModelForPlatform } from "../runtime/platform";
+import { isWordPackId } from "../../src/wordPacks";
 import { speechLanguageCapability } from "../../src/speechCapabilities";
 import { reduxSupported } from "../runtime/redux";
 import { normalizeAliases } from "../../src/personalization";
@@ -253,16 +246,6 @@ function normalizeWords(value: unknown): CustomWord[] {
   });
 }
 
-/** Snapshots store rules in the customWords shape so the active label compares like with like. */
-function normalizeProfileSnapshots(
-  active: ActivePersonalProfile | null,
-): ActivePersonalProfile | null {
-  if (!active) return null;
-  for (const snapshot of [active.appliedSettings, active.globalSettings])
-    snapshot.customWords = normalizeWords(snapshot.customWords);
-  return active;
-}
-
 function boolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
@@ -287,6 +270,8 @@ export function normalizeSettings(value: unknown): AppSettings {
   delete source.speechDevice;
   delete source.liveTyping;
   delete source.dictationMode;
+  delete source.personalProfiles;
+  delete source.activePersonalProfile;
   assertPersistedSchema(source, "settings");
   const magicModel = validMagicModels.has(source.magicModel as MagicModelId)
     ? (source.magicModel as MagicModelId)
@@ -432,14 +417,12 @@ export function normalizeSettings(value: unknown): AppSettings {
     ),
     menuBarOnly: boolean(source.menuBarOnly, DEFAULT_SETTINGS.menuBarOnly),
     customWords: normalizeWords(source.customWords),
+    wordPacks: Array.isArray(source.wordPacks)
+      ? [...new Set(source.wordPacks.filter(isWordPackId))]
+      : [],
     vocabularyHints: boolean(
       source.vocabularyHints,
       DEFAULT_SETTINGS.vocabularyHints,
-    ),
-    personalProfiles: readPersonalProfiles(source.personalProfiles)
-      .document as AppSettings["personalProfiles"],
-    activePersonalProfile: normalizeProfileSnapshots(
-      readActivePersonalProfile(source.activePersonalProfile),
     ),
   };
 }
@@ -768,25 +751,7 @@ export class StorageService {
       value && typeof value === "object" && !Array.isArray(value)
         ? (value as Record<string, unknown>)
         : {};
-    // Older settings callers may omit the new field. Preserve existing documents.
-    const document = Object.prototype.hasOwnProperty.call(
-      source,
-      "personalProfiles",
-    )
-      ? source.personalProfiles
-      : this.settings.personalProfiles;
-    assertPersonalProfilesUpdate(this.settings.personalProfiles, document);
-    const activePersonalProfile = Object.prototype.hasOwnProperty.call(
-      source,
-      "activePersonalProfile",
-    )
-      ? source.activePersonalProfile
-      : this.settings.activePersonalProfile;
-    const next = normalizeSettings({
-      ...source,
-      personalProfiles: document,
-      activePersonalProfile,
-    });
+    const next = normalizeSettings(source);
     this.writeProfile(join(this.dataDirectory, SETTINGS_FILE), next);
     this.settings = next;
     this.enforceHistoryLimit();

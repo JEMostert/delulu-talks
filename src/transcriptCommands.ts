@@ -4,6 +4,8 @@ import {
   discardCorrectionDraft,
 } from "./correctionDrafts";
 import { ruleConflict, ruleKind, ruleLanguage } from "./personalization";
+import { MAX_HINT_WORDS, hintWords } from "./recognitionHints";
+import { activeRules } from "./wordPacks";
 import type { TranscriptActions } from "./components/TranscriptCard";
 import type { useWorkspace } from "./hooks/useWorkspace";
 import type {
@@ -48,6 +50,19 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     );
     if (conflict) {
       return Promise.reject(new Error(conflict));
+    }
+    const words = (customWords: CustomWord[]) =>
+      hintWords(activeRules({ ...w.settings, customWords })).length;
+    if (
+      !existing &&
+      words([word, ...w.settings.customWords]) >
+        Math.max(MAX_HINT_WORDS, words(w.settings.customWords))
+    ) {
+      return Promise.reject(
+        new Error(
+          `All ${MAX_HINT_WORDS} words are in use. Turn off a word pack or remove a word in Personalization first.`,
+        ),
+      );
     }
     return w.saveSettings(
       {

@@ -317,3 +317,27 @@ test("automatic language is kept where the speech engine detects it, and vocabul
     normalizeSettings({ ...DEFAULT_SETTINGS, language: "klingon" }).language,
   ).toBe(DEFAULT_SETTINGS.language);
 });
+
+test("word packs keep known ids once, and settings from removed profiles are dropped", () => {
+  const settings = normalizeSettings({
+    ...DEFAULT_SETTINGS,
+    wordPacks: ["gaming", "unknown", "gaming", 3, "programming"],
+    personalProfiles: { schemaVersion: 1, profiles: [] },
+    activePersonalProfile: null,
+  });
+  expect(settings.wordPacks).toEqual(["gaming", "programming"]);
+  expect(settings).not.toHaveProperty("personalProfiles");
+  expect(settings).not.toHaveProperty("activePersonalProfile");
+  expect(
+    normalizeSettings({ ...DEFAULT_SETTINGS, wordPacks: "gaming" }).wordPacks,
+  ).toEqual([]);
+});
+
+test("saved settings with word packs reopen unchanged", () => {
+  const { application } = profile();
+  const storage = new StorageService(application);
+  storage.updateSettings({ ...storage.getSettings(), wordPacks: ["gaming"] });
+  expect(new StorageService(application).getSettings().wordPacks).toEqual([
+    "gaming",
+  ]);
+});

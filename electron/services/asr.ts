@@ -6,6 +6,7 @@ import {
 } from "../../src/rewriteContext";
 import { normalizeSpeechExecution } from "../../src/speechModels";
 import { splitForRewrite } from "../../src/personalization";
+import { activeRules } from "../../src/wordPacks";
 import { normalizeTimings } from "../../src/pipelineTimings";
 import {
   DomainError,
@@ -1058,7 +1059,7 @@ export class AsrService {
           ...(capabilities.vocabularyBiasing && settings.vocabularyHints
             ? {
                 hotwords: recognitionHints(
-                  settings.customWords,
+                  activeRules(settings),
                   settings.language,
                 ),
               }
@@ -1323,7 +1324,7 @@ export class AsrService {
             ? [part]
             : splitForRewrite(
                 part.text,
-                settings.customWords,
+                activeRules(settings),
                 request.sourceLanguage ?? settings.language,
               ),
         );

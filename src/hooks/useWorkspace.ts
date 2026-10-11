@@ -1,8 +1,3 @@
-import type {
-  CaptureProfileSnapshot,
-  ProfileActivationCommand,
-} from "../activePersonalProfile";
-import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
 import { retainSessionTranscripts } from "../sessionTranscriptRetention";
@@ -60,8 +55,6 @@ export function useWorkspace() {
     remainingSeconds: 0,
     message: "",
   });
-  const [captureProfile, setCaptureProfile] =
-    useState<CaptureProfileSnapshot | null>(null);
   const [history, setHistory] = useState<TranscriptRecord[]>([]);
   // Session-only view state survives History navigation and page remounts.
   const [historyView, setHistoryView] =
@@ -149,13 +142,7 @@ export function useWorkspace() {
       setHistoryDeletion(snapshot.deletion);
     };
     const subscriptions = [
-      bridge.onStatus(
-        subscribe("speech status", (next: DictationStatus) => {
-          setStatus(next);
-          if (next.phase === "idle" || next.phase === "error")
-            setCaptureProfile(null);
-        }),
-      ),
+      bridge.onStatus(subscribe("speech status", setStatus)),
       bridge.onPasteLastStatus(subscribe("paste last", setPasteLastStatus)),
       bridge.onMagicStatus(subscribe("rewriting status", setMagicStatus)),
       bridge.onSettingsChanged(subscribe("settings", receiveSettings)),
@@ -166,9 +153,6 @@ export function useWorkspace() {
       bridge.onUpdateStatus(subscribe("update status", setUpdateStatus)),
       bridge.onRecorderCommand((command) => {
         if (!isCurrent()) return;
-        if (command.action === "start")
-          setCaptureProfile(command.captureProfile ?? null);
-        if (command.action === "cancel") setCaptureProfile(null);
         void recorder.handle(command).catch((reason) => {
           if (isCurrent()) report(reason);
           // Tell the main process, so its capture state never waits forever.
@@ -425,30 +409,6 @@ export function useWorkspace() {
     return run;
   }
 
-  function managePersonalProfile(
-    command: PersonalProfileCommand,
-  ): Promise<boolean> {
-    const verb =
-      command.action === "delete"
-        ? "deleted"
-        : command.action === "rename"
-          ? "renamed"
-          : "saved";
-    return action(async () => {
-      receiveSettings(await bridge.managePersonalProfile(command));
-    }, `Profile ${verb} · active settings unchanged`);
-  }
-
-  function activateProfile(
-    command: ProfileActivationCommand,
-  ): Promise<boolean> {
-    return action(
-      async () =>
-        receiveSettings(await bridge.activatePersonalProfile(command)),
-      "Profile switched",
-    );
-  }
-
   async function updateTranscript(
     id: string,
     text: string | null,
@@ -515,7 +475,6 @@ export function useWorkspace() {
     exportSelection,
     deleteSelection,
     undoDeletion,
-    captureProfile,
     setHistory,
     historyView,
     setHistoryView,
@@ -530,8 +489,6 @@ export function useWorkspace() {
     setError,
     action,
     saveSettings,
-    managePersonalProfile,
-    activateProfile,
     updateTranscript,
     finishOnboarding,
     copy,

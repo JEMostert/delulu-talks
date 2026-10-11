@@ -6,6 +6,7 @@ import {
   splitForRewrite,
 } from "../../src/personalization";
 import type { CustomWord } from "../../src/types";
+import { activeRules } from "../../src/wordPacks";
 
 function rule(
   id: string,
@@ -81,5 +82,32 @@ describe("personalization protects dictated content", () => {
       { text: "my signature\n", protected: false },
       { text: block, protected: true },
     ]);
+  });
+});
+
+describe("word packs", () => {
+  test("pack words fix known misspellings, and your own rules win", () => {
+    const packs = activeRules({ customWords: [], wordPacks: ["programming"] });
+    expect(
+      personalize("push it to git hub, then cube control apply", packs),
+    ).toBe("push it to GitHub, then kubectl apply");
+    const own = activeRules({
+      customWords: [rule("own", "Git Hub Enterprise", "git hub")],
+      wordPacks: ["programming"],
+    });
+    expect(personalize("open git hub", own)).toBe("open Git Hub Enterprise");
+    expect(
+      personalize(
+        "open git hub",
+        activeRules({ customWords: [], wordPacks: [] }),
+      ),
+    ).toBe("open git hub");
+  });
+
+  test("gaming words fix spelled-out slang", () => {
+    const packs = activeRules({ customWords: [], wordPacks: ["gaming"] });
+    expect(personalize("g g, ik ben a f k in CS two", packs, "nl")).toBe(
+      "GG, ik ben AFK in CS2",
+    );
   });
 });

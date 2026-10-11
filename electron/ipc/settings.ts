@@ -1,6 +1,3 @@
-import { activatePersonalProfile } from "../../src/activePersonalProfile";
-import { randomUUID } from "node:crypto";
-import { changePersonalProfiles } from "../../src/personalProfileCommands";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
 export function registerSettingsIpc(
@@ -10,22 +7,9 @@ export function registerSettingsIpc(
     shortcut,
     persistSettings,
     ruleUsage,
-    applySettings,
-    settingsQueue,
-    dictation,
-    asr,
-    paste,
   }: Pick<
     IpcDependencies,
-    | "storage"
-    | "shortcut"
-    | "persistSettings"
-    | "ruleUsage"
-    | "applySettings"
-    | "settingsQueue"
-    | "dictation"
-    | "asr"
-    | "paste"
+    "storage" | "shortcut" | "persistSettings" | "ruleUsage"
   >,
 ): void {
   const ruleIds = () =>
@@ -37,29 +21,6 @@ export function registerSettingsIpc(
     return ruleUsage.get(ruleIds());
   });
   handle("settings:update", (_event, value: unknown) => persistSettings(value));
-  handle("profiles:manage", (_event, command: unknown) =>
-    settingsQueue.run(() =>
-      applySettings({
-        personalProfiles: changePersonalProfiles(
-          storage.getSettings(),
-          command,
-          randomUUID,
-        ),
-      }),
-    ),
-  );
-  handle("profiles:activate", (_event, command: unknown) =>
-    settingsQueue.run(() => {
-      if (dictation.isActive || asr.isBusy || paste.isBusy)
-        throw new Error(
-          "Finish the current recording or model operation first",
-        );
-      return applySettings(
-        activatePersonalProfile(storage.getSettings(), command),
-        true,
-      );
-    }),
-  );
   handle("shortcut:status", () => shortcut.getStatus());
   handle("shortcut:configure", () => shortcut.configure());
 }

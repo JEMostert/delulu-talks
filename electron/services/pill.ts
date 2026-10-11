@@ -21,7 +21,6 @@ export type PillCommand = {
   state: PillState;
   title?: string;
   detail?: string;
-  profile?: string;
   level?: number;
 };
 
@@ -137,7 +136,6 @@ export class PillService {
     state: Exclude<PillState, "hidden">;
     title?: string;
     detail?: string;
-    profile?: string;
     level?: number;
   }): void {
     this.send(command);
@@ -161,7 +159,6 @@ export class PillService {
             state: command.state,
             title: command.title,
             detail: command.detail,
-            profile: command.profile,
           };
     if (this.platform === "darwin") {
       if (!this.mac && command.state !== "hidden") {

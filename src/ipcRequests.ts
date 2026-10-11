@@ -286,8 +286,6 @@ export const ipcRequestSchemas = {
   "paste:recovery": noArguments,
   "paste:copyInstead": schema(1, ([id]) => [requestText(id, 128)]),
   "paste:dismissRecovery": schema(1, ([id]) => [requestText(id, 128)]),
-  "profiles:manage": schema(1, ([command]) => [jsonInput(command)]),
-  "profiles:activate": schema(1, ([command]) => [jsonInput(command)]),
   "dictation:pause": noArguments,
   "dictation:resume": noArguments,
   "recorder:silence": schema(3, ([id, remaining, stop]) => {

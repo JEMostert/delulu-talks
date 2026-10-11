@@ -345,3 +345,38 @@ test("a quick tap reports a short recording, not a microphone error", () => {
   expect(f.asr.getStatus().phase).toBe("idle");
   expect(f.service.isActive).toBe(false);
 });
+
+test("automatic language guesses Dutch or English when the model reports none", async () => {
+  const f = fixture({
+    language: "auto",
+    keepHistory: true,
+    customWords: [
+      {
+        id: "nl",
+        language: "nl",
+        term: "Utrecht",
+        soundsLike: "uut recht",
+        replacement: "",
+        enabled: true,
+      },
+    ],
+  });
+  f.inference(async () => ({
+    text: "Ik heb de code naar github gepusht en daarna ga ik naar uut recht",
+    recognizedLanguage: null as unknown as string,
+  }));
+  await f.service.submitRecording(f.recording());
+  expect(f.records[0]).toMatchObject({
+    language: "nl",
+    recognizedLanguage: null,
+    requestedLanguage: "auto",
+  });
+  expect(f.records[0].personalizedText).toContain("naar Utrecht");
+
+  f.inference(async () => ({
+    text: "Kestrel Moondream Delulu",
+    recognizedLanguage: null as unknown as string,
+  }));
+  await f.service.submitRecording(f.recording());
+  expect(f.records[1].language).toBe("und");
+});

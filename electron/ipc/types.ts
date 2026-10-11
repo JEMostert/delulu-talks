@@ -2,7 +2,6 @@ import type { PasteLastService } from "../services/pasteLast";
 import type { PasteRecovery } from "../../src/types";
 import type { ModelCacheService } from "../services/modelCache";
 import type { RuleUsageService } from "../services/ruleUsage";
-import type { SerialQueue } from "../runtime/serialQueue";
 import type { IpcRequestChannel } from "../../src/ipcRequests";
 import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import type { AppSettings, TranscriptRecord } from "../../src/types";
@@ -47,11 +46,6 @@ export interface IpcDependencies {
   schedulePasteLast: () => unknown;
   getPasteRecovery: () => PasteRecovery | null;
   setPasteRecovery: (recovery: PasteRecovery | null) => void;
-  applySettings: (
-    value: unknown,
-    explicitProfileActivation?: boolean,
-  ) => Promise<AppSettings>;
-  settingsQueue: SerialQueue;
   broadcast: (channel: string, payload: unknown) => void;
   selectedAudioFiles: Set<string>;
 }
