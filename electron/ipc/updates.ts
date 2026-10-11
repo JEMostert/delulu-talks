@@ -1,4 +1,3 @@
-import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
 export function registerUpdatesIpc(

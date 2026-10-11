@@ -8,9 +8,6 @@ import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import type { AppSettings, TranscriptRecord } from "../../src/types";
 import type { AsrService } from "../services/asr";
 import type { DictationService } from "../services/dictation";
-import type { PasteService } from "../services/paste";
-import type { PillService } from "../services/pill";
-import type { ShortcutService } from "../services/shortcut";
 import type { StorageService } from "../services/storage";
 import type { UpdateService } from "../services/updates";
 

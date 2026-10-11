@@ -4,7 +4,6 @@ import { freemem, totalmem } from "node:os";
 import type { RuntimeDiagnostics } from "../../src/types";
 import type { StorageService } from "../services/storage";
 import { getMicrophonePermission } from "../services/microphonePermission";
-import { getAccessibilityPermission } from "../services/accessibilityPermission";
 import { createPermissionAdapter } from "../services/desktopAdapters";
 import { runtimePython } from "./location";
 
@@ -21,17 +20,25 @@ function probe(program: string, args: string[]): Promise<string> {
 export async function runtimeDiagnostics(
   storage: StorageService,
 ): Promise<RuntimeDiagnostics> {
-  const pythonPath = runtimePython(storage.venvDirectory);
-  const installed = existsSync(pythonPath);
+  let pythonPath = "";
+  let runtimeError = "";
+  try {
+    pythonPath = runtimePython(storage.venvDirectory);
+  } catch {
+    runtimeError =
+      "Invalid runtime activation record. Run Repair to rebuild safely.";
+  }
+  const installed = !runtimeError && existsSync(pythonPath);
   const [python, ffmpeg, metadata] = await Promise.all([
-    probe(
-      installed
-        ? pythonPath
-        : process.platform === "win32"
-          ? "python"
-          : "python3",
-      ["--version"],
-    ),
+    runtimeError ||
+      probe(
+        installed
+          ? pythonPath
+          : process.platform === "win32"
+            ? "python"
+            : "python3",
+        ["--version"],
+      ),
     probe("ffmpeg", ["-version"]),
     installed
       ? probe(pythonPath, [

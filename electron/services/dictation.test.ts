@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, jest, test } from "bun:test";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,6 +43,7 @@ function fixture(overrides: Partial<AppSettings> = {}) {
     recognizedLanguage: "en",
   });
   let deliveryError: Error | null = null;
+  let historyError: Error | null = null;
   const recovery: boolean[] = [];
   const asr = {
     getStatus: () => status,
@@ -76,6 +77,7 @@ function fixture(overrides: Partial<AppSettings> = {}) {
       addHistory: (record: TranscriptRecord) => records.push(record),
       findHistory: (id: string) => records.find((r) => r.id === id),
       replaceHistory: (record: TranscriptRecord) => {
+        if (historyError) throw historyError;
         records[records.findIndex((r) => r.id === record.id)] = record;
       },
     } as unknown as StorageService,
@@ -144,6 +146,9 @@ function fixture(overrides: Partial<AppSettings> = {}) {
     deliveryError: (error: Error) => {
       deliveryError = error;
     },
+    historyError: (error: Error) => {
+      historyError = error;
+    },
   };
 }
 
@@ -210,6 +215,19 @@ test("paste failures report clipboard truth and never offer audio retry that cou
   }
 });
 
+test("a history write failure after a successful paste does not report the paste as failed", async () => {
+  const f = fixture();
+  f.historyError(new Error("Disk full"));
+  await f.service.submitRecording(f.recording());
+  expect(f.deliveries).toEqual(["Ship the release."]);
+  expect(f.asr.getStatus()).toMatchObject({
+    phase: "idle",
+    message: "Transcript: paste attempted — destination unconfirmed",
+  });
+  expect(f.records[0].delivery?.state).not.toBe("copied");
+  await expect(f.service.retry()).rejects.toThrow("No failed recording");
+});
+
 test("rewrite failure holds spoken corrections for review but lets ordinary polishing fall back to the transcript", async () => {
   for (const preset of ["spoken-corrections", "clean"] as const) {
     const f = fixture({
@@ -259,6 +277,34 @@ test("audio the renderer submits while paused is transcribed exactly once", asyn
   });
   expect(f.deliveries).toEqual(["Ship the release."]);
   expect(f.asr.getStatus().phase).toBe("idle");
+});
+
+test("a pause the recorder never acknowledges fails the capture instead of staying pausing", () => {
+  jest.useFakeTimers();
+  try {
+    const acknowledged = fixture();
+    const acknowledgedSession = acknowledged.start();
+    acknowledged.service.recordingStarted(acknowledgedSession);
+    acknowledged.service.pause();
+    acknowledged.service.recordingPauseChanged(acknowledgedSession, true);
+    jest.advanceTimersByTime(60_000);
+    expect(acknowledged.asr.getStatus().phase).toBe("paused");
+    expect(acknowledged.service.isActive).toBe(true);
+
+    const silent = fixture();
+    const sessionId = silent.start();
+    silent.service.recordingStarted(sessionId);
+    silent.service.pause();
+    jest.advanceTimersByTime(15_000);
+    expect(silent.commands.at(-1)).toMatchObject({
+      action: "cancel",
+      sessionId,
+    });
+    expect(silent.service.isActive).toBe(false);
+    expect(silent.asr.getStatus().phase).toBe("error");
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test("presses during paste or processing never throw", async () => {

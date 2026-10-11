@@ -101,22 +101,6 @@ function failedLifecycle(running: boolean): RuntimeLifecycle {
     : UNLOADED_LIFECYCLE;
 }
 
-function setupCause(error: unknown, depth = 0): string {
-  if (depth > 4) return "Additional nested causes omitted";
-  const message =
-    error instanceof Error
-      ? `${error.name}: ${error.message.slice(0, 2048)}`
-      : String(error).slice(0, 2048);
-  if (error instanceof AggregateError)
-    return `${message}\n${error.errors
-      .slice(0, 4)
-      .map((cause) => setupCause(cause, depth + 1))
-      .join("\n")}`;
-  if (error instanceof Error && error.cause !== undefined)
-    return `${message}\nCaused by: ${setupCause(error.cause, depth + 1)}`;
-  return message;
-}
-
 function conciseError(value: string): string {
   const lines = value
     .split(/\r?\n/)

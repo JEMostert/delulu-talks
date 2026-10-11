@@ -2,7 +2,13 @@ import { previewApi } from "./preview";
 import type { DeluluApi } from "./types";
 import { restoreDomainError } from "./domainErrors";
 
-const api = window.delulu ?? previewApi;
+// The browser preview mock is dev-only (dev:web and e2e); Vite replaces
+// import.meta.env.DEV with false in production builds so it is tree-shaken.
+const api: DeluluApi =
+  window.delulu ?? (import.meta.env.DEV ? previewApi : missingBridge());
+function missingBridge(): never {
+  throw new Error("Delulu bridge is unavailable outside the Electron preload.");
+}
 // Preserve subscription disposers and synchronous methods; only invocation
 // promise rejections cross the error reconstruction boundary.
 // contextBridge freezes its exports. Proxy a mutable wrapper so wrapping a method

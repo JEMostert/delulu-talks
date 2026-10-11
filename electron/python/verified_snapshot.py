@@ -93,9 +93,9 @@ def verified_snapshot(repo_id, revision, cache_dir=None, local_files_only=False,
                 continue
             if local_files_only or os.environ.get("HF_HUB_OFFLINE") == "1":
                 raise RuntimeError(f"Offline checkpoint file is missing or corrupt: {name}. Reconnect and retry setup.")
-            # Never overwrite a bad final artifact: preserve it for diagnosis.
+            # Keep one bad final artifact for diagnosis; a newer one replaces it.
             if target.exists():
-                target.rename(target.with_name(target.name + ".corrupt-" + uuid.uuid4().hex))
+                os.replace(target, target.with_name(target.name + ".corrupt"))
             # Reuse existing standard Hub blobs only after checking the upstream
             # pinned digest. Hard-link complete immutable content where supported.
             try:
@@ -157,7 +157,7 @@ def verified_snapshot(repo_id, revision, cache_dir=None, local_files_only=False,
             if partial.stat().st_size != size:
                 raise RuntimeError(f"Interrupted download retained for retry: {name}")
             if _digest(partial, expected) != expected:
-                partial.rename(partial.with_name(partial.name + ".corrupt-" + uuid.uuid4().hex))
+                os.replace(partial, target.with_name(target.name + ".corrupt"))
                 raise RuntimeError(f"Checkpoint hash mismatch: {name}. Corrupt partial preserved; retry downloads a fresh file.")
             os.replace(partial, target)
             receipt.unlink(missing_ok=True)

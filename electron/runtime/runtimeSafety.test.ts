@@ -1,14 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
-import {
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { activateRuntime, rollbackRuntime, runtimeDirectory } from "./location";
+import { activateRuntime, runtimeDirectory } from "./location";
 import { SerialQueue } from "./serialQueue";
 
 const directories: string[] = [];
@@ -24,20 +18,16 @@ function directory() {
 const old = "12345678-1234-1234-1234-123456789abc";
 const candidate = "87654321-4321-4321-4321-cba987654321";
 
-test("failed repair can restore the prior runtime or a legacy installation", () => {
+test("legacy installations stay usable and activation switches generations", () => {
   const root = directory();
   expect(runtimeDirectory(root)).toBe(root);
   activateRuntime(root, old);
-  rollbackRuntime(root);
-  expect(runtimeDirectory(root)).toBe(root);
-  activateRuntime(root, old);
+  expect(runtimeDirectory(root)).toBe(join(root, "generations", old));
   activateRuntime(root, candidate);
   expect(runtimeDirectory(root)).toBe(join(root, "generations", candidate));
-  rollbackRuntime(root);
-  expect(runtimeDirectory(root)).toBe(join(root, "generations", old));
 });
 
-test("malformed activation and rollback targets cannot replace the working pointer", () => {
+test("malformed activation cannot replace the working pointer", () => {
   const root = directory();
   activateRuntime(root, old);
   const pointer = join(root, "active.json");
@@ -46,13 +36,6 @@ test("malformed activation and rollback targets cannot replace the working point
     "Invalid runtime generation",
   );
   expect(readFileSync(pointer, "utf8")).toBe(original);
-  writeFileSync(
-    pointer,
-    JSON.stringify({ generation: old, previous: "../outside" }),
-  );
-  const damaged = readFileSync(pointer, "utf8");
-  expect(() => rollbackRuntime(root)).toThrow("Invalid previous");
-  expect(readFileSync(pointer, "utf8")).toBe(damaged);
   expect(readdirSync(root)).toEqual(["active.json"]);
 });
 

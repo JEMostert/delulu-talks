@@ -33,6 +33,7 @@ export type PillIo = {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   scriptPath?: () => string;
+  killDelayMs?: number;
 };
 
 const LAYER_SHELL_CANDIDATES = [
@@ -88,6 +89,7 @@ export class PillService {
   private readonly now: () => number;
   private readonly platform: NodeJS.Platform;
   private readonly env: NodeJS.ProcessEnv;
+  private readonly killDelayMs: number;
 
   constructor(private readonly io: PillIo = {}) {
     this.spawn = io.spawn ?? spawn;
@@ -96,6 +98,7 @@ export class PillService {
     this.now = io.now ?? Date.now;
     this.platform = io.platform ?? process.platform;
     this.env = io.env ?? process.env;
+    this.killDelayMs = io.killDelayMs ?? 5000;
   }
 
   get method(): "layer-shell" | "mac-panel" | "unavailable" {
@@ -335,5 +338,11 @@ export class PillService {
     child.stdin.end();
     // Electron can exit before a delayed cleanup timer runs.
     child.kill("SIGTERM");
+    // Escalate like WorkerClient.stop() if the helper ignores SIGTERM. Unref'd so
+    // a pending escalation never keeps Electron alive.
+    const escalation = setTimeout(() => {
+      child.kill("SIGKILL");
+    }, this.killDelayMs);
+    escalation.unref();
   }
 }

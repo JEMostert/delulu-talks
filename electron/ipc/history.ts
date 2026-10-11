@@ -3,7 +3,7 @@ import { openSync, closeSync, readFileSync, fstatSync } from "node:fs";
 import { extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { historySelection } from "../services/historyBatch";
-import { dialog, session } from "electron";
+import { dialog } from "electron";
 import type {
   ExportFormat,
   HistoryRetentionPreview,

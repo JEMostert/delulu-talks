@@ -161,7 +161,7 @@ async function runtime(
   const metal = kind === "speech" && usesMetal();
   const root =
     kind === "speech" ? storage.venvDirectory : storage.magicVenvDirectory;
-  const backend = inventoryBackend(kind, metal, process.platform === "win32");
+  const backend = inventoryBackend(kind, metal);
   const modules =
     kind === "magic"
       ? ["torch", "torchvision", "transformers"]

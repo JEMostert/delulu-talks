@@ -21,12 +21,7 @@ export type {
 } from "./domainErrors";
 
 export type Page =
-  | "home"
-  | "lab"
-  | "models"
-  | "vocabulary"
-  | "history"
-  | "settings";
+  "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
 
 export type SpeechModelId = "r2t2" | "r2t2Mlx";
 /** Historical Qwen speech results retain their identity; it is never an active engine. */

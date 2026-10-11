@@ -14,15 +14,10 @@ import {
 import type { MenuItemConstructorOptions } from "electron";
 import electronUpdater from "electron-updater";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
-import {
-  HistoryBatchDeletion,
-  historySelection,
-} from "./services/historyBatch";
+import { HistoryBatchDeletion } from "./services/historyBatch";
 import { join, resolve } from "node:path";
 import type {
   AppSettings,
-  MagicPreset,
   Page,
   PasteRecovery,
   TranscriptRecord,
@@ -30,18 +25,14 @@ import type {
 import { normalizeTimings } from "../src/pipelineTimings";
 import { REWRITE_PRESETS } from "../src/rewritePresets";
 import { assertPersonalProfilesUpdate } from "../src/personalProfiles";
-import { DomainError } from "../src/domainErrors";
 import { deliveredText } from "../src/transcriptText";
 import { rememberSessionTranscript } from "../src/sessionTranscriptRetention";
 import { SerialQueue } from "./runtime/serialQueue";
 import { AsrService } from "./services/asr";
 import { ModelCacheService } from "./services/modelCache";
 import { DictationService } from "./services/dictation";
-import { PasteService } from "./services/paste";
 import { RuleUsageService } from "./services/ruleUsage";
 import { PasteLastService } from "./services/pasteLast";
-import { PillService } from "./services/pill";
-import { ShortcutService } from "./services/shortcut";
 import { normalizeSettings, StorageService } from "./services/storage";
 import {
   createIndicatorAdapter,
@@ -886,11 +877,6 @@ function setupPermissions(): void {
   );
 }
 
-function validateText(value: unknown, max: number): string {
-  if (typeof value !== "string") throw new Error("Expected text input");
-  return value.slice(0, max);
-}
-
 function persistSettings(value: unknown): Promise<AppSettings> {
   return settingsQueue.run(() => applySettings(value));
 }
@@ -947,8 +933,16 @@ async function applySettings(
   if (saved.menuBarOnly !== previous.menuBarOnly) syncMacDock();
   if (saved.launchAtLogin !== previous.launchAtLogin)
     syncLoginItem(saved.launchAtLogin);
-  if (runtimeChanged) await asr.unload();
-  if (magicRuntimeChanged) await asr.unloadMagic();
+  // Settings are already saved. A model that is still busy must not skip the
+  // broadcast and residency update below, so an unload failure is only logged.
+  if (runtimeChanged)
+    await asr.unload().catch((error) => {
+      console.error("Speech model was not unloaded:", error);
+    });
+  if (magicRuntimeChanged)
+    await asr.unloadMagic().catch((error) => {
+      console.error("Rewrite model was not unloaded:", error);
+    });
   const residencyChanged =
     next.preloadModel !== previous.preloadModel ||
     next.preloadMagicModel !== previous.preloadMagicModel ||
@@ -980,18 +974,6 @@ function syncLoginItem(enabled: boolean): void {
       `Could not change launch at login: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-}
-
-function assertRuntimeIdle(): void {
-  if (dictation.isActive || asr.isBusy)
-    throw new DomainError(
-      "BUSY",
-      "Finish the current recording or model operation first",
-      {
-        operationId: randomUUID(),
-        operation: "runtime:idle",
-      },
-    );
 }
 
 async function start(): Promise<void> {

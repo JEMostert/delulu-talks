@@ -34,6 +34,12 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: resolve(__dirname, "index.html"),
+        // The browser preview mock has top-level state; drop it when bridge.ts
+        // no longer references it (production builds).
+        treeshake: {
+          moduleSideEffects: (id) =>
+            !/[\\/]src[\\/]preview(Scenarios)?\.ts$/.test(id),
+        },
       },
     },
   },

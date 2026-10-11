@@ -675,7 +675,7 @@ export class RuntimeInstaller {
         revision: RUNTIME_REVISION,
         kind,
         generation,
-        backend: inventoryBackend(kind, metal, this.windows),
+        backend: inventoryBackend(kind, metal),
         target: this.target,
         python: candidatePython,
         directory: candidate,

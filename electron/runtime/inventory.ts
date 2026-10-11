@@ -88,7 +88,6 @@ export type RuntimeInventory = {
 export function inventoryBackend(
   kind: RuntimeKind,
   metal: boolean,
-  windows: boolean,
 ): InventoryBackend {
   if (kind === "magic")
     return { engine: "transformers", devicePreference: ["cuda", "mps", "cpu"] };

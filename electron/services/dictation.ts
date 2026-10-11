@@ -62,6 +62,7 @@ const ACTIVE_CAPTURE: CaptureState[] = [
   "resuming",
 ];
 const OPENING_DEADLINE_MS = 45_000;
+const PAUSING_DEADLINE_MS = 15_000;
 const STOPPING_DEADLINE_MS = 30_000;
 
 class NoSpeechError extends Error {
@@ -377,7 +378,7 @@ export class DictationService {
       if (
         !sessionId ||
         sessionId !== this.captureSessionId ||
-        !["opening", "stopping"].includes(this.captureState)
+        !["opening", "pausing", "stopping"].includes(this.captureState)
       )
         return;
       this.sendRecorder({
@@ -408,6 +409,10 @@ export class DictationService {
   pause(): void {
     if (this.captureState !== "listening") return;
     this.captureState = "pausing";
+    this.armDeadline(
+      PAUSING_DEADLINE_MS,
+      "The recording did not pause. Please dictate again.",
+    );
     this.sendRecorder({
       action: "pause",
       sessionId: this.captureSessionId ?? undefined,
@@ -431,6 +436,7 @@ export class DictationService {
       this.captureState !== (paused ? "pausing" : "resuming")
     )
       return;
+    this.clearDeadline();
     this.captureState = paused ? "paused" : "listening";
     this.asr.setActivity(
       paused ? "paused" : "listening",
@@ -792,20 +798,13 @@ export class DictationService {
       this.setHud({ state: "delivering" });
       deliveryStarted = true;
       if (settings.autoPaste) {
+        let method: string | null = null;
         try {
-          const method = await this.paste.paste(
+          method = await this.paste.paste(
             output,
             settings.restoreClipboardAfterPaste,
             (record.timings ??= {}),
           );
-          record = this.recordDelivery(
-            record,
-            "paste-attempted",
-            "Paste command sent; destination receipt is not confirmed",
-            method,
-          );
-          delivery = "pasted";
-          completion = `${outputName}: paste attempted — destination unconfirmed`;
         } catch (error) {
           const detail = (
             error instanceof Error ? error.message : String(error)
@@ -821,6 +820,18 @@ export class DictationService {
           completion = copied
             ? `Copied — paste manually (${detail})`
             : `Transcribed — clipboard copy failed (${detail})`;
+        }
+        if (method !== null) {
+          delivery = "pasted";
+          completion = `${outputName}: paste attempted — destination unconfirmed`;
+          const pasteDetail =
+            "Paste command sent; destination receipt is not confirmed";
+          record = this.recordDelivery(
+            record,
+            "paste-attempted",
+            pasteDetail,
+            method,
+          );
         }
       } else if (settings.copyToClipboard) {
         try {
@@ -1150,14 +1161,19 @@ export class DictationService {
     detail?: string,
     method?: string,
   ): TranscriptRecord {
-    const saved = this.storage.findHistory(record.id);
-    const updated = {
-      ...(saved ?? record),
-      delivery: { state, updatedAt: Date.now(), detail, method },
-    };
-    if (saved) this.storage.replaceHistory(updated);
-    this.broadcastTranscript(updated);
-    return updated;
+    const delivery = { state, updatedAt: Date.now(), detail, method };
+    try {
+      const saved = this.storage.findHistory(record.id);
+      const updated = { ...(saved ?? record), delivery };
+      if (saved) this.storage.replaceHistory(updated);
+      this.broadcastTranscript(updated);
+      return updated;
+    } catch (error) {
+      // Delivery already happened; a failed history write must not turn a
+      // paste or copy into a reported failure.
+      console.error("Could not record delivery", error);
+      return { ...record, delivery };
+    }
   }
 
   private publishDeliveryTimings(

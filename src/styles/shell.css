@@ -796,18 +796,6 @@ button.engine-chip:hover {
   margin: 8px 10px;
   border-top: 1px solid var(--line);
 }
-.quick-footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 6px 6px 0;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-.quick-footer button {
-  flex: 1;
-  min-width: max-content;
-}
 
 /* ── Latest result (home) ─────────────────────────────── */
 .latest-result {

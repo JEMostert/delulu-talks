@@ -2,7 +2,6 @@ import {
   rendererRecoveryState,
   reloadRenderer,
 } from "../services/rendererRecovery";
-import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
 export function registerRendererIpc(

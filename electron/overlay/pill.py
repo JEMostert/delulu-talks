@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sys
+import tempfile
 import threading
 import time
 
@@ -374,7 +376,9 @@ class PillApplication(Gtk.Application):
             self.shown_level = 0.62
             self._draw(self.area, cr, width, HEIGHT)
             suffix = "-reduced-motion" if self.reduce_motion else ""
-            path = f"/tmp/delulu-pill-{self.preview}{suffix}.png"
+            # mkdtemp is unique and owner-only, so no fixed /tmp name can be pre-created or symlinked.
+            directory = tempfile.mkdtemp(prefix="delulu-pill-")
+            path = os.path.join(directory, f"{self.preview}{suffix}.png")
             surface.write_to_png(path)
             print(json.dumps({"type": "export", "path": path, "width": width, "height": HEIGHT}), flush=True)
         finally:

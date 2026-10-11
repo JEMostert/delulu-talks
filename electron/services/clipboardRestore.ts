@@ -115,7 +115,12 @@ export class ClipboardRestore {
           }
           if (this.clock.now() >= deadline) {
             this.cancel();
-            void Promise.resolve(restore(previous)).catch(() => undefined);
+            // The executor also turns a synchronous throw from restore into a logged rejection.
+            void new Promise<void>((resolve) =>
+              resolve(restore(previous)),
+            ).catch((error) =>
+              console.error("Could not restore the clipboard", error),
+            );
           }
         } catch {
           this.cancel();

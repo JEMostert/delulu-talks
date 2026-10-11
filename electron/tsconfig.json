@@ -6,6 +6,7 @@
     "lib": ["ES2023"],
     "types": ["node", "electron", "bun"],
     "strict": true,
+    "noUnusedLocals": true,
     "skipLibCheck": true,
     "noEmit": true,
     "allowImportingTsExtensions": false,

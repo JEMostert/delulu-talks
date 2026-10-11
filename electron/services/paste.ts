@@ -27,7 +27,7 @@ export class ClipboardCopyError extends Error {
   }
 }
 
-type PasteCommand = { program: string; args: string[]; input?: string };
+type PasteCommand = { program: string; args: string[] };
 type PortalInterface = ClientInterface &
   Record<string, (...args: unknown[]) => Promise<unknown>>;
 type ConnectedBus = MessageBus & { name: string | null };
@@ -281,7 +281,6 @@ export class PasteService {
         });
         if (typeof child.stdin?.on === "function")
           child.stdin.on("error", () => undefined);
-        if (command.input) child.stdin.end(command.input);
         // A stuck injector must not keep the paste (and dictation) busy forever.
         const timeout = setTimeout(() => {
           child.kill();

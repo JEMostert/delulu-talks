@@ -133,6 +133,11 @@ MAGIC_MODELS = {
     "qwen35Medium": "Qwen/Qwen3.5-2B",
     "qwen35Large": "Qwen/Qwen3.5-4B",
 }
+MAGIC_REVISIONS = {
+    "Qwen/Qwen3.5-0.8B": "2fc06364715b967f1860aea9cf38778875588b17",
+    "Qwen/Qwen3.5-2B": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+    "Qwen/Qwen3.5-4B": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+}
 MAGIC_PRESETS = {
     "spoken-corrections": "Resolve explicit spoken self-corrections without paraphrasing.",
     "polish": (
@@ -347,7 +352,7 @@ class Worker:
             cache_dir = str(request.get("cacheDir") or "") or None
             emit_progress("Retrieving rewrite checkpoint (cached files may be reused)…", stage="download")
             model_path = snapshot_download(
-                repo_id=model_id, cache_dir=cache_dir,
+                repo_id=model_id, revision=MAGIC_REVISIONS[model_id], cache_dir=cache_dir,
                 local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1",
                 allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.tiktoken", "*.jinja"],
                 tqdm_class=download_progress_class(),
@@ -479,22 +484,28 @@ class Worker:
         if self.magic_warmup != "complete":
             self.magic_warmup = "warming"
             emit_progress("Exercising rewrite inference for the first request…", stage="warmup")
-        with torch.inference_mode():
-            generated = self.magic_model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=False,
-                repetition_penalty=1.0 if preset == "spoken-corrections" else 1.05,
-                use_cache=True,
-            )
-        output = self.magic_processor.decode(generated[0][input_length:], skip_special_tokens=True).strip()
-        output = re.sub(r"^(?:<think>)?.*?</think>\s*", "", output, flags=re.DOTALL).strip()
-        if preset == "spoken-corrections":
-            if generated.shape[-1] - input_length >= max_new_tokens:
-                raise SpokenCorrectionError("Cleanup exceeded its output limit. Original saved for review; nothing sent.")
-            output = apply_spoken_corrections(str(request.get("text", "")), output)
-        if not output:
-            raise RuntimeError("The rewrite model returned an empty rewrite")
+        try:
+            with torch.inference_mode():
+                generated = self.magic_model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                    repetition_penalty=1.0 if preset == "spoken-corrections" else 1.05,
+                    use_cache=True,
+                )
+            output = self.magic_processor.decode(generated[0][input_length:], skip_special_tokens=True).strip()
+            output = re.sub(r"^(?:<think>)?.*?</think>\s*", "", output, flags=re.DOTALL).strip()
+            if preset == "spoken-corrections":
+                if generated.shape[-1] - input_length >= max_new_tokens:
+                    raise SpokenCorrectionError("Cleanup exceeded its output limit. Original saved for review; nothing sent.")
+                output = apply_spoken_corrections(str(request.get("text", "")), output)
+            if not output:
+                raise RuntimeError("The rewrite model returned an empty rewrite")
+        except BaseException:
+            # A failed warmup must not leave the status stuck at "warming".
+            if self.magic_warmup == "warming":
+                self.magic_warmup = "not-started"
+            raise
         self.magic_warmup = "complete"
         source = str(request.get("text", "")).strip()
         return {

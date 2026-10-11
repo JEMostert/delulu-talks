@@ -71,10 +71,12 @@ class ReduxSpeech:
     def unload(self) -> dict[str, Any]:
         runtime, self.runtime = self.runtime, None
         self.warmup = "not-started"
-        if runtime is not None:
-            runtime.shutdown()
-        del runtime
-        gc.collect()
+        try:
+            if runtime is not None:
+                runtime.shutdown()
+        finally:
+            del runtime
+            gc.collect()
         return self.status()
 
     def transcribe(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -86,12 +88,18 @@ class ReduxSpeech:
         import soundfile as sf
         import soxr
         started = time.perf_counter()
-        samples, rate = sf.read(str(source), dtype="float32", always_2d=False)
+        try:
+            samples, rate = sf.read(str(source), dtype="float32", always_2d=False)
+        except RuntimeError:
+            import librosa
+            samples, rate = librosa.load(str(source), sr=16000, mono=True)
         if samples.ndim > 1:
             samples = samples.mean(axis=1)
         duration = len(samples) / rate
         if rate != 16000:
             samples = soxr.resample(samples, rate, 16000)
+        if not len(samples):
+            raise ValueError("The selected audio file contains no samples")
         inference_started = time.perf_counter()
         result = self.runtime.forward("transcribe", [{"audio": samples, "sample_rate": 16000}])[0]
         if isinstance(result, Exception):

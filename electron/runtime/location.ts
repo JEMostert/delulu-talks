@@ -59,15 +59,3 @@ export function activateRuntime(root: string, generation: string): void {
     throw error;
   }
 }
-
-export function rollbackRuntime(root: string): void {
-  const pointer = join(root, "active.json");
-  const { previous } = JSON.parse(readFileSync(pointer, "utf8"));
-  if (previous === null) {
-    unlinkSync(pointer);
-    return;
-  }
-  if (!validGeneration(previous))
-    throw new Error("Invalid previous runtime activation record");
-  activateRuntime(root, previous);
-}

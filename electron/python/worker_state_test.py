@@ -2,9 +2,11 @@
 import io
 import json
 import os
+import sys
+import types
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import transcription_engine as engine
 
@@ -104,6 +106,80 @@ class WorkerStateTests(unittest.TestCase):
                 engine.emit({"id": "operation", "ok": True, "result": {"text": "a" * 64,
                             "language": "und", "duration": 0, "processingTime": 0}}, "transcribe")
         self.assertEqual(output.getvalue(), "")
+
+
+class FakeInputs(dict):
+    def to(self, device):
+        return self
+
+
+class NoGrad:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class MagicWarmupTests(unittest.TestCase):
+    def fake_torch(self):
+        return SimpleNamespace(inference_mode=NoGrad, cuda=SimpleNamespace(is_available=lambda: False),
+                               backends=SimpleNamespace(mps=None))
+
+    def loaded_worker(self, generate):
+        worker = engine.Worker()
+        worker.magic_model = SimpleNamespace(generate=generate)
+        worker.magic_processor = SimpleNamespace(
+            apply_chat_template=lambda messages, **kwargs: FakeInputs(input_ids=SimpleNamespace(shape=(1, 3))),
+            decode=lambda ids, skip_special_tokens: " Polished text. ")
+        worker.magic_model_name = "qwen35Small"
+        worker.magic_device = "cpu"
+        return worker
+
+    def test_failed_warmup_generation_resets_warmup_for_the_next_attempt(self):
+        def failing(**kwargs):
+            raise RuntimeError("kernel failed")
+
+        worker = self.loaded_worker(failing)
+        with patch.dict(sys.modules, {"torch": self.fake_torch()}), patch.object(engine, "emit_progress"):
+            with self.assertRaisesRegex(RuntimeError, "kernel failed"):
+                worker.generate_rewrite({"text": "hello", "warmup": True})
+            self.assertEqual(worker.magic_warmup, "not-started")
+            worker.magic_model.generate = lambda **kwargs: [[1, 2, 3, 4, 5, 6]]
+            result = worker.generate_rewrite({"text": "hello", "warmup": True})
+        self.assertEqual(result["text"], "Polished text.")
+        self.assertEqual(worker.magic_warmup, "complete")
+
+    def test_checkpoints_are_downloaded_at_their_pinned_revisions(self):
+        self.assertEqual(sorted(engine.MAGIC_REVISIONS), sorted(engine.MAGIC_MODELS.values()))
+        self.assertEqual(engine.MAGIC_REVISIONS, {
+            "Qwen/Qwen3.5-0.8B": "2fc06364715b967f1860aea9cf38778875588b17",
+            "Qwen/Qwen3.5-2B": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+            "Qwen/Qwen3.5-4B": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+        })
+        snapshot = MagicMock(return_value="/cache/model")
+
+        class FakeModel:
+            def eval(self):
+                return self
+
+        hub = types.ModuleType("huggingface_hub")
+        hub.snapshot_download = snapshot
+        transformers = types.ModuleType("transformers")
+        transformers.AutoProcessor = SimpleNamespace(from_pretrained=lambda *a, **k: object())
+        transformers.AutoModelForMultimodalLM = SimpleNamespace(from_pretrained=lambda *a, **k: FakeModel())
+        progress = types.ModuleType("download_progress")
+        progress.download_progress_class = lambda: None
+        modules = {"torch": self.fake_torch(), "huggingface_hub": hub, "transformers": transformers,
+                   "download_progress": progress}
+        with patch.dict(sys.modules, modules), patch.dict(os.environ), patch.object(engine, "emit_progress"):
+            os.environ.pop("HF_HUB_OFFLINE", None)
+            os.environ.pop("TRANSFORMERS_OFFLINE", None)
+            for model_name, repo in engine.MAGIC_MODELS.items():
+                snapshot.reset_mock()
+                engine.Worker().load_magic({"model": model_name})
+                self.assertEqual(snapshot.call_args.kwargs["repo_id"], repo)
+                self.assertEqual(snapshot.call_args.kwargs["revision"], engine.MAGIC_REVISIONS[repo])
 
 
 if __name__ == "__main__":

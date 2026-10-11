@@ -41,6 +41,12 @@ function shortcutDescription(shortcuts: unknown): string | undefined {
       : undefined;
 }
 
+type ConnectedBus = MessageBus & { name: string | null };
+
+function openSessionBus(busAddress?: string): ConnectedBus {
+  return sessionBus(busAddress ? { busAddress } : undefined) as ConnectedBus;
+}
+
 export class ShortcutService {
   private readonly portal =
     process.platform === "linux" &&
@@ -58,8 +64,15 @@ export class ShortcutService {
   private session: string | null = null;
   private shortcuts: PortalInterface | null = null;
   private readonly gesture: ShortcutGesture;
+  private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(mode: () => ShortcutMode, actions: ShortcutActions) {
+  constructor(
+    mode: () => ShortcutMode,
+    actions: ShortcutActions,
+    private readonly openBus: (
+      busAddress?: string,
+    ) => ConnectedBus = openSessionBus,
+  ) {
     this.gesture = new ShortcutGesture(mode, actions);
   }
 
@@ -95,44 +108,58 @@ export class ShortcutService {
     this.gesture.release();
   }
 
-  async register(accelerator: string): Promise<void> {
-    if (this.portal) await this.registerPortal(accelerator);
-    else this.registerNative(accelerator);
+  // The portal path owns one bus and session at a time. Startup registration
+  // and settings changes share this queue so they never interleave.
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(operation);
+    this.queue = result.catch(() => undefined);
+    return result;
   }
 
-  // Settings coordination serializes callers. Hold status notifications until
-  // persistence succeeds, or the previous binding has been restored.
-  async change<T>(
+  register(accelerator: string): Promise<void> {
+    return this.serialize(() => this.bind(accelerator));
+  }
+
+  // Hold status notifications until persistence succeeds, or the previous
+  // binding has been restored.
+  change<T>(
     accelerator: string,
     previousAccelerator: string,
     persist: () => T,
   ): Promise<T> {
-    this.publicationDepth++;
-    try {
-      await this.register(accelerator);
-      return await persist();
-    } catch (error) {
+    return this.serialize(async () => {
+      this.publicationDepth++;
       try {
-        // Portal status contains a localized trigger description, not the
-        // canonical accelerator used for registration. The caller supplies
-        // the previous saved preference explicitly.
-        await this.register(previousAccelerator);
-      } catch (restoreError) {
-        this.update({
-          accelerator: previousAccelerator,
-          registered: false,
-          message: `Previous shortcut could not be restored: ${concise(restoreError)}`,
-        });
-        throw new AggregateError(
-          [error, restoreError],
-          `${concise(error)}. Previous shortcut could not be restored: ${concise(restoreError)}`,
-        );
+        await this.bind(accelerator);
+        return await persist();
+      } catch (error) {
+        try {
+          // Portal status contains a localized trigger description, not the
+          // canonical accelerator used for registration. The caller supplies
+          // the previous saved preference explicitly.
+          await this.bind(previousAccelerator);
+        } catch (restoreError) {
+          this.update({
+            accelerator: previousAccelerator,
+            registered: false,
+            message: `Previous shortcut could not be restored: ${concise(restoreError)}`,
+          });
+          throw new AggregateError(
+            [error, restoreError],
+            `${concise(error)}. Previous shortcut could not be restored: ${concise(restoreError)}`,
+          );
+        }
+        throw error;
+      } finally {
+        this.publicationDepth--;
+        if (!this.publicationDepth) this.publish();
       }
-      throw error;
-    } finally {
-      this.publicationDepth--;
-      if (!this.publicationDepth) this.publish();
-    }
+    });
+  }
+
+  private async bind(accelerator: string): Promise<void> {
+    if (this.portal) await this.registerPortal(accelerator);
+    else this.registerNative(accelerator);
   }
 
   private registerNative(accelerator: string): void {
@@ -168,10 +195,7 @@ export class ShortcutService {
       registered: false,
       message: "Registering with the desktop shortcut portal",
     });
-    const busAddress = compatibleSessionBusAddress(process.env);
-    const bus = sessionBus(
-      busAddress ? { busAddress } : undefined,
-    ) as MessageBus & { name: string | null };
+    const bus = this.openBus(compatibleSessionBusAddress(process.env));
     this.bus = bus;
     bus.on("error", (error) =>
       this.update({

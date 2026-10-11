@@ -41,40 +41,6 @@
 .setup-details[open] > summary {
   margin-bottom: 16px;
 }
-.setup-tabs {
-  display: inline-flex;
-  align-self: flex-start;
-  gap: 2px;
-  margin-bottom: 18px;
-  padding: 3px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--input);
-  box-shadow: inset 0 1px 2px rgba(4, 24, 46, 0.08);
-}
-.setup-tabs button {
-  min-height: 30px;
-  padding: 6px 14px;
-  border: 0;
-  border-radius: 9px;
-  font-size: 12.5px;
-  font-weight: 520;
-  color: var(--muted);
-  background: transparent;
-}
-.setup-tabs button:hover:not([aria-selected="true"]) {
-  color: var(--ink);
-  background: var(--surface-hover);
-}
-.setup-tabs button[aria-selected="true"] {
-  color: var(--ink);
-  font-weight: 600;
-  background: var(--surface);
-  box-shadow:
-    0 1px 3px rgba(4, 24, 46, 0.14),
-    var(--rim-highlight),
-    inset 0 -2px 0 var(--accent);
-}
 .setup-finished {
   display: flex;
   align-items: center;

@@ -19,7 +19,6 @@ type Pending = {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
-  removeAbortListener?: () => void;
 };
 const PREFIX = "@delulu:";
 
@@ -106,7 +105,6 @@ export class WorkerClient {
         if (!request) return true;
         if (response.ok) validateWorkerResult(request.command, response.result);
         clearTimeout(request.timer);
-        request.removeAbortListener?.();
         this.pending.delete(response.id);
         if (response.ok) request.resolve(response.result);
         else
@@ -206,18 +204,11 @@ export class WorkerClient {
     command: string,
     payload: Record<string, unknown> = {},
     timeoutMs = operationTimeout(command),
-    signal?: AbortSignal,
   ): Promise<T> {
     const id = randomUUID();
     let wire: string;
     let child: ChildProcessWithoutNullStreams;
     try {
-      if (signal?.aborted)
-        throw new DomainError(
-          "CANCELLED",
-          "Model operation cancelled before it started",
-          { operationId: id, operation: command },
-        );
       wire = serializeWorkerRequest(
         id,
         command,
@@ -270,28 +261,6 @@ export class WorkerClient {
         reject,
         timer,
       });
-      if (signal) {
-        const cancel = () =>
-          this.stop(
-            new DomainError(
-              "CANCELLED",
-              "Model operation cancelled; its worker was stopped",
-              {
-                operationId: id,
-                operation: command,
-                cancellationEffect: "worker-stopped",
-              },
-            ),
-          );
-        signal.addEventListener("abort", cancel, { once: true });
-        this.pending.get(id)!.removeAbortListener = () =>
-          signal.removeEventListener("abort", cancel);
-        // Cover cancellation between the preflight check and registration.
-        if (signal.aborted) {
-          cancel();
-          return;
-        }
-      }
       child.stdin.write(wire, (error) => {
         if (error && this.child === child)
           this.fail(
@@ -315,9 +284,12 @@ export class WorkerClient {
     const child = this.child;
     if (!child?.pid) return;
     const pid = child.pid;
-    const exited = new Promise<void>((resolve) =>
-      child.once("exit", () => resolve()),
-    );
+    // 'exit' can fire before 'close' while descendants keep stdio open, so a
+    // listener added now would miss it and wait for the fallback timer.
+    const exited = new Promise<void>((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) resolve();
+      else child.once("exit", () => resolve());
+    });
     this.stop(error);
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([
@@ -355,7 +327,6 @@ export class WorkerClient {
     this.child = null;
     for (const [id, request] of this.pending) {
       clearTimeout(request.timer);
-      request.removeAbortListener?.();
       const failure = domainError(error, {
         operationId: id,
         operation: request.command,
