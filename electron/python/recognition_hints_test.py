@@ -4,8 +4,6 @@ import types
 import unittest
 from unittest.mock import patch
 
-import numpy as np
-
 import transcription_engine as engine
 import worker_protocol as protocol
 from r2t2_speech import R2T2Speech
@@ -53,13 +51,17 @@ class FakeInputs(dict):
         return self
 
 
+class FakeIds:
+    shape = (1, 3)
+
+
 class FakeProcessor:
     def __init__(self):
         self.calls = []
 
     def apply_transcription_request(self, **kwargs):
         self.calls.append(kwargs)
-        return FakeInputs(input_ids=np.zeros((1, 3)))
+        return FakeInputs(input_ids=FakeIds())
 
     def decode(self, _output, **_kwargs):
         return {"language": "Dutch", "transcription": "Hallo Kestrel"}
@@ -70,7 +72,7 @@ class FakeModel:
     dtype = "float32"
 
     def generate(self, **_kwargs):
-        return [np.array([1, 2, 3, 4, 151645])]
+        return [[1, 2, 3, 4, 151645]]
 
 
 class InferenceMode:
@@ -89,8 +91,8 @@ class R2T2PromptTests(unittest.TestCase):
         fake_torch = types.SimpleNamespace(inference_mode=InferenceMode)
         with patch.dict(sys.modules, {"torch": fake_torch}):
             calls = speech.processor.calls
-            speech._generate(np.zeros(1600, dtype=np.float32), None, 512, None, "Kestrel, Moondream")
-            speech._generate(np.zeros(1600, dtype=np.float32), "Dutch", 512, None, "")
+            speech._generate([0.0] * 1600, None, 512, None, "Kestrel, Moondream")
+            speech._generate([0.0] * 1600, "Dutch", 512, None, "")
         self.assertIsNone(calls[0]["language"])
         self.assertEqual(calls[0]["prompt"], "Kestrel, Moondream")
         self.assertEqual(calls[1]["language"], "Dutch")
