@@ -36,7 +36,7 @@ Hold your shortcut → Speak → Release
                   Review · edit · optionally rewrite
 ```
 
-With **live typing** in press-to-toggle mode, your words appear at the cursor while you are still speaking: R2T2 types each phrase when you pause. Parakeet Redux is buffered and has no live typing. Hold-to-talk waits until you release the shortcut before pasting, so live paste keys cannot interrupt the held shortcut. Live typing also waits for the finished text when automatic rewriting or spoken punctuation commands are on.
+Dictation delivers the whole text at once after you stop recording. With hold-to-talk, that happens after you release the shortcut, so paste keys cannot interrupt the held shortcut.
 
 Automatic rewriting is off; use **Rewrite** beside a result when you want to shorten or restructure it.
 
@@ -46,7 +46,7 @@ On supported Wayland desktops, a small pearl pill with wave bars stays above you
 
 | Feature                       | What it does                                                                                                                 |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **System dictation**          | Hold-to-talk by default, optional press-to-toggle, live typing, tray controls and desktop-owned shortcut remapping.          |
+| **System dictation**          | Hold-to-talk by default, optional press-to-toggle, tray controls and desktop-owned shortcut remapping.                       |
 | **Optional rewriting**        | Optional local transformations with preview, apply and undo beside each transcript. Automatic rewriting is off by default.   |
 | **Native Wayland experience** | Uses XDG GlobalShortcuts, secure Remote Desktop paste, and a click-through layer-shell recording pill on supported desktops. |
 | **Audio files**               | Imports audio or video for local transcription.                                                                              |
@@ -72,7 +72,7 @@ Delulu Talks opens onto a living ocean with one pearl record button. Press it �
 
 _Captured from the browser preview with demo text. The image follows your light or dark theme._
 
-The **Deep Sea** design system has two themes — _Abyss_ (dark) and _Shallows_ (sunlit, light) — and follows your system by default. A glass sheet rises above a compact dock for History, Audio files, Models, Personalization, the Editor and Settings; <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd> opens the command palette. The tray icon shows whether you are recording, busy, need attention or have an update; its menu switches the speech engine, live typing and rewriting style, and copies any of your five most recent transcripts. See the [design system](docs/DESIGN-SYSTEM.md) and [brand assets](docs/BRAND.md).
+The **Deep Sea** design system has two themes — _Abyss_ (dark) and _Shallows_ (sunlit, light) — and follows your system by default. A glass sheet rises above a compact dock for History, Audio files, Models, Personalization and Settings; <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd> opens the command palette. The tray icon shows whether you are recording, busy, need attention or have an update; its menu switches the speech engine and rewriting style, and copies any of your five most recent transcripts. See the [design system](docs/DESIGN-SYSTEM.md) and [brand assets](docs/BRAND.md).
 
 - **Configure quickly:** the gear opens quick settings for microphone, language, shortcut, paste and theme.
 - **Recover results:** paste the latest transcript, retry failed audio from memory, or discard it explicitly.
@@ -93,7 +93,7 @@ Speech stays ready by default. The optional writing model loads on demand; you c
 
 On Apple Silicon with macOS 15+, Delulu selects the approximately 4.1 GB [R2T2 BF16 MLX conversion](https://huggingface.co/mlx-community/Confucius4-R2T2-bf16). This preserves the preferred fine-tune instead of substituting Qwen3-ASR-0.6B. The checkpoint revision and runtime packages are pinned. Language hints are available; missing or mixed detected language stays unknown. Older Mac installations need **Update setup/Repair** for the new runtime.
 
-**The new R2T2 Mac route is implemented but has not passed native Apple Silicon inference validation in this development pass.** See [Mac support, evidence boundaries and acceptance steps](docs/MAC_SUPPORT.md#native-release-acceptance). The [historical v0.9.4 validation](docs/mac-release-validation.md) applies to Qwen3-ASR-0.6B through vLLM Metal, not the current direct R2T2 MLX Audio route. Live typing is available with CUDA and CPU speech; on Mac, capture completes before transcription and paste. See [the capture boundary](docs/audio-stream-protocol.md).
+**The new R2T2 Mac route is implemented but has not passed native Apple Silicon inference validation in this development pass.** See [Mac support, evidence boundaries and acceptance steps](docs/MAC_SUPPORT.md#native-release-acceptance). The [historical v0.9.4 validation](docs/mac-release-validation.md) applies to Qwen3-ASR-0.6B through vLLM Metal, not the current direct R2T2 MLX Audio route. On Mac, capture completes before transcription and paste.
 
 Linux and Windows share one PyTorch/Transformers speech runtime; v0.12.0 removed the earlier Linux vLLM server, which reserved most of the GPU's memory. Existing Linux installations need **Update setup** once. **Native Windows inference still requires hardware validation.** See [Windows support](docs/WINDOWS_SUPPORT.md). Intel Macs and Rosetta Python are unsupported. R2T2 is the default; Parakeet Redux is the CPU-only alternative on Linux x64. [Model research](docs/MODEL_RESEARCH.md) keeps other models as external benchmark references. Optional Qwen 3.5 rewriting remains available.
 
@@ -191,7 +191,7 @@ electron/
   python/             persistent speech + rewriting worker
 src/
   components/         Electron app shell components
-  pages/              Audio files, History, Models, Personalization, Editor, Settings
+  pages/              Audio files, History, Models, Personalization, Settings
   styles/             Deep Sea tokens, primitives, shell and feature styles
   bridge.ts           typed Electron/browser boundary
   recorder.ts         microphone capture and 16 kHz WAV encoder
@@ -250,4 +250,4 @@ Ready now follows a bounded synthetic transcription warm-up. Recording timings i
 
 The benchmark uses the active speech runtime and cached models, with no clipboard/paste delivery. It measures a supplied audio sample; it is not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
 
-The [historical roadmap](https://github.com/JEMostert/delulu-talks/issues/14) now serves as a record of the broader plan. The current scope is the desktop dictation app: R2T2 speech, explicit profiles and vocabulary, a technical text buffer, optional local Qwen 3.5 rewrite previews, and local history and audio imports. CLI/API servers, editor extensions, watched folders, cloud/account features and meeting-summary pipelines are outside this scope. The unfinished live streaming experiment has been removed; all platforms use buffered capture. Automated fixtures do not establish native MLX/CUDA inference, physical microphone behavior or delivery into another application. Native platform acceptance remains pending.
+The [historical roadmap](https://github.com/JEMostert/delulu-talks/issues/14) now serves as a record of the broader plan. The current scope is the desktop dictation app: R2T2 speech, explicit profiles and vocabulary, optional local Qwen 3.5 rewrite previews, and local history and audio imports. CLI/API servers, editor extensions, watched folders, cloud/account features and meeting-summary pipelines are outside this scope. The unfinished live streaming experiment has been removed; all platforms use buffered capture. Automated fixtures do not establish native MLX/CUDA inference, physical microphone behavior or delivery into another application. Native platform acceptance remains pending.

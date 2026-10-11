@@ -1,9 +1,6 @@
-import type { SelectedTextApi } from "./selectedText";
 export type SetupState =
   "running" | "cancelling" | "cancelled" | "complete" | "failed";
-import type { DictationMode } from "./technicalDictation";
 import type { ImportQueueSnapshot } from "./importQueue";
-import type { ExportTemplateRequest } from "./exportTemplates";
 import type {
   ActivePersonalProfile,
   CaptureProfileSnapshot,
@@ -23,15 +20,13 @@ export type {
   RetryPolicy,
 } from "./domainErrors";
 
-import type { ProjectVocabularySnapshot } from "./projectVocabulary";
 export type Page =
   | "home"
   | "lab"
   | "models"
   | "vocabulary"
   | "history"
-  | "settings"
-  | "technical";
+  | "settings";
 
 export type SpeechModelId = "r2t2" | "r2t2Mlx";
 /** Historical Qwen speech results retain their identity; it is never an active engine. */
@@ -97,7 +92,6 @@ export type AppSettings = {
   shortcutMode: "hold" | "toggle";
   model: SpeechModelId;
   language: string;
-  dictationMode: DictationMode;
   dictationFormatting: DictationFormatting;
   pythonCommand: string;
   inputDeviceId: string;
@@ -118,8 +112,6 @@ export type AppSettings = {
   captureSoundsMuted: boolean;
   /** Speech engine: R2T2 (accuracy, GPU) or Parakeet Redux (light, CPU, Linux x64). */
   speechEngine: "r2t2" | "redux";
-  /** Type text into the focused app while you speak (needs paste, no rewriting). */
-  liveTyping: boolean;
   /** Saved transcripts beyond this many are removed, oldest first. */
   historyLimit: number;
   captureSoundVolume: number;
@@ -166,7 +158,6 @@ export type BackendCapabilities = {
   modelFamily: "r2t2" | "redux" | "qwen3.5";
   timestamps: boolean;
   languageHints: { supported: boolean; languages: string[] };
-  streaming: boolean;
   vocabularyBiasing: boolean;
 };
 export type RuntimeLifecycle = {
@@ -339,8 +330,6 @@ export type TranscriptRecord = {
   /** Source version used for this rewrite; null means unknown legacy provenance. */
   rewriteSourceRevision?: number | null;
   personalizedText?: string | null;
-  technicalText?: string | null;
-  dictationMode?: DictationMode;
   editedText?: string | null;
   magicText?: string | null;
   magicModel?: MagicModelId | null;
@@ -443,8 +432,6 @@ export type RecorderCommand = {
   /** Native commands identify their capture; standalone capture can omit this. */
   sessionId?: string;
   captureProfile?: CaptureProfileSnapshot;
-  /** Stream audio to the main process while recording, for live typing. */
-  live?: boolean;
 };
 
 export type RecordingSubmission = {
@@ -525,7 +512,7 @@ export type ModelCacheCleanupResult = {
 
 export type RenderingMode = "hardware" | "software";
 
-export type DeluluApi = SelectedTextApi & {
+export type DeluluApi = {
   getRenderingMode(): Promise<RenderingMode>;
   onRenderingModeChanged(callback: (mode: RenderingMode) => void): () => void;
   previewModelCache(): Promise<ModelCachePreview>;
@@ -621,15 +608,6 @@ export type DeluluApi = SelectedTextApi & {
   onHistoryRetentionApplied(
     callback: (removedIds: string[]) => void,
   ): () => void;
-  chooseProjectIdentifier(input: {
-    repository: string;
-    rawSpeech: string;
-    symbol: string;
-  }): Promise<ProjectVocabularySnapshot>;
-  getProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
-  selectProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
-  refreshProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
-  clearProjectVocabulary(): Promise<ProjectVocabularySnapshot>;
   chooseAudioFile(): Promise<AudioFileSelection | null>;
   inspectAudioFile(path: string): Promise<AudioFileMetadata>;
   chooseAudioFiles(): Promise<AudioFileSelection[]>;
@@ -648,10 +626,6 @@ export type DeluluApi = SelectedTextApi & {
   onImportQueue(callback: (snapshot: ImportQueueSnapshot) => void): () => void;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
-  exportTranscriptTemplate(
-    id: string,
-    request: ExportTemplateRequest,
-  ): Promise<string | null>;
   recordingStarted(sessionId: string): Promise<void>;
   recordingLimitReached(sessionId: string): Promise<void>;
   recordingPauseChanged(sessionId: string, paused: boolean): Promise<void>;
@@ -668,8 +642,6 @@ export type DeluluApi = SelectedTextApi & {
     inputLost: boolean,
   ): Promise<void>;
   recordingLevel(level: number): void;
-  /** Live typing: 16-bit PCM (base64) at the capture's native rate. */
-  recordingStream(sessionId: string, sampleRate: number, pcm: string): void;
   submitRecording(recording: RecordingSubmission): Promise<void>;
   onPasteLastStatus(callback: (status: PasteLastStatus) => void): () => void;
   onStatus(callback: (status: DictationStatus) => void): () => void;

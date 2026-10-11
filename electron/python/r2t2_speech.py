@@ -192,17 +192,6 @@ class R2T2Speech:
             raise RuntimeError("R2T2 returned an invalid transcription response")
         return parsed
 
-    def transcribe_samples(self, samples, code="en"):
-        """Transcribe 16 kHz mono samples; used for live typing phrases."""
-        from transcription_engine import LANGUAGE_NAMES
-        if self.model is None:
-            raise RuntimeError("R2T2 is not loaded. Load the model to try again.")
-        language = LANGUAGE_NAMES.get(code, "English")
-        return " ".join(
-            self._generate(samples[start:end], language, 1024)["transcription"].strip()
-            for start, end in chunk_bounds(samples, CHUNK_SAMPLES)
-        ).strip()
-
     def transcribe(self, request):
         from transcription_engine import LANGUAGE_NAMES, language_hint
         code, language = language_hint(request)

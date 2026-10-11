@@ -3,7 +3,6 @@ import type { RuntimeDiagnostics } from "./types";
 const PACKAGE_NAMES = [
   "mlx",
   "mlx-audio",
-  "qwen-asr",
   "torch",
   "torchvision",
   "transformers",

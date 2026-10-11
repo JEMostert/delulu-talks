@@ -30,10 +30,6 @@ import {
 } from "../services/historyRetention";
 import { exportRecord, writeExportFile } from "../services/transcripts";
 import { deletedDespiteCleanup } from "../services/migrationBackups";
-import {
-  renderExportTemplate,
-  validateExportTemplateRequest,
-} from "../../src/exportTemplates";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
@@ -393,44 +389,6 @@ export function registerHistoryIpc(
     rebuildTrayMenu();
     if (cleanupFailure) throw cleanupFailure;
   });
-  handle(
-    "history:exportTemplate",
-    async (_event, id: unknown, input: unknown) => {
-      const key = validateText(id, 128);
-      if (historyDeletion.hidden(key))
-        throw new Error("Undo deletion before using this transcript.");
-      const request = validateExportTemplateRequest(input);
-      const findRecord = () =>
-        storage.findHistory(key) ?? sessionTranscripts.get(key);
-      const renderCurrent = () => {
-        const record = findRecord();
-        if (!record) throw new Error("Transcript no longer exists");
-        const text = renderExportTemplate(record, request);
-        if (text !== request.expectedOutput)
-          throw new Error(
-            "The transcript changed. Reopen the export preview before saving.",
-          );
-        return { record, text };
-      };
-      const { record } = renderCurrent();
-      const stem = (record.sourceName ?? `delulu-${record.createdAt}`)
-        .replace(/[/\\]/g, "-")
-        .replace(/\.[^.]+$/, "");
-      const extension = request.extension;
-      const outputPath = await chooseExportPath(
-        {
-          title: "Save transcript template",
-          defaultPath: `${stem}.${extension}`,
-          filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
-        },
-        extension,
-      );
-      if (!outputPath) return null;
-      const { text } = renderCurrent();
-      saveExport(outputPath, text);
-      return outputPath;
-    },
-  );
   handle(
     "history:export",
     async (_event, id: unknown, requestedFormat: ExportFormat) => {

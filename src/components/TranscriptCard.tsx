@@ -1,8 +1,5 @@
 import { CaptureDiagnostics } from "./CaptureDiagnostics";
-import { ExportTemplateDialog } from "./ExportTemplateDialog";
-import type { ExportTemplateRequest } from "../exportTemplates";
 import { PipelineTimingDetails } from "./PipelineTimingDetails";
-import { TechnicalAddressPreview } from "./TechnicalAddressPreview";
 import { RewriteDialog } from "./RewriteDialog";
 import { IdentifierPreview } from "./IdentifierPreview";
 import { FillerPreview } from "./FillerPreview";
@@ -66,10 +63,6 @@ export type TranscriptActions = {
   onSetTitle?: (id: string, title: string | null) => Promise<boolean>;
   onDelete?: (id: string) => void;
   onExport?: (id: string, format: ExportFormat) => void;
-  onExportTemplate?: (
-    id: string,
-    request: ExportTemplateRequest,
-  ) => Promise<string | null>;
   onRemember?: (word: CustomWord) => Promise<boolean>;
   ruleExamples?: TranscriptRecord[];
 };
@@ -81,7 +74,6 @@ export function TranscriptCard({
   onSetTitle,
   onDelete,
   onExport,
-  onExportTemplate,
   onRemember,
   ruleExamples,
   onRewrite,
@@ -98,7 +90,6 @@ export function TranscriptCard({
   const pendingDraft = useCorrectionDraft(record.id);
   const [expanded, setOpen] = useState(!!pendingDraft);
   const open = variant === "detail" || expanded;
-  const [templateExport, setTemplateExport] = useState(false);
   const [showSource, setShowSource] = useState(false);
   const [rewriting, setRewriting] = useState(false);
   const [identifierPreview, setIdentifierPreview] = useState(false);
@@ -227,11 +218,6 @@ export function TranscriptCard({
           <strong>{record.title || record.sourceName || "Dictation"}</strong>
           <span>
             {date} · {Math.max(1, Math.round(record.durationMs / 1000))}s
-            {record.dictationMode && record.dictationMode !== "prose"
-              ? record.dictationMode === "code"
-                ? " · Code"
-                : " · Command"
-              : ""}
             {record.title &&
             record.sourceName &&
             record.title !== record.sourceName
@@ -346,15 +332,6 @@ export function TranscriptCard({
                 The saved transcript changed while this draft was open. Review
                 the current speech before replacing it.
               </p>
-            )}
-          {!editing &&
-            record.dictationMode &&
-            record.dictationMode !== "prose" && (
-              <TechnicalAddressPreview
-                key={record.id}
-                speech={record.text}
-                onCopy={onCopy}
-              />
             )}
           {editing ? (
             <textarea
@@ -493,15 +470,6 @@ export function TranscriptCard({
                           }),
                         )
                       : []),
-                    ...(onExport && onExportTemplate
-                      ? [
-                          {
-                            label: "Export with template…",
-                            icon: Download,
-                            onSelect: () => setTemplateExport(true),
-                          },
-                        ]
-                      : []),
                   ]}
                 />
               </>
@@ -545,13 +513,6 @@ export function TranscriptCard({
             <PipelineTimingDetails timings={record.timings} />
           </details>
         </div>
-      )}
-      {templateExport && onExportTemplate && (
-        <ExportTemplateDialog
-          record={record}
-          onClose={() => setTemplateExport(false)}
-          onExport={(request) => onExportTemplate(record.id, request)}
-        />
       )}
       {rewriting && onRewrite && onSetRewrite && (
         <RewriteDialog

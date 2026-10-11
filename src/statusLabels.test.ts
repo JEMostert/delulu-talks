@@ -55,7 +55,6 @@ describe("engineLabel", () => {
             modelFamily: "r2t2",
             timestamps: false,
             languageHints: { supported: true, languages: [] },
-            streaming: false,
             vocabularyBiasing: false,
           },
         }),

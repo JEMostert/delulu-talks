@@ -10,7 +10,6 @@ import {
   BookA,
   Check,
   Clock3,
-  Code2,
   Cpu,
   Home,
   LoaderCircle,
@@ -41,16 +40,10 @@ import { HistoryDeletionNotice } from "./components/HistoryDeletionNotice";
 import { Alert } from "./components/ui";
 import { LatestResult } from "./components/LatestResult";
 import brandMark from "./assets/delulu-talks-mark.svg";
-import { ProjectVocabulary } from "./components/ProjectVocabulary";
 import { activityLabel, engineLabel } from "./statusLabels";
 import { RecordingClock } from "./components/RecordingClock";
 const LabPage = lazy(() =>
   import("./pages/LabPage").then((module) => ({ default: module.LabPage })),
-);
-const TechnicalPage = lazy(() =>
-  import("./pages/TechnicalPage").then((module) => ({
-    default: module.TechnicalPage,
-  })),
 );
 const ModelsPage = lazy(() =>
   import("./pages/ModelsPage").then((module) => ({
@@ -91,10 +84,6 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
   models: {
     title: "Models",
     subtitle: "Speech and rewrite models, runtimes and backends",
-  },
-  technical: {
-    title: "Editor",
-    subtitle: "Literal editing · undo · explicit copy",
   },
   settings: {
     title: "Settings",
@@ -211,7 +200,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
       [
         ["settings", "Go to Settings"],
         ["lab", "Go to Audio files"],
-        ["technical", "Go to Editor"],
         ["vocabulary", "Go to Personalization"],
       ] as const
     ).map(([page, label]) => ({ id: page, label, run: () => w.setPage(page) })),
@@ -684,23 +672,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                 </div>
               </Activity>
             )}
-            {(visited.has("technical") || w.page === "technical") && (
-              <Activity
-                name="technical"
-                mode={w.page === "technical" ? "visible" : "hidden"}
-              >
-                <div className="workspace-view">
-                  <TechnicalPage
-                    history={w.history}
-                    settings={w.settings}
-                    busy={busy || w.saving}
-                    onUpdateSettings={(patch) => w.saveSettings(patch, null)}
-                    rewriteStatus={w.magicStatus}
-                    onRewriteSetup={() => w.setPage("models")}
-                  />
-                </div>
-              </Activity>
-            )}
             {(visited.has("models") || w.page === "models") && (
               <Activity
                 name="models"
@@ -745,10 +716,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                       w.saveSettings({ customWords }, "Rules saved")
                     }
                   />
-                  <details className="disclosure mt-6">
-                    <summary>Project vocabulary from a code repository</summary>
-                    <ProjectVocabulary />
-                  </details>
                 </div>
               </Activity>
             )}
@@ -799,7 +766,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                       () => bridge.resetPythonEnvironment(),
                       "Runtime removed",
                     )}
-                    onOpenModels={() => navigate("models")}
                   />
                 </div>
               </Activity>
@@ -818,7 +784,6 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   { page: "lab", label: "Audio files", Icon: AudioLines },
                   { page: "models", label: "Models", Icon: Cpu },
                   { page: "vocabulary", label: "Personalization", Icon: BookA },
-                  { page: "technical", label: "Editor", Icon: Code2 },
                   { page: "settings", label: "Settings", Icon: Settings2 },
                 ] as const
               ).map(({ page, label, Icon }) => (

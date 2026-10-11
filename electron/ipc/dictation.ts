@@ -82,14 +82,6 @@ export function registerDictationIpc(
       throw new Error("Recording submission requires a capture session ID");
     return dictation.submitRecording(submission);
   });
-  on("recorder:stream", (_event, id: unknown, rate: unknown, pcm: unknown) => {
-    if (
-      typeof id === "string" &&
-      typeof rate === "number" &&
-      typeof pcm === "string"
-    )
-      dictation.recordingStream(id, rate, pcm);
-  });
   on("recorder:level", (_event, value: unknown) => {
     const level =
       typeof value === "number" && Number.isFinite(value)

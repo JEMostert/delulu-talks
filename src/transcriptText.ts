@@ -27,9 +27,7 @@ export function deliveredText(record: TranscriptRecord): string {
         ? record.magicText
         : null
       : null) ||
-    (record.editedText == null
-      ? (record.technicalText ?? record.personalizedText)
-      : null) ||
+    (record.editedText == null ? record.personalizedText : null) ||
     transcriptText(record)
   );
 }

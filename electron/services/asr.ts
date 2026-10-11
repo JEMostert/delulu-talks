@@ -176,7 +176,7 @@ export class AsrService {
       !!this.loadPromise ||
       !!this.magicLoadPromise ||
       !!this.speechUnloadPromise ||
-      !!this.magicUnloadPromise ||
+      !!this.magicReleasePromise ||
       this.speechOperations > 0 ||
       this.magicOperations > 0 ||
       !!this.manualRewrite
@@ -214,7 +214,7 @@ export class AsrService {
   private magicSetupPromise: Promise<void> | null = null;
   private magicLoadPromise: Promise<void> | null = null;
   private speechUnloadPromise: Promise<void> | null = null;
-  private magicUnloadPromise: Promise<void> | null = null;
+  private magicReleasePromise: Promise<void> | null = null;
   private speechOperations = 0;
   private magicOperations = 0;
   private manualRewrite: ManualRewrite | null = null;
@@ -224,7 +224,6 @@ export class AsrService {
   private magicFailureGeneration = 0;
   private speechIdleTimer: NodeJS.Timeout | null = null;
   private loadedEngine: "r2t2" | "redux" | null = null;
-  private liveActive = false;
   private magicIdleTimer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -821,23 +820,10 @@ export class AsrService {
       return Promise.reject(new Error("The model engines are shutting down"));
     const commands =
       kind === "speech"
-        ? [
-            "capabilities",
-            "ping",
-            "load",
-            "unload",
-            "status",
-            "transcribe",
-            "streamStart",
-            "streamAudio",
-            "streamFinish",
-            "shutdown",
-          ]
+        ? ["capabilities", "load", "unload", "status", "transcribe", "shutdown"]
         : [
             "capabilities",
-            "ping",
             "magicLoad",
-            "magicUnload",
             "magicStatus",
             "magicRewrite",
             "shutdown",
@@ -894,7 +880,7 @@ export class AsrService {
 
   private async releaseMagicForSpeech(settings: AppSettings): Promise<void> {
     if (settings.memoryPolicy !== "balanced") return;
-    await this.magicUnloadPromise;
+    await this.magicReleasePromise;
     if (
       this.magicStatus.engine === "missing" ||
       this.magicStatus.engine === "unloaded"
@@ -1105,64 +1091,6 @@ export class AsrService {
     }
   }
 
-  /**
-   * Live typing: open a streaming session on the loaded speech model. Returns
-   * false when the model cannot stream right now; dictation then stays buffered.
-   */
-  async liveStart(settings: AppSettings): Promise<boolean> {
-    if (usesMetal() || this.shuttingDown) return false;
-    this.liveActive = false;
-    this.speechOperations += 1;
-    this.clearSpeechIdle();
-    try {
-      await this.releaseMagicForSpeech(settings);
-      await this.ensureLoaded(settings);
-      await this.request("speech", "streamStart", {
-        language: settings.language,
-      });
-      this.liveActive = true;
-      return true;
-    } catch {
-      return false;
-    } finally {
-      this.speechOperations -= 1;
-    }
-  }
-
-  /** Send 16-bit PCM (base64) and receive text that became final. */
-  async liveAudio(sampleRate: number, pcm: string): Promise<string> {
-    if (!this.liveActive) return "";
-    const result = await this.request<{ delta: string }>(
-      "speech",
-      "streamAudio",
-      { pcm, sampleRate: Math.round(sampleRate) },
-      30_000,
-    );
-    return result.delta;
-  }
-
-  async liveFinish(): Promise<string> {
-    if (!this.liveActive) return "";
-    this.liveActive = false;
-    try {
-      const result = await this.request<{ delta: string }>(
-        "speech",
-        "streamFinish",
-        {},
-        60_000,
-      );
-      return result.delta;
-    } catch (error) {
-      // A rejected streamFinish can leave a native decoder thread running.
-      // Release this worker before buffered transcription reloads the model.
-      await this.speechWorker.stopAndWait();
-      this.updateStatus({ ...UNLOADED_LIFECYCLE, engine: "unloaded" });
-      throw error;
-    } finally {
-      this.scheduleSpeechIdle();
-    }
-  }
-
   async unload(): Promise<void> {
     if (this.modelOperations.busy)
       throw new Error("Wait for the current model operation before unloading");
@@ -1176,7 +1104,6 @@ export class AsrService {
       throw new Error("Wait for speech to finish before unloading");
     this.clearSpeechIdle();
     this.speechUnloadPromise = (async () => {
-      this.liveActive = false;
       this.updateStatus({ residency: "unloading", idleUnloadAt: null });
       await this.speechWorker.stopAndWait();
       this.loadedEngine = null;
@@ -1229,7 +1156,7 @@ export class AsrService {
     if (this.magicLoadPromise) return this.magicLoadPromise;
     this.clearMagicIdle();
     this.magicLoadPromise = (async () => {
-      await this.magicUnloadPromise;
+      await this.magicReleasePromise;
       if (!eligible()) return;
       const ready = fromSetup || (await this.isMagicEnvironmentReady());
       if (!eligible()) return;
@@ -1309,7 +1236,7 @@ export class AsrService {
     this.throwIfRewriteCancelled(operation);
     if (this.shuttingDown)
       throw new Error("The rewrite model worker is shutting down");
-    await this.magicUnloadPromise;
+    await this.magicReleasePromise;
     if (!eligible()) return;
     this.throwIfRewriteCancelled(operation);
     if (this.shuttingDown)
@@ -1536,7 +1463,7 @@ export class AsrService {
   }
 
   private async performUnloadMagic(forSpeech = false): Promise<void> {
-    if (this.magicUnloadPromise) return this.magicUnloadPromise;
+    if (this.magicReleasePromise) return this.magicReleasePromise;
     if (
       this.magicWorker.busy ||
       this.magicLoadPromise ||
@@ -1547,7 +1474,7 @@ export class AsrService {
         "Wait for rewriting to finish before unloading the rewrite model",
       );
     this.clearMagicIdle();
-    this.magicUnloadPromise = (async () => {
+    this.magicReleasePromise = (async () => {
       this.updateMagicStatus({ residency: "unloading", idleUnloadAt: null });
       await this.magicWorker.stopAndWait();
       this.updateMagicStatus({
@@ -1564,10 +1491,10 @@ export class AsrService {
         throw error;
       })
       .finally(() => {
-        this.magicUnloadPromise = null;
+        this.magicReleasePromise = null;
         this.applyDeferredResidency();
       });
-    return this.magicUnloadPromise;
+    return this.magicReleasePromise;
   }
 
   configureResidency(settings: AppSettings): void {
@@ -1737,7 +1664,6 @@ export class AsrService {
 
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
-    this.liveActive = false;
     this.speechSetup?.controller.abort(
       new Error("Setup cancelled during shutdown"),
     );
@@ -1761,7 +1687,6 @@ export class AsrService {
   }
 
   fail(error: unknown): void {
-    this.liveActive = false;
     if (error instanceof DomainError && error.cancelled) return;
     this.clearSpeechIdle();
     this.speechFailureGeneration += 1;

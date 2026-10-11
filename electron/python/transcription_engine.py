@@ -2,9 +2,8 @@
 """Persistent JSON-lines worker for Delulu Talks local speech and writing models.
 
 Speech uses R2T2 (Confucius4-R2T2, a Qwen3-ASR fine-tune) through Transformers on
-CUDA or MLX Audio on Apple Silicon, or Parakeet Redux through Kestrel on the CPU (buffered, no live typing). Live typing
-streams audio into the loaded model. The desktop starts a dedicated process per runtime role, each accepting only its own
-model commands. Protocol messages are prefixed so library progress output can never be mistaken for a response by Electron.
+CUDA or MLX Audio on Apple Silicon, or Parakeet Redux through Kestrel on the CPU. Each recording is transcribed as one
+buffered clip. The desktop starts a dedicated process per runtime role, each accepting only its own model commands. Protocol messages are prefixed so library progress output can never be mistaken for a response by Electron.
 """
 
 from __future__ import annotations
@@ -224,8 +223,6 @@ class Worker:
             "mlx" if sys.platform == "darwin" and platform.machine() == "arm64" else "cuda"
         )
         self.speech_model = "r2t2"
-        self.live: Any | None = None
-        self.live_resampler: Any | None = None
         self.magic_model: Any | None = None
         self.magic_processor: Any | None = None
         self.magic_model_name: str | None = None
@@ -253,7 +250,6 @@ class Worker:
         return self.speech
 
     def unload(self) -> dict[str, Any]:
-        self.live = None
         if self.speech is not None:
             return self.speech.unload()
         self.clear_allocator(speech=True)
@@ -527,61 +523,6 @@ class Worker:
             raise RuntimeError("No model is loaded")
         return speech.transcribe(request)
 
-    # Live typing: audio arrives while the user talks; text is returned as soon
-    # as it is final. Native streaming models stream; others cut at pauses.
-    def stream_start(self, request: dict[str, Any]) -> dict[str, Any]:
-        code, _ = language_hint(request)
-        speech = self.speech_engine()
-        if speech.status().get("loaded") is not True:
-            raise RuntimeError("No model is loaded")
-        self.live_resampler = None
-        if hasattr(speech, "stream_start"):
-            self.live = "native"
-            return speech.stream_start({"language": code})
-        if not hasattr(speech, "transcribe_samples"):
-            raise RuntimeError("Live typing is not available for this speech model")
-        from live_segments import PauseStreamer
-        self.live = PauseStreamer(lambda samples: speech.transcribe_samples(samples, code))
-        return {"started": True, "latencyMs": None}
-
-    def stream_audio(self, request: dict[str, Any]) -> dict[str, Any]:
-        import base64
-        import numpy as np
-        raw = base64.b64decode(str(request.get("pcm", "")), validate=True)
-        rate = int(request.get("sampleRate", 16000))
-        if len(raw) % 2 or len(raw) > 2 * rate * 5:
-            raise ValueError("Live audio must be 16-bit PCM, at most five seconds per piece")
-        if self.live is None:
-            raise RuntimeError("No live session is active")
-        samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
-        if rate != 16000:
-            # A stateful resampler keeps filter history across pieces: no clicks.
-            if self.live_resampler is None:
-                import soxr
-                self.live_resampler = (rate, soxr.ResampleStream(rate, 16000, 1, dtype="float32"))
-            if self.live_resampler[0] != rate:
-                raise ValueError("The live sample rate changed mid-recording")
-            samples = self.live_resampler[1].resample_chunk(samples)
-        return {"delta": self._live_push(samples)}
-
-    def _live_push(self, samples) -> str:
-        if not len(samples):
-            return ""
-        return self.speech.stream_audio(samples) if self.live == "native" else self.live.push(samples)
-
-    def stream_finish(self) -> dict[str, Any]:
-        live, resampler = self.live, self.live_resampler
-        self.live_resampler = None
-        if live is None:
-            return {"delta": ""}
-        delta = ""
-        if resampler is not None:
-            import numpy as np
-            delta = self._live_push(resampler[1].resample_chunk(np.zeros(0, dtype=np.float32), last=True))
-        self.live = None
-        tail = self.speech.stream_finish() if live == "native" else live.finish()
-        return {"delta": delta + tail}
-
     def capabilities(self, engine: str, model: str | None = None) -> dict[str, Any]:
         """Describe this pipeline without importing adapters or probing hardware."""
         if engine not in ("speech", "writing"):
@@ -590,7 +531,7 @@ class Worker:
         if speech and model == "redux":
             if not (sys.platform == "linux" and platform.machine() in ("x86_64", "AMD64")):
                 raise ValueError("Parakeet Redux requires Linux x64")
-            return {"schemaVersion": 1, "engine": "speech", "backend": "photon-cpu", "modelFamily": "redux", "timestamps": False, "languageHints": {"supported": False, "languages": []}, "streaming": False, "vocabularyBiasing": False}
+            return {"schemaVersion": 1, "engine": "speech", "backend": "photon-cpu", "modelFamily": "redux", "timestamps": False, "languageHints": {"supported": False, "languages": []}, "vocabularyBiasing": False}
         backend = ("mlx" if self.speech_backend == "mlx" else "cuda-transformers") if speech else "transformers"
         return {
             "schemaVersion": 1,
@@ -599,7 +540,6 @@ class Worker:
             "modelFamily": "r2t2" if speech else "qwen3.5",
             "timestamps": False,
             "languageHints": {"supported": speech, "languages": list(LANGUAGE_NAMES) if speech else []},
-            "streaming": speech and self.speech_backend != "mlx",
             "vocabularyBiasing": False,
         }
 
@@ -609,8 +549,8 @@ class Worker:
         role = os.environ.get("DELULU_RUNTIME_KIND")
         if role:
             allowed = {
-                "speech": {"capabilities", "ping", "load", "unload", "status", "transcribe", "streamStart", "streamAudio", "streamFinish", "shutdown"},
-                "magic": {"capabilities", "ping", "magicLoad", "magicUnload", "magicStatus", "magicRewrite", "shutdown"},
+                "speech": {"capabilities", "load", "unload", "status", "transcribe", "shutdown"},
+                "magic": {"capabilities", "magicLoad", "magicStatus", "magicRewrite", "shutdown"},
             }
             if role not in allowed or command not in allowed[role]:
                 raise ValueError(f"Command {command} is not allowed in the {role} runtime")
@@ -619,9 +559,6 @@ class Worker:
             if role and request.get("engine") != expected:
                 raise ValueError("Capabilities engine does not match runtime role")
             return self.capabilities(request["engine"], request.get("model"))
-        if command == "ping":
-            status = self.magic_status() if role == "magic" else self.status()
-            return {"python": sys.version.split()[0], **status}
         if command == "load":
             return self.load(request)
         if command == "unload":
@@ -630,20 +567,12 @@ class Worker:
             return self.status()
         if command == "magicLoad":
             return self.load_magic(request)
-        if command == "magicUnload":
-            return self.unload_magic()
         if command == "magicStatus":
             return self.magic_status()
         if command == "magicRewrite":
             return self.rewrite_magic(request)
         if command == "transcribe":
             return self.transcribe(request)
-        if command == "streamStart":
-            return self.stream_start(request)
-        if command == "streamAudio":
-            return self.stream_audio(request)
-        if command == "streamFinish":
-            return self.stream_finish()
         if command == "shutdown":
             if role != "magic":
                 self.unload()

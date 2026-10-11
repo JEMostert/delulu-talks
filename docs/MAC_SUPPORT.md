@@ -10,7 +10,7 @@ The checkpoint is [`mlx-community/Confucius4-R2T2-bf16`](https://huggingface.co/
 
 The runtime pins `mlx==0.32.2`, `mlx-audio[stt]==0.5.7`, and `transformers==5.15.0`. The loader API was inspected at MLX Audio tag `v0.5.7`, commit `94c7716212b2228f178d2f9c7619a591fd1b0b78`. [MLX Audio source](https://github.com/Blaizzy/mlx-audio/tree/v0.5.7) supplies the Qwen3-ASR architecture loader and local audio decoding.
 
-Requirements remain macOS 15+ and native arm64 Python 3.12. Intel Macs and Rosetta Python are unsupported in this setup. A tested memory recommendation still needs native measurement. Speech remains buffered until recording stops; installing a streaming-capable checkpoint does not implement R2T2's stable-prefix streaming loop. The adapter requests 30-second chunks from MLX Audio; upstream silence-based splitting can vary their duration. A global 4,096-token guard rejects partial long transcripts rather than presenting truncated output as complete.
+Requirements remain macOS 15+ and native arm64 Python 3.12. Intel Macs and Rosetta Python are unsupported in this setup. A tested memory recommendation still needs native measurement. Speech remains buffered until recording stops. The adapter requests 30-second chunks from MLX Audio; upstream silence-based splitting can vary their duration. A global 4,096-token guard rejects partial long transcripts rather than presenting truncated output as complete.
 
 A static checkpoint audit matched all 707 stored BF16 tensor keys/shapes to the pinned MLX loader. This is actual file/architecture evidence, but it does not exercise Metal inference, decoder output, or native memory behavior.
 

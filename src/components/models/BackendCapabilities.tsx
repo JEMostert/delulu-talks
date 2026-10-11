@@ -17,7 +17,6 @@ export function BackendCapabilities({
         ? `${capabilities.languageHints.languages.length} accepted languages`
         : "Unsupported",
     ],
-    ["Streaming", capabilities.streaming ? "Supported" : "Unsupported"],
     [
       "Vocabulary biasing",
       capabilities.vocabularyBiasing ? "Supported" : "Unsupported",

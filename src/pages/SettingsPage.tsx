@@ -4,7 +4,6 @@ import type { ProfileActivationCommand } from "../activePersonalProfile";
 import { PersonalProfiles } from "../components/PersonalProfiles";
 import type { PersonalProfileCommand } from "../personalProfileCommands";
 import { EncryptedHistory } from "../components/EncryptedHistory";
-import { SelectedTextWorkflow } from "../components/SelectedTextWorkflow";
 import { useEffect, useState } from "react";
 import type React from "react";
 import {
@@ -19,7 +18,6 @@ import {
   Monitor,
   RefreshCw,
   Trash2,
-  Zap,
 } from "lucide-react";
 import { MAGIC_MODELS } from "../data";
 import { speechLanguageCapability } from "../speechCapabilities";
@@ -50,7 +48,7 @@ const SECTIONS = [
     "General",
     "Microphone, language, shortcut and how the app starts.",
   ],
-  ["speech", "Speech", "Which model listens, where it runs, and live typing."],
+  ["speech", "Speech", "Which model listens and where it runs."],
   [
     "output",
     "Output",
@@ -96,7 +94,6 @@ type Props = {
   onLoadMagic: () => void;
   onUnloadMagic: () => void;
   onReset: () => void;
-  onOpenModels: () => void;
 };
 
 /** A titled list of rows: the one structure every settings section uses. */
@@ -157,18 +154,6 @@ export function SettingsPage(props: Props) {
     />
   );
   const mac = capabilities?.platform === "darwin";
-  const liveBlocker =
-    s.speechEngine === "redux"
-      ? "Parakeet Redux transcribes after recording ends; live typing is unavailable."
-      : s.shortcutMode === "hold"
-        ? "Hold to talk pastes after you release the shortcut. Choose Press to toggle in General to type live."
-        : !s.autoPaste
-          ? "Turn on Paste automatically (Output) to type live."
-          : s.magicEnabled
-            ? "Live typing pauses while Rewriting is on: a rewrite needs the whole text."
-            : s.dictationFormatting === "spoken"
-              ? "Live typing pauses while spoken punctuation commands are on."
-              : null;
   const [, title, blurb] = SECTIONS.find(([id]) => id === section)!;
 
   return (
@@ -386,7 +371,7 @@ export function SettingsPage(props: Props) {
                         "redux",
                         "Parakeet Redux",
                         Feather,
-                        "Light, runs on the CPU. 178 MB download. Detects the language automatically and transcribes after you stop, with no live typing.",
+                        "Light, runs on the CPU. 178 MB download. Detects the language automatically and transcribes after you stop.",
                       ],
                       [
                         "r2t2",
@@ -447,20 +432,6 @@ export function SettingsPage(props: Props) {
               </Group>
             )}
             <Group title="While you speak">
-              <SettingRow
-                icon={Zap}
-                title="Live typing"
-                description={
-                  liveBlocker ??
-                  "Each phrase appears at your cursor when you pause."
-                }
-              >
-                {toggle(
-                  "liveTyping",
-                  "Live typing",
-                  mac || s.speechEngine === "redux",
-                )}
-              </SettingRow>
               <SettingRow
                 icon={AudioWaveform}
                 title="Stop after silence"
@@ -731,10 +702,7 @@ export function SettingsPage(props: Props) {
                 )}
               </div>
             </div>
-            <Group
-              title="After dictation"
-              note="While rewriting is on, live typing waits for the finished text."
-            >
+            <Group title="After dictation">
               <SettingRow
                 title="Rewrite after dictation"
                 description="Apply a style before delivery; the original stays in History."
@@ -818,13 +786,6 @@ export function SettingsPage(props: Props) {
                 </select>
               </SettingRow>
             </Group>
-            <details className="disclosure">
-              <summary>Rewrite selected text in other apps</summary>
-              <SelectedTextWorkflow
-                status={magicStatus}
-                onSetup={props.onOpenModels}
-              />
-            </details>
           </>
         )}
 

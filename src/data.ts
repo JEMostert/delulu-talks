@@ -38,7 +38,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   shortcutMode: "hold",
   model: "r2t2",
   language: "en",
-  dictationMode: "prose",
   dictationFormatting: "preserve",
   pythonCommand: "python3",
   inputDeviceId: "default",
@@ -58,7 +57,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showOverlay: true,
   captureSoundsMuted: true,
   speechEngine: "r2t2",
-  liveTyping: true,
   historyLimit: 50,
   captureSoundVolume: 0.15,
   preloadModel: true,
@@ -86,7 +84,7 @@ export const MODELS: ModelInfo[] = [
     hfId: "netease-youdao/Confucius4-R2T2",
     name: "R2T2",
     description:
-      "R2T2 speech recognition on NVIDIA GPUs through Transformers on Linux and Windows. About 4 GB of GPU memory; live typing cuts phrases at your pauses.",
+      "R2T2 speech recognition on NVIDIA GPUs through Transformers on Linux and Windows. About 4 GB of GPU memory.",
     recommended: true,
     provenance: {
       ...R2T2_LICENSE,

@@ -18,7 +18,7 @@ class WorkerProtocolTests(unittest.TestCase):
         capabilities = {"schemaVersion": 1, "engine": "speech", "backend": "photon-cpu",
                         "modelFamily": "redux", "timestamps": False,
                         "languageHints": {"supported": False, "languages": []},
-                        "streaming": False, "vocabularyBiasing": False}
+                        "vocabularyBiasing": False}
         protocol.validate_result("capabilities", capabilities)
         with self.assertRaises(ValueError):
             protocol.validate_result("capabilities", {**capabilities, "engine": "writing"})
@@ -37,7 +37,7 @@ class WorkerProtocolTests(unittest.TestCase):
             protocol.validate_request(request("load", model="redux", device="gpu"))
         base = {"schemaVersion": 1, "engine": "speech", "backend": "cuda-transformers",
                 "timestamps": False, "languageHints": {"supported": True, "languages": ["en"]},
-                "streaming": True, "vocabularyBiasing": False}
+                "vocabularyBiasing": False}
         protocol.validate_result("capabilities", {**base, "modelFamily": "r2t2"})
         with self.assertRaises(ValueError):
             protocol.validate_result("capabilities", {**base, "modelFamily": "legacy-asr"})
@@ -49,13 +49,18 @@ class WorkerProtocolTests(unittest.TestCase):
                    {**valid, "id": "😀" * 33}, {**valid, "id": "\ud800"},
                    {**valid, "command": "execute"}, {**valid, "model": "whisper"}, {**valid, "audioPath": ""},
                    {**valid, "durationMs": float("nan")}, {**valid, "durationMs": True},
-                   {**valid, "timestamps": True}, {**valid, "streaming": True},
+                   {**valid, "timestamps": True}, {**valid, "vocabularyBiasing": True},
                    {**valid, "extra": float("inf")}]
         for value in invalid:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 protocol.validate_request(value)
-        self.assertEqual(protocol.correlation_id(request("ping", id="😀" * 32)), "😀" * 32)
-        self.assertIsNone(protocol.correlation_id(request("ping", id="😀" * 33)))
+        self.assertEqual(protocol.correlation_id(request("status", id="😀" * 32)), "😀" * 32)
+        self.assertIsNone(protocol.correlation_id(request("status", id="😀" * 33)))
+
+    def test_removed_live_and_dead_commands_are_unknown(self):
+        for command in ("streamStart", "streamAudio", "streamFinish", "ping", "magicUnload"):
+            with self.subTest(command=command), self.assertRaisesRegex(ValueError, "Unknown worker command"):
+                protocol.validate_request(request(command))
 
     def test_rewrite_contract_enforces_choices_and_javascript_character_limits(self):
         protocol.validate_request(request("magicRewrite", text="Draft", instructions="😀" * 2000))

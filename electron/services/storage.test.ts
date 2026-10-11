@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { DEFAULT_SETTINGS } from "../../src/data";
 import type { TranscriptRecord } from "../../src/types";
 import { speechModelForPlatform } from "../runtime/platform";
-import { StorageService, writeProfileJson } from "./storage";
+import { normalizeSettings, StorageService, writeProfileJson } from "./storage";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -246,4 +246,55 @@ test("history keeps only the newest transcripts up to the chosen limit", () => {
   // Unsupported limits fall back to the default rather than keeping everything.
   storage.updateSettings({ historyLimit: 7 });
   expect(storage.getSettings().historyLimit).toBe(50);
+});
+
+test("removed live typing, code mode and speech device settings are dropped and unsupported engines fall back to R2T2", () => {
+  const settings = normalizeSettings({
+    liveTyping: true,
+    dictationMode: "code",
+    speechDevice: "cpu",
+    speechEngine: "nemotron",
+  });
+  expect(settings).not.toHaveProperty("liveTyping");
+  expect(settings).not.toHaveProperty("dictationMode");
+  expect(settings).not.toHaveProperty("speechDevice");
+  expect(settings.speechEngine).toBe("r2t2");
+});
+
+test("history records with removed technical fields load without them and keep their text", () => {
+  const { directory, application } = profile();
+  const history = join(directory, "history.json");
+  writeFileSync(
+    history,
+    JSON.stringify([
+      {
+        ...transcript(),
+        id: "legacy",
+        technicalText: "const value = 1;",
+        dictationMode: "code",
+      },
+      {
+        ...transcript(),
+        id: "current",
+        schemaVersion: 1,
+        technicalText: "fn main() {}",
+        dictationMode: "command",
+      },
+    ]),
+  );
+  const storage = new StorageService(application);
+  for (const id of ["legacy", "current"]) {
+    const record = storage.findHistory(id)!;
+    expect(record).not.toHaveProperty("technicalText");
+    expect(record).not.toHaveProperty("dictationMode");
+    expect(record.text).toBe(transcript().text);
+  }
+  const saved = JSON.parse(readFileSync(history, "utf8")) as Record<
+    string,
+    unknown
+  >[];
+  for (const record of saved) {
+    expect(record).not.toHaveProperty("technicalText");
+    expect(record).not.toHaveProperty("dictationMode");
+  }
 });

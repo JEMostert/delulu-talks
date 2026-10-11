@@ -10,10 +10,10 @@ The reference is [Ocean Controller](design-concepts/04-ocean-controller.png). Th
 
 ## Layout
 
-- Settings opens a compact sheet with microphone, language, shortcut, automatic paste and speech residency. Appearance remains in the quick sheet. One bottom dock combines recording with Home, History, Audio files, Models, Editor and Settings navigation.
+- Settings opens a compact sheet with microphone, language, shortcut, automatic paste and speech residency. Appearance remains in the quick sheet. One bottom dock combines recording with Home, History, Audio files, Models and Settings navigation.
 - Secondary workspaces open in a larger sheet. Their content starts immediately below the compact header; workspace navigation lives in the bottom dock. The controller remains accessible below it. Escape closes the sheet; Back returns to quick settings. Visited workspaces preserve drafts using React Activity, while hidden effects are suspended.
 - First-run setup opens Models when the speech engine is missing. Speech and optional Rewriting have separate tabs, install/load/repair actions, progress, cancellation and recoverable errors. Technical snapshots, disk estimates and diagnostics live under Details. Provenance and logs expand on demand.
-- History starts with search and transcripts. Filters open on demand; selection reveals batch actions. History retains transcript review, edits, corrections, exports and rewrite preview/apply/undo. Audio files starts with its drop area and queue. Editor starts with its text buffer and icon toolbar; insertion previews and advanced editing tools expand on demand. Setting labels have optional info disclosures. Backups and retention live under Local data. Profile creation and rules appear before transfer and usage tools. Advanced preferences remain available without occupying the idle screen.
+- History starts with search and transcripts. Filters open on demand; selection reveals batch actions. History retains transcript review, edits, corrections, exports and rewrite preview/apply/undo. Audio files starts with its drop area and queue. Setting labels have optional info disclosures. Backups and retention live under Local data. Profile creation and rules appear before usage tools. Advanced preferences remain available without occupying the idle screen.
 - Actionable errors and recovery controls may display text. Ordinary idle operation has no visible headings, status paragraphs or navigation sidebar.
 
 ## Performance

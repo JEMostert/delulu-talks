@@ -280,6 +280,8 @@ export function normalizeSettings(value: unknown): AppSettings {
       : {};
   // Removed CPU device setting: never carried into normalized settings.
   delete source.speechDevice;
+  delete source.liveTyping;
+  delete source.dictationMode;
   assertPersistedSchema(source, "settings");
   const magicModel = validMagicModels.has(source.magicModel as MagicModelId)
     ? (source.magicModel as MagicModelId)
@@ -318,10 +320,6 @@ export function normalizeSettings(value: unknown): AppSettings {
     language: validLanguages.has(requestedLanguage)
       ? requestedLanguage
       : DEFAULT_SETTINGS.language,
-    dictationMode:
-      source.dictationMode === "code" || source.dictationMode === "command"
-        ? source.dictationMode
-        : "prose",
     dictationFormatting:
       source.dictationFormatting === "spoken" ? "spoken" : "preserve",
     pythonCommand: safeString(
@@ -390,7 +388,6 @@ export function normalizeSettings(value: unknown): AppSettings {
     // Nemotron and unsupported-platform Redux profiles fall back to R2T2.
     speechEngine:
       source.speechEngine === "redux" && reduxSupported() ? "redux" : "r2t2",
-    liveTyping: boolean(source.liveTyping, DEFAULT_SETTINGS.liveTyping),
     historyLimit: [25, 50, 100, 250, 500].includes(Number(source.historyLimit))
       ? Number(source.historyLimit)
       : DEFAULT_SETTINGS.historyLimit,
@@ -466,8 +463,14 @@ function migrateDelivery(value: unknown): TranscriptDelivery | undefined {
 
 function migrateRecord(value: unknown): TranscriptRecord | null {
   if (!value || typeof value !== "object") return null;
-  const source = value as Record<string, unknown>;
+  // Copy so removed keys are dropped from the saved file on the next rewrite.
+  const source: Record<string, unknown> = {
+    ...(value as Record<string, unknown>),
+  };
   assertPersistedSchema(source, "transcript");
+  // Removed code/command modes and technical text: never carried into records.
+  delete source.technicalText;
+  delete source.dictationMode;
   const original = source.text ?? source.intendedText ?? source.verbatimText;
   const text = typeof original === "string" ? original : "";
   if (!text.trim())
@@ -508,14 +511,6 @@ function migrateRecord(value: unknown): TranscriptRecord | null {
     createdAt: Number(source.createdAt) || Date.now(),
     durationMs: Math.max(0, Number(source.durationMs) || 0),
     text,
-    technicalText:
-      typeof source.technicalText === "string"
-        ? source.technicalText.slice(0, 500_000)
-        : null,
-    dictationMode:
-      source.dictationMode === "code" || source.dictationMode === "command"
-        ? source.dictationMode
-        : "prose",
     sourceRevision:
       Number.isSafeInteger(source.sourceRevision) &&
       Number(source.sourceRevision) >= 0

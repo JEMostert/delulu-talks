@@ -3,8 +3,7 @@
 The BF16 checkpoint is an unquantized MLX conversion of Confucius4-R2T2,
 not a substitution with the smaller base Qwen model. No CUDA, vLLM server,
 or local HTTP endpoint is involved. Dependencies and model revision are pinned.
-The direct generate API transcribes buffered audio; it does not implement
-R2T2's acoustic streaming/committed-prefix protocol.
+The direct generate API transcribes buffered audio, one recording at a time.
 """
 from __future__ import annotations
 

@@ -1,7 +1,6 @@
 """Opt-in native same-audio benchmark; no settings/history or app model changes.
 
-Run separately in each platform's installed speech environment. External base
-Qwen3-ASR controls use Linux CUDA's qwen_asr engine only inside this process.
+Run separately in each platform's installed speech environment.
 Requires explicit consent metadata and cached checkpoint revisions; no downloads.
 """
 from __future__ import annotations
@@ -57,19 +56,15 @@ def bind_worker(args):
     sys.path.insert(0, str(ROOT / "electron/python"))
     import transcription_engine as engine
     worker = engine.Worker()
-    expected = {"mlx": "mlx", "cuda-windows": "cuda", "cuda-linux": "cuda", "external-qwen3-asr": "cuda"}[args.backend]
+    expected = {"mlx": "mlx", "cuda-windows": "cuda", "cuda-linux": "cuda"}[args.backend]
     if worker.speech_backend != expected:
         raise ValueError("Selected runner must execute on its native platform; cross-platform emulation is not supported")
     if args.backend == "mlx":
         import metal_speech as adapter
         identity = (adapter.MODEL, adapter.MODEL_REVISION)
-    elif args.backend in ("cuda-windows", "cuda-linux"):
+    else:
         import r2t2_speech as adapter
         identity = (adapter.MODEL, adapter.MODEL_REVISION)
-    else:
-        # The external base-Qwen control ran through the Linux vLLM worker,
-        # which v0.12.0 removed; it needs its own runner before it can return.
-        raise ValueError("The external Qwen3-ASR control is unavailable since v0.12.0 removed vLLM")
     return worker, identity
 
 
@@ -85,11 +80,11 @@ def run(args) -> None:
     args.output_directory.mkdir()
     (args.output_directory / "audio-manifest.json").write_bytes(manifest_bytes)
     versions = {}
-    for name in ("mlx", "mlx-audio", "torch", "transformers", "qwen-asr", "vllm", "soundfile", "soxr"):
+    for name in ("mlx", "mlx-audio", "torch", "transformers", "soundfile", "soxr"):
         with contextlib.suppress(importlib.metadata.PackageNotFoundError):
             versions[name] = importlib.metadata.version(name)
     runtime = {"schema": "delulu-native-audio-run-v1", "created_utc": datetime.now(timezone.utc).isoformat(),
-               "backend": args.backend, "role": "external-benchmark-control" if args.backend == "external-qwen3-asr" else "supported-r2t2-adapter",
+               "backend": args.backend, "role": "supported-r2t2-adapter",
                "model_repository": identity[0], "model_revision": identity[1],
                "host_os": platform.platform(), "host_architecture": platform.machine(),
                "python": platform.python_version(), "installed_dependencies": versions,
@@ -147,13 +142,11 @@ def run(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute-native", action="store_true", help="Required explicit opt-in; loads cached weights and performs inference")
-    parser.add_argument("--backend", choices=("mlx", "cuda-linux", "cuda-windows", "external-qwen3-asr"), required=True)
+    parser.add_argument("--backend", choices=("mlx", "cuda-linux", "cuda-windows"), required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--provenance", type=Path, required=True)
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--output-directory", type=Path, required=True)
-    parser.add_argument("--control-repository")
-    parser.add_argument("--control-revision")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--normalization", choices=("none", "wer-basic-v1"), default="wer-basic-v1")
     parser.add_argument("--max-cells", type=int, default=4_000_000)

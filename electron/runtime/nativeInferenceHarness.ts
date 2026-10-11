@@ -91,7 +91,7 @@ export class NativeInferenceHarness {
     this.assertOpen();
     const script = `import importlib.metadata,json,platform,sys
 packages={}
-for name in ("mlx","mlx-audio","torch","transformers","vllm","qwen-asr"):
+for name in ("mlx","mlx-audio","torch","transformers"):
  try: packages[name]=importlib.metadata.version(name)
  except importlib.metadata.PackageNotFoundError: pass
 result={"python":sys.version,"pythonVersion":list(sys.version_info[:3]),"platform":sys.platform,"architecture":platform.machine(),"os":platform.platform(),"packageVersions":packages}
@@ -343,7 +343,6 @@ export async function nativeWorkerSources(
     "r2t2_speech.py",
     "r2t2_checkpoint.py",
     "redux_speech.py",
-    "live_segments.py",
   ]) {
     const path =
       name === "transcription_engine.py"

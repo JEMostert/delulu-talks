@@ -14,20 +14,15 @@ const PRESETS = new Set([
 const MAGIC_MODELS = new Set(["qwen35Small", "qwen35Medium", "qwen35Large"]);
 const SPEECH_MODELS = new Set(["r2t2", "redux"]);
 const COMMANDS = new Set([
-  "ping",
   "status",
   "load",
   "unload",
   "magicStatus",
   "magicLoad",
-  "magicUnload",
   "magicRewrite",
   "transcribe",
   "shutdown",
   "capabilities",
-  "streamStart",
-  "streamAudio",
-  "streamFinish",
 ]);
 // Keep aligned with the shared PipelineTimings contract; unknown stages are omitted.
 const TIMING_FIELDS = new Set([
@@ -156,20 +151,6 @@ export function validateWorkerRequest(value: unknown): JsonObject {
     )
       throw new Error("Invalid model worker speech model");
   }
-  if (request.command === "streamStart") stringField(request, "language");
-  if (request.command === "streamAudio") {
-    stringField(request, "pcm", true);
-    if ((request.pcm as string).length > 2_600_000)
-      throw new Error("Live audio pieces are limited to five seconds");
-    numberField(request, "sampleRate");
-    if (
-      request.sampleRate !== undefined &&
-      (!Number.isSafeInteger(request.sampleRate) ||
-        (request.sampleRate as number) < 8_000 ||
-        (request.sampleRate as number) > 192_000)
-    )
-      throw new Error("Unsupported live sample rate");
-  }
   if (request.command === "magicLoad") {
     stringField(request, "model");
     if (
@@ -182,7 +163,7 @@ export function validateWorkerRequest(value: unknown): JsonObject {
     stringField(request, "audioPath", true, true);
     stringField(request, "language");
     numberField(request, "durationMs");
-    for (const key of ["timestamps", "streaming", "vocabularyBiasing"]) {
+    for (const key of ["timestamps", "vocabularyBiasing"]) {
       booleanField(request, key);
       if (request[key] === true)
         throw new Error(
@@ -329,13 +310,11 @@ export function validateWorkerResult(command: string, value: unknown): void {
     }
   }
   const statusCommands = [
-    "ping",
     "status",
     "load",
     "unload",
     "magicStatus",
     "magicLoad",
-    "magicUnload",
   ];
   if (command === "capabilities") {
     const result = object(value, "capability result");
@@ -354,7 +333,7 @@ export function validateWorkerResult(command: string, value: unknown): void {
       ).includes(result.backend as string)
     )
       throw new Error("Invalid model worker capability backend/model family");
-    for (const key of ["timestamps", "streaming", "vocabularyBiasing"])
+    for (const key of ["timestamps", "vocabularyBiasing"])
       booleanField(result, key, true);
     const hints = object(result.languageHints, "language hint capability");
     booleanField(hints, "supported", true);
@@ -385,7 +364,6 @@ export function validateWorkerResult(command: string, value: unknown): void {
       throw new Error("Model worker residency disagrees with loaded state");
     for (const key of ["model", "device"])
       if (result[key] !== null) stringField(result, key);
-    if (command === "ping") stringField(result, "python", true, true);
   } else if (command === "transcribe") {
     const result = object(value, "transcription result");
     stringField(result, "text", true);
@@ -393,12 +371,6 @@ export function validateWorkerResult(command: string, value: unknown): void {
     for (const key of ["duration", "processingTime"])
       numberField(result, key, true);
     numberField(result, "inferenceTime");
-  } else if (command === "streamStart") {
-    if (resultObject.started !== true)
-      throw new Error("Model worker live session did not start");
-    if (resultObject.latencyMs !== null) numberField(resultObject, "latencyMs");
-  } else if (command === "streamAudio" || command === "streamFinish") {
-    stringField(resultObject, "delta", true);
   } else if (command === "magicRewrite") {
     const result = object(value, "rewrite result");
     lifecycleFields(result);

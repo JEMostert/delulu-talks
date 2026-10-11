@@ -7,8 +7,6 @@ import {
   Tabs,
   Toggle,
 } from "../components/ui";
-import { VocabularyBulk } from "../components/VocabularyBulk";
-import { VocabularyTransfer } from "../components/VocabularyTransfer";
 import {
   aliasError,
   normalizeAliases,
@@ -278,11 +276,6 @@ export function VocabularyPage({
             </div>
           )}
         </section>
-      </details>
-      <details className="disclosure">
-        <summary>Manage rules</summary>{" "}
-        <VocabularyBulk words={words} saving={saving} onChange={onChange} />
-        <VocabularyTransfer words={words} saving={saving} onChange={onChange} />
       </details>
       <details className="disclosure">
         <summary>Usage & details</summary>

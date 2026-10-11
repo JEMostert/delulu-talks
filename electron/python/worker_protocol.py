@@ -21,9 +21,8 @@ MAX_PROGRESS_DETAIL_BYTES = 4_000
 MAX_PROGRESS_LINE_BYTES = 32_768
 _active_operation: ContextVar[tuple[str, str] | None] = ContextVar("worker_operation", default=None)
 COMMANDS = frozenset({
-    "ping", "status", "load", "unload", "magicStatus", "magicLoad",
-    "magicUnload", "magicRewrite", "transcribe", "shutdown", "capabilities",
-    "streamStart", "streamAudio", "streamFinish",
+    "status", "load", "unload", "magicStatus", "magicLoad",
+    "magicRewrite", "transcribe", "shutdown", "capabilities",
 })
 SPEECH_MODELS = frozenset({"r2t2", "redux"})
 MAGIC_PRESETS = frozenset({"spoken-corrections", "polish", "concise", "structured", "prompt", "bullet-points", "professional-message"})
@@ -216,16 +215,6 @@ def validate_request(request: Any) -> dict[str, Any]:
         require_string(request, "model")
         if request["model"] not in SPEECH_MODELS:
             raise ValueError(f"Unsupported speech model: {request['model']}")
-    if command == "streamStart" and "language" in request:
-        require_string(request, "language")
-    if command == "streamAudio":
-        require_string(request, "pcm")
-        if "sampleRate" in request:
-            require_number(request, "sampleRate", integer=True)
-            if not 8_000 <= request["sampleRate"] <= 192_000:
-                raise ValueError("Unsupported live sample rate")
-        if len(request["pcm"]) > 2_600_000:
-            raise ValueError("Live audio pieces are limited to five seconds")
     if command == "magicLoad" and "model" in request:
         require_string(request, "model")
         if request["model"] not in MAGIC_MODELS:
@@ -236,7 +225,7 @@ def validate_request(request: Any) -> dict[str, Any]:
             require_string(request, "language")
         if "durationMs" in request:
             require_number(request, "durationMs")
-        for control in ("timestamps", "streaming", "vocabularyBiasing"):
+        for control in ("timestamps", "vocabularyBiasing"):
             if control in request:
                 require_boolean(request, control)
                 if request[control]:
@@ -288,7 +277,7 @@ def validate_result(command: str, result: Any) -> None:
             raise ValueError("Worker capabilities backend does not match engine")
         if result.get("modelFamily") not in (("r2t2", "redux") if engine == "speech" else ("qwen3.5",)):
             raise ValueError("Worker capabilities modelFamily does not match engine")
-        for key in ("timestamps", "streaming", "vocabularyBiasing"):
+        for key in ("timestamps", "vocabularyBiasing"):
             require_boolean(result, key)
         hints = result.get("languageHints")
         if not isinstance(hints, dict):
@@ -297,13 +286,11 @@ def validate_result(command: str, result: Any) -> None:
         languages = hints.get("languages")
         if not isinstance(languages, list) or any(not bounded_string(language, 64) for language in languages):
             raise ValueError("Worker capabilities languages must be nonempty bounded strings")
-    elif command in ("ping", "status", "load", "unload", "magicStatus", "magicLoad", "magicUnload"):
+    elif command in ("status", "load", "unload", "magicStatus", "magicLoad"):
         require_boolean(result, "loaded")
         for key in ("model", "device"):
             if key in result and result[key] is not None:
                 require_string(result, key)
-        if command == "ping":
-            require_string(result, "python", nonempty=True)
     elif command == "transcribe":
         require_string(result, "text")
         require_string(result, "language")
@@ -311,13 +298,6 @@ def validate_result(command: str, result: Any) -> None:
         require_number(result, "processingTime")
         if "inferenceTime" in result:
             require_number(result, "inferenceTime")
-    elif command == "streamStart":
-        if result.get("started") is not True:
-            raise ValueError("Worker live session did not start")
-        if result.get("latencyMs") is not None:
-            require_number(result, "latencyMs")
-    elif command in ("streamAudio", "streamFinish"):
-        require_string(result, "delta")
     elif command == "magicRewrite":
         require_string(result, "text")
         require_string(result, "model")

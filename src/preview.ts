@@ -8,7 +8,6 @@ import {
 } from "./previewScenarios";
 import { activatePersonalProfile } from "./activePersonalProfile";
 import { changePersonalProfiles } from "./personalProfileCommands";
-import { emptyProjectVocabulary } from "./projectVocabulary";
 import { DEFAULT_SETTINGS } from "./data";
 import {
   deliveredText,
@@ -67,25 +66,6 @@ export const previewApi: DeluluApi = {
   onRenderingModeChanged() {
     return () => {};
   },
-  getSelectedTextState: async () => ({
-    enabled: false,
-    supported: false,
-    shortcut: "CommandOrControl+Shift+R",
-    session: null,
-    error: null,
-  }),
-  enableSelectedText: async () => {
-    throw new Error(
-      "Native selected-text capture requires the desktop application on X11.",
-    );
-  },
-  discardSelectedText: async () => {},
-  replaceSelectedText: async () => {
-    throw new Error(
-      "Native selected-text replacement is unavailable in browser preview.",
-    );
-  },
-  onSelectedTextState: () => () => {},
   async getRuleUsage() {
     return desktopOnly();
   },
@@ -440,21 +420,6 @@ export const previewApi: DeluluApi = {
   async exportHistorySelection(_ids, _format) {
     return desktopOnly();
   },
-  async chooseProjectIdentifier() {
-    return desktopOnly();
-  },
-  async getProjectVocabulary() {
-    return emptyProjectVocabulary();
-  },
-  async selectProjectVocabulary() {
-    return desktopOnly();
-  },
-  async refreshProjectVocabulary() {
-    return desktopOnly();
-  },
-  async clearProjectVocabulary() {
-    return emptyProjectVocabulary();
-  },
   async chooseAudioFile(): Promise<AudioFileSelection | null> {
     return desktopOnly();
   },
@@ -509,9 +474,6 @@ export const previewApi: DeluluApi = {
   async exportTranscript(_id: string, _format: ExportFormat) {
     return desktopOnly();
   },
-  async exportTranscriptTemplate() {
-    return desktopOnly();
-  },
   async recordingStarted() {},
   async recordingLimitReached() {},
   async recordingSilence() {},
@@ -519,7 +481,6 @@ export const previewApi: DeluluApi = {
   async recordingFailed() {},
   async recordingInputChanged() {},
   recordingLevel(_level: number) {},
-  recordingStream() {},
   async submitRecording(_recording: RecordingSubmission) {},
   onStatus(callback: (status: DictationStatus) => void) {
     statusListeners.add(callback);

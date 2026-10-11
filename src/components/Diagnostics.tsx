@@ -157,14 +157,12 @@ export function Diagnostics({
               <dd>{data.dataDirectory}</dd>
               <dt>Runtime</dt>
               <dd>{data.runtimeInstalled ? "Installed" : "Not installed"}</dd>
-              {["mlx", "mlx-audio", "qwen-asr", "torch", "transformers"].map(
-                (name) => (
-                  <div key={name}>
-                    <dt>{name}</dt>
-                    <dd>{data.packages[name] ?? "Not installed"}</dd>
-                  </div>
-                ),
-              )}
+              {["mlx", "mlx-audio", "torch", "transformers"].map((name) => (
+                <div key={name}>
+                  <dt>{name}</dt>
+                  <dd>{data.packages[name] ?? "Not installed"}</dd>
+                </div>
+              ))}
             </dl>
             <p className="caption">
               The copied report includes device and selected package versions.

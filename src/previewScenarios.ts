@@ -116,15 +116,6 @@ export function scenarioHistory(now = Date.now()): TranscriptRecord[] {
       },
     ),
     record(
-      "demo-3",
-      42 * minute,
-      "const total equals items dot reduce open paren sum comma item close paren",
-      {
-        dictationMode: "code",
-        technicalText: "const total = items.reduce(sum, item)",
-      },
-    ),
-    record(
       "demo-1",
       3 * 60 * minute,
       "Move the design review to Thursday and add the new onboarding notes.",

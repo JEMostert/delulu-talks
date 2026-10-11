@@ -68,11 +68,12 @@ class WorkerStateTests(unittest.TestCase):
                     worker.dispatch({"command": forbidden})
                 with self.assertRaisesRegex(ValueError, "does not match"):
                     worker.dispatch({"command": "capabilities", "engine": engine_name})
-                self.assertFalse(worker.dispatch({"command": "ping"})["loaded"])
-        for backend, streaming in (("cuda", True), ("mlx", False)):
+                status = "status" if role == "speech" else "magicStatus"
+                self.assertFalse(worker.dispatch({"command": status})["loaded"])
+        for backend in ("cuda", "mlx"):
             worker.speech_backend = backend
             capabilities = worker.capabilities("speech")
-            self.assertEqual(capabilities["streaming"], streaming)
+            self.assertNotIn("streaming", capabilities)
             engine.validate_result("capabilities", capabilities)
 
     def test_bad_input_produces_private_error_then_worker_accepts_next_request(self):

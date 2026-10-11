@@ -94,7 +94,7 @@ export function SpeechSetup({
       )}
       {settings.speechEngine === "redux" && (
         <p className="setup-status-copy">
-          Runs on the CPU and downloads 178 MB on first load. No live typing.
+          Runs on the CPU and downloads 178 MB on first load.
         </p>
       )}
       {(status.engine === "ready" || status.engine === "unloaded") &&

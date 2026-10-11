@@ -29,7 +29,6 @@ describe("transcript data cannot silently lose its source", () => {
       sourceRevision: 2,
       editedText: "Corrected source",
       personalizedText: "Old personalization",
-      technicalText: "Old technical text",
       magicText: "Old rewrite",
       rewriteSourceRevision: 1,
     };
@@ -44,12 +43,12 @@ describe("transcript data cannot silently lose its source", () => {
       deliveredText({
         ...transcript,
         personalizedText: "Personalized",
-        technicalText: "Code",
       }),
-    ).toBe("Code");
+    ).toBe("Personalized");
     expect(deliveredText({ ...transcript, magicText: "Legacy rewrite" })).toBe(
       "Legacy rewrite",
     );
+    expect(deliveredText(transcript)).toBe("Original recognition");
   });
 
   test("legacy migration and reversal preserve literal text and unknown metadata without sharing mutable snapshots", () => {

@@ -30,42 +30,37 @@ test("worker framing preserves fragmented Unicode and final output while boundin
 test("invalid, oversized and envelope-altering requests are rejected before worker dispatch", () => {
   const request = serializeWorkerRequest(
     "request",
-    "ping",
+    "status",
     { text: "🎙️" },
     1024,
   );
   const bytes = Buffer.byteLength(request) - 1;
-  expect(serializeWorkerRequest("request", "ping", { text: "🎙️" }, bytes)).toBe(
-    request,
-  );
+  expect(
+    serializeWorkerRequest("request", "status", { text: "🎙️" }, bytes),
+  ).toBe(request);
   expect(() =>
-    serializeWorkerRequest("request", "ping", { text: "🎙️" }, bytes - 1),
+    serializeWorkerRequest("request", "status", { text: "🎙️" }, bytes - 1),
   ).toThrow("UTF-8 bytes");
   const circular: Record<string, unknown> = {};
   circular.self = circular;
   expect(() =>
-    serializeWorkerRequest("request", "ping", circular, 1024),
+    serializeWorkerRequest("request", "status", circular, 1024),
   ).toThrow("cannot be serialized");
   expect(() =>
     serializeWorkerRequest(
       "request",
-      "ping",
+      "status",
       { toJSON: () => ({ id: "foreign" }) },
       1024,
     ),
   ).toThrow("request envelope");
 });
 
-test("worker schemas reject legacy streaming flags and malformed transcription results", () => {
+test("worker schemas reject removed stream commands and malformed transcription results", () => {
   const identity = { protocolVersion: 1, id: "request" };
   expect(() =>
-    validateWorkerRequest({
-      ...identity,
-      command: "transcribe",
-      audioPath: "/audio.wav",
-      streaming: true,
-    }),
-  ).toThrow("does not support");
+    validateWorkerRequest({ ...identity, command: "streamStart" }),
+  ).toThrow("Unknown model worker command: streamStart");
   const result = {
     text: "Saved",
     language: "und",
@@ -98,7 +93,6 @@ test("Redux CPU speech negotiation supports automatic language without weakening
     modelFamily: "redux",
     timestamps: false,
     languageHints: { supported: false, languages: [] },
-    streaming: false,
     vocabularyBiasing: false,
   };
   expect(() =>
@@ -143,7 +137,6 @@ test("speech engines are limited to R2T2 and Redux in requests and capability re
     modelFamily: "r2t2",
     timestamps: false,
     languageHints: { supported: true, languages: ["en"] },
-    streaming: false,
     vocabularyBiasing: false,
   };
   expect(() =>

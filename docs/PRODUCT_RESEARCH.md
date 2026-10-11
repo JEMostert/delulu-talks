@@ -10,7 +10,7 @@ Evidence checked against primary sources:
 - [Superwhisper modes](https://superwhisper.com/docs/modes/modes): plain voice-to-text can operate without AI transformations.
 - [Flow transforms](https://docs.wisprflow.ai/articles/2719941210-how-to-configure-polish-shortcuts-and-custom-prompts): explicit transformations provide useful access to rewriting without making it a prerequisite for every utterance.
 
-Validation includes real local Electron inference and Qwen rewriting with automatic rewriting off, exact shortcut preservation, apply/undo, original-preserving corrections and export. The short audio smoke sample is not an accuracy benchmark. Broad natural-speech evaluation, streaming previews, and application-aware profiles remain future work rather than advertised capabilities.
+Validation includes real local Electron inference and Qwen rewriting with automatic rewriting off, exact shortcut preservation, apply/undo, original-preserving corrections and export. The short audio smoke sample is not an accuracy benchmark. Broad natural-speech evaluation and application-aware profiles remain future work rather than advertised capabilities.
 
 ---
 
@@ -65,9 +65,8 @@ These should follow the same local-first and evidence-honest design:
 
 1. **Meeting capture as a separate pipeline:** PipeWire system audio, dual-channel mic/system capture, a local diarizer, live segment storage, and optional local summary generation. CrisperWhisper remains ASR; it should not be presented as a diarizer.
 2. **App-aware output profiles:** opt-in application identity only, with local deterministic formatting profiles before any LLM is considered. Screen capture remains off by default.
-3. **Streaming preview:** incremental local segments during capture, clearly marked provisional, while the final Crisper pass remains authoritative.
-4. **Command palette and transformations:** user-defined offline actions over selected text/transcripts, isolated from the raw transcript record.
-5. **Runtime resilience:** signed/checksummed helper downloads, GPU-to-CPU fallback, model storage management, and first-run hardware benchmarking.
+3. **Command palette and transformations:** user-defined offline actions over selected text/transcripts, isolated from the raw transcript record.
+4. **Runtime resilience:** signed/checksummed helper downloads, GPU-to-CPU fallback, model storage management, and first-run hardware benchmarking.
 6. **Accessible onboarding:** interactive shortcut conflict checks, microphone level testing, paste-capability setup, and a license/runtime readiness checklist.
 
 The architectural rule is that transcription truth, optional transformation, and delivery remain separate. That keeps new convenience features from corrupting the verbatim record or weakening the privacy promise.

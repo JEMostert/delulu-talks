@@ -53,11 +53,6 @@ function listener<T>(
 
 const api: DeluluApi = {
   inspectAudioFile: (path) => invoke("lab:inspectAudio", path),
-  getSelectedTextState: () => invoke("selectedText:state"),
-  enableSelectedText: (enabled) => invoke("selectedText:enable", enabled),
-  discardSelectedText: (id) => invoke("selectedText:discard", id),
-  replaceSelectedText: (id, text) => invoke("selectedText:replace", id, text),
-  onSelectedTextState: (callback) => listener("selectedText:changed", callback),
   getRuleUsage: () => invoke("rules:usage"),
   resetRuleUsage: () => invoke("rules:resetUsage"),
   previewModelCache: () => invoke("cache:preview"),
@@ -156,11 +151,6 @@ const api: DeluluApi = {
     invoke("history:exportSelection", ids, format),
   onHistoryRetentionApplied: (callback: (removedIds: string[]) => void) =>
     listener("history:retentionApplied", callback),
-  chooseProjectIdentifier: (input) => invoke("projectVocabulary:choose", input),
-  getProjectVocabulary: () => invoke("projectVocabulary:get"),
-  selectProjectVocabulary: () => invoke("projectVocabulary:select"),
-  refreshProjectVocabulary: () => invoke("projectVocabulary:refresh"),
-  clearProjectVocabulary: () => invoke("projectVocabulary:clear"),
   chooseAudioFile: () => invoke("lab:chooseAudio"),
   runLab: (request: LabRequest) => invoke("lab:run", request),
   chooseAudioFiles: () => invoke("lab:chooseAudioFiles"),
@@ -195,8 +185,6 @@ const api: DeluluApi = {
   onImportQueue: (callback) => listener("lab:queueChanged", callback),
   exportTranscript: (id: string, format: ExportFormat) =>
     invoke("history:export", id, format),
-  exportTranscriptTemplate: (id, request) =>
-    invoke("history:exportTemplate", id, request),
   recordingStarted: (sessionId: string) =>
     invoke("recorder:started", sessionId),
   recordingLimitReached: (sessionId: string) =>
@@ -211,8 +199,6 @@ const api: DeluluApi = {
   recordingInputChanged: (sessionId, message, inputLost) =>
     invoke("recorder:inputChanged", sessionId, message, inputLost),
   recordingLevel: (level: number) => send("recorder:level", level),
-  recordingStream: (sessionId: string, sampleRate: number, pcm: string) =>
-    send("recorder:stream", sessionId, sampleRate, pcm),
   submitRecording: (recording: RecordingSubmission) =>
     invoke("recorder:submit", recording),
   onStatus: (callback: (status: DictationStatus) => void) =>

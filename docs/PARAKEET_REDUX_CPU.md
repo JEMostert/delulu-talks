@@ -16,7 +16,7 @@ Attribution: Moondream and NVIDIA Parakeet TDT v3;
 - **Packages:** `kestrel==0.9.1` and `moondream==2.6.1` install into the normal speech runtime (`speech-venv`) beside the R2T2 packages. Existing Linux installs need **Update setup** once.
 - **Checkpoint:** the app downloads the checkpoint pinned to revision `2bf128600aac4b16946f7ed8372e56117fe5e23b` on first load and verifies it. It is kept as a resumable verified snapshot in the app's model cache, so later loads run offline.
 - **Switching:** R2T2 and Redux switch in the app without a restart.
-- **Buffered:** Redux transcribes after capture ends and has no live typing. Dictation is buffered until capture ends, including when an older profile enables live typing.
+- **Buffered:** Redux transcribes after capture ends. Dictation delivers the whole text once you stop.
 - **Language:** detected automatically. The decoder does not accept a forced language.
 - **Startup:** the worker runs a synthetic speech warmup before it reports the model ready.
 - **Capabilities:** the speech worker reports backend `photon-cpu` and model family `redux`.
