@@ -343,14 +343,20 @@ test("history records with removed technical fields load without them and keep t
 });
 
 test("automatic language is kept where the speech engine detects it, and vocabulary hints default on", () => {
-  const automatic =
-    speechModelForPlatform() === "r2t2" ? "auto" : DEFAULT_SETTINGS.language;
+  // Medium detects the language everywhere; R2T2 on MLX needs a selected one.
   const settings = normalizeSettings({
     ...DEFAULT_SETTINGS,
     language: "AUTO",
     vocabularyHints: undefined,
   });
-  expect(settings.language).toBe(automatic);
+  expect(settings.language).toBe("auto");
+  expect(
+    normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      speechEngine: "large",
+      language: "auto",
+    }).language,
+  ).toBe(speechModelForPlatform() === "r2t2" ? "auto" : "en");
   expect(settings.vocabularyHints).toBe(true);
   expect(
     normalizeSettings({ ...DEFAULT_SETTINGS, vocabularyHints: false })
