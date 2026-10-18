@@ -102,3 +102,26 @@
   margin: 0 0 14px;
   border-bottom: 0;
 }
+
+/* Downloaded speech models: name, size and a delete action per row. */
+.downloaded-models {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.downloaded-models h3 {
+  font-size: 13px;
+  font-weight: 650;
+}
+.downloaded-models ul {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+.downloaded-models li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}

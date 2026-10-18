@@ -492,6 +492,15 @@ export type ModelCacheEntry = {
   sizeComplete: boolean;
 };
 
+/** A downloaded speech checkpoint the user can delete from Models. */
+export type SpeechDownload = {
+  id: SpeechDownloadId;
+  name: string;
+  bytes: number;
+};
+export type SpeechDownloadId =
+  "canary-180m" | "parakeet-v2" | "parakeet-v3" | "r2t2";
+
 export type ModelCachePreview = {
   token: string;
   entries: ModelCacheEntry[];
@@ -508,6 +517,8 @@ export type DeluluApi = {
   getRenderingMode(): Promise<RenderingMode>;
   onRenderingModeChanged(callback: (mode: RenderingMode) => void): () => void;
   previewModelCache(): Promise<ModelCachePreview>;
+  listSpeechDownloads(): Promise<SpeechDownload[]>;
+  deleteSpeechDownload(id: SpeechDownloadId): Promise<SpeechDownload[]>;
   cleanupModelCache(
     token: string,
     ids: string[],

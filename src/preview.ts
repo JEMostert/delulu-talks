@@ -73,6 +73,12 @@ export const previewApi: DeluluApi = {
   async previewModelCache() {
     return desktopOnly();
   },
+  async listSpeechDownloads() {
+    return [];
+  },
+  async deleteSpeechDownload() {
+    return desktopOnly();
+  },
   async cleanupModelCache() {
     return desktopOnly();
   },

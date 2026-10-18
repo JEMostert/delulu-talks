@@ -11,7 +11,50 @@ import type {
   ModelCacheCleanupResult,
   ModelCacheEntry,
   ModelCachePreview,
+  SpeechDownload,
+  SpeechDownloadId,
 } from "../../src/types";
+
+const VERIFIED = "hub/delulu-verified";
+/** Where each speech checkpoint lives in the model cache, relative to its root. */
+const SPEECH_DOWNLOADS: {
+  id: SpeechDownloadId;
+  name: string;
+  paths: string[];
+}[] = [
+  {
+    id: "canary-180m",
+    name: "Small · Canary 180M",
+    paths: [
+      `${VERIFIED}/csukuangfj--sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8`,
+    ],
+  },
+  {
+    id: "parakeet-v2",
+    name: "Medium · Parakeet v2 (English)",
+    paths: [
+      `${VERIFIED}/csukuangfj--sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8`,
+    ],
+  },
+  {
+    id: "parakeet-v3",
+    name: "Medium · Parakeet v3 (Automatic)",
+    paths: [
+      `${VERIFIED}/csukuangfj--sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`,
+    ],
+  },
+  {
+    id: "r2t2",
+    name: "Large · R2T2",
+    paths: [
+      `${VERIFIED}/netease-youdao--Confucius4-R2T2`,
+      `${VERIFIED}/mlx-community--Confucius4-R2T2-bf16`,
+      "hub/models--netease-youdao--Confucius4-R2T2",
+      "hub/models--mlx-community--Confucius4-R2T2-bf16",
+      "delulu-r2t2-transformers",
+    ],
+  },
+];
 
 const PLAN_LIFETIME_MS = 10 * 60 * 1000;
 const MAX_SIZE_NODES = 20_000;
@@ -138,6 +181,40 @@ export class ModelCacheService {
 
   constructor(cacheRoot: string) {
     this.root = resolve(cacheRoot);
+  }
+
+  /** Speech checkpoints present in the cache, with their size on disk. */
+  speechDownloads(): SpeechDownload[] {
+    if (!safeDirectory(this.root)) return [];
+    const budget = { remaining: MAX_SIZE_NODES };
+    return SPEECH_DOWNLOADS.flatMap(({ id, name, paths }) => {
+      const present = paths
+        .map((path) => join(this.root, path))
+        .filter((path) => optionalStat(path));
+      if (!present.length) return [];
+      const bytes = present.reduce(
+        (sum, path) => sum + sizeOf(path, budget).bytes,
+        0,
+      );
+      return [{ id, name, bytes }];
+    });
+  }
+
+  /** Delete one speech checkpoint; it downloads again the next time it loads. */
+  deleteSpeechDownload(id: string): SpeechDownload[] {
+    const download = SPEECH_DOWNLOADS.find((item) => item.id === id);
+    if (!download) throw new Error("Unknown speech model");
+    if (!safeDirectory(this.root)) return [];
+    this.plan = undefined;
+    for (const relative of download.paths) {
+      const path = join(this.root, relative);
+      // Never follow a link out of the cache.
+      const stat = optionalStat(path);
+      if (stat?.isSymbolicLink()) continue;
+      rmSync(path, { recursive: true, force: true });
+      rmSync(`${path}.lock`, { force: true });
+    }
+    return this.speechDownloads();
   }
 
   preview(): ModelCachePreview {

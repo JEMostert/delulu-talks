@@ -13,6 +13,7 @@ import { ModelLifecycle } from "./ModelLifecycle";
 import { BackendCapabilities } from "./BackendCapabilities";
 import { EngineBadge } from "./EngineBadge";
 import { SpeechTierPicker } from "./SpeechTierPicker";
+import { DownloadedModels } from "./DownloadedModels";
 
 export type SpeechSetupProps = {
   largeSpeechAvailable?: boolean;
@@ -167,6 +168,7 @@ export function SpeechSetup({
           {status.message}
         </p>
       )}
+      <DownloadedModels status={status} busy={busy || installing} />
       <details className="setup-details">
         <summary>Model details & license</summary>
         <BackendCapabilities capabilities={status.capabilities} />

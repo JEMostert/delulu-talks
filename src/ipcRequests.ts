@@ -235,6 +235,8 @@ function stringIds(value: unknown, limit = 128, count = 500): string[] {
 
 export const ipcRequestSchemas = {
   "cache:preview": noArguments,
+  "models:downloads": noArguments,
+  "models:deleteDownload": schema(1, ([id]) => [requestText(id, 32)]),
   "cache:cleanup": schema(2, ([token, ids]) => [
     requestText(token, 128),
     stringIds(ids),

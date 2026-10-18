@@ -36,6 +36,16 @@ export function registerRuntimeIpc(
   handle("runtime:diagnostics", () => runtimeDiagnostics(storage));
   handle("runtime:renderingMode", getRenderingMode);
   handle("cache:preview", () => modelCache.preview());
+  handle("models:downloads", () => modelCache.speechDownloads());
+  handle("models:deleteDownload", async (_event, id: unknown) => {
+    assertRuntimeIdle();
+    if (settingsBusy())
+      throw new Error("Wait for settings to finish saving before deleting");
+    // The loaded checkpoint's files are in use: release them first.
+    if (asr.getStatus().engine === "ready") await asr.unload();
+    assertRuntimeIdle();
+    return modelCache.deleteSpeechDownload(String(id));
+  });
   handle("cache:cleanup", (_event, token: unknown, ids: unknown) => {
     assertRuntimeIdle();
     if (settingsBusy())
