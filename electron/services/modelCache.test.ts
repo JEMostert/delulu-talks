@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelCacheService } from "./modelCache";
@@ -8,7 +14,8 @@ const verified = (root: string, repo: string) =>
   join(root, "hub", "delulu-verified", repo);
 
 test("downloaded speech models are listed with their size and deleted one at a time", () => {
-  const root = mkdtempSync(join(tmpdir(), "delulu-cache-"));
+  // macOS temp lives behind a symlink, which the cache refuses to touch.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "delulu-cache-")));
   const canary = verified(
     root,
     "csukuangfj--sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8",
