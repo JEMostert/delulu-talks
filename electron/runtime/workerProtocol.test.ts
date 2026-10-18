@@ -77,50 +77,62 @@ test("worker schemas reject removed stream commands and malformed transcription 
   ).toThrow();
 });
 
-test("Redux CPU speech negotiation supports automatic language without weakening writing isolation", () => {
-  expect(() =>
-    validateWorkerRequest({
-      protocolVersion: 1,
-      id: "redux-load",
-      command: "load",
-      model: "redux",
-      device: "cpu",
-    }),
-  ).not.toThrow();
-  const capabilities = {
-    schemaVersion: 1,
-    engine: "speech",
-    backend: "photon-cpu",
-    modelFamily: "redux",
-    timestamps: false,
-    languageHints: { supported: false, languages: [] },
-    vocabularyBiasing: false,
-  };
-  expect(() =>
-    validateWorkerResult("capabilities", capabilities),
-  ).not.toThrow();
-  expect(() =>
-    validateWorkerResult("capabilities", {
-      ...capabilities,
-      engine: "writing",
-    }),
-  ).toThrow();
+test("CPU speech negotiation for Small and Medium does not weaken writing isolation", () => {
+  for (const [model, family, languages] of [
+    ["canary-180m", "canary", ["en", "de", "fr", "es"]],
+    ["parakeet-v2", "parakeet", ["en"]],
+    ["parakeet-v3", "parakeet", []],
+  ] as const) {
+    expect(() =>
+      validateWorkerRequest({
+        protocolVersion: 1,
+        id: `${model}-load`,
+        command: "load",
+        model,
+        language: "en",
+        device: "cpu",
+      }),
+    ).not.toThrow();
+    const capabilities = {
+      schemaVersion: 1,
+      engine: "speech",
+      backend: "onnx-cpu",
+      modelFamily: family,
+      timestamps: false,
+      languageHints: { supported: languages.length > 0, languages },
+      vocabularyBiasing: false,
+    };
+    expect(() =>
+      validateWorkerResult("capabilities", capabilities),
+    ).not.toThrow();
+    expect(() =>
+      validateWorkerResult("capabilities", {
+        ...capabilities,
+        engine: "writing",
+      }),
+    ).toThrow();
+  }
 });
 
-test("speech engines are limited to R2T2 and Redux in requests and capability results", () => {
+test("speech engines are limited to the three sizes in requests and capability results", () => {
   const identity = { protocolVersion: 1, id: "request" };
   expect(() =>
-    validateWorkerRequest({ ...identity, command: "load", model: "redux" }),
+    validateWorkerRequest({
+      ...identity,
+      command: "load",
+      model: "canary-180m",
+    }),
   ).not.toThrow();
-  expect(() =>
-    validateWorkerRequest({ ...identity, command: "load", model: "nemotron" }),
-  ).toThrow("Invalid model worker speech model");
+  for (const model of ["nemotron", "redux"])
+    expect(() =>
+      validateWorkerRequest({ ...identity, command: "load", model }),
+    ).toThrow("Invalid model worker speech model");
   expect(() =>
     validateWorkerRequest({
       ...identity,
       command: "capabilities",
       engine: "speech",
-      model: "redux",
+      model: "parakeet-v3",
     }),
   ).not.toThrow();
   expect(() =>
@@ -128,7 +140,7 @@ test("speech engines are limited to R2T2 and Redux in requests and capability re
       ...identity,
       command: "capabilities",
       engine: "speech",
-      model: "nemotron",
+      model: "redux",
     }),
   ).toThrow("Invalid model worker speech model");
   const capabilities = {

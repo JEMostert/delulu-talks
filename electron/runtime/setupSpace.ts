@@ -3,7 +3,12 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { SetupDiskCapacity, SetupSpaceSnapshot } from "../../src/types";
 import type { StorageService } from "../services/storage";
-import { magicModelById, modelById } from "../../src/data";
+import {
+  CANARY_MODEL,
+  magicModelById,
+  modelById,
+  PARAKEET_MODEL,
+} from "../../src/data";
 import { speechModelForPlatform } from "./platform";
 
 /** Query the target filesystem, never enumerate runtime, cache or history files. */
@@ -105,11 +110,25 @@ function pipCacheDirectory(): string {
 export async function setupSpaceSnapshot(
   storage: StorageService,
 ): Promise<SetupSpaceSnapshot> {
+  const settings = storage.getSettings();
   const speechId = speechModelForPlatform();
-  const speechModel = modelById(speechId);
-  const magicModel = magicModelById(storage.getSettings().magicModel);
+  const tier = settings.speechEngine;
+  const speechModel =
+    tier === "small"
+      ? CANARY_MODEL
+      : tier === "medium"
+        ? PARAKEET_MODEL
+        : modelById(speechId);
+  const magicModel = magicModelById(settings.magicModel);
   // Speech estimates are the existing model catalogue, not remote manifests.
-  const speechBytes = speechId === "r2t2Mlx" ? 4.1e9 : 4e9;
+  const speechBytes =
+    tier === "small"
+      ? 0.2e9
+      : tier === "medium"
+        ? 0.64e9
+        : speechId === "r2t2Mlx"
+          ? 4.1e9
+          : 4e9;
   // Marketing parameter count × two-byte BF16 weights is a planning estimate,
   // not a measured checkpoint size or a claim about RAM consumption.
   const parameters = {
@@ -118,7 +137,8 @@ export async function setupSpaceSnapshot(
     qwen35Large: 4e9,
   }[magicModel.id];
   const magicBytes = parameters * 2;
-  const convertedBytes = process.platform === "win32" ? speechBytes : 0;
+  const convertedBytes =
+    tier === "large" && process.platform === "win32" ? speechBytes : 0;
   const disk = await Promise.all([
     capacity("Speech runtime generations", storage.venvDirectory),
     capacity("Rewrite runtime generations", storage.magicVenvDirectory),

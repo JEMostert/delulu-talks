@@ -14,6 +14,12 @@ Delulu Talks extracts the ASR weight-key mapping, configuration cleanup, and cha
 
 The Apache-2.0 code license is separate from the R2T2 checkpoint's weight license. The application does not bundle model weights.
 
-## Experimental Parakeet Redux CPU model
+## Small and Medium CPU speech models
 
-The optional CPU adapter uses Moondream's Parakeet Redux checkpoint, derived from NVIDIA Parakeet TDT v3, at revision `2bf128600aac4b16946f7ed8372e56117fe5e23b`. The weights are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); attribution and the upstream license are available in the [model repository](https://huggingface.co/moondream/parakeet-redux). Weights are downloaded separately and are not bundled with Delulu Talks. See [setup and validation limits](PARAKEET_REDUX_CPU.md).
+Small and Medium run NVIDIA [Canary 180M Flash](https://huggingface.co/nvidia/canary-180m-flash) and [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) / [v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3). The weights are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Delulu downloads the INT8 ONNX exports published by the sherpa-onnx project, pinned to these revisions:
+
+- `csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8` at `9077164e0d3dd1d5353743e89ceaa1d3a770838c`
+- `csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8` at `1ab9323565ddb038682214b292f588070a538ce2`
+- `csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8` at `2bda32ec70b097a55adaa07d9a7173915b43cc78`
+
+Inference uses the [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) Python package (Apache License 2.0), installed into the speech runtime. Weights are downloaded separately and are not bundled with Delulu Talks.

@@ -12,29 +12,30 @@ def request(command, **fields):
 
 
 class WorkerProtocolTests(unittest.TestCase):
-    def test_redux_capabilities_preserve_writing_role_isolation(self):
-        valid = request("load", model="redux", device="cpu")
-        self.assertIs(protocol.validate_request(valid), valid)
-        capabilities = {"schemaVersion": 1, "engine": "speech", "backend": "photon-cpu",
-                        "modelFamily": "redux", "timestamps": False,
-                        "languageHints": {"supported": False, "languages": []},
-                        "vocabularyBiasing": False}
-        protocol.validate_result("capabilities", capabilities)
-        with self.assertRaises(ValueError):
-            protocol.validate_result("capabilities", {**capabilities, "engine": "writing"})
+    def test_cpu_capabilities_preserve_writing_role_isolation(self):
+        for model, family in (("canary-180m", "canary"), ("parakeet-v2", "parakeet"), ("parakeet-v3", "parakeet")):
+            valid = request("load", model=model, device="cpu")
+            self.assertIs(protocol.validate_request(valid), valid)
+            capabilities = {"schemaVersion": 1, "engine": "speech", "backend": "onnx-cpu",
+                            "modelFamily": family, "timestamps": False,
+                            "languageHints": {"supported": False, "languages": []},
+                            "vocabularyBiasing": False}
+            protocol.validate_result("capabilities", capabilities)
+            with self.assertRaises(ValueError):
+                protocol.validate_result("capabilities", {**capabilities, "engine": "writing"})
 
-    def test_speech_models_are_closed_to_r2t2_and_redux(self):
-        redux_probe = request("capabilities", engine="speech", model="redux")
-        self.assertIs(protocol.validate_request(redux_probe), redux_probe)
+    def test_speech_models_are_closed_to_the_three_tiers(self):
+        probe = request("capabilities", engine="speech", model="parakeet-v3")
+        self.assertIs(protocol.validate_request(probe), probe)
         protocol.validate_request(request("capabilities", engine="speech"))
         protocol.validate_request(request("load", model="r2t2", cacheDir="cache"))
-        for model in ("legacy-asr", "", None):
+        for model in ("legacy-asr", "redux", "", None):
             with self.subTest(model=model), self.assertRaises(ValueError):
                 protocol.validate_request(request("load", model=model))
             with self.subTest(model=model), self.assertRaises(ValueError):
                 protocol.validate_request(request("capabilities", engine="speech", model=model))
         with self.assertRaises(ValueError):
-            protocol.validate_request(request("load", model="redux", device="gpu"))
+            protocol.validate_request(request("load", model="canary-180m", device="gpu"))
         base = {"schemaVersion": 1, "engine": "speech", "backend": "cuda-transformers",
                 "timestamps": False, "languageHints": {"supported": True, "languages": ["en"]},
                 "vocabularyBiasing": False}

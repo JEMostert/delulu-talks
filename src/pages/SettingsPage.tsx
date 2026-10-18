@@ -6,8 +6,6 @@ import {
   AudioWaveform,
   Check,
   Download,
-  Feather,
-  Gauge,
   Keyboard,
   Languages,
   Mic,
@@ -17,7 +15,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { AUTO_LANGUAGE, MAGIC_MODELS } from "../data";
-import { speechLanguageCapability } from "../speechCapabilities";
+import {
+  speechLanguageCapability,
+  speechLanguageHelp,
+} from "../speechCapabilities";
+import { SpeechTierPicker } from "../components/models/SpeechTierPicker";
 import {
   ConfirmDialog,
   NumberField,
@@ -129,7 +131,7 @@ export function SettingsPage(props: Props) {
   const [shortcut, setShortcut] = useState(s.shortcut);
   useEffect(() => setPython(s.pythonCommand), [s.pythonCommand]);
   useEffect(() => setShortcut(s.shortcut), [s.shortcut]);
-  const languageCapability = speechLanguageCapability(s.model);
+  const languageCapability = speechLanguageCapability(s.speechEngine, s.model);
   const busy =
     ["preparing", "loading", "listening", "paused", "transcribing"].includes(
       status.phase,
@@ -209,29 +211,17 @@ export function SettingsPage(props: Props) {
               <SettingRow
                 icon={Languages}
                 title="Language"
-                help={
-                  s.speechEngine === "redux"
-                    ? "Parakeet Redux detects the language automatically."
-                    : s.language === AUTO_LANGUAGE
-                      ? "R2T2 detects the language, also when you switch between languages. Choose one to force it."
-                      : "Forces the speech model to this language. Automatic detection handles mixed languages."
-                }
+                help={speechLanguageHelp(s.speechEngine, s.language)}
               >
                 <select
                   aria-label="Language"
-                  value={
-                    s.speechEngine === "redux" ? AUTO_LANGUAGE : s.language
-                  }
+                  value={s.language}
                   disabled={
-                    saving ||
-                    busy ||
-                    s.speechEngine === "redux" ||
-                    !languageCapability.canSelectLanguage
+                    saving || busy || !languageCapability.canSelectLanguage
                   }
                   onChange={(e) => save({ language: e.target.value })}
                 >
-                  {(s.speechEngine === "redux" ||
-                    languageCapability.canRequestAutomaticLanguage) && (
+                  {languageCapability.canRequestAutomaticLanguage && (
                     <option value={AUTO_LANGUAGE}>Automatic detection</option>
                   )}
                   {languageCapability.languages.map(([code, label]) => (
@@ -241,7 +231,7 @@ export function SettingsPage(props: Props) {
                   ))}
                 </select>
               </SettingRow>
-              {s.speechEngine === "r2t2" && !mac && (
+              {s.speechEngine === "large" && !mac && (
                 <SettingRow
                   icon={SpellCheck}
                   title="Vocabulary hints"
@@ -364,79 +354,36 @@ export function SettingsPage(props: Props) {
 
         {section === "speech" && (
           <>
-            {!mac && (
-              <Group title="Speech model">
-                <div
-                  className="engine-choice"
-                  role="radiogroup"
-                  aria-label="Speech model"
+            <Group title="Speech model">
+              <SpeechTierPicker
+                settings={s}
+                largeAvailable={!!capabilities?.largeSpeechAvailable}
+                disabled={saving || busy}
+                onSelect={save}
+              />
+              <SettingRow
+                title="Keep the model ready"
+                description="No wait before your first word; uses memory while idle."
+              >
+                {toggle("preloadModel", "Keep the model ready", busy)}
+              </SettingRow>
+              <SettingRow title="Unload when idle">
+                <select
+                  aria-label="Idle unload delay"
+                  value={s.modelIdleMinutes}
+                  disabled={saving}
+                  onChange={(e) =>
+                    save({ modelIdleMinutes: Number(e.target.value) })
+                  }
                 >
-                  {(
-                    [
-                      [
-                        "redux",
-                        "Parakeet Redux",
-                        Feather,
-                        "Light, runs on the CPU. 178 MB download. Detects the language automatically and transcribes after you stop.",
-                      ],
-                      [
-                        "r2t2",
-                        "R2T2",
-                        Gauge,
-                        "Most accurate, especially in Dutch. About 4 GB of GPU memory.",
-                      ],
-                    ] as const
-                  )
-                    .filter(
-                      ([id]) =>
-                        id !== "redux" || capabilities?.reduxCpuAvailable,
-                    )
-                    .map(([id, name, Icon, detail]) => (
-                      <button
-                        key={id}
-                        role="radio"
-                        aria-checked={s.speechEngine === id}
-                        className="engine-option"
-                        disabled={saving || busy}
-                        onClick={() =>
-                          s.speechEngine !== id && save({ speechEngine: id })
-                        }
-                      >
-                        <Icon aria-hidden="true" />
-                        <span>
-                          <strong>{name}</strong>
-                          <small>{detail}</small>
-                        </span>
-                        {s.speechEngine === id && (
-                          <Check className="engine-check" aria-hidden="true" />
-                        )}
-                      </button>
-                    ))}
-                </div>
-                <SettingRow
-                  title="Keep the model ready"
-                  description="No wait before your first word; uses memory while idle."
-                >
-                  {toggle("preloadModel", "Keep the model ready", busy)}
-                </SettingRow>
-                <SettingRow title="Unload when idle">
-                  <select
-                    aria-label="Idle unload delay"
-                    value={s.modelIdleMinutes}
-                    disabled={saving}
-                    onChange={(e) =>
-                      save({ modelIdleMinutes: Number(e.target.value) })
-                    }
-                  >
-                    {[1, 5, 15, 30, 60].map((n) => (
-                      <option value={n} key={n}>
-                        After {n} {n === 1 ? "minute" : "minutes"}
-                      </option>
-                    ))}
-                  </select>
-                </SettingRow>
-              </Group>
-            )}
+                  {[1, 5, 15, 30, 60].map((n) => (
+                    <option value={n} key={n}>
+                      After {n} {n === 1 ? "minute" : "minutes"}
+                    </option>
+                  ))}
+                </select>
+              </SettingRow>
+            </Group>
             <Group title="While you speak">
               <SettingRow
                 icon={AudioWaveform}

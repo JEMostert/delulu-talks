@@ -1,9 +1,9 @@
 {
   "name": "delulu-talks",
   "private": true,
-  "version": "0.15.0",
+  "version": "0.16.0",
   "type": "module",
-  "description": "Private, local-first system-wide R2T2 dictation with MLX and CUDA acceleration",
+  "description": "Private, local-first system-wide dictation with CPU, CUDA and MLX speech models",
   "author": {
     "name": "JoranEMostert",
     "email": "92588849+JoranEMostert@users.noreply.github.com"

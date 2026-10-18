@@ -91,7 +91,7 @@ def run(args) -> None:
                "provenance_supplied": provenance, "repetitions": args.repetitions,
                "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                "adapter_source_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-                  for path in (ROOT / "electron/python").glob("*.py") if path.name in {"transcription_engine.py", "metal_speech.py", "r2t2_speech.py", "r2t2_checkpoint.py", "redux_speech.py"}},
+                  for path in (ROOT / "electron/python").glob("*.py") if path.name in {"transcription_engine.py", "metal_speech.py", "r2t2_speech.py", "r2t2_checkpoint.py", "onnx_speech.py", "audio_input.py"}},
                "status": "running", "native_inference_run": False}
     try:
         started = time.perf_counter()

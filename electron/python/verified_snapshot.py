@@ -40,7 +40,8 @@ def _entry_path(root, name):
     return target
 
 
-def verified_snapshot(repo_id, revision, cache_dir=None, local_files_only=False, allow_patterns=None):
+def verified_snapshot(repo_id, revision, cache_dir=None, local_files_only=False, allow_patterns=None,
+                      weights_suffix=".safetensors"):
     from filelock import FileLock
     from huggingface_hub import HfApi, get_hf_file_metadata, hf_hub_url, hf_hub_download
     from huggingface_hub.constants import HF_HUB_CACHE
@@ -80,7 +81,7 @@ def verified_snapshot(repo_id, revision, cache_dir=None, local_files_only=False,
                 if not isinstance(metadata.size, int) or not 0 <= metadata.size <= 64 * 1024**3:
                     raise RuntimeError(f"Invalid checkpoint size for {name}")
                 entries.append({"name": name, "size": metadata.size, "digest": expected})
-            if not entries or not any(entry["name"].endswith(".safetensors") for entry in entries):
+            if not entries or not any(entry["name"].endswith(weights_suffix) for entry in entries):
                 raise RuntimeError("Pinned snapshot does not contain speech weights")
         for entry in entries:
             name, size, expected = entry["name"], entry["size"], entry["digest"]

@@ -3,6 +3,7 @@ import type {
   MagicModelInfo,
   ModelInfo,
   ModelProvenance,
+  SpeechTier,
 } from "./types";
 
 export const DEFAULT_SHORTCUT = "Super+Z";
@@ -56,7 +57,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   historyRetention: { maxAgeDays: null, maxCount: null },
   showOverlay: true,
   captureSoundsMuted: true,
-  speechEngine: "r2t2",
+  speechEngine: "medium",
   historyLimit: 50,
   captureSoundVolume: 0.15,
   preloadModel: true,
@@ -127,28 +128,109 @@ export const MODELS: ModelInfo[] = [
   },
 ];
 
-export const REDUX_MODEL: Omit<ModelInfo, "id"> = {
-  identity: "redux",
-  backendIds: ["photon-cpu"],
-  runtime: "Photon · CPU",
-  downloadSize: "178 MB",
-  hfId: "moondream/parakeet-redux",
-  name: "Parakeet Redux",
+const NVIDIA_LICENSE = {
+  licenseName: "CC BY 4.0",
+  licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+};
+const SHERPA_CONVERSION =
+  "INT8 ONNX export of the NVIDIA NeMo checkpoint, published by the sherpa-onnx project (k2-fsa). Delulu does not convert it further.";
+
+export const CANARY_MODEL: Omit<ModelInfo, "id"> = {
+  identity: "canary",
+  backendIds: ["onnx-cpu"],
+  runtime: "sherpa-onnx · CPU",
+  downloadSize: "200 MB",
+  hfId: "csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8",
+  name: "Canary 180M Flash",
   description:
-    "Light local dictation on the CPU in 25 languages, including Dutch. Packed 1.58-bit weights; language is detected automatically. Speak, then stop to transcribe.",
+    "NVIDIA Canary 180M Flash on the CPU. The smallest option: English, German, French and Spanish, with punctuation. Speak, then stop to transcribe.",
   provenance: {
-    licenseName: "CC BY 4.0",
-    licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+    ...NVIDIA_LICENSE,
     variants: [
       {
-        label: "Moondream / NVIDIA · CPU",
-        revision: "2bf128600aac4b16946f7ed8372e56117fe5e23b",
-        conversion:
-          "Original Moondream packed ternary checkpoint, based on NVIDIA Parakeet v3. No conversion.",
+        label: "NVIDIA Canary 180M Flash · INT8",
+        revision: "9077164e0d3dd1d5353743e89ceaa1d3a770838c",
+        conversion: SHERPA_CONVERSION,
+        attributionUrl: "https://huggingface.co/nvidia/canary-180m-flash",
       },
     ],
   },
 };
+
+export const PARAKEET_MODEL: Omit<ModelInfo, "id"> = {
+  identity: "parakeet",
+  backendIds: ["onnx-cpu"],
+  runtime: "sherpa-onnx · CPU",
+  downloadSize: "630 MB",
+  hfId: "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+  name: "Parakeet TDT 0.6B",
+  description:
+    "NVIDIA Parakeet TDT 0.6B on the CPU. English uses v2, the English model; Automatic uses v3, which detects 25 European languages. Speak, then stop to transcribe.",
+  provenance: {
+    ...NVIDIA_LICENSE,
+    variants: [
+      {
+        label: "NVIDIA Parakeet TDT 0.6B v2 · English · INT8",
+        revision: "1ab9323565ddb038682214b292f588070a538ce2",
+        conversion: SHERPA_CONVERSION,
+        attributionUrl: "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2",
+      },
+      {
+        label: "NVIDIA Parakeet TDT 0.6B v3 · 25 languages · INT8",
+        revision: "2bda32ec70b097a55adaa07d9a7173915b43cc78",
+        conversion: SHERPA_CONVERSION,
+        attributionUrl: "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+      },
+    ],
+  },
+};
+
+/** The three speech choices, smallest first. Small and Medium run on any CPU. */
+export const SPEECH_TIERS = [
+  {
+    id: "small",
+    name: "Small",
+    model: "Canary 180M",
+    download: "200 MB",
+    summary: "Runs on almost any computer.",
+    detail: "English, German, French and Spanish. Least accurate of the three.",
+    hardware: "Any CPU",
+  },
+  {
+    id: "medium",
+    name: "Medium",
+    model: "Parakeet 0.6B",
+    download: "630 MB",
+    summary: "Fast and accurate on the CPU.",
+    detail:
+      "English, or automatic detection across 25 European languages. Recommended for most computers.",
+    hardware: "Any CPU",
+    recommended: true,
+  },
+  {
+    id: "large",
+    name: "Large",
+    model: "R2T2",
+    download: "~4 GB",
+    summary: "Most accurate.",
+    detail:
+      "30 languages, automatic detection and vocabulary hints. Needs an NVIDIA GPU with about 4 GB of memory, or Apple Silicon.",
+    hardware: "NVIDIA GPU or Apple Silicon",
+  },
+] as const satisfies readonly {
+  id: SpeechTier;
+  name: string;
+  model: string;
+  download: string;
+  summary: string;
+  detail: string;
+  hardware: string;
+  recommended?: boolean;
+}[];
+
+export function speechTierById(id: SpeechTier) {
+  return SPEECH_TIERS.find((tier) => tier.id === id) ?? SPEECH_TIERS[1];
+}
 
 export const MAGIC_MODELS: MagicModelInfo[] = [
   {

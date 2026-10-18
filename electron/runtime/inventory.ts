@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { RuntimeArtifact } from "./artifacts";
+import type { SpeechRuntimeProfile } from "./platform";
 
 /** Enumerates distribution metadata, without importing installed packages. */
 export const PYTHON_INVENTORY_PROBE = `import importlib.metadata as metadata
@@ -40,7 +41,7 @@ print(json.dumps({
 export type RuntimeKind = "speech" | "magic";
 export type TargetPlatform = { platform: string; arch: string };
 export type InventoryBackend = {
-  engine: "mlx-audio" | "transformers" | "photon-cpu";
+  engine: "mlx-audio" | "transformers" | "onnx-cpu";
   // Selection policy, not an observed GPU capability or inference result.
   devicePreference: ("metal" | "cuda" | "mps" | "cpu")[];
 };
@@ -88,9 +89,12 @@ export type RuntimeInventory = {
 export function inventoryBackend(
   kind: RuntimeKind,
   metal: boolean,
+  profile: SpeechRuntimeProfile = "full",
 ): InventoryBackend {
   if (kind === "magic")
     return { engine: "transformers", devicePreference: ["cuda", "mps", "cpu"] };
+  if (profile === "cpu")
+    return { engine: "onnx-cpu", devicePreference: ["cpu"] };
   return metal
     ? { engine: "mlx-audio", devicePreference: ["metal"] }
     : {

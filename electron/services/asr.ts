@@ -1,4 +1,3 @@
-import { reduxSupported } from "../runtime/redux";
 import { recognitionHints } from "../../src/recognitionHints";
 import {
   normalizeRewriteContext,
@@ -17,7 +16,12 @@ import { randomUUID } from "node:crypto";
 import { app } from "electron";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { magicModelById, modelById } from "../../src/data";
+import {
+  CANARY_MODEL,
+  magicModelById,
+  modelById,
+  PARAKEET_MODEL,
+} from "../../src/data";
 import type {
   AppSettings,
   BackendCapabilities,
@@ -37,7 +41,11 @@ import { WorkerClient, transcriptionTimeout } from "../runtime/workerClient";
 import { SerialQueue } from "../runtime/serialQueue";
 import { RuntimeInstaller } from "../runtime/installer";
 import { runtimeEnvironment } from "../runtime/environment";
-import { speechModelForPlatform, usesMetal } from "../runtime/platform";
+import {
+  largeSpeechSupported,
+  speechModelForPlatform,
+  type SpeechRuntimeProfile,
+} from "../runtime/platform";
 import { privateFailureLog } from "../runtime/privateDiagnostics";
 
 function modelSetupStage(stage: string): SetupStage | null {
@@ -129,18 +137,27 @@ type SetupOperation = {
   termination?: Promise<void>;
 };
 
-/** The speech model the worker runs; Apple Silicon always uses R2T2 on MLX. */
-export function speechEngineId(settings: AppSettings): "r2t2" | "redux" {
-  return settings.speechEngine === "redux" && reduxSupported() && !usesMetal()
-    ? "redux"
-    : "r2t2";
+/** Checkpoints the speech worker loads; Medium picks Parakeet's English model for English. */
+export type SpeechWorkerModel =
+  "canary-180m" | "parakeet-v2" | "parakeet-v3" | "r2t2";
+
+/** The checkpoint for the selected size. Large falls back to Medium where R2T2 cannot run. */
+export function speechEngineId(settings: AppSettings): SpeechWorkerModel {
+  if (settings.speechEngine === "small") return "canary-180m";
+  if (settings.speechEngine === "large" && largeSpeechSupported())
+    return "r2t2";
+  return settings.language === "en" ? "parakeet-v2" : "parakeet-v3";
 }
 
 export function speechModelName(settings: AppSettings): string {
-  return speechEngineId(settings) === "redux"
-    ? "Parakeet Redux"
-    : modelById(settings.model).name;
+  const model = speechEngineId(settings);
+  if (model === "r2t2") return modelById(settings.model).name;
+  if (model === "canary-180m") return CANARY_MODEL.name;
+  return `${PARAKEET_MODEL.name} ${model === "parakeet-v2" ? "v2" : "v3"}`;
 }
+
+const speechProfile = (settings: AppSettings): SpeechRuntimeProfile =>
+  speechEngineId(settings) === "r2t2" ? "full" : "cpu";
 
 export class AsrService {
   private readonly speechWorker: WorkerClient;
@@ -209,7 +226,7 @@ export class AsrService {
   private speechFailureGeneration = 0;
   private magicFailureGeneration = 0;
   private speechIdleTimer: NodeJS.Timeout | null = null;
-  private loadedEngine: "r2t2" | "redux" | null = null;
+  private loadedEngine: SpeechWorkerModel | null = null;
   private magicIdleTimer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -427,11 +444,10 @@ export class AsrService {
       message: "Checking your rewrite runtime…",
     });
     const [ready, magicReady] = await Promise.all([
-      this.isEnvironmentReady(),
+      this.isEnvironmentReady(settings),
       this.isMagicEnvironmentReady(),
     ]);
-    const migrationRequired =
-      !ready && existsSync(this.storage.legacyVenvDirectory);
+    const migrationRequired = !ready && this.runtimeNeedsUpdate();
     this.initializing = false;
     if (this.maintenance.busy) return;
     this.updateStatus(
@@ -480,8 +496,46 @@ export class AsrService {
     }
   }
 
-  async isEnvironmentReady(): Promise<boolean> {
-    return this.speechInstaller.ready("speech");
+  /** Whether the active speech runtime can run the selected model size. */
+  async isEnvironmentReady(settings: AppSettings): Promise<boolean> {
+    return this.speechInstaller.ready("speech", speechProfile(settings));
+  }
+
+  /** An installed runtime that lacks the selected size's packages needs an update. */
+  private runtimeNeedsUpdate(): boolean {
+    try {
+      return (
+        existsSync(this.speechInstaller.python) ||
+        existsSync(this.storage.legacyVenvDirectory)
+      );
+    } catch {
+      return true;
+    }
+  }
+
+  /** Re-check the runtime after the model size changes, so setup is offered when needed. */
+  async refreshEnvironment(settings: AppSettings): Promise<void> {
+    if (this.setupPromise || this.maintenance.busy || this.shuttingDown) return;
+    const ready = await this.isEnvironmentReady(settings);
+    if (this.setupPromise || this.maintenance.busy || this.shuttingDown) return;
+    if (!ready)
+      this.updateStatus({
+        phase: "idle",
+        engine: "missing",
+        message: this.runtimeNeedsUpdate()
+          ? "Speech runtime update required for this model size"
+          : "Speech runtime setup required",
+        migrationRequired: this.runtimeNeedsUpdate(),
+        model: null,
+        progress: null,
+      });
+    else if (this.status.engine === "missing")
+      this.updateStatus({
+        phase: "idle",
+        engine: "unloaded",
+        message: "Speech runtime installed — speech model loads on demand",
+        migrationRequired: false,
+      });
   }
   async isMagicEnvironmentReady(): Promise<boolean> {
     return this.magicInstaller.ready("magic");
@@ -748,7 +802,7 @@ export class AsrService {
       if (kind === "speech") {
         this.fail(error);
         this.updateStatus({ setupState: "failed" });
-        if (await this.isEnvironmentReady())
+        if (await this.isEnvironmentReady(settings))
           this.updateStatus({
             phase: "idle",
             engine: "unloaded",
@@ -824,7 +878,7 @@ export class AsrService {
 
   private async negotiateCapabilities(
     kind: "speech" | "magic",
-    model?: "r2t2" | "redux",
+    model?: SpeechWorkerModel,
   ): Promise<BackendCapabilities> {
     const engine = kind === "speech" ? "speech" : "writing";
     const capabilities = await this.request<BackendCapabilities>(
@@ -832,16 +886,23 @@ export class AsrService {
       "capabilities",
       { engine, ...(model ? { model } : {}) },
     );
+    const cpu = kind === "speech" && !!model && model !== "r2t2";
     const backend =
       kind === "magic"
         ? "transformers"
-        : model === "redux"
-          ? "photon-cpu"
+        : cpu
+          ? "onnx-cpu"
           : speechModelForPlatform() === "r2t2Mlx"
             ? "mlx"
             : "cuda-transformers";
     const modelFamily =
-      kind === "speech" ? (model === "redux" ? "redux" : "r2t2") : "qwen3.5";
+      kind === "magic"
+        ? "qwen3.5"
+        : model === "canary-180m"
+          ? "canary"
+          : cpu
+            ? "parakeet"
+            : "r2t2";
     if (
       capabilities.engine !== engine ||
       capabilities.modelFamily !== modelFamily ||
@@ -907,7 +968,7 @@ export class AsrService {
       await this.speechUnloadPromise;
       await this.releaseMagicForSpeech(settings);
       if (!eligible()) return;
-      const ready = fromSetup || (await this.isEnvironmentReady());
+      const ready = fromSetup || (await this.isEnvironmentReady(settings));
       if (!eligible()) return;
       if (!ready)
         throw new Error(
@@ -936,6 +997,7 @@ export class AsrService {
       const runtime = await this.request<WorkerRuntime>("speech", "load", {
         cacheDir: this.storage.modelCacheDirectory,
         model: speechEngineId(settings),
+        language: settings.language,
       });
       this.loadedEngine = speechEngineId(settings);
       if (!runtime.loaded)
@@ -1509,7 +1571,7 @@ export class AsrService {
         !this.shuttingDown &&
         generation === this.speechFailureGeneration &&
         this.status.engine !== "error";
-      void this.isEnvironmentReady()
+      void this.isEnvironmentReady(settings)
         .then((ready) => {
           const current = this.storage.getSettings();
           if (!ready || !current.preloadModel || !eligible()) return;

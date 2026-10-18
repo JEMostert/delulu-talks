@@ -18,10 +18,12 @@ import {
 } from "./migrationBackups";
 import { randomUUID } from "node:crypto";
 import { validateProfileWrite } from "./profileWriteValidation";
-import { speechModelForPlatform } from "../runtime/platform";
+import {
+  largeSpeechSupported,
+  speechModelForPlatform,
+} from "../runtime/platform";
 import { isWordPackId } from "../../src/wordPacks";
-import { speechLanguageCapability } from "../../src/speechCapabilities";
-import { reduxSupported } from "../runtime/redux";
+import { supportedSpeechLanguage } from "../../src/speechCapabilities";
 import { normalizeAliases } from "../../src/personalization";
 import { historyFingerprint, savedRetentionPolicy } from "./historyRetention";
 import {
@@ -55,6 +57,7 @@ import type {
   MagicModelId,
   MagicPreset,
   ModelId,
+  SpeechTier,
   TranscriptDelivery,
   TranscriptRecord,
 } from "../../src/types";
@@ -68,9 +71,22 @@ const validHistoryModels = new Set<ModelId>([
 ]);
 const validMagicModels = new Set(MAGIC_MODELS.map((model) => model.id));
 const validLanguages = new Set<string>(LANGUAGES.map(([code]) => code));
-const automaticLanguage = () =>
-  speechLanguageCapability(speechModelForPlatform())
-    .canRequestAutomaticLanguage;
+const SPEECH_TIER_IDS = new Set<string>(["small", "medium", "large"]);
+
+/** v0.16 replaced R2T2/Parakeet Redux with three sizes; earlier engines map onto them. */
+function speechTier(value: unknown, saved: boolean): SpeechTier {
+  // R2T2 and the removed Nemotron engine both ran on the GPU; Redux on the CPU.
+  // Saved profiles from before the setting existed used R2T2.
+  const tier =
+    value === "r2t2" || value === "nemotron" || (value === undefined && saved)
+      ? "large"
+      : value === "redux"
+        ? "medium"
+        : typeof value === "string" && SPEECH_TIER_IDS.has(value)
+          ? (value as SpeechTier)
+          : DEFAULT_SETTINGS.speechEngine;
+  return tier === "large" && !largeSpeechSupported() ? "medium" : tier;
+}
 
 function readJson(path: string): unknown {
   try {
@@ -284,6 +300,10 @@ export function normalizeSettings(value: unknown): AppSettings {
     DEFAULT_SETTINGS.language,
     12,
   ).toLowerCase();
+  const speechEngine = speechTier(
+    source.speechEngine,
+    source.schemaVersion !== undefined,
+  );
   const requestedShortcut = safeString(
     source.shortcut,
     DEFAULT_SETTINGS.shortcut,
@@ -307,11 +327,14 @@ export function normalizeSettings(value: unknown): AppSettings {
         : requestedShortcut,
     shortcutMode: source.shortcutMode === "toggle" ? "toggle" : "hold",
     model: speechModelForPlatform(),
-    language:
+    language: supportedSpeechLanguage(
+      speechEngine,
+      speechModelForPlatform(),
       validLanguages.has(requestedLanguage) ||
-      (requestedLanguage === AUTO_LANGUAGE && automaticLanguage())
+        requestedLanguage === AUTO_LANGUAGE
         ? requestedLanguage
         : DEFAULT_SETTINGS.language,
+    ),
     dictationFormatting:
       source.dictationFormatting === "spoken" ? "spoken" : "preserve",
     pythonCommand: safeString(
@@ -377,9 +400,7 @@ export function normalizeSettings(value: unknown): AppSettings {
     keepHistory: boolean(source.keepHistory, DEFAULT_SETTINGS.keepHistory),
     historyRetention: savedRetentionPolicy(source.historyRetention),
     showOverlay: boolean(source.showOverlay, DEFAULT_SETTINGS.showOverlay),
-    // Nemotron and unsupported-platform Redux profiles fall back to R2T2.
-    speechEngine:
-      source.speechEngine === "redux" && reduxSupported() ? "redux" : "r2t2",
+    speechEngine,
     historyLimit: [25, 50, 100, 250, 500].includes(Number(source.historyLimit))
       ? Number(source.historyLimit)
       : DEFAULT_SETTINGS.historyLimit,

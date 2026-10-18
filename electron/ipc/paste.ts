@@ -1,4 +1,4 @@
-import { reduxSupported } from "../runtime/redux";
+import { largeSpeechSupported } from "../runtime/platform";
 import { deliveredText } from "../../src/transcriptText";
 import { validateText } from "./validation";
 import type { IpcDependencies, IpcRegistrar } from "./types";
@@ -55,7 +55,7 @@ export function registerPasteIpc(
   });
   handle("platform:capabilities", () => ({
     ...paste.capabilities(pill.method, pill.detail),
-    reduxCpuAvailable: reduxSupported(),
+    largeSpeechAvailable: largeSpeechSupported(),
   }));
   handle("clipboard:copy", (_event, text: unknown) =>
     paste.copy(validateText(text, 500_000)),

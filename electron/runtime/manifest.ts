@@ -2,7 +2,7 @@
  * Linux transitive constraints live beside the Python worker. Portable platforms
  * share direct pins; their platform-specific wheels are resolved by pip.
  */
-export const RUNTIME_REVISION = "2026-10-11.1";
+export const RUNTIME_REVISION = "2026-10-18.1";
 export const INSTALLER_PACKAGES = [
   "pip==26.2.1",
   "wheel==0.47.0",
@@ -40,6 +40,13 @@ export const MAGIC_PACKAGES = [
   "sentencepiece==0.2.2",
   "pillow==12.3.0",
 ];
-// Parakeet Redux runs on Photon's Kestrel CPU runtime inside the Linux x64
-// speech environment, beside the CUDA torch build that R2T2 uses.
-export const REDUX_PACKAGES = ["kestrel==0.9.1", "moondream==2.6.1"];
+// Small (Canary) and Medium (Parakeet) run on the CPU through sherpa-onnx, which
+// bundles ONNX Runtime. These are the whole speech runtime unless Large is
+// chosen; the R2T2 runtime includes them too, so switching down needs no setup.
+// huggingface-hub matches the version Transformers resolves for R2T2.
+export const CPU_SPEECH_PACKAGES = [
+  "sherpa-onnx==1.13.8",
+  "soundfile==0.13.1",
+  "soxr==1.0.0",
+  "huggingface-hub==1.33.0",
+];

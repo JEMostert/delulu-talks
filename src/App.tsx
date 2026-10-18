@@ -655,7 +655,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
               >
                 <div className="workspace-view">
                   <ModelsPage
-                    reduxCpuAvailable={w.capabilities?.reduxCpuAvailable}
+                    largeSpeechAvailable={w.capabilities?.largeSpeechAvailable}
                     onDone={closePanel}
                     focusTarget={modelTarget}
                     onTargetHandled={() => setModelTarget(null)}
@@ -690,7 +690,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                     packs={w.settings.wordPacks}
                     hintsActive={
                       w.settings.vocabularyHints &&
-                      w.settings.speechEngine === "r2t2" &&
+                      w.settings.speechEngine === "large" &&
                       w.capabilities?.platform !== "darwin"
                     }
                     saving={w.saving}

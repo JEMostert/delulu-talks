@@ -342,7 +342,8 @@ export async function nativeWorkerSources(
     "metal_speech.py",
     "r2t2_speech.py",
     "r2t2_checkpoint.py",
-    "redux_speech.py",
+    "onnx_speech.py",
+    "audio_input.py",
   ]) {
     const path =
       name === "transcription_engine.py"

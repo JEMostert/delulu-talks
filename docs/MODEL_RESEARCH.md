@@ -1,21 +1,35 @@
 # Speech model choices for Delulu Talks
 
-Reviewed 29 September 2026 using upstream model cards, source, and announcements. There is no measured basis here to replace the user's preferred R2T2 with a universally “better” model. Quality depends on language, microphone, noise, names, and latency/memory constraints. Candidate integration is separate from a supported, tested engine.
+Reviewed 18 October 2026. English is the main dictation language; other languages are supported but secondary. The app offers three sizes, so owners of low-end hardware get a usable model and others get the most accurate one.
 
-## Product decision and research scope
+## Decision: three sizes
 
-R2T2 is the default speech identity: direct MLX on Apple Silicon and PyTorch/Transformers on Linux and Windows CUDA. NVIDIA Nemotron 3.5 ASR Streaming 0.6B was a light alternative from v0.12.0 (Dutch FLEURS WER 11.5% against 7.9% in English in our quick check) and was removed in v0.13.0 because it was less accurate, especially in Dutch. Parakeet Redux replaces it as the CPU-only alternative on Linux x64: Moondream's packed ternary checkpoint of Parakeet TDT v3 run through Photon's Kestrel runtime (see [Parakeet Redux](PARAKEET_REDUX_CPU.md)). Qwen 3.5 remains optional for rewriting. Validate those R2T2 adapters before widening feature claims. Apart from Parakeet Redux, other checkpoints in this document are external research references; they are not available in Models or planned app speech options. Parakeet supplies a smaller Dutch/English comparison, Voxtral supplies a streaming reference, and base Qwen3-ASR-1.7B measures the fine-tune's effect. A recent English-only model does not solve Dutch dictation.
+| Size   | Model                                                         | English WER | Dutch WER | CPU speed (Ryzen 4750U) | Download | Runtime                  |
+| ------ | ------------------------------------------------------------- | ----------- | --------- | ----------------------- | -------- | ------------------------ |
+| Small  | Canary 180M Flash (en, de, fr, es)                            | 5.98%       | —         | ~22× real time          | 200 MB   | sherpa-onnx, CPU, INT8   |
+| Medium | Parakeet TDT 0.6B v2 (English) / v3 (25 languages, automatic) | 4.11% / 4.83% | — / 7.66% | ~14× real time          | 630 MB   | sherpa-onnx, CPU, INT8   |
+| Large  | R2T2 (fine-tune of Qwen3-ASR-1.7B)                            | 3.23%*      | 7.43%*    | GPU or Apple Silicon    | ~4 GB    | Transformers CUDA or MLX |
 
-| Candidate                   | Why it is relevant                                                              | Limitation / next check                                                                              | App status                                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| R2T2, original checkpoint   | User preference; fine-tune of Qwen3-ASR with a stable-prefix streaming protocol | Upstream primarily optimizes Chinese/English; Dutch quality needs matched evaluation                 | Transformers on Linux and Windows since v0.12.0 (vLLM removed); Windows requires native validation |
-| R2T2 BF16 MLX conversion    | Preserves the preferred fine-tune on Apple Silicon; about 4.1 GB checkpoint     | Community conversion; verify equivalent behavior, actual memory, decoder output, and Metal execution | Adapter implemented; native validation pending                                                     |
-| Parakeet TDT 0.6B v3        | Smaller 600M multilingual model; supports Dutch/English and timestamps          | Performance/quality need the same audio and hardware; it is not a newly discovered successor to R2T2 | Ships as Parakeet Redux (packed ternary copy, Linux x64 CPU)                                       |
-| Qwen3-ASR-1.7B              | Base-model control with Dutch and broad multilingual coverage                   | Different fine-tuning and decoding behavior; does not establish a superiority claim                  | External benchmark only; old 0.6B history identity retained                                        |
-| Voxtral Realtime 4B         | Open weights, Dutch/English support, native streaming                           | Larger model and distinct runtime; verify Mac implementation, residency, and streaming tradeoffs     | External benchmark only                                                                            |
-| Granite Speech 5.0 TurboCTC | Recent compact English ASR alternative                                          | English-only variant does not cover the Dutch workflow                                               | External English benchmark only                                                                    |
+WER is FLEURS test at Q8_0 from the [Handy / transcribe.cpp benchmark](https://models.handy.computer/) (English) and its [Dutch table](https://models.handy.computer/languages/nl). *Measured on base Qwen3-ASR-1.7B, not the R2T2 fine-tune. Read speech, not dictation; check on your own audio before changing defaults.
 
-Sources: [R2T2 upstream](https://github.com/netease-youdao/Confucius4-R2T2), [MLX conversion](https://huggingface.co/mlx-community/Confucius4-R2T2-bf16), [NVIDIA Parakeet model card](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), [Parakeet Redux checkpoint](https://huggingface.co/moondream/parakeet-redux), [Qwen3-ASR documentation](https://huggingface.co/docs/transformers/main/model_doc/qwen3_asr), [Mistral announcement](https://mistral.ai/news/voxtral-transcribe-2/), and [IBM speech model overview](https://www.ibm.com/granite/docs/models/speech).
+Why these models:
+
+- **Parakeet Redux removed.** It was Parakeet TDT v3 packed to ternary weights. The unpacked v3 is already mid-table (4.83% English); the packing adds error and it ran only on Linux x64.
+- **Medium uses v2 for English** because it is more accurate in English than v3 (4.11% vs 4.83%) at the same size and speed. v3 is kept for Automatic, where it detects 25 European languages.
+- **Small is Canary 180M** rather than Granite Speech 5.0 470M TurboCTC (4.61%, English only): at 0.47 GB Granite is barely smaller than Medium, while Canary is a clear step down in size and covers four languages.
+- **Large stays R2T2**, the most accurate English model in the table that also detects 30 languages.
+- **Runtime:** [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) wheels exist for Linux, Windows and macOS on Python 3.11–3.13 and bundle ONNX Runtime, so Small and Medium need no PyTorch or GPU. The INT8 exports are published by the sherpa-onnx project.
+
+Considered and not adopted now:
+
+- **Parakeet Unified EN 0.6B** (3.99% English): only a NeMo checkpoint; no ONNX export to run without PyTorch.
+- **R2T2 at 8-bit** (about 2 GB, could run on strong CPUs): not implemented; Large remains BF16 on GPU or Apple Silicon.
+- **TranscribePsy 254M** (Tether, 14 October 2026; 25 European languages, Apache-2.0): candidate replacement for Small once independent results exist ([announcement](https://qvac.tether.io/blog/on-device-speech-recognition-transcribepsy)).
+- **Cohere Transcribe 2B**: strong on the English leaderboard, but no automatic language detection and gated downloads.
+- **Granite Speech 4.1 2B**: Open ASR Leaderboard leader (5.33% average), but covers six languages and is the same size class as R2T2.
+- **Moonshine, Nemotron, Qwen3-ASR-0.6B**: smaller or similar size with clearly worse accuracy (Qwen3-ASR-0.6B: 13.9% Dutch).
+
+Sources: [Canary-1B-v2 & Parakeet-TDT-0.6B-v3 paper](https://arxiv.org/pdf/2509.14128), [Hugging Face Open ASR Leaderboard blog](https://huggingface.co/blog/open-asr-leaderboard), [Cohere Transcribe card](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026), [R2T2 upstream](https://github.com/netease-youdao/Confucius4-R2T2), [MLX conversion](https://huggingface.co/mlx-community/Confucius4-R2T2-bf16).
 
 ## What “streaming” must mean here
 
@@ -42,4 +56,4 @@ Collect consented Dutch/English examples spanning short commands, conversational
 
 For each model/backend/revision, use identical files and decode settings where comparable. Report word errors, entity/number mistakes, punctuation, hallucinations on silence, and required corrections. Measure cold load, first warm request, changed-input request, p50/p95 finalization latency, peak memory, and laptop energy. Repeated identical inputs can make caches look like general speed improvements, so include changed audio.
 
-Keep R2T2 as the app speech model. Change its decoding or precision defaults only after real native tests and a documented advantage on this workflow. Roadmap §§07, 13, 20, and 21 contain the implementation/evaluation tasks.
+Keep R2T2 as the Large model. Change its decoding or precision defaults only after real native tests and a documented advantage on this workflow. Roadmap §§07, 13, 20, and 21 contain the implementation/evaluation tasks.

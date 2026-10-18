@@ -13,7 +13,12 @@ const PRESETS = new Set([
   "professional-message",
 ]);
 const MAGIC_MODELS = new Set(["qwen35Small", "qwen35Medium", "qwen35Large"]);
-const SPEECH_MODELS = new Set(["r2t2", "redux"]);
+const SPEECH_MODELS = new Set([
+  "r2t2",
+  "canary-180m",
+  "parakeet-v2",
+  "parakeet-v3",
+]);
 const COMMANDS = new Set([
   "status",
   "load",
@@ -146,6 +151,7 @@ export function validateWorkerRequest(value: unknown): JsonObject {
     throw new Error("Unsupported speech device preference");
   if (request.command === "load" || request.command === "transcribe") {
     stringField(request, "model");
+    stringField(request, "language");
     if (
       request.model !== undefined &&
       !SPEECH_MODELS.has(request.model as string)
@@ -332,11 +338,11 @@ export function validateWorkerResult(command: string, value: unknown): void {
       throw new Error("Invalid model worker capability schema or engine");
     const speech = result.engine === "speech";
     if (
-      !(speech ? ["r2t2", "redux"] : ["qwen3.5"]).includes(
+      !(speech ? ["r2t2", "canary", "parakeet"] : ["qwen3.5"]).includes(
         result.modelFamily as string,
       ) ||
       !(
-        speech ? ["mlx", "cuda-transformers", "photon-cpu"] : ["transformers"]
+        speech ? ["mlx", "cuda-transformers", "onnx-cpu"] : ["transformers"]
       ).includes(result.backend as string)
     )
       throw new Error("Invalid model worker capability backend/model family");

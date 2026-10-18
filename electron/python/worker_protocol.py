@@ -26,7 +26,7 @@ COMMANDS = frozenset({
     "status", "load", "unload", "magicStatus", "magicLoad",
     "magicRewrite", "transcribe", "shutdown", "capabilities",
 })
-SPEECH_MODELS = frozenset({"r2t2", "redux"})
+SPEECH_MODELS = frozenset({"r2t2", "canary-180m", "parakeet-v2", "parakeet-v3"})
 MAGIC_PRESETS = frozenset({"spoken-corrections", "polish", "concise", "structured", "prompt", "bullet-points", "professional-message"})
 MAGIC_MODELS = frozenset({"qwen35Small", "qwen35Medium", "qwen35Large"})
 # Keep aligned with the shared PipelineTimings contract; unknown stages are omitted.
@@ -213,6 +213,8 @@ def validate_request(request: Any) -> dict[str, Any]:
         require_string(request, "cacheDir")
     if command == "load" and "device" in request and request["device"] not in ("auto", "cpu"):
         raise ValueError("Unsupported speech device preference")
+    if command == "load" and "language" in request:
+        require_string(request, "language")
     if command in ("load", "transcribe") and "model" in request:
         require_string(request, "model")
         if request["model"] not in SPEECH_MODELS:
@@ -278,10 +280,10 @@ def validate_result(command: str, result: Any) -> None:
         engine = result.get("engine")
         if engine not in ("speech", "writing"):
             raise ValueError("Worker capabilities engine must be speech or writing")
-        backends = ("mlx", "cuda-transformers", "photon-cpu") if engine == "speech" else ("transformers",)
+        backends = ("mlx", "cuda-transformers", "onnx-cpu") if engine == "speech" else ("transformers",)
         if result.get("backend") not in backends:
             raise ValueError("Worker capabilities backend does not match engine")
-        if result.get("modelFamily") not in (("r2t2", "redux") if engine == "speech" else ("qwen3.5",)):
+        if result.get("modelFamily") not in (("r2t2", "canary", "parakeet") if engine == "speech" else ("qwen3.5",)):
             raise ValueError("Worker capabilities modelFamily does not match engine")
         for key in ("timestamps", "vocabularyBiasing"):
             require_boolean(result, key)

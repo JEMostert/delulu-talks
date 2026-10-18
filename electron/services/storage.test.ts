@@ -93,9 +93,9 @@ test("failed settings and transcript writes leave memory consistent with disk an
   const settings = storage.getSettings();
   const history = storage.getHistory();
   denied = "settings.json";
-  expect(() => storage.updateSettings({ ...settings, language: "nl" })).toThrow(
-    "Disk full",
-  );
+  expect(() =>
+    storage.updateSettings({ ...settings, language: "auto" }),
+  ).toThrow("Disk full");
   expect(storage.getSettings()).toEqual(settings);
   denied = "history.json";
   expect(() => storage.updateTranscript("speech", "Edited")).toThrow(
@@ -103,10 +103,10 @@ test("failed settings and transcript writes leave memory consistent with disk an
   );
   expect(storage.getHistory()).toEqual(history);
   denied = "";
-  storage.updateSettings({ ...settings, language: "nl" });
+  storage.updateSettings({ ...settings, language: "auto" });
   storage.updateTranscript("speech", "Edited");
   const reopened = new StorageService(application);
-  expect(reopened.getSettings().language).toBe("nl");
+  expect(reopened.getSettings().language).toBe("auto");
   expect(reopened.findHistory("speech")).toMatchObject({
     text: transcript().text,
     editedText: "Edited",
@@ -169,6 +169,7 @@ test("reopening a v0.10.0 profile preserves explicit settings, exact rules and e
   const savedSettings = {
     ...DEFAULT_SETTINGS,
     model: speechModelForPlatform(),
+    speechEngine: "large" as const,
     language: "nl",
     shortcut: "CommandOrControl+Shift+D",
     keepHistory: false,
@@ -248,17 +249,59 @@ test("history keeps only the newest transcripts up to the chosen limit", () => {
   expect(storage.getSettings().historyLimit).toBe(50);
 });
 
-test("removed live typing, code mode and speech device settings are dropped and unsupported engines fall back to R2T2", () => {
+test("removed live typing, code mode and speech device settings are dropped", () => {
   const settings = normalizeSettings({
     liveTyping: true,
     dictationMode: "code",
     speechDevice: "cpu",
-    speechEngine: "nemotron",
   });
   expect(settings).not.toHaveProperty("liveTyping");
   expect(settings).not.toHaveProperty("dictationMode");
   expect(settings).not.toHaveProperty("speechDevice");
-  expect(settings.speechEngine).toBe("r2t2");
+});
+
+test("earlier speech engines map onto the three model sizes", () => {
+  expect(normalizeSettings({ speechEngine: "r2t2" }).speechEngine).toBe(
+    "large",
+  );
+  expect(normalizeSettings({ speechEngine: "nemotron" }).speechEngine).toBe(
+    "large",
+  );
+  expect(normalizeSettings({ speechEngine: "redux" }).speechEngine).toBe(
+    "medium",
+  );
+  expect(normalizeSettings({ speechEngine: "small" }).speechEngine).toBe(
+    "small",
+  );
+  expect(normalizeSettings({ speechEngine: "huge" }).speechEngine).toBe(
+    "medium",
+  );
+  // New installs start on Medium; profiles from before the setting used R2T2.
+  expect(normalizeSettings({}).speechEngine).toBe("medium");
+  expect(normalizeSettings({ schemaVersion: 1 }).speechEngine).toBe("large");
+});
+
+test("the saved language must suit the selected model size", () => {
+  // Small takes four forced languages and cannot detect one.
+  expect(
+    normalizeSettings({ speechEngine: "small", language: "de" }).language,
+  ).toBe("de");
+  expect(
+    normalizeSettings({ speechEngine: "small", language: "nl" }).language,
+  ).toBe("en");
+  expect(
+    normalizeSettings({ speechEngine: "small", language: "auto" }).language,
+  ).toBe("en");
+  // Medium is English or automatic detection across 25 languages.
+  expect(
+    normalizeSettings({ speechEngine: "medium", language: "nl" }).language,
+  ).toBe("auto");
+  expect(
+    normalizeSettings({ speechEngine: "medium", language: "en" }).language,
+  ).toBe("en");
+  expect(
+    normalizeSettings({ speechEngine: "large", language: "nl" }).language,
+  ).toBe("nl");
 });
 
 test("history records with removed technical fields load without them and keep their text", () => {

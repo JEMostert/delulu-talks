@@ -1,4 +1,5 @@
 import type { TargetPlatform } from "./inventory";
+import type { SpeechRuntimeProfile } from "./platform";
 
 export enum RuntimePrerequisiteCode {
   PYTHON_VERSION = "PYTHON_VERSION",
@@ -129,7 +130,11 @@ export function runtimeReadinessScript(
   kind: "speech" | "magic",
   target: TargetPlatform,
   metal: boolean,
+  profile: SpeechRuntimeProfile = "full",
 ): string {
+  // The CPU speech runtime checks only its own imports, not a GPU.
+  const cpu = kind === "speech" && profile === "cpu";
+  if (cpu) metal = false;
   const version =
     metal || target.platform === "win32"
       ? "sys.version_info[:2] == (3, 12)"
@@ -145,15 +150,16 @@ export function runtimeReadinessScript(
       : target.arch === "arm64"
         ? "platform.machine().lower() in ('arm64', 'aarch64')"
         : "True";
-  const parakeetRedux = target.platform === "linux" && target.arch === "x64";
   const imports =
     kind === "magic"
       ? "import torch, torchvision, transformers\n    from transformers import AutoModelForMultimodalLM, AutoProcessor\n    if int(transformers.__version__.split('.')[0]) < 5:\n        fail('PACKAGE_IMPORT', 'Magic requires transformers 5 or later')"
-      : metal
-        ? "import mlx.core as mx\n    from mlx_audio.stt.utils import load_model, load_audio"
-        : `import torch, soundfile, soxr, librosa\n    from transformers import Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor${parakeetRedux ? "\n    from kestrel.models.parakeet_tdt.runtime import ParakeetTdtRuntime" : ""}`;
+      : cpu
+        ? "import numpy, sherpa_onnx, soundfile, soxr, huggingface_hub"
+        : metal
+          ? "import mlx.core as mx\n    from mlx_audio.stt.utils import load_model, load_audio"
+          : "import torch, soundfile, soxr, librosa\n    from transformers import Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor";
   const hardware =
-    kind !== "speech"
+    kind !== "speech" || cpu
       ? ""
       : metal
         ? `try:

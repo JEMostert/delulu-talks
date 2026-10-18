@@ -1,5 +1,10 @@
 import { Cpu, Download, LoaderCircle, Play } from "lucide-react";
-import { modelById, REDUX_MODEL } from "../../data";
+import {
+  CANARY_MODEL,
+  modelById,
+  PARAKEET_MODEL,
+  speechTierById,
+} from "../../data";
 import { speechBackendById } from "../../speechModels";
 import type { AppSettings, DictationStatus } from "../../types";
 import { ModelSetupStatus } from "./ModelSetupStatus";
@@ -7,9 +12,10 @@ import { ModelProvenance } from "./ModelProvenance";
 import { ModelLifecycle } from "./ModelLifecycle";
 import { BackendCapabilities } from "./BackendCapabilities";
 import { EngineBadge } from "./EngineBadge";
+import { SpeechTierPicker } from "./SpeechTierPicker";
 
 export type SpeechSetupProps = {
-  reduxCpuAvailable?: boolean;
+  largeSpeechAvailable?: boolean;
   status: DictationStatus;
   settings: AppSettings;
   busy: boolean;
@@ -22,7 +28,7 @@ export type SpeechSetupProps = {
   onUpdateSettings?: (patch: Partial<AppSettings>) => void;
 };
 export function SpeechSetup({
-  reduxCpuAvailable = false,
+  largeSpeechAvailable = false,
   status,
   settings,
   busy,
@@ -35,7 +41,15 @@ export function SpeechSetup({
 }: SpeechSetupProps) {
   const execution = status.speechExecution;
   const r2t2 = modelById(status.speechModel ?? status.model ?? settings.model);
-  const model = settings.speechEngine === "redux" ? REDUX_MODEL : r2t2;
+  const tier = speechTierById(settings.speechEngine);
+  const model =
+    tier.id === "small"
+      ? CANARY_MODEL
+      : tier.id === "medium" || !largeSpeechAvailable
+        ? PARAKEET_MODEL
+        : r2t2;
+  // First run: nothing is installed yet, so the user chooses before any download.
+  const choosing = status.engine === "missing" && !status.migrationRequired;
   const backend = execution ? speechBackendById(execution.backendId) : null;
   const speechBusy = ["preparing", "loading", "transcribing"].includes(
     status.phase,
@@ -51,8 +65,8 @@ export function SpeechSetup({
           <h2>
             {status.engine === "missing"
               ? status.migrationRequired
-                ? "Update speech model"
-                : "Set up speech"
+                ? `Set up ${tier.name}`
+                : "Choose a speech model"
               : status.engine === "error"
                 ? "Fix speech setup"
                 : "Speech"}
@@ -63,44 +77,29 @@ export function SpeechSetup({
         </div>
         <EngineBadge engine={status.engine} />
       </div>
-      {onUpdateSettings && r2t2.id !== "r2t2Mlx" && (
-        <div
-          className="segmented engine-switch"
-          role="group"
-          aria-label="Speech engine"
-        >
-          {(
-            [
-              ["r2t2", "R2T2"],
-              ["redux", "Parakeet Redux · CPU"],
-            ] as const
-          )
-            .filter(([engine]) => engine !== "redux" || reduxCpuAvailable)
-            .map(([engine, label]) => (
-              <button
-                key={engine}
-                aria-pressed={settings.speechEngine === engine}
-                className={settings.speechEngine === engine ? "active" : ""}
-                disabled={busy || speechBusy}
-                onClick={() =>
-                  settings.speechEngine !== engine &&
-                  onUpdateSettings({ speechEngine: engine })
-                }
-              >
-                {label}
-              </button>
-            ))}
-        </div>
-      )}
-      {settings.speechEngine === "redux" && (
+      {choosing && (
         <p className="setup-status-copy">
-          Runs on the CPU and downloads 178 MB on first load.
+          Pick a size for this computer. Nothing is downloaded until you press
+          Download &amp; set up, and you can switch later in Settings.
         </p>
+      )}
+      {onUpdateSettings && (
+        <SpeechTierPicker
+          settings={settings}
+          largeAvailable={largeSpeechAvailable}
+          disabled={busy || speechBusy || installing}
+          onSelect={onUpdateSettings}
+        />
       )}
       {(status.engine === "ready" || status.engine === "unloaded") &&
         status.residency && <ModelLifecycle status={status} />}
       {status.engine === "missing" && (
-        <p className="setup-status-copy">{model.downloadSize} download</p>
+        <p className="setup-status-copy">
+          {tier.name}: {tier.download} download
+          {tier.id === "large"
+            ? ", plus the GPU runtime (several GB)."
+            : ", plus a small CPU runtime."}
+        </p>
       )}
       <div className="runtime-actions">
         {onCancelSetup && installing && (
@@ -152,9 +151,7 @@ export function SpeechSetup({
           >
             {speechBusy ? <LoaderCircle className="spin" /> : <Download />}
             {status.engine === "missing"
-              ? status.migrationRequired
-                ? "Update setup"
-                : "Download & set up"
+              ? `Download & set up ${tier.name}`
               : "Repair"}
           </button>
         )}

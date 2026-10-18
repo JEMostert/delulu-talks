@@ -1,10 +1,10 @@
 import math
 import unittest
 
-from r2t2_speech import SAMPLE_RATE, chunk_bounds
+from audio_input import SAMPLE_RATE, chunk_bounds
 
 
-class WindowsChunkingTests(unittest.TestCase):
+class ChunkingTests(unittest.TestCase):
     def test_cuts_land_in_the_quiet_gap_before_the_boundary(self):
         chunk = 30 * SAMPLE_RATE
         samples = [math.sin(index / 7) for index in range(70 * SAMPLE_RATE)]

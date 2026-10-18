@@ -18,6 +18,8 @@ export type Page =
   "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
 
 export type SpeechModelId = "r2t2" | "r2t2Mlx";
+/** Speech model size the user picks: Small and Medium run on any CPU, Large is R2T2. */
+export type SpeechTier = "small" | "medium" | "large";
 /** Historical Qwen speech results retain their identity; it is never an active engine. */
 export type ModelId = SpeechModelId | "qwen3Asr";
 export type MagicModelId = "qwen35Small" | "qwen35Medium" | "qwen35Large";
@@ -100,8 +102,8 @@ export type AppSettings = {
   historyRetention?: HistoryRetentionPolicy;
   showOverlay: boolean;
   captureSoundsMuted: boolean;
-  /** Speech engine: R2T2 (accuracy, GPU) or Parakeet Redux (light, CPU, Linux x64). */
-  speechEngine: "r2t2" | "redux";
+  /** Speech model size: Canary (small), Parakeet (medium) or R2T2 (large, GPU). */
+  speechEngine: SpeechTier;
   /** Saved transcripts beyond this many are removed, oldest first. */
   historyLimit: number;
   captureSoundVolume: number;
@@ -145,8 +147,8 @@ export type BackendCapabilities = {
   schemaVersion: 1;
   engine: "speech" | "writing";
   backend:
-    "mlx" | "cuda-vllm" | "cuda-transformers" | "transformers" | "photon-cpu";
-  modelFamily: "r2t2" | "redux" | "qwen3.5";
+    "mlx" | "cuda-vllm" | "cuda-transformers" | "transformers" | "onnx-cpu";
+  modelFamily: "r2t2" | "canary" | "parakeet" | "qwen3.5";
   timestamps: boolean;
   languageHints: { supported: boolean; languages: string[] };
   vocabularyBiasing: boolean;
@@ -440,8 +442,8 @@ export type MicrophoneDevice = {
 };
 
 export type PlatformCapabilities = {
-  /** Parakeet Redux runs on this platform (Linux x64). */
-  reduxCpuAvailable?: boolean;
+  /** R2T2 (Large) can run on this platform and architecture. */
+  largeSpeechAvailable?: boolean;
   platform: "linux" | "darwin" | "win32";
   desktop: string;
   sessionType: string;

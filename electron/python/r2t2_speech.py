@@ -15,38 +15,14 @@ import tempfile
 import time
 from pathlib import Path
 
+from audio_input import SAMPLE_RATE, chunk_bounds
 from worker_protocol import emit_progress
 
 MODEL = "netease-youdao/Confucius4-R2T2"
 MODEL_REVISION = "185ce639118ad1362d049ca0d8ed04b6ec5cd6c9"
-SAMPLE_RATE = 16000
 CONVERSION_VERSION = "transformers-5.15.0-v1"
 CHUNK_SAMPLES = 30 * SAMPLE_RATE
 
-
-
-def chunk_bounds(samples, chunk: int, search: int = 2 * SAMPLE_RATE, frame: int = SAMPLE_RATE // 50):
-    """Split at the quietest 20 ms frame near each chunk boundary.
-
-    Fixed cuts split words across two model calls. Searching up to `search`
-    samples before the boundary keeps every chunk at most `chunk` long.
-    """
-    total = len(samples)
-    bounds = []
-    start = 0
-    while total - start > chunk:
-        target = start + chunk
-        best, best_energy = target, None
-        position = max(start + frame, target - search)
-        while position + frame <= target:
-            energy = sum(float(value) * float(value) for value in samples[position:position + frame])
-            if best_energy is None or energy < best_energy:
-                best, best_energy = position + frame // 2, energy
-            position += frame
-        bounds.append((start, best))
-        start = best
-    bounds.append((start, total))
-    return bounds
 
 class R2T2Speech:
     def __init__(self):

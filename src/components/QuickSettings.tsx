@@ -16,7 +16,7 @@ export function QuickSettings({
   onNavigate: (page: Page) => void;
 }) {
   const s = w.settings;
-  const languageCapability = speechLanguageCapability(s.model);
+  const languageCapability = speechLanguageCapability(s.speechEngine, s.model);
   const save = (patch: Parameters<typeof w.saveSettings>[0]) =>
     void w.saveSettings(patch, null);
   return (
@@ -56,17 +56,11 @@ export function QuickSettings({
         </span>
         <select
           aria-label="Dictation language"
-          value={s.speechEngine === "redux" ? AUTO_LANGUAGE : s.language}
-          disabled={
-            busy ||
-            w.saving ||
-            s.speechEngine === "redux" ||
-            !languageCapability.canSelectLanguage
-          }
+          value={s.language}
+          disabled={busy || w.saving || !languageCapability.canSelectLanguage}
           onChange={(e) => save({ language: e.target.value })}
         >
-          {(s.speechEngine === "redux" ||
-            languageCapability.canRequestAutomaticLanguage) && (
+          {languageCapability.canRequestAutomaticLanguage && (
             <option value={AUTO_LANGUAGE}>Automatic detection</option>
           )}
           {languageCapability.languages.map(([value, label]) => (

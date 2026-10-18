@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Persistent JSON-lines worker for Delulu Talks local speech and writing models.
 
-Speech uses R2T2 (Confucius4-R2T2, a Qwen3-ASR fine-tune) through Transformers on
-CUDA or MLX Audio on Apple Silicon, or Parakeet Redux through Kestrel on the CPU. Each recording is transcribed as one
+Speech uses Canary (Small) or Parakeet (Medium) through sherpa-onnx on the CPU, or
+R2T2 (Large: Confucius4-R2T2, a Qwen3-ASR fine-tune) through Transformers on CUDA or
+MLX Audio on Apple Silicon. Each recording is transcribed as one
 buffered clip. The desktop starts a dedicated process per runtime role, each accepting only its own model commands. Protocol messages are prefixed so library progress output can never be mistaken for a response by Electron.
 """
 
@@ -61,6 +62,8 @@ LANGUAGE_NAMES = {
     "vi": "Vietnamese",
 }
 AUTO_LANGUAGE = "auto"
+# CPU checkpoints and the languages each accepts; Parakeet v3 detects its own.
+ONNX_MODELS = {"canary-180m": ("en", "de", "fr", "es"), "parakeet-v2": ("en",), "parakeet-v3": ()}
 
 
 def language_hint(request, allow_auto=True):
@@ -251,9 +254,9 @@ class Worker:
             self.speech = None
         self.speech_model = wanted
         if self.speech is None:
-            if wanted == "redux":
-                from redux_speech import ReduxSpeech
-                self.speech = ReduxSpeech()
+            if wanted in ONNX_MODELS:
+                from onnx_speech import OnnxSpeech
+                self.speech = OnnxSpeech(wanted)
             elif self.speech_backend == "mlx":
                 from metal_speech import MetalSpeech
                 self.speech = MetalSpeech()
@@ -547,10 +550,12 @@ class Worker:
         if engine not in ("speech", "writing"):
             raise ValueError("Worker capabilities engine must be speech or writing")
         speech = engine == "speech"
-        if speech and model == "redux":
-            if not (sys.platform == "linux" and platform.machine() in ("x86_64", "AMD64")):
-                raise ValueError("Parakeet Redux requires Linux x64")
-            return {"schemaVersion": 1, "engine": "speech", "backend": "photon-cpu", "modelFamily": "redux", "timestamps": False, "languageHints": {"supported": False, "languages": []}, "vocabularyBiasing": False}
+        if speech and model in ONNX_MODELS:
+            languages = ONNX_MODELS[model]
+            return {"schemaVersion": 1, "engine": "speech", "backend": "onnx-cpu",
+                    "modelFamily": "canary" if model == "canary-180m" else "parakeet", "timestamps": False,
+                    "languageHints": {"supported": bool(languages), "languages": list(languages)},
+                    "vocabularyBiasing": False}
         backend = ("mlx" if self.speech_backend == "mlx" else "cuda-transformers") if speech else "transformers"
         # The Transformers R2T2 processor detects the language and takes a
         # hotword prompt; the MLX adapter's equivalents are unvalidated.

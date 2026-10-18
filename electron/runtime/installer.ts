@@ -4,7 +4,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { homedir, release } from "node:os";
-import { usesMetal } from "./platform";
+import {
+  speechRuntimeProfile,
+  usesMetal,
+  type SpeechRuntimeProfile,
+} from "./platform";
 import { activateRuntime, runtimeDirectory, runtimePython } from "./location";
 import type { AppSettings, SetupStage } from "../../src/types";
 import { resolveRuntimeArtifacts } from "./artifacts";
@@ -26,9 +30,9 @@ import {
   type TargetPlatform,
 } from "./inventory";
 import {
+  CPU_SPEECH_PACKAGES,
   INSTALLER_PACKAGES,
   MAGIC_PACKAGES,
-  REDUX_PACKAGES,
   RUNTIME_REVISION,
   SPEECH_PACKAGES,
   METAL_PACKAGES,
@@ -42,6 +46,17 @@ export type InstallProgress = {
   progress: number;
   detail?: string;
 };
+/** Append requirements whose package is not already pinned in `base`. */
+function withPackages(base: string[], extra: string[]): string[] {
+  const name = (requirement: string) =>
+    requirement
+      .split(/[=<>!~\[]/)[0]
+      .toLowerCase()
+      .replace(/_/g, "-");
+  const present = new Set(base.map(name));
+  return [...base, ...extra.filter((item) => !present.has(name(item)))];
+}
+
 type Paths = {
   dataDirectory: string;
   venvDirectory: string;
@@ -103,11 +118,15 @@ export class RuntimeInstaller {
       arch: process.arch,
     },
   ) {}
-  private readiness(kind: "speech" | "magic"): string {
+  private readiness(
+    kind: "speech" | "magic",
+    profile: SpeechRuntimeProfile,
+  ): string {
     return runtimeReadinessScript(
       kind,
       this.target,
       kind === "speech" && this.metal,
+      profile,
     );
   }
   get python(): string {
@@ -331,18 +350,23 @@ export class RuntimeInstaller {
     clearTimeout(timer);
   }
 
-  async ready(kind: "speech" | "magic"): Promise<boolean> {
+  /** Whether the active runtime can run `profile`; the magic runtime ignores it. */
+  async ready(
+    kind: "speech" | "magic",
+    profile: SpeechRuntimeProfile = "full",
+  ): Promise<boolean> {
     try {
       this.assertKind(kind);
       if (!existsSync(this.python)) return false;
-      if (this.validatedPython === `${kind}:${this.python}`) return true;
+      const key = `${kind}:${profile}:${this.python}`;
+      if (this.validatedPython === key) return true;
       await this.run(
         this.python,
-        ["-c", this.readiness(kind)],
+        ["-c", this.readiness(kind, profile)],
         undefined,
         60_000,
       );
-      this.validatedPython = `${kind}:${this.python}`;
+      this.validatedPython = key;
       return true;
     } catch (error) {
       if (this.cancelled) throw error;
@@ -437,9 +461,13 @@ export class RuntimeInstaller {
         `This installer owns the ${this.paths.kind} runtime, not ${kind}`,
       );
     this.cancelled = false;
+    // Install what the selected size needs; the full runtime also runs Small and Medium.
+    const profile: SpeechRuntimeProfile =
+      kind === "speech" ? speechRuntimeProfile(settings.speechEngine) : "full";
+    const cpu = kind === "speech" && profile === "cpu";
     this.candidate = null;
     this.validatedPython = null;
-    const metal = kind === "speech" && this.metal;
+    const metal = kind === "speech" && this.metal && !cpu;
     if (
       metal &&
       process.platform === "darwin" &&
@@ -586,7 +614,7 @@ export class RuntimeInstaller {
       this.target.arch === "x64"
         ? ["--constraint", this.constraintsPath]
         : [];
-    if (this.windows) {
+    if (this.windows && !cpu) {
       await installPackages(
         "windows-cuda",
         WINDOWS_CUDA_PACKAGES,
@@ -594,7 +622,7 @@ export class RuntimeInstaller {
         "Installing the native Windows CUDA runtime",
         0.32,
       );
-    } else if (kind === "speech" && !metal) {
+    } else if (kind === "speech" && !metal && !cpu) {
       await installPackages(
         "linux-cuda",
         LINUX_CUDA_PACKAGES,
@@ -606,11 +634,12 @@ export class RuntimeInstaller {
     await installPackages(
       "runtime",
       kind === "speech"
-        ? metal
-          ? METAL_PACKAGES
-          : this.target.platform === "linux" && this.target.arch === "x64"
-            ? [...SPEECH_PACKAGES, ...REDUX_PACKAGES]
-            : SPEECH_PACKAGES
+        ? cpu
+          ? CPU_SPEECH_PACKAGES
+          : withPackages(
+              metal ? METAL_PACKAGES : SPEECH_PACKAGES,
+              CPU_SPEECH_PACKAGES,
+            )
         : MAGIC_PACKAGES,
       constraints,
       kind === "speech"
@@ -633,7 +662,7 @@ export class RuntimeInstaller {
     );
     await stage(
       candidatePython,
-      ["-c", this.readiness(kind)],
+      ["-c", this.readiness(kind, profile)],
       "Validating the new runtime before switching",
       0.76,
       "runtime-validate",
@@ -675,7 +704,7 @@ export class RuntimeInstaller {
         revision: RUNTIME_REVISION,
         kind,
         generation,
-        backend: inventoryBackend(kind, metal),
+        backend: inventoryBackend(kind, metal, profile),
         target: this.target,
         python: candidatePython,
         directory: candidate,
@@ -686,7 +715,11 @@ export class RuntimeInstaller {
     writeRuntimeInventory(candidate, inventory);
     writeFileSync(
       join(candidate, "runtime-role.json"),
-      JSON.stringify({ kind, revision: RUNTIME_REVISION }),
+      JSON.stringify({
+        kind,
+        revision: RUNTIME_REVISION,
+        ...(kind === "speech" ? { profile } : {}),
+      }),
       { mode: 0o600 },
     );
     if (this.cancelled)

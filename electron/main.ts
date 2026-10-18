@@ -1,4 +1,4 @@
-import { reduxSupported } from "./runtime/redux";
+import { largeSpeechSupported } from "./runtime/platform";
 import {
   app,
   BrowserWindow,
@@ -27,7 +27,9 @@ import { REWRITE_PRESETS } from "../src/rewritePresets";
 import { deliveredText } from "../src/transcriptText";
 import { rememberSessionTranscript } from "../src/sessionTranscriptRetention";
 import { SerialQueue } from "./runtime/serialQueue";
-import { AsrService } from "./services/asr";
+import { AsrService, speechEngineId } from "./services/asr";
+import { SPEECH_TIERS } from "../src/data";
+import { supportedSpeechLanguage } from "../src/speechCapabilities";
 import { ModelCacheService } from "./services/modelCache";
 import { DictationService } from "./services/dictation";
 import { RuleUsageService } from "./services/ruleUsage";
@@ -390,28 +392,27 @@ function speechMenu(settings: AppSettings): MenuItemConstructorOptions[] {
             enabled: !busy,
             click: () => showMainWindow("models"),
           };
-  const engines: MenuItemConstructorOptions[] =
-    process.platform === "darwin"
-      ? []
-      : [
-          ...(
-            [
-              ["redux", "Parakeet Redux — CPU, 178 MB"],
-              ["r2t2", "R2T2 — most accurate"],
-            ] as const
-          )
-            .filter(([engine]) => engine !== "redux" || reduxSupported())
-            .map(([engine, label]): MenuItemConstructorOptions => ({
-              type: "radio",
-              label,
-              checked: settings.speechEngine === engine,
-              enabled: !busy,
-              click: () =>
-                settings.speechEngine !== engine &&
-                patchTraySettings({ speechEngine: engine }),
-            })),
-          { type: "separator" },
-        ];
+  const engines: MenuItemConstructorOptions[] = [
+    ...SPEECH_TIERS.filter(
+      (tier) => tier.id !== "large" || largeSpeechSupported(),
+    ).map((tier): MenuItemConstructorOptions => ({
+      type: "radio",
+      label: `${tier.name} — ${tier.model}, ${tier.download}`,
+      checked: settings.speechEngine === tier.id,
+      enabled: !busy,
+      click: () =>
+        settings.speechEngine !== tier.id &&
+        patchTraySettings({
+          speechEngine: tier.id,
+          language: supportedSpeechLanguage(
+            tier.id,
+            settings.model,
+            settings.language,
+          ),
+        }),
+    })),
+    { type: "separator" },
+  ];
   return [
     { label: engineLabel(speech), enabled: false },
     ...engines,
@@ -885,9 +886,11 @@ async function applySettings(value: unknown): Promise<AppSettings> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Expected a settings object");
   const next = normalizeSettings({ ...previous, ...value });
+  // Medium switches checkpoints with the language, so compare the loaded model.
   const runtimeChanged =
     next.model !== previous.model ||
-    next.speechEngine !== previous.speechEngine;
+    next.speechEngine !== previous.speechEngine ||
+    speechEngineId(next) !== speechEngineId(previous);
   const magicRuntimeChanged = next.magicModel !== previous.magicModel;
   const assertEngineChangeIdle = () => {
     if (
@@ -917,10 +920,15 @@ async function applySettings(value: unknown): Promise<AppSettings> {
     syncLoginItem(saved.launchAtLogin);
   // Settings are already saved. A model that is still busy must not skip the
   // broadcast and residency update below, so an unload failure is only logged.
-  if (runtimeChanged)
+  if (runtimeChanged) {
     await asr.unload().catch((error) => {
       console.error("Speech model was not unloaded:", error);
     });
+    // A new size may need packages the installed runtime lacks.
+    await asr.refreshEnvironment(saved).catch((error) => {
+      console.error("Speech runtime was not checked:", error);
+    });
+  }
   if (magicRuntimeChanged)
     await asr.unloadMagic().catch((error) => {
       console.error("Rewrite model was not unloaded:", error);
