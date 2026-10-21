@@ -449,39 +449,43 @@ test("the script source prefers packaged resources", () => {
   );
 });
 
-test("agent setup uses Node when it is on PATH", () => {
-  const bin = directory();
-  writeFileSync(join(bin, "node"), "#!/bin/sh\n");
-  chmodSync(join(bin, "node"), 0o755);
-  const setup = voiceAgentSetup("/home/me/.config/delulu-talks/voice/s.mjs", {
-    env: { PATH: `/nowhere:${bin}` },
-    platform: "linux",
-    execPath: "/opt/Delulu/delulu-talks",
-  });
-  expect(setup.nodeFound).toBe(true);
-  expect(setup.command).toEqual([
-    "node",
-    "/home/me/.config/delulu-talks/voice/s.mjs",
-  ]);
-  expect(setup.claudeCode).toBe(
-    "claude mcp add --scope user delulu-voice -- node /home/me/.config/delulu-talks/voice/s.mjs",
-  );
-  expect(setup.codex).toBe(
-    "codex mcp add delulu-voice -- node /home/me/.config/delulu-talks/voice/s.mjs",
-  );
-  expect(JSON.parse(setup.json)).toEqual({
-    mcpServers: {
-      "delulu-voice": {
-        command: "node",
-        args: ["/home/me/.config/delulu-talks/voice/s.mjs"],
+// A POSIX PATH cannot hold Windows temp paths (their drive colon splits it).
+test.skipIf(process.platform === "win32")(
+  "agent setup uses Node when it is on PATH",
+  () => {
+    const bin = directory();
+    writeFileSync(join(bin, "node"), "#!/bin/sh\n");
+    chmodSync(join(bin, "node"), 0o755);
+    const setup = voiceAgentSetup("/home/me/.config/delulu-talks/voice/s.mjs", {
+      env: { PATH: `/nowhere:${bin}` },
+      platform: "linux",
+      execPath: "/opt/Delulu/delulu-talks",
+    });
+    expect(setup.nodeFound).toBe(true);
+    expect(setup.command).toEqual([
+      "node",
+      "/home/me/.config/delulu-talks/voice/s.mjs",
+    ]);
+    expect(setup.claudeCode).toBe(
+      "claude mcp add --scope user delulu-voice -- node /home/me/.config/delulu-talks/voice/s.mjs",
+    );
+    expect(setup.codex).toBe(
+      "codex mcp add delulu-voice -- node /home/me/.config/delulu-talks/voice/s.mjs",
+    );
+    expect(JSON.parse(setup.json)).toEqual({
+      mcpServers: {
+        "delulu-voice": {
+          command: "node",
+          args: ["/home/me/.config/delulu-talks/voice/s.mjs"],
+        },
       },
-    },
-  });
-  expect(setup.shell).toBe(
-    "node /home/me/.config/delulu-talks/voice/s.mjs say 'Done, all tests pass.'",
-  );
-  expect(setup.instructions).toBe(VOICE_AGENT_INSTRUCTIONS);
-});
+    });
+    expect(setup.shell).toBe(
+      "node /home/me/.config/delulu-talks/voice/s.mjs say 'Done, all tests pass.'",
+    );
+    expect(setup.instructions).toBe(VOICE_AGENT_INSTRUCTIONS);
+  },
+);
 
 test("a non-executable node is ignored and Electron runs the script as Node", () => {
   const bin = directory();
