@@ -9,6 +9,11 @@ import type {
   MagicRewriteRequest,
   RecordingSubmission,
 } from "./types";
+import {
+  VOICE_LIMITS,
+  type VoicePlaybackEvent,
+  type VoiceSpeakRequest,
+} from "./voice";
 
 /** Runtime contracts for renderer requests; no Electron or platform dependencies. */
 type RequestSchema = {
@@ -224,6 +229,47 @@ function parseRewriteResult(value: unknown): ObjectInput | null {
 
 const noArguments = schema(0);
 
+export function parseVoiceSpeakRequest(value: unknown): VoiceSpeakRequest {
+  const source = object(value, "speak request");
+  optionalBoolean(source, "interrupt");
+  optionalBoolean(source, "normalize");
+  if (
+    source.source !== undefined &&
+    source.source !== "app" &&
+    source.source !== "clipboard"
+  )
+    throw new Error("Expected an app or clipboard speech source");
+  const text = requestText(source.text, VOICE_LIMITS.requestCharacters);
+  if (!text.trim()) throw new Error("There is nothing to say");
+  return {
+    text,
+    source: (source.source as "app" | "clipboard" | undefined) ?? "app",
+    ...(source.interrupt === undefined
+      ? {}
+      : { interrupt: source.interrupt as boolean }),
+    ...(source.normalize === undefined
+      ? {}
+      : { normalize: source.normalize as boolean }),
+  };
+}
+
+export function parseVoicePlaybackEvent(value: unknown): VoicePlaybackEvent {
+  const source = object(value, "playback event");
+  const chunk = finiteNumber(source.chunk, "playback chunk");
+  if (!Number.isInteger(chunk) || chunk < 0 || chunk > 10_000)
+    throw new Error("Invalid playback chunk");
+  if (!["started", "ended", "failed"].includes(source.event as string))
+    throw new Error("Invalid playback event");
+  return {
+    utteranceId: requestText(source.utteranceId, 128),
+    chunk,
+    event: source.event as VoicePlaybackEvent["event"],
+    ...(source.message === undefined
+      ? {}
+      : { message: requestText(source.message, 400) }),
+  };
+}
+
 function stringIds(value: unknown, limit = 128, count = 500): string[] {
   if (!Array.isArray(value) || value.length > count)
     throw new Error("Invalid selection list");
@@ -234,6 +280,18 @@ function stringIds(value: unknown, limit = 128, count = 500): string[] {
 }
 
 export const ipcRequestSchemas = {
+  "voice:status": noArguments,
+  "voice:setup": noArguments,
+  "voice:cancelSetup": noArguments,
+  "voice:load": noArguments,
+  "voice:unload": noArguments,
+  "voice:speak": schema(1, ([value]) => [parseVoiceSpeakRequest(value)]),
+  "voice:stop": noArguments,
+  "voice:speakClipboard": noArguments,
+  "voice:chooseReference": noArguments,
+  "voice:removeReference": noArguments,
+  "voice:agentSetup": noArguments,
+  "voice:playback": schema(1, ([value]) => [parseVoicePlaybackEvent(value)]),
   "cache:preview": noArguments,
   "models:downloads": noArguments,
   "models:deleteDownload": schema(1, ([id]) => [requestText(id, 32)]),
@@ -305,8 +363,8 @@ export const ipcRequestSchemas = {
     return [requestText(id, 128), requestText(message, 1000), lost];
   }),
   "runtime:setupLog": schema(1, ([kind]) => {
-    if (kind !== "speech" && kind !== "rewrite")
-      throw new Error("Choose speech or rewriting setup logs");
+    if (kind !== "speech" && kind !== "rewrite" && kind !== "voice")
+      throw new Error("Choose speech, rewriting or voice setup logs");
     return [kind];
   }),
   "runtime:setupSnapshot": noArguments,

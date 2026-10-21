@@ -1,4 +1,5 @@
 import { emptyImportQueue } from "./importQueue";
+import { stripVoiceMarkup } from "./voiceMarkup";
 import {
   previewScenario,
   scenarioHistory,
@@ -29,6 +30,7 @@ import type {
   TranscriptRecord,
   UpdateStatus,
 } from "./types";
+import { VOICE_AGENT_INSTRUCTIONS, type VoiceStatus } from "./voice";
 
 let demoHistory: TranscriptRecord[] =
   previewScenario === "empty" ? [] : scenarioHistory();
@@ -39,6 +41,76 @@ const transcriptListeners = new Set<(record: TranscriptRecord) => void>();
 function setLiveStatus(patch: Partial<DictationStatus>) {
   liveStatus = { ...liveStatus, ...patch };
   for (const listener of statusListeners) listener(liveStatus);
+}
+
+// Preview voice: no audio plays in the browser; status changes are simulated.
+const PREVIEW_SCRIPT =
+  "/home/you/.config/delulu-talks/voice/delulu-voice-mcp.mjs (preview path)";
+let voiceStatus: VoiceStatus = {
+  engine: "ready",
+  phase: "idle",
+  message: "Preview — the browser plays no audio",
+  model: "kokoro",
+  residency: "resident",
+  warmup: "complete",
+  device: "cpu",
+  current: null,
+  queued: 0,
+  recent:
+    previewScenario === "empty"
+      ? []
+      : [
+          {
+            id: "preview-voice-2",
+            at: Date.now() - 4 * 60_000,
+            source: "agent",
+            agent: "Claude Code",
+            text: "Done. The cache path fix is merged and all 212 tests pass.",
+            outcome: "spoken",
+            durationMs: 4_200,
+          },
+          {
+            id: "preview-voice-1",
+            at: Date.now() - 19 * 60_000,
+            source: "agent",
+            agent: "Codex",
+            text: "The build still fails on the cache path. Want me to try another way?",
+            outcome: "spoken",
+            durationMs: 4_700,
+          },
+        ],
+  bridge: {
+    enabled: false,
+    listening: false,
+    clients: 0,
+    endpoint: null,
+    error: null,
+  },
+};
+const voiceListeners = new Set<(status: VoiceStatus) => void>();
+let voiceTimer: ReturnType<typeof setTimeout> | null = null;
+function setVoiceStatus(patch: Partial<VoiceStatus>) {
+  voiceStatus = { ...voiceStatus, ...patch };
+  for (const listener of voiceListeners) listener(voiceStatus);
+}
+function syncPreviewBridge(settings: AppSettings) {
+  setVoiceStatus({
+    bridge: settings.voiceAgentBridge
+      ? {
+          enabled: true,
+          listening: true,
+          clients: 1,
+          endpoint: "/home/you/.config/delulu-talks/voice/agent.sock",
+          error: null,
+        }
+      : {
+          enabled: false,
+          listening: false,
+          clients: 0,
+          endpoint: null,
+          error: null,
+        },
+  });
 }
 
 function mockSettings(): AppSettings {
@@ -58,6 +130,126 @@ function desktopOnly(): never {
 }
 
 export const previewApi: DeluluApi = {
+  async getVoiceStatus() {
+    syncPreviewBridge(mockSettings());
+    return voiceStatus;
+  },
+  onVoiceStatus(callback) {
+    voiceListeners.add(callback);
+    return () => voiceListeners.delete(callback);
+  },
+  async setupVoice() {
+    desktopOnly();
+  },
+  async cancelVoiceSetup() {
+    desktopOnly();
+  },
+  async loadVoice() {
+    desktopOnly();
+  },
+  async unloadVoice() {
+    desktopOnly();
+  },
+  async speak(request) {
+    // Simulates timing only, so the page can be reviewed without audio.
+    if (voiceTimer) clearTimeout(voiceTimer);
+    const id = `preview-voice-${Date.now()}`;
+    const text = stripVoiceMarkup(request.text);
+    const durationMs = Math.min(8_000, Math.max(800, text.length * 55));
+    const settings = mockSettings();
+    setVoiceStatus({
+      phase: "speaking",
+      current: {
+        id,
+        text,
+        source: request.source ?? "app",
+        agent: request.agent ?? null,
+        chunk: 1,
+        chunks: 1,
+      },
+    });
+    await new Promise<void>((resolve) => {
+      voiceTimer = setTimeout(resolve, durationMs);
+    });
+    voiceTimer = null;
+    const summary = {
+      id,
+      at: Date.now(),
+      source: request.source ?? ("app" as const),
+      agent: request.agent ?? null,
+      text: text.slice(0, 280),
+      outcome: "spoken" as const,
+      durationMs,
+    };
+    setVoiceStatus({
+      phase: "idle",
+      current: null,
+      recent: [summary, ...voiceStatus.recent].slice(0, 20),
+    });
+    const unsupported =
+      settings.voiceEngine === "kokoro"
+        ? [
+            ...new Set(
+              [
+                ...request.text.matchAll(
+                  /\[(laugh|chuckle|sigh|gasp|cough|clear-throat|sniff|groan|shush)\]/gi,
+                ),
+              ].map((match) => match[1].toLowerCase()),
+            ),
+          ]
+        : [];
+    return {
+      id,
+      outcome: "spoken",
+      durationMs,
+      timestamps: [{ text, startMs: 0, endMs: durationMs }],
+      warnings: [],
+      unsupported,
+    };
+  },
+  async speakClipboard() {
+    return null;
+  },
+  async stopSpeaking() {
+    if (voiceTimer) clearTimeout(voiceTimer);
+    voiceTimer = null;
+    setVoiceStatus({ phase: "idle", current: null, queued: 0 });
+  },
+  async chooseVoiceReference() {
+    return desktopOnly();
+  },
+  async removeVoiceReference() {
+    const next = { ...mockSettings(), voiceClone: "" };
+    localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
+    return next;
+  },
+  async getVoiceAgentSetup() {
+    return {
+      scriptPath: PREVIEW_SCRIPT,
+      command: ["node", PREVIEW_SCRIPT],
+      nodeFound: true,
+      claudeCode: `claude mcp add --scope user delulu-voice -- node ${PREVIEW_SCRIPT}`,
+      codex: `codex mcp add delulu-voice -- node ${PREVIEW_SCRIPT}`,
+      json: JSON.stringify(
+        {
+          mcpServers: {
+            "delulu-voice": { command: "node", args: [PREVIEW_SCRIPT] },
+          },
+        },
+        null,
+        2,
+      ),
+      shell: `node ${PREVIEW_SCRIPT} say "Done, all tests pass."`,
+      instructions: VOICE_AGENT_INSTRUCTIONS,
+    };
+  },
+  onVoicePlay() {
+    return () => undefined;
+  },
+  onVoiceStopPlayback() {
+    return () => undefined;
+  },
+  reportVoicePlayback() {},
   async getRenderingMode() {
     return "hardware";
   },
@@ -185,6 +377,7 @@ export const previewApi: DeluluApi = {
   async updateSettings(settings) {
     const next = { ...mockSettings(), ...settings };
     localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
+    syncPreviewBridge(next);
     return next;
   },
   async getStatus() {

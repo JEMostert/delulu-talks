@@ -25,7 +25,28 @@ _active_operation: ContextVar[tuple[str, str] | None] = ContextVar("worker_opera
 COMMANDS = frozenset({
     "status", "load", "unload", "magicStatus", "magicLoad",
     "magicRewrite", "transcribe", "shutdown", "capabilities",
+    "voiceStatus", "voiceLoad", "voiceUnload", "voiceSynthesize",
 })
+# Spoken output (src/voice.ts is the shared source of truth for these names).
+VOICE_ENGINES = frozenset({"kokoro", "chatterbox-turbo"})
+VOICE_EVENT_TAGS = frozenset({
+    "laugh", "chuckle", "sigh", "gasp", "cough", "clear-throat", "sniff", "groan", "shush",
+})
+VOICE_STYLES = frozenset({
+    "whisper", "happy", "angry", "surprised", "scared", "sarcastic", "dramatic", "narration",
+    "crying", "slow", "fast", "soft", "loud", "emphasis",
+})
+MAX_VOICE_TEXT_CHARS = 600
+MAX_VOICE_PARTS = 200
+MAX_VOICE_PAUSE_MS = 5_000
+MAX_VOICE_STYLES = 8
+MAX_VOICE_NAME_BYTES = 64
+MAX_VOICE_REFERENCE_BYTES = 4096
+MAX_VOICE_UNSUPPORTED = 32
+MIN_VOICE_SPEED = 0.25
+MAX_VOICE_SPEED = 4.0
+VOICE_PART_FIELDS = {"text": frozenset({"kind", "text"}), "event": frozenset({"kind", "tag"}),
+                     "pause": frozenset({"kind", "ms"})}
 SPEECH_MODELS = frozenset({"r2t2", "canary-180m", "parakeet-v2", "parakeet-v3"})
 MAGIC_PRESETS = frozenset({"spoken-corrections", "polish", "concise", "structured", "prompt", "bullet-points", "professional-message"})
 MAGIC_MODELS = frozenset({"qwen35Small", "qwen35Medium", "qwen35Large"})
@@ -209,8 +230,15 @@ def validate_request(request: Any) -> dict[str, Any]:
             require_string(request, "model")
             if request["model"] not in SPEECH_MODELS:
                 raise ValueError(f"Unsupported speech model: {request['model']}")
-    if command in ("load", "magicLoad") and "cacheDir" in request:
+    if command in ("load", "magicLoad", "voiceLoad") and "cacheDir" in request:
         require_string(request, "cacheDir")
+    if command in ("voiceLoad", "voiceSynthesize"):
+        if request.get("engine") not in VOICE_ENGINES:
+            raise ValueError("Unsupported voice engine")
+    if command == "voiceLoad" and "device" in request and request["device"] not in ("auto", "cpu"):
+        raise ValueError("Unsupported voice device preference")
+    if command == "voiceSynthesize":
+        validate_voice_synthesis(request)
     if command == "load" and "device" in request and request["device"] not in ("auto", "cpu"):
         raise ValueError("Unsupported speech device preference")
     if command == "load" and "language" in request:
@@ -253,6 +281,42 @@ def validate_request(request: Any) -> dict[str, Any]:
         if "allowInferences" in request:
             require_boolean(request, "allowInferences")
     return request
+
+
+def validate_voice_synthesis(request: dict[str, Any]) -> None:
+    if not bounded_string(request.get("voice"), MAX_VOICE_NAME_BYTES):
+        raise ValueError("Voice name must be a nonempty string of at most 64 UTF-8 bytes")
+    if "reference" in request and not bounded_string(request["reference"], MAX_VOICE_REFERENCE_BYTES):
+        raise ValueError("Voice reference must be a nonempty path of at most 4096 UTF-8 bytes")
+    require_number(request, "speed")
+    if not MIN_VOICE_SPEED <= request["speed"] <= MAX_VOICE_SPEED:
+        raise ValueError("Voice speed must be between 0.25 and 4")
+    styles = request.get("styles")
+    if (not isinstance(styles, list) or len(styles) > MAX_VOICE_STYLES
+            or any(type(style) is not str or style not in VOICE_STYLES for style in styles)
+            or len(set(styles)) != len(styles)):
+        raise ValueError("Voice styles must be at most 8 unique known style names")
+    parts = request.get("parts")
+    if not isinstance(parts, list) or not parts or len(parts) > MAX_VOICE_PARTS:
+        raise ValueError("Voice synthesis needs between 1 and 200 parts")
+    characters = 0
+    for part in parts:
+        if not isinstance(part, dict) or part.get("kind") not in VOICE_PART_FIELDS:
+            raise ValueError("Voice part kind must be text, event or pause")
+        if set(part) != VOICE_PART_FIELDS[part["kind"]]:
+            raise ValueError("Voice part has missing or unexpected fields")
+        if part["kind"] == "text":
+            require_string(part, "text")
+            characters += utf16_length(part["text"])
+        elif part["kind"] == "event":
+            if type(part["tag"]) is not str or part["tag"] not in VOICE_EVENT_TAGS:
+                raise ValueError("Unknown voice event tag")
+        else:
+            require_number(part, "ms")
+            if part["ms"] > MAX_VOICE_PAUSE_MS:
+                raise ValueError("Voice pauses are limited to 5,000 ms")
+    if characters > MAX_VOICE_TEXT_CHARS:
+        raise ValueError("Voice synthesis text exceeds the 600 character chunk limit")
 
 
 def validate_result(command: str, result: Any) -> None:
@@ -299,6 +363,32 @@ def validate_result(command: str, result: Any) -> None:
         for key in ("model", "device"):
             if key in result and result[key] is not None:
                 require_string(result, key)
+    elif command in ("voiceStatus", "voiceLoad", "voiceUnload"):
+        require_boolean(result, "loaded")
+        for key in ("model", "device"):
+            if key in result and result[key] is not None:
+                require_string(result, key)
+        if result.get("engine") is not None and result.get("engine") not in VOICE_ENGINES:
+            raise ValueError("Worker voice engine is not a known engine")
+        residency = result.get("residency")
+        if (residency == "resident" and not result["loaded"]) or (residency == "unloaded" and result["loaded"]):
+            raise ValueError("Worker voice residency disagrees with loaded state")
+        if residency == "unloaded" and result.get("device") is not None:
+            raise ValueError("Unloaded voice worker must not report an active device")
+    elif command == "voiceSynthesize":
+        rate = result.get("sampleRate")
+        if type(rate) is not int or not 8000 <= rate <= 48000:
+            raise ValueError("Worker voice sampleRate must be an integer between 8000 and 48000")
+        require_string(result, "audio")
+        require_number(result, "durationMs")
+        require_number(result, "processingTimeMs")
+        if result.get("engine") not in VOICE_ENGINES:
+            raise ValueError("Worker voice engine is not a known engine")
+        require_string(result, "device", nonempty=True)
+        unsupported = result.get("unsupported")
+        if (not isinstance(unsupported, list) or len(unsupported) > MAX_VOICE_UNSUPPORTED
+                or any(not bounded_string(item, 64) for item in unsupported)):
+            raise ValueError("Worker voice unsupported list must hold at most 32 short names")
     elif command == "transcribe":
         require_string(result, "text")
         require_string(result, "language")

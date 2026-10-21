@@ -1,6 +1,12 @@
 import type { DownloadBytes } from "../../src/types";
 import { MAX_RECOGNITION_HINT_CHARS } from "../../src/recognitionHints";
 import { StringDecoder } from "node:string_decoder";
+import {
+  isVoiceEngineId,
+  VOICE_EVENT_TAGS,
+  VOICE_LIMITS,
+  VOICE_STYLES,
+} from "../../src/voice";
 
 export const WORKER_PROTOCOL_VERSION = 1;
 const PRESETS = new Set([
@@ -29,6 +35,10 @@ const COMMANDS = new Set([
   "transcribe",
   "shutdown",
   "capabilities",
+  "voiceStatus",
+  "voiceLoad",
+  "voiceUnload",
+  "voiceSynthesize",
 ]);
 // Keep aligned with the shared PipelineTimings contract; unknown stages are omitted.
 const TIMING_FIELDS = new Set([
@@ -199,6 +209,17 @@ export function validateWorkerRequest(value: unknown): JsonObject {
     )
       throw new Error("Invalid model worker speech model");
   }
+  if (request.command === "voiceLoad") {
+    if (!isVoiceEngineId(request.engine))
+      throw new Error("Invalid model worker voice engine");
+    stringField(request, "cacheDir");
+    if (
+      request.device !== undefined &&
+      !["auto", "cpu"].includes(request.device as string)
+    )
+      throw new Error("Unsupported voice device preference");
+  }
+  if (request.command === "voiceSynthesize") voiceSynthesizeRequest(request);
   if (request.command === "magicRewrite") {
     stringField(request, "text", true);
     stringField(request, "preset");
@@ -213,6 +234,59 @@ export function validateWorkerRequest(value: unknown): JsonObject {
       throw new Error("Invalid model worker rewrite preset");
   }
   return request;
+}
+
+function voiceSynthesizeRequest(request: JsonObject): void {
+  if (!isVoiceEngineId(request.engine))
+    throw new Error("Invalid model worker voice engine");
+  stringField(request, "voice", true, true);
+  if (Buffer.byteLength(request.voice as string, "utf8") > 64)
+    throw new Error("Model worker voice name is too long");
+  if (request.reference !== undefined) {
+    stringField(request, "reference", true, true);
+    if (Buffer.byteLength(request.reference as string, "utf8") > 4096)
+      throw new Error("Model worker voice reference path is too long");
+  }
+  const speed = request.speed;
+  if (
+    typeof speed !== "number" ||
+    !Number.isFinite(speed) ||
+    speed < 0.25 ||
+    speed > 4
+  )
+    throw new Error("Model worker voice speed must be between 0.25 and 4");
+  const styles = request.styles;
+  if (
+    !Array.isArray(styles) ||
+    styles.length > VOICE_LIMITS.styles ||
+    new Set(styles).size !== styles.length ||
+    styles.some((style) => !VOICE_STYLES.includes(style))
+  )
+    throw new Error("Invalid model worker voice styles");
+  const parts = request.parts;
+  if (
+    !Array.isArray(parts) ||
+    !parts.length ||
+    parts.length > VOICE_LIMITS.chunkParts
+  )
+    throw new Error("Model worker voice parts must be a nonempty bounded list");
+  let characters = 0;
+  for (const value of parts) {
+    const part = object(value, "voice part");
+    if (part.kind === "text") {
+      stringField(part, "text", true);
+      characters += (part.text as string).length;
+    } else if (part.kind === "event") {
+      if (!VOICE_EVENT_TAGS.includes(part.tag as never))
+        throw new Error("Invalid model worker voice event");
+    } else if (part.kind === "pause") {
+      numberField(part, "ms", true);
+      if ((part.ms as number) > VOICE_LIMITS.pauseMs)
+        throw new Error("Model worker voice pause is too long");
+    } else throw new Error("Invalid model worker voice part");
+  }
+  if (characters > VOICE_LIMITS.chunkCharacters)
+    throw new Error("Model worker voice text exceeds its chunk limit");
 }
 
 export function validateWorkerResponse(value: unknown): WorkerResponse {
@@ -328,6 +402,9 @@ export function validateWorkerResult(command: string, value: unknown): void {
     "unload",
     "magicStatus",
     "magicLoad",
+    "voiceStatus",
+    "voiceLoad",
+    "voiceUnload",
   ];
   if (command === "capabilities") {
     const result = object(value, "capability result");
@@ -377,6 +454,42 @@ export function validateWorkerResult(command: string, value: unknown): void {
       throw new Error("Model worker residency disagrees with loaded state");
     for (const key of ["model", "device"])
       if (result[key] !== null) stringField(result, key);
+    if (
+      command.startsWith("voice") &&
+      result.engine !== null &&
+      !isVoiceEngineId(result.engine)
+    )
+      throw new Error("Invalid model worker voice engine");
+  } else if (command === "voiceSynthesize") {
+    const result = object(value, "voice synthesis result");
+    const rate = result.sampleRate;
+    if (
+      typeof rate !== "number" ||
+      !Number.isInteger(rate) ||
+      rate < 8000 ||
+      rate > 48000
+    )
+      throw new Error("Invalid model worker voice sample rate");
+    stringField(result, "audio", true);
+    for (const key of ["durationMs", "processingTimeMs"])
+      numberField(result, key, true);
+    if ((result.durationMs as number) > VOICE_LIMITS.chunkAudioSeconds * 1000)
+      throw new Error("Model worker voice audio exceeds its chunk limit");
+    if (!isVoiceEngineId(result.engine))
+      throw new Error("Invalid model worker voice engine");
+    stringField(result, "device", true, true);
+    const unsupported = result.unsupported;
+    if (
+      !Array.isArray(unsupported) ||
+      unsupported.length > 32 ||
+      unsupported.some(
+        (tag) =>
+          typeof tag !== "string" ||
+          !tag ||
+          Buffer.byteLength(tag, "utf8") > 64,
+      )
+    )
+      throw new Error("Invalid model worker unsupported voice tags");
   } else if (command === "transcribe") {
     const result = object(value, "transcription result");
     stringField(result, "text", true);

@@ -1,6 +1,15 @@
 export type SetupState =
   "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { ImportQueueSnapshot } from "./importQueue";
+import type {
+  VoiceAgentSetup,
+  VoiceEngineId,
+  VoicePlaybackChunk,
+  VoicePlaybackEvent,
+  VoiceSpeakRequest,
+  VoiceSpeakResult,
+  VoiceStatus,
+} from "./voice";
 import type { WordPackId } from "./wordPacks";
 import type {
   SpeechBackendId,
@@ -15,7 +24,7 @@ export type {
 } from "./domainErrors";
 
 export type Page =
-  "home" | "lab" | "models" | "vocabulary" | "history" | "settings";
+  "home" | "lab" | "models" | "vocabulary" | "history" | "voice" | "settings";
 
 export type SpeechModelId = "r2t2" | "r2t2Mlx";
 /** Speech model size the user picks: Small and Medium run on any CPU, Large is R2T2. */
@@ -122,6 +131,28 @@ export type AppSettings = {
   wordPacks: WordPackId[];
   /** Send enabled vocabulary corrections to R2T2 as recognition hints. */
   vocabularyHints: boolean;
+  /** Spoken output. Off until the user turns it on in Voice. */
+  voiceEnabled: boolean;
+  /** Kokoro (Small, CPU) or Chatterbox Turbo (Large, GPU, expressive). */
+  voiceEngine: VoiceEngineId;
+  /** Kokoro speaker id. */
+  voiceName: string;
+  /** File name of a Chatterbox reference clip under voice/references; empty for the built-in voice. */
+  voiceClone: string;
+  /** Speaking rate multiplier, 0.5–2. */
+  voiceSpeed: number;
+  /** Playback volume, 0–1. */
+  voiceVolume: number;
+  /** Audio output device; "default" follows the system. */
+  voiceOutputDeviceId: string;
+  /** Starting a dictation stops speech, so you can answer right away. */
+  voiceInterruptOnDictation: boolean;
+  /** Turn code, paths and identifiers into speakable words. */
+  voiceNormalizeText: boolean;
+  /** Keep the voice model loaded instead of unloading it when idle. */
+  voiceKeepLoaded: boolean;
+  /** Let local coding agents speak through the MCP server and CLI. */
+  voiceAgentBridge: boolean;
 };
 
 export type SetupStage =
@@ -514,6 +545,26 @@ export type ModelCacheCleanupResult = {
 export type RenderingMode = "hardware" | "software";
 
 export type DeluluApi = {
+  getVoiceStatus(): Promise<VoiceStatus>;
+  onVoiceStatus(callback: (status: VoiceStatus) => void): () => void;
+  setupVoice(): Promise<void>;
+  cancelVoiceSetup(): Promise<void>;
+  loadVoice(): Promise<void>;
+  unloadVoice(): Promise<void>;
+  /** Resolves when the utterance has been spoken, stopped or failed. */
+  speak(request: VoiceSpeakRequest): Promise<VoiceSpeakResult>;
+  stopSpeaking(): Promise<void>;
+  /** Read the clipboard text aloud; null when the clipboard has no text. */
+  speakClipboard(): Promise<VoiceSpeakResult | null>;
+  /** Choose a clip for Chatterbox to clone; returns the saved settings. */
+  chooseVoiceReference(): Promise<AppSettings | null>;
+  removeVoiceReference(): Promise<AppSettings>;
+  getVoiceAgentSetup(): Promise<VoiceAgentSetup>;
+  onVoicePlay(callback: (chunk: VoicePlaybackChunk) => void): () => void;
+  onVoiceStopPlayback(
+    callback: (utteranceId: string | null) => void,
+  ): () => void;
+  reportVoicePlayback(event: VoicePlaybackEvent): void;
   getRenderingMode(): Promise<RenderingMode>;
   onRenderingModeChanged(callback: (mode: RenderingMode) => void): () => void;
   previewModelCache(): Promise<ModelCachePreview>;
@@ -673,7 +724,7 @@ export type MicrophonePermission = {
   detail: string;
 };
 
-export type RuntimeSetupKind = "speech" | "rewrite";
+export type RuntimeSetupKind = "speech" | "rewrite" | "voice";
 export type RuntimeSetupLogEntry = {
   at: number;
   type: "stage" | "command" | "stdout" | "stderr" | "exit" | "error";

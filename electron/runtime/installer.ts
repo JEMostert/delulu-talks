@@ -27,10 +27,18 @@ import {
   PYTHON_INVENTORY_PROBE,
   writeRuntimeInventory,
   type RequestedInstallStage,
+  type RuntimeKind,
   type TargetPlatform,
 } from "./inventory";
+import { voiceRuntimeProfile } from "./platform";
 import {
   CPU_SPEECH_PACKAGES,
+  VOICE_CPU_PACKAGES,
+  VOICE_GPU_PACKAGES,
+  VOICE_PIP_CHECK_EXCEPTIONS,
+  VOICE_TORCH_PACKAGES,
+  VOICE_UNPINNED_PACKAGES,
+  VOICE_WINDOWS_TORCH_PACKAGES,
   INSTALLER_PACKAGES,
   MAGIC_PACKAGES,
   RUNTIME_REVISION,
@@ -60,8 +68,21 @@ function withPackages(base: string[], extra: string[]): string[] {
 type Paths = {
   dataDirectory: string;
   venvDirectory: string;
-  kind?: "speech" | "magic";
+  kind?: RuntimeKind;
 };
+
+/** Run `pip check`, accepting only the documented voice runtime exceptions. */
+export function pipCheckScript(exceptions: readonly string[]): string {
+  return `import subprocess, sys
+result = subprocess.run([sys.executable, "-m", "pip", "check"], capture_output=True, text=True)
+allowed = ${JSON.stringify(exceptions)}
+problems = [line for line in result.stdout.splitlines() if line.strip() and not any(line.startswith(prefix) for prefix in allowed)]
+print(result.stdout)
+if result.returncode != 0 and problems:
+    print("\\n".join(problems), file=sys.stderr)
+    raise SystemExit(1)
+`;
+}
 /** Owns interpreter discovery and package installation; model loading is separate. */
 export class RuntimeInstaller {
   readonly setupLog = new SetupLog();
@@ -118,10 +139,7 @@ export class RuntimeInstaller {
       arch: process.arch,
     },
   ) {}
-  private readiness(
-    kind: "speech" | "magic",
-    profile: SpeechRuntimeProfile,
-  ): string {
+  private readiness(kind: RuntimeKind, profile: SpeechRuntimeProfile): string {
     return runtimeReadinessScript(
       kind,
       this.target,
@@ -132,7 +150,7 @@ export class RuntimeInstaller {
   get python(): string {
     return this.candidate?.python ?? runtimePython(this.paths.venvDirectory);
   }
-  private assertKind(kind: "speech" | "magic"): void {
+  private assertKind(kind: RuntimeKind): void {
     if (this.paths.kind && this.paths.kind !== kind)
       throw new Error(
         `This installer owns the ${this.paths.kind} runtime, not ${kind}`,
@@ -352,7 +370,7 @@ export class RuntimeInstaller {
 
   /** Whether the active runtime can run `profile`; the magic runtime ignores it. */
   async ready(
-    kind: "speech" | "magic",
+    kind: RuntimeKind,
     profile: SpeechRuntimeProfile = "full",
   ): Promise<boolean> {
     try {
@@ -430,7 +448,7 @@ export class RuntimeInstaller {
   }
 
   async install(
-    kind: "speech" | "magic",
+    kind: RuntimeKind,
     settings: AppSettings,
     publish: (progress: InstallProgress) => void,
     options: { signal?: AbortSignal; deferActivation?: boolean } = {},
@@ -452,7 +470,7 @@ export class RuntimeInstaller {
   }
 
   private async installCandidate(
-    kind: "speech" | "magic",
+    kind: RuntimeKind,
     settings: AppSettings,
     publish: (progress: InstallProgress) => void,
   ): Promise<void> {
@@ -463,8 +481,12 @@ export class RuntimeInstaller {
     this.cancelled = false;
     // Install what the selected size needs; the full runtime also runs Small and Medium.
     const profile: SpeechRuntimeProfile =
-      kind === "speech" ? speechRuntimeProfile(settings.speechEngine) : "full";
-    const cpu = kind === "speech" && profile === "cpu";
+      kind === "speech"
+        ? speechRuntimeProfile(settings.speechEngine)
+        : kind === "voice"
+          ? voiceRuntimeProfile(settings.voiceEngine)
+          : "full";
+    const cpu = kind !== "magic" && profile === "cpu";
     this.candidate = null;
     this.validatedPython = null;
     const metal = kind === "speech" && this.metal && !cpu;
@@ -614,7 +636,35 @@ export class RuntimeInstaller {
       this.target.arch === "x64"
         ? ["--constraint", this.constraintsPath]
         : [];
-    if (this.windows && !cpu) {
+    if (kind === "voice") {
+      if (!cpu)
+        await installPackages(
+          "voice-torch",
+          this.windows ? VOICE_WINDOWS_TORCH_PACKAGES : VOICE_TORCH_PACKAGES,
+          this.windows
+            ? ["--index-url", "https://download.pytorch.org/whl/cu130"]
+            : [],
+          "Installing PyTorch for expressive voice",
+          0.3,
+        );
+      await installPackages(
+        "runtime",
+        cpu
+          ? VOICE_CPU_PACKAGES
+          : withPackages(VOICE_GPU_PACKAGES, VOICE_CPU_PACKAGES),
+        [],
+        "Installing the voice runtime",
+        0.45,
+      );
+      if (!cpu)
+        await installPackages(
+          "voice-unpinned",
+          VOICE_UNPINNED_PACKAGES,
+          ["--no-deps"],
+          "Installing Chatterbox Turbo",
+          0.6,
+        );
+    } else if (this.windows && !cpu) {
       await installPackages(
         "windows-cuda",
         WINDOWS_CUDA_PACKAGES,
@@ -631,31 +681,34 @@ export class RuntimeInstaller {
         0.32,
       );
     }
-    await installPackages(
-      "runtime",
-      kind === "speech"
-        ? cpu
-          ? CPU_SPEECH_PACKAGES
-          : withPackages(
-              metal ? METAL_PACKAGES : SPEECH_PACKAGES,
-              CPU_SPEECH_PACKAGES,
-            )
-        : MAGIC_PACKAGES,
-      constraints,
-      kind === "speech"
-        ? "Installing the speech runtime"
-        : "Installing the rewrite runtime",
-      0.45,
-      constraints.length
-        ? {
-            path: this.constraintsPath!,
-            contents: readFileSync(this.constraintsPath!, "utf8"),
-          }
-        : null,
-    );
+    if (kind !== "voice")
+      await installPackages(
+        "runtime",
+        kind === "speech"
+          ? cpu
+            ? CPU_SPEECH_PACKAGES
+            : withPackages(
+                metal ? METAL_PACKAGES : SPEECH_PACKAGES,
+                CPU_SPEECH_PACKAGES,
+              )
+          : MAGIC_PACKAGES,
+        constraints,
+        kind === "speech"
+          ? "Installing the speech runtime"
+          : "Installing the rewrite runtime",
+        0.45,
+        constraints.length
+          ? {
+              path: this.constraintsPath!,
+              contents: readFileSync(this.constraintsPath!, "utf8"),
+            }
+          : null,
+      );
     await stage(
       candidatePython,
-      ["-m", "pip", "check"],
+      kind === "voice"
+        ? ["-c", pipCheckScript(VOICE_PIP_CHECK_EXCEPTIONS)]
+        : ["-m", "pip", "check"],
       "Checking package compatibility",
       0.72,
       "runtime-validate",
@@ -718,7 +771,7 @@ export class RuntimeInstaller {
       JSON.stringify({
         kind,
         revision: RUNTIME_REVISION,
-        ...(kind === "speech" ? { profile } : {}),
+        ...(kind !== "magic" ? { profile } : {}),
       }),
       { mode: 0o600 },
     );

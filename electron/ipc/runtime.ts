@@ -20,9 +20,16 @@ export function registerRuntimeIpc(
     settingsBusy,
     modelCache,
     paste,
+    voice,
   }: Pick<
     IpcDependencies,
-    "storage" | "asr" | "dictation" | "settingsBusy" | "modelCache" | "paste"
+    | "storage"
+    | "asr"
+    | "dictation"
+    | "settingsBusy"
+    | "modelCache"
+    | "paste"
+    | "voice"
   >,
 ): void {
   const assertRuntimeIdle = () => {
@@ -75,8 +82,9 @@ export function registerRuntimeIpc(
   });
   handle("runtime:setupSnapshot", () => runtimeSetupSnapshot(storage));
   handle("runtime:setupLog", (_event, kind: unknown) => {
+    if (kind === "voice") return voice.getSetupLog();
     if (kind !== "speech" && kind !== "rewrite")
-      throw new Error("Choose speech or rewriting setup logs");
+      throw new Error("Choose speech, rewriting or voice setup logs");
     return asr.getSetupLog(kind);
   });
   handle("storage:overview", () => localDataOverview(storage));

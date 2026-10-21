@@ -1,0 +1,232 @@
+/* Voice: spoken output, its model, tag playground and agent connection. */
+.voice-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(
+      ellipse at 100% 0%,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      transparent 60%
+    ),
+    var(--surface);
+  box-shadow: var(--shadow-1), var(--rim-highlight);
+}
+.voice-hero-copy {
+  min-width: 0;
+}
+.voice-hero h2 {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+.voice-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.voice-current {
+  margin-top: 6px;
+  max-width: 62ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.voice-hero-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.voice-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  font-size: 12px;
+}
+.voice-facts dt {
+  color: var(--muted);
+}
+.voice-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-code);
+}
+
+/* Try it: the text, tag chips grouped by kind, and what was spoken. */
+.voice-try-card {
+  padding: 16px 18px 18px;
+}
+.voice-field {
+  margin-top: 0;
+}
+.voice-field textarea {
+  min-height: 96px;
+  resize: vertical;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.voice-tag-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 18px;
+  margin: 14px 0 10px;
+}
+.voice-tag-group .eyebrow {
+  margin-bottom: 6px;
+}
+.voice-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.voice-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  transition:
+    border-color var(--t-base),
+    background-color var(--t-base);
+}
+.voice-chip:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.voice-chip.skipped {
+  color: var(--muted);
+  border-style: dashed;
+}
+.voice-try-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.voice-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.voice-result {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.voice-notes {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+.voice-timestamps {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--input);
+  font-size: 12.5px;
+}
+.voice-timestamps li {
+  display: grid;
+  grid-template-columns: 7.5em 1fr;
+  gap: 10px;
+}
+.voice-time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Agent connection: one snippet at a time behind tabs. */
+.voice-endpoint {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.voice-connect .voice-snippet-tabs {
+  margin: 12px 18px 0;
+}
+.voice-snippet {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 12px 18px 16px;
+}
+.voice-snippet pre {
+  width: 100%;
+  max-height: 220px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--input);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.voice-snippet pre.voice-instructions {
+  max-height: 260px;
+}
+.voice-snippet-note {
+  padding: 0 18px 12px;
+}
+
+/* Recently spoken: newest first, speaker and outcome above the words. */
+.voice-recent li {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.voice-recent li:last-child {
+  border-bottom: 0;
+}
+.voice-recent-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.voice-recent-meta time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.voice-recent p {
+  margin-top: 4px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .voice-hero {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .voice-hero-copy {
+    flex: 1 1 60%;
+  }
+  .voice-timestamps li {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
+/* Several actions share a row here; let them wrap in compact windows. */
+.voice-page .setting-control {
+  flex-wrap: wrap;
+}

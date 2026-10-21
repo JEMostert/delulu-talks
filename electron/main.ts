@@ -2,6 +2,7 @@ import { largeSpeechSupported } from "./runtime/platform";
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   Menu,
   nativeImage,
@@ -46,6 +47,13 @@ import {
 import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { deletedDespiteCleanup } from "./services/migrationBackups";
 import { UpdateService } from "./services/updates";
+import { VoiceService } from "./services/voice";
+import {
+  installVoiceAgentScript,
+  VoiceBridge,
+  voiceAgentScriptSource,
+  voiceAgentSetup,
+} from "./services/voiceBridge";
 import { setLinuxAutostart } from "./services/autostart";
 import { linuxTrayHostAvailable } from "./services/trayHost";
 import {
@@ -104,6 +112,8 @@ let paste: DesktopPasteAdapter;
 let pasteLast: PasteLastService;
 let pill: DesktopIndicatorAdapter;
 let dictation: DictationService;
+let voice: VoiceService;
+let voiceBridge: VoiceBridge | null = null;
 let labIpc: ReturnType<typeof registerMainIpc> | null = null;
 let ruleUsage: RuleUsageService;
 
@@ -338,6 +348,95 @@ type TrayActionScope = "speech" | "rewrite" | "app";
  * updates, paste) is shown as a notification, so a refused tray click never
  * marks the speech engine broken and blocks dictation.
  */
+/** Speak whatever text is on the clipboard, interrupting current speech. */
+function speakClipboard(): void {
+  const text = clipboard.readText().trim();
+  if (!text) {
+    notify("The clipboard has no text to read aloud.");
+    return;
+  }
+  runTrayAction(async () => {
+    const result = await voice.speak({
+      text,
+      source: "clipboard",
+      interrupt: true,
+    });
+    if (result.outcome === "failed" && result.error) notify(result.error);
+  });
+}
+
+function voiceMenuItems(settings: AppSettings): MenuItemConstructorOptions[] {
+  const status = voice?.getStatus();
+  if (!status || !settings.voiceEnabled) return [];
+  const items: MenuItemConstructorOptions[] = [];
+  if (voice.isSpeaking)
+    items.push({
+      label: status.current?.agent
+        ? `Stop speaking (${status.current.agent})`
+        : "Stop speaking",
+      click: () => voice.stop("tray"),
+    });
+  items.push({
+    label: "Read clipboard aloud",
+    enabled: status.engine !== "missing" && status.engine !== "settingUp",
+    click: () => speakClipboard(),
+  });
+  return [{ type: "separator" }, ...items];
+}
+
+/** Start or stop the local agent bridge to match settings. */
+async function syncVoiceBridge(settings: AppSettings): Promise<void> {
+  if (smokeTest) return;
+  if (!settings.voiceAgentBridge) {
+    await voiceBridge?.stop();
+    return;
+  }
+  voiceBridge ??= new VoiceBridge({
+    directory: storage.voiceDirectory,
+    appVersion: app.getVersion(),
+    handlers: {
+      speak: async (request, wait) => {
+        const queued = voice.enqueue({ ...request, source: "agent" });
+        if (wait) return queued.done;
+        return { id: queued.id, position: queued.position };
+      },
+      stop: async () => voice.stop("agent"),
+      status: () => {
+        const status = voice.getStatus();
+        const current = storage.getSettings();
+        return {
+          enabled: current.voiceEnabled,
+          ready: !["missing", "settingUp", "error"].includes(status.engine),
+          engine: current.voiceEngine,
+          speaking: voice.isSpeaking,
+          queued: status.queued,
+          message: current.voiceEnabled
+            ? status.message
+            : "Speaking out loud is turned off in Delulu Talks.",
+        };
+      },
+    },
+    onStatus: (status) => voice.setBridgeStatus(status),
+  });
+  try {
+    installAgentScript();
+    await voiceBridge.start();
+  } catch (error) {
+    console.error("Voice bridge did not start:", error);
+  }
+}
+
+function installAgentScript(): string {
+  return installVoiceAgentScript(
+    storage.voiceDirectory,
+    voiceAgentScriptSource(
+      process.resourcesPath,
+      app.getAppPath(),
+      app.isPackaged,
+    ),
+  );
+}
+
 function runTrayAction(
   action: () => unknown | Promise<unknown>,
   scope: TrayActionScope = "app",
@@ -699,6 +798,7 @@ function renderTrayMenu(): void {
             pending?.phase !== "delivering",
           click: () => runTrayAction(async () => void schedulePasteLast()),
         },
+    ...voiceMenuItems(settings),
     { type: "separator" },
     { label: "Speech", submenu: speechMenu(settings) },
     {
@@ -778,6 +878,7 @@ function renderTrayMenu(): void {
           click: () => showMainWindow("vocabulary"),
         },
         { label: "Models", click: () => showMainWindow("models") },
+        { label: "Voice", click: () => showMainWindow("voice") },
         { label: "Settings", click: () => showMainWindow("settings") },
       ],
     },
@@ -872,7 +973,11 @@ function setupPermissions(): void {
         permission === "media" &&
         (!mediaTypes?.length ||
           mediaTypes.every((type: string) => type === "audio"));
-      callback(contents === mainWindow?.webContents && audioOnly);
+      // Speaker selection lets spoken output use the chosen output device.
+      callback(
+        contents === mainWindow?.webContents &&
+          (audioOnly || permission === "speaker-selection"),
+      );
     },
   );
 }
@@ -945,6 +1050,11 @@ async function applySettings(value: unknown): Promise<AppSettings> {
     if (saved.showOverlay) pill.prepare();
     dictation.syncOverlay();
   }
+  await voice.settingsChanged(previous, saved).catch((error) => {
+    console.error("Voice settings were not applied:", error);
+  });
+  if (saved.voiceAgentBridge !== previous.voiceAgentBridge)
+    await syncVoiceBridge(saved);
   broadcast("settings:changed", saved);
   rebuildTrayMenu();
   return saved;
@@ -1018,6 +1128,25 @@ async function start(): Promise<void> {
   );
   updates.start();
   mainWindow = createMainWindow();
+  voice = new VoiceService(storage, {
+    play: (chunk) => {
+      const contents = mainWindow?.webContents;
+      if (!contents || contents.isDestroyed() || contents.isLoadingMainFrame())
+        return false;
+      contents.send("voice:play", chunk);
+      return true;
+    },
+    stop: (utteranceId) => broadcast("voice:stopPlayback", utteranceId),
+  });
+  let voicePhase = "";
+  voice.onStatus((status) => {
+    broadcast("voice:statusChanged", status);
+    const phase = `${status.engine}:${status.phase}:${status.current?.agent ?? ""}`;
+    if (phase !== voicePhase) {
+      voicePhase = phase;
+      rebuildTrayMenu();
+    }
+  });
   dictation = new DictationService(
     storage,
     asr,
@@ -1087,12 +1216,15 @@ async function start(): Promise<void> {
       "Scheduled paste cancelled because the workspace reloaded.",
     );
     dictation.recorderUnavailable();
+    voice.playbackLost();
   });
   shortcut = createShortcutAdapter(() => storage.getSettings().shortcutMode, {
     start: () => dictation.start(),
     stop: () => dictation.stop(),
     toggle: () => dictation.toggle(),
   });
+  // Answering by voice stops Delulu talking before the microphone opens.
+  dictation.beforeCapture = () => voice.interruptForDictation();
   asr.onStatus((status) => {
     dictation.runtimeChanged();
     if (dictation.isActive)
@@ -1139,6 +1271,12 @@ async function start(): Promise<void> {
     visibleHistory,
     historyBatchSnapshot,
     selectedHistory,
+    voice,
+    voiceAgentSetup: () =>
+      voiceAgentSetup(installAgentScript(), {
+        execPath: process.execPath,
+        env: process.env,
+      }),
   });
   if (!smokeTest) {
     if (app.isPackaged)
@@ -1156,7 +1294,11 @@ async function start(): Promise<void> {
   // A tray app can run for weeks; check again every six hours.
   setInterval(() => void updates.check(), 6 * 60 * 60 * 1000).unref();
   syncLoginItem(storage.getSettings().launchAtLogin);
-  await asr.initialize(storage.getSettings());
+  void syncVoiceBridge(storage.getSettings());
+  await Promise.all([
+    asr.initialize(storage.getSettings()),
+    voice.initialize(storage.getSettings()).catch((error) => voice.fail(error)),
+  ]);
 }
 
 const hasLock = app.requestSingleInstanceLock();
@@ -1171,6 +1313,8 @@ if (!hasLock) {
     // app itself to a custom keyboard shortcut.
     if (argv.includes("--toggle-dictation") && dictation)
       runTrayAction(() => dictation.toggle());
+    else if (argv.includes("--read-clipboard") && voice) speakClipboard();
+    else if (argv.includes("--stop-speaking") && voice) voice.stop("launch");
     else showMainWindow();
   });
   if (process.platform === "win32")
@@ -1227,7 +1371,11 @@ app.on("before-quit", (event) => {
   // Wait for model workers (and their GPU children) to exit, but never hang quit.
   event.preventDefault();
   void Promise.race([
-    asr.shutdown().catch(() => undefined),
+    Promise.all([
+      asr.shutdown().catch(() => undefined),
+      voiceBridge?.stop().catch(() => undefined),
+      voice?.shutdown().catch(() => undefined),
+    ]),
     new Promise((resolve) => setTimeout(resolve, 6_000)),
   ]).finally(() => {
     shutdownComplete = true;

@@ -52,6 +52,21 @@ function listener<T>(
 }
 
 const api: DeluluApi = {
+  getVoiceStatus: () => invoke("voice:status"),
+  onVoiceStatus: (callback) => listener("voice:statusChanged", callback),
+  setupVoice: () => invoke("voice:setup"),
+  cancelVoiceSetup: () => invoke("voice:cancelSetup"),
+  loadVoice: () => invoke("voice:load"),
+  unloadVoice: () => invoke("voice:unload"),
+  speak: (request) => invoke("voice:speak", request),
+  stopSpeaking: () => invoke("voice:stop"),
+  speakClipboard: () => invoke("voice:speakClipboard"),
+  chooseVoiceReference: () => invoke("voice:chooseReference"),
+  removeVoiceReference: () => invoke("voice:removeReference"),
+  getVoiceAgentSetup: () => invoke("voice:agentSetup"),
+  onVoicePlay: (callback) => listener("voice:play", callback),
+  onVoiceStopPlayback: (callback) => listener("voice:stopPlayback", callback),
+  reportVoicePlayback: (event) => send("voice:playback", event),
   inspectAudioFile: (path) => invoke("lab:inspectAudio", path),
   getRuleUsage: () => invoke("rules:usage"),
   resetRuleUsage: () => invoke("rules:resetUsage"),

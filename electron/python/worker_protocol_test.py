@@ -121,5 +121,59 @@ class WorkerProtocolTests(unittest.TestCase):
         self.assertIn("vllm noise", result.stderr)
 
 
+def voice_text(value):
+    return {"kind": "text", "text": value}
+
+
+def synthesis(**fields):
+    return {"protocolVersion": 1, "id": "speak", "command": "voiceSynthesize", "engine": "kokoro",
+            "voice": "af_heart", "speed": 1, "styles": [], "parts": [voice_text("Hello.")], **fields}
+
+
+class VoiceProtocolTests(unittest.TestCase):
+    def test_synthesis_requests_accept_the_shared_wire_format(self):
+        valid = synthesis(engine="chatterbox-turbo", reference="/clips/me.wav", speed=0.25,
+                          styles=["whisper", "slow"], parts=[voice_text("Hi "), {"kind": "event", "tag": "clear-throat"}, {"kind": "pause", "ms": 5000}])
+        self.assertIs(protocol.validate_request(valid), valid)
+        protocol.validate_request({"protocolVersion": 1, "id": "load", "command": "voiceLoad",
+                                   "engine": "kokoro", "cacheDir": "models", "device": "cpu"})
+        protocol.validate_request({"protocolVersion": 1, "id": "status", "command": "voiceStatus"})
+        protocol.validate_request(synthesis(parts=[voice_text("😀" * 300)]))
+
+    def test_synthesis_requests_reject_unknown_or_unbounded_input(self):
+        invalid = [
+            {"engine": "orpheus"}, {"voice": ""}, {"voice": "v" * 65}, {"reference": ""},
+            {"speed": 0.2}, {"speed": 4.5}, {"speed": True}, {"speed": float("nan")},
+            {"styles": ["whisper", "whisper"]}, {"styles": ["mumble"]}, {"styles": "whisper"},
+            {"styles": ["slow"] * 9}, {"parts": []}, {"parts": [voice_text("x")] * 201},
+            {"parts": [{"kind": "music"}]}, {"parts": [{"kind": "text", "text": "x", "extra": 1}]},
+            {"parts": [{"kind": "text"}]}, {"parts": [{"kind": "event", "tag": "yell"}]}, {"parts": [{"kind": "pause", "ms": 5001}]},
+            {"parts": [{"kind": "pause", "ms": -1}]}, {"parts": [voice_text("😀" * 301)]}, {"parts": "Hello"},
+        ]
+        for fields in invalid:
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                protocol.validate_request(synthesis(**fields))
+        for fields in ({}, {"engine": "kokoro", "device": "gpu"}, {"engine": "kokoro", "cacheDir": 3}):
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                protocol.validate_request({"protocolVersion": 1, "id": "load", "command": "voiceLoad", **fields})
+
+    def test_results_are_validated_before_publication(self):
+        result = {"sampleRate": 24000, "audio": "AAA=", "durationMs": 1.5, "processingTimeMs": 3,
+                  "engine": "kokoro", "device": "cpu", "unsupported": ["laugh"]}
+        protocol.validate_result("voiceSynthesize", result)
+        for fields in ({"sampleRate": 24000.0}, {"sampleRate": 4000}, {"audio": None}, {"engine": "other"},
+                       {"device": ""}, {"unsupported": ["x"] * 33}, {"unsupported": [""]},
+                       {"durationMs": -1}):
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                protocol.validate_result("voiceSynthesize", {**result, **fields})
+        status = {"loaded": True, "model": "repo", "device": "cuda", "residency": "resident",
+                  "warmup": "complete", "engine": "chatterbox-turbo"}
+        protocol.validate_result("voiceLoad", status)
+        for fields in ({"engine": "orpheus"}, {"residency": "unloaded"}, {"loaded": False},
+                       {"device": None}):
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                protocol.validate_result("voiceLoad", {**status, **fields})
+
+
 if __name__ == "__main__":
     unittest.main()

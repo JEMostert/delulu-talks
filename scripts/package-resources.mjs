@@ -16,11 +16,13 @@ export const REQUIRED_RESOURCES = [
   "python/r2t2_speech.py",
   "python/r2t2_checkpoint.py",
   "python/onnx_speech.py",
+  "python/voice_engine.py",
   "python/audio_input.py",
   "python/constraints-linux-x64.txt",
   "python/THIRD_PARTY_NOTICES.md",
   "python/licenses/transformers-Apache-2.0.txt",
   "overlay/pill.py",
+  "voice/delulu-voice-mcp.mjs",
   "icon.png",
   ...["idle", "recording", "busy", "attention", "update"].flatMap((state) => [
     `tray/tray-${state}.png`,
@@ -140,7 +142,8 @@ export function sourceManifest(root = process.cwd()) {
           ? "docs/licenses/transformers-Apache-2.0.txt"
           : resource.to.startsWith("python/")
             ? `electron/${resource.to}`
-            : resource.to.startsWith("overlay/")
+            : resource.to.startsWith("overlay/") ||
+                resource.to.startsWith("voice/")
               ? `electron/${resource.to}`
               : `build/${resource.to}`;
     assert.equal(

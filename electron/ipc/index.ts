@@ -8,6 +8,7 @@ import { registerRuntimeIpc } from "./runtime";
 import { registerSettingsIpc } from "./settings";
 import type { IpcDependencies } from "./types";
 import { registerUpdatesIpc } from "./updates";
+import { registerVoiceIpc } from "./voice";
 
 export function registerMainIpc(dependencies: IpcDependencies) {
   const registrar = createIpcRegistrar(dependencies.getMainWindow);
@@ -18,6 +19,7 @@ export function registerMainIpc(dependencies: IpcDependencies) {
   registerPasteIpc(registrar, dependencies);
   registerUpdatesIpc(registrar, dependencies);
   registerHistoryIpc(registrar, dependencies);
+  registerVoiceIpc(registrar, dependencies);
   const lab = registerLabIpc(registrar, dependencies);
   return lab;
 }

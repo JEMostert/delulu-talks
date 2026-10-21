@@ -184,3 +184,109 @@ test("transcription hotwords must be a bounded string", () => {
     }),
   ).toThrow("too long");
 });
+
+test("voice requests are validated before they reach the worker", () => {
+  const request = (command: string, payload: Record<string, unknown>) => () =>
+    validateWorkerRequest({
+      protocolVersion: 1,
+      id: "voice",
+      command,
+      ...payload,
+    });
+  const synthesis = {
+    engine: "chatterbox-turbo",
+    voice: "af_heart",
+    speed: 1,
+    styles: ["whisper"],
+    parts: [
+      { kind: "text", text: "Okay, that one was my fault" },
+      { kind: "event", tag: "laugh" },
+      { kind: "pause", ms: 400 },
+      { kind: "text", text: ". Fixed it" },
+    ],
+  };
+  expect(request("voiceLoad", { engine: "kokoro" })).not.toThrow();
+  expect(request("voiceLoad", { engine: "orpheus" })).toThrow("voice engine");
+  expect(request("voiceSynthesize", synthesis)).not.toThrow();
+  expect(
+    request("voiceSynthesize", { ...synthesis, reference: "/clip.wav" }),
+  ).not.toThrow();
+  expect(request("voiceSynthesize", { ...synthesis, speed: 9 })).toThrow(
+    "speed",
+  );
+  expect(
+    request("voiceSynthesize", {
+      ...synthesis,
+      styles: ["whisper", "whisper"],
+    }),
+  ).toThrow("styles");
+  expect(request("voiceSynthesize", { ...synthesis, styles: ["sad"] })).toThrow(
+    "styles",
+  );
+  expect(request("voiceSynthesize", { ...synthesis, parts: [] })).toThrow(
+    "parts",
+  );
+  expect(
+    request("voiceSynthesize", {
+      ...synthesis,
+      parts: [{ kind: "event", tag: "scream" }],
+    }),
+  ).toThrow("event");
+  expect(
+    request("voiceSynthesize", {
+      ...synthesis,
+      parts: [{ kind: "pause", ms: 60_000 }],
+    }),
+  ).toThrow("pause");
+  expect(
+    request("voiceSynthesize", {
+      ...synthesis,
+      parts: [{ kind: "text", text: "a".repeat(601) }],
+    }),
+  ).toThrow("chunk limit");
+});
+
+test("voice results must describe bounded, playable audio", () => {
+  const result = {
+    sampleRate: 24_000,
+    audio: "AAAA",
+    durationMs: 1200,
+    processingTimeMs: 210,
+    engine: "kokoro",
+    device: "cpu",
+    unsupported: ["laugh"],
+  };
+  expect(() => validateWorkerResult("voiceSynthesize", result)).not.toThrow();
+  expect(() =>
+    validateWorkerResult("voiceSynthesize", { ...result, sampleRate: 1 }),
+  ).toThrow("sample rate");
+  expect(() =>
+    validateWorkerResult("voiceSynthesize", {
+      ...result,
+      durationMs: 91_000,
+    }),
+  ).toThrow("chunk limit");
+  expect(() =>
+    validateWorkerResult("voiceSynthesize", { ...result, unsupported: [1] }),
+  ).toThrow("unsupported");
+  expect(() =>
+    validateWorkerResult("voiceLoad", {
+      loaded: true,
+      model: "csukuangfj/kokoro-multi-lang-v1_0",
+      device: "cpu",
+      residency: "resident",
+      warmup: "complete",
+      engine: "kokoro",
+    }),
+  ).not.toThrow();
+  expect(() =>
+    validateWorkerResult("voiceStatus", {
+      loaded: false,
+      model: null,
+      device: null,
+      residency: "unloaded",
+      warmup: "not-started",
+      engine: "piper",
+    }),
+  ).toThrow("voice engine");
+});

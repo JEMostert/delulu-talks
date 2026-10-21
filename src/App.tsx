@@ -15,6 +15,7 @@ import {
   LoaderCircle,
   RotateCcw,
   Settings2,
+  Speech,
   Terminal,
   X,
 } from "lucide-react";
@@ -40,6 +41,7 @@ import { LatestResult } from "./components/LatestResult";
 import brandMark from "./assets/delulu-talks-mark.svg";
 import { activityLabel, engineLabel } from "./statusLabels";
 import { RecordingClock } from "./components/RecordingClock";
+import { useVoice } from "./hooks/useVoice";
 const LabPage = lazy(() =>
   import("./pages/LabPage").then((module) => ({ default: module.LabPage })),
 );
@@ -56,6 +58,11 @@ const VocabularyPage = lazy(() =>
 const HistoryPage = lazy(() =>
   import("./pages/HistoryPage").then((module) => ({
     default: module.HistoryPage,
+  })),
+);
+const VoicePage = lazy(() =>
+  import("./pages/VoicePage").then((module) => ({
+    default: module.VoicePage,
   })),
 );
 const SettingsPage = lazy(() =>
@@ -83,6 +90,10 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
     title: "Models",
     subtitle: "Speech and rewrite models, runtimes and backends",
   },
+  voice: {
+    title: "Voice",
+    subtitle: "Spoken replies and briefings from your agents",
+  },
   settings: {
     title: "Settings",
     subtitle: "How Delulu listens, types and keeps your words",
@@ -90,6 +101,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
 };
 function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const theme = useTheme(w.settings.theme);
+  const voice = useVoice();
   const [modelTarget, setModelTarget] = useState<
     "decode" | "diagnostics" | null
   >(null);
@@ -199,6 +211,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         ["settings", "Go to Settings"],
         ["lab", "Go to Audio files"],
         ["vocabulary", "Go to Personalization"],
+        ["voice", "Go to Voice"],
       ] as const
     ).map(([page, label]) => ({ id: page, label, run: () => w.setPage(page) })),
     {
@@ -212,6 +225,30 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
             : "Finish the current model operation first."
           : undefined,
       run: () => w.action(() => bridge.toggleDictation()),
+    },
+    {
+      id: "stop-speaking",
+      label: "Stop speaking",
+      keywords: "voice quiet silence interrupt tts",
+      disabled: voice.speaking ? undefined : "Nothing is being spoken.",
+      run: () => w.action(voice.stop),
+    },
+    {
+      id: "read-clipboard",
+      label: "Read clipboard aloud",
+      keywords: "voice speak tts listen copy paste",
+      disabled: w.settings.voiceEnabled
+        ? undefined
+        : "Turn on Speak out loud on the Voice page first.",
+      run: () =>
+        w.action(async () => {
+          const result = await voice.speakClipboard();
+          if (!result) throw new Error("The clipboard has no text to read.");
+          if (result.outcome === "failed")
+            throw new Error(
+              result.error ?? "The clipboard could not be read aloud.",
+            );
+        }),
     },
     {
       id: "history",
@@ -704,6 +741,23 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                 </div>
               </Activity>
             )}
+            {(visited.has("voice") || w.page === "voice") && (
+              <Activity
+                name="voice"
+                mode={w.page === "voice" ? "visible" : "hidden"}
+              >
+                <div className="workspace-view">
+                  <VoicePage
+                    settings={w.settings}
+                    voice={voice}
+                    saving={w.saving}
+                    onSave={w.saveSettings}
+                    onAction={w.action}
+                    onCopy={w.copy}
+                  />
+                </div>
+              </Activity>
+            )}
             {(visited.has("settings") || w.page === "settings") && (
               <Activity
                 name="settings"
@@ -767,6 +821,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   { page: "lab", label: "Audio files", Icon: AudioLines },
                   { page: "models", label: "Models", Icon: Cpu },
                   { page: "vocabulary", label: "Personalization", Icon: BookA },
+                  { page: "voice", label: "Voice", Icon: Speech },
                   { page: "settings", label: "Settings", Icon: Settings2 },
                 ] as const
               ).map(({ page, label, Icon }) => (

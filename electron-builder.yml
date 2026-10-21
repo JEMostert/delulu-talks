@@ -18,6 +18,8 @@ files:
 extraResources:
   - from: electron/python/onnx_speech.py
     to: python/onnx_speech.py
+  - from: electron/python/voice_engine.py
+    to: python/voice_engine.py
   - from: electron/python/audio_input.py
     to: python/audio_input.py
   - from: electron/python/spoken_corrections.py
@@ -48,6 +50,8 @@ extraResources:
     to: python/download_progress.py
   - from: electron/overlay/pill.py
     to: overlay/pill.py
+  - from: electron/voice/delulu-voice-mcp.mjs
+    to: voice/delulu-voice-mcp.mjs
   - from: build/icon.png
     to: icon.png
   - from: build/tray/tray-idle.png

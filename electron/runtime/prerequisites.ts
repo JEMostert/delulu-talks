@@ -127,13 +127,15 @@ export function parseRuntimePrerequisiteError(
 
 /** Import and hardware availability checks only; never load or download models. */
 export function runtimeReadinessScript(
-  kind: "speech" | "magic",
+  kind: "speech" | "magic" | "voice",
   target: TargetPlatform,
   metal: boolean,
   profile: SpeechRuntimeProfile = "full",
 ): string {
-  // The CPU speech runtime checks only its own imports, not a GPU.
-  const cpu = kind === "speech" && profile === "cpu";
+  // The CPU speech runtime checks only its own imports, not a GPU. The voice
+  // runtime never requires a GPU: Chatterbox falls back to the CPU, slowly.
+  const cpu = kind !== "magic" && profile === "cpu";
+  if (kind === "voice") metal = false;
   if (cpu) metal = false;
   const version =
     metal || target.platform === "win32"
@@ -151,13 +153,17 @@ export function runtimeReadinessScript(
         ? "platform.machine().lower() in ('arm64', 'aarch64')"
         : "True";
   const imports =
-    kind === "magic"
-      ? "import torch, torchvision, transformers\n    from transformers import AutoModelForMultimodalLM, AutoProcessor\n    if int(transformers.__version__.split('.')[0]) < 5:\n        fail('PACKAGE_IMPORT', 'Magic requires transformers 5 or later')"
-      : cpu
+    kind === "voice"
+      ? cpu
         ? "import numpy, sherpa_onnx, soundfile, soxr, huggingface_hub"
-        : metal
-          ? "import mlx.core as mx\n    from mlx_audio.stt.utils import load_model, load_audio"
-          : "import torch, soundfile, soxr, librosa\n    from transformers import Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor";
+        : "import numpy, sherpa_onnx, soundfile, soxr, huggingface_hub, torch, torchaudio, librosa\n    from chatterbox.tts_turbo import ChatterboxTurboTTS"
+      : kind === "magic"
+        ? "import torch, torchvision, transformers\n    from transformers import AutoModelForMultimodalLM, AutoProcessor\n    if int(transformers.__version__.split('.')[0]) < 5:\n        fail('PACKAGE_IMPORT', 'Magic requires transformers 5 or later')"
+        : cpu
+          ? "import numpy, sherpa_onnx, soundfile, soxr, huggingface_hub"
+          : metal
+            ? "import mlx.core as mx\n    from mlx_audio.stt.utils import load_model, load_audio"
+            : "import torch, soundfile, soxr, librosa\n    from transformers import Qwen3ASRConfig, Qwen3ASRForConditionalGeneration, Qwen3ASRProcessor, Qwen3ASRFeatureExtractor";
   const hardware =
     kind !== "speech" || cpu
       ? ""

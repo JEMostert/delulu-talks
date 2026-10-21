@@ -9,6 +9,7 @@
   <p>
     <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><strong>Download the latest release</strong></a> ·
     <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+    <a href="docs/VOICE.md">Voice</a> ·
     <a href="https://github.com/JEMostert/delulu-talks/issues/14">GitHub roadmap</a> ·
     <a href="docs/MODEL_RESEARCH.md">Model research</a> ·
     <a href="docs/MAC_SUPPORT.md">Mac support</a> ·
@@ -20,7 +21,7 @@
 
 Delulu Talks turns speech into text in the app you are using. You choose one of three local speech models when you first open it: **Small** (Canary 180M) and **Medium** (Parakeet 0.6B) run on any CPU, and **Large** (R2T2) uses an NVIDIA GPU or Apple Silicon for the best accuracy. Nothing is downloaded until you pick one. Speech is transcribed after you stop recording. Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
 
-[v0.16.0](docs/releases/v0.16.0.md) offers three speech model sizes you pick on first launch: Small and Medium run on any CPU on Linux, Windows and macOS, Large is R2T2. Parakeet Redux is removed. [v0.15.0](docs/releases/v0.15.0.md) replaces profiles with one-toggle word packs for programming and gaming, and makes adding your own words a single field. [v0.14.0](docs/releases/v0.14.0.md) lets R2T2 detect the spoken language and use your vocabulary as recognition hints. [v0.13.0](docs/releases/v0.13.0.md) makes Parakeet Redux a normal CPU engine on Linux, removes Nemotron and live typing, and drops several unused features. [v0.12.3](docs/releases/v0.12.3.md) fixes KDE clipboard timeouts after successful recognition and makes delivery failures clearer. [v0.12.2](docs/releases/v0.12.2.md) restores hardware compositing on Wayland and reduces background drawing while using workspaces. The [native rendering review](docs/performance-review-v0.12.2.md) records the diagnosis, measurements and verification limits. [v0.12.1](docs/releases/v0.12.1.md) fixed desktop streaming validation, bounded live-audio buffers and moved recording encoding off the interface thread.
+[v0.17.0](docs/releases/v0.17.0.md) adds Delulu Voice: local text-to-speech with Grok-style tags, and a lead coding agent that briefs you out loud. [v0.16.0](docs/releases/v0.16.0.md) offers three speech model sizes you pick on first launch: Small and Medium run on any CPU on Linux, Windows and macOS, Large is R2T2. Parakeet Redux is removed. [v0.15.0](docs/releases/v0.15.0.md) replaces profiles with one-toggle word packs for programming and gaming, and makes adding your own words a single field. [v0.14.0](docs/releases/v0.14.0.md) lets R2T2 detect the spoken language and use your vocabulary as recognition hints. [v0.13.0](docs/releases/v0.13.0.md) makes Parakeet Redux a normal CPU engine on Linux, removes Nemotron and live typing, and drops several unused features. [v0.12.3](docs/releases/v0.12.3.md) fixes KDE clipboard timeouts after successful recognition and makes delivery failures clearer. [v0.12.2](docs/releases/v0.12.2.md) restores hardware compositing on Wayland and reduces background drawing while using workspaces. The [native rendering review](docs/performance-review-v0.12.2.md) records the diagnosis, measurements and verification limits. [v0.12.1](docs/releases/v0.12.1.md) fixed desktop streaming validation, bounded live-audio buffers and moved recording encoding off the interface thread.
 
 ## Dictate, review, keep working
 
@@ -44,13 +45,20 @@ On supported Wayland desktops, a small pearl pill with wave bars stays above you
 
 ## What it brings
 
-| Feature                       | What it does                                                                                                                 |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **System dictation**          | Hold-to-talk by default, optional press-to-toggle, tray controls and desktop-owned shortcut remapping.                       |
-| **Optional rewriting**        | Optional local transformations with preview, apply and undo beside each transcript. Automatic rewriting is off by default.   |
-| **Native Wayland experience** | Uses XDG GlobalShortcuts, secure Remote Desktop paste, and a click-through layer-shell recording pill on supported desktops. |
-| **Audio files**               | Imports audio or video for local transcription.                                                                              |
-| **Local by design**           | Runs speech and writing models on your machine. There is no telemetry or cloud transcription.                                |
+| Feature                       | What it does                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **System dictation**          | Hold-to-talk by default, optional press-to-toggle, tray controls and desktop-owned shortcut remapping.                         |
+| **Optional rewriting**        | Optional local transformations with preview, apply and undo beside each transcript. Automatic rewriting is off by default.     |
+| **Native Wayland experience** | Uses XDG GlobalShortcuts, secure Remote Desktop paste, and a click-through layer-shell recording pill on supported desktops.   |
+| **Audio files**               | Imports audio or video for local transcription.                                                                                |
+| **Voice**                     | Speaks text aloud with a local voice: Kokoro on any CPU, or expressive Chatterbox Turbo on a GPU. Coding agents can brief you. |
+| **Local by design**           | Runs speech and writing models on your machine. There is no telemetry or cloud transcription.                                  |
+
+### Voice: your agent talks back
+
+Turn on **Speak out loud** on the Voice page and Delulu can talk as well as listen. Text goes in, speech comes out, with Grok-style tags: `[laugh]`, `[sigh]` and `[pause]` for one-off sounds, `<whisper>…</whisper>` and `<slow>…</slow>` for spans. **Small** is Kokoro 82M on any CPU; **Large** is Chatterbox Turbo on a GPU, which really laughs and whispers and can clone a voice from a short clip.
+
+Turn on **Let coding agents speak** to connect Claude Code, Codex or T3 Code through a local MCP server. You dictate to one lead agent as usual; it runs its own subagents and briefs you out loud, briefly, when work is done, blocked or needs a decision. Starting a dictation stops it talking so you can answer. The tray can also read the clipboard aloud. See [Delulu Voice](docs/VOICE.md).
 
 ### Corrections and text shortcuts
 
@@ -84,12 +92,12 @@ The **Deep Sea** design system has two themes — _Abyss_ (dark) and _Shallows_ 
 
 Speech stays ready by default. The optional writing model loads on demand; you can keep either model loaded or let it unload after a configurable idle period.
 
-| Size                   | Model                                      | Good for                                                                                                                                                  |
-| ---------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Small**              | NVIDIA Canary 180M Flash · CPU             | Older or low-memory computers. English, German, French and Spanish, with punctuation. About 200 MB.                                                        |
-| **Medium** (default)   | NVIDIA Parakeet TDT 0.6B v2 / v3 · CPU     | Fast, accurate dictation on any CPU. English uses v2; Automatic uses v3, which detects 25 European languages. About 630 MB.                               |
-| **Large**              | Confucius4-R2T2 · CUDA or MLX              | Most accurate. 30 languages, automatic detection and vocabulary hints. NVIDIA GPU with about 4 GB of memory (Linux, Windows) or Apple Silicon. About 4 GB. |
-| **Qwen 3.5 writing**   | 0.8B · 2B · 4B                             | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default.                                                   |
+| Size                 | Model                                  | Good for                                                                                                                                                   |
+| -------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Small**            | NVIDIA Canary 180M Flash · CPU         | Older or low-memory computers. English, German, French and Spanish, with punctuation. About 200 MB.                                                        |
+| **Medium** (default) | NVIDIA Parakeet TDT 0.6B v2 / v3 · CPU | Fast, accurate dictation on any CPU. English uses v2; Automatic uses v3, which detects 25 European languages. About 630 MB.                                |
+| **Large**            | Confucius4-R2T2 · CUDA or MLX          | Most accurate. 30 languages, automatic detection and vocabulary hints. NVIDIA GPU with about 4 GB of memory (Linux, Windows) or Apple Silicon. About 4 GB. |
+| **Qwen 3.5 writing** | 0.8B · 2B · 4B                         | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default.                                                   |
 
 Small and Medium run through [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with INT8 weights. Their runtime is about 140 MB and installs no PyTorch or GPU drivers; Large adds the PyTorch/CUDA or MLX runtime. Switching between Small and Medium, or down from Large, needs no new setup.
 

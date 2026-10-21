@@ -5,6 +5,7 @@ import type {
   ModelProvenance,
   SpeechTier,
 } from "./types";
+import { DEFAULT_KOKORO_VOICE } from "./voice";
 
 export const DEFAULT_SHORTCUT = "Super+Z";
 export const LEGACY_DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
@@ -73,6 +74,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customWords: [],
   wordPacks: [],
   vocabularyHints: true,
+  voiceEnabled: false,
+  voiceEngine: "kokoro",
+  voiceName: DEFAULT_KOKORO_VOICE,
+  voiceClone: "",
+  voiceSpeed: 1,
+  voiceVolume: 0.9,
+  voiceOutputDeviceId: "default",
+  voiceInterruptOnDictation: true,
+  voiceNormalizeText: true,
+  voiceKeepLoaded: false,
+  voiceAgentBridge: false,
 };
 
 export const MODELS: ModelInfo[] = [

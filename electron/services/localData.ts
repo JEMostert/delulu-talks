@@ -87,15 +87,15 @@ export async function localDataOverview(storage: {
       id: "models" as const,
       label: "Model cache",
       description:
-        "Downloaded R2T2 and optional Qwen 3.5 weights, download cache and converted checkpoints. Separate from Python runtimes.",
+        "Downloaded speech, optional Qwen 3.5 and voice weights, download cache and converted checkpoints. Separate from Python runtimes.",
       paths: ["models"],
     },
     {
       id: "runtimes" as const,
       label: "Runtimes",
       description:
-        "Speech, writing and preserved legacy Python environments. A legacy environment may still be used for writing; presence does not establish readiness.",
-      paths: ["speech-venv", "magic-venv", "asr-venv"],
+        "Speech, writing, voice and preserved legacy Python environments. A legacy environment may still be used for writing; presence does not establish readiness.",
+      paths: ["speech-venv", "magic-venv", "voice-venv", "asr-venv"],
     },
     {
       id: "audio" as const,

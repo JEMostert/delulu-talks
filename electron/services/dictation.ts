@@ -249,6 +249,9 @@ export class DictationService {
     }
   }
 
+  /** Called just before the microphone opens, e.g. to stop spoken output. */
+  beforeCapture: () => void = () => undefined;
+
   start(): void {
     const status = this.asr.getStatus();
     if (this.captureState !== "idle") {
@@ -309,6 +312,7 @@ export class DictationService {
       return;
     }
     const settings = structuredClone(this.settings());
+    this.beforeCapture();
     this.captureSettings = settings;
     this.captureSessionId = randomUUID();
     this.captureState = "opening";

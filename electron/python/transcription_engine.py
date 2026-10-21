@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Persistent JSON-lines worker for Delulu Talks local speech and writing models.
+"""Persistent JSON-lines worker for Delulu Talks local speech, writing and voice models.
 
 Speech uses Canary (Small) or Parakeet (Medium) through sherpa-onnx on the CPU, or
 R2T2 (Large: Confucius4-R2T2, a Qwen3-ASR fine-tune) through Transformers on CUDA or
 MLX Audio on Apple Silicon. Each recording is transcribed as one
-buffered clip. The desktop starts a dedicated process per runtime role, each accepting only its own model commands. Protocol messages are prefixed so library progress output can never be mistaken for a response by Electron.
+buffered clip. Spoken output (Kokoro or Chatterbox Turbo) runs in the voice role
+through voice_engine.py. The desktop starts a dedicated process per runtime role, each accepting only its own model commands. Protocol messages are prefixed so library progress output can never be mistaken for a response by Electron.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from typing import Any, TYPE_CHECKING
 
 from worker_protocol import correlation_id, emit_progress, isolate_protocol_output, operation_scope, protocol_stream, terminal_response, validate_request, validate_result
 from spoken_corrections import SpokenCorrectionError, apply_spoken_corrections
+from voice_engine import VoiceEngine, VoiceInputError
 
 if TYPE_CHECKING:
     from speech_engine import SpeechEngine
@@ -203,7 +205,7 @@ def bounded_error(exc: Exception) -> str:
     detail = str(exc).lower()
     if "out of memory" in detail or "memory allocation" in detail or isinstance(exc, MemoryError):
         return "Model out of memory. Unload the other model or select a smaller rewriting model."
-    if isinstance(exc, SpokenCorrectionError):
+    if isinstance(exc, (SpokenCorrectionError, VoiceInputError)):
         return str(exc)
     if isinstance(exc, (ModuleNotFoundError, ImportError)):
         return "Model dependency unavailable. Repair this runtime."
@@ -244,6 +246,32 @@ class Worker:
         self.magic_model_name: str | None = None
         self.magic_device: str | None = None
         self.magic_warmup = "not-started"
+        # Spoken output; created on first use so other roles never touch it.
+        self.voice: VoiceEngine | None = None
+
+    def voice_engine(self) -> VoiceEngine:
+        if self.voice is None:
+            self.voice = VoiceEngine()
+        return self.voice
+
+    def load_voice(self, request: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self.voice_engine().load(request)
+        except BaseException:
+            self.clear_allocator()
+            raise
+
+    def unload_voice(self) -> dict[str, Any]:
+        status = self.voice_engine().unload()
+        self.clear_allocator()
+        return status
+
+    def synthesize_voice(self, request: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self.voice_engine().synthesize(request)
+        except BaseException:
+            self.clear_allocator()
+            raise
 
     def speech_engine(self, model: str | None = None) -> SpeechEngine:
         """Return the adapter for the requested speech model, switching if needed."""
@@ -578,6 +606,7 @@ class Worker:
             allowed = {
                 "speech": {"capabilities", "load", "unload", "status", "transcribe", "shutdown"},
                 "magic": {"capabilities", "magicLoad", "magicStatus", "magicRewrite", "shutdown"},
+                "voice": {"voiceStatus", "voiceLoad", "voiceUnload", "voiceSynthesize", "shutdown"},
             }
             if role not in allowed or command not in allowed[role]:
                 raise ValueError(f"Command {command} is not allowed in the {role} runtime")
@@ -600,11 +629,21 @@ class Worker:
             return self.rewrite_magic(request)
         if command == "transcribe":
             return self.transcribe(request)
+        if command == "voiceStatus":
+            return self.voice_engine().status()
+        if command == "voiceLoad":
+            return self.load_voice(request)
+        if command == "voiceUnload":
+            return self.unload_voice()
+        if command == "voiceSynthesize":
+            return self.synthesize_voice(request)
         if command == "shutdown":
-            if role != "magic":
+            if role in (None, "", "speech"):
                 self.unload()
-            if role != "speech":
+            if role in (None, "", "magic"):
                 self.unload_magic()
+            if role in (None, "", "voice") and self.voice is not None:
+                self.unload_voice()
             return {"shutdown": True}
         raise ValueError(f"Unknown worker command: {command}")
 

@@ -23,6 +23,7 @@ import {
   speechModelForPlatform,
 } from "../runtime/platform";
 import { isWordPackId } from "../../src/wordPacks";
+import { isKokoroVoice, isVoiceEngineId } from "../../src/voice";
 import { supportedSpeechLanguage } from "../../src/speechCapabilities";
 import { normalizeAliases } from "../../src/personalization";
 import { historyFingerprint, savedRetentionPolicy } from "./historyRetention";
@@ -445,6 +446,52 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.vocabularyHints,
       DEFAULT_SETTINGS.vocabularyHints,
     ),
+    voiceEnabled: boolean(source.voiceEnabled, DEFAULT_SETTINGS.voiceEnabled),
+    voiceEngine: isVoiceEngineId(source.voiceEngine)
+      ? source.voiceEngine
+      : DEFAULT_SETTINGS.voiceEngine,
+    voiceName: isKokoroVoice(source.voiceName)
+      ? source.voiceName
+      : DEFAULT_SETTINGS.voiceName,
+    // Only a bare file name inside the references directory, never a path.
+    voiceClone:
+      typeof source.voiceClone === "string" &&
+      /^[a-z0-9-]{1,64}\.(wav|flac|mp3|ogg)$/.test(source.voiceClone)
+        ? source.voiceClone
+        : "",
+    voiceSpeed: boundedNumber(
+      source.voiceSpeed,
+      DEFAULT_SETTINGS.voiceSpeed,
+      0.5,
+      2,
+    ),
+    voiceVolume: boundedNumber(
+      source.voiceVolume,
+      DEFAULT_SETTINGS.voiceVolume,
+      0,
+      1,
+    ),
+    voiceOutputDeviceId: safeString(
+      source.voiceOutputDeviceId,
+      DEFAULT_SETTINGS.voiceOutputDeviceId,
+      512,
+    ),
+    voiceInterruptOnDictation: boolean(
+      source.voiceInterruptOnDictation,
+      DEFAULT_SETTINGS.voiceInterruptOnDictation,
+    ),
+    voiceNormalizeText: boolean(
+      source.voiceNormalizeText,
+      DEFAULT_SETTINGS.voiceNormalizeText,
+    ),
+    voiceKeepLoaded: boolean(
+      source.voiceKeepLoaded,
+      DEFAULT_SETTINGS.voiceKeepLoaded,
+    ),
+    voiceAgentBridge: boolean(
+      source.voiceAgentBridge,
+      DEFAULT_SETTINGS.voiceAgentBridge,
+    ),
   };
 }
 
@@ -616,6 +663,9 @@ export class StorageService {
   /** Dedicated speech environment. Kept as venvDirectory for API compatibility. */
   readonly venvDirectory: string;
   readonly magicVenvDirectory: string;
+  readonly voiceVenvDirectory: string;
+  /** Voice bridge file, MCP script and cloning reference clips. */
+  readonly voiceDirectory: string;
   readonly legacyVenvDirectory: string;
   readonly modelCacheDirectory: string;
   private settings: AppSettings;
@@ -644,6 +694,8 @@ export class StorageService {
       : existsSync(this.legacyVenvDirectory)
         ? this.legacyVenvDirectory
         : dedicatedMagicVenv;
+    this.voiceVenvDirectory = join(this.dataDirectory, "voice-venv");
+    this.voiceDirectory = join(this.dataDirectory, "voice");
     this.modelCacheDirectory = join(this.dataDirectory, "models");
     mkdirSync(this.dataDirectory, { recursive: true });
     mkdirSync(this.cacheDirectory, { recursive: true });

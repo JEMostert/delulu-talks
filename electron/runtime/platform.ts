@@ -21,3 +21,8 @@ export function largeSpeechSupported(
 export type SpeechRuntimeProfile = "cpu" | "full";
 export const speechRuntimeProfile = (tier: SpeechTier): SpeechRuntimeProfile =>
   tier === "large" ? "full" : "cpu";
+
+/** Kokoro needs only the CPU voice runtime; Chatterbox Turbo adds PyTorch. */
+export const voiceRuntimeProfile = (
+  engine: import("../../src/voice").VoiceEngineId,
+): SpeechRuntimeProfile => (engine === "chatterbox-turbo" ? "full" : "cpu");

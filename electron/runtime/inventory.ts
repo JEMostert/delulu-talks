@@ -38,15 +38,21 @@ print(json.dumps({
 }))
 `;
 
-export type RuntimeKind = "speech" | "magic";
+export type RuntimeKind = "speech" | "magic" | "voice";
 export type TargetPlatform = { platform: string; arch: string };
 export type InventoryBackend = {
-  engine: "mlx-audio" | "transformers" | "onnx-cpu";
+  engine: "mlx-audio" | "transformers" | "onnx-cpu" | "pytorch";
   // Selection policy, not an observed GPU capability or inference result.
   devicePreference: ("metal" | "cuda" | "mps" | "cpu")[];
 };
 export type RequestedInstallStage = {
-  name: "installer" | "windows-cuda" | "linux-cuda" | "runtime";
+  name:
+    | "installer"
+    | "windows-cuda"
+    | "linux-cuda"
+    | "runtime"
+    | "voice-torch"
+    | "voice-unpinned";
   requirements: string[];
   pipArguments: string[];
   constraint: { path: string; contents: string } | null;
@@ -93,6 +99,10 @@ export function inventoryBackend(
 ): InventoryBackend {
   if (kind === "magic")
     return { engine: "transformers", devicePreference: ["cuda", "mps", "cpu"] };
+  if (kind === "voice")
+    return profile === "cpu"
+      ? { engine: "onnx-cpu", devicePreference: ["cpu"] }
+      : { engine: "pytorch", devicePreference: ["cuda", "mps", "cpu"] };
   if (profile === "cpu")
     return { engine: "onnx-cpu", devicePreference: ["cpu"] };
   return metal

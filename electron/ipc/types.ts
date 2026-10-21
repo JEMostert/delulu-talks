@@ -48,4 +48,6 @@ export interface IpcDependencies {
   setPasteRecovery: (recovery: PasteRecovery | null) => void;
   broadcast: (channel: string, payload: unknown) => void;
   selectedAudioFiles: Set<string>;
+  voice: import("../services/voice").VoiceService;
+  voiceAgentSetup: () => import("../../src/voice").VoiceAgentSetup;
 }

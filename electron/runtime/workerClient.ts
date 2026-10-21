@@ -23,7 +23,9 @@ type Pending = {
 const PREFIX = "@delulu:";
 
 export function operationTimeout(command: string): number {
-  if (command === "load" || command === "magicLoad") return 30 * 60_000;
+  if (command === "load" || command === "magicLoad" || command === "voiceLoad")
+    return 30 * 60_000;
+  if (command === "voiceSynthesize") return 120_000;
   if (command === "transcribe") return 120_000;
   if (command === "magicRewrite") return 180_000;
   return 30_000;

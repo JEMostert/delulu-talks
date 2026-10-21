@@ -40,6 +40,38 @@ export const MAGIC_PACKAGES = [
   "sentencepiece==0.2.2",
   "pillow==12.3.0",
 ];
+// Voice (text-to-speech) has its own runtime. Kokoro (Small) needs only
+// sherpa-onnx on the CPU; Chatterbox Turbo (Large) adds PyTorch. torchaudio
+// stopped at 2.11, so the voice runtime pins torch 2.11 independently of the
+// speech and rewrite runtimes. Verified on Linux x64, CUDA 13, sm_120.
+export const VOICE_CPU_PACKAGES = [
+  "sherpa-onnx==1.13.8",
+  "soundfile==0.13.1",
+  "soxr==1.0.0",
+  "huggingface-hub==1.33.0",
+];
+export const VOICE_TORCH_PACKAGES = ["torch==2.11.0", "torchaudio==2.11.0"];
+export const VOICE_WINDOWS_TORCH_PACKAGES = [
+  "torch==2.11.0+cu130",
+  "torchaudio==2.11.0+cu130",
+];
+export const VOICE_GPU_PACKAGES = [
+  "transformers==5.15.0",
+  "safetensors==0.8.0",
+  "librosa==0.11.0",
+  "s3tokenizer==0.3.0",
+  "diffusers==0.29.0",
+  "conformer==0.3.2",
+  "resemble-perth==1.0.1",
+  "omegaconf==2.4.0",
+  "pyloudnorm==0.2.0",
+];
+// chatterbox-tts pins torch 2.6 (no Blackwell support), Gradio and other
+// demo dependencies. Install it without dependencies; the packages above are
+// what Turbo inference imports.
+export const VOICE_UNPINNED_PACKAGES = ["chatterbox-tts==0.1.7"];
+/** `pip check` lines starting with these are expected and accepted. */
+export const VOICE_PIP_CHECK_EXCEPTIONS = ["chatterbox-tts 0.1.7 "];
 // Small (Canary) and Medium (Parakeet) run on the CPU through sherpa-onnx, which
 // bundles ONNX Runtime. These are the whole speech runtime unless Large is
 // chosen; the R2T2 runtime includes them too, so switching down needs no setup.
