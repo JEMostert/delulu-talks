@@ -1,79 +1,61 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 
-// Run with Bun against the merged native build artifacts before publication.
-const directory = resolve(process.argv[2] ?? "artifacts");
+// Checks a draft GitHub release before publication: every platform package is
+// present, and the updater manifest points at signed assets of this release.
+// Usage: bun scripts/verify-release.mjs v0.1.0   (needs `gh` and GH_TOKEN)
+const tag = process.argv[2];
+assert.ok(tag, "Usage: verify-release.mjs <tag>");
 const { version } = JSON.parse(
   await readFile(new URL("../package.json", import.meta.url), "utf8"),
 );
-const prefix = `Delulu-Talks-${version}`;
-const required = [
-  `${prefix}-linux-x86_64.AppImage`,
-  `${prefix}-linux-x64.pacman`,
-  `${prefix}-linux-x64.tar.xz`,
-  `${prefix}-mac-arm64.dmg`,
-  `${prefix}-mac-arm64.zip`,
-  `${prefix}-mac-arm64.zip.blockmap`,
-  `${prefix}-win-x64.exe`,
-  `${prefix}-win-x64.exe.blockmap`,
-  `${prefix}-win-x64.zip`,
-];
-for (const name of required) {
-  const file = await stat(join(directory, name));
-  assert.ok(file.isFile() && file.size > 0, `Missing release asset: ${name}`);
-}
+assert.equal(tag, `v${version}`, "Tag does not match package.json version");
 
-for (const [metadata, installFile] of [
-  ["latest-linux.yml", `${prefix}-linux-x86_64.AppImage`],
-  ["latest-mac.yml", `${prefix}-mac-arm64.zip`],
-  ["latest.yml", `${prefix}-win-x64.exe`],
-]) {
-  const manifest = Bun.YAML.parse(
-    await readFile(join(directory, metadata), "utf8"),
-  );
-  assert.equal(manifest.version, version, `${metadata}: wrong version`);
+const gh = Bun.spawnSync(["gh", "release", "view", tag, "--json", "assets"]);
+assert.equal(gh.exitCode, 0, gh.stderr.toString());
+const assets = JSON.parse(gh.stdout.toString()).assets;
+const names = assets.map((asset) => asset.name);
+const find = (pattern, label) => {
+  const name = names.find((candidate) => pattern.test(candidate));
+  assert.ok(name, `Missing release asset: ${label}`);
+  const asset = assets.find((candidate) => candidate.name === name);
+  assert.ok(asset.size > 0, `Empty release asset: ${name}`);
+  return name;
+};
+
+const updaterTargets = {
+  "linux-x86_64": find(/_amd64\.AppImage$/, "Linux AppImage"),
+  "darwin-aarch64": find(/aarch64\.app\.tar\.gz$/, "macOS updater archive"),
+  "windows-x86_64": find(/_x64-setup\.exe$/, "Windows installer"),
+};
+find(/_amd64\.deb$/, "Linux deb");
+find(/\.x86_64\.rpm$/, "Linux rpm");
+find(/\.pkg\.tar\.zst$/, "Arch pacman package");
+find(/_aarch64\.dmg$/, "macOS dmg");
+for (const [target, name] of Object.entries(updaterTargets))
+  assert.ok(names.includes(`${name}.sig`), `${target}: missing signature`);
+
+const download = Bun.spawnSync([
+  "gh",
+  "release",
+  "download",
+  tag,
+  "--pattern",
+  "latest.json",
+  "--output",
+  "-",
+]);
+assert.equal(download.exitCode, 0, "Missing latest.json updater manifest");
+const manifest = JSON.parse(download.stdout.toString());
+assert.equal(manifest.version, version, "latest.json: wrong version");
+for (const [target, name] of Object.entries(updaterTargets)) {
+  const platform = manifest.platforms?.[target];
+  assert.ok(platform, `latest.json: missing ${target}`);
+  assert.ok(platform.signature?.length > 0, `latest.json: ${target} unsigned`);
   assert.ok(
-    Array.isArray(manifest.files) && manifest.files.length,
-    `${metadata}: missing files`,
-  );
-  assert.ok(
-    manifest.files.some((file) => file.url === installFile),
-    `${metadata}: missing installer`,
-  );
-  for (const file of manifest.files) {
-    assert.equal(
-      basename(file.url),
-      file.url,
-      `${metadata}: invalid asset path`,
-    );
-    const path = join(directory, file.url);
-    assert.equal(
-      (await stat(path)).size,
-      file.size,
-      `${file.url}: size mismatch`,
-    );
-    const hash = createHash("sha512");
-    for await (const chunk of createReadStream(path)) hash.update(chunk);
-    assert.equal(
-      hash.digest("base64"),
-      file.sha512,
-      `${file.url}: checksum mismatch`,
-    );
-  }
-  const primary = manifest.files.find((file) => file.url === manifest.path);
-  assert.ok(primary, `${metadata}: primary asset missing`);
-  assert.equal(
-    manifest.sha512,
-    primary.sha512,
-    `${metadata}: primary checksum mismatch`,
-  );
-  console.log(
-    `${metadata}: v${version}, installer and all file checksums verified`,
+    platform.url.endsWith(`/download/${tag}/${encodeURIComponent(name)}`) ||
+      platform.url.endsWith(`/download/${tag}/${name}`),
+    `latest.json: ${target} points at ${platform.url}, expected ${name}`,
   );
 }
-console.log(
-  `Release v${version}: all native packages and updater metadata are complete.`,
-);
+console.log(`Release ${tag} has ${names.length} assets and a valid updater manifest.`);

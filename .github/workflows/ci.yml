@@ -1,4 +1,4 @@
-name: Verify Electron app
+name: CI
 
 on:
   workflow_call:
@@ -6,43 +6,53 @@ on:
   push:
     branches: [main, master]
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  native-unit:
-    name: Unit tests (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  renderer:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - run: bun install --frozen-lockfile
+      - run: bun run format:check
+      - run: bun run typecheck
       - run: bun run test:unit
+      - run: bun run test:python
+      - run: python3 -m compileall -q backend/python backend/overlay
+      - run: bun run build:web
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run test:e2e
 
-  verify:
-    runs-on: ubuntu-latest
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Typecheck, test, and build
+      - uses: actions/checkout@v4
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
         run: |
-          bun run format:check
-          bun run test
-          bun run build
-
-      - name: Validate Python worker
-        run: python3 -m compileall -q backend/python
-
-      - name: Install browser test runtime
-        run: bunx playwright install --with-deps chromium
-
-      - name: Verify browser workflows
-        run: bun run test:e2e
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Create an empty frontend bundle
+        shell: bash
+        run: mkdir -p dist && echo '<!doctype html>' > dist/index.html
+      - name: Test
+        working-directory: src-tauri
+        run: cargo test --workspace --locked
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --workspace --locked --all-targets -- -D warnings

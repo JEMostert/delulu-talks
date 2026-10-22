@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Delulu Talks",
   "mainBinaryName": "delulu-talks",
-  "version": "0.1.0",
+  "version": "../package.json",
   "identifier": "com.joran.delulu-talks",
   "build": {
     "devUrl": "http://127.0.0.1:1420",
@@ -12,19 +12,113 @@
   },
   "app": {
     "windows": [],
+    "withGlobalTauri": false,
     "security": {
-      "csp": null
+      "csp": null,
+      "dangerousDisableAssetCspModification": false
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
+    "publisher": "JoranEMostert",
+    "copyright": "MIT License",
+    "category": "Productivity",
+    "shortDescription": "Private local dictation",
+    "longDescription": "Private, local-first system-wide dictation with CPU, CUDA and MLX speech models.",
+    "homepage": "https://github.com/JEMostert/delulu-talks",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "../backend/python/onnx_speech.py": "python/onnx_speech.py",
+      "../backend/python/voice_engine.py": "python/voice_engine.py",
+      "../backend/python/audio_input.py": "python/audio_input.py",
+      "../backend/python/spoken_corrections.py": "python/spoken_corrections.py",
+      "../backend/python/speech_engine.py": "python/speech_engine.py",
+      "../backend/python/verified_snapshot.py": "python/verified_snapshot.py",
+      "../backend/python/metal_speech.py": "python/metal_speech.py",
+      "../backend/python/r2t2_speech.py": "python/r2t2_speech.py",
+      "../backend/python/r2t2_checkpoint.py": "python/r2t2_checkpoint.py",
+      "../backend/python/cuda_preflight.py": "python/cuda_preflight.py",
+      "../backend/python/transcription_engine.py": "python/transcription_engine.py",
+      "../backend/python/worker_protocol.py": "python/worker_protocol.py",
+      "../backend/python/download_progress.py": "python/download_progress.py",
+      "../backend/python/constraints-linux-x64.txt": "python/constraints-linux-x64.txt",
+      "../docs/THIRD_PARTY_NOTICES.md": "python/THIRD_PARTY_NOTICES.md",
+      "../docs/licenses/transformers-Apache-2.0.txt": "python/licenses/transformers-Apache-2.0.txt",
+      "../backend/overlay/pill.py": "overlay/pill.py",
+      "../skills/delulu-voice/SKILL.md": "voice/skill/SKILL.md",
+      "../build/icon.png": "icon.png",
+      "../build/tray/tray-idle.png": "tray/tray-idle.png",
+      "../build/tray/tray-idle@2x.png": "tray/tray-idle@2x.png",
+      "../build/tray/tray-idle.ico": "tray/tray-idle.ico",
+      "../build/tray/tray-idleTemplate.png": "tray/tray-idleTemplate.png",
+      "../build/tray/tray-idleTemplate@2x.png": "tray/tray-idleTemplate@2x.png",
+      "../build/tray/tray-recording.png": "tray/tray-recording.png",
+      "../build/tray/tray-recording@2x.png": "tray/tray-recording@2x.png",
+      "../build/tray/tray-recording.ico": "tray/tray-recording.ico",
+      "../build/tray/tray-recordingTemplate.png": "tray/tray-recordingTemplate.png",
+      "../build/tray/tray-recordingTemplate@2x.png": "tray/tray-recordingTemplate@2x.png",
+      "../build/tray/tray-busy.png": "tray/tray-busy.png",
+      "../build/tray/tray-busy@2x.png": "tray/tray-busy@2x.png",
+      "../build/tray/tray-busy.ico": "tray/tray-busy.ico",
+      "../build/tray/tray-busyTemplate.png": "tray/tray-busyTemplate.png",
+      "../build/tray/tray-busyTemplate@2x.png": "tray/tray-busyTemplate@2x.png",
+      "../build/tray/tray-attention.png": "tray/tray-attention.png",
+      "../build/tray/tray-attention@2x.png": "tray/tray-attention@2x.png",
+      "../build/tray/tray-attention.ico": "tray/tray-attention.ico",
+      "../build/tray/tray-attentionTemplate.png": "tray/tray-attentionTemplate.png",
+      "../build/tray/tray-attentionTemplate@2x.png": "tray/tray-attentionTemplate@2x.png",
+      "../build/tray/tray-update.png": "tray/tray-update.png",
+      "../build/tray/tray-update@2x.png": "tray/tray-update@2x.png",
+      "../build/tray/tray-update.ico": "tray/tray-update.ico",
+      "../build/tray/tray-updateTemplate.png": "tray/tray-updateTemplate.png",
+      "../build/tray/tray-updateTemplate@2x.png": "tray/tray-updateTemplate@2x.png"
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "deb": {
+        "depends": [
+          "ffmpeg",
+          "python3",
+          "python3-venv"
+        ],
+        "desktopTemplate": "linux/delulu-talks.desktop"
+      },
+      "rpm": {
+        "depends": [
+          "(ffmpeg-free or ffmpeg)",
+          "python3"
+        ],
+        "desktopTemplate": "linux/delulu-talks.desktop"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "15.0",
+      "entitlements": "macos/entitlements.plist",
+      "hardenedRuntime": true
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcwRTFDOEYyM0JCNDk3MjkKUldRcGw3UTc4c2poY0NxWmFWRDdhamZ4QlIvMFZra0loc3hVaTZvMFVaOVl2NUZOM0swci9hb0YK",
+      "endpoints": [
+        "https://github.com/JEMostert/delulu-talks/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

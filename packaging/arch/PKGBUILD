@@ -1,0 +1,27 @@
+# Repackages the Tauri deb build for Arch-based distributions (CachyOS, EndeavourOS, …).
+# CI substitutes @VERSION@ and places the deb beside this file.
+pkgname=delulu-talks-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Private, local-first system-wide dictation with CPU, CUDA and MLX speech models"
+arch=('x86_64')
+url="https://github.com/JEMostert/delulu-talks"
+license=('MIT')
+provides=('delulu-talks')
+conflicts=('delulu-talks')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'ffmpeg' 'python')
+optdepends=(
+  'gtk4-layer-shell: recording overlay on Wayland'
+  'python-gobject: recording overlay on Wayland'
+  'python-cairo: recording overlay on Wayland'
+  'xdotool: automatic paste on X11'
+)
+options=('!strip' '!debug')
+
+package() {
+  local deb
+  deb="$(find "$startdir" -maxdepth 1 -name '*.deb' | head -n1)"
+  [ -n "$deb" ] || { echo "No .deb next to PKGBUILD" >&2; return 1; }
+  bsdtar -xOf "$deb" 'data.tar.*' | bsdtar -xpf - -C "$pkgdir"
+  chmod -R u=rwX,go=rX "$pkgdir/usr"
+}

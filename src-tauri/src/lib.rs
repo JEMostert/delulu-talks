@@ -1,58 +1,51 @@
+mod ipc;
+mod state;
 #[cfg(target_os = "linux")]
 mod webview_linux;
 
-use tauri::webview::{PermissionKind, PermissionResponse};
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use std::sync::Arc;
 
-#[tauri::command]
-fn probe_report(report: serde_json::Value) {
-    println!("PROBE {}", report);
+use delulu_core::{AppPaths, DomainResult};
+use serde_json::Value;
+use tauri::webview::PermissionResponse;
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+use crate::ipc::{Router, MAIN_WINDOW};
+use crate::state::AppState;
+
+/// Placeholder until `delulu_domain::parse_ipc_request` lands.
+fn validate(_channel: &str, args: Vec<Value>) -> DomainResult<Vec<Value>> {
+    Ok(args)
 }
 
-#[tauri::command]
-fn probe_binary(request: tauri::ipc::Request) -> tauri::ipc::Response {
-    let bytes = match request.body() {
-        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
-        tauri::ipc::InvokeBody::Json(_) => Vec::new(),
-    };
-    println!("PROBE binary-received {}", bytes.len());
-    tauri::ipc::Response::new(bytes)
-}
-
-#[tauri::command]
-fn probe_done(app: tauri::AppHandle) {
-    app.exit(0);
+fn resources_dir(app: &tauri::App, packaged: bool) -> std::path::PathBuf {
+    if packaged {
+        app.path().resource_dir().unwrap_or_default()
+    } else {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
+    }
 }
 
 pub fn run() {
     tauri::Builder::default()
-        .on_permission_request(|_, kind| {
-            println!("PROBE permission-request {:?}", kind);
-            match kind {
-                PermissionKind::Microphone => PermissionResponse::Allow,
-                _ => PermissionResponse::Deny,
-            }
-        })
+        .on_permission_request(|_, _| PermissionResponse::Deny)
         .setup(|app| {
-            let window = WebviewWindowBuilder::new(
-                app,
-                "main",
-                WebviewUrl::External("about:blank".parse().unwrap()),
-            )
-            .title("Delulu Talks")
-            .inner_size(1100.0, 760.0)
-            .build()?;
+            let packaged = !cfg!(debug_assertions);
+            let paths = AppPaths::resolve(packaged, resources_dir(app, packaged));
+            let router = Router::new(validate);
+            app.manage(Arc::new(AppState { paths, router: Arc::new(router) }));
+
+            let window = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::App("index.html".into()))
+                .title("Delulu Talks")
+                .inner_size(1100.0, 760.0)
+                .min_inner_size(720.0, 520.0)
+                .build()?;
             #[cfg(target_os = "linux")]
             window.with_webview(|webview| webview_linux::configure(&webview.inner()))?;
-            let url = if cfg!(debug_assertions) {
-                "http://127.0.0.1:1420/spike-gum.html".parse().unwrap()
-            } else {
-                "tauri://localhost/spike-gum.html".parse().unwrap()
-            };
-            window.navigate(url)?;
+            let _ = window;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![probe_report, probe_binary, probe_done])
+        .invoke_handler(tauri::generate_handler![ipc::ipc_invoke, ipc::ipc_send, ipc::ipc_bytes])
         .run(tauri::generate_context!())
         .expect("error while running Delulu Talks");
 }

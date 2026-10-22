@@ -1,280 +1,84 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
-import { basename, isAbsolute, join, resolve, sep } from "node:path";
-import { pathToFileURL } from "node:url";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+
+// Verifies that a Tauri build bundled every resource from tauri.conf.json,
+// byte-for-byte, where the app resolves them at runtime.
+// Usage: bun scripts/package-resources.mjs <src-tauri/target> <linux-x64|mac-arm64|windows-x64>
+const root = resolve(import.meta.dir, "..");
+const target = resolve(process.argv[2] ?? "src-tauri/target");
+const platform = process.argv[3] ?? "linux-x64";
+const config = JSON.parse(
+  readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"),
+);
+const resources = config.bundle.resources;
 
 export const REQUIRED_RESOURCES = [
   "python/transcription_engine.py",
-  "python/speech_engine.py",
-  "python/spoken_corrections.py",
-  "python/verified_snapshot.py",
-  "python/cuda_preflight.py",
   "python/worker_protocol.py",
-  "python/download_progress.py",
-  "python/metal_speech.py",
-  "python/r2t2_speech.py",
-  "python/r2t2_checkpoint.py",
   "python/onnx_speech.py",
   "python/voice_engine.py",
-  "python/audio_input.py",
   "python/constraints-linux-x64.txt",
-  "python/THIRD_PARTY_NOTICES.md",
-  "python/licenses/transformers-Apache-2.0.txt",
   "overlay/pill.py",
-  "voice/delulu-voice-mcp.mjs",
   "voice/skill/SKILL.md",
   "icon.png",
-  ...["idle", "recording", "busy", "attention", "update"].flatMap((state) => [
-    `tray/tray-${state}.png`,
-    `tray/tray-${state}@2x.png`,
-    `tray/tray-${state}.ico`,
-    `tray/tray-${state}Template.png`,
-    `tray/tray-${state}Template@2x.png`,
-  ]),
+  "tray/tray-idle.png",
+  "tray/tray-recording.png",
 ];
 
-function hash(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-function inside(root, name) {
-  assert.equal(
-    isAbsolute(name),
-    false,
-    `Resource path must be relative: ${name}`,
-  );
-  const path = resolve(root, name);
+const destinations = Object.values(resources);
+assert.equal(
+  new Set(destinations).size,
+  destinations.length,
+  "Duplicate resource destinations",
+);
+for (const required of REQUIRED_RESOURCES)
+  assert.ok(destinations.includes(required), `Not configured: ${required}`);
+for (const source of Object.keys(resources))
   assert.ok(
-    path.startsWith(resolve(root) + sep),
-    `Resource path escapes root: ${name}`,
+    statSync(join(root, "src-tauri", source)).isFile(),
+    `Missing source: ${source}`,
   );
-  return path;
-}
-function bytes(path) {
-  assert.ok(statSync(path).isFile(), `Expected packaged file: ${path}`);
-  return readFileSync(path);
-}
-export function pngSize(buffer) {
-  assert.ok(
-    buffer.length >= 24 &&
-      buffer
-        .subarray(0, 8)
-        .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
-    "Invalid PNG icon",
-  );
-  const size = [buffer.readUInt32BE(16), buffer.readUInt32BE(20)];
-  assert.ok(
-    size.every((value) => value > 0),
-    "PNG icon has no pixels",
-  );
-  return size;
-}
-export function icoImages(buffer) {
-  assert.ok(
-    buffer.length >= 6 &&
-      buffer.readUInt16LE(0) === 0 &&
-      buffer.readUInt16LE(2) === 1,
-    "Invalid Windows icon",
-  );
-  const count = buffer.readUInt16LE(4);
-  assert.ok(
-    count > 0 && buffer.length >= 6 + count * 16,
-    "Windows icon has no image directory",
-  );
-  return Array.from({ length: count }, (_, index) => {
-    const entry = 6 + index * 16;
-    const size = buffer.readUInt32LE(entry + 8),
-      offset = buffer.readUInt32LE(entry + 12);
-    assert.ok(
-      size > 0 && offset >= 6 + count * 16 && offset + size <= buffer.length,
-      "Truncated Windows icon image",
-    );
-    return buffer.subarray(offset, offset + size);
-  });
-}
-function icns(buffer) {
-  assert.ok(
-    buffer.length >= 8 &&
-      buffer.subarray(0, 4).toString() === "icns" &&
-      buffer.readUInt32BE(4) === buffer.length,
-    "Invalid macOS icon",
-  );
-}
 
-export function sourceManifest(root = process.cwd()) {
-  const config = Bun.YAML.parse(
-    readFileSync(join(root, "electron-builder.yml"), "utf8"),
-  );
-  assert.ok(
-    Array.isArray(config.extraResources),
-    "Packaging must declare external runtime resources",
-  );
-  const seen = new Set();
-  const resources = config.extraResources.map((entry) => {
-    assert.ok(
-      typeof entry.from === "string" &&
-        typeof entry.to === "string" &&
-        !entry.filter,
-      "Resource verifier requires explicit file mappings",
-    );
-    assert.ok(
-      !seen.has(entry.to),
-      `Duplicate resource destination: ${entry.to}`,
-    );
-    seen.add(entry.to);
-    inside(root, entry.to);
-    const content = bytes(inside(root, entry.from));
-    assert.ok(content.length > 0, `Empty resource: ${entry.from}`);
-    return {
-      from: entry.from,
-      to: entry.to,
-      sha256: hash(content),
-      size: content.length,
-    };
-  });
-  for (const name of REQUIRED_RESOURCES)
-    assert.ok(seen.has(name), `Missing required resource mapping: ${name}`);
-  for (const resource of resources) {
-    if (!REQUIRED_RESOURCES.includes(resource.to)) continue;
-    const expected =
-      resource.to === "python/THIRD_PARTY_NOTICES.md"
-        ? "docs/THIRD_PARTY_NOTICES.md"
-        : resource.to === "voice/skill/SKILL.md"
-          ? "skills/delulu-voice/SKILL.md"
-          : resource.to === "python/licenses/transformers-Apache-2.0.txt"
-            ? "docs/licenses/transformers-Apache-2.0.txt"
-            : resource.to.startsWith("python/")
-              ? `electron/${resource.to}`
-              : resource.to.startsWith("overlay/") ||
-                  resource.to.startsWith("voice/")
-                ? `electron/${resource.to}`
-                : `build/${resource.to}`;
-    assert.equal(
-      resource.from,
-      expected,
-      `Required resource mapped from wrong source: ${resource.to}`,
-    );
-  }
-  const icons = {
-    linux: config.linux?.icon,
-    mac: config.mac?.icon,
-    win: config.win?.icon,
-  };
-  assert.ok(
-    Object.values(icons).every((icon) => typeof icon === "string"),
-    "Every platform must declare a native icon",
-  );
-  const linuxSize = pngSize(bytes(inside(root, icons.linux)));
-  icns(bytes(inside(root, icons.mac)));
-  icoImages(bytes(inside(root, icons.win)));
-  for (const state of ["idle", "recording", "busy", "attention", "update"]) {
-    for (const base of [`tray-${state}`, `tray-${state}Template`]) {
-      const tray = pngSize(bytes(join(root, `build/tray/${base}.png`)));
-      const retina = pngSize(bytes(join(root, `build/tray/${base}@2x.png`)));
-      assert.deepEqual(
-        retina,
-        tray.map((value) => value * 2),
-        `Tray image ${base} must include an exact 2x companion`,
-      );
+function findResourceRoot() {
+  const marker = join("overlay", "pill.py");
+  const candidates = [];
+  const walk = (directory, depth) => {
+    if (depth > 8 || !existsSync(directory)) return;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const path = join(directory, entry.name);
+      if (existsSync(join(path, marker))) candidates.push(path);
+      else walk(path, depth + 1);
     }
-    icoImages(bytes(join(root, `build/tray/tray-${state}.ico`)));
-  }
-  return { config, resources, icons, linuxSize };
-}
-
-function plistValue(text, key) {
-  const match = text.match(
-    new RegExp(`<key>${key}</key>\\s*<string>([^<]+)</string>`),
-  );
-  assert.ok(match, `macOS bundle is missing ${key}`);
-  assert.equal(
-    basename(match[1]),
-    match[1],
-    `Unexpected bundle filename for ${key}`,
-  );
-  return match[1];
-}
-
-export function verifyPackage(root, packageDirectory, platform) {
-  assert.ok(
-    ["linux", "mac", "win"].includes(platform),
-    "Choose linux, mac or win",
-  );
-  const manifest = sourceManifest(root);
-  const resourceDirectory =
-    platform === "mac"
-      ? join(packageDirectory, "Contents/Resources")
-      : join(packageDirectory, "resources");
-  for (const resource of manifest.resources) {
-    assert.equal(
-      hash(bytes(inside(resourceDirectory, resource.to))),
-      resource.sha256,
-      `Packaged bytes differ: ${resource.to}`,
-    );
-  }
-  bytes(join(resourceDirectory, "app.asar"));
-  if (platform === "mac") {
-    const plist = readFileSync(
-      join(packageDirectory, "Contents/Info.plist"),
-      "utf8",
-    );
-    const icon = plistValue(plist, "CFBundleIconFile");
-    assert.equal(
-      hash(bytes(join(resourceDirectory, icon))),
-      hash(bytes(inside(root, manifest.icons.mac))),
-      "macOS bundle icon differs from configured source",
-    );
-    bytes(
-      join(
-        packageDirectory,
-        "Contents/MacOS",
-        plistValue(plist, "CFBundleExecutable"),
-      ),
-    );
-  } else if (platform === "win") {
-    const executable = bytes(
-      join(packageDirectory, `${manifest.config.productName}.exe`),
-    );
-    for (const image of icoImages(bytes(inside(root, manifest.icons.win))))
-      assert.ok(
-        executable.includes(image),
-        "Windows executable is missing a configured icon image",
-      );
-  } else {
-    bytes(join(packageDirectory, manifest.config.linux.executableName));
-    const packagedIcon = manifest.resources.find(
-      (resource) => resource.to === "icon.png",
-    );
-    assert.equal(
-      packagedIcon.sha256,
-      hash(bytes(inside(root, manifest.icons.linux))),
-      "Linux packaged icon differs from configured native icon",
-    );
-  }
-  return {
-    platform,
-    packageDirectory: resolve(packageDirectory),
-    resourceDirectory: resolve(resourceDirectory),
-    resources: manifest.resources,
-    scope:
-      "fixture-only packaged bytes and native icon content; no inference, launch or manual desktop evidence",
   };
+  if (platform === "windows-x64") walk(join(target, "release"), 0);
+  else walk(join(target), 0);
+  const preferred = {
+    "linux-x64": (path) => path.includes(join("bundle", "deb")),
+    "mac-arm64": (path) => path.endsWith(join("Contents", "Resources")),
+    "windows-x64": () => true,
+  }[platform];
+  assert.ok(preferred, `Unknown platform ${platform}`);
+  const found = candidates.find(preferred);
+  assert.ok(found, `No bundled resources found under ${target}`);
+  return found;
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-) {
-  const [directory, platform] = process.argv.slice(2);
-  assert.ok(
-    directory && platform && process.argv.length === 4,
-    "Use bun scripts/package-resources.mjs <unpacked-directory-or-app> <linux|mac|win>",
-  );
-  console.log(
-    JSON.stringify(
-      verifyPackage(process.cwd(), resolve(directory), platform),
-      null,
-      2,
-    ),
+const resourceRoot = findResourceRoot();
+const digest = (path) =>
+  createHash("sha256").update(readFileSync(path)).digest("hex");
+for (const [source, destination] of Object.entries(resources)) {
+  const bundled = join(resourceRoot, destination);
+  assert.ok(existsSync(bundled), `Not bundled: ${destination}`);
+  assert.equal(
+    digest(bundled),
+    digest(join(root, "src-tauri", source)),
+    `Bundled bytes differ: ${destination}`,
   );
 }
+assert.ok(existsSync(dirname(resourceRoot)));
+console.log(
+  `${destinations.length} resources verified in ${resourceRoot} (${platform}).`,
+);

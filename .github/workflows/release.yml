@@ -1,4 +1,4 @@
-name: Build Electron release
+name: Release
 
 on:
   push:
@@ -8,116 +8,114 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   verify:
     uses: ./.github/workflows/ci.yml
 
-  package:
+  build:
     needs: verify
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Ubuntu 22.04 keeps the glibc floor low enough for the AppImage and deb.
+          - os: ubuntu-22.04
             name: linux-x64
-            args: --linux AppImage pacman tar.xz --x64
-            package-dir: release/linux-unpacked
-            platform: linux
+            args: ""
           - os: macos-latest
             name: mac-arm64
-            args: --mac dmg zip --arm64
-            package-dir: release/mac-arm64/Delulu Talks.app
-            platform: mac
+            args: --target aarch64-apple-darwin
           - os: windows-latest
             name: windows-x64
-            args: --win nsis zip --x64
-            package-dir: release/win-unpacked
-            platform: win
+            args: ""
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install Linux packaging tools
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libarchive-tools libopenjp2-tools
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build application after verification
-        run: bun run build
-
-      - name: Verify tag matches package version
+      - uses: actions/checkout@v4
+      - name: Check the tag matches package.json
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
-        run: test "${GITHUB_REF_NAME}" = "v$(bun -p "require('./package.json').version")"
-
-      - name: Build native packages
-        run: bunx electron-builder ${{ matrix.args }} --publish never
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-
-      - name: Verify Apple Silicon package
-        if: runner.os == 'macOS'
+        run: test "${GITHUB_REF_NAME}" = "v$(node -p 'require("./package.json").version')"
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
         run: |
-          test -f "release/mac-arm64/Delulu Talks.app/Contents/Resources/python/metal_speech.py"
-          file "release/mac-arm64/Delulu Talks.app/Contents/MacOS/Delulu Talks" | grep arm64
-
-      - name: Verify packaged resources
-        run: bun scripts/package-resources.mjs "${{ matrix.package-dir }}" "${{ matrix.platform }}"
-
-      - name: Upload packages
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev patchelf rpm
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.name == 'mac-arm64' && 'aarch64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: bun install --frozen-lockfile
+      - name: Build and upload to a draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Delulu Talks ${{ github.ref_name }}
+          releaseBody: See the release notes in docs/releases.
+          releaseDraft: true
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
+      - name: Check bundled resources
+        shell: bash
+        run: bun scripts/package-resources.mjs src-tauri/target ${{ matrix.name }}
+      - name: Keep the Linux deb for the pacman package
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: delulu-talks-${{ matrix.name }}
-          path: |
-            release/*.AppImage
-            release/*.pacman
-            release/*.tar.xz
-            release/*.dmg
-            release/*.zip
-            release/*.exe
-            release/latest*.yml
-            release/*.blockmap
+          name: linux-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: package
+  pacman:
+    needs: build
     runs-on: ubuntu-latest
+    container: archlinux:base-devel
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Download packages
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: artifacts
-          pattern: delulu-talks-*
-          merge-multiple: true
-
-      - name: Verify complete release and updater checksums
-        run: bun scripts/verify-release.mjs artifacts
-
-      - name: Upload complete draft release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/*
-          generate_release_notes: true
-          body_path: docs/releases/${{ github.ref_name }}.md
-          name: Delulu Talks ${{ github.ref_name }}
-          draft: true
-          fail_on_unmatched_files: true
-
-      - name: Publish verified release
+          name: linux-deb
+          path: packaging/arch
+      - name: Build the pacman package from the deb
+        run: |
+          pacman -Syu --noconfirm --needed github-cli
+          useradd -m builder
+          version="${GITHUB_REF_NAME#v}"
+          sed -i "s/@VERSION@/${version}/" packaging/arch/PKGBUILD
+          chown -R builder packaging/arch
+          cd packaging/arch
+          sudo -u builder makepkg --nodeps --noconfirm
+      - name: Upload to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release edit "$RELEASE_TAG" --draft=false --latest
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          gh release upload "$GITHUB_REF_NAME" packaging/arch/*.pkg.tar.zst --clobber
+
+  publish:
+    needs: [build, pacman]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Verify release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun scripts/verify-release.mjs "$GITHUB_REF_NAME"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then gh release edit "$GITHUB_REF_NAME" --notes-file "$notes"; fi
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
