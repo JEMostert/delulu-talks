@@ -5,6 +5,8 @@
 // `DomainError` is the workspace's shared (frozen) error contract.
 #![allow(clippy::result_large_err)]
 
+#[cfg(target_os = "linux")]
+pub mod appimage;
 mod desktop_entry;
 mod dialogs;
 #[cfg(debug_assertions)]
@@ -64,6 +66,17 @@ pub fn cli_paths() -> AppPaths {
 pub fn prepare_environment() {
     #[cfg(target_os = "linux")]
     {
+        // NVIDIA's EGL turns on Wayland explicit sync for the window, then
+        // commits a frame without an acquire point: KWin ends the connection
+        // ("explicit sync is used, but no acquire point is set", Gdk Error 71)
+        // and WebKitGTK 2.54 never shows the window. Implicit sync renders at
+        // full speed.
+        if std::env::var_os("WAYLAND_DISPLAY").is_some()
+            && std::path::Path::new("/proc/driver/nvidia/version").exists()
+            && std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none()
+        {
+            std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+        }
         // Escape hatch for drivers that cannot composite this window.
         if std::env::var("DELULU_SOFTWARE_RENDERING").as_deref() == Ok("1") {
             std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
@@ -266,6 +279,8 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
 
 pub fn run() {
     logging::init();
+    #[cfg(target_os = "linux")]
+    appimage::use_host_webkit();
     prepare_environment();
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| second_instance(app, argv)))

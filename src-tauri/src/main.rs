@@ -10,6 +10,8 @@ fn main() {
             std::process::exit(delulu_voice::run_cli_with(args.collect(), &delulu_talks_lib::cli_paths()))
         }
         Some(delulu_talks_lib::restore_cli::SUBCOMMAND) => std::process::exit(delulu_talks_lib::restore_cli::run(args.collect())),
+        #[cfg(target_os = "linux")]
+        Some(delulu_talks_lib::appimage::VERSION_FLAG) => return delulu_talks_lib::appimage::print_webkit_version(),
         _ => {}
     }
     delulu_talks_lib::run()
