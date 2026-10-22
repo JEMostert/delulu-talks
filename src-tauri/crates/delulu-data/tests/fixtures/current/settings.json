@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "workflowVersion": 1,
+  "onboardingComplete": true,
+  "theme": "system",
+  "shortcut": "Super+Z",
+  "shortcutMode": "hold",
+  "model": "r2t2",
+  "language": "auto",
+  "dictationFormatting": "preserve",
+  "pythonCommand": "python3",
+  "inputDeviceId": "default",
+  "inputDeviceLabel": "System default",
+  "trailingSilenceStopEnabled": false,
+  "trailingSilenceSeconds": 7.5,
+  "trailingSilenceThresholdDb": -45,
+  "autoPaste": true,
+  "pasteShortcut": "standard",
+  "pasteLastDelaySeconds": 3,
+  "copyToClipboard": true,
+  "restoreClipboardAfterPaste": false,
+  "spokenFormattingCommands": false,
+  "pastePortalToken": "",
+  "keepHistory": true,
+  "historyRetention": {
+    "maxAgeDays": 30,
+    "maxCount": null
+  },
+  "showOverlay": true,
+  "captureSoundsMuted": true,
+  "speechEngine": "medium",
+  "historyLimit": 50,
+  "captureSoundVolume": 0.35,
+  "preloadModel": true,
+  "magicEnabled": false,
+  "magicModel": "qwen35Medium",
+  "magicPreset": "polish",
+  "magicAllowInferences": false,
+  "preloadMagicModel": false,
+  "modelIdleMinutes": 15,
+  "memoryPolicy": "independent",
+  "launchAtLogin": false,
+  "menuBarOnly": false,
+  "customWords": [
+    {
+      "id": "w1",
+      "term": "Delulu",
+      "soundsLike": "delulu",
+      "replacement": "",
+      "enabled": true,
+      "aliases": [
+        "de lulu"
+      ],
+      "schemaVersion": 1,
+      "kind": "correction"
+    },
+    {
+      "id": "w2",
+      "kind": "shortcut",
+      "term": "sig",
+      "language": "nl",
+      "soundsLike": "",
+      "replacement": "\tGroet,\r\n  Boran  ",
+      "enabled": true,
+      "schemaVersion": 1
+    }
+  ],
+  "wordPacks": [
+    "programming"
+  ],
+  "vocabularyHints": true,
+  "voiceEnabled": false,
+  "voiceEngine": "kokoro",
+  "voiceName": "af_heart",
+  "voiceClone": "",
+  "voiceSpeed": 1,
+  "voiceVolume": 0.9,
+  "voiceOutputDeviceId": "default",
+  "voiceInterruptOnDictation": true,
+  "voiceNormalizeText": true,
+  "voiceKeepLoaded": false,
+  "voiceAgentBridge": false,
+  "listenSensitivity": 0.5,
+  "listenSilenceMs": 900,
+  "listenBargeIn": true,
+  "listenBargeInMs": 300,
+  "pluginSetting": {
+    "nested": [
+      1,
+      2.5,
+      "x"
+    ]
+  }
+}
