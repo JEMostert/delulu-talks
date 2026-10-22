@@ -1,0 +1,39 @@
+[package]
+name = "delulu-desktop"
+description = "Paste, clipboard, global shortcuts, overlay supervisor, tray host, autostart and permissions for Delulu Talks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+delulu-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+tokio.workspace = true
+which.workspace = true
+dirs.workspace = true
+async-trait = "0.1"
+futures-util = "0.3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Wayland portals (RemoteDesktop keyboard, GlobalShortcuts). `screencast` is
+# required by ashpd's remote_desktop module.
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "global_shortcuts", "remote_desktop", "screencast"] }
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+# data-control (KDE, wlroots) first, X11/Xwayland otherwise (GNOME/Mutter).
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+arboard = { version = "3", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
