@@ -89,8 +89,7 @@ const PREVIEW_SPEAKERS: MicrophoneDevice[] = [
 ];
 
 // Preview voice: no audio plays in the browser; status changes are simulated.
-const PREVIEW_SCRIPT =
-  "/home/you/.config/delulu-talks/voice/delulu-voice-mcp.mjs (preview path)";
+const PREVIEW_APP = "/usr/bin/delulu-talks";
 let voiceStatus: VoiceStatus = {
   engine: "ready",
   phase: "idle",
@@ -346,21 +345,21 @@ export const previewApi: DeluluApi = {
   },
   async getVoiceAgentSetup() {
     return {
-      scriptPath: PREVIEW_SCRIPT,
-      command: ["node", PREVIEW_SCRIPT],
-      nodeFound: true,
-      claudeCode: `claude mcp add --scope user delulu-voice -- node ${PREVIEW_SCRIPT}`,
-      codex: `codex mcp add delulu-voice -- node ${PREVIEW_SCRIPT}`,
+      scriptPath: PREVIEW_APP,
+      command: [PREVIEW_APP, "mcp"],
+      nodeFound: false,
+      claudeCode: `claude mcp add --scope user delulu-voice -- ${PREVIEW_APP} mcp`,
+      codex: `codex mcp add delulu-voice -- ${PREVIEW_APP} mcp`,
       json: JSON.stringify(
         {
           mcpServers: {
-            "delulu-voice": { command: "node", args: [PREVIEW_SCRIPT] },
+            "delulu-voice": { command: PREVIEW_APP, args: ["mcp"] },
           },
         },
         null,
         2,
       ),
-      shell: `node ${PREVIEW_SCRIPT} say "Done, all tests pass."`,
+      shell: `${PREVIEW_APP} mcp say "Done, all tests pass."`,
       instructions: VOICE_AGENT_INSTRUCTIONS,
     };
   },

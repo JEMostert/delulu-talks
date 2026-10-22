@@ -340,10 +340,11 @@ export type VoicePlaybackEvent = {
 
 /** Copyable setup for coding agents; paths are resolved on this machine. */
 export type VoiceAgentSetup = {
-  /** Dependency-free MCP server and CLI, installed beside the bridge file. */
+  /** The Delulu Talks executable, which serves MCP and the CLI via `mcp`. */
   scriptPath: string;
-  /** How to run the script: Node if found, otherwise Electron as Node. */
+  /** How to run the server: the app executable followed by `mcp`. */
   command: string[];
+  /** Kept for the wire shape; always false since no Node runtime is used. */
   nodeFound: boolean;
   claudeCode: string;
   codex: string;

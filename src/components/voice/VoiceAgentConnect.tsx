@@ -128,12 +128,10 @@ export function VoiceAgentConnect({
                     <Copy /> Copy
                   </button>
                 </div>
-                {!setup.nodeFound && (
-                  <p className="caption voice-snippet-note">
-                    Node.js wasn't found, so these commands run Delulu Talks
-                    itself as Node.
-                  </p>
-                )}
+                <p className="caption voice-snippet-note">
+                  These commands run the Delulu Talks app itself with mcp, so no
+                  extra runtime is needed.
+                </p>
                 <p className="caption voice-snippet-note">
                   T3 Code uses the Claude Code or Codex configuration of the
                   provider it runs, so add it there.

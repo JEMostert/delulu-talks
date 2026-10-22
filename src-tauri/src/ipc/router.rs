@@ -25,6 +25,7 @@ type SendHandler<C> = Arc<dyn Fn(Arc<C>, Args) + Send + Sync>;
 /// Validated positional arguments.
 pub struct Args(Vec<Value>);
 
+#[allow(dead_code)] // `new`, `len` and `is_empty` round out the API.
 impl Args {
     pub fn new(values: Vec<Value>) -> Self {
         Self(values)
@@ -90,7 +91,9 @@ impl<C: Send + Sync + 'static> Router<C> {
         self
     }
 
-    /// Registers a fire-and-forget channel.
+    /// Registers a fire-and-forget channel. None remain since capture moved
+    /// to Rust (`FIRE_AND_FORGET_CHANNELS` is empty).
+    #[allow(dead_code)]
     pub fn on<F>(&mut self, channel: &'static str, handler: F) -> &mut Self
     where
         F: Fn(Arc<C>, Args) + Send + Sync + 'static,
@@ -145,6 +148,7 @@ impl<C: Send + Sync + 'static> Router<C> {
         }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn channels(&self) -> impl Iterator<Item = &&'static str> {
         self.invoke.keys().chain(self.bytes.keys()).chain(self.send.keys())
     }
