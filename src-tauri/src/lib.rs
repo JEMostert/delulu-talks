@@ -1,3 +1,4 @@
+mod events;
 mod ipc;
 mod state;
 #[cfg(target_os = "linux")]
@@ -5,18 +6,12 @@ mod webview_linux;
 
 use std::sync::Arc;
 
-use delulu_core::{AppPaths, DomainResult};
-use serde_json::Value;
+use delulu_core::AppPaths;
 use tauri::webview::PermissionResponse;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 use crate::ipc::{Router, MAIN_WINDOW};
 use crate::state::AppState;
-
-/// Placeholder until `delulu_domain::parse_ipc_request` lands.
-fn validate(_channel: &str, args: Vec<Value>) -> DomainResult<Vec<Value>> {
-    Ok(args)
-}
 
 fn resources_dir(app: &tauri::App, packaged: bool) -> std::path::PathBuf {
     if packaged {
@@ -28,11 +23,24 @@ fn resources_dir(app: &tauri::App, packaged: bool) -> std::path::PathBuf {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .on_permission_request(|_, _| PermissionResponse::Deny)
         .setup(|app| {
             let packaged = !cfg!(debug_assertions);
             let paths = AppPaths::resolve(packaged, resources_dir(app, packaged));
-            let router = Router::new(validate);
+            let router = Router::new(delulu_domain::parse_ipc_request);
             app.manage(Arc::new(AppState { paths, router: Arc::new(router) }));
 
             let window = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::App("index.html".into()))
