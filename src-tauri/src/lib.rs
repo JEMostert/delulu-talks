@@ -7,7 +7,10 @@
 
 mod desktop_entry;
 mod dialogs;
+#[cfg(debug_assertions)]
+mod dev_script;
 mod events;
+pub mod restore_cli;
 mod handlers;
 mod ipc;
 mod lab;
@@ -123,6 +126,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     };
     let state = built.state;
     app.manage(Arc::clone(&state));
+    #[cfg(debug_assertions)]
+    dev_script::spawn(Arc::clone(&state));
 
     if built.audio_recovery.failure_count > 0 {
         let detail = format!(

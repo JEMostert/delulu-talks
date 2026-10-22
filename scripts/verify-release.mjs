@@ -58,4 +58,6 @@ for (const [target, name] of Object.entries(updaterTargets)) {
     `latest.json: ${target} points at ${platform.url}, expected ${name}`,
   );
 }
-console.log(`Release ${tag} has ${names.length} assets and a valid updater manifest.`);
+console.log(
+  `Release ${tag} has ${names.length} assets and a valid updater manifest.`,
+);
