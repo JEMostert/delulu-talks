@@ -22,7 +22,8 @@ src-tauri/                  app crate: Tauri setup, IPC router, windows, tray, m
   crates/delulu-audio       native capture, resampling, WAV, trailing silence, cues, VAD, playback
   crates/delulu-desktop     paste, clipboard, global shortcuts (portal), overlay supervisor, tray host, autostart, permissions
   crates/delulu-data        storage (settings/history), migrations, backups, retention, exports, caches   (wave 2)
-  crates/delulu-services    asr, dictation, voice, listening, voice bridge, imports, paste-last, updates   (wave 2)
+  crates/delulu-speech      asr + magic lifecycle, dictation pipeline, paste-last, import queue runner   (wave 2)
+  crates/delulu-voice       voice output, listening sessions, agent bridge, MCP server   (wave 2)
 backend/python, backend/overlay   unchanged worker and overlay scripts
 ```
 
@@ -75,13 +76,13 @@ Unchanged in shape: everything else, including `onStatus` (now also carries reco
 
 - [x] Phase 0 probe (WebKitGTK capabilities, native capture spike)
 - [x] Workspace + `delulu-core`
-- [ ] `delulu-domain`
-- [ ] `delulu-runtime`
-- [ ] `delulu-audio`
-- [ ] `delulu-desktop`
-- [ ] Renderer bridge (`src/desktopBridge.ts`) and removal of renderer capture/playback
+- [x] `delulu-domain`
+- [x] `delulu-runtime`
+- [x] `delulu-audio`
+- [x] `delulu-desktop`
+- [x] Renderer bridge (`src/desktopBridge.ts`) and removal of renderer capture/playback
 - [ ] `delulu-data`
-- [ ] `delulu-services`
+- [ ] `delulu-speech`, `delulu-voice`
 - [ ] App crate: router, handlers, tray, windows, plugins, MCP subcommand
 - [ ] Packaging + CI (AppImage, rpm, deb, pacman, dmg, NSIS, updater signing)
 - [ ] Docs, cleanup (remove `electron/`, electron-builder, Electron deps), release reset, v0.1.0

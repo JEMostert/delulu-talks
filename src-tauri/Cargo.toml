@@ -15,7 +15,8 @@ delulu-runtime = { path = "crates/delulu-runtime" }
 delulu-audio = { path = "crates/delulu-audio" }
 delulu-desktop = { path = "crates/delulu-desktop" }
 delulu-data = { path = "crates/delulu-data" }
-delulu-services = { path = "crates/delulu-services" }
+delulu-speech = { path = "crates/delulu-speech" }
+delulu-voice = { path = "crates/delulu-voice" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
