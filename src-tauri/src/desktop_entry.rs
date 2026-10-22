@@ -1,9 +1,11 @@
-//! Development desktop entry (Linux). xdg-desktop-portal accepts the
-//! GlobalShortcuts `Registry.Register("delulu-talks")` call only when a
-//! `delulu-talks.desktop` file is installed, so development builds write one
-//! pointing at the current executable (`ensureDevelopmentDesktopEntry`).
-//! An existing entry anywhere on the XDG data path is never touched: a
-//! user-local file would shadow an installed package's entry.
+//! Desktop entry for builds that no package installs (Linux). xdg-desktop-portal
+//! accepts the GlobalShortcuts `Registry.Register("delulu-talks")` call only
+//! when a `delulu-talks.desktop` file is installed. The deb, rpm and pacman
+//! packages ship one; development builds and AppImages write a hidden one to
+//! `$XDG_DATA_HOME/applications` pointing at the current executable or
+//! `$APPIMAGE`. A package's entry is never shadowed, and a user-local entry is
+//! only rewritten when this app wrote it (`X-Delulu-Managed`) and the
+//! executable moved.
 
 use std::path::{Path, PathBuf};
 
@@ -30,39 +32,47 @@ fn quote(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+const MANAGED: &str = "X-Delulu-Managed=true";
+
 pub fn entry(executable: &Path, icon: &Path) -> String {
+    let name = if cfg!(debug_assertions) { "Delulu Talks Dev" } else { "Delulu Talks" };
     [
         "[Desktop Entry]".to_owned(),
         "Type=Application".to_owned(),
-        "Name=Delulu Talks Dev".to_owned(),
+        format!("Name={name}"),
         format!("Exec={}", quote(&executable.to_string_lossy())),
         format!("Icon={}", icon.display()),
         "Terminal=false".to_owned(),
         "NoDisplay=true".to_owned(),
         "Categories=AudioVideo;Utility;".to_owned(),
         "StartupWMClass=delulu-talks".to_owned(),
+        MANAGED.to_owned(),
         String::new(),
     ]
     .join("\n")
 }
 
 /// Writes `$XDG_DATA_HOME/applications/delulu-talks.desktop` for a
-/// development build when no entry of that name exists yet.
+/// development build or an AppImage when no package provides the entry.
 pub fn ensure_development_entry(icon: &Path) {
-    if !cfg!(target_os = "linux") || !cfg!(debug_assertions) {
+    let appimage = std::env::var_os("APPIMAGE").filter(|path| !path.is_empty()).map(PathBuf::from);
+    if !cfg!(target_os = "linux") || !(cfg!(debug_assertions) || appimage.is_some()) {
         return;
     }
+    let Some(executable) = appimage.or_else(|| std::env::current_exe().ok()) else { return };
     let target = data_home().join("applications").join(FILE);
-    let installed = std::iter::once(target.clone())
-        .chain(data_dirs().into_iter().map(|dir| dir.join("applications").join(FILE)))
-        .any(|path| path.exists());
-    if installed {
+    if data_dirs().into_iter().any(|dir| dir.join("applications").join(FILE).exists()) {
         return;
     }
-    let Ok(executable) = std::env::current_exe() else { return };
+    let content = entry(&executable, icon);
+    if let Ok(existing) = std::fs::read_to_string(&target) {
+        if !existing.contains(MANAGED) || existing == content {
+            return;
+        }
+    }
     let result = (|| -> std::io::Result<()> {
         std::fs::create_dir_all(target.parent().unwrap_or(Path::new(".")))?;
-        std::fs::write(&target, entry(&executable, icon))?;
+        std::fs::write(&target, &content)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -71,7 +81,7 @@ pub fn ensure_development_entry(icon: &Path) {
         Ok(())
     })();
     match result {
-        Ok(()) => log::info!("Wrote development desktop entry {}", target.display()),
+        Ok(()) => log::info!("Wrote desktop entry {}", target.display()),
         Err(error) => log::warn!("Could not write {}: {error}", target.display()),
     }
 }
