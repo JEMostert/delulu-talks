@@ -20,7 +20,7 @@ Platform-specific adapters and decoder contracts are maintained independently, w
 
 Mocked contracts and the static MLX weight audit do not establish native recognition quality, warmup, allocator release, memory minimum, or permission/paste behavior. Mac/Windows acceptance remains a hardware gate.
 
-Owners (since ADR 0006): [platform selection](../../src-tauri/crates/delulu-runtime/src/platform.rs), [catalog](../../src/data.ts) and [its Rust port](../../src-tauri/crates/delulu-domain/src/catalog.rs), [MLX adapter](../../backend/python/metal_speech.py), [CUDA adapter](../../backend/python/r2t2_speech.py), [Linux worker](../../backend/python/transcription_engine.py). The Nemotron adapter was removed in v0.13.0. See [model provenance](../model-provenance.md), [Mac support](../MAC_SUPPORT.md), and [Windows support](../WINDOWS_SUPPORT.md).
+Owners (since ADR 0006): [platform selection](../../src-tauri/crates/delulu-runtime/src/platform.rs), [catalog](../../src/data.ts) and [its Rust port](../../src-tauri/crates/delulu-domain/src/catalog.rs), [MLX adapter](../../backend/python/metal_speech.py), [CUDA adapter](../../backend/python/r2t2_speech.py), [Linux worker](../../backend/python/transcription_engine.py). The Nemotron adapter was removed in v0.13.0. See [model provenance](../model-provenance.md), [Mac support](../MAC_SUPPORT.md), and Windows support (dropped in v0.1.0).
 
 ## Amendment (v0.12.0)
 

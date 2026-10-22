@@ -30,4 +30,4 @@ source IDs and Windows conversion-cache generation with actual Python adapter
 constants; browser tests verify links and changing rewrite selection. These
 checks establish metadata consistency and renderer behavior. Native Mac and
 Windows inference gates remain open; see [Mac support](MAC_SUPPORT.md),
-[Windows support](WINDOWS_SUPPORT.md), and [model research](MODEL_RESEARCH.md).
+Windows support (dropped in v0.1.0), and [model research](MODEL_RESEARCH.md).

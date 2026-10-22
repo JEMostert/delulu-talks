@@ -3,7 +3,7 @@
   <p><strong>Native clean dictation. Personal corrections. Optional local rewriting.</strong></p>
   <p>
     <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><img src="https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&amp;label=release&amp;color=16b3e8&amp;labelColor=0a2942" alt="Latest release" /></a>
-    <img src="https://img.shields.io/badge/Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-Desktop-16b3e8?style=for-the-badge&amp;labelColor=0a2942" alt="Linux, Windows, and macOS" />
+    <img src="https://img.shields.io/badge/Linux%20%C2%B7%20macOS-Desktop-16b3e8?style=for-the-badge&amp;labelColor=0a2942" alt="Linux and macOS" />
     <img src="https://img.shields.io/badge/AI-local--first-16b3e8?style=for-the-badge&amp;labelColor=0a2942" alt="Local-first AI" />
   </p>
   <p>
@@ -12,8 +12,7 @@
     <a href="docs/VOICE.md">Voice</a> ·
     <a href="https://github.com/JEMostert/delulu-talks/issues/14">GitHub roadmap</a> ·
     <a href="docs/MODEL_RESEARCH.md">Model research</a> ·
-    <a href="docs/MAC_SUPPORT.md">Mac support</a> ·
-    <a href="docs/WINDOWS_SUPPORT.md">Windows support</a>
+    <a href="docs/MAC_SUPPORT.md">Mac support</a>
   </p>
 </div>
 
@@ -96,7 +95,7 @@ Speech stays ready by default. The optional writing model loads on demand; you c
 | -------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Small**            | NVIDIA Canary 180M Flash · CPU         | Older or low-memory computers. English, German, French and Spanish, with punctuation. About 200 MB.                                                        |
 | **Medium** (default) | NVIDIA Parakeet TDT 0.6B v2 / v3 · CPU | Fast, accurate dictation on any CPU. English uses v2; Automatic uses v3, which detects 25 European languages. About 630 MB.                                |
-| **Large**            | Confucius4-R2T2 · CUDA or MLX          | Most accurate. 30 languages, automatic detection and vocabulary hints. NVIDIA GPU with about 4 GB of memory (Linux, Windows) or Apple Silicon. About 4 GB. |
+| **Large**            | Confucius4-R2T2 · CUDA or MLX          | Most accurate. 30 languages, automatic detection and vocabulary hints. NVIDIA GPU with about 4 GB of memory (Linux) or Apple Silicon. About 4 GB. |
 | **Qwen 3.5 writing** | 0.8B · 2B · 4B                         | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default.                                                   |
 
 Small and Medium run through [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with INT8 weights. Their runtime is about 140 MB and installs no PyTorch or GPU drivers; Large adds the PyTorch/CUDA or MLX runtime. Switching between Small and Medium, or down from Large, needs no new setup.
@@ -105,7 +104,7 @@ On Apple Silicon with macOS 15+, Delulu selects the approximately 4.1 GB [R2T2 B
 
 **The new R2T2 Mac route is implemented but has not passed native Apple Silicon inference validation in this development pass.** See [Mac support, evidence boundaries and acceptance steps](docs/MAC_SUPPORT.md#native-release-acceptance). The [historical v0.9.4 validation](docs/mac-release-validation.md) applies to Qwen3-ASR-0.6B through vLLM Metal, not the current direct R2T2 MLX Audio route. On Mac, capture completes before transcription and paste.
 
-Linux and Windows share one PyTorch/Transformers speech runtime; v0.12.0 removed the earlier Linux vLLM server, which reserved most of the GPU's memory. Existing Linux installations need **Update setup** once. **Native Windows inference still requires hardware validation.** See [Windows support](docs/WINDOWS_SUPPORT.md). Intel Macs and Rosetta Python are unsupported. [Model research](docs/MODEL_RESEARCH.md) keeps other models as external benchmark references. Optional Qwen 3.5 rewriting remains available.
+On Linux, Large runs through PyTorch/Transformers on CUDA; v0.12.0 removed the earlier vLLM server, which reserved most of the GPU's memory. Windows is not supported. Intel Macs and Rosetta Python are unsupported. [Model research](docs/MODEL_RESEARCH.md) keeps other models as external benchmark references. Optional Qwen 3.5 rewriting remains available.
 
 ## Install
 
@@ -120,7 +119,7 @@ Download the package for your platform from [GitHub Releases](https://github.com
 | Debian, Ubuntu | deb | `sudo apt install ./Delulu*_amd64.deb` | New deb from Releases |
 | CachyOS, Arch, EndeavourOS | pacman `delulu-talks-bin` | `sudo pacman -U delulu-talks-bin-*-x86_64.pkg.tar.zst` | New package from Releases |
 
-The rpm, deb and pacman packages pull in FFmpeg and Python and install `delulu-talks.desktop`, the desktop entry the Wayland shortcut portal identifies the app by. With the AppImage, install FFmpeg and Python yourself; the AppImage does not install that entry, and KDE's portal needs it to store the shortcut, so on KDE prefer a package (or add a `delulu-talks.desktop` that runs the AppImage to `~/.local/share/applications`). The recording pill needs gtk4-layer-shell and PyGObject with cairo:
+The rpm, deb and pacman packages pull in FFmpeg and Python and install `delulu-talks.desktop`, the desktop entry the Wayland shortcut portal identifies the app by. With the AppImage, install FFmpeg and Python yourself; on first start the AppImage writes a hidden `delulu-talks.desktop` to `~/.local/share/applications` so the portal recognizes it. The recording pill needs gtk4-layer-shell and PyGObject with cairo:
 
 ```bash
 sudo pacman -S gtk4-layer-shell python-gobject python-cairo        # CachyOS, Arch
@@ -129,13 +128,13 @@ sudo dnf install gtk4-layer-shell python3-gobject python3-cairo    # Fedora
 
 GNOME has no layer-shell, so the pill is not available there; the main window and tray show recording state instead.
 
-### Windows and macOS
+### macOS
 
-Use the Windows installer (`*_x64-setup.exe`) or the macOS DMG (`*_aarch64.dmg`, Apple Silicon only) from the same release page. Packages are not code-signed or notarized. If macOS blocks launch, use System Settings → Privacy & Security → Open Anyway for the app you downloaded from this repository. Both builds are produced in CI but have not yet been run on real Mac or Windows hardware for this release.
+Use the macOS DMG (`*_aarch64.dmg`, Apple Silicon only) from the same release page. It is not code-signed or notarized. If macOS blocks launch, use System Settings → Privacy & Security → Open Anyway for the app you downloaded from this repository. The build is produced in CI but has not yet been run on a real Mac for this release.
 
 ### Updates
 
-The AppImage, the macOS app and the Windows installer check GitHub Releases for signed updates. Downloads are explicit, progress is visible, and restart waits until recording, inference, and setup are idle. The rpm, deb and pacman packages update by installing the newer package; their tray links to the releases page. Settings, history, and models stay in the profile directory across updates and package types.
+The AppImage and the macOS app check GitHub Releases for signed updates. Downloads are explicit, progress is visible, and restart waits until recording, inference, and setup are idle. The rpm, deb and pacman packages update by installing the newer package; their tray links to the releases page. Settings, history, and models stay in the profile directory across updates and package types.
 
 ## Your first minute
 
@@ -148,7 +147,7 @@ The app manages separate isolated Python environments for platform-selected spee
 
 ## Run from source
 
-You will need [Bun](https://bun.sh/), stable [Rust](https://rustup.rs/), **Python 3.12 on Windows and native arm64 Python 3.12 on Apple Silicon** (Python 3.11–3.13 for Linux CUDA), and FFmpeg for compressed audio or video imports. On Mac, install Python using `brew install python@3.12` or `uv python install 3.12`; set its full path under Settings → Advanced if necessary. The Mac speech environment installs pinned MLX, MLX Audio, and Transformers packages.
+You will need [Bun](https://bun.sh/), stable [Rust](https://rustup.rs/), Python 3.11–3.13 on Linux, **native arm64 Python 3.12 on Apple Silicon**, and FFmpeg for compressed audio or video imports. On Mac, install Python using `brew install python@3.12` or `uv python install 3.12`; set its full path under Settings → Advanced if necessary. The Mac speech environment installs pinned MLX, MLX Audio, and Transformers packages.
 
 On Linux, install the Tauri build dependencies first:
 
@@ -199,7 +198,7 @@ bun run test:e2e
 bun run build      # tauri build: bundles for the current platform
 ```
 
-On Linux, `bun run build` produces the AppImage, deb and rpm under `src-tauri/target/release/bundle/`. The release workflow runs on version tags: it runs the renderer, Python and Rust checks, builds Linux, macOS and Windows packages, signs the updater artifacts, repackages the deb as the pacman package (`packaging/arch/PKGBUILD`), and publishes a release with a `latest.json` updater manifest. A tag must match the package version before it can publish.
+On Linux, `bun run build` produces the AppImage, deb and rpm under `src-tauri/target/release/bundle/`. The release workflow runs on version tags: it runs the renderer, Python and Rust checks, builds Linux and macOS packages, signs the updater artifacts, repackages the deb as the pacman package (`packaging/arch/PKGBUILD`), and publishes a release with a `latest.json` updater manifest. A tag must match the package version before it can publish.
 
 </details>
 
@@ -230,13 +229,13 @@ File transcription reads media metadata after you explicitly select a source fil
 
 ## Privacy and licenses
 
-Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Failed captures can remain in memory for Retry during the session; Discard releases them, and closing the app loses that recovery copy. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environments, and downloaded models stay in the profile directory: `~/.config/Delulu Talks` on Linux, `~/Library/Application Support/Delulu Talks` on macOS, `%APPDATA%\Delulu Talks` on Windows. Audio is captured natively; the webview has no microphone access.
+Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Failed captures can remain in memory for Retry during the session; Discard releases them, and closing the app loses that recovery copy. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environments, and downloaded models stay in the profile directory: `~/.config/Delulu Talks` on Linux, `~/Library/Application Support/Delulu Talks` on macOS. Audio is captured natively; the webview has no microphone access.
 
 With **Keep local history** off, new dictation and imported-file results are session-only, including their original text, personalization, corrections, and rewrites. The backend and renderer retain at most the newest 20 session records and 8 MiB of UTF-8 strings per transcript collection; the newest record is kept whole even if it alone exceeds that budget. Older records are evicted whole, never truncated. These are text retention limits, not a total process RAM cap: active inference, failed-recording retry audio and bounded worker diagnostics use separate memory. Session results disappear on exit, are never automatically promoted to saved history when the setting is re-enabled, and remain explicitly exportable while retained. Existing saved history remains on disk and edits to those saved records still persist. Disabling history also suppresses automatic speech/writing error-log writes, which can include model diagnostics; existing logs are not deleted. Explicit clipboard/paste delivery and exports can create copies outside the app.
 
 Temporary microphone WAVs and converted import audio still use the app audio-cache directory while processing, regardless of the history setting; normal success and failure paths delete them. An abrupt process exit can leave temporary audio behind. The app does not automatically write transcript-text sidecars for these files.
 
-Delulu Talks is [MIT licensed](LICENSE). Vendored conversion helpers and their license are recorded in [third-party notices](docs/THIRD_PARTY_NOTICES.md). R2T2 inference code is Apache-2.0; the [model weights](https://huggingface.co/netease-youdao/Confucius4-R2T2) use the [NetEase Model Use License](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE); R2T2 on Linux and Windows requires an NVIDIA CUDA GPU; NVIDIA [Canary 180M Flash](https://huggingface.co/nvidia/canary-180m-flash) and [Parakeet TDT 0.6B](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) weights (Small and Medium) use [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and run on the CPU through the Apache-2.0 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx); the MLX conversion targets Apple Silicon. Delulu Talks does not bundle weights. Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
+Delulu Talks is [MIT licensed](LICENSE). Vendored conversion helpers and their license are recorded in [third-party notices](docs/THIRD_PARTY_NOTICES.md). R2T2 inference code is Apache-2.0; the [model weights](https://huggingface.co/netease-youdao/Confucius4-R2T2) use the [NetEase Model Use License](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE); R2T2 on Linux requires an NVIDIA CUDA GPU; NVIDIA [Canary 180M Flash](https://huggingface.co/nvidia/canary-180m-flash) and [Parakeet TDT 0.6B](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) weights (Small and Medium) use [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and run on the CPU through the Apache-2.0 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx); the MLX conversion targets Apple Silicon. Delulu Talks does not bundle weights. Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
 
 ## Development checks
 

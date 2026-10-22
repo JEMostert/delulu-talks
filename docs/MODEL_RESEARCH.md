@@ -45,7 +45,7 @@ Implementation pins:
 
 - Mac checkpoint: `mlx-community/Confucius4-R2T2-bf16`, revision `747f5fc5f84bc9976baa2f02714e2fed67ed8611`.
 - Mac packages: MLX `0.32.2`, MLX Audio `0.5.7`, Transformers `5.15.0`.
-- Windows original checkpoint revision: `185ce639118ad1362d049ca0d8ed04b6ec5cd6c9`; native PyTorch/Transformers conversion and validation requirements are recorded in [Windows support](WINDOWS_SUPPORT.md).
+- Windows original checkpoint revision: `185ce639118ad1362d049ca0d8ed04b6ec5cd6c9`; native PyTorch/Transformers conversion and validation requirements are recorded in Windows support (dropped in v0.1.0).
 - Inspected MLX Audio source commit: `94c7716212b2228f178d2f9c7619a591fd1b0b78`.
 
 Weight licensing remains distinct from the app/code licenses. Link the original [R2T2 model license](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE) for both original and converted weights; conversion does not change the upstream terms.

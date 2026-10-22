@@ -28,9 +28,6 @@ jobs:
           - os: macos-latest
             name: mac-arm64
             args: --target aarch64-apple-darwin
-          - os: windows-latest
-            name: windows-x64
-            args: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +54,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # linuxdeploy's bundled strip cannot read newer ELF sections.
+          NO_STRIP: "true"
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Delulu Talks ${{ github.ref_name }}

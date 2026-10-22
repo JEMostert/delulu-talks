@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 
 // Verifies that a Tauri build bundled every resource from tauri.conf.json,
 // byte-for-byte, where the app resolves them at runtime.
-// Usage: bun scripts/package-resources.mjs <src-tauri/target> <linux-x64|mac-arm64|windows-x64>
+// Usage: bun scripts/package-resources.mjs <src-tauri/target> <linux-x64|mac-arm64>
 const root = resolve(import.meta.dir, "..");
 const target = resolve(process.argv[2] ?? "src-tauri/target");
 const platform = process.argv[3] ?? "linux-x64";
@@ -57,7 +57,6 @@ function findResourceRoot() {
   const preferred = {
     "linux-x64": (path) => path.includes(join("bundle", "deb")),
     "mac-arm64": (path) => path.endsWith(join("Contents", "Resources")),
-    "windows-x64": () => true,
   }[platform];
   assert.ok(preferred, `Unknown platform ${platform}`);
   const found = candidates.find(preferred);

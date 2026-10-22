@@ -418,10 +418,12 @@ fn concurrent_patches_are_serialized() {
 
 /* Profiles written by the Electron app (fixtures/generate.ts). */
 
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 fn fixtures() -> &'static Path {
     Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures"))
 }
 
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 fn copy_profile(from: &Path, to: &Path) {
     for name in ["settings.json", "history.json"] {
         fs::copy(from.join(name), to.join(name)).unwrap();

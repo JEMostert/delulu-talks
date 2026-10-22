@@ -12,7 +12,7 @@ The decisions, layout, crate rules and renderer transport are now in [ARCHITECTU
 - **Profile location unchanged.** `~/.config/Delulu Talks` (Linux), `~/Library/Application Support/Delulu Talks`, `%APPDATA%\Delulu Talks`; `Delulu Talks Dev` for dev builds; `DELULU_USER_DATA_DIR` overrides. See `delulu-core::paths`.
 - **Python workers unchanged.** `backend/python/*` keeps its JSON-lines protocol; the overlay stays `backend/overlay/pill.py`.
 - **Voice MCP server becomes a subcommand** (`delulu-talks mcp`), so agents no longer need Node or `ELECTRON_RUN_AS_NODE`.
-- **Packaging:** AppImage (auto-update), rpm (Fedora), deb, pacman `.pkg.tar.zst` (CachyOS/Arch, built from the Tauri binary in CI), macOS arm64 dmg + updater archive, Windows NSIS. Releases restart at v0.1.0; old Electron releases and tags are removed at cutover.
+- **Packaging:** AppImage (auto-update), rpm (Fedora), deb, pacman `.pkg.tar.zst` (CachyOS/Arch, built from the Tauri binary in CI), macOS arm64 dmg + updater archive. Windows is not supported. Releases restart at v0.1.0; old Electron releases and tags are removed at cutover.
 
 ## Layout
 
@@ -86,12 +86,12 @@ Unchanged in shape: everything else, including `onStatus` (now also carries reco
 - [x] `delulu-data`
 - [x] `delulu-speech`, `delulu-voice`
 - [x] App crate: router, handlers, tray, windows, plugins, MCP subcommand, `restore-profile` subcommand
-- [x] Packaging + CI workflows (AppImage, rpm, deb, pacman, dmg, NSIS, updater signing)
+- [x] Packaging + CI workflows (AppImage, rpm, deb, pacman, dmg, updater signing)
 - [ ] First tagged release run of the pipeline (needs `TAURI_SIGNING_PRIVATE_KEY` secrets)
 - [x] Cleanup: `electron/`, electron-builder, electron-vite and Electron deps removed
 - [x] Docs: README, ARCHITECTURE, ADR 0006, VOICE, doc sweep, v0.1.0 release notes; Electron v0.x release notes removed
 - [ ] Release reset: delete the Electron GitHub releases and tags
 - [ ] Tag and publish v0.1.0
-- [ ] Native macOS and Windows runs
+- [ ] Native macOS run
 - [ ] Port the native inference harness, Mac lifecycle driver and speech/history benchmarks
 - [ ] Delete this file

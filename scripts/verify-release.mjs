@@ -26,7 +26,6 @@ const find = (pattern, label) => {
 const updaterTargets = {
   "linux-x86_64": find(/_amd64\.AppImage$/, "Linux AppImage"),
   "darwin-aarch64": find(/aarch64\.app\.tar\.gz$/, "macOS updater archive"),
-  "windows-x86_64": find(/_x64-setup\.exe$/, "Windows installer"),
 };
 find(/_amd64\.deb$/, "Linux deb");
 find(/\.x86_64\.rpm$/, "Linux rpm");

@@ -111,12 +111,6 @@
       "minimumSystemVersion": "15.0",
       "entitlements": "macos/entitlements.plist",
       "hardenedRuntime": true
-    },
-    "windows": {
-      "nsis": {
-        "installMode": "both",
-        "displayLanguageSelector": false
-      }
     }
   },
   "plugins": {

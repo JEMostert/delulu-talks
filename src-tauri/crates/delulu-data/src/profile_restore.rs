@@ -352,6 +352,7 @@ fn write_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 pub fn restore_profile_backup(request: &ProfileRestoreRequest) -> DomainResult<ProfileRestorePlan> {
     let (plan, contents) = validate(request)?;
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut builder = fs::DirBuilder::new();
     #[cfg(unix)]
     {
