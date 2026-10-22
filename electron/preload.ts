@@ -52,6 +52,13 @@ function listener<T>(
 }
 
 const api: DeluluApi = {
+  getListenStatus: () => invoke("listen:status"),
+  onListenStatus: (callback) => listener("listen:statusChanged", callback),
+  startListening: () => invoke("listen:start"),
+  stopListening: () => invoke("listen:stop"),
+  installVoiceSkill: () => invoke("voice:installSkill"),
+  onListenCommand: (callback) => listener("listen:command", callback),
+  reportListenEvent: (event) => send("listen:event", event),
   getVoiceStatus: () => invoke("voice:status"),
   onVoiceStatus: (callback) => listener("voice:statusChanged", callback),
   setupVoice: () => invoke("voice:setup"),

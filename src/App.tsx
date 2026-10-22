@@ -42,6 +42,8 @@ import brandMark from "./assets/delulu-talks-mark.svg";
 import { activityLabel, engineLabel } from "./statusLabels";
 import { RecordingClock } from "./components/RecordingClock";
 import { useVoice } from "./hooks/useVoice";
+import { useListen } from "./hooks/useListen";
+import { ListeningIndicator } from "./components/voice/VoiceListening";
 const LabPage = lazy(() =>
   import("./pages/LabPage").then((module) => ({ default: module.LabPage })),
 );
@@ -102,6 +104,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
 function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const theme = useTheme(w.settings.theme);
   const voice = useVoice();
+  const listen = useListen();
   const [modelTarget, setModelTarget] = useState<
     "decode" | "diagnostics" | null
   >(null);
@@ -233,6 +236,22 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
       disabled: voice.speaking ? undefined : "Nothing is being spoken.",
       run: () => w.action(voice.stop),
     },
+    listen.active
+      ? {
+          id: "stop-listening",
+          label: "Stop listening",
+          keywords: "voice microphone agent session conversation",
+          run: () => w.action(listen.stop, "Stopped listening"),
+        }
+      : {
+          id: "start-listening",
+          label: "Start listening",
+          keywords: "voice microphone agent session conversation",
+          disabled: ["missing", "error"].includes(w.status.engine)
+            ? "Set up a speech model in Models first."
+            : undefined,
+          run: () => w.action(listen.start),
+        },
     {
       id: "read-clipboard",
       label: "Read clipboard aloud",
@@ -422,6 +441,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         <img src={brandMark} alt="" />
         Delulu Talks
       </div>
+      <ListeningIndicator listen={listen} />
       {w.ready && !panelOpen && (
         <button
           className="engine-chip"
@@ -750,6 +770,10 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   <VoicePage
                     settings={w.settings}
                     voice={voice}
+                    listen={listen}
+                    speechReady={
+                      !["missing", "error"].includes(w.status.engine)
+                    }
                     saving={w.saving}
                     onSave={w.saveSettings}
                     onAction={w.action}

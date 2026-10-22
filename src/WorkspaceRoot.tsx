@@ -5,11 +5,13 @@ import { RendererErrorBoundary } from "./components/RendererErrorBoundary";
 import { RecoveryDrafts } from "./rendererRecovery";
 import { useRenderingMode } from "./hooks/useRenderingMode";
 import { useVoicePlayer } from "./hooks/useVoicePlayer";
+import { useListening } from "./hooks/useListening";
 
 /** Capture, playback and pending saves survive a failure in the presentation subtree. */
 export function WorkspaceRoot() {
   useRenderingMode();
   useVoicePlayer();
+  useListening();
   const workspace = useWorkspace();
   const drafts = useRef(new RecoveryDrafts());
   const fieldIds = useRef(new WeakMap<HTMLElement, string>());

@@ -1,6 +1,8 @@
 class DeluluCaptureProcessor extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
+    // Listening sessions ask for small blocks so speech detection stays prompt.
+    this.flushSamples = options?.processorOptions?.flushSamples || 2048;
     this.paused = false;
     this.chunks = [];
     this.samples = 0;
@@ -40,7 +42,7 @@ class DeluluCaptureProcessor extends AudioWorkletProcessor {
       this.samples += channel.length;
       for (let index = 0; index < channel.length; index += 1)
         this.sumSquares += channel[index] * channel[index];
-      if (this.samples >= 2048) this.flush();
+      if (this.samples >= this.flushSamples) this.flush();
     }
     return true;
   }

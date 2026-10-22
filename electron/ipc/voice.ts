@@ -4,6 +4,7 @@ import { extname, join } from "node:path";
 import { clipboard, dialog } from "electron";
 import type { AppSettings } from "../../src/types";
 import type { VoicePlaybackEvent, VoiceSpeakRequest } from "../../src/voice";
+import type { ListenCaptureEvent } from "../../src/listening";
 import type { IpcDependencies, IpcRegistrar } from "./types";
 
 const REFERENCE_EXTENSIONS = ["wav", "flac", "mp3", "ogg"];
@@ -17,8 +18,12 @@ export function registerVoiceIpc(
     persistSettings,
     voiceAgentSetup,
     getMainWindow,
+    listening,
+    installVoiceSkill,
   }: Pick<
     IpcDependencies,
+    | "listening"
+    | "installVoiceSkill"
     | "voice"
     | "storage"
     | "persistSettings"
@@ -91,5 +96,18 @@ export function registerVoiceIpc(
   });
   on("voice:playback", (_event, event: VoicePlaybackEvent) =>
     voice.playbackEvent(event),
+  );
+  handle("listen:status", () => listening.getStatus());
+  handle("listen:start", async () => {
+    await listening.start("delulu");
+    return listening.getStatus();
+  });
+  handle("listen:stop", () => {
+    listening.stopActive();
+    return listening.getStatus();
+  });
+  handle("voice:installSkill", () => installVoiceSkill());
+  on("listen:event", (_event, event: ListenCaptureEvent) =>
+    listening.captureEvent(event),
   );
 }

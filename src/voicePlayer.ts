@@ -9,8 +9,17 @@ export type VoicePlayer = {
   play(chunk: VoicePlaybackChunk): void;
   /** Stop one utterance, or everything when null. Stopped chunks report nothing more. */
   stop(utteranceId: string | null): void;
+  /** Barge-in: stop everything now; returns the utterances that were cut off. */
+  interrupt(): string[];
+  /** Whether audio is audible right now. */
+  isPlaying(): boolean;
+  /** Current output level in dBFS, −120 when silent. */
+  outputLevelDb(): number;
   dispose(): void;
 };
+
+/** Stopped utterances remembered so their late chunks are dropped. */
+const REJECTED_LIMIT = 200;
 
 type Scheduled = {
   utteranceId: string;
@@ -50,6 +59,27 @@ export function createVoicePlayer(
   // Context time at which the last scheduled chunk ends.
   let cursor = 0;
   const scheduled = new Set<Scheduled>();
+  // Every chunk passes through one analyser, the playback reference for echo.
+  let analyser: AnalyserNode | null = null;
+  let levels: Float32Array<ArrayBuffer> | null = null;
+  const rejected = new Set<string>();
+  const reject = (utteranceId: string) => {
+    rejected.delete(utteranceId);
+    rejected.add(utteranceId);
+    if (rejected.size > REJECTED_LIMIT)
+      rejected.delete(rejected.values().next().value!);
+  };
+  const output = (audio: AudioContext): AudioNode => {
+    if (analyser) return analyser;
+    try {
+      analyser = audio.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.connect(audio.destination);
+      return analyser;
+    } catch {
+      return audio.destination;
+    }
+  };
 
   const release = (entry: Scheduled) => {
     scheduled.delete(entry);
@@ -76,6 +106,8 @@ export function createVoicePlayer(
   };
 
   const play = (chunk: VoicePlaybackChunk) => {
+    // Audio for an interrupted or stopped reply must never resume.
+    if (rejected.has(chunk.utteranceId)) return;
     const fail = (reason: unknown) =>
       report({
         utteranceId: chunk.utteranceId,
@@ -116,7 +148,7 @@ export function createVoicePlayer(
       gain.gain.value = Math.min(1, Math.max(0, chunk.volume));
       source.buffer = buffer;
       source.connect(gain);
-      gain.connect(audio.destination);
+      gain.connect(output(audio));
       const startAt = Math.max(audio.currentTime + LEAD_SECONDS, cursor);
       entry = {
         utteranceId: chunk.utteranceId,
@@ -158,8 +190,10 @@ export function createVoicePlayer(
   };
 
   const stop = (utteranceId: string | null) => {
+    if (utteranceId !== null) reject(utteranceId);
     for (const entry of [...scheduled]) {
       if (utteranceId !== null && entry.utteranceId !== utteranceId) continue;
+      reject(entry.utteranceId);
       release(entry);
       try {
         entry.source.stop();
@@ -174,11 +208,34 @@ export function createVoicePlayer(
   return {
     play,
     stop,
+    interrupt() {
+      const ids = [
+        ...new Set([...scheduled].map((entry) => entry.utteranceId)),
+      ];
+      stop(null);
+      return ids;
+    },
+    isPlaying() {
+      const now = context?.currentTime ?? 0;
+      for (const entry of scheduled)
+        if (entry.endsAt > now && entry.startTimer === null) return true;
+      return false;
+    },
+    outputLevelDb() {
+      if (!analyser || !scheduled.size) return -120;
+      levels ??= new Float32Array(analyser.fftSize);
+      analyser.getFloatTimeDomainData(levels);
+      let energy = 0;
+      for (let index = 0; index < levels.length; index += 1)
+        energy += levels[index] * levels[index];
+      return Math.max(-120, 10 * Math.log10(energy / levels.length + 1e-12));
+    },
     dispose() {
       stop(null);
       const audio = context;
       context = null;
       sinkId = null;
+      analyser = null;
       void audio?.close().catch(() => undefined);
     },
   };

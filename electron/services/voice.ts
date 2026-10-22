@@ -80,13 +80,31 @@ type Utterance = {
   /** When the audio sent so far should have finished playing. */
   playEndAt: number;
   outcome: VoiceUtteranceOutcome;
+  responseId: string;
   cancelled: boolean;
+  /** Cut off by the user talking over it, rather than stopped. */
+  interrupted: boolean;
   error?: string;
   finish: (result: VoiceSpeakResult) => void;
   done: Promise<VoiceSpeakResult>;
 };
 
 const RECENT_LIMIT = 20;
+
+/** A set that forgets its oldest entries. */
+class BoundedSet {
+  private readonly items = new Set<string>();
+  constructor(private readonly limit: number) {}
+  add(value: string): void {
+    this.items.delete(value);
+    this.items.add(value);
+    if (this.items.size > this.limit)
+      this.items.delete(this.items.values().next().value!);
+  }
+  has(value: string): boolean {
+    return this.items.has(value);
+  }
+}
 /** Synthesize at most this many chunks ahead of the one being heard. */
 const LOOKAHEAD = 2;
 /** Fallback when the renderer never reports a chunk's end. */
@@ -134,6 +152,9 @@ export class VoiceService {
   private current: Utterance | null = null;
   private draining = false;
   private recent: VoiceUtteranceSummary[] = [];
+  private spokenText: { text: string; at: number }[] = [];
+  /** Utterances stopped or interrupted; late audio for them is dropped. */
+  private readonly rejected = new BoundedSet(200);
   private setupOperation: {
     controller: AbortController;
     promise: Promise<void>;
@@ -776,7 +797,10 @@ export class VoiceService {
       heard: -1,
       playEndAt: 0,
       outcome: "queued",
+      responseId:
+        request.responseId?.trim().slice(0, 128) || `rsp_${randomUUID()}`,
       cancelled: false,
+      interrupted: false,
       finish,
       done,
     };
@@ -786,11 +810,36 @@ export class VoiceService {
     this.clearIdle();
     this.update({});
     void this.drain();
-    return { id: utterance.id, position, done };
+    this.spokenText.push({ text: markup.plainText, at: Date.now() });
+    return {
+      id: utterance.id,
+      responseId: utterance.responseId,
+      position,
+      done,
+    };
   }
 
   async speak(request: VoiceSpeakRequest): Promise<VoiceSpeakResult> {
     return this.enqueue(request).done;
+  }
+
+  /** Text spoken recently, so a listening session can recognize its own voice. */
+  recentlySpoken(withinMs = 60_000): string[] {
+    const since = Date.now() - withinMs;
+    this.spokenText = this.spokenText.filter((item) => item.at >= since);
+    return this.spokenText.map((item) => item.text);
+  }
+
+  /**
+   * The user talked over Delulu: stop at once, drop what was queued and refuse
+   * any audio still being synthesized for these responses. Returns the
+   * response ids that were cut off, the one being heard first.
+   */
+  interrupt(): string[] {
+    const affected = [...(this.current ? [this.current] : []), ...this.queue];
+    for (const utterance of affected) utterance.interrupted = true;
+    this.stop("barge-in");
+    return [...new Set(affected.map((utterance) => utterance.responseId))];
   }
 
   /** Stop speaking and clear everything waiting. */
@@ -800,13 +849,18 @@ export class VoiceService {
     if (!stopped.length) return;
     for (const utterance of stopped) {
       utterance.cancelled = true;
+      this.rejected.add(utterance.id);
       for (const [, pending] of utterance.pending) {
         clearTimeout(pending.timer);
         pending.resolve();
       }
       utterance.pending.clear();
       utterance.playing.clear();
-      if (utterance !== this.current) this.complete(utterance, "stopped");
+      if (utterance !== this.current)
+        this.complete(
+          utterance,
+          utterance.interrupted ? "interrupted" : "stopped",
+        );
     }
     this.playback.stop(null);
     this.update({});
@@ -914,7 +968,13 @@ export class VoiceService {
       await Promise.all(playbacks);
       this.complete(
         utterance,
-        utterance.cancelled ? "stopped" : utterance.error ? "failed" : "spoken",
+        utterance.interrupted
+          ? "interrupted"
+          : utterance.cancelled
+            ? "stopped"
+            : utterance.error
+              ? "failed"
+              : "spoken",
       );
     } catch (error) {
       if (!utterance.cancelled) {
@@ -922,7 +982,14 @@ export class VoiceService {
           error instanceof Error ? error.message : "Speech failed";
         this.playback.stop(utterance.id);
       }
-      this.complete(utterance, utterance.cancelled ? "stopped" : "failed");
+      this.complete(
+        utterance,
+        utterance.interrupted
+          ? "interrupted"
+          : utterance.cancelled
+            ? "stopped"
+            : "failed",
+      );
     }
   }
 
@@ -936,6 +1003,11 @@ export class VoiceService {
     utterance.playEndAt =
       Math.max(Date.now(), utterance.playEndAt) + result.durationMs;
     return new Promise<void>((resolve) => {
+      // Audio synthesized after a stop or interruption never reaches playback.
+      if (utterance.cancelled || this.rejected.has(utterance.id)) {
+        resolve();
+        return;
+      }
       const timer = setTimeout(
         () => {
           utterance.pending.delete(index);
@@ -969,7 +1041,10 @@ export class VoiceService {
     utterance: Utterance,
     outcome: Exclude<VoiceUtteranceOutcome, "queued" | "speaking">,
   ): void {
-    if (["spoken", "stopped", "failed"].includes(utterance.outcome)) return;
+    if (
+      ["spoken", "stopped", "interrupted", "failed"].includes(utterance.outcome)
+    )
+      return;
     utterance.outcome = outcome;
     const durationMs = Math.round(utterance.cursorMs);
     this.recent = [
@@ -986,6 +1061,7 @@ export class VoiceService {
     ].slice(0, RECENT_LIMIT);
     utterance.finish({
       id: utterance.id,
+      responseId: utterance.responseId,
       outcome,
       durationMs,
       timestamps: utterance.timestamps,

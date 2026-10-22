@@ -1,6 +1,11 @@
 import { useEffect } from "react";
 import { bridge } from "../bridge";
-import { createVoicePlayer } from "../voicePlayer";
+import { createVoicePlayer, type VoicePlayer } from "../voicePlayer";
+
+let shared: VoicePlayer | null = null;
+
+/** The mounted player, for listening sessions' barge-in and echo reference. */
+export const sharedVoicePlayer = (): VoicePlayer | null => shared;
 
 /**
  * Plays synthesized speech the desktop sends. Mounted once at the app root, so
@@ -11,6 +16,7 @@ export function useVoicePlayer(): void {
     const player = createVoicePlayer((event) =>
       bridge.reportVoicePlayback(event),
     );
+    shared = player;
     const removePlay = bridge.onVoicePlay((chunk) => player.play(chunk));
     const removeStop = bridge.onVoiceStopPlayback((utteranceId) =>
       player.stop(utteranceId),
@@ -18,6 +24,7 @@ export function useVoicePlayer(): void {
     return () => {
       removePlay();
       removeStop();
+      if (shared === player) shared = null;
       player.dispose();
     };
   }, []);

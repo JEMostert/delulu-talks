@@ -492,6 +492,32 @@ export function normalizeSettings(value: unknown): AppSettings {
       source.voiceAgentBridge,
       DEFAULT_SETTINGS.voiceAgentBridge,
     ),
+    listenSensitivity: boundedNumber(
+      source.listenSensitivity,
+      DEFAULT_SETTINGS.listenSensitivity,
+      0,
+      1,
+    ),
+    listenSilenceMs: Math.round(
+      boundedNumber(
+        source.listenSilenceMs,
+        DEFAULT_SETTINGS.listenSilenceMs,
+        300,
+        3000,
+      ),
+    ),
+    listenBargeIn: boolean(
+      source.listenBargeIn,
+      DEFAULT_SETTINGS.listenBargeIn,
+    ),
+    listenBargeInMs: Math.round(
+      boundedNumber(
+        source.listenBargeInMs,
+        DEFAULT_SETTINGS.listenBargeInMs,
+        100,
+        1000,
+      ),
+    ),
   };
 }
 

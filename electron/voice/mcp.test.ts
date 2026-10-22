@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { VoiceBridge, type VoiceBridgeSnapshot } from "../services/voiceBridge";
+import { fakeListen } from "./fakeListen";
 import {
   VOICE_AGENT_INSTRUCTIONS,
   type VoiceSpeakRequest,
@@ -25,6 +26,7 @@ async function bridge(snapshot: Partial<VoiceBridgeSnapshot> = {}) {
   cleanup.push(() => rmSync(root, { recursive: true, force: true }));
   const calls: Array<[VoiceSpeakRequest, boolean]> = [];
   let stops = 0;
+  const listen = fakeListen();
   const server = new VoiceBridge({
     directory: join(root, "voice"),
     appVersion: "0.17.0",
@@ -37,13 +39,18 @@ async function bridge(snapshot: Partial<VoiceBridgeSnapshot> = {}) {
         return wait
           ? {
               id: "u",
+              responseId: request.responseId ?? "rsp_auto",
               outcome: "spoken",
               durationMs: 4200,
               timestamps: [],
               warnings: ["Unknown tag [dance] was skipped"],
               unsupported: ["[laugh]"],
             }
-          : { id: "u", position: 2 };
+          : {
+              id: "u",
+              responseId: request.responseId ?? "rsp_auto",
+              position: 2,
+            };
       },
       stop: async () => {
         stops++;
@@ -57,12 +64,14 @@ async function bridge(snapshot: Partial<VoiceBridgeSnapshot> = {}) {
         message: "Speaking for Claude Code",
         ...snapshot,
       }),
+      ...listen.handlers,
     },
   });
   await server.start();
   cleanup.push(() => server.stop());
   return {
     calls,
+    listen,
     stops: () => stops,
     env: {
       ...process.env,
@@ -142,6 +151,11 @@ test("MCP server initializes from the bridge and exposes the voice tools", async
     "speak",
     "stop_speaking",
     "voice_status",
+    "listen_start",
+    "listen_next",
+    "listen_ack",
+    "listen_status",
+    "listen_stop",
   ]);
   const speak = tools[0];
   expect(speak.inputSchema.required).toEqual(["text"]);
@@ -161,15 +175,15 @@ test("MCP server initializes from the bridge and exposes the voice tools", async
       agent: "Claude Code",
     },
   });
-  expect(queued.result).toEqual({
-    content: [{ type: "text", text: "Queued (position 2)." }],
-  });
+  expect(queued.result.content).toEqual([
+    { type: "text", text: "Queued (2 ahead). Response rsp_auto." },
+  ]);
   const waited = await server.request("tools/call", {
     name: "speak",
     arguments: { text: "Done.", wait: true, interrupt: true },
   });
   expect(waited.result.content[0].text).toBe(
-    "Spoken (4.2 s). Markup warnings: Unknown tag [dance] was skipped. Skipped by this voice: [laugh].",
+    "Spoken (4.2 s). Markup warnings: Unknown tag [dance] was skipped. Skipped by this voice: [laugh]. Response rsp_auto.",
   );
   expect(calls).toEqual([
     [
@@ -187,7 +201,7 @@ test("MCP server initializes from the bridge and exposes the voice tools", async
     name: "speak",
     arguments: { text: "this will fail" },
   });
-  expect(refused.result).toEqual({
+  expect(refused.result).toMatchObject({
     content: [{ type: "text", text: "Voice is turned off in Delulu Talks." }],
     isError: true,
   });
@@ -255,7 +269,7 @@ test("MCP server still initializes when Delulu Talks is not running", async () =
     name: "speak",
     arguments: { text: "Hi" },
   });
-  expect(speak.result).toEqual({
+  expect(speak.result).toMatchObject({
     content: [
       {
         type: "text",
@@ -276,7 +290,7 @@ test("CLI says, reads stdin, stops and reports status", async () => {
     await cli(["say", "--agent", "Codex", "Build", "is", "green."], env),
   ).toEqual({
     code: 0,
-    stdout: "Queued (position 2).\n",
+    stdout: "Queued (2 ahead). Response rsp_auto.\n",
     stderr: "",
   });
   const waited = await cli(
@@ -326,4 +340,104 @@ test("CLI explains when Delulu Talks is not running", async () => {
     stderr:
       "Delulu Talks isn't running, or agent voice is turned off in its Voice page.\n",
   });
+});
+
+test("the CLI runs a listening session with documented exit codes", async () => {
+  const { env, listen, calls } = await bridge();
+  const json = (text: string) => JSON.parse(text.trim());
+  const start = await cli(["listen", "start", "--client", "claude"], env);
+  expect(start.code).toBe(0);
+  const session = json(start.stdout);
+  expect(session.id).toBe("ses_claude");
+
+  const timeout = await cli(
+    ["listen", "next", "--session", session.id, "--timeout", "0.1"],
+    env,
+  );
+  expect(timeout.code).toBe(3);
+  expect(json(timeout.stdout).status).toBe("timeout");
+
+  listen.push({
+    type: "utterance",
+    id: "utt_1",
+    text: "Run the tests",
+    at: 1,
+    durationMs: 800,
+    interruptedResponseId: null,
+  });
+  const event = await cli(
+    ["listen", "next", "--session", session.id, "--timeout", "5"],
+    env,
+  );
+  expect(event.code).toBe(0);
+  expect(json(event.stdout).event).toMatchObject({
+    seq: 1,
+    text: "Run the tests",
+  });
+
+  const ack = await cli(
+    ["listen", "ack", "--session", session.id, "--after", "1"],
+    env,
+  );
+  expect(json(ack.stdout).ackedSeq).toBe(1);
+  const status = await cli(["listen", "status"], env);
+  expect(json(status.stdout).session.queued).toBe(0);
+
+  const say = await cli(["say", "--response", "rsp_1", "On it."], env);
+  expect(say.code).toBe(0);
+  expect(say.stdout).toContain("rsp_1");
+  expect(calls.at(-1)?.[0].responseId).toBe("rsp_1");
+
+  await cli(["listen", "stop", "--session", session.id], env);
+  const stopped = await cli(
+    ["listen", "next", "--session", session.id, "--after", "1"],
+    env,
+  );
+  expect(stopped.code).toBe(4);
+
+  const missing = await cli(["listen", "next", "--session", "nope"], env);
+  expect(missing.code).toBe(1);
+  expect(json(missing.stderr).error.code).toBe("SESSION_NOT_FOUND");
+});
+
+test("MCP listen tools are bounded calls over one session", async () => {
+  const { env, listen } = await bridge();
+  const client = mcp(env);
+  await client.request("initialize", { protocolVersion: "2025-06-18" });
+  const tools = (await client.request("tools/list")).result.tools.map(
+    (tool: { name: string }) => tool.name,
+  );
+  expect(tools).toEqual(
+    expect.arrayContaining([
+      "listen_start",
+      "listen_next",
+      "listen_ack",
+      "listen_status",
+      "listen_stop",
+    ]),
+  );
+  const call = async (name: string, args: unknown) =>
+    (await client.request("tools/call", { name, arguments: args })).result;
+  const session = (await call("listen_start", { client: "codex" }))
+    .structuredContent;
+  expect(
+    (await call("listen_next", { sessionId: session.id, timeoutSeconds: 0.1 }))
+      .structuredContent.status,
+  ).toBe("timeout");
+  listen.push({
+    type: "utterance",
+    id: "utt_7",
+    text: "Hello",
+    at: 1,
+    durationMs: 500,
+    interruptedResponseId: null,
+  });
+  const next = await call("listen_next", {
+    sessionId: session.id,
+    timeoutSeconds: 5,
+  });
+  expect(JSON.parse(next.content[0].text).event.id).toBe("utt_7");
+  const busy = await call("listen_start", { client: "other" });
+  expect(busy.isError).toBe(true);
+  expect(busy.content[0].text).toContain("SESSION_BUSY");
 });

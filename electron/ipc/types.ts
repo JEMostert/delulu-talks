@@ -49,5 +49,7 @@ export interface IpcDependencies {
   broadcast: (channel: string, payload: unknown) => void;
   selectedAudioFiles: Set<string>;
   voice: import("../services/voice").VoiceService;
+  listening: import("../services/listening").ListeningService;
+  installVoiceSkill: () => import("../../src/listening").VoiceSkillInstall;
   voiceAgentSetup: () => import("../../src/voice").VoiceAgentSetup;
 }

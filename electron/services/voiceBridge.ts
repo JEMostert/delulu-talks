@@ -16,6 +16,11 @@ import { connect, createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join, posix, win32 } from "node:path";
 import {
+  LISTEN_LIMITS,
+  type ListenNextResult,
+  type ListenSessionInfo,
+} from "../../src/listening";
+import {
   VOICE_AGENT_INSTRUCTIONS,
   VOICE_LIMITS,
   type VoiceAgentSetup,
@@ -42,6 +47,8 @@ const MAX_IN_FLIGHT = 4;
 const MAX_ID_BYTES = 128;
 const MAX_AGENT_CHARACTERS = 64;
 const MAX_ERROR_CHARACTERS = 2_000;
+const RESPONSE_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
+const MAX_CLIENT_CHARACTERS = 64;
 // sun_path holds 108 bytes on Linux and 104 on macOS, including the NUL.
 const MAX_SOCKET_PATH_BYTES = 100;
 
@@ -61,10 +68,26 @@ export type VoiceBridgeHandlers = {
   ): Promise<VoiceSpeakResult | VoiceQueued>;
   stop(): Promise<void>;
   status(): VoiceBridgeSnapshot;
+  /** Idempotent for the same client; throws SESSION_BUSY for another client's session. */
+  listenStart(client: string): Promise<ListenSessionInfo>;
+  /** Waits for the first event after the cursor; `after` acknowledges up to it. */
+  listenNext(
+    sessionId: string,
+    options: { after?: number; timeoutMs: number; signal: AbortSignal },
+  ): Promise<ListenNextResult>;
+  /** Acknowledges events up to `after` without waiting. */
+  listenAck(sessionId: string, after: number): ListenSessionInfo;
+  listenStatus(sessionId?: string): ListenSessionInfo | null;
+  listenStop(sessionId: string): Promise<ListenSessionInfo>;
 };
 
 export type VoiceBridgeErrorCode =
-  "UNAUTHORIZED" | "INVALID_REQUEST" | "VOICE_UNAVAILABLE" | "INTERNAL";
+  | "UNAUTHORIZED"
+  | "INVALID_REQUEST"
+  | "VOICE_UNAVAILABLE"
+  | "SESSION_BUSY"
+  | "SESSION_NOT_FOUND"
+  | "INTERNAL";
 
 /** Handlers may throw this to choose the code an agent receives. */
 export class VoiceBridgeError extends Error {
@@ -83,6 +106,8 @@ type Connection = {
   length: number;
   inFlight: number;
   closing: boolean;
+  /** Waiting listen.next calls, aborted when the client disconnects. */
+  waits: Set<AbortController>;
 };
 
 function bridgeEndpoint(
@@ -143,11 +168,28 @@ function failure(
   };
 }
 
+function sessionId(params: Record<string, unknown>): string {
+  const value = params.sessionId;
+  if (typeof value !== "string" || !value || value.length > MAX_ID_BYTES)
+    throw new VoiceBridgeError("INVALID_REQUEST", "sessionId is required");
+  return value;
+}
+
+function cursor(value: unknown, required: boolean): number | undefined {
+  if (value === undefined && !required) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
+    throw new VoiceBridgeError(
+      "INVALID_REQUEST",
+      "after must be a nonnegative integer sequence number",
+    );
+  return value;
+}
+
 function parseSpeak(params: Record<string, unknown>): {
   request: VoiceSpeakRequest;
   wait: boolean;
 } {
-  const { text, interrupt, wait, agent, normalize } = params;
+  const { text, interrupt, wait, agent, normalize, responseId } = params;
   if (typeof text !== "string" || !text.trim())
     throw new VoiceBridgeError("INVALID_REQUEST", "speak needs nonempty text");
   if (text.length > VOICE_LIMITS.requestCharacters)
@@ -166,11 +208,20 @@ function parseSpeak(params: Record<string, unknown>): {
   if (agent !== undefined && typeof agent !== "string")
     throw new VoiceBridgeError("INVALID_REQUEST", "agent must be text");
   const label = (agent ?? "").trim().slice(0, MAX_AGENT_CHARACTERS) || "Agent";
+  if (
+    responseId !== undefined &&
+    (typeof responseId !== "string" || !RESPONSE_ID.test(responseId))
+  )
+    throw new VoiceBridgeError(
+      "INVALID_REQUEST",
+      "responseId must be 1–128 characters of letters, digits, _ . : or -",
+    );
   return {
     request: {
       text,
       source: "agent",
       agent: label,
+      ...(responseId === undefined ? {} : { responseId }),
       ...(interruptFlag === undefined ? {} : { interrupt: interruptFlag }),
       ...(normalizeFlag === undefined ? {} : { normalize: normalizeFlag }),
     },
@@ -357,11 +408,15 @@ export class VoiceBridge {
       length: 0,
       inFlight: 0,
       closing: false,
+      waits: new Set(),
     };
     this.connections.add(connection);
     this.update({ clients: this.connections.size });
     socket.on("data", (chunk: Buffer) => this.receive(connection, chunk));
     socket.once("close", () => {
+      // A disconnected waiter gives up; its event stays queued for the next one.
+      for (const wait of connection.waits) wait.abort();
+      connection.waits.clear();
       this.connections.delete(connection);
       if (this.server) this.update({ clients: this.connections.size });
     });
@@ -488,7 +543,7 @@ export class VoiceBridge {
       return;
     }
     connection.inFlight++;
-    void this.dispatch(request.method, request.params ?? {})
+    void this.dispatch(request.method, request.params ?? {}, connection)
       .then(
         (result) => ({ v: VOICE_BRIDGE_PROTOCOL, id, ok: true, result }),
         (reason: unknown) =>
@@ -509,6 +564,7 @@ export class VoiceBridge {
   private async dispatch(
     method: string,
     params: Record<string, unknown>,
+    connection?: Connection,
   ): Promise<unknown> {
     switch (method) {
       case "hello":
@@ -530,6 +586,66 @@ export class VoiceBridge {
       case "stop":
         await this.unavailableOnFailure(() => this.handlers.stop());
         return { stopped: true };
+      case "listen.start": {
+        const client = params.client ?? "agent";
+        if (
+          typeof client !== "string" ||
+          !client.trim() ||
+          client.length > MAX_CLIENT_CHARACTERS
+        )
+          throw new VoiceBridgeError(
+            "INVALID_REQUEST",
+            "client must be 1–64 characters",
+          );
+        return this.unavailableOnFailure(() =>
+          this.handlers.listenStart(client.trim()),
+        );
+      }
+      case "listen.next": {
+        const id = sessionId(params);
+        const after = cursor(params.after, false);
+        const seconds =
+          params.timeoutSeconds ?? LISTEN_LIMITS.defaultWaitSeconds;
+        if (
+          typeof seconds !== "number" ||
+          !Number.isFinite(seconds) ||
+          seconds < 0 ||
+          seconds > LISTEN_LIMITS.maxWaitSeconds
+        )
+          throw new VoiceBridgeError(
+            "INVALID_REQUEST",
+            `timeoutSeconds must be between 0 and ${LISTEN_LIMITS.maxWaitSeconds}`,
+          );
+        const wait = new AbortController();
+        connection?.waits.add(wait);
+        try {
+          return await this.unavailableOnFailure(() =>
+            this.handlers.listenNext(id, {
+              ...(after === undefined ? {} : { after }),
+              timeoutMs: Math.round(seconds * 1000),
+              signal: wait.signal,
+            }),
+          );
+        } finally {
+          connection?.waits.delete(wait);
+        }
+      }
+      case "listen.ack": {
+        const id = sessionId(params);
+        const after = cursor(params.after, true)!;
+        return this.unavailableOnFailure(async () =>
+          this.handlers.listenAck(id, after),
+        );
+      }
+      case "listen.status": {
+        const id =
+          params.sessionId === undefined ? undefined : sessionId(params);
+        return { session: this.handlers.listenStatus(id) };
+      }
+      case "listen.stop":
+        return this.unavailableOnFailure(() =>
+          this.handlers.listenStop(sessionId(params)),
+        );
       default:
         throw new VoiceBridgeError(
           "INVALID_REQUEST",
@@ -544,6 +660,13 @@ export class VoiceBridge {
       return await run();
     } catch (reason) {
       if (reason instanceof VoiceBridgeError) throw reason;
+      // ListeningService throws ListenError; keep its session codes.
+      const code = (reason as { code?: unknown } | null)?.code;
+      if (code === "SESSION_BUSY" || code === "SESSION_NOT_FOUND")
+        throw new VoiceBridgeError(
+          code,
+          reason instanceof Error ? reason.message : String(reason),
+        );
       throw new VoiceBridgeError(
         "VOICE_UNAVAILABLE",
         reason instanceof Error ? reason.message : String(reason),

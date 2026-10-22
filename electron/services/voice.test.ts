@@ -276,3 +276,32 @@ test("setup is required before speaking", async () => {
   expect(service.getStatus().engine).toBe("missing");
   expect(() => service.enqueue({ text: "Hello" })).toThrow(/Set up/);
 });
+
+test("an interrupted response never resumes; the next one plays and can be interrupted", async () => {
+  const { service, played } = fixture({}, { autoplay: false });
+  await service.initialize(DEFAULT_SETTINGS);
+  const first = service.enqueue({
+    text: "One. Two sentences that go on for a while. Three more words here.",
+    responseId: "rsp_a",
+  });
+  await until(() => played.length > 0, "first chunk");
+  expect(service.interrupt()).toEqual(["rsp_a"]);
+  const result = await first.done;
+  expect(result).toMatchObject({ outcome: "interrupted", responseId: "rsp_a" });
+  const sent = played.length;
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  // Synthesis that finished after the interruption is never sent to playback.
+  expect(played.filter((chunk) => chunk.utteranceId === first.id).length).toBe(
+    sent,
+  );
+  const second = service.enqueue({
+    text: "Okay, go ahead.",
+    responseId: "rsp_b",
+  });
+  await until(
+    () => played.some((chunk) => chunk.utteranceId === second.id),
+    "second response",
+  );
+  expect(service.interrupt()).toEqual(["rsp_b"]);
+  expect((await second.done).outcome).toBe("interrupted");
+});

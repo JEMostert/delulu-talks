@@ -93,9 +93,65 @@ delulu-voice-mcp.mjs status
 
 Desktop shortcuts can also run the app itself: `delulu-talks --read-clipboard` reads the clipboard aloud and `delulu-talks --stop-speaking` stops. Both are in the tray menu too.
 
+## Listening sessions
+
+A listening session turns Delulu into a voice conversation with a coding agent. The agent starts a session once; Delulu then keeps the microphone open and the speech model loaded across turns, detects when you start and stop talking, transcribes each completed utterance and queues it. The agent collects utterances with short waiting calls, answers aloud with `say`, and waits again. Ending a waiting call (an answer, a timeout, a cancel or a disconnect) never stops the session or unloads the model; only `listen stop`, quitting the app or an unrecoverable failure does.
+
+While a session runs, the Voice page and the tray show that Delulu is listening and offer **Stop listening**. Dictating with your shortcut still works: the session ignores the microphone during a dictation and resumes afterwards.
+
+### A complete session
+
+```text
+S='/home/you/.config/Delulu Talks/voice/delulu-voice-mcp.mjs'
+node "$S" listen start --client claude-code
+  → {"id":"ses_8f…","state":"listening","ackedSeq":0,"lastSeq":0,"queued":0,…}
+node "$S" listen next --session ses_8f… --after 0 --timeout 600     # run in the background
+  → exit 0  {"status":"event","event":{"seq":1,"type":"utterance","id":"utt_…","text":"Can you run the tests?",…}}
+node "$S" say --response rsp_1 "Sure, running them now."
+node "$S" listen next --session ses_8f… --after 1 --timeout 600     # next waiter, acknowledges seq 1
+  → exit 0  {"status":"event","event":{"seq":2,"type":"interrupted","responseId":"rsp_1",…}}
+node "$S" listen next --session ses_8f… --after 2 --timeout 600
+  → exit 0  {"status":"event","event":{"seq":3,"type":"utterance","text":"Actually, only the unit tests.","interruptedResponseId":"rsp_1",…}}
+node "$S" listen stop --session ses_8f…
+```
+
+`listen next` exits 0 for an event, 3 for a timeout (start another waiter), 4 when the session has stopped, and 1 on errors (JSON on stderr). `listen ack --session ID --after SEQ` acknowledges without waiting, and `listen status [--session ID]` reports the session. The MCP server offers the same as tools: `listen_start`, `listen_next` (50-second default wait so hosts do not time the call out), `listen_ack`, `listen_status` and `listen_stop`; `speak` takes a `responseId`.
+
+The agent skill in [`skills/delulu-voice/SKILL.md`](../skills/delulu-voice/SKILL.md) describes this loop for agents.
+
+### Delivery rules
+
+- Every event in a session has an increasing `seq`: `utterance` (your transcribed words), `interrupted` (Delulu stopped talking because you started) and `stopped` (the session ended).
+- `next` returns the first event after the acknowledged cursor and keeps it until it is acknowledged. Passing `after: N` acknowledges every event up to N. Repeating a call with the same `after` returns the same event, so retries, timeouts and reconnects never lose input. Delivery is at least once: an agent that does not advance the cursor can see an event twice and should skip repeated utterance ids.
+- Events are kept, in order, while nobody is waiting. Up to 200 unacknowledged events are kept per session.
+- A session belongs to the client that started it. Starting again with the same client returns the same session; another client gets `SESSION_BUSY` and cannot read it. Only one session listens at a time, because there is one microphone.
+- `interrupted` always comes before the utterance that caused it, so "playback stopped, you are still talking" is distinct from "a new transcript is ready". The utterance carries `interruptedResponseId`. Interrupted speech is never replayed.
+
+### Speech detection
+
+The renderer captures the microphone continuously, resampled to 16 kHz, and runs voice-activity detection on 20 ms frames: energy above an adaptive noise floor, a speech-band energy ratio, and a minimum stretch of sustained speech, so a cough, a click or a door does not start a turn. Half a second of pre-roll is kept, so the first word is never clipped. An utterance ends after the quiet pause set by **Pause before your turn ends** (default 0.9 s) and is transcribed with the selected speech model. Too-short sounds and empty transcripts are dropped. **Listening sensitivity** trades quiet speech against background noise.
+
+### Interrupting Delulu (barge-in)
+
+Detection keeps running while Delulu speaks. When you talk over it for **Talk-over time** (default 0.3 s) of sustained speech, the renderer stops playback at once, without waiting for a transcript, and tells the app. The app drops the rest of that response and anything queued behind it, discards synthesis still in flight, and refuses any late audio from it, so it cannot resume. Your utterance, including its pre-roll from before playback stopped, is finalized after the normal pause and delivered as the next input.
+
+Keeping Delulu's own voice out of the microphone uses three layers:
+
+1. The capture stream asks Chromium for echo cancellation. Playback runs in the same renderer, which gives the canceller a reference. How well this works depends on the platform audio stack.
+2. Playback-reference gating: while Delulu is speaking, the detector knows its own output level and requires the microphone to be clearly louder than the echo it has learned to expect, for longer, before treating it as speech.
+3. A transcript that closely matches what Delulu said in the last minute is discarded (unless the user had just interrupted it) instead of delivered, so leaked playback cannot start a self-conversation.
+
+This is not verified full-duplex echo cancellation. With loud speakers close to the microphone, barge-in can miss quiet speech or, rarely, trigger on Delulu's own voice. Headphones make it reliable. Turn off **Talk over Delulu to interrupt** to keep listening without barge-in.
+
+### Agent hosts
+
+- **Claude Code:** run `listen next` with the Bash tool in the background. A finished background task notifies the agent and wakes it even when idle, so your next utterance reaches it as soon as it is transcribed. While the agent is mid-response or running tools, it sees the result at its next turn boundary. Your speech stops Delulu's audio immediately either way, because the app does that itself.
+- **T3 Code:** behaves like the provider it runs.
+- **Codex CLI and other hosts:** a finished background command may not wake an idle agent (not verified). The fallback is a foreground `listen next` with a bounded timeout when the agent has nothing else to do. No host should poll `listen status` in a loop.
+
 ## Bridge protocol
 
-Newline-delimited JSON over the socket. Requests: `{"v":1,"id":"…","token":"…","method":"hello"|"speak"|"stop"|"status","params":{…}}`. Responses: `{"v":1,"id":"…","ok":true,"result":…}` or `{"v":1,"id":"…","ok":false,"error":{"code":"UNAUTHORIZED"|"INVALID_REQUEST"|"VOICE_UNAVAILABLE"|"INTERNAL","message":"…"}}`.
+Newline-delimited JSON over the socket. Requests: `{"v":1,"id":"…","token":"…","method":"hello"|"speak"|"stop"|"status"|"listen.start"|"listen.next"|"listen.ack"|"listen.status"|"listen.stop","params":{…}}`. Responses: `{"v":1,"id":"…","ok":true,"result":…}` or `{"v":1,"id":"…","ok":false,"error":{"code":"UNAUTHORIZED"|"INVALID_REQUEST"|"VOICE_UNAVAILABLE"|"SESSION_BUSY"|"SESSION_NOT_FOUND"|"INTERNAL","message":"…"}}`.
 
 Limits: 256 KiB per request line, 16 connections, 4 requests in flight per connection, 15,000 characters per message (Grok's limit).
 

@@ -192,4 +192,27 @@ describe("createVoicePlayer", () => {
     expect(context.sources[0].stopped).toBe(true);
     expect(context.closed).toBe(true);
   });
+
+  test("barge-in stops everything and late audio from that reply never plays", () => {
+    const { context, player, summary } = setup();
+    player.play(chunk({ utteranceId: "a", chunk: 0 }));
+    player.play(chunk({ utteranceId: "a", chunk: 1 }));
+    expect(player.isPlaying()).toBe(true);
+    expect(player.interrupt()).toEqual(["a"]);
+    expect(context.sources.every((source) => source.stopped)).toBe(true);
+    expect(player.isPlaying()).toBe(false);
+    const sources = context.sources.length;
+    // A chunk synthesized before the interruption arrives late: dropped.
+    player.play(chunk({ utteranceId: "a", chunk: 2, last: true }));
+    expect(context.sources).toHaveLength(sources);
+    // The next reply plays from now, and can itself be interrupted.
+    player.play(chunk({ utteranceId: "b", chunk: 0 }));
+    expect(context.sources).toHaveLength(sources + 1);
+    expect(context.sources[context.sources.length - 1].startedAt).toBeCloseTo(
+      10.03,
+      5,
+    );
+    expect(player.interrupt()).toEqual(["b"]);
+    expect(summary().filter((line) => line.endsWith("ended"))).toEqual([]);
+  });
 });

@@ -246,16 +246,19 @@ export type VoiceSpeakRequest = {
   interrupt?: boolean;
   /** Turn code, paths and identifiers into speakable words (default on). */
   normalize?: boolean;
+  /** Caller's id for this spoken response; interruptions report it. Generated when omitted. */
+  responseId?: string;
 };
 
 /** Exact chunk boundaries, measured from the synthesized audio. */
 export type VoiceTimestamp = { text: string; startMs: number; endMs: number };
 
 export type VoiceUtteranceOutcome =
-  "queued" | "speaking" | "spoken" | "stopped" | "failed";
+  "queued" | "speaking" | "spoken" | "stopped" | "interrupted" | "failed";
 
 export type VoiceSpeakResult = {
   id: string;
+  responseId: string;
   outcome: VoiceUtteranceOutcome;
   durationMs: number;
   timestamps: VoiceTimestamp[];
@@ -267,7 +270,7 @@ export type VoiceSpeakResult = {
 };
 
 /** `position` is how many utterances are ahead; 0 starts right away. */
-export type VoiceQueued = { id: string; position: number };
+export type VoiceQueued = { id: string; responseId: string; position: number };
 
 export type VoiceUtteranceSummary = {
   id: string;

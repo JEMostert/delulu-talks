@@ -23,6 +23,7 @@ import {
   type VoiceBridgeHandlers,
   type VoiceBridgeSnapshot,
 } from "./voiceBridge";
+import { fakeListen } from "../voice/fakeListen";
 import {
   VOICE_AGENT_INSTRUCTIONS,
   type VoiceBridgeStatus,
@@ -67,18 +68,20 @@ async function started(
         return wait
           ? {
               id: "u1",
+              responseId: "r1",
               outcome: "spoken",
               durationMs: 4200,
               timestamps: [],
               warnings: [],
               unsupported: [],
             }
-          : { id: "u1", position: 1 };
+          : { id: "u1", responseId: "r1", position: 1 };
       },
       stop: async () => {
         calls.stops++;
       },
       status: () => snapshot,
+      ...fakeListen().handlers,
       ...handlers,
     },
   });
@@ -216,7 +219,11 @@ test("hello, speak, stop and status round trip", async () => {
   });
 
   request("q", "speak", { text: "Done. [laugh]", agent: "  Claude Code  " });
-  expect((await agent.response("q")).result).toEqual({ id: "u1", position: 1 });
+  expect((await agent.response("q")).result).toEqual({
+    id: "u1",
+    responseId: "r1",
+    position: 1,
+  });
   request("w", "speak", {
     text: "Done.",
     wait: true,
@@ -318,7 +325,11 @@ test("responses may complete out of order and in-flight requests are capped", as
     speak: (request) =>
       new Promise((resolve) => {
         releases.push(() =>
-          resolve({ id: request.text, position: Number(request.text) }),
+          resolve({
+            id: request.text,
+            responseId: "r1",
+            position: Number(request.text),
+          }),
         );
       }),
   });
@@ -334,7 +345,11 @@ test("responses may complete out of order and in-flight requests are capped", as
   expect((await agent.response("5")).error.message).toContain("At most 4");
   while (releases.length < 4) await Bun.sleep(5);
   releases[3]();
-  expect((await agent.response("4")).result).toEqual({ id: "4", position: 4 });
+  expect((await agent.response("4")).result).toEqual({
+    id: "4",
+    responseId: "r1",
+    position: 4,
+  });
   releases[0]();
   expect((await agent.response("1")).result.position).toBe(1);
   releases[1]();
@@ -392,9 +407,10 @@ test("a stale socket is replaced but a live one or a regular file is not", async
   expect(bridge.status.listening).toBe(true);
 
   const handlers: VoiceBridgeHandlers = {
-    speak: async () => ({ id: "x", position: 0 }),
+    speak: async () => ({ id: "x", responseId: "r1", position: 0 }),
     stop: async () => undefined,
     status: () => snapshot,
+    ...fakeListen().handlers,
   };
   const second = new VoiceBridge({
     directory: voice,
@@ -538,4 +554,156 @@ test("Windows setup quotes paths for PowerShell and agent CLIs", () => {
   expect(fallback.shell).toBe(
     `$env:ELECTRON_RUN_AS_NODE="1"; & "C:\\Program Files\\Delulu Talks\\Delulu Talks.exe" "${script}" say "Done, all tests pass."`,
   );
+});
+
+test("listening sessions deliver events after the cursor until acknowledged", async () => {
+  const listen = fakeListen();
+  const { file } = await started(listen.handlers);
+  const agent = await client(file.endpoint);
+  const request = (id: string, method: string, params = {}) => {
+    agent.send({ v: 1, id, token: file.token, method, params });
+    return agent.response(id);
+  };
+  const session = (await request("s", "listen.start", { client: "claude" }))
+    .result;
+  expect(session.id).toBe("ses_claude");
+  // Idempotent for the same client, refused for another.
+  expect(
+    (await request("s2", "listen.start", { client: "claude" })).result.id,
+  ).toBe(session.id);
+  expect(
+    (await request("s3", "listen.start", { client: "codex" })).error.code,
+  ).toBe("SESSION_BUSY");
+
+  // Speech between waits stays queued.
+  listen.push({
+    type: "utterance",
+    id: "utt_1",
+    text: "First",
+    at: 1,
+    durationMs: 900,
+    interruptedResponseId: null,
+  });
+  const first = (
+    await request("n1", "listen.next", {
+      sessionId: session.id,
+      timeoutSeconds: 5,
+    })
+  ).result;
+  expect(first.event).toMatchObject({ seq: 1, id: "utt_1" });
+  // A retry without advancing the cursor gets the same event again.
+  const retry = (
+    await request("n2", "listen.next", {
+      sessionId: session.id,
+      timeoutSeconds: 5,
+    })
+  ).result;
+  expect(retry.event.id).toBe("utt_1");
+  // Passing after acknowledges it; nothing new yet, so the wait times out.
+  const empty = (
+    await request("n3", "listen.next", {
+      sessionId: session.id,
+      after: 1,
+      timeoutSeconds: 0.05,
+    })
+  ).result;
+  expect(empty).toMatchObject({
+    status: "timeout",
+    session: { ackedSeq: 1, queued: 0 },
+  });
+
+  listen.push({ type: "interrupted", responseId: "rsp_9", at: 2 });
+  listen.push({
+    type: "utterance",
+    id: "utt_2",
+    text: "Wait",
+    at: 3,
+    durationMs: 700,
+    interruptedResponseId: "rsp_9",
+  });
+  const interrupted = (
+    await request("n4", "listen.next", {
+      sessionId: session.id,
+      after: 1,
+      timeoutSeconds: 5,
+    })
+  ).result;
+  expect(interrupted.event).toMatchObject({
+    type: "interrupted",
+    responseId: "rsp_9",
+  });
+  expect(
+    (await request("a", "listen.ack", { sessionId: session.id, after: 2 }))
+      .result.ackedSeq,
+  ).toBe(2);
+  expect((await request("st", "listen.status", {})).result.session.queued).toBe(
+    1,
+  );
+
+  expect(
+    (await request("x", "listen.next", { sessionId: "nope" })).error.code,
+  ).toBe("SESSION_NOT_FOUND");
+  expect(
+    (await request("y", "listen.next", { sessionId: session.id, after: -1 }))
+      .error.code,
+  ).toBe("INVALID_REQUEST");
+  expect(
+    (await request("z", "speak", { text: "Hi", responseId: "bad id!" })).error
+      .code,
+  ).toBe("INVALID_REQUEST");
+
+  await request("stop", "listen.stop", { sessionId: session.id });
+  const stopped = (
+    await request("n5", "listen.next", {
+      sessionId: session.id,
+      after: 3,
+      timeoutSeconds: 5,
+    })
+  ).result;
+  expect(stopped.status).toBe("stopped");
+});
+
+test("a disconnected waiter is aborted and loses nothing", async () => {
+  const listen = fakeListen();
+  const { file } = await started(listen.handlers);
+  const owner = await client(file.endpoint);
+  owner.send({
+    v: 1,
+    id: "s",
+    token: file.token,
+    method: "listen.start",
+    params: {},
+  });
+  const session = (await owner.response("s")).result;
+  const waiter = await client(file.endpoint);
+  waiter.send({
+    v: 1,
+    id: "w",
+    token: file.token,
+    method: "listen.next",
+    params: { sessionId: session.id, timeoutSeconds: 30 },
+  });
+  for (let tries = 0; listen.waiting === 0 && tries < 100; tries++)
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(listen.waiting).toBe(1);
+  waiter.socket.destroy();
+  for (let tries = 0; listen.waiting > 0 && tries < 100; tries++)
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(listen.waiting).toBe(0);
+  listen.push({
+    type: "utterance",
+    id: "utt_1",
+    text: "Still here",
+    at: 1,
+    durationMs: 500,
+    interruptedResponseId: null,
+  });
+  owner.send({
+    v: 1,
+    id: "n",
+    token: file.token,
+    method: "listen.next",
+    params: { sessionId: session.id, timeoutSeconds: 5 },
+  });
+  expect((await owner.response("n")).result.event.id).toBe("utt_1");
 });

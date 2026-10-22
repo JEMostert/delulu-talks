@@ -2,6 +2,12 @@ export type SetupState =
   "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { ImportQueueSnapshot } from "./importQueue";
 import type {
+  ListenCaptureEvent,
+  ListenCommand,
+  ListenStatus,
+  VoiceSkillInstall,
+} from "./listening";
+import type {
   VoiceAgentSetup,
   VoiceEngineId,
   VoicePlaybackChunk,
@@ -153,6 +159,14 @@ export type AppSettings = {
   voiceKeepLoaded: boolean;
   /** Let local coding agents speak through the MCP server and CLI. */
   voiceAgentBridge: boolean;
+  /** Listening sessions: 0 hears only clear speech, 1 also quiet speech. */
+  listenSensitivity: number;
+  /** Quiet pause, in milliseconds, that ends an utterance. */
+  listenSilenceMs: number;
+  /** Talking over Delulu stops its speech. */
+  listenBargeIn: boolean;
+  /** Sustained speech over playback, in milliseconds, needed to interrupt. */
+  listenBargeInMs: number;
 };
 
 export type SetupStage =
@@ -545,6 +559,15 @@ export type ModelCacheCleanupResult = {
 export type RenderingMode = "hardware" | "software";
 
 export type DeluluApi = {
+  getListenStatus(): Promise<ListenStatus>;
+  onListenStatus(callback: (status: ListenStatus) => void): () => void;
+  /** Start or reuse the app's own listening session (client "delulu"). */
+  startListening(): Promise<ListenStatus>;
+  /** Stop the active listening session, whoever started it. */
+  stopListening(): Promise<ListenStatus>;
+  installVoiceSkill(): Promise<VoiceSkillInstall>;
+  onListenCommand(callback: (command: ListenCommand) => void): () => void;
+  reportListenEvent(event: ListenCaptureEvent): void;
   getVoiceStatus(): Promise<VoiceStatus>;
   onVoiceStatus(callback: (status: VoiceStatus) => void): () => void;
   setupVoice(): Promise<void>;

@@ -5,6 +5,7 @@ const OUTCOMES: Record<VoiceUtteranceSummary["outcome"], [string, string]> = {
   speaking: ["Speaking", ""],
   spoken: ["Spoken", "success"],
   stopped: ["Stopped", "neutral"],
+  interrupted: ["Interrupted", "neutral"],
   failed: ["Failed", "danger"],
 };
 

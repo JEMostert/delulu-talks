@@ -9,6 +9,7 @@ import type {
   MagicRewriteRequest,
   RecordingSubmission,
 } from "./types";
+import type { ListenCaptureEvent } from "./listening";
 import {
   VOICE_LIMITS,
   type VoicePlaybackEvent,
@@ -253,6 +254,64 @@ export function parseVoiceSpeakRequest(value: unknown): VoiceSpeakRequest {
   };
 }
 
+const LISTEN_STATES = ["listening", "failed", "stopped"];
+
+export function parseListenCaptureEvent(value: unknown): ListenCaptureEvent {
+  const source = object(value, "listen event");
+  const sessionId = requestText(source.sessionId, 128);
+  switch (source.type) {
+    case "state":
+      if (!LISTEN_STATES.includes(source.state as string))
+        throw new Error("Invalid listen state");
+      return {
+        type: "state",
+        sessionId,
+        state: source.state as "listening" | "failed" | "stopped",
+        ...(source.message === undefined
+          ? {}
+          : { message: requestText(source.message, 400) }),
+      };
+    case "speechStart":
+      return {
+        type: "speechStart",
+        sessionId,
+        duringPlayback: source.duringPlayback === true,
+      };
+    case "bargeIn":
+      return {
+        type: "bargeIn",
+        sessionId,
+        utteranceIds: stringIds(source.utteranceIds ?? [], 128, 50),
+      };
+    case "discarded":
+      return {
+        type: "discarded",
+        sessionId,
+        reason: requestText(source.reason ?? "", 200),
+      };
+    case "utterance": {
+      const wav = source.wav;
+      if (
+        !ArrayBuffer.isView(wav) ||
+        Object.prototype.toString.call(wav) !== "[object Uint8Array]" ||
+        wav.byteLength < 44 ||
+        wav.byteLength > 8 * 1024 * 1024
+      )
+        throw new Error("Invalid utterance audio");
+      return {
+        type: "utterance",
+        sessionId,
+        wav: wav as Uint8Array,
+        durationMs: Math.max(0, finiteNumber(source.durationMs, "duration")),
+        speechMs: Math.max(0, finiteNumber(source.speechMs, "speech")),
+        overlappedPlayback: source.overlappedPlayback === true,
+      };
+    }
+    default:
+      throw new Error("Unknown listen event");
+  }
+}
+
 export function parseVoicePlaybackEvent(value: unknown): VoicePlaybackEvent {
   const source = object(value, "playback event");
   const chunk = finiteNumber(source.chunk, "playback chunk");
@@ -280,6 +339,11 @@ function stringIds(value: unknown, limit = 128, count = 500): string[] {
 }
 
 export const ipcRequestSchemas = {
+  "listen:status": noArguments,
+  "listen:start": noArguments,
+  "listen:stop": noArguments,
+  "voice:installSkill": noArguments,
+  "listen:event": schema(1, ([value]) => [parseListenCaptureEvent(value)]),
   "voice:status": noArguments,
   "voice:setup": noArguments,
   "voice:cancelSetup": noArguments,

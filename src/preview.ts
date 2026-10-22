@@ -31,6 +31,7 @@ import type {
   UpdateStatus,
 } from "./types";
 import { VOICE_AGENT_INSTRUCTIONS, type VoiceStatus } from "./voice";
+import type { ListenStatus } from "./listening";
 
 let demoHistory: TranscriptRecord[] =
   previewScenario === "empty" ? [] : scenarioHistory();
@@ -113,6 +114,43 @@ function syncPreviewBridge(settings: AppSettings) {
   });
 }
 
+// Preview listening: no microphone; session state and turns are simulated.
+let listenStatus: ListenStatus = {
+  session: null,
+  recent:
+    previewScenario === "empty"
+      ? []
+      : [
+          {
+            seq: 2,
+            type: "utterance",
+            sessionId: "lst_preview",
+            id: "utt_preview_2",
+            text: "Actually, skip the tests for now and open the pull request.",
+            at: Date.now() - 2 * 60_000,
+            durationMs: 3_400,
+            interruptedResponseId: "rsp_preview_1",
+          },
+          {
+            seq: 1,
+            type: "utterance",
+            sessionId: "lst_preview",
+            id: "utt_preview_1",
+            text: "Can you fix the cache path test first?",
+            at: Date.now() - 6 * 60_000,
+            durationMs: 2_100,
+            interruptedResponseId: null,
+          },
+        ],
+  capturing: false,
+  message: "Preview — the browser opens no microphone",
+};
+const listenListeners = new Set<(status: ListenStatus) => void>();
+function setListenStatus(patch: Partial<ListenStatus>) {
+  listenStatus = { ...listenStatus, ...patch };
+  for (const listener of listenListeners) listener(listenStatus);
+}
+
 function mockSettings(): AppSettings {
   try {
     const raw = localStorage.getItem("delulu-demo-settings");
@@ -130,6 +168,48 @@ function desktopOnly(): never {
 }
 
 export const previewApi: DeluluApi = {
+  async getListenStatus() {
+    return listenStatus;
+  },
+  onListenStatus(callback) {
+    listenListeners.add(callback);
+    return () => listenListeners.delete(callback);
+  },
+  async startListening() {
+    setListenStatus({
+      capturing: true,
+      session: {
+        id: "lst_preview",
+        client: "delulu",
+        state: "listening",
+        startedAt: Date.now(),
+        ackedSeq: 2,
+        lastSeq: 2,
+        queued: 0,
+        userSpeaking: false,
+        transcribing: false,
+        waiters: 0,
+        error: null,
+      },
+    });
+    return listenStatus;
+  },
+  async stopListening() {
+    setListenStatus({
+      capturing: false,
+      session: listenStatus.session
+        ? { ...listenStatus.session, state: "stopped", waiters: 0 }
+        : null,
+    });
+    return listenStatus;
+  },
+  async installVoiceSkill() {
+    return desktopOnly();
+  },
+  onListenCommand() {
+    return () => undefined;
+  },
+  reportListenEvent() {},
   async getVoiceStatus() {
     syncPreviewBridge(mockSettings());
     return voiceStatus;
@@ -200,6 +280,7 @@ export const previewApi: DeluluApi = {
         : [];
     return {
       id,
+      responseId: request.responseId ?? `rsp_preview_${Date.now()}`,
       outcome: "spoken",
       durationMs,
       timestamps: [{ text, startMs: 0, endMs: durationMs }],

@@ -16,6 +16,8 @@ import { VoiceEngineSetup } from "../components/voice/VoiceEngineSetup";
 import { VoiceTryIt } from "../components/voice/VoiceTryIt";
 import { VoiceAgentConnect } from "../components/voice/VoiceAgentConnect";
 import { VoiceRecent } from "../components/voice/VoiceRecent";
+import { VoiceListening } from "../components/voice/VoiceListening";
+import type { ListenControls } from "../hooks/useListen";
 import type { VoiceControls } from "../hooks/useVoice";
 import {
   KOKORO_VOICES,
@@ -91,6 +93,8 @@ function statusLine(status: VoiceStatus, enabled: boolean): string {
 export function VoicePage({
   settings: s,
   voice,
+  listen,
+  speechReady,
   saving,
   onSave,
   onAction,
@@ -98,6 +102,8 @@ export function VoicePage({
 }: {
   settings: AppSettings;
   voice: VoiceControls;
+  listen: ListenControls;
+  speechReady: boolean;
   saving: boolean;
   onSave: (
     patch: Partial<AppSettings>,
@@ -401,6 +407,15 @@ export function VoicePage({
         load={voice.agentSetup}
         onToggle={() => save({ voiceAgentBridge: !s.voiceAgentBridge })}
         onCopy={onCopy}
+      />
+
+      <VoiceListening
+        settings={s}
+        listen={listen}
+        speechReady={speechReady}
+        saving={saving}
+        onSave={save}
+        onAction={onAction}
       />
 
       <VoiceRecent items={status.recent} />

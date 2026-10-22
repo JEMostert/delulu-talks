@@ -14,9 +14,9 @@ import {
 } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import electronUpdater from "electron-updater";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { HistoryBatchDeletion } from "./services/historyBatch";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type {
   AppSettings,
   Page,
@@ -48,9 +48,11 @@ import { recoverTemporaryAudio } from "./services/audioCacheRecovery";
 import { deletedDespiteCleanup } from "./services/migrationBackups";
 import { UpdateService } from "./services/updates";
 import { VoiceService } from "./services/voice";
+import { ListenError, ListeningService } from "./services/listening";
 import {
   installVoiceAgentScript,
   VoiceBridge,
+  VoiceBridgeError,
   voiceAgentScriptSource,
   voiceAgentSetup,
 } from "./services/voiceBridge";
@@ -114,6 +116,7 @@ let pill: DesktopIndicatorAdapter;
 let dictation: DictationService;
 let voice: VoiceService;
 let voiceBridge: VoiceBridge | null = null;
+let listening: ListeningService;
 let labIpc: ReturnType<typeof registerMainIpc> | null = null;
 let ruleUsage: RuleUsageService;
 
@@ -367,8 +370,15 @@ function speakClipboard(): void {
 
 function voiceMenuItems(settings: AppSettings): MenuItemConstructorOptions[] {
   const status = voice?.getStatus();
-  if (!status || !settings.voiceEnabled) return [];
+  const session = listening?.getStatus().session;
   const items: MenuItemConstructorOptions[] = [];
+  if (listening?.active && session)
+    items.push({
+      label: `Stop listening (${session.client})`,
+      click: () => listening.stopActive("Stopped from the tray"),
+    });
+  if (!status || !settings.voiceEnabled)
+    return items.length ? [{ type: "separator" }, ...items] : [];
   if (voice.isSpeaking)
     items.push({
       label: status.current?.agent
@@ -398,9 +408,21 @@ async function syncVoiceBridge(settings: AppSettings): Promise<void> {
       speak: async (request, wait) => {
         const queued = voice.enqueue({ ...request, source: "agent" });
         if (wait) return queued.done;
-        return { id: queued.id, position: queued.position };
+        return {
+          id: queued.id,
+          responseId: queued.responseId,
+          position: queued.position,
+        };
       },
       stop: async () => voice.stop("agent"),
+      listenStart: (client) => bridgeListen(() => listening.start(client)),
+      listenNext: (sessionId, options) =>
+        bridgeListen(() => listening.next(sessionId, options)),
+      listenAck: (sessionId, after) =>
+        bridgeListenSync(() => listening.ack(sessionId, after)),
+      listenStatus: (sessionId) =>
+        bridgeListenSync(() => listening.status(sessionId)),
+      listenStop: (sessionId) => bridgeListen(() => listening.stop(sessionId)),
       status: () => {
         const status = voice.getStatus();
         const current = storage.getSettings();
@@ -424,6 +446,63 @@ async function syncVoiceBridge(settings: AppSettings): Promise<void> {
   } catch (error) {
     console.error("Voice bridge did not start:", error);
   }
+}
+
+/** Give agents the bridge's error codes for listening failures. */
+function bridgeError(error: unknown): unknown {
+  if (!(error instanceof ListenError)) return error;
+  return new VoiceBridgeError(
+    error.code === "UNAVAILABLE" ? "VOICE_UNAVAILABLE" : error.code,
+    error.message,
+  );
+}
+
+async function bridgeListen<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    throw bridgeError(error);
+  }
+}
+
+function bridgeListenSync<T>(operation: () => T): T {
+  try {
+    return operation();
+  } catch (error) {
+    throw bridgeError(error);
+  }
+}
+
+/** Install the delulu-voice skill for Claude Code and Codex, with this machine's script path. */
+function installVoiceSkill(): { paths: string[] } {
+  const setup = voiceAgentSetup(installAgentScript(), {
+    execPath: process.execPath,
+    env: process.env,
+  });
+  const packaged = join(process.resourcesPath, "voice", "skill", "SKILL.md");
+  const template = readFileSync(
+    app.isPackaged && existsSync(packaged)
+      ? packaged
+      : resolve(app.getAppPath(), "skills", "delulu-voice", "SKILL.md"),
+    "utf8",
+  );
+  const quote = (value: string) =>
+    /^[A-Za-z0-9_\/.:=@%+,-]+$/.test(value)
+      ? value
+      : `'${value.replaceAll("'", "'\\''")}'`;
+  const env = setup.nodeFound ? "" : "ELECTRON_RUN_AS_NODE=1 ";
+  const skill = template.replaceAll(
+    "{{SCRIPT}}",
+    env + setup.command.map(quote).join(" "),
+  );
+  const paths = [".claude", ".codex"].map((root) =>
+    join(app.getPath("home"), root, "skills", "delulu-voice", "SKILL.md"),
+  );
+  for (const path of paths) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, skill);
+  }
+  return { paths };
 }
 
 function installAgentScript(): string {
@@ -1055,6 +1134,14 @@ async function applySettings(value: unknown): Promise<AppSettings> {
   });
   if (saved.voiceAgentBridge !== previous.voiceAgentBridge)
     await syncVoiceBridge(saved);
+  if (
+    saved.listenSensitivity !== previous.listenSensitivity ||
+    saved.listenSilenceMs !== previous.listenSilenceMs ||
+    saved.listenBargeIn !== previous.listenBargeIn ||
+    saved.listenBargeInMs !== previous.listenBargeInMs ||
+    saved.inputDeviceId !== previous.inputDeviceId
+  )
+    listening.settingsChanged(saved);
   broadcast("settings:changed", saved);
   rebuildTrayMenu();
   return saved;
@@ -1105,7 +1192,11 @@ async function start(): Promise<void> {
     smokeTest ? { env: { ...process.env, XDG_SESSION_TYPE: "" } } : {},
   );
   if (!smokeTest && storage.getSettings().showOverlay) pill.prepare();
-  asr = new AsrService(storage, () => !dictation?.isActive);
+  // A listening session keeps the speech model loaded between turns.
+  asr = new AsrService(
+    storage,
+    () => !dictation?.isActive && !listening?.active,
+  );
   updates = new UpdateService(
     app.isPackaged &&
       process.platform !== "darwin" &&
@@ -1137,6 +1228,41 @@ async function start(): Promise<void> {
       return true;
     },
     stop: (utteranceId) => broadcast("voice:stopPlayback", utteranceId),
+  });
+  listening = new ListeningService({
+    settings: () => storage.getSettings(),
+    cacheDirectory: storage.cacheDirectory,
+    prepareSpeech: async (settings) => {
+      if (!(await asr.isEnvironmentReady(settings)))
+        throw new Error(
+          "Set up a speech model on the Models page before listening.",
+        );
+      await asr.ensureLoaded(settings);
+    },
+    transcribe: async (audioPath, durationMs) => {
+      const result = await asr.transcribe(
+        { audioPath, durationMs },
+        storage.getSettings(),
+      );
+      return typeof result.text === "string" ? result.text : "";
+    },
+    interruptSpeech: () => voice.interrupt(),
+    recentlySpoken: () => voice.recentlySpoken(),
+    command: (command) => {
+      const contents = mainWindow?.webContents;
+      if (!contents || contents.isDestroyed()) return false;
+      contents.send("listen:command", command);
+      return true;
+    },
+  });
+  let listenKey = "";
+  listening.onStatus((status) => {
+    broadcast("listen:statusChanged", status);
+    const key = `${status.session?.state ?? ""}:${status.capturing}`;
+    if (key !== listenKey) {
+      listenKey = key;
+      rebuildTrayMenu();
+    }
   });
   let voicePhase = "";
   voice.onStatus((status) => {
@@ -1218,14 +1344,20 @@ async function start(): Promise<void> {
     dictation.recorderUnavailable();
     voice.playbackLost();
   });
+  mainWindow.webContents.on("did-finish-load", () => listening.rendererReady());
   shortcut = createShortcutAdapter(() => storage.getSettings().shortcutMode, {
     start: () => dictation.start(),
     stop: () => dictation.stop(),
     toggle: () => dictation.toggle(),
   });
-  // Answering by voice stops Delulu talking before the microphone opens.
-  dictation.beforeCapture = () => voice.interruptForDictation();
+  // Answering by voice stops Delulu talking before the microphone opens, and a
+  // listening session leaves the microphone to dictation until it finishes.
+  dictation.beforeCapture = () => {
+    voice.interruptForDictation();
+    listening.pauseForDictation();
+  };
   asr.onStatus((status) => {
+    if (!dictation.isActive) listening.resumeAfterDictation();
     dictation.runtimeChanged();
     if (dictation.isActive)
       pasteLast.cancelPending("Paste cancelled because a recording started.");
@@ -1272,6 +1404,8 @@ async function start(): Promise<void> {
     historyBatchSnapshot,
     selectedHistory,
     voice,
+    listening,
+    installVoiceSkill: () => installVoiceSkill(),
     voiceAgentSetup: () =>
       voiceAgentSetup(installAgentScript(), {
         execPath: process.execPath,
@@ -1374,6 +1508,7 @@ app.on("before-quit", (event) => {
     Promise.all([
       asr.shutdown().catch(() => undefined),
       voiceBridge?.stop().catch(() => undefined),
+      Promise.resolve(listening?.shutdown()),
       voice?.shutdown().catch(() => undefined),
     ]),
     new Promise((resolve) => setTimeout(resolve, 6_000)),

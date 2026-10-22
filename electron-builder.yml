@@ -52,6 +52,8 @@ extraResources:
     to: overlay/pill.py
   - from: electron/voice/delulu-voice-mcp.mjs
     to: voice/delulu-voice-mcp.mjs
+  - from: skills/delulu-voice/SKILL.md
+    to: voice/skill/SKILL.md
   - from: build/icon.png
     to: icon.png
   - from: build/tray/tray-idle.png

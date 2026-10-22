@@ -23,6 +23,7 @@ export const REQUIRED_RESOURCES = [
   "python/licenses/transformers-Apache-2.0.txt",
   "overlay/pill.py",
   "voice/delulu-voice-mcp.mjs",
+  "voice/skill/SKILL.md",
   "icon.png",
   ...["idle", "recording", "busy", "attention", "update"].flatMap((state) => [
     `tray/tray-${state}.png`,
@@ -138,14 +139,16 @@ export function sourceManifest(root = process.cwd()) {
     const expected =
       resource.to === "python/THIRD_PARTY_NOTICES.md"
         ? "docs/THIRD_PARTY_NOTICES.md"
-        : resource.to === "python/licenses/transformers-Apache-2.0.txt"
-          ? "docs/licenses/transformers-Apache-2.0.txt"
-          : resource.to.startsWith("python/")
-            ? `electron/${resource.to}`
-            : resource.to.startsWith("overlay/") ||
-                resource.to.startsWith("voice/")
+        : resource.to === "voice/skill/SKILL.md"
+          ? "skills/delulu-voice/SKILL.md"
+          : resource.to === "python/licenses/transformers-Apache-2.0.txt"
+            ? "docs/licenses/transformers-Apache-2.0.txt"
+            : resource.to.startsWith("python/")
               ? `electron/${resource.to}`
-              : `build/${resource.to}`;
+              : resource.to.startsWith("overlay/") ||
+                  resource.to.startsWith("voice/")
+                ? `electron/${resource.to}`
+                : `build/${resource.to}`;
     assert.equal(
       resource.from,
       expected,
