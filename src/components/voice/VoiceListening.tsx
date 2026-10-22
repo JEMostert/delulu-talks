@@ -64,7 +64,7 @@ export function VoiceListening({
   return (
     <>
       <section className="pref-group">
-        <h3>Listening</h3>
+        <h3>Microphone</h3>
         <div className="pref-list">
           <div className="voice-listen-head">
             <span

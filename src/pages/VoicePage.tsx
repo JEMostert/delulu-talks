@@ -16,6 +16,7 @@ import { VoiceEngineSetup } from "../components/voice/VoiceEngineSetup";
 import { VoiceTryIt } from "../components/voice/VoiceTryIt";
 import { VoiceAgentConnect } from "../components/voice/VoiceAgentConnect";
 import { VoiceRecent } from "../components/voice/VoiceRecent";
+import { VoiceStep } from "../components/voice/VoiceStep";
 import { VoiceListening } from "../components/voice/VoiceListening";
 import type { ListenControls } from "../hooks/useListen";
 import type { VoiceControls } from "../hooks/useVoice";
@@ -84,7 +85,7 @@ function statusLine(status: VoiceStatus, enabled: boolean): string {
     return `Speaking ${current.chunk} of ${current.chunks}${current.agent ? ` — ${current.agent}` : ""}${waiting}`;
   if (status.phase === "synthesizing" || current)
     return `Preparing speech${current?.agent ? ` — ${current.agent}` : ""}${waiting}`;
-  if (status.engine === "missing") return "Set up a voice model below";
+  if (status.engine === "missing") return "Set up a voice model in step 1";
   if (status.engine === "error") return status.message;
   if (!enabled) return "Off · nothing is spoken";
   return status.message;
@@ -130,9 +131,9 @@ export function VoicePage({
     status.engine === "unloaded" ||
     (status.engine === "error" && status.setupState !== "failed");
   const unavailableReason = !s.voiceEnabled
-    ? "Turn on Speak out loud first."
+    ? "Turn on Speak out loud in step 1 first."
     : !runnable
-      ? "Set up the voice model first."
+      ? "Set up the voice model in step 1 first."
       : "";
   const available = !unavailableReason;
   const busySpeaking = voice.speaking;
@@ -178,7 +179,7 @@ export function VoicePage({
       <section className="voice-hero" aria-label="Voice status">
         <div className="voice-hero-copy">
           <span className="eyebrow">Delulu Voice</span>
-          <h2>Speak out loud</h2>
+          <h2>Voice status</h2>
           <p className="voice-status-line" role="status" aria-live="polite">
             <span
               className={`status-dot ${
@@ -209,154 +210,228 @@ export function VoicePage({
               <Square /> Stop
             </button>
           )}
-          <Toggle
-            value={s.voiceEnabled}
-            label="Speak out loud"
-            disabled={saving}
-            onChange={() => save({ voiceEnabled: !s.voiceEnabled })}
-          />
         </div>
       </section>
 
-      <VoiceEngineSetup
-        status={status}
-        settings={s}
-        saving={saving}
-        onSelect={(voiceEngine) => void onSave({ voiceEngine }, null)}
-        onSetup={() => void onAction(voice.setup)}
-        onCancelSetup={() => void onAction(voice.cancelSetup)}
-        onLoad={() => void onAction(voice.load)}
-        onUnload={() => void onAction(voice.unload)}
-      />
-
-      <section className="pref-group">
-        <h3>Voice</h3>
+      <VoiceStep
+        number={1}
+        title="Turn on speech"
+        description="Switch on Speak out loud, then pick a voice model and set it up once."
+        done={s.voiceEnabled && runnable}
+      >
         <div className="pref-list">
-          {s.voiceEngine === "kokoro" ? (
-            <SettingRow
-              icon={UserRound}
-              title="Speaker"
-              description="Kokoro's English voices."
-            >
-              <select
-                aria-label="Kokoro voice"
-                value={s.voiceName}
-                disabled={saving}
-                onChange={(event) => save({ voiceName: event.target.value })}
+          <SettingRow
+            icon={Volume2}
+            title="Speak out loud"
+            description="Delulu reads text aloud with a local model. Nothing leaves your machine."
+          >
+            {toggle("voiceEnabled", "Speak out loud")}
+          </SettingRow>
+        </div>
+        <VoiceEngineSetup
+          status={status}
+          settings={s}
+          saving={saving}
+          onSelect={(voiceEngine) => void onSave({ voiceEngine }, null)}
+          onSetup={() => void onAction(voice.setup)}
+          onCancelSetup={() => void onAction(voice.cancelSetup)}
+          onLoad={() => void onAction(voice.load)}
+          onUnload={() => void onAction(voice.unload)}
+        />
+      </VoiceStep>
+
+      <VoiceStep
+        number={2}
+        title="Choose how it sounds"
+        description="Pick a speaker, adjust speed and volume, then try some text."
+      >
+        <section className="pref-group">
+          <h3>Voice</h3>
+          <div className="pref-list">
+            {s.voiceEngine === "kokoro" ? (
+              <SettingRow
+                icon={UserRound}
+                title="Speaker"
+                description="Kokoro's English voices."
               >
-                {VOICE_GROUPS.map(([label, matches]) => (
-                  <optgroup key={label} label={label}>
-                    {KOKORO_VOICES.filter(matches).map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </optgroup>
+                <select
+                  aria-label="Kokoro voice"
+                  value={s.voiceName}
+                  disabled={saving}
+                  onChange={(event) => save({ voiceName: event.target.value })}
+                >
+                  {VOICE_GROUPS.map(([label, matches]) => (
+                    <optgroup key={label} label={label}>
+                      {KOKORO_VOICES.filter(matches).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <button
+                  className="secondary-button"
+                  disabled={!available || saving}
+                  title={available ? "Hear this voice" : unavailableReason}
+                  onClick={() => void preview()}
+                >
+                  <Play /> Preview
+                </button>
+              </SettingRow>
+            ) : (
+              <SettingRow
+                icon={UserRound}
+                title={s.voiceClone ? "Your voice clip" : "Built-in voice"}
+                description={
+                  s.voiceClone
+                    ? `Speaking in the voice from ${s.voiceClone}.`
+                    : "Chatterbox's own voice. Choose a clip to speak in another voice."
+                }
+                help="Use 5–20 seconds of one person speaking clearly, with no music or background voices. Only clone a voice you have permission to use."
+              >
+                {s.voiceClone && (
+                  <button
+                    className="tool-button"
+                    disabled={saving}
+                    onClick={removeClip}
+                  >
+                    Use built-in
+                  </button>
+                )}
+                <button
+                  className="secondary-button"
+                  disabled={saving}
+                  onClick={chooseClip}
+                >
+                  <Upload /> {s.voiceClone ? "Replace clip" : "Choose clip…"}
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={!available || saving}
+                  title={available ? "Hear this voice" : unavailableReason}
+                  onClick={() => void preview()}
+                >
+                  <Play /> Preview
+                </button>
+              </SettingRow>
+            )}
+          </div>
+          {s.voiceEngine === "chatterbox-turbo" && (
+            <p className="pref-note">
+              Voice clip: 5–20 seconds of one person speaking clearly, no music.
+            </p>
+          )}
+        </section>
+
+        <section className="pref-group">
+          <h3>Delivery</h3>
+          <div className="pref-list">
+            <SettingRow icon={Gauge} title="Speed">
+              <RangeField
+                label="Speaking speed"
+                min={0.5}
+                max={2}
+                step={0.05}
+                value={s.voiceSpeed}
+                format={(value) => `${value.toFixed(2)}×`}
+                disabled={saving}
+                onCommit={(voiceSpeed) => save({ voiceSpeed })}
+              />
+            </SettingRow>
+            <SettingRow icon={Volume2} title="Volume">
+              <RangeField
+                label="Speech volume"
+                min={0}
+                max={1}
+                step={0.01}
+                value={s.voiceVolume}
+                format={(value) => `${Math.round(value * 100)}%`}
+                disabled={saving}
+                onCommit={(voiceVolume) => save({ voiceVolume })}
+              />
+            </SettingRow>
+            <SettingRow icon={Headphones} title="Output">
+              <select
+                aria-label="Speech output device"
+                value={s.voiceOutputDeviceId}
+                disabled={saving}
+                onChange={(event) =>
+                  save({ voiceOutputDeviceId: event.target.value })
+                }
+              >
+                <option value="default">System default</option>
+                {!outputListed && (
+                  <option value={s.voiceOutputDeviceId}>
+                    Saved device (not connected)
+                  </option>
+                )}
+                {outputs.map((device) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.label}
+                  </option>
                 ))}
               </select>
-              <button
-                className="secondary-button"
-                disabled={!available || saving}
-                title={available ? "Hear this voice" : unavailableReason}
-                onClick={() => void preview()}
-              >
-                <Play /> Preview
-              </button>
             </SettingRow>
-          ) : (
-            <SettingRow
-              icon={UserRound}
-              title={s.voiceClone ? "Your voice clip" : "Built-in voice"}
-              description={
-                s.voiceClone
-                  ? `Speaking in the voice from ${s.voiceClone}.`
-                  : "Chatterbox's own voice. Choose a clip to speak in another voice."
+          </div>
+        </section>
+
+        <section className="pref-group">
+          <h3>Try it</h3>
+          <div className="pref-list voice-try-card">
+            <VoiceTryIt
+              engine={s.voiceEngine}
+              available={available}
+              unavailableReason={unavailableReason}
+              speaking={busySpeaking}
+              onSpeak={(text) =>
+                voice.speak({ text, source: "app", interrupt: true })
               }
-              help="Use 5–20 seconds of one person speaking clearly, with no music or background voices. Only clone a voice you have permission to use."
-            >
-              {s.voiceClone && (
-                <button
-                  className="tool-button"
-                  disabled={saving}
-                  onClick={removeClip}
-                >
-                  Use built-in
-                </button>
-              )}
-              <button
-                className="secondary-button"
-                disabled={saving}
-                onClick={chooseClip}
-              >
-                <Upload /> {s.voiceClone ? "Replace clip" : "Choose clip…"}
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!available || saving}
-                title={available ? "Hear this voice" : unavailableReason}
-                onClick={() => void preview()}
-              >
-                <Play /> Preview
-              </button>
-            </SettingRow>
-          )}
-        </div>
-        {s.voiceEngine === "chatterbox-turbo" && (
-          <p className="pref-note">
-            Voice clip: 5–20 seconds of one person speaking clearly, no music.
-          </p>
-        )}
-      </section>
+              onStop={() => void onAction(voice.stop)}
+            />
+          </div>
+        </section>
+      </VoiceStep>
+
+      <VoiceStep
+        number={3}
+        title="Connect your coding agents"
+        description="Let Claude Code, Codex or another agent speak to you: turn it on, add Delulu to the agent, then give your lead agent the instructions."
+        done={
+          s.voiceAgentBridge && status.bridge.listening && !status.bridge.error
+        }
+        optional
+      >
+        <VoiceAgentConnect
+          enabled={s.voiceAgentBridge}
+          bridge={status.bridge}
+          saving={saving}
+          load={voice.agentSetup}
+          onToggle={() => save({ voiceAgentBridge: !s.voiceAgentBridge })}
+          onCopy={onCopy}
+        />
+      </VoiceStep>
+
+      <VoiceStep
+        number={4}
+        title="Talk back to your agents"
+        description="Keep the microphone open so a connected agent hears your answers in turns."
+        done={listen.active}
+        optional
+      >
+        <VoiceListening
+          settings={s}
+          listen={listen}
+          speechReady={speechReady}
+          saving={saving}
+          onSave={save}
+          onAction={onAction}
+        />
+      </VoiceStep>
 
       <section className="pref-group">
-        <h3>Delivery</h3>
+        <h3>More options</h3>
         <div className="pref-list">
-          <SettingRow icon={Gauge} title="Speed">
-            <RangeField
-              label="Speaking speed"
-              min={0.5}
-              max={2}
-              step={0.05}
-              value={s.voiceSpeed}
-              format={(value) => `${value.toFixed(2)}×`}
-              disabled={saving}
-              onCommit={(voiceSpeed) => save({ voiceSpeed })}
-            />
-          </SettingRow>
-          <SettingRow icon={Volume2} title="Volume">
-            <RangeField
-              label="Speech volume"
-              min={0}
-              max={1}
-              step={0.01}
-              value={s.voiceVolume}
-              format={(value) => `${Math.round(value * 100)}%`}
-              disabled={saving}
-              onCommit={(voiceVolume) => save({ voiceVolume })}
-            />
-          </SettingRow>
-          <SettingRow icon={Headphones} title="Output">
-            <select
-              aria-label="Speech output device"
-              value={s.voiceOutputDeviceId}
-              disabled={saving}
-              onChange={(event) =>
-                save({ voiceOutputDeviceId: event.target.value })
-              }
-            >
-              <option value="default">System default</option>
-              {!outputListed && (
-                <option value={s.voiceOutputDeviceId}>
-                  Saved device (not connected)
-                </option>
-              )}
-              {outputs.map((device) => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label}
-                </option>
-              ))}
-            </select>
-          </SettingRow>
           <SettingRow
             icon={MicOff}
             title="Stop speaking when I start dictating"
@@ -383,40 +458,6 @@ export function VoicePage({
           </SettingRow>
         </div>
       </section>
-
-      <section className="pref-group">
-        <h3>Try it</h3>
-        <div className="pref-list voice-try-card">
-          <VoiceTryIt
-            engine={s.voiceEngine}
-            available={available}
-            unavailableReason={unavailableReason}
-            speaking={busySpeaking}
-            onSpeak={(text) =>
-              voice.speak({ text, source: "app", interrupt: true })
-            }
-            onStop={() => void onAction(voice.stop)}
-          />
-        </div>
-      </section>
-
-      <VoiceAgentConnect
-        enabled={s.voiceAgentBridge}
-        bridge={status.bridge}
-        saving={saving}
-        load={voice.agentSetup}
-        onToggle={() => save({ voiceAgentBridge: !s.voiceAgentBridge })}
-        onCopy={onCopy}
-      />
-
-      <VoiceListening
-        settings={s}
-        listen={listen}
-        speechReady={speechReady}
-        saving={saving}
-        onSave={save}
-        onAction={onAction}
-      />
 
       <VoiceRecent items={status.recent} />
     </div>

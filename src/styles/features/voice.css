@@ -230,3 +230,74 @@
 .voice-page .setting-control {
   flex-wrap: wrap;
 }
+
+/* Numbered setup steps: a badge, a title and the step's settings. */
+.voice-step {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1), var(--rim-highlight);
+}
+.voice-step-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.voice-step-number {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+.voice-step-number svg {
+  width: 15px;
+  height: 15px;
+}
+.voice-step.done .voice-step-number {
+  color: var(--on-accent);
+  background: var(--accent-grad);
+}
+.voice-step-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+.voice-step-head p {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.voice-step-optional {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.voice-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+/* The model card sits inside a step, so it drops its own frame. */
+.voice-step-body > .setup-card {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: none;
+}
