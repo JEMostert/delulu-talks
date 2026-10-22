@@ -24,7 +24,7 @@ jobs:
           # Ubuntu 22.04 keeps the glibc floor low enough for the AppImage and deb.
           - os: ubuntu-22.04
             name: linux-x64
-            args: ""
+            args: --verbose
           - os: macos-latest
             name: mac-arm64
             args: --target aarch64-apple-darwin
@@ -39,7 +39,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev patchelf rpm
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev patchelf rpm libfuse2
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -56,6 +56,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # linuxdeploy's bundled strip cannot read newer ELF sections.
           NO_STRIP: "true"
+          # linuxdeploy is itself an AppImage; run it without FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Delulu Talks ${{ github.ref_name }}
@@ -97,8 +99,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          gh release upload "$GITHUB_REF_NAME" packaging/arch/*.pkg.tar.zst --clobber
+          gh release upload "$GITHUB_REF_NAME" packaging/arch/*.pkg.tar.zst --clobber --repo "$GITHUB_REPOSITORY"
 
   publish:
     needs: [build, pacman]
