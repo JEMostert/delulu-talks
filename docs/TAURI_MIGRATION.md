@@ -81,8 +81,8 @@ Unchanged in shape: everything else, including `onStatus` (now also carries reco
 - [x] `delulu-audio`
 - [x] `delulu-desktop`
 - [x] Renderer bridge (`src/desktopBridge.ts`) and removal of renderer capture/playback
-- [ ] `delulu-data`
-- [ ] `delulu-speech`, `delulu-voice`
+- [x] `delulu-data`
+- [x] `delulu-speech`, `delulu-voice`
 - [ ] App crate: router, handlers, tray, windows, plugins, MCP subcommand
 - [ ] Packaging + CI (AppImage, rpm, deb, pacman, dmg, NSIS, updater signing)
 - [ ] Docs, cleanup (remove `electron/`, electron-builder, Electron deps), release reset, v0.1.0
