@@ -23,9 +23,8 @@ import type {
   LabRequest,
   MagicRewriteRequest,
   MagicStatus,
+  MicrophoneDevice,
   Page,
-  RecorderCommand,
-  RecordingSubmission,
   ShortcutStatus,
   TranscriptRecord,
   UpdateStatus,
@@ -42,7 +41,52 @@ const transcriptListeners = new Set<(record: TranscriptRecord) => void>();
 function setLiveStatus(patch: Partial<DictationStatus>) {
   liveStatus = { ...liveStatus, ...patch };
   for (const listener of statusListeners) listener(liveStatus);
+  syncPreviewLevel();
 }
+/** Pushes a dictation status, as the native recorder would (preview and e2e). */
+export function setPreviewStatus(patch: Partial<DictationStatus>) {
+  setLiveStatus(patch);
+}
+
+// Preview capture: no microphone; a speech-like level arrives at ~20 Hz
+// while listening, like the desktop's `recorder:level` event.
+const levelListeners = new Set<(level: number) => void>();
+let levelTimer: ReturnType<typeof setInterval> | null = null;
+function syncPreviewLevel() {
+  const active = liveStatus.phase === "listening" && levelListeners.size > 0;
+  if (active && !levelTimer) {
+    const started = performance.now();
+    levelTimer = setInterval(() => {
+      const t = (performance.now() - started) / 1000;
+      const syllables =
+        Math.abs(Math.sin(t * 7.3)) * Math.abs(Math.sin(t * 1.1));
+      const level = Math.min(1, 0.04 + syllables * 0.6 + Math.random() * 0.05);
+      for (const listener of levelListeners) listener(level);
+    }, 50);
+  } else if (!active && levelTimer) {
+    clearInterval(levelTimer);
+    levelTimer = null;
+  }
+}
+
+const PREVIEW_MICROPHONES: MicrophoneDevice[] = [
+  { deviceId: "default", label: "System default", labelKnown: true },
+  { deviceId: "preview-usb-mic", label: "USB Microphone", labelKnown: true },
+  {
+    deviceId: "preview-built-in",
+    label: "Built-in Audio Analog Stereo",
+    labelKnown: true,
+  },
+];
+const PREVIEW_SPEAKERS: MicrophoneDevice[] = [
+  { deviceId: "default", label: "System default", labelKnown: true },
+  { deviceId: "preview-headphones", label: "Headphones", labelKnown: true },
+  {
+    deviceId: "preview-speakers",
+    label: "Built-in Audio Speakers",
+    labelKnown: true,
+  },
+];
 
 // Preview voice: no audio plays in the browser; status changes are simulated.
 const PREVIEW_SCRIPT =
@@ -206,10 +250,6 @@ export const previewApi: DeluluApi = {
   async installVoiceSkill() {
     return desktopOnly();
   },
-  onListenCommand() {
-    return () => undefined;
-  },
-  reportListenEvent() {},
   async getVoiceStatus() {
     syncPreviewBridge(mockSettings());
     return voiceStatus;
@@ -324,13 +364,26 @@ export const previewApi: DeluluApi = {
       instructions: VOICE_AGENT_INSTRUCTIONS,
     };
   },
-  onVoicePlay() {
+  async listMicrophones() {
+    return PREVIEW_MICROPHONES;
+  },
+  onMicrophonesChanged() {
     return () => undefined;
   },
-  onVoiceStopPlayback() {
-    return () => undefined;
+  async listSpeakers() {
+    return PREVIEW_SPEAKERS;
   },
-  reportVoicePlayback() {},
+  onRecordingLevel(callback) {
+    levelListeners.add(callback);
+    syncPreviewLevel();
+    return () => {
+      levelListeners.delete(callback);
+      syncPreviewLevel();
+    };
+  },
+  async testCaptureCue() {
+    // The preview plays no audio.
+  },
   async getRenderingMode() {
     return "hardware";
   },
@@ -506,16 +559,24 @@ export const previewApi: DeluluApi = {
     desktopOnly();
   },
   async pauseDictation() {
-    setLiveStatus({ phase: "paused", message: "Paused — microphone open" });
+    setLiveStatus({
+      phase: "paused",
+      message: "Paused — microphone open",
+      silenceCountdownSeconds: null,
+    });
   },
   async resumeDictation() {
     setLiveStatus({ phase: "listening", message: "Listening — resumed" });
   },
-  async recordingPauseChanged() {},
   async toggleDictation() {
     // The preview simulates a short dictation so the shell can be reviewed.
     if (liveStatus.phase === "listening" || liveStatus.phase === "paused") {
-      setLiveStatus({ phase: "transcribing", message: "Transcribing locally" });
+      setLiveStatus({
+        phase: "transcribing",
+        message: "Transcribing locally",
+        silenceCountdownSeconds: null,
+        captureInputNotice: null,
+      });
       setTimeout(() => {
         const record: TranscriptRecord = {
           ...scenarioHistory()[2],
@@ -542,7 +603,12 @@ export const previewApi: DeluluApi = {
     desktopOnly();
   },
   async cancelDictation() {
-    setLiveStatus({ phase: "idle", message: "Recording cancelled" });
+    setLiveStatus({
+      phase: "idle",
+      message: "Recording cancelled",
+      silenceCountdownSeconds: null,
+      captureInputNotice: null,
+    });
   },
   async setupModel() {
     desktopOnly();
@@ -678,7 +744,7 @@ export const previewApi: DeluluApi = {
     return desktopOnly();
   },
   async inspectAudioFile(_path: string) {
-    throw new Error("Media inspection requires Electron");
+    throw new Error("Media inspection requires the desktop app");
   },
   async getAudioJobs() {
     return desktopOnly();
@@ -695,7 +761,18 @@ export const previewApi: DeluluApi = {
   async chooseAudioFiles(): Promise<AudioFileSelection[]> {
     return desktopOnly();
   },
-  async resolveAudioFiles(_files: File[]): Promise<AudioFileSelection[]> {
+  onFilesDropped(callback) {
+    // Browsers expose no local paths; report names so the page responds.
+    const drop = (event: DragEvent) => {
+      const names = [...(event.dataTransfer?.files ?? [])].map(
+        (file) => file.name,
+      );
+      if (names.length) callback(names);
+    };
+    window.addEventListener("drop", drop);
+    return () => window.removeEventListener("drop", drop);
+  },
+  async resolveAudioPaths(_paths: string[]): Promise<AudioFileSelection[]> {
     return desktopOnly();
   },
   async getImportQueue() {
@@ -723,19 +800,11 @@ export const previewApi: DeluluApi = {
     return () => {};
   },
   async runLab(_request: LabRequest) {
-    throw new Error("Audio file transcription requires Electron");
+    throw new Error("Audio file transcription requires the desktop app");
   },
   async exportTranscript(_id: string, _format: ExportFormat) {
     return desktopOnly();
   },
-  async recordingStarted() {},
-  async recordingLimitReached() {},
-  async recordingSilence() {},
-  async recorderReady() {},
-  async recordingFailed() {},
-  async recordingInputChanged() {},
-  recordingLevel(_level: number) {},
-  async submitRecording(_recording: RecordingSubmission) {},
   onStatus(callback: (status: DictationStatus) => void) {
     statusListeners.add(callback);
     return () => statusListeners.delete(callback);
@@ -763,9 +832,6 @@ export const previewApi: DeluluApi = {
   onTranscript(callback: (record: TranscriptRecord) => void) {
     transcriptListeners.add(callback);
     return () => transcriptListeners.delete(callback);
-  },
-  onRecorderCommand(_callback: (command: RecorderCommand) => void) {
-    return () => undefined;
   },
   onUpdateStatus(_callback: (status: UpdateStatus) => void) {
     return () => undefined;

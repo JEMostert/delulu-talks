@@ -1,22 +1,16 @@
 import { DEFAULT_SETTINGS } from "./data";
 import { isMagicPreset } from "./rewritePresets";
 import { normalizeTimings } from "./pipelineTimings";
-import { normalizeCaptureDiagnostics } from "./captureDiagnostics";
 import type {
   AppSettings,
   CustomWord,
   MagicPreset,
   MagicRewriteRequest,
-  RecordingSubmission,
 } from "./types";
-import type { ListenCaptureEvent } from "./listening";
-import {
-  VOICE_LIMITS,
-  type VoicePlaybackEvent,
-  type VoiceSpeakRequest,
-} from "./voice";
+import { VOICE_LIMITS, type VoiceSpeakRequest } from "./voice";
 
-/** Runtime contracts for renderer requests; no Electron or platform dependencies. */
+/** Runtime contracts for renderer requests; no desktop or platform dependencies.
+ * The Rust router validates again with the same arity, limits and truncation. */
 type RequestSchema = {
   readonly count: number;
   parse(args: readonly unknown[]): unknown[];
@@ -172,32 +166,6 @@ export function parseMagicRequest(value: unknown): MagicRewriteRequest {
   return request;
 }
 
-export function parseRecording(value: unknown): RecordingSubmission {
-  const source = object(value, "recording");
-  const durationMs = finiteNumber(source.durationMs, "recording duration");
-  if (durationMs < 0) throw new Error("Invalid recording duration");
-  // ArrayBuffer.isView also accepts typed arrays copied across renderer realms.
-  const wav = source.wav;
-  if (
-    !ArrayBuffer.isView(wav) ||
-    Object.prototype.toString.call(wav) !== "[object Uint8Array]" ||
-    wav.byteLength < 44
-  )
-    throw new Error("The microphone returned an empty recording");
-  if (wav.byteLength > 500 * 1024 * 1024)
-    throw new Error(
-      "Recording is too large; keep dictation captures below 500 MB",
-    );
-  return {
-    wav: wav as Uint8Array,
-    durationMs,
-    sessionId: requestText(source.sessionId, 128),
-    timings: normalizeTimings(source.timings) ?? undefined,
-    captureDiagnostics:
-      normalizeCaptureDiagnostics(source.captureDiagnostics) ?? undefined,
-  };
-}
-
 function parseRewriteResult(value: unknown): ObjectInput | null {
   if (value === null) return null;
   const source = object(value, "rewrite");
@@ -254,81 +222,6 @@ export function parseVoiceSpeakRequest(value: unknown): VoiceSpeakRequest {
   };
 }
 
-const LISTEN_STATES = ["listening", "failed", "stopped"];
-
-export function parseListenCaptureEvent(value: unknown): ListenCaptureEvent {
-  const source = object(value, "listen event");
-  const sessionId = requestText(source.sessionId, 128);
-  switch (source.type) {
-    case "state":
-      if (!LISTEN_STATES.includes(source.state as string))
-        throw new Error("Invalid listen state");
-      return {
-        type: "state",
-        sessionId,
-        state: source.state as "listening" | "failed" | "stopped",
-        ...(source.message === undefined
-          ? {}
-          : { message: requestText(source.message, 400) }),
-      };
-    case "speechStart":
-      return {
-        type: "speechStart",
-        sessionId,
-        duringPlayback: source.duringPlayback === true,
-      };
-    case "bargeIn":
-      return {
-        type: "bargeIn",
-        sessionId,
-        utteranceIds: stringIds(source.utteranceIds ?? [], 128, 50),
-      };
-    case "discarded":
-      return {
-        type: "discarded",
-        sessionId,
-        reason: requestText(source.reason ?? "", 200),
-      };
-    case "utterance": {
-      const wav = source.wav;
-      if (
-        !ArrayBuffer.isView(wav) ||
-        Object.prototype.toString.call(wav) !== "[object Uint8Array]" ||
-        wav.byteLength < 44 ||
-        wav.byteLength > 8 * 1024 * 1024
-      )
-        throw new Error("Invalid utterance audio");
-      return {
-        type: "utterance",
-        sessionId,
-        wav: wav as Uint8Array,
-        durationMs: Math.max(0, finiteNumber(source.durationMs, "duration")),
-        speechMs: Math.max(0, finiteNumber(source.speechMs, "speech")),
-        overlappedPlayback: source.overlappedPlayback === true,
-      };
-    }
-    default:
-      throw new Error("Unknown listen event");
-  }
-}
-
-export function parseVoicePlaybackEvent(value: unknown): VoicePlaybackEvent {
-  const source = object(value, "playback event");
-  const chunk = finiteNumber(source.chunk, "playback chunk");
-  if (!Number.isInteger(chunk) || chunk < 0 || chunk > 10_000)
-    throw new Error("Invalid playback chunk");
-  if (!["started", "ended", "failed"].includes(source.event as string))
-    throw new Error("Invalid playback event");
-  return {
-    utteranceId: requestText(source.utteranceId, 128),
-    chunk,
-    event: source.event as VoicePlaybackEvent["event"],
-    ...(source.message === undefined
-      ? {}
-      : { message: requestText(source.message, 400) }),
-  };
-}
-
 function stringIds(value: unknown, limit = 128, count = 500): string[] {
   if (!Array.isArray(value) || value.length > count)
     throw new Error("Invalid selection list");
@@ -343,7 +236,6 @@ export const ipcRequestSchemas = {
   "listen:start": noArguments,
   "listen:stop": noArguments,
   "voice:installSkill": noArguments,
-  "listen:event": schema(1, ([value]) => [parseListenCaptureEvent(value)]),
   "voice:status": noArguments,
   "voice:setup": noArguments,
   "voice:cancelSetup": noArguments,
@@ -355,7 +247,9 @@ export const ipcRequestSchemas = {
   "voice:chooseReference": noArguments,
   "voice:removeReference": noArguments,
   "voice:agentSetup": noArguments,
-  "voice:playback": schema(1, ([value]) => [parseVoicePlaybackEvent(value)]),
+  "audio:inputs": noArguments,
+  "audio:outputs": noArguments,
+  "audio:testCue": noArguments,
   "cache:preview": noArguments,
   "models:downloads": noArguments,
   "models:deleteDownload": schema(1, ([id]) => [requestText(id, 32)]),
@@ -391,7 +285,7 @@ export const ipcRequestSchemas = {
   "lab:loadSource": schema(1, ([path]) => [requestText(path, 4096)]),
   "lab:removeJob": schema(1, ([path]) => [requestText(path, 4096)]),
   "lab:relinkJob": schema(1, ([path]) => [requestText(path, 4096)]),
-  "lab:resolveAudioFiles": schema(1, ([paths]) => [stringIds(paths, 4096, 50)]),
+  "lab:resolveAudioPaths": schema(1, ([paths]) => [stringIds(paths, 4096, 50)]),
   "lab:queueGet": noArguments,
   "lab:queueClearFinished": noArguments,
   "lab:queueEnqueue": schema(1, ([path]) => [requestText(path, 4096)]),
@@ -412,20 +306,6 @@ export const ipcRequestSchemas = {
   "paste:dismissRecovery": schema(1, ([id]) => [requestText(id, 128)]),
   "dictation:pause": noArguments,
   "dictation:resume": noArguments,
-  "recorder:silence": schema(3, ([id, remaining, stop]) => {
-    if (typeof stop !== "boolean") throw new Error("Expected stop boolean");
-    return [
-      requestText(id, 128),
-      remaining === null ? null : finiteNumber(remaining, "silence countdown"),
-      stop,
-    ];
-  }),
-  "recorder:limit": schema(1, ([id]) => [requestText(id, 128)]),
-  "recorder:inputChanged": schema(3, ([id, message, lost]) => {
-    if (typeof lost !== "boolean")
-      throw new Error("Expected lost-input boolean");
-    return [requestText(id, 128), requestText(message, 1000), lost];
-  }),
   "runtime:setupLog": schema(1, ([kind]) => {
     if (kind !== "speech" && kind !== "rewrite" && kind !== "voice")
       throw new Error("Choose speech, rewriting or voice setup logs");
@@ -468,20 +348,6 @@ export const ipcRequestSchemas = {
   "dictation:stop": noArguments,
   "dictation:toggle": noArguments,
   "dictation:cancel": noArguments,
-  "recorder:started": schema(1, ([id]) => [requestText(id, 128)]),
-  "recorder:pause-changed": schema(2, ([id, paused]) => {
-    if (typeof paused !== "boolean") throw new Error("Invalid pause state");
-    return [requestText(id, 128), paused];
-  }),
-  "recorder:ready": noArguments,
-  "recorder:failed": schema(2, ([value, id]) => [
-    requestText(value, 1000),
-    requestText(id, 128),
-  ]),
-  "recorder:submit": schema(1, ([value]) => [parseRecording(value)]),
-  "recorder:level": schema(1, ([value]) => [
-    Math.min(1, Math.max(0, finiteNumber(value, "recording level"))),
-  ]),
   "clipboard:copy": schema(1, ([value]) => [requestText(value, 500_000)]),
   "paste:authorize": noArguments,
   "paste:test": noArguments,

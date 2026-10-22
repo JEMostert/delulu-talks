@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
-import { captureLevelStore } from "../captureLevel";
+import { recordingLevelStore } from "../recordingLevel";
 
 /**
  * The sea behind the app, built from layered gradients: no images, canvas or
@@ -138,10 +138,10 @@ export const OceanBackground = memo(function OceanBackground({
       return;
     }
     let level = 0;
-    const unsubscribe = captureLevelStore.subscribe(() => {
+    const unsubscribe = recordingLevelStore.subscribe(() => {
       level = Math.min(
         1,
-        Math.max(0, (captureLevelStore.getSnapshot().db + 55) / 45),
+        Math.max(0, (recordingLevelStore.getSnapshot().db + 55) / 45),
       );
     });
     const timer = setInterval(() => {

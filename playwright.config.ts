@@ -6,12 +6,6 @@ export default defineConfig({
   testMatch: "**/*.pw.ts",
   fullyParallel: true,
   use: {
-    launchOptions: {
-      args: [
-        "--use-fake-ui-for-media-stream",
-        "--use-fake-device-for-media-stream",
-      ],
-    },
     baseURL,
     viewport: { width: 1280, height: 900 },
     screenshot: "only-on-failure",

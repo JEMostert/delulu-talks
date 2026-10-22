@@ -128,34 +128,42 @@ export function encodeDomainFailure(failure: DomainFailure): Error {
   );
 }
 
+/** The safe failure contract as a DomainError, or null when it is malformed. */
+export function domainErrorFromFailure(value: unknown): DomainError | null {
+  if (!value || typeof value !== "object") return null;
+  const failure = value as DomainFailure;
+  if (
+    failure.schemaVersion !== 1 ||
+    !Object.prototype.hasOwnProperty.call(
+      DOMAIN_ERROR_POLICIES,
+      failure.code,
+    ) ||
+    typeof failure.operationId !== "string" ||
+    typeof failure.operation !== "string" ||
+    typeof failure.message !== "string"
+  )
+    return null;
+  return new DomainError(failure.code, failure.message, {
+    operationId: failure.operationId,
+    operation: failure.operation,
+    cancellationEffect:
+      failure.cancellationEffect === "worker-stopped"
+        ? "worker-stopped"
+        : "none",
+    cause: failure.cause,
+  });
+}
+
 export function restoreDomainError(reason: unknown): unknown {
   if (!(reason instanceof Error)) return reason;
   const index = reason.message.lastIndexOf(ERROR_MARKER);
   if (index < 0) return reason;
   try {
-    const failure = JSON.parse(
-      reason.message.slice(index + ERROR_MARKER.length),
-    ) as DomainFailure;
-    if (
-      failure.schemaVersion !== 1 ||
-      !Object.prototype.hasOwnProperty.call(
-        DOMAIN_ERROR_POLICIES,
-        failure.code,
-      ) ||
-      typeof failure.operationId !== "string" ||
-      typeof failure.operation !== "string" ||
-      typeof failure.message !== "string"
-    )
-      return reason;
-    return new DomainError(failure.code, failure.message, {
-      operationId: failure.operationId,
-      operation: failure.operation,
-      cancellationEffect:
-        failure.cancellationEffect === "worker-stopped"
-          ? "worker-stopped"
-          : "none",
-      cause: failure.cause,
-    });
+    return (
+      domainErrorFromFailure(
+        JSON.parse(reason.message.slice(index + ERROR_MARKER.length)),
+      ) ?? reason
+    );
   } catch {
     return reason;
   }

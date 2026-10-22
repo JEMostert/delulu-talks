@@ -115,18 +115,13 @@ export function RendererRecovery({
             Saved transcripts, settings and installed runtimes are kept. Reload
             only when the current operation has finished.
           </p>
-          {controllerFailed ? (
-            <p className="mt-3 text-muted">
-              The recording controller stopped. An unfinished microphone capture
-              may have been interrupted. Submitted audio and model operations
-              continue in the desktop process.
-            </p>
-          ) : (
-            <p className="mt-3 text-muted">
-              The recording controller and pending saves are still running. You
-              can stop and save an active recording here.
-            </p>
-          )}
+          <p className="mt-3 text-muted">
+            {controllerFailed
+              ? "The workspace controller stopped. "
+              : "Pending saves are still running. "}
+            Recording, listening and speech run in the desktop process and are
+            not interrupted. You can stop and save an active recording here.
+          </p>
           <div
             role="alert"
             className="mt-4 whitespace-pre-wrap break-words rounded-lg border border-line p-3"
@@ -134,7 +129,7 @@ export function RendererRecovery({
             {error || "Unknown renderer error"}
           </div>
           <div className="panel-actions mt-4 flex flex-wrap gap-3">
-            {state?.canStopRecording && !controllerFailed && (
+            {state?.canStopRecording && (
               <button
                 className="secondary-button"
                 disabled={actionBusy}

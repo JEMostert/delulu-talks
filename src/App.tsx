@@ -805,6 +805,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                       () => bridge.authorizePaste(),
                       "Paste permission saved",
                     )}
+                    onTestCaptureCue={run(() => bridge.testCaptureCue())}
                     onTestPaste={() => {
                       w.setToast(
                         "Focus another text field — pasting in 3 seconds…",

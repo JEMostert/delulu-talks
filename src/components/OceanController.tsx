@@ -18,15 +18,15 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { captureLevelStore } from "../captureLevel";
+import { recordingLevelStore } from "../recordingLevel";
 import { RecordingClock } from "./RecordingClock";
 import type { DictationStatus } from "../types";
 
 function AudioHalo() {
   const level = useSyncExternalStore(
-    captureLevelStore.subscribe,
-    captureLevelStore.getSnapshot,
-    captureLevelStore.getServerSnapshot,
+    recordingLevelStore.subscribe,
+    recordingLevelStore.getSnapshot,
+    recordingLevelStore.getServerSnapshot,
   );
   return (
     <span

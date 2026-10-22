@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileAudio, LoaderCircle, Upload } from "lucide-react";
 import { bridge } from "../bridge";
 import { AudioSourceReview } from "../components/AudioSourceReview";
@@ -96,11 +96,19 @@ export function LabPage({
       setPending(false);
     }
   }
-  function drop(event: DragEvent) {
-    event.preventDefault();
-    const files = Array.from(event.dataTransfer.files);
-    if (files.length) void select(() => bridge.resolveAudioFiles(files));
-  }
+  // Native drag-and-drop delivers local paths while this page is visible;
+  // hidden Activity pages release their effects, so drops target Lab only.
+  const dropBlocked = useRef(false);
+  dropBlocked.current = pending || busy;
+  useEffect(
+    () =>
+      bridge.onFilesDropped((paths) => {
+        setDragging(false);
+        if (!dropBlocked.current && paths.length)
+          void select(() => bridge.resolveAudioPaths(paths));
+      }),
+    [],
+  );
   const result = history.find((record) => record.id === file?.resultId);
   return (
     <div className="content-stack">
@@ -117,9 +125,9 @@ export function LabPage({
           event.dataTransfer.dropEffect = pending || busy ? "none" : "copy";
         }}
         onDrop={(event) => {
+          // The desktop reports dropped paths through onFilesDropped.
+          event.preventDefault();
           setDragging(false);
-          if (!pending && !busy) drop(event);
-          else event.preventDefault();
         }}
       >
         <span className="file-drop-icon" aria-hidden="true">

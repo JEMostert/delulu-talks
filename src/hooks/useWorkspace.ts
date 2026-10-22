@@ -2,14 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { bridge } from "../bridge";
 import { retainSessionTranscripts } from "../sessionTranscriptRetention";
 import { DEFAULT_SETTINGS } from "../data";
-import { PcmRecorder, listMicrophones } from "../recorder";
 import { readStartupService } from "../startupServices";
 import { useWorkspaceOperations } from "./useWorkspaceOperations";
 import { DEFAULT_HISTORY_VIEW, type HistoryViewState } from "../historyView";
 import { useServiceRecovery, type RecoveryService } from "./useServiceRecovery";
 import type {
   AppSettings,
-  CaptureDiagnostics,
   DictationStatus,
   ExportFormat,
   HistoryBatchSnapshot,
@@ -46,8 +44,6 @@ export function useWorkspace() {
     method: "native",
     message: "Checking shortcut",
   });
-  const [captureDiagnostics, setCaptureDiagnostics] =
-    useState<CaptureDiagnostics | null>(null);
   const [pasteLastStatus, setPasteLastStatus] = useState<PasteLastStatus>({
     phase: "idle",
     operationId: null,
@@ -131,9 +127,6 @@ export function useWorkspace() {
     const read = <T>(name: string, request: () => Promise<T>) =>
       readStartupService(name, request, startup.signal);
     setStartupError(null);
-    const recorder = new PcmRecorder((stats) => {
-      if (alive) setCaptureDiagnostics(stats);
-    });
     const receiveBatch = (snapshot: HistoryBatchSnapshot) => {
       if (!alive) return;
       received.add("history batch");
@@ -151,20 +144,6 @@ export function useWorkspace() {
       }),
       bridge.onShortcutStatus(subscribe("shortcut status", setShortcutStatus)),
       bridge.onUpdateStatus(subscribe("update status", setUpdateStatus)),
-      bridge.onRecorderCommand((command) => {
-        if (!isCurrent()) return;
-        void recorder.handle(command).catch((reason) => {
-          if (isCurrent()) report(reason);
-          // Tell the main process, so its capture state never waits forever.
-          if (command.sessionId && command.action !== "cancel")
-            void bridge
-              .recordingFailed(
-                reason instanceof Error ? reason.message : String(reason),
-                command.sessionId,
-              )
-              .catch(() => undefined);
-        });
-      }),
       bridge.onTranscript((record) => {
         if (!isCurrent()) return;
         if (readingHistory) liveRecords.set(record.id, record);
@@ -181,9 +160,6 @@ export function useWorkspace() {
       }),
       bridge.onHistoryBatchChanged(receiveBatch),
     ];
-    void bridge.recorderReady().catch((reason) => {
-      if (isCurrent()) report(reason);
-    });
     void bridge
       .getPasteLastStatus()
       .then((state) => {
@@ -318,20 +294,23 @@ export function useWorkspace() {
       startup.abort();
       serviceRecovery.cancel();
       subscriptions.forEach((remove) => remove());
-      void recorder.cancel().catch(() => {
-        /* The retired owner cannot publish an error. */
-      });
     };
   }, [startupAttempt]);
 
+  // The native recorder owns the inventory; the renderer only lists it.
   useEffect(() => {
     let alive = true;
     let revision = 0;
+    const receive = (next: MicrophoneDevice[]) => {
+      revision += 1;
+      if (alive && next.length) setDevices(next);
+    };
     const refresh = () => {
       const current = ++revision;
-      void listMicrophones(false)
+      void bridge
+        .listMicrophones()
         .then((next) => {
-          if (alive && current === revision) setDevices(next);
+          if (alive && current === revision && next.length) setDevices(next);
         })
         .catch((reason: unknown) => {
           if (alive && current === revision) {
@@ -346,12 +325,12 @@ export function useWorkspace() {
           }
         });
     };
+    const remove = bridge.onMicrophonesChanged(receive);
     refresh();
-    navigator.mediaDevices?.addEventListener("devicechange", refresh);
     window.addEventListener("focus", refresh);
     return () => {
       alive = false;
-      navigator.mediaDevices?.removeEventListener("devicechange", refresh);
+      remove();
       window.removeEventListener("focus", refresh);
     };
   }, []);
@@ -470,7 +449,6 @@ export function useWorkspace() {
     magicStatus,
     shortcutStatus,
     history,
-    captureDiagnostics,
     historyDeletion,
     exportSelection,
     deleteSelection,

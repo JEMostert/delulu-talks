@@ -22,5 +22,8 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src", "tests/unit"],
+  // Renderer capture is native now; this file is kept only as the reference
+  // for the Rust port and no longer compiles against DeluluApi.
+  "exclude": ["src/recorder.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -1,17 +1,10 @@
 export type SetupState =
   "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { ImportQueueSnapshot } from "./importQueue";
-import type {
-  ListenCaptureEvent,
-  ListenCommand,
-  ListenStatus,
-  VoiceSkillInstall,
-} from "./listening";
+import type { ListenStatus, VoiceSkillInstall } from "./listening";
 import type {
   VoiceAgentSetup,
   VoiceEngineId,
-  VoicePlaybackChunk,
-  VoicePlaybackEvent,
   VoiceSpeakRequest,
   VoiceSpeakResult,
   VoiceStatus,
@@ -463,6 +456,7 @@ export type LabRequest = {
   path: string;
 };
 
+/** Legacy renderer-capture command; the native recorder replaced it. */
 export type RecorderCommand = {
   action: "start" | "stop" | "cancel" | "pause" | "resume";
   trailingSilence?: { seconds: number; thresholdDb: number } | null;
@@ -471,6 +465,7 @@ export type RecorderCommand = {
   sessionId?: string;
 };
 
+/** Legacy renderer-capture upload; the native recorder replaced it. */
 export type RecordingSubmission = {
   sessionId: string;
   timings?: PipelineTimings;
@@ -479,6 +474,7 @@ export type RecordingSubmission = {
   captureDiagnostics?: CaptureDiagnostics;
 };
 
+/** An audio input or output; "default" follows the system. */
 export type MicrophoneDevice = {
   deviceId: string;
   label: string;
@@ -566,8 +562,6 @@ export type DeluluApi = {
   /** Stop the active listening session, whoever started it. */
   stopListening(): Promise<ListenStatus>;
   installVoiceSkill(): Promise<VoiceSkillInstall>;
-  onListenCommand(callback: (command: ListenCommand) => void): () => void;
-  reportListenEvent(event: ListenCaptureEvent): void;
   getVoiceStatus(): Promise<VoiceStatus>;
   onVoiceStatus(callback: (status: VoiceStatus) => void): () => void;
   setupVoice(): Promise<void>;
@@ -583,11 +577,17 @@ export type DeluluApi = {
   chooseVoiceReference(): Promise<AppSettings | null>;
   removeVoiceReference(): Promise<AppSettings>;
   getVoiceAgentSetup(): Promise<VoiceAgentSetup>;
-  onVoicePlay(callback: (chunk: VoicePlaybackChunk) => void): () => void;
-  onVoiceStopPlayback(
-    callback: (utteranceId: string | null) => void,
+  /** Audio inputs the native recorder can open; the first is "default". */
+  listMicrophones(): Promise<MicrophoneDevice[]>;
+  onMicrophonesChanged(
+    callback: (devices: MicrophoneDevice[]) => void,
   ): () => void;
-  reportVoicePlayback(event: VoicePlaybackEvent): void;
+  /** Audio outputs for spoken voice; the first is "default". */
+  listSpeakers(): Promise<MicrophoneDevice[]>;
+  /** Live input level, 0–1, about 20 times a second while recording. */
+  onRecordingLevel(callback: (level: number) => void): () => void;
+  /** Plays the start cue at the configured capture sound volume. */
+  testCaptureCue(): Promise<void>;
   getRenderingMode(): Promise<RenderingMode>;
   onRenderingModeChanged(callback: (mode: RenderingMode) => void): () => void;
   previewModelCache(): Promise<ModelCachePreview>;
@@ -684,7 +684,9 @@ export type DeluluApi = {
   chooseAudioFile(): Promise<AudioFileSelection | null>;
   inspectAudioFile(path: string): Promise<AudioFileMetadata>;
   chooseAudioFiles(): Promise<AudioFileSelection[]>;
-  resolveAudioFiles(files: File[]): Promise<AudioFileSelection[]>;
+  /** Local paths of files dropped onto the window (native drag-and-drop). */
+  onFilesDropped(callback: (paths: string[]) => void): () => void;
+  resolveAudioPaths(paths: string[]): Promise<AudioFileSelection[]>;
   getAudioJobs(): Promise<AudioImportJob[]>;
   loadAudioSource(path: string): Promise<{ bytes: Uint8Array; mime: string }>;
   removeAudioJob(path: string): Promise<void>;
@@ -699,23 +701,6 @@ export type DeluluApi = {
   onImportQueue(callback: (snapshot: ImportQueueSnapshot) => void): () => void;
   runLab(request: LabRequest): Promise<TranscriptRecord>;
   exportTranscript(id: string, format: ExportFormat): Promise<string | null>;
-  recordingStarted(sessionId: string): Promise<void>;
-  recordingLimitReached(sessionId: string): Promise<void>;
-  recordingPauseChanged(sessionId: string, paused: boolean): Promise<void>;
-  recordingSilence(
-    sessionId: string,
-    remainingSeconds: number | null,
-    stop: boolean,
-  ): Promise<void>;
-  recorderReady(): Promise<void>;
-  recordingFailed(message: string, sessionId: string): Promise<void>;
-  recordingInputChanged(
-    sessionId: string,
-    message: string,
-    inputLost: boolean,
-  ): Promise<void>;
-  recordingLevel(level: number): void;
-  submitRecording(recording: RecordingSubmission): Promise<void>;
   onPasteLastStatus(callback: (status: PasteLastStatus) => void): () => void;
   onStatus(callback: (status: DictationStatus) => void): () => void;
   onMagicStatus(callback: (status: MagicStatus) => void): () => void;
@@ -725,7 +710,6 @@ export type DeluluApi = {
   onNavigate(callback: (page: Page) => void): () => void;
   onShortcutStatus(callback: (status: ShortcutStatus) => void): () => void;
   onTranscript(callback: (record: TranscriptRecord) => void): () => void;
-  onRecorderCommand(callback: (command: RecorderCommand) => void): () => void;
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
 };
 

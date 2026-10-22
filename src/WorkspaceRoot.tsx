@@ -4,14 +4,14 @@ import { useWorkspace } from "./hooks/useWorkspace";
 import { RendererErrorBoundary } from "./components/RendererErrorBoundary";
 import { RecoveryDrafts } from "./rendererRecovery";
 import { useRenderingMode } from "./hooks/useRenderingMode";
-import { useVoicePlayer } from "./hooks/useVoicePlayer";
-import { useListening } from "./hooks/useListening";
 
-/** Capture, playback and pending saves survive a failure in the presentation subtree. */
+/**
+ * Workspace state and pending saves survive a failure in the presentation
+ * subtree. Capture, listening and voice playback run natively in the desktop
+ * process, so a renderer failure or reload never interrupts them.
+ */
 export function WorkspaceRoot() {
   useRenderingMode();
-  useVoicePlayer();
-  useListening();
   const workspace = useWorkspace();
   const drafts = useRef(new RecoveryDrafts());
   const fieldIds = useRef(new WeakMap<HTMLElement, string>());

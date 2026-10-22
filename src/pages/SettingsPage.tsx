@@ -76,6 +76,7 @@ type Props = {
   onConfigureShortcut: () => void;
   onAuthorizePaste: () => void;
   onTestPaste: () => void;
+  onTestCaptureCue: () => void;
   onCheckForUpdates: () => void;
   onDownloadUpdate: () => void;
   onInstallUpdate: () => void;
@@ -588,17 +589,26 @@ export function SettingsPage(props: Props) {
               </SettingRow>
               {!s.captureSoundsMuted && (
                 <SettingRow title="Volume">
-                  <RangeField
-                    label="Capture sound volume"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={s.captureSoundVolume}
-                    format={(value) => `${Math.round(value * 100)}%`}
-                    onCommit={(captureSoundVolume) =>
-                      save({ captureSoundVolume })
-                    }
-                  />
+                  <div className="inline-control">
+                    <RangeField
+                      label="Capture sound volume"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={s.captureSoundVolume}
+                      format={(value) => `${Math.round(value * 100)}%`}
+                      onCommit={(captureSoundVolume) =>
+                        save({ captureSoundVolume })
+                      }
+                    />
+                    <button
+                      className="tool-button compact"
+                      disabled={saving}
+                      onClick={props.onTestCaptureCue}
+                    >
+                      Test
+                    </button>
+                  </div>
                 </SettingRow>
               )}
             </Group>

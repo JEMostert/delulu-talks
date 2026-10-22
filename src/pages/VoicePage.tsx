@@ -26,43 +26,36 @@ import {
   type VoiceOption,
   type VoiceStatus,
 } from "../voice";
-import type { AppSettings } from "../types";
+import { bridge } from "../bridge";
+import type { AppSettings, MicrophoneDevice } from "../types";
 import "../styles/features/voice.css";
 
-type OutputDevice = { deviceId: string; label: string };
-
-/** Audio outputs for setSinkId; labels need the microphone permission. */
-function useOutputDevices(): OutputDevice[] {
-  const [devices, setDevices] = useState<OutputDevice[]>([]);
+/** Native audio outputs; the desktop lists them, the select adds the default. */
+function useOutputDevices(): MicrophoneDevice[] {
+  const [devices, setDevices] = useState<MicrophoneDevice[]>([]);
   useEffect(() => {
-    const media = navigator.mediaDevices;
-    if (!media?.enumerateDevices) return;
     let alive = true;
-    const read = () =>
-      void media
-        .enumerateDevices()
+    let revision = 0;
+    const read = () => {
+      const current = ++revision;
+      void bridge
+        .listSpeakers()
         .then((items) => {
-          if (!alive) return;
-          const outputs = items.filter(
-            (item) =>
-              item.kind === "audiooutput" &&
-              item.deviceId &&
-              item.deviceId !== "default" &&
-              item.deviceId !== "communications",
-          );
-          setDevices(
-            outputs.map((item, index) => ({
-              deviceId: item.deviceId,
-              label: item.label || `Speaker ${index + 1}`,
-            })),
-          );
+          if (alive && current === revision)
+            setDevices(
+              items.filter(
+                (item) => item.deviceId && item.deviceId !== "default",
+              ),
+            );
         })
         .catch(() => undefined);
+    };
     read();
-    media.addEventListener?.("devicechange", read);
+    // There is no output change event; a returning window re-reads the list.
+    window.addEventListener("focus", read);
     return () => {
       alive = false;
-      media.removeEventListener?.("devicechange", read);
+      window.removeEventListener("focus", read);
     };
   }, []);
   return devices;
