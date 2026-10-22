@@ -1185,7 +1185,7 @@ impl AsrService {
             &self.inner.paths.data,
             &self.inner.paths.models(),
             &bin,
-            std::env::vars_os(),
+            delulu_core::host_vars(),
         )
     }
 

@@ -1641,7 +1641,7 @@ fn environment(paths: &AppPaths, installer: Option<&RuntimeInstaller>) -> ChildE
         .and_then(|installer| installer.python().ok())
         .and_then(|python| python.parent().map(PathBuf::from))
         .unwrap_or(fallback);
-    let mut env = runtime_environment(RuntimeKind::Voice, &paths.data, &paths.models(), &bin, std::env::vars_os());
+    let mut env = runtime_environment(RuntimeKind::Voice, &paths.data, &paths.models(), &bin, delulu_core::host_vars());
     env.insert("TQDM_DISABLE".into(), "1".into());
     env
 }

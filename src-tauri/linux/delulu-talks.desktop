@@ -1,10 +1,10 @@
 [Desktop Entry]
+Type=Application
+Name=Delulu Talks
+Comment=Private local dictation
+Exec=delulu-talks
+Icon=delulu-talks
+StartupWMClass=delulu-talks
 Categories=AudioVideo;Utility;
-Comment={{comment}}
-Exec={{exec}}
-StartupWMClass={{exec}}
-Icon={{icon}}
-Name={{name}}
 Keywords=dictation;speech;transcription;whisper;voice;
 Terminal=false
-Type=Application

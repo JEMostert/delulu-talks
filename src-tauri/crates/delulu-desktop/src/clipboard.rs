@@ -15,6 +15,7 @@
 //!   data-control and no Xwayland); without data-control they need focus,
 //!   so every call is bounded by a timeout.
 
+use delulu_core::HostEnv;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -157,6 +158,7 @@ mod wl {
 
     pub fn copy(text: &str) -> Result<(), String> {
         let mut child = Command::new("wl-copy")
+            .host_env()
             .args(["--type", "text/plain;charset=utf-8"])
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
@@ -187,6 +189,7 @@ mod wl {
 
     fn output(args: &[&str]) -> Result<Option<String>, String> {
         let mut child = Command::new("wl-paste")
+            .host_env()
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

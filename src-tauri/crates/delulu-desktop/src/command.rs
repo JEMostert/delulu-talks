@@ -1,6 +1,7 @@
 //! Short-lived helper commands (qdbus, xdotool, osascript, PowerShell) with a
 //! kill timeout. Injected so tests can replace every subprocess.
 
+use delulu_core::HostEnv;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -52,7 +53,7 @@ impl CommandRunner for SystemCommandRunner {
 
     async fn run(&self, spec: CommandSpec) -> CommandOutcome {
         let mut command = tokio::process::Command::new(&spec.program);
-        command.args(&spec.args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
+        command.host_env().args(&spec.args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
         #[cfg(windows)]
         command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW, like windowsHide
         let mut child = match command.spawn() {

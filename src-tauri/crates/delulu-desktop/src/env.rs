@@ -14,7 +14,7 @@ pub struct DesktopEnv {
 impl DesktopEnv {
     /// The running process.
     pub fn current() -> Self {
-        Self { platform: Platform::current(), vars: std::env::vars().collect() }
+        Self { platform: Platform::current(), vars: delulu_core::host_vars().into_iter().filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?))).collect() }
     }
 
     pub fn new<K: Into<String>, V: Into<String>>(platform: Platform, vars: impl IntoIterator<Item = (K, V)>) -> Self {

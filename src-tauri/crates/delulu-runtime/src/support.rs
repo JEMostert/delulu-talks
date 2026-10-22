@@ -1,6 +1,7 @@
 //! Crate-internal helpers: timestamps, lexical paths, command-line splitting,
 //! process-group termination and bounded command capture.
 
+use delulu_core::HostEnv;
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 use std::sync::OnceLock;
@@ -176,6 +177,7 @@ pub enum CaptureError {
 pub async fn capture(program: &str, args: &[String], timeout: Duration, max_buffer: usize) -> Result<String, CaptureError> {
     let mut command = tokio::process::Command::new(program);
     command
+        .host_env()
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

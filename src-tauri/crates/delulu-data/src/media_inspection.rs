@@ -3,6 +3,7 @@
 //! Reads metadata only: no model startup, conversion, download or disk
 //! output. Blocking (up to the 5 s probe timeout); run on a blocking task.
 
+use delulu_core::HostEnv;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -18,7 +19,7 @@ const MAX_OUTPUT: usize = 128 * 1024;
 /// oversized output.
 fn probe(program: &Path, args: &[&str]) -> Option<String> {
     let mut command = Command::new(program);
-    command.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    command.host_env().args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

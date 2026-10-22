@@ -9,7 +9,7 @@ license = "MIT"
 rust-version = "1.85"
 
 [workspace.dependencies]
-delulu-core = { path = "crates/delulu-core" }
+delulu-core = { path = "crates/delulu-core", features = ["tokio"] }
 delulu-domain = { path = "crates/delulu-domain" }
 delulu-runtime = { path = "crates/delulu-runtime" }
 delulu-audio = { path = "crates/delulu-audio" }

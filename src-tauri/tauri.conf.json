@@ -83,7 +83,7 @@
     },
     "linux": {
       "appimage": {
-        "bundleMediaFramework": true
+        "bundleMediaFramework": false
       },
       "deb": {
         "depends": [
@@ -91,14 +91,20 @@
           "python3",
           "python3-venv"
         ],
-        "desktopTemplate": "linux/delulu-talks.desktop"
+        "desktopTemplate": "linux/generated.desktop",
+        "files": {
+          "/usr/share/applications/delulu-talks.desktop": "linux/delulu-talks.desktop"
+        }
       },
       "rpm": {
         "depends": [
           "(ffmpeg-free or ffmpeg)",
           "python3"
         ],
-        "desktopTemplate": "linux/delulu-talks.desktop"
+        "desktopTemplate": "linux/generated.desktop",
+        "files": {
+          "/usr/share/applications/delulu-talks.desktop": "linux/delulu-talks.desktop"
+        }
       }
     },
     "macOS": {

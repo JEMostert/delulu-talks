@@ -3,6 +3,7 @@
 //! lines on stdin, on Linux Wayland. macOS uses an app-provided panel
 //! window ([`MacPillFactory`], see [`crate::mac_pill`]).
 
+use delulu_core::HostEnv;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -179,6 +180,7 @@ pub fn resolve_system_python(which: &dyn Fn(&str) -> Option<PathBuf>, exists: &d
 
 fn pkg_config_libdir() -> Option<String> {
     let output = Command::new("pkg-config")
+        .host_env()
         .args(["--variable=libdir", "gtk4-layer-shell-0"])
         .stdin(Stdio::null())
         .stderr(Stdio::null())

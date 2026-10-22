@@ -9,6 +9,7 @@
 //! [`Capture::stop`] on a blocking thread and submits the audio itself.
 //! Deadlines still guard a recorder that never answers.
 
+use delulu_core::HostEnv;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
@@ -1471,6 +1472,7 @@ async fn convert_with_ffmpeg(
     use tokio::io::AsyncReadExt;
     let mut command = tokio::process::Command::new("ffmpeg");
     command
+        .host_env()
         .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-n", "-i"])
         .arg(source)
         .args(["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"])

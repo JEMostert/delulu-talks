@@ -45,16 +45,15 @@ function findResourceRoot() {
   const marker = join("overlay", "pill.py");
   const candidates = [];
   const walk = (directory, depth) => {
-    if (depth > 8 || !existsSync(directory)) return;
+    if (depth > 12 || !existsSync(directory)) return;
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
+      if (!entry.isDirectory() || entry.name === "deps") continue;
       const path = join(directory, entry.name);
       if (existsSync(join(path, marker))) candidates.push(path);
-      else walk(path, depth + 1);
+      walk(path, depth + 1);
     }
   };
-  if (platform === "windows-x64") walk(join(target, "release"), 0);
-  else walk(join(target), 0);
+  walk(target, 0);
   const preferred = {
     "linux-x64": (path) => path.includes(join("bundle", "deb")),
     "mac-arm64": (path) => path.endsWith(join("Contents", "Resources")),

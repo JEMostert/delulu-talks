@@ -12,6 +12,10 @@ thiserror.workspace = true
 uuid.workspace = true
 parking_lot.workspace = true
 dirs.workspace = true
+tokio = { workspace = true, optional = true }
+
+[features]
+tokio = ["dep:tokio"]
 
 [dev-dependencies]
 tempfile.workspace = true
