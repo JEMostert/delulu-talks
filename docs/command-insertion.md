@@ -17,7 +17,7 @@ may execute pasted multiline text without a separate Enter keypress. Delulu does
 not inspect the destination or guarantee bracketed-paste behavior. Use copy-only
 delivery and inspect the clipboard text before pasting commands when this matters.
 
-`bun test electron/services/paste.test.ts` checks every current injection route
-and failure/clipboard-only paths in isolated processes. Clipboard, subprocess,
-and portal calls are mocked; the suite neither runs shell text nor proves native
+`cargo test -p delulu-desktop paste` checks the injection routes (Wayland
+portal key release, KDE Klipper publication, macOS accessibility) and the
+failure/clipboard-only paths. Clipboard, subprocess, and portal calls are mocked; the suite neither runs shell text nor proves native
 desktop focus, terminal paste behavior, or successful delivery.

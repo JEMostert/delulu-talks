@@ -2,24 +2,54 @@
 
 ## Product contract
 
-A local desktop voice companion. A global shortcut records in the renderer; Electron owns transcription, optional Magic rewriting, and delivery to the previous app. The main window provides recent results, contextual transcript rewriting, personalization, file transcription, and maintenance. Linux/Wayland is the reference desktop.
+A local desktop voice companion. A global shortcut starts native microphone capture in the Rust backend; the backend owns transcription, optional Magic rewriting, and delivery to the previous app. The main window provides recent results, contextual transcript rewriting, personalization, file transcription, and maintenance. Linux/Wayland is the reference desktop.
 
-The [architecture decision records](decisions/README.md) explain the current transport, backend catalog, runtime packaging, and history-storage choices, including their deferred requirements.
+The app is a [Tauri 2](https://tauri.app/) shell with a Rust backend and the React renderer in the system webview: WebKitGTK on Linux, WKWebView on macOS, WebView2 on Windows. It replaced the Electron app in v0.1.0; [ADR 0006](decisions/0006-tauri-and-native-audio.md) records why. The [architecture decision records](decisions/README.md) explain the transport, backend catalog, runtime packaging, history-storage and voice choices, including their deferred requirements.
+
+## Layout
+
+```text
+src/                        React renderer (pages, components, hooks, shared TypeScript types)
+  desktopBridge.ts          installs window.delulu over Tauri invoke/listen
+src-tauri/                  app crate: Tauri setup, IPC router and handlers, windows, tray, menus, plugins, CLI subcommands
+  crates/delulu-core        error contract, event sink, profile/resource paths, atomic writes
+  crates/delulu-domain      wire types (src/types.ts), catalogs, IPC request validation, shared text logic
+  crates/delulu-runtime     Python discovery, venv generations, installer, worker client + protocol, diagnostics
+  crates/delulu-audio       native capture, resampling, WAV, trailing silence, cues, listening VAD, playback
+  crates/delulu-desktop     paste, clipboard, global shortcuts (portal), overlay supervisor, tray state, autostart, permissions
+  crates/delulu-data        settings/history storage, migrations, backups, retention, exports, caches, import queue
+  crates/delulu-speech      speech + Magic lifecycle, dictation pipeline, paste-last, file transcription
+  crates/delulu-voice       voice output, listening sessions, agent bridge, `delulu-talks mcp`
+backend/python              persistent Python workers (speech, rewriting, voice) and their tests
+backend/overlay/pill.py     GTK4 layer-shell recording pill
+```
+
+Leaf crates (`domain`, `runtime`, `audio`, `desktop`) depend only on `delulu-core` and crates.io, never on each other or on `tauri`. Where they need a value owned elsewhere they take it as a parameter; where they need an app-level integration (a window, a plugin, storage) they define a trait the app crate implements (`NativeShortcuts`, `MacPillFactory`, `LoginItems`, `delulu_speech::Profile`, `delulu_voice::VoiceProfile`). The service crates (`data`, `speech`, `voice`) build on the leaves. The app crate builds every service once (`src-tauri/src/services.rs`) and routes IPC, tray items and shortcuts to them.
+
+Wire types serialize exactly like the TypeScript types (camelCase fields, string unions as renamed enums, absent versus `null` preserved), and errors are `delulu_core::DomainError` with the codes and user-facing wording the renderer already handles. `delulu-data` treats persisted JSON with JavaScript object semantics (key order, number formatting), so a profile written by the Electron releases loads and saves byte-for-byte the same way.
 
 ## Boundaries
 
-- `src/components/OceanController.tsx` provides the persistent icon-only capture controls. `QuickSettings.tsx` opens essential preferences; `OceanBackground.tsx` renders the sea from layered gradients with Tailwind animations: no images, canvas or GPU. `src/ocean.css` defines the shell and working sheets.
+- `src/components/OceanController.tsx` provides the persistent icon-only capture controls. `QuickSettings.tsx` opens essential preferences; `OceanBackground.tsx` renders the sea from layered gradients with Tailwind animations: no images, canvas or GPU. `src/styles/` defines the Deep Sea tokens, primitives, shell and working sheets.
 - `src/App.tsx` assembles the shell and pages. `hooks/useWorkspace.ts` owns subscriptions, serialized settings patches, transcript actions and feedback. `hooks/useTheme.ts` applies system/light/dark appearance.
-- `src/components/ui` supplies shared switches, setting rows, alerts, empty states and native modal dialogs. `TranscriptCard` owns review/edit/restore/remember-word interactions for both Controls and History.
-- `src/index.css` defines semantic light/dark tokens and reusable controls; Tailwind utilities in the components handle shell and page layouts. All pages remain usable in compact desktop windows.
-- Secondary pages are lazy loaded. Visited pages use React Activity to preserve drafts while suspending hidden effects; capture and submitted backend operations remain owned outside these views. The standalone Writing workspace has been removed. Rewrite preview/apply/undo belongs to shared transcript review; model installation belongs to Models. No cloud draft storage is used.
-- `src/bridge.ts` is the typed Electron boundary. `src/preview.ts` contains explicitly labeled browser sample data. Native actions in preview explain that the desktop app is required; preview does not pretend to run inference.
-- `electron/main.ts` owns lifecycle, tray, shortcuts, IPC registration and settings side effects. IPC accepts only the main window's top frame; the renderer has context isolation, sandboxing and no Node integration. Native file selections are allowlisted for Speech Lab.
-- `electron/services/dictation.ts` owns capture and delivery state. The microphone controller serializes commands, handles cancellation during pending permissions, and flushes AudioWorklet samples before producing mono 16 kHz PCM WAV.
-- `electron/services/asr.ts` owns speech and Magic model lifecycle. `electron/runtime/workerClient.ts` owns the persistent Python JSON-lines transport, request IDs, bounded logs, timeouts and crash cleanup. A timed-out worker is terminated and all queued requests are rejected.
-- `electron/runtime/installer.ts` owns asynchronous Python discovery, environment creation, package installation, compatibility checking and installed-version recording. `manifest.ts` contains direct dependency pins; Linux x64 transitive constraints are bundled for Magic only. `SerialQueue` serializes runtime setup. No shell string is used to execute user-provided Python paths.
-- `electron/services/voice.ts` owns the voice runtime, its worker and the speech queue. `src/voiceMarkup.ts`, `src/speakableText.ts` and `src/voiceChunks.ts` turn text into chunks; the worker synthesizes one chunk per request and the renderer plays it through `src/voicePlayer.ts` while the next is synthesized. `electron/services/voiceBridge.ts` serves a token-protected local socket for `electron/voice/delulu-voice-mcp.mjs`, the MCP server and CLI coding agents run. See [Delulu Voice](VOICE.md).
-- `electron/runtime/diagnostics.ts` reports memory, Python, FFmpeg, package versions and local data paths on demand. It does not send diagnostics anywhere.
+- `src/components/ui` supplies shared switches, setting rows, alerts, empty states and native modal dialogs. `TranscriptCard` owns review/edit/restore/remember-word interactions for both Controls and History. All pages remain usable in compact desktop windows.
+- Secondary pages are lazy loaded. Visited pages use React Activity to preserve drafts while suspending hidden effects; capture and submitted backend operations remain owned outside these views. Rewrite preview/apply/undo belongs to shared transcript review; model installation belongs to Models. No cloud draft storage is used.
+- `src/bridge.ts` is the typed renderer boundary; `src/desktopBridge.ts` installs `window.delulu` with the `DeluluApi` shape over three Tauri commands. `ipc_invoke` returns an envelope (`{ transport: "delulu-operation-v1", ok, value | error }`), `ipc_send` is fire-and-forget, and `ipc_bytes` returns a raw `ArrayBuffer` (used by `lab:loadSource`). Channel names and argument order are the Electron ones (`settings:update`, `history:setTitle`, …), and backend events are Tauri events with the same channel names (`settings:changed`, `runtime:statusChanged`, `recorder:level`, …). `src/preview.ts` contains explicitly labeled browser sample data for `bun run dev:web`; native actions there explain that the desktop app is required.
+- `src-tauri/src/ipc/router.rs` validates every request a second time with `delulu-domain::ipc_requests` (same arity, limits and truncation as the renderer's `parseIpcRequest`) before a handler in `src-tauri/src/handlers/` sees it. Only the `main` webview may call `ipc_*`; anything else gets `UNTRUSTED_SENDER`. The renderer has no file-system or shell access; native file selections and drag-and-drop paths are allowlisted for Speech Lab (`src-tauri/src/lab.rs`). WebKitGTK media capture is disabled (`src-tauri/src/webview_linux.rs`): the renderer never touches the microphone.
+- `src-tauri/src/lib.rs`, `shell.rs` and `tray.rs` own lifecycle, single-instance flags, close-to-tray, tray menu and icons, login items and settings side effects (`settings.rs`).
+- `delulu-audio` owns capture and playback. WebKitGTK only starts `getUserMedia` for a focused window, and dictation records while another app is focused, so the microphone is native: cpal (through handy-cpal) on its own thread per stream, with the PulseAudio host on Linux (pipewire-pulse on PipeWire systems) and an ALSA fallback, CoreAudio on macOS and WASAPI on Windows. `Recorder` produces 16 kHz mono WAV with levels, trailing silence, duration limits, input-loss detection and cues; `ListenCapture` runs the voice-activity detector for listening sessions; `Player` plays queued PCM gaplessly and exposes its level as the echo reference. The renderer only displays state.
+- `delulu-speech` owns the dictation state machine over the native recorder, delivery with paste recovery, retry audio, paste-last, file transcription, and speech and Magic model lifecycle (`asr.rs`). `delulu-runtime::worker` owns the persistent Python JSON-lines transport, request IDs, bounded logs, timeouts and crash cleanup. A timed-out worker is terminated and all queued requests are rejected.
+- `delulu-runtime::installer` owns Python discovery, environment creation, package installation, compatibility checking and installed-version recording. `manifest.rs` contains direct dependency pins; Linux x64 transitive constraints are bundled for Magic only. A serial queue serializes runtime setup. No shell string is used to execute user-provided Python paths.
+- `delulu-desktop` owns delivery and desktop integration: paste through the RemoteDesktop portal, klipper, xdotool, osascript or SendKeys; a long-lived clipboard owner with restore; GlobalShortcuts portal registration with hold and toggle gestures on Wayland (tauri-plugin-global-shortcut elsewhere, `src-tauri/src/shortcuts.rs`); the overlay supervisor; tray state; autostart and permission checks.
+- `delulu-voice` owns the voice runtime, its worker and the speech queue. `delulu-domain::voice` turns text into chunks (kept in step with `src/voiceMarkup.ts`, `src/speakableText.ts` and `src/voiceChunks.ts`); the worker synthesizes one chunk per request and `delulu-audio::Player` plays it while the next is synthesized. `bridge.rs` serves a token-protected local socket for `delulu-talks mcp`, the MCP server and CLI coding agents run (`mcp.rs`). See [Delulu Voice](VOICE.md).
+- `delulu-runtime::diagnostics` reports memory, Python, FFmpeg, package versions and local data paths on demand. It does not send diagnostics anywhere.
+- `delulu-core::paths` keeps the profile where the Electron releases kept it: `~/.config/Delulu Talks` (Linux), `~/Library/Application Support/Delulu Talks` (macOS), `%APPDATA%\Delulu Talks` (Windows); development builds use `Delulu Talks Dev`, and `DELULU_USER_DATA_DIR` overrides both.
+
+### Linux desktop specifics
+
+- The GlobalShortcuts and RemoteDesktop portals accept a host app only when `delulu-talks.desktop` is installed (`delulu-desktop::portal`). Packages install one; development builds write one to `~/.local/share/applications` when no entry of that name exists (`src-tauri/src/desktop_entry.rs`).
+- The overlay pill needs layer-shell. KDE Plasma and wlroots compositors have it; GNOME does not, so the overlay is unavailable there and the main window and tray carry recording state.
+- Clipboard: KDE and wlroots use data-control (`ext-data-control-v1` / `zwlr-data-control`); GNOME has neither, so the clipboard goes through X11 via Xwayland, with `wl-copy`/`wl-paste` as a bounded last resort (`delulu-desktop::clipboard`).
 
 ## Runtime lifecycle
 
@@ -37,13 +67,13 @@ The native GTK4 overlay keeps a dark ocean-blue palette for visibility over arbi
 
 ## Data and recovery
 
-Settings and persisted history use temporary-file replacement with restricted permissions. Missing files initialize normally; parse/read failures preserve existing files and produce an actionable error instead of silently resetting them. In-memory state is updated only after a successful write. Settings updates are partial patches, serialized in both the workspace and main process to prevent stale whole-object saves from undoing unrelated preferences.
+Settings and persisted history use temporary-file replacement with restricted permissions. Missing files initialize normally; parse/read failures preserve existing files and produce an actionable error instead of silently resetting them. In-memory state is updated only after a successful write. Settings updates are partial patches, serialized in both the workspace and the Rust backend (`src-tauri/src/settings.rs`) to prevent stale whole-object saves from undoing unrelated preferences.
 
-`WorkspaceRoot` owns capture and queued saves outside the presentation error boundary. A render/lifecycle failure replaces the view with recovery controls while microphone capture and pending saves continue. Stop and save submits active capture normally. The recovery view reads diagnostics independently, bounds service waits to five seconds, and exposes rejected calls for intentional retry. The main process checks current capture, runtime, settings queue and update state synchronously before reloading; renderer-local queued saves also block the reload button. An outer boundary covers controller initialization failures: interrupted unsent capture is explicitly disclosed, while submitted inference remains owned by the desktop process. React boundaries do not recover a terminated renderer process or a failure before the renderer bundle starts.
+`WorkspaceRoot` owns the capture controls and queued saves outside the presentation error boundary. A render/lifecycle failure replaces the view with recovery controls while native microphone capture and pending saves continue. Stop and save submits active capture normally. The recovery view reads diagnostics independently, bounds service waits to five seconds, and exposes rejected calls for intentional retry. The backend checks current capture, runtime, settings queue and update state synchronously before reloading; renderer-local queued saves also block the reload button. An outer boundary covers controller initialization failures: interrupted unsent capture is explicitly disclosed, while submitted inference remains owned by the desktop process. React boundaries do not recover a terminated webview process or a failure before the renderer bundle starts.
 
 Recovery retains up to 12 recent editable text-field values, with a combined 500,000-character limit, in session memory for explicit copying. These can include already saved edits, retain whitespace and Unicode, and are kept separate from diagnostic reports. They are not written to disk or automatically applied; reload clears these recovery copies. Password, read-only and disabled fields are excluded. Saved transcript originals, settings and runtime environments are not reset by recovery.
 
-The Python worker returns unmodified R2T2 speech text. On Apple Silicon, MLX Audio decodes/resamples audio, loads the pinned BF16 conversion with strict weights, and warms the decoder before Ready. Buffered inference remains the active workflow. `src/personalization.ts` creates a separate `personalizedText` field in Electron; Unicode whole-phrase matching never cascades. Original speech is preserved beside user corrections and Magic output. Controls, History, exports and paste-last share the text selection helpers.
+The Python worker returns unmodified R2T2 speech text. On Apple Silicon, MLX Audio decodes/resamples audio, loads the pinned BF16 conversion with strict weights, and warms the decoder before Ready. Buffered inference remains the active workflow. The backend creates a separate `personalizedText` field (`delulu-domain` `text/personalization.rs`, kept in step with `src/personalization.ts`); Unicode whole-phrase matching never cascades. Original speech is preserved beside user corrections and Magic output. Controls, History, exports and paste-last share the text selection helpers.
 
 When history saving is disabled, newly produced records remain in a bounded session map for review, corrections and exports; they are not written to history. Existing saved history remains until explicitly cleared. Deletion clears both saved and session records, including paste-last references.
 
@@ -53,23 +83,33 @@ Native intended-only transcription is the default. Manual writing is independent
 
 ## Updates
 
-App updates are explicit downloads. The updater disables automatic installation on quit, retains a ready download when asked to check again, and blocks restart while capture, inference or setup is active. Linux automatic updates apply to AppImage installs; other Linux packages and source builds link to manual releases. Platform packages remain unsigned until signing is configured.
+App updates use tauri-plugin-updater against a signed `latest.json` on the latest GitHub release (`src-tauri/src/updates.rs`). Downloads are explicit, progress is visible, a verified download is kept when asked to check again, and install + restart is blocked while capture, inference or setup is active. Self-updating installations are the Linux AppImage, the macOS app bundle and the Windows NSIS installer. Development builds and the deb, rpm and pacman packages report updates as unsupported; they update through the package manager or a new download, and the tray links to the releases page.
+
+The release workflow (`.github/workflows/release.yml`) runs on `v*.*.*` tags whose version matches `package.json`: it runs CI, builds with tauri-action on Ubuntu 22.04 (AppImage, deb, rpm), macOS (arm64 dmg + updater archive) and Windows (NSIS), signs updater artifacts with `TAURI_SIGNING_PRIVATE_KEY`, checks bundled resources with `scripts/package-resources.mjs`, repackages the deb as the pacman package `delulu-talks-bin` (`packaging/arch/PKGBUILD`) in an Arch container, verifies the assets (`scripts/verify-release.mjs`) and publishes with `docs/releases/<tag>.md` as notes. macOS and Windows packages are not code-signed.
+
+## Command-line entry points
+
+- `delulu-talks mcp …`: the Delulu Voice MCP server (stdio) and CLI; it runs before Tauri starts, so it needs no window and no Node. See [Delulu Voice](VOICE.md).
+- `delulu-talks restore-profile …`: validates or restores a profile backup into a new isolated directory. See [profile recovery](PROFILE_RECOVERY.md).
+- `delulu-talks --read-clipboard` / `--stop-speaking`: forwarded to the running instance.
+- Debug builds only: `DELULU_DEV_SCRIPT` runs a JSON list of IPC steps through the same router at startup (`src-tauri/src/dev_script.rs`), and `DELULU_IPC_LOG=1` logs every request's channel and outcome.
 
 ## Verification
 
-- `bun run test`: fast TypeScript and dependency-free Python unit tests for data preservation, exact text blocks, delivery/retry, worker validation, and runtime rollback.
-- `bun run test:e2e`: the two existing Chromium capture tests, using synthetic microphone audio to check final worklet flushing and cancellation cleanup.
-- `bun run format:check`, `bun run typecheck`, and `bun run build`: source and production build checks.
-- The [native inference harness](NATIVE_HARNESS.md) remains an optional manual hardware check using already-cached models. It does not run in the test suite.
+- `bun run test`: renderer unit tests (`bun test`), dependency-free Python units, and `cargo test --workspace` for data preservation, protocol bounds, state machines, exact text blocks, delivery/retry and runtime rollback.
+- `bun run test:e2e`: Playwright checks of the renderer in the browser preview (idle ocean, recording state display). Capture itself is native and is not exercised in the browser.
+- `bun run format:check`, `bun run typecheck`, `bun run build` and, in CI, `cargo clippy --workspace --all-targets -- -D warnings` on Linux, macOS and Windows.
+- `src-tauri/crates/delulu-audio/tests/hardware.rs` holds ignored tests that need a real microphone and speakers.
+- The [native inference harness](NATIVE_HARNESS.md) is not available in the Tauri app yet.
 
 ## Architecture review
 
-The current boundaries are useful: sandboxed IPC, worker ownership, separate runtime environments, atomic writes, and shared transcript actions. Retain them while extracting responsibilities that have become crowded. `electron/main.ts` is approximately 987 lines and `src/App.tsx` approximately 538 lines in this pass; IPC registration and transcript commands are the first candidates for focused modules. File size alone does not justify a rewrite.
+The useful boundaries carried over from the Electron app: validated IPC, worker ownership, separate runtime environments, atomic writes, and shared transcript actions. The Rust port moved capture and playback out of the renderer and split the backend into crates with one direction of dependency, which replaces the crowded `electron/main.ts`.
 
 The JSON-lines transport has per-worker budgets of 4 MiB request bytes, eight pending requests, 8 MiB stdout lines and 80,000 retained stderr bytes. Admission failures reject only the excess request; stdout overflow stops the generation and requires explicit recovery. Python independently bounds input and validates a complete response before emitting any prefix. See [worker protocol bounds](worker-bounds.md) for byte/delimiter rules, failure semantics and subprocess evidence.
 
-The largest functional gap is native evidence for the new Mac and Windows adapters. Capture still buffers audio until Stop. Platform shortcuts/paste, runtime capability metadata, and durable storage schemas deserve clearer contracts before profiles or persistent import queues expand their use. The roadmap links those changes to observed behavior and failure-path acceptance.
+The largest functional gaps are native evidence for the Mac and Windows builds (they are built in CI but not run on real hardware for v0.1.0) and the missing echo canceller in listening mode. Capture still buffers audio until Stop. Platform shortcuts/paste, runtime capability metadata, and durable storage schemas deserve clearer contracts before profiles or persistent import queues expand their use.
 
 ## Direction
 
-[The GitHub roadmap](https://github.com/JEMostert/delulu-talks/issues/14) maps ambitious work across the entire personal tool: native R2T2 evidence on the owner's machines, contextual rewriting, advanced profiles, batch imports, durable history, CLI/API automation, and GPU optimization. Individual task issues retain section context, with area/priority labels and milestones. The 12 completed items record local implementation, not pushed changes or proven native Mac/Windows inference. Technical observability and data integrity guide the architecture; customer onboarding and public hardware certification are outside scope. [Model research](MODEL_RESEARCH.md) records candidates and the limits of source-level compatibility evidence.
+[The GitHub roadmap](https://github.com/JEMostert/delulu-talks/issues/14) maps ambitious work across the entire personal tool: native R2T2 evidence on the owner's machines, contextual rewriting, advanced profiles, batch imports, durable history, CLI/API automation, and GPU optimization. Individual task issues retain section context, with area/priority labels and milestones. Technical observability and data integrity guide the architecture; customer onboarding and public hardware certification are outside scope. [Model research](MODEL_RESEARCH.md) records candidates and the limits of source-level compatibility evidence.

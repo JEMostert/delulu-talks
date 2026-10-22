@@ -10,7 +10,7 @@ Evidence checked against primary sources:
 - [Superwhisper modes](https://superwhisper.com/docs/modes/modes): plain voice-to-text can operate without AI transformations.
 - [Flow transforms](https://docs.wisprflow.ai/articles/2719941210-how-to-configure-polish-shortcuts-and-custom-prompts): explicit transformations provide useful access to rewriting without making it a prerequisite for every utterance.
 
-Validation includes real local Electron inference and Qwen rewriting with automatic rewriting off, exact shortcut preservation, apply/undo, original-preserving corrections and export. The short audio smoke sample is not an accuracy benchmark. Broad natural-speech evaluation and application-aware profiles remain future work rather than advertised capabilities.
+Validation (on the earlier Electron app) included real local inference and Qwen rewriting with automatic rewriting off, exact shortcut preservation, apply/undo, original-preserving corrections and export. The short audio smoke sample is not an accuracy benchmark. Broad natural-speech evaluation and application-aware profiles remain future work rather than advertised capabilities.
 
 ---
 
@@ -26,7 +26,7 @@ Research snapshot: 11 August 2026. Sources are the vendors' own product pages an
 | [Wispr Flow context](https://wisprflow.ai/context)                                        | Uses surrounding content and optional screen context to tune output                                                                      | Delulu stays screen-blind by design today; privacy is predictable and no unrelated app content is captured                                                                         |
 | [Superwhisper modes](https://superwhisper.com/docs/modes/modes)                           | App/site modes, custom AI instructions, system audio, speaker workflows, and context-aware processing                                    | Dual transcript modes are model-native and deterministic; context/LLM rewriting remains an optional future layer, never part of the speech truth                                   |
 | [Superwhisper vocabulary](https://superwhisper.com/docs/get-started/interface-vocabulary) | Recognition vocabulary plus reliable post-transcription replacements                                                                     | Standard Nyra weights do not safely support hotword hints, so Delulu implements the reliable replacement half and labels the limitation honestly                                   |
-| [VoiceInk](https://github.com/Beingpax/VoiceInk)                                          | Open-source local dictation, modes, contextual awareness, custom commands, and model choice                                              | Cross-platform Electron shell, local Crisper engine family, vocabulary rules, history, model lifecycle, and Speech Lab                                                             |
+| [VoiceInk](https://github.com/Beingpax/VoiceInk)                                          | Open-source local dictation, modes, contextual awareness, custom commands, and model choice                                              | Cross-platform desktop shell, local Crisper engine family, vocabulary rules, history, model lifecycle, and Speech Lab                                                             |
 | [OpenWhispr](https://github.com/OpenWhispr/openwhispr)                                    | Open-source cross-platform dictation, local/cloud choice, meetings, diarization, notes, audio import, agents, API/MCP                    | Delulu takes the focused local specialist position: no accounts or cloud, but unusually rich verbatim fidelity, alignment, paired transcripts, timing, and export                  |
 | [Superwhisper Meeting](https://superwhisper.com/docs/modes/meeting)                       | Meeting recording, summaries/action items, and optional speaker separation                                                               | Meeting/system-audio capture and diarization are the largest remaining competitive gap; they should be a separate subsystem instead of being faked with a single-speaker ASR model |
 
@@ -57,7 +57,7 @@ The 2.0 rework turns those primitives into user features: paired history, select
 | Feedback on speaking            | Local filler, repetition, cut-off, vocal-event, pace, and speaking-time insights                             |
 | Privacy/control                 | Local inference, no telemetry, temporary audio deletion, optional history, isolated runtime reset            |
 | Hardware choice                 | Small/Medium/Turbo/Large catalog, backend and compute controls, load/unload/preload toggle                   |
-| CachyOS/KDE                     | Chromium audio stack, Electron Wayland shortcut portal, pacman package target, layered Linux paste detection |
+| CachyOS/KDE                     | Native PulseAudio/PipeWire audio, Wayland shortcut portal, pacman package target, layered Linux paste detection |
 
 ## Next product bets
 

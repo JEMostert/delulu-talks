@@ -22,4 +22,8 @@ Rejected: a single shared Python environment; vLLM-served Orpheus (gated weights
 
 Starting a dictation interrupts speech by default, so the microphone does not record Delulu's own voice.
 
-Owners: [contracts](../../src/voice.ts), [markup](../../src/voiceMarkup.ts), [speakable text](../../src/speakableText.ts), [chunks](../../src/voiceChunks.ts), [player](../../src/voicePlayer.ts), [service](../../electron/services/voice.ts), [bridge](../../electron/services/voiceBridge.ts), [MCP server](../../electron/voice/delulu-voice-mcp.mjs), [engine](../../electron/python/voice_engine.py), [manifest](../../electron/runtime/manifest.ts). See [Delulu Voice](../VOICE.md).
+Owners (since ADR 0006): [contracts](../../src/voice.ts), [markup](../../src/voiceMarkup.ts), [speakable text](../../src/speakableText.ts), [chunks](../../src/voiceChunks.ts), [player](../../src-tauri/crates/delulu-audio/src/player.rs), [service](../../src-tauri/crates/delulu-voice/src/service.rs), [bridge](../../src-tauri/crates/delulu-voice/src/bridge.rs), [MCP server](../../src-tauri/crates/delulu-voice/src/mcp.rs), [engine](../../backend/python/voice_engine.py), [manifest](../../src-tauri/crates/delulu-runtime/src/manifest.rs). See [Delulu Voice](../VOICE.md).
+
+## Amendment (v0.1.0, ADR 0006)
+
+Playback and listening capture are native (`delulu-audio`), and the backend runs the markup and chunk logic in Rust (`delulu-domain::voice`). The MCP server and CLI are built into the app as `delulu-talks mcp`, so agents no longer need Node and nothing is copied into the user data directory. Listening mode has no WebRTC echo cancellation; see [ADR 0006](0006-tauri-and-native-audio.md).

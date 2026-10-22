@@ -9,7 +9,7 @@ model, processor or loaded metadata; the other engine remains unchanged.
 The dependency-free regression suite runs with:
 
 ```sh
-python3 -m unittest discover -s electron/python -p '*_test.py'
+python3 -m unittest discover -s backend/python -p '*_test.py'
 ```
 
 Load tests inject failures before and after model assignment, including Linux

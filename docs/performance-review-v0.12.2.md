@@ -1,5 +1,7 @@
 # Native window rendering review — v0.12.2
 
+Historical record of the Electron app. The Chromium GPU switches and the preload compositing-status boundary it describes do not exist in the Tauri app; see [GUI design](GUI_DESIGN.md) for current rendering behavior.
+
 ## Diagnosis
 
 The running v0.12.1 AppImage explicitly disabled Chromium GPU drawing on Linux Wayland. Its renderer had `--disable-gpu-compositing` and its compositor had `--use-gl=disabled`. Three one-second CPU samples from the already running app showed compositor usage of 30%, 34% and 33%, while the renderer used 1%, 2% and 1%. This points to drawing cost rather than a continuously busy React thread; it does not establish a measured input-to-paint latency.

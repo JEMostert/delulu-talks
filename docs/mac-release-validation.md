@@ -1,6 +1,6 @@
 # Historical Apple Silicon validation — v0.9.4
 
-Historical validation record. The desktop smoke commands below were removed when the test suite was rebuilt; current commands are in [testing](VERIFICATION.md) and [native inference](NATIVE_HARNESS.md).
+Historical validation record of the Electron app. The desktop smoke commands below were removed when the test suite was rebuilt, and the `electron-builder` packaging step no longer exists (the Tauri app builds with `bun run build`); current commands are in [testing](VERIFICATION.md). The [native inference harness](NATIVE_HARNESS.md) is not available in the Tauri app yet.
 
 > This record covers the previous **Qwen3-ASR-0.6B / vLLM Metal** implementation. The current R2T2 MLX adapter has not yet passed native validation. See [current Mac support and acceptance steps](MAC_SUPPORT.md).
 
@@ -42,7 +42,7 @@ Use an absolute `DATA_DIR` pointing to an existing Delulu data directory contain
 node scripts/desktop-smoke.mjs "$DATA_DIR" --lifecycle
 DELULU_TEST_EXECUTABLE="$PWD/release/mac-arm64/Delulu Talks.app/Contents/MacOS/Delulu Talks" node scripts/desktop-smoke.mjs "$DATA_DIR" --lifecycle
 node scripts/mac-package-smoke.mjs "release/mac-arm64/Delulu Talks.app" "$DATA_DIR"
-python3 -m unittest discover -s electron/python -p '*_test.py'
+python3 -m unittest discover -s backend/python -p '*_test.py'
 ```
 
 Without the optional data-directory argument, the package replacement check verifies first-run migration, persistent state, platform UI, and manual update guidance without downloading a model. The release workflow runs this check on its Mac runner.

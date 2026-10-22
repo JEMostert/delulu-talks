@@ -20,4 +20,8 @@ This duplicates some dependencies and can consume substantial disk and physical 
 
 Final cross-backend preload restoration, uncooperative installer descendants, crash/power-loss durability, and artifact hash verification need their own failure-path work. Recording this architecture does not assert that every rollback or native packaging gate has passed. Native Mac/Windows acceptance remains separate.
 
-Owners: [installer](../../electron/runtime/installer.ts), [runtime inventory](../../electron/runtime/inventory.ts), [manifest](../../electron/runtime/manifest.ts), [ASR lifecycle](../../electron/services/asr.ts), [storage paths](../../electron/services/storage.ts), [package resources](../../electron-builder.yml). See [runtime inventory](../runtime-inventory.md).
+Owners (since ADR 0006): [installer](../../src-tauri/crates/delulu-runtime/src/installer.rs), [runtime inventory](../../src-tauri/crates/delulu-runtime/src/inventory.rs), [manifest](../../src-tauri/crates/delulu-runtime/src/manifest.rs), [ASR lifecycle](../../src-tauri/crates/delulu-speech/src/asr.rs), [profile paths](../../src-tauri/crates/delulu-core/src/paths.rs), [package resources](../../src-tauri/tauri.conf.json). See [runtime inventory](../runtime-inventory.md).
+
+## Amendment (v0.1.0, ADR 0006)
+
+The workers and adapters are now Tauri bundle resources (`bundle.resources` in `src-tauri/tauri.conf.json`) instead of Electron resources. Environments stay in the same profile directory, so runtimes installed by Electron releases remain usable. See [ADR 0006](0006-tauri-and-native-audio.md).

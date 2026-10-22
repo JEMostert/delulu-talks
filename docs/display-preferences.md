@@ -11,15 +11,15 @@ Actual microphone levels and the duration clock remain live information.
 For a later authorized native preview (requires the existing GTK dependencies):
 
 ```sh
-python3 electron/overlay/pill.py --preview listening --reduced-motion
-python3 electron/overlay/pill.py --preview transcribing --reduced-motion
+python3 backend/overlay/pill.py --preview listening --reduced-motion
+python3 backend/overlay/pill.py --preview transcribing --reduced-motion
 ```
 
 The forced switch applies only to preview mode. Normal operation follows the
 desktop preference. Reduced-motion preview files have a `-reduced-motion.png`
 suffix, so they do not replace normal-motion previews.
 
-`tests/e2e/display-preferences.pw.ts` contains unrun browser fixtures for compact
+`tests/e2e/display-preferences.pw.ts` (since removed) contained unrun browser fixtures for compact
 540×760 windows, 1×/1.25×/1.5× device scale, reduced motion and 18px control text.
 These simulated settings are not evidence about the owner's displays or native
 font scaling. They check that Stop stays reachable, decorative motion is absent,

@@ -1,7 +1,7 @@
 # Installed audio decoder contracts
 
 Run the opt-in suite with a speech runtime's Python, or an isolated environment
-containing the decoder packages pinned in `electron/runtime/manifest.ts`:
+containing the decoder packages pinned in `src-tauri/crates/delulu-runtime/src/manifest.rs`:
 
 ```sh
 /path/to/speech-venv/bin/python scripts/decoder-contract.py --backend cuda

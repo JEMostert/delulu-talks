@@ -1,11 +1,11 @@
 # Setup recovery verification
 
-The former installer subprocess suite and its synthetic Python executable have been removed. The focused replacement is:
+The former installer subprocess suite and its synthetic Python executable have been removed. The focused check is:
 
 ```sh
-bun test electron/runtime/runtimeSafety.test.ts
+cargo test -p delulu-runtime
 ```
 
-It checks activation/rollback to previous and legacy installations, rejection of malformed generation targets without overwriting the selected runtime, and ordered model-operation recovery after a rejection. Temporary activation records are isolated from actual runtimes; no packages, model downloads or worker processes are started.
+It checks that a failed setup keeps the active generation and logs the attempt, that cancellation terminates the running command, that inventory comes from the candidate environment and that Python overrides cannot redirect setup. The Electron `runtimeSafety.test.ts` cases for legacy-installation rollback, malformed generation targets and ordered model-operation recovery are not ported yet. Temporary records are isolated from actual runtimes; no packages or model downloads are started.
 
 Installer process cancellation and native readiness still need manual acceptance when changing installation code. The unit suite establishes pointer and queue safety, not native MLX/CUDA readiness. See [testing](VERIFICATION.md) for the current suite policy.

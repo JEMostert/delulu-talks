@@ -1,5 +1,7 @@
 # Performance and reliability review — v0.12.1
 
+Historical record of the Electron app, where capture ran in the renderer.
+
 The review followed capture from the renderer through IPC, worker dispatch, live inference, delivery and saved history. It also inspected renderer subscriptions, lazy pages, runtime cleanup, queue persistence, packaging and release verification. Existing boundaries around sandboxed IPC, original transcript preservation and atomic storage remain useful; the changes address observed repeated work and faulty lifecycle paths.
 
 | Area | Finding | Implemented change |

@@ -1,12 +1,15 @@
 # Storage recovery verification
 
-Run `bun test electron/services/storage.test.ts`. These fixture-only checks use
-real temporary files and the production StorageService with an isolated Electron
-profile mock. They never read the owner's profile, backups, model cache or
-runtime. The packaged legacy lookup scenarios run on Linux, where that migration
-path exists; the corresponding tests explicitly skip on other platforms.
+Run `cargo test -p delulu-data --test storage`. These fixture-only checks use
+real temporary files and the production storage service (`delulu-data`) with a
+temporary profile. They never read the owner's profile, backups, model cache or
+runtime. The Rust suite covers corrupt and future profiles failing before either
+file is replaced, failed atomic publication, failed writes with retry, and a
+legacy profile migrating to the bytes the Electron app wrote.
 
-The suite covers:
+The scenarios below were verified against the Electron StorageService; the
+backup-restoration and injected rename/rollback cases are not ported as Rust
+tests yet. The Electron suite covered:
 
 - Corrupt settings/history, wrong top-level JSON types and unsupported workflow
   versions fail startup before migration writes. Source and companion data stay

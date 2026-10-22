@@ -2,6 +2,8 @@
 
 Working document for the rewrite on the `tauri` branch. It records the decisions, the contracts every crate codes against, and progress. It is deleted (or folded into ARCHITECTURE.md) at cutover.
 
+The decisions, layout, crate rules and renderer transport are now in [ARCHITECTURE.md](ARCHITECTURE.md) and [ADR 0006](decisions/0006-tauri-and-native-audio.md); the release notes are [v0.1.0](releases/v0.1.0.md). What remains here is the progress record and the detailed API and audio contracts used during the port.
+
 ## Decisions
 
 - **Tauri 2, full Rust backend.** Every Electron main-process module (`electron/`) and every shared `src/` module it imports is ported to Rust. The React renderer stays; only its bridge changes.
@@ -83,6 +85,13 @@ Unchanged in shape: everything else, including `onStatus` (now also carries reco
 - [x] Renderer bridge (`src/desktopBridge.ts`) and removal of renderer capture/playback
 - [x] `delulu-data`
 - [x] `delulu-speech`, `delulu-voice`
-- [ ] App crate: router, handlers, tray, windows, plugins, MCP subcommand
-- [ ] Packaging + CI (AppImage, rpm, deb, pacman, dmg, NSIS, updater signing)
-- [ ] Docs, cleanup (remove `electron/`, electron-builder, Electron deps), release reset, v0.1.0
+- [x] App crate: router, handlers, tray, windows, plugins, MCP subcommand, `restore-profile` subcommand
+- [x] Packaging + CI workflows (AppImage, rpm, deb, pacman, dmg, NSIS, updater signing)
+- [ ] First tagged release run of the pipeline (needs `TAURI_SIGNING_PRIVATE_KEY` secrets)
+- [x] Cleanup: `electron/`, electron-builder, electron-vite and Electron deps removed
+- [x] Docs: README, ARCHITECTURE, ADR 0006, VOICE, doc sweep, v0.1.0 release notes; Electron v0.x release notes removed
+- [ ] Release reset: delete the Electron GitHub releases and tags
+- [ ] Tag and publish v0.1.0
+- [ ] Native macOS and Windows runs
+- [ ] Port the native inference harness, Mac lifecycle driver and speech/history benchmarks
+- [ ] Delete this file

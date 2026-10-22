@@ -18,4 +18,8 @@ This keeps one completed transcript as the history/delivery boundary and avoids 
 
 True streaming requires an explicit session protocol, ordering/cancellation rules, stable-prefix semantics, native backend evidence, and a visible partial-versus-committed distinction before clipboard or paste. Those are separate implementation issues, not an outcome of this record. Protocol versioning and worker message/queue bounds are implemented separately from acoustic streaming. The unfinished live-streaming experiment was removed during the unit-suite rebuild; buffered capture remains the accepted behavior.
 
-Owners: [microphone controller](../../src/WorkspaceRoot.tsx), [dictation service](../../electron/services/dictation.ts), [worker client](../../electron/runtime/workerClient.ts), [Python worker](../../electron/python/transcription_engine.py). See [capture verification](../capture-verification.md) for fixture boundaries.
+Owners (since ADR 0006): [native recorder](../../src-tauri/crates/delulu-audio/src/recorder.rs), [dictation service](../../src-tauri/crates/delulu-speech/src/dictation.rs), [worker client](../../src-tauri/crates/delulu-runtime/src/worker.rs), [Python worker](../../backend/python/transcription_engine.py). See [capture verification](../capture-verification.md) for fixture boundaries.
+
+## Amendment (v0.1.0, ADR 0006)
+
+Capture moved out of the renderer: the native recorder in `delulu-audio` produces the mono 16 kHz WAV, and the Rust dictation service owns submission, inference, rewriting and delivery. Buffered stop-to-transcribe and the worker transport are unchanged. See [ADR 0006](0006-tauri-and-native-audio.md).

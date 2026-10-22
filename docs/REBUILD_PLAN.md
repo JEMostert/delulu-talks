@@ -57,6 +57,8 @@ Package signing and native runtime verification on unavailable operating systems
 
 ## Validation record — 0.6.0, 6 September 2026
 
+Recorded on the Electron app; the smoke checks named here have since been removed.
+
 - 53 Bun regression tests passed, including worker crash/timeout handling, setup serialization, update restart safety, recording retry, delivered transcript selection, and overlay shutdown without orphan helpers.
 - Eight Playwright browser workflows passed, including all pages at 1280 px and 860 px in both themes, draft retention, Wordbook editing, original/corrected transcripts, focus containment, synthetic microphone capture and cancellation during permission requests.
 - Type checking, formatting, production build, Python syntax checks and `git diff --check` passed.

@@ -12,7 +12,7 @@ Only the file for that generation's runtime kind is written. The existing `runti
 The JSON report uses `schemaVersion: 1` and records:
 
 - `createdAt`: UTC observation time.
-- `runtime`: manifest revision, runtime kind, generation, backend engine and device selection preference, plus the target Electron platform and architecture.
+- `runtime`: manifest revision, runtime kind, generation, backend engine and device selection preference, plus the target platform and architecture.
 - `requested`: each executed pip installation stage, its exact direct requirement strings and pip arguments, and the path and full contents of any constraint file actually passed to pip. Installer pins, Windows CUDA wheel pins and the main runtime request remain distinct, including overlapping requirements. Git requirements retain their source revision; extras retain their spelling.
 - `observed.interpreter`: the candidate's executable, Python version and full version string, implementation, virtualenv and base prefixes, Python platform, OS system/release, machine architecture and pointer size.
 - `observed.distributions`: the names and resolved versions of **all** distributions visible to that candidate Python, including installer tools and transitive dependencies; `distributionCount` records their count. Names and versions come from `importlib.metadata`, retaining the installed metadata spelling rather than deriving them from requests or another platform's lock file.

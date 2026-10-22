@@ -7,5 +7,6 @@ These records explain the current implementation choices and their limits. They 
 - [0003: isolated runtime generations](0003-isolated-runtime-generations.md)
 - [0004: local JSON history and text layers](0004-local-json-history-and-text-layers.md)
 - [0005: local voice output with a lead-agent bridge](0005-local-voice-output.md)
+- [0006: Tauri shell, Rust backend and native audio](0006-tauri-and-native-audio.md)
 
 Future changes should update or supersede the relevant record while preserving why the previous choice existed.

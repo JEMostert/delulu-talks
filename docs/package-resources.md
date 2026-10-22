@@ -1,25 +1,16 @@
 # Packaged resource verification
 
-`bun scripts/package-resources.mjs <unpacked-directory-or-app> <linux|mac|win>` checks actual artifact files against the current checkout. Use the same revision to build and verify: a stale adapter or constraint intentionally fails its SHA-256 comparison. The command is read-only and reports fixture-only evidence; it does not start models or certify native application behavior.
+`bun scripts/package-resources.mjs <src-tauri/target> <linux-x64|mac-arm64|windows-x64>` checks a Tauri build's bundled resources against the current checkout. It reads `bundle.resources` from `src-tauri/tauri.conf.json`, finds the bundled resource directory (the deb tree on Linux, `Contents/Resources` in the Mac app, the release directory on Windows) and requires every declared resource to be present and byte-identical (SHA-256). Use the same revision to build and verify: a stale adapter or constraint intentionally fails. The command is read-only; it does not start models or certify native application behavior.
 
-The verifier requires the worker, Linux speech adapter, direct MLX adapter, Windows native adapter and strict checkpoint converter; the Linux constraints, model/framework notices and bundled Transformers license; the overlay helper; and the app/tray/retina-template PNGs. It rejects missing, empty, misrouted or duplicate required resource mappings. Every declared external resource must be present and byte-identical in the artifact, including additions beyond the current thirteen files.
+It also rejects duplicate destinations, missing sources and a configuration without the required resources: the worker and protocol, the CPU speech adapter, the voice engine, the Linux constraints, the overlay helper, the agent skill, the app icon and the idle/recording tray icons. All 44 declared resources (Python workers, notices and Transformers license, overlay, skill, app and tray icons) are compared.
 
-Native icon checks validate the configured PNG/ICNS/ICO sources and the exact 2x macOS tray-template dimensions. Linux's packaged PNG must match its configured native icon. A Mac bundle's Info.plist must reference the configured ICNS bytes and a present executable. A Windows executable must contain every configured ICO image payload; merely shipping an unused .ico beside the executable does not pass. These are content checks, not a claim about launcher appearance or native menu-bar rendering.
-
-Build and verify unpacked artifacts without publishing:
+Build and verify without publishing:
 
 ```sh
 bun run build
-bunx --no-install electron-builder --dir --linux --x64 --publish never
-bun scripts/package-resources.mjs release/linux-unpacked linux
-bunx --no-install electron-builder --dir --mac --arm64 --publish never
-bun scripts/package-resources.mjs 'release/mac-arm64/Delulu Talks.app' mac
-bunx --no-install electron-builder --dir --win --x64 --publish never
-bun scripts/package-resources.mjs release/win-unpacked win
+bun scripts/package-resources.mjs src-tauri/target linux-x64
 ```
 
-Linux CI builds an unpacked artifact, runs the resource audit, then launches it through the existing isolated Electron fixture smoke. Both reports retain native-inference and manual-desktop as not-run. The fixture uses a temporary profile and synthetic Web Audio; it does not access personal settings/history/model environments.
+The release workflow runs the same check on each platform's build (`linux-x64`, `mac-arm64`, `windows-x64`) before the draft release is published.
 
-This change was checked against actual Linux x64, cross-built Apple Silicon arm64 and Windows x64 unpacked artifacts on Linux, including the Mac ICNS reference and Windows embedded ICO payloads. Windows resource editing used Wine with an isolated temporary prefix. The Linux packaged application passed real Electron/preload/IPC/persistence/production-CSP worklet checks. Cross-built Mac/Windows content verification establishes their artifact contents only: native launch, microphone permissions, inference, code signing, installers, updates and visual icon quality remain separate platform gates.
-
-`bun test scripts/package-resources.test.mjs` uses copies in owned temporary directories. It deliberately removes/stales packaged adapters, replaces the Mac icon, removes Windows icon payloads, and corrupts required mappings/native icon sources. These cases fail without modifying the inspected artifact. Actual signing and hardware inference are never substituted by those fixtures.
+The Electron app's version of this check also validated native icon payloads (Mac ICNS reference, embedded Windows ICO images, retina tray templates) and had fixture tests (`scripts/package-resources.test.mjs`); neither is ported. Content verification of Mac and Windows builds establishes their artifact contents only: native launch, microphone permissions, inference, code signing, installers, updates and visual icon quality remain separate platform gates.

@@ -1,17 +1,19 @@
 # Quiet GUI during idle capture
 
 The hardware-rendered Home ocean in v0.12.2 continues its decorative CSS
-animations between recordings. Also, `document.hidden` does not reflect a hidden
-Electron window when `backgroundThrottling: false` keeps microphone capture alive.
+animations between recordings. Also, `document.hidden` did not reflect a hidden
+Electron window when `backgroundThrottling: false` kept renderer microphone
+capture alive. Capture is native in the Tauri app, but the native visibility
+signal below is kept.
 
 This change pauses ocean decoration whenever capture is idle or paused, a
 workspace covers the ocean, or the native window is hidden or minimized. The
 voice-glow interval is created only for visible, uncovered recording. Pointer
 ripples use the same activity gate. Theme changes and normal controls remain
-available. Microphone capture keeps its existing background behavior.
+available. Microphone capture runs natively and does not depend on the window.
 
-The main process publishes window visibility on show, hide, minimize, restore,
-and renderer load. A validated no-argument IPC request supplies the initial
+The app crate publishes window visibility (`app:visibility`) when the window is
+shown, hidden, resized or focused, and on renderer load. A validated no-argument IPC request supplies the initial
 value; the renderer subscribes before requesting it and ignores a stale initial
 response once an event has arrived. Browser preview supplies the same API using
 document visibility.
@@ -21,6 +23,9 @@ container with layout/paint containment. Existing reduced-motion styles retain
 instant scrolling. v0.12.2's hardware/software rendering selection is preserved.
 
 ## Verification
+
+The measurements below were taken on the Electron app and have not been
+repeated on the Tauri app.
 
 Checked against `main` at `ef4f7e1`, using Electron 43.3.0 on KDE Wayland / Intel
 Arc. A native Electron instance loaded the production build with an isolated
@@ -46,12 +51,14 @@ one machine are not a universal utilization or display-latency guarantee.
 
 Automated checks:
 
-- `bun run build` (including renderer and Electron type checks).
+- `bun run build` (at the time including renderer and Electron type checks).
 - `bun run format:check`.
 - `bun run test:unit`: 70 tests pass.
 - `bun run test:python`: 19 tests pass.
 - `bun run test:e2e`: five tests pass. Three new checks verify paused CSS animation
   timelines in idle/pause/cancel, recording resume, hidden decoration without
   changing recording state, workspace coverage, and reduced-motion scrolling.
-  Two existing checks use Chromium's real fake microphone and AudioWorklet to
-  verify final PCM delivery and repeated cancel/release behavior.
+  Two checks then used Chromium's fake microphone and the renderer AudioWorklet
+  to verify final PCM delivery and repeated cancel/release behavior; they were
+  removed with renderer capture, and `tests/e2e/recording.pw.ts` now checks that
+  the controls follow the native recorder's status.

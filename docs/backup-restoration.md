@@ -4,7 +4,7 @@
 
 The `backup:dry-run` package command accepts the same arguments. This offline
 Node command reads files and prints a structured JSON report to stdout. It never
-starts Electron, installs runtimes, creates the target, copies data or changes
+starts the app, installs runtimes, creates the target, copies data or changes
 any profile. Do not redirect its output into a source or active profile file.
 
 A supported backup directory contains both committed `settings.json` and

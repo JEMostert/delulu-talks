@@ -21,7 +21,7 @@
 
 Delulu Talks turns speech into text in the app you are using. You choose one of three local speech models when you first open it: **Small** (Canary 180M) and **Medium** (Parakeet 0.6B) run on any CPU, and **Large** (R2T2) uses an NVIDIA GPU or Apple Silicon for the best accuracy. Nothing is downloaded until you pick one. Speech is transcribed after you stop recording. Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
 
-[v0.18.1](docs/releases/v0.18.1.md) turns the Voice page into numbered setup steps. [v0.18.0](docs/releases/v0.18.0.md) adds voice conversations: coding agents keep the microphone open, hear you in turns, and stop talking when you talk over them. [v0.17.0](docs/releases/v0.17.0.md) adds Delulu Voice: local text-to-speech with Grok-style tags, and a lead coding agent that briefs you out loud. [v0.16.0](docs/releases/v0.16.0.md) offers three speech model sizes you pick on first launch: Small and Medium run on any CPU on Linux, Windows and macOS, Large is R2T2. Parakeet Redux is removed. [v0.15.0](docs/releases/v0.15.0.md) replaces profiles with one-toggle word packs for programming and gaming, and makes adding your own words a single field. [v0.14.0](docs/releases/v0.14.0.md) lets R2T2 detect the spoken language and use your vocabulary as recognition hints. [v0.13.0](docs/releases/v0.13.0.md) makes Parakeet Redux a normal CPU engine on Linux, removes Nemotron and live typing, and drops several unused features. [v0.12.3](docs/releases/v0.12.3.md) fixes KDE clipboard timeouts after successful recognition and makes delivery failures clearer. [v0.12.2](docs/releases/v0.12.2.md) restores hardware compositing on Wayland and reduces background drawing while using workspaces. The [native rendering review](docs/performance-review-v0.12.2.md) records the diagnosis, measurements and verification limits. [v0.12.1](docs/releases/v0.12.1.md) fixed desktop streaming validation, bounded live-audio buffers and moved recording encoding off the interface thread.
+[v0.1.0](docs/releases/v0.1.0.md) is a rewrite of the desktop app on Tauri with a Rust backend: smaller packages, native microphone capture and voice playback, a voice MCP server that needs no Node, and native packages for Fedora, Debian/Ubuntu and Arch/CachyOS. Your profile, models, runtimes and history carry over from the Electron releases. Release numbers restart at v0.1.0.
 
 ## Dictate, review, keep working
 
@@ -41,7 +41,7 @@ Dictation delivers the whole text at once after you stop recording. With hold-to
 
 Automatic rewriting is off; use **Rewrite** beside a result when you want to shorten or restructure it.
 
-On supported Wayland desktops, a small pearl pill with wave bars stays above your apps without taking focus. Hold-to-talk uses the desktop shortcut portal; other desktops use toggle shortcuts. If automatic paste is blocked, the result stays available on the clipboard.
+On Wayland desktops with layer-shell (KDE Plasma and wlroots compositors; not GNOME), a small pearl pill with wave bars stays above your apps without taking focus. Hold-to-talk uses the desktop shortcut portal; other desktops use toggle shortcuts. If automatic paste is blocked, the result stays available on the clipboard.
 
 ## What it brings
 
@@ -109,24 +109,33 @@ Linux and Windows share one PyTorch/Transformers speech runtime; v0.12.0 removed
 
 ## Install
 
-Download the package for your platform from [GitHub Releases](https://github.com/JEMostert/delulu-talks/releases/latest).
+Download the package for your platform from [GitHub Releases](https://github.com/JEMostert/delulu-talks/releases/latest). Linux/Wayland is the primary and most thoroughly exercised platform.
 
 ### Linux
 
-Run the AppImage directly:
+| Distribution | Package | Install | Updates |
+| --- | --- | --- | --- |
+| Any (x86_64) | AppImage | `chmod +x Delulu*_amd64.AppImage` and run it | In the app |
+| Fedora | rpm | `sudo dnf install ./Delulu*.x86_64.rpm` | New rpm from Releases |
+| Debian, Ubuntu | deb | `sudo apt install ./Delulu*_amd64.deb` | New deb from Releases |
+| CachyOS, Arch, EndeavourOS | pacman `delulu-talks-bin` | `sudo pacman -U delulu-talks-bin-*-x86_64.pkg.tar.zst` | New package from Releases |
+
+The rpm, deb and pacman packages pull in FFmpeg and Python and install `delulu-talks.desktop`, the desktop entry the Wayland shortcut portal identifies the app by. With the AppImage, install FFmpeg and Python yourself; the AppImage does not install that entry, and KDE's portal needs it to store the shortcut, so on KDE prefer a package (or add a `delulu-talks.desktop` that runs the AppImage to `~/.local/share/applications`). The recording pill needs gtk4-layer-shell and PyGObject with cairo:
 
 ```bash
-chmod +x Delulu-Talks-*-linux-x86_64.AppImage
-./Delulu-Talks-*-linux-x86_64.AppImage
+sudo pacman -S gtk4-layer-shell python-gobject python-cairo        # CachyOS, Arch
+sudo dnf install gtk4-layer-shell python3-gobject python3-cairo    # Fedora
 ```
 
-Arch and CachyOS users can install the pacman package instead. A portable `tar.xz` is also included. Linux/Wayland is the primary and most thoroughly exercised platform.
+GNOME has no layer-shell, so the pill is not available there; the main window and tray show recording state instead.
 
 ### Windows and macOS
 
-Use the Windows installer or the macOS DMG from the same release page. Mac packages target Apple Silicon and are not Developer ID signed or notarized. If macOS blocks launch, use System Settings → Privacy & Security → Open Anyway for the app you downloaded from this repository. Automatic installation of Mac updates is disabled for these unsigned builds: download the new DMG, quit Delulu, replace the app in Applications, and reopen it. Settings, history, and models stay in the application-data directory.
+Use the Windows installer (`*_x64-setup.exe`) or the macOS DMG (`*_aarch64.dmg`, Apple Silicon only) from the same release page. Packages are not code-signed or notarized. If macOS blocks launch, use System Settings → Privacy & Security → Open Anyway for the app you downloaded from this repository. Both builds are produced in CI but have not yet been run on real Mac or Windows hardware for this release.
 
-Supported installed packages check GitHub Releases for updates. Downloads are explicit, progress is visible, and restart waits until recording, inference, and setup are idle. Linux automatic updates use AppImage; pacman and portable packages link to manual downloads.
+### Updates
+
+The AppImage, the macOS app and the Windows installer check GitHub Releases for signed updates. Downloads are explicit, progress is visible, and restart waits until recording, inference, and setup are idle. The rpm, deb and pacman packages update by installing the newer package; their tray links to the releases page. Settings, history, and models stay in the profile directory across updates and package types.
 
 ## Your first minute
 
@@ -139,11 +148,21 @@ The app manages separate isolated Python environments for platform-selected spee
 
 ## Run from source
 
-You will need [Bun](https://bun.sh/), **Python 3.12 on Windows and native arm64 Python 3.12 on Apple Silicon** (Python 3.11–3.13 for Linux CUDA), and FFmpeg for compressed audio or video imports. On Mac, install Python using `brew install python@3.12` or `uv python install 3.12`; set its full path under Settings → Advanced if necessary. The Mac speech environment installs pinned MLX, MLX Audio, and Transformers packages.
+You will need [Bun](https://bun.sh/), stable [Rust](https://rustup.rs/), **Python 3.12 on Windows and native arm64 Python 3.12 on Apple Silicon** (Python 3.11–3.13 for Linux CUDA), and FFmpeg for compressed audio or video imports. On Mac, install Python using `brew install python@3.12` or `uv python install 3.12`; set its full path under Settings → Advanced if necessary. The Mac speech environment installs pinned MLX, MLX Audio, and Transformers packages.
+
+On Linux, install the Tauri build dependencies first:
+
+```bash
+sudo dnf install webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel alsa-lib-devel          # Fedora
+sudo pacman -S --needed webkit2gtk-4.1 libayatana-appindicator librsvg alsa-lib                       # CachyOS, Arch
+sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev       # Debian, Ubuntu
+```
+
+Then:
 
 ```bash
 bun install
-bun run dev
+bun run dev        # tauri dev: the desktop app with hot reload
 ```
 
 For a renderer-only preview with safe demo data:
@@ -152,24 +171,21 @@ For a renderer-only preview with safe demo data:
 bun run dev:web
 ```
 
-On Arch-based Wayland systems, install the native overlay dependencies with:
-
-```bash
-sudo pacman -S ffmpeg gtk4-layer-shell python-gobject python-cairo
-```
-
 ## How it fits together
 
 ```text
-Electron main process
-├── lifecycle, tray, updater, global shortcuts, validated IPC
-├── native Wayland overlay + secure paste services
-├── persistent Python worker
-│   ├── R2T2 speech runtime
-│   └── Qwen writing runtime
-└── sandboxed React renderer
+Tauri app (Rust)
+├── lifecycle, tray, updater, global shortcuts, validated IPC router
+├── native audio: capture, cues, listening detection, voice playback (cpal)
+├── Wayland portals: GlobalShortcuts, RemoteDesktop paste, clipboard
+├── GTK4 layer-shell overlay helper (Python)
+├── persistent Python workers
+│   ├── speech runtime (sherpa-onnx, R2T2)
+│   ├── Qwen writing runtime
+│   └── voice runtime (Kokoro, Chatterbox)
+└── React renderer in the system webview (WebKitGTK, WKWebView, WebView2)
     ├── ocean shell, dock + contextual transcript rewriting
-    ├── Audio files + History + Personalization
+    ├── Audio files + History + Personalization + Voice
     └── Models + Settings + onboarding
 ```
 
@@ -180,12 +196,10 @@ Electron main process
 bun run typecheck
 bun run test
 bun run test:e2e
-bun run build
-python3 -m py_compile electron/python/transcription_engine.py
-bun run dist:linux
+bun run build      # tauri build: bundles for the current platform
 ```
 
-Linux packaging produces AppImage, pacman, and `tar.xz` artifacts. The release workflow runs the focused unit and existing browser tests, then builds native Linux, macOS, and Windows packages on version tags. A tag must match the package version before it can publish.
+On Linux, `bun run build` produces the AppImage, deb and rpm under `src-tauri/target/release/bundle/`. The release workflow runs on version tags: it runs the renderer, Python and Rust checks, builds Linux, macOS and Windows packages, signs the updater artifacts, repackages the deb as the pacman package (`packaging/arch/PKGBUILD`), and publishes a release with a `latest.json` updater manifest. A tag must match the package version before it can publish.
 
 </details>
 
@@ -193,20 +207,22 @@ Linux packaging produces AppImage, pacman, and `tar.xz` artifacts. The release w
 <summary><strong>Repository map</strong></summary>
 
 ```text
-electron/
-  main.ts             lifecycle, windows, tray, shortcuts, validated IPC
-  preload.ts          isolated renderer API
-  services/           ASR, dictation, overlay, shortcuts, storage, paste, export
-  overlay/            GTK4 layer-shell recording pill helper
-  python/             persistent speech + rewriting worker
-src/
-  components/         Electron app shell components
-  pages/              Audio files, History, Models, Personalization, Settings
+src/                  React renderer
+  components/         app shell components
+  pages/              Audio files, History, Models, Personalization, Voice, Settings
   styles/             Deep Sea tokens, primitives, shell and feature styles
-  bridge.ts           typed Electron/browser boundary
-  recorder.ts         microphone capture and 16 kHz WAV encoder
-  data.ts             R2T2, Qwen, and language catalogs
+  bridge.ts           typed renderer boundary
+  desktopBridge.ts    window.delulu over Tauri commands and events
+  data.ts             speech, rewriting and language catalogs
+src-tauri/            Tauri app: IPC router, handlers, windows, tray, updater, CLI
+  crates/             delulu-core, -domain, -runtime, -audio, -desktop, -data, -speech, -voice
+backend/
+  python/             persistent speech, rewriting and voice workers
+  overlay/            GTK4 layer-shell recording pill helper
+packaging/arch/       PKGBUILD for the pacman package
 ```
+
+See [architecture](docs/ARCHITECTURE.md) for what each crate owns.
 
 </details>
 
@@ -214,9 +230,9 @@ File transcription reads media metadata after you explicitly select a source fil
 
 ## Privacy and licenses
 
-Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Failed captures can remain in memory for Retry during the session; Discard releases them, and closing the app loses that recovery copy. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environment, and downloaded models stay under Electron's application-data directory.
+Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Failed captures can remain in memory for Retry during the session; Discard releases them, and closing the app loses that recovery copy. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environments, and downloaded models stay in the profile directory: `~/.config/Delulu Talks` on Linux, `~/Library/Application Support/Delulu Talks` on macOS, `%APPDATA%\Delulu Talks` on Windows. Audio is captured natively; the webview has no microphone access.
 
-With **Keep local history** off, new dictation and imported-file results are session-only, including their original text, personalization, corrections, and rewrites. Main and renderer retain at most the newest 20 session records and 8 MiB of UTF-8 strings per transcript collection; the newest record is kept whole even if it alone exceeds that budget. Older records are evicted whole, never truncated. These are text retention limits, not a total process RAM cap: active inference, failed-recording retry audio and bounded worker diagnostics use separate memory. Session results disappear on exit, are never automatically promoted to saved history when the setting is re-enabled, and remain explicitly exportable while retained. Existing saved history remains on disk and edits to those saved records still persist. Disabling history also suppresses automatic speech/writing error-log writes, which can include model diagnostics; existing logs are not deleted. Explicit clipboard/paste delivery and exports can create copies outside the app.
+With **Keep local history** off, new dictation and imported-file results are session-only, including their original text, personalization, corrections, and rewrites. The backend and renderer retain at most the newest 20 session records and 8 MiB of UTF-8 strings per transcript collection; the newest record is kept whole even if it alone exceeds that budget. Older records are evicted whole, never truncated. These are text retention limits, not a total process RAM cap: active inference, failed-recording retry audio and bounded worker diagnostics use separate memory. Session results disappear on exit, are never automatically promoted to saved history when the setting is re-enabled, and remain explicitly exportable while retained. Existing saved history remains on disk and edits to those saved records still persist. Disabling history also suppresses automatic speech/writing error-log writes, which can include model diagnostics; existing logs are not deleted. Explicit clipboard/paste delivery and exports can create copies outside the app.
 
 Temporary microphone WAVs and converted import audio still use the app audio-cache directory while processing, regardless of the history setting; normal success and failure paths delete them. An abrupt process exit can leave temporary audio behind. The app does not automatically write transcript-text sidecars for these files.
 
@@ -224,13 +240,13 @@ Delulu Talks is [MIT licensed](LICENSE). Vendored conversion helpers and their l
 
 ## Development checks
 
-The focused unit suite covers data preservation, dictation recovery, paste safety,
+The focused unit suites cover data preservation, dictation recovery, paste safety,
 worker messages, exact text blocks, and runtime rollback.
-`bun run test` runs both TypeScript and dependency-free Python units; the existing
-browser tests run separately and check microphone capture and cleanup with synthetic audio.
+`bun run test` runs the TypeScript renderer units, the dependency-free Python units and
+`cargo test --workspace`; the Playwright browser tests run separately against the renderer preview.
 See [testing](docs/VERIFICATION.md) for commands and scope.
 
-Development uses its own **Delulu Talks Dev** profile, audio cache, and Linux desktop entry. It does not import production history, overwrite the installed launcher, automatically bind the production shortcut, or change login startup. `DELULU_USER_DATA_DIR` is an explicit development/test override; do not point it at your everyday profile.
+Development uses its own **Delulu Talks Dev** profile, audio cache, and Linux desktop entry (written to `~/.local/share/applications` only when no `delulu-talks.desktop` exists, because the Wayland shortcut portal requires one). It does not import production history, overwrite the installed launcher, automatically bind the production shortcut, or change login startup. `DELULU_USER_DATA_DIR` is an explicit development/test override; do not point it at your everyday profile. Debug builds also accept `DELULU_DEV_SCRIPT` (a JSON list of IPC steps run at startup, see `src-tauri/src/dev_script.rs`) and `DELULU_IPC_LOG=1` (logs every IPC request).
 
 Repairs build a fresh environment under `speech-venv/generations/` (or the Writing runtime root), validate dependencies and imports, then atomically activate it. Virtualenv directories are never renamed. Failed installation leaves the previous runtime selected; a failed initial model load rolls activation back. Previous and interrupted generations are retained for recovery, so repairs temporarily require extra disk space. The existing `asr-venv` can still be the active Writing runtime; do not delete it merely because its name is old.
 
@@ -244,20 +260,10 @@ bunx playwright install chromium
 bun run test:e2e
 ```
 
-For optional real-model validation with an existing runtime and cached models,
-use the [native inference harness](docs/NATIVE_HARNESS.md). These hardware checks
-are separate from the fast test suite.
-
-For cold-start and first-response latency, close the everyday app and run:
-
-```bash
-bun scripts/benchmark-speech.mjs "/path/to/Delulu Talks user data"
-```
-
-This reports startup including synthetic inference warm-up, then first, changed-input, and repeated-input transcription timings. It uses cached models, temporary audio, and no user history or clipboard. In a local RTX 4090 test with the included 4.59-second sample, 0.9.3 reduced the first post-ready worker round trip from 1.82 seconds to 54 ms; the changed-input check took 85 ms. Startup remained about 25 seconds. These are single-machine sample measurements, not general latency guarantees; repeated inputs may benefit from caching.
+The [native inference harness](docs/NATIVE_HARNESS.md) and the cold-start speech benchmark were removed with the Electron app and are not available in the Tauri app yet.
 
 Ready now follows a bounded synthetic transcription warm-up. Recording timings include worker communication and any on-demand model load, rather than just GPU inference; they do not include microphone capture, optional Writing, or paste delivery. Short dictations time out after two minutes, longer captures scale up to fifteen minutes, and imported files allow fifteen minutes. Model installation/loading retains a separate download-sized deadline. Busy shortcut notices dismiss on release, cancellation, readiness, or after two seconds, without queuing an unexpected recording.
 
-The benchmark uses the active speech runtime and cached models, with no clipboard/paste delivery. It measures a supplied audio sample; it is not a general accuracy benchmark. See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
+See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
 
 The [historical roadmap](https://github.com/JEMostert/delulu-talks/issues/14) now serves as a record of the broader plan. The current scope is the desktop dictation app: R2T2 speech, word packs and vocabulary, optional local Qwen 3.5 rewrite previews, and local history and audio imports. CLI/API servers, editor extensions, watched folders, cloud/account features and meeting-summary pipelines are outside this scope. The unfinished live streaming experiment has been removed; all platforms use buffered capture. Automated fixtures do not establish native MLX/CUDA inference, physical microphone behavior or delivery into another application. Native platform acceptance remains pending.
