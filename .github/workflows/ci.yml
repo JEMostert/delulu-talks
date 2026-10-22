@@ -39,7 +39,7 @@ jobs:
           bun run build
 
       - name: Validate Python worker
-        run: python3 -m compileall -q electron/python
+        run: python3 -m compileall -q backend/python
 
       - name: Install browser test runtime
         run: bunx playwright install --with-deps chromium

@@ -64,7 +64,7 @@ const python = resolve(options["--python"]),
   cache = resolve(options["--cache"]),
   audio = resolve(options["--audio"]);
 const workerScript = resolve(
-  options["--worker"] ?? `${root}/electron/python/transcription_engine.py`,
+  options["--worker"] ?? `${root}/backend/python/transcription_engine.py`,
 );
 const report = {
   schemaVersion: 1,

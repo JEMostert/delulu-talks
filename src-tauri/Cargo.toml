@@ -1,0 +1,68 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+delulu-core = { path = "crates/delulu-core" }
+delulu-domain = { path = "crates/delulu-domain" }
+delulu-runtime = { path = "crates/delulu-runtime" }
+delulu-audio = { path = "crates/delulu-audio" }
+delulu-desktop = { path = "crates/delulu-desktop" }
+delulu-data = { path = "crates/delulu-data" }
+delulu-services = { path = "crates/delulu-services" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+parking_lot = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+base64 = "0.22"
+regex = "1"
+unicode-normalization = "0.1"
+unicode-segmentation = "1"
+log = "0.4"
+tempfile = "3"
+which = "7"
+dirs = "6"
+
+[package]
+name = "delulu-talks"
+description = "Private, local-first system-wide dictation with CPU, CUDA and MLX speech models"
+authors = ["JoranEMostert"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "delulu_talks_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+delulu-core.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "2.0"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

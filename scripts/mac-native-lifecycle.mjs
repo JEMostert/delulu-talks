@@ -53,7 +53,7 @@ if (!Number.isFinite(limitMiB) || limitMiB < 0 || limitMiB > 1024)
   throw new Error("Retained-memory limit must be 0–1024 MiB");
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceWorker = resolve(
-  options["--worker"] ?? join(root, "electron/python/transcription_engine.py"),
+  options["--worker"] ?? join(root, "backend/python/transcription_engine.py"),
 );
 const wrapper = join(root, "scripts/native-worker-observation.py");
 const control = await mkdtemp(join(tmpdir(), "delulu-mac-native-"));

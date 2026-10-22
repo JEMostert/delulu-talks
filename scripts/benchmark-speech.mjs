@@ -18,7 +18,7 @@ const cache = join(data, "models");
 const source = resolve(process.argv[3] ?? join(root, "test-audio.m4a"));
 const harness = new NativeInferenceHarness({
   python: runtimePython(join(data, "speech-venv")),
-  workerScript: join(root, "electron/python/transcription_engine.py"),
+  workerScript: join(root, "backend/python/transcription_engine.py"),
   cacheDirectory: cache,
 });
 const prepared = new Map();

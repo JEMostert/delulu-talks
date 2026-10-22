@@ -22,7 +22,7 @@ DURATION = 0.5
 
 def make_probe(backend):
     root = Path(__file__).resolve().parents[1]
-    sys.path.insert(0, str(root / "electron/python"))
+    sys.path.insert(0, str(root / "backend/python"))
     captured = []
     if backend == "mlx":
         if sys.platform != "darwin" or platform.machine() != "arm64":
