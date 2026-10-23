@@ -1,155 +1,132 @@
-//! Port of `electron/services/listening.test.ts`.
+//! The listening session Talk owns: turns in order, durable recordings,
+//! barge-in, levels and the microphone lifecycle.
 
 mod support;
 
 use std::sync::atomic::Ordering;
 
 use delulu_audio::{ListenEvent as CaptureEvent, ListenState};
-use delulu_domain::listening::{ListenEvent, ListenNextResult};
-use delulu_voice::{is_real_turn, sounds_like_own_speech, CaptureCommand, ListenErrorCode};
-use support::listen_fixture;
-use tokio_util::sync::CancellationToken;
-
-fn event(result: &ListenNextResult) -> &ListenEvent {
-    match result {
-        ListenNextResult::Event { event, .. } => event,
-        other => panic!("expected an event, got {other:?}"),
-    }
-}
-
-fn text(result: &ListenNextResult) -> String {
-    match event(result) {
-        ListenEvent::Utterance(utterance) => utterance.text.clone(),
-        other => panic!("expected an utterance, got {other:?}"),
-    }
-}
+use delulu_domain::listening::ListenSessionState;
+use delulu_voice::{is_real_turn, sounds_like_own_speech, CaptureCommand, Heard};
+use support::{listen_fixture, listen_fixture_in};
 
 #[tokio::test]
-async fn turns_reuse_one_session_and_model_and_speech_between_waits_stays_queued() {
+async fn turns_reach_the_owner_in_order_over_one_session_and_model() {
     let f = listen_fixture();
-    let session = f.service.start("claude-code").await.unwrap();
+    let session = f.service.start().await.unwrap();
     f.service.capture_event(&session.id, CaptureEvent::State { state: ListenState::Listening, message: None });
-    assert_eq!(f.service.start("claude-code").await.unwrap().id, session.id);
+    assert_eq!(f.service.start().await.unwrap().id, session.id);
     assert_eq!(f.transcriber.prepared.load(Ordering::SeqCst), 1);
-    f.say(&session.id, "First question.").await;
-    f.say(&session.id, "And a second thing.").await;
-    let first = f.service.next(&session.id, None, 1000, None).await.unwrap();
-    assert_eq!((event(&first).seq(), text(&first).as_str()), (1, "First question."));
-    // A retry without advancing the cursor gets the same event again.
-    let retry = f.service.next(&session.id, None, 1000, None).await.unwrap();
-    assert_eq!(event(&retry).seq(), 1);
-    let second = f.service.next(&session.id, Some(1), 1000, None).await.unwrap();
-    assert_eq!((event(&second).seq(), text(&second).as_str()), (2, "And a second thing."));
+    f.say("First question.").await;
+    f.say("And a second thing.").await;
+    let turns = f.turns();
+    assert_eq!(turns.iter().map(|(text, _)| text.as_str()).collect::<Vec<_>>(), ["First question.", "And a second thing."]);
+    // Recordings stay private until the owner has handled the turn.
+    let first = turns[0].1.clone().unwrap();
+    assert!(first.starts_with(f.dir.path().join("voice").join("pending-audio")) && first.exists());
+    f.service.discard(&first);
+    assert!(!first.exists() && !first.with_extension("json").exists());
     let starts = f.backend.commands.lock().iter().filter(|c| matches!(c, CaptureCommand::Start { .. })).count();
     assert_eq!(starts, 1);
 }
 
 #[tokio::test]
-async fn timeouts_and_cancelled_waiters_keep_capture_running_and_lose_nothing() {
-    let f = listen_fixture();
-    let session = f.service.start("agent").await.unwrap();
-    let timed_out = f.service.next(&session.id, None, 10, None).await.unwrap();
-    assert!(matches!(timed_out, ListenNextResult::Timeout { .. }));
-    let cancel = CancellationToken::new();
-    let waiting = {
-        let service = f.service.clone();
-        let id = session.id.clone();
-        let cancel = cancel.clone();
-        tokio::spawn(async move { service.next(&id, None, 10_000, Some(cancel)).await })
-    };
-    tokio::task::yield_now().await;
-    cancel.cancel();
-    assert!(matches!(waiting.await.unwrap().unwrap(), ListenNextResult::Timeout { .. }));
-    f.say(&session.id, "Are you still there?").await;
-    assert!(f.service.active());
-    assert!(!f.backend.commands.lock().iter().any(|c| matches!(c, CaptureCommand::Stop { .. })));
-    let next = f.service.next(&session.id, None, 1000, None).await.unwrap();
-    assert!(matches!(event(&next), ListenEvent::Utterance(_)));
-}
-
-#[tokio::test]
-async fn a_waiter_wakes_when_the_utterance_arrives() {
-    let f = listen_fixture();
-    let session = f.service.start("agent").await.unwrap();
-    let waiting = {
-        let service = f.service.clone();
-        let id = session.id.clone();
-        tokio::spawn(async move { service.next(&id, None, 5000, None).await })
-    };
-    support::until(|| f.service.status(None).unwrap().unwrap().waiters == 1, "waiter").await;
-    f.say(&session.id, "Ship it.").await;
-    assert_eq!(text(&waiting.await.unwrap().unwrap()), "Ship it.");
-}
-
-#[tokio::test]
 async fn noise_fillers_and_delulus_own_words_never_become_turns() {
     let f = listen_fixture();
-    let session = f.service.start("agent").await.unwrap();
-    f.say(&session.id, "").await;
-    f.say(&session.id, "Um.").await;
-    f.say(&session.id, "All two hundred tests pass.").await;
-    assert_eq!(f.service.status(Some(&session.id)).unwrap().unwrap().queued, 0);
+    f.service.start().await.unwrap();
+    f.say("").await;
+    f.say("Um.").await;
+    f.say("All two hundred tests pass.").await;
+    assert!(f.turns().is_empty());
+    assert!(f.pending_audio().is_empty(), "dropped recordings are deleted");
     assert!(!is_real_turn("Hmm, uh"));
     assert!(is_real_turn("No."));
     assert!(sounds_like_own_speech("the fix is merged", &["The fix is merged.".into()]));
 }
 
 #[tokio::test]
-async fn barge_in_reports_the_response_then_the_utterance_that_interrupted_it() {
+async fn barge_in_reports_the_cut_off_response_then_the_utterance_that_interrupted_it() {
     let f = listen_fixture();
-    let session = f.service.start("agent").await.unwrap();
-    f.barge_in(&session.id, &["rsp_1"]);
+    f.service.start().await.unwrap();
+    f.barge_in(&["rsp_1"]);
     // Even words Delulu just said count when the user deliberately interrupted.
-    f.say(&session.id, "Wait, the fix is merged?").await;
-    let interrupted = f.service.next(&session.id, None, 1000, None).await.unwrap();
-    match event(&interrupted) {
-        ListenEvent::Interrupted(event) => assert_eq!(event.response_id.as_deref(), Some("rsp_1")),
-        other => panic!("{other:?}"),
-    }
-    let utterance = f.service.next(&session.id, Some(1), 1000, None).await.unwrap();
-    match event(&utterance) {
-        ListenEvent::Utterance(event) => assert_eq!(event.interrupted_response_id.as_deref(), Some("rsp_1")),
+    f.say("Wait, the fix is merged?").await;
+    let heard = f.heard.lock().clone();
+    assert_eq!(heard[0], Heard::BargeIn { response_ids: vec!["rsp_1".into()] });
+    match &heard[1] {
+        Heard::Turn { turn, .. } => assert_eq!(turn.interrupted_response_id.as_deref(), Some("rsp_1")),
         other => panic!("{other:?}"),
     }
 }
 
 #[tokio::test]
-async fn other_clients_cannot_take_or_read_a_running_session() {
+async fn unhandled_recordings_survive_a_restart_and_are_handed_over_again() {
     let f = listen_fixture();
-    let session = f.service.start("claude-code").await.unwrap();
-    let busy = f.service.start("codex").await.unwrap_err();
-    assert_eq!(busy.code, ListenErrorCode::SessionBusy);
-    assert!(busy.message.contains("already listening"));
-    let missing = f.service.next("lsn_other", None, 10, None).await.unwrap_err();
-    assert!(missing.message.contains("does not exist"));
-    f.service.stop(&session.id, "Stopped by request").unwrap();
-    let second = f.service.start("codex").await.unwrap();
-    assert_ne!(second.id, session.id);
+    f.service.start().await.unwrap();
+    f.say("Deploy the preview.").await;
+    let (_, recording) = f.turns().remove(0);
+    let recording = recording.unwrap();
+    f.service.stop_active("Stopped");
+    // Outstanding (not released) recordings are not handed over twice.
+    f.service.start().await.unwrap();
+    assert_eq!(f.turns().len(), 1);
+    f.service.stop_active("Stopped");
+
+    // A new process finds the recording and transcribes it again first.
+    let restarted = listen_fixture_in(f.dir);
+    restarted.transcriber.push("Deploy the preview.");
+    restarted.service.start().await.unwrap();
+    let turns = restarted.turns();
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].0, "Deploy the preview.");
+    assert_eq!(turns[0].1.as_deref(), Some(recording.as_path()));
+    assert_eq!(restarted.transcriber.prepared.load(Ordering::SeqCst), 1, "recovery uses the loaded model");
 }
 
 #[tokio::test]
-async fn stopping_releases_capture_and_resolves_waiters() {
+async fn a_failed_transcription_keeps_the_recording_and_gives_up_after_three_retries() {
     let f = listen_fixture();
-    let session = f.service.start("agent").await.unwrap();
-    let waiting = {
-        let service = f.service.clone();
-        let id = session.id.clone();
-        tokio::spawn(async move { service.next(&id, None, 10_000, None).await })
-    };
-    support::until(|| f.service.status(None).unwrap().unwrap().waiters == 1, "waiter").await;
-    f.service.stop(&session.id, "Stopped by request").unwrap();
-    let result = waiting.await.unwrap().unwrap();
-    assert!(matches!(event(&result), ListenEvent::Stopped(_)));
-    assert!(matches!(f.backend.commands.lock().last(), Some(CaptureCommand::Stop { .. })));
-    assert!(!f.service.active());
-    let after = f.service.next(&session.id, Some(event(&result).seq()), 1000, None).await.unwrap();
-    assert!(matches!(after, ListenNextResult::Stopped { .. }));
+    f.service.start().await.unwrap();
+    f.transcriber.fail_next();
+    let id = f.session_id();
+    f.service.capture_event(
+        &id,
+        CaptureEvent::Utterance { wav: vec![0; 64], duration_ms: 900, speech_ms: 700, overlapped_playback: false },
+    );
+    let service = f.service.clone();
+    support::until(move || !service.get_status().session.unwrap().transcribing, "transcription").await;
+    assert!(f.service.active(), "one failure does not end the session");
+    assert!(f.service.get_status().session.unwrap().error.unwrap().contains("Could not transcribe"));
+    assert_eq!(f.pending_audio().len(), 1);
+    f.service.stop_active("Stopped");
+    for attempt in 1..=3 {
+        f.transcriber.fail_next();
+        f.service.start().await.unwrap();
+        f.service.stop_active("Stopped");
+        assert_eq!(f.pending_audio().len(), usize::from(attempt < 3), "attempt {attempt}");
+    }
+    assert!(f.turns().is_empty());
+}
+
+#[tokio::test]
+async fn levels_reach_the_owner_and_a_new_microphone_reconfigures_the_capture() {
+    let f = listen_fixture();
+    let session = f.service.start().await.unwrap();
+    f.service.capture_event(&session.id, CaptureEvent::Level { db: -42.5 });
+    assert_eq!(f.heard.lock().last(), Some(&Heard::Level { db: -42.5 }));
+    let settings = delulu_domain::AppSettings { input_device_id: "usb-headset".into(), ..Default::default() };
+    f.service.settings_changed(&settings);
+    let last = f.backend.commands.lock().last().cloned();
+    match last {
+        Some(CaptureCommand::Configure { config, .. }) => assert_eq!(config.device_id, "usb-headset"),
+        other => panic!("{other:?}"),
+    }
 }
 
 #[tokio::test]
 async fn dictation_pauses_and_resumes_the_microphone() {
     let f = listen_fixture();
-    let session = f.service.start("agent").await.unwrap();
+    let session = f.service.start().await.unwrap();
     f.service.capture_event(&session.id, CaptureEvent::State { state: ListenState::Listening, message: None });
     f.service.pause_for_dictation();
     assert_eq!(f.service.get_status().message, "Paused while you dictate");
@@ -163,15 +140,14 @@ async fn dictation_pauses_and_resumes_the_microphone() {
 #[tokio::test]
 async fn a_failed_microphone_ends_the_session_with_its_reason() {
     let f = listen_fixture();
-    let session = f.service.start("agent").await.unwrap();
+    let session = f.service.start().await.unwrap();
     f.service.capture_event(
         &session.id,
         CaptureEvent::State { state: ListenState::Failed, message: Some("The microphone was disconnected.".into()) },
     );
-    let result = f.service.next(&session.id, Some(1), 1000, None).await.unwrap();
-    match result {
-        ListenNextResult::Stopped { reason, .. } => assert_eq!(reason, "The microphone was disconnected."),
-        other => panic!("{other:?}"),
-    }
+    let status = f.service.get_status();
+    assert_eq!(status.session.unwrap().state, ListenSessionState::Failed);
+    assert_eq!(status.message, "The microphone was disconnected.");
     assert!(!f.service.active());
+    assert!(matches!(f.backend.commands.lock().last(), Some(CaptureCommand::Stop { .. })));
 }

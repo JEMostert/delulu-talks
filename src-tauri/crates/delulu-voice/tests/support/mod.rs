@@ -9,11 +9,10 @@ use std::time::Duration;
 
 use delulu_audio::{ListenEvent as CaptureEvent, PlaybackChunk, PlaybackEvent, PlaybackEventKind};
 use delulu_core::{AppPaths, DomainResult};
-use delulu_domain::listening::{ListenNextResult, ListenSessionInfo};
 use delulu_domain::voice::{VoiceEngineId, VoiceSpeakRequest};
 use delulu_domain::AppSettings;
 use delulu_voice::{
-    BoxFuture, BridgeError, BridgeHandlers, BridgeResult, CaptureCommand, CaptureEvents, ListenBackend,
+    BoxFuture, BridgeError, BridgeHandlers, BridgeResult, CaptureCommand, CaptureEvents, Heard, Inbox, ListenBackend,
     ListenTranscriber, ListeningService, SpeakReply, SpeechOutput, VoiceBridge, VoiceBridgeSnapshot, VoiceOptions,
     VoicePlayback, VoiceProfile, VoiceService, VoiceWorker,
 };
@@ -186,10 +185,20 @@ pub fn voice_fixture(patch: impl FnOnce(&mut AppSettings), duration_ms: f64, aut
 
 /* Listening */
 
+/// Pops one queued transcript per call; an `Err(..)` entry fails that call.
 #[derive(Default)]
 pub struct FakeTranscriber {
     pub prepared: AtomicUsize,
-    pub transcripts: Mutex<VecDeque<String>>,
+    pub transcripts: Mutex<VecDeque<Result<String, String>>>,
+}
+
+impl FakeTranscriber {
+    pub fn push(&self, text: &str) {
+        self.transcripts.lock().push_back(Ok(text.to_owned()));
+    }
+    pub fn fail_next(&self) {
+        self.transcripts.lock().push_back(Err("speech failed".into()));
+    }
 }
 
 impl ListenTranscriber for FakeTranscriber {
@@ -199,8 +208,8 @@ impl ListenTranscriber for FakeTranscriber {
     }
     fn transcribe(&self, audio_path: &Path, _duration_ms: u64) -> BoxFuture<'_, DomainResult<String>> {
         assert!(audio_path.exists(), "the utterance WAV is written before transcription");
-        let text = self.transcripts.lock().pop_front().unwrap_or_default();
-        Box::pin(async move { Ok(text) })
+        let next = self.transcripts.lock().pop_front().unwrap_or(Ok(String::new()));
+        Box::pin(async move { next.map_err(delulu_core::DomainError::failed) })
     }
 }
 
@@ -236,33 +245,72 @@ pub struct ListenFixture {
     pub transcriber: Arc<FakeTranscriber>,
     pub speech: Arc<FakeSpeech>,
     pub backend: Arc<FakeBackend>,
+    pub heard: Arc<Mutex<Vec<Heard>>>,
 }
 
 pub fn listen_fixture() -> ListenFixture {
-    let dir = tempfile::tempdir().unwrap();
+    listen_fixture_in(tempfile::tempdir().unwrap())
+}
+
+pub fn listen_fixture_in(dir: tempfile::TempDir) -> ListenFixture {
     let profile = FakeProfile::new(dir.path(), |_| {});
     let transcriber = Arc::new(FakeTranscriber::default());
     let speech = Arc::new(FakeSpeech::default());
     let backend = Arc::new(FakeBackend::default());
     let service = ListeningService::new(profile, transcriber.clone(), speech.clone(), backend.clone());
-    ListenFixture { dir, service, transcriber, speech, backend }
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let sink = heard.clone();
+    service.on_heard(move |item| sink.lock().push(item));
+    ListenFixture { dir, service, transcriber, speech, backend, heard }
+}
+
+/// Feeds one finished utterance to `service`; resolves once it was transcribed.
+pub async fn utter(service: &ListeningService, transcriber: &FakeTranscriber, text: &str) {
+    transcriber.push(text);
+    let id = service.get_status().session.expect("a session").id;
+    service.capture_event(
+        &id,
+        CaptureEvent::Utterance { wav: vec![0; 64], duration_ms: 1500, speech_ms: 1200, overlapped_playback: false },
+    );
+    let service = service.clone();
+    until(move || !service.get_status().session.is_some_and(|session| session.transcribing), "transcription").await;
 }
 
 impl ListenFixture {
-    /// The user says `text`; resolves once it was transcribed.
-    pub async fn say(&self, session_id: &str, text: &str) {
-        self.transcriber.transcripts.lock().push_back(text.to_owned());
-        self.service.capture_event(
-            session_id,
-            CaptureEvent::Utterance { wav: vec![0; 64], duration_ms: 1500, speech_ms: 1200, overlapped_playback: false },
-        );
-        let service = self.service.clone();
-        until(move || !service.status(Some(session_id)).unwrap().unwrap().transcribing, "transcription").await;
+    pub fn session_id(&self) -> String {
+        self.service.get_status().session.expect("a session").id
     }
 
-    pub fn barge_in(&self, session_id: &str, responses: &[&str]) {
+    /// The user says `text`; resolves once it was transcribed.
+    pub async fn say(&self, text: &str) {
+        utter(&self.service, &self.transcriber, text).await;
+    }
+
+    pub fn barge_in(&self, responses: &[&str]) {
         *self.speech.interrupted.lock() = responses.iter().map(|id| id.to_string()).collect();
-        self.service.capture_event(session_id, CaptureEvent::BargeIn { utterance_ids: Vec::new() });
+        self.service.capture_event(&self.session_id(), CaptureEvent::BargeIn { utterance_ids: Vec::new() });
+    }
+
+    /// The turns handed to the owner so far.
+    pub fn turns(&self) -> Vec<(String, Option<std::path::PathBuf>)> {
+        self.heard
+            .lock()
+            .iter()
+            .filter_map(|item| match item {
+                Heard::Turn { turn, recording } => Some((turn.text.clone(), recording.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn pending_audio(&self) -> Vec<std::path::PathBuf> {
+        let directory = self.dir.path().join("voice").join("pending-audio");
+        let mut files: Vec<_> = std::fs::read_dir(directory)
+            .map(|entries| entries.filter_map(Result::ok).map(|entry| entry.path()).collect())
+            .unwrap_or_default();
+        files.retain(|path| path.extension().is_some_and(|ext| ext == "wav"));
+        files.sort();
+        files
     }
 }
 
@@ -276,7 +324,10 @@ pub struct TestHandlers {
     pub speak: Mutex<Option<SpeakFn>>,
     pub stop_error: Mutex<Option<BridgeError>>,
     pub snapshot: Mutex<VoiceBridgeSnapshot>,
-    pub listen: ListenFixture,
+    /// A real inbox behind `agent.*` and `task.*`.
+    pub inbox: Inbox,
+    pub injected: Mutex<Vec<String>>,
+    pub inbox_dir: tempfile::TempDir,
 }
 
 pub fn snapshot() -> VoiceBridgeSnapshot {
@@ -290,15 +341,27 @@ pub fn snapshot() -> VoiceBridgeSnapshot {
     }
 }
 
+/// What `talk.status` answers in [`TestHandlers`].
+pub fn talk_status() -> Value {
+    json!({
+        "on": true, "phase": "listening", "message": "Listening",
+        "helper": { "mode": "off", "state": "off", "message": "" },
+        "needsDownload": false, "downloadSize": "~1.7 GB", "agents": [], "turns": [],
+    })
+}
+
 impl TestHandlers {
     pub fn new() -> Arc<Self> {
+        let inbox_dir = tempfile::tempdir().unwrap();
         Arc::new(Self {
             speak_calls: Mutex::new(Vec::new()),
             stops: AtomicUsize::new(0),
             speak: Mutex::new(None),
             stop_error: Mutex::new(None),
             snapshot: Mutex::new(snapshot()),
-            listen: listen_fixture(),
+            inbox: Inbox::open(inbox_dir.path().to_path_buf()),
+            injected: Mutex::new(Vec::new()),
+            inbox_dir,
         })
     }
 }
@@ -329,23 +392,21 @@ impl BridgeHandlers for TestHandlers {
     fn status(&self) -> VoiceBridgeSnapshot {
         self.snapshot.lock().clone()
     }
-    fn listen_start(&self, client: String) -> BoxFuture<'static, BridgeResult<ListenSessionInfo>> {
-        let service = self.listen.service.clone();
-        Box::pin(async move { Ok(service.start(&client).await?) })
-    }
-    fn listen_next(&self, session_id: String, after: Option<u64>, timeout_ms: u64, cancel: CancellationToken) -> BoxFuture<'static, BridgeResult<ListenNextResult>> {
-        let service = self.listen.service.clone();
-        Box::pin(async move { Ok(service.next(&session_id, after, timeout_ms, Some(cancel)).await?) })
-    }
-    fn listen_ack(&self, session_id: &str, after: u64) -> BridgeResult<ListenSessionInfo> {
-        Ok(self.listen.service.ack(session_id, after)?)
-    }
-    fn listen_status(&self, session_id: Option<&str>) -> BridgeResult<Option<ListenSessionInfo>> {
-        Ok(self.listen.service.status(session_id)?)
-    }
-    fn listen_stop(&self, session_id: String) -> BoxFuture<'static, BridgeResult<ListenSessionInfo>> {
-        let result = self.listen.service.stop(&session_id, "Stopped by request");
-        Box::pin(async move { Ok(result?) })
+    fn dispatch(&self, method: String, params: Value, cancel: CancellationToken) -> BoxFuture<'static, BridgeResult<Value>> {
+        match method.as_str() {
+            "talk.status" => Box::pin(async { Ok(talk_status()) }),
+            "talk.inject" => {
+                let text = params["text"].as_str().unwrap_or_default().to_owned();
+                self.injected.lock().push(text.clone());
+                Box::pin(async move {
+                    Ok(json!({ "id": "turn_1", "at": 1, "user": text, "tool": "send_to_agent", "said": "", "helperMs": null }))
+                })
+            }
+            _ => {
+                let inbox = self.inbox.clone();
+                Box::pin(async move { Ok(inbox.dispatch(&method, params, cancel).await?) })
+            }
+        }
     }
 }
 

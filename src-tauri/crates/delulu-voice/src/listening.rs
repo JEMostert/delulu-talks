@@ -1,83 +1,48 @@
-//! Persistent listening sessions (`electron/services/listening.ts`). The app
-//! owns the microphone, the speech model and the transcript queue; agents
-//! collect events with short `next` calls that can time out, be cancelled or
-//! be retried without losing anything.
+//! The microphone for Talk (`electron/services/listening.ts`): one listening
+//! session keeps the microphone and the speech model running, detects turns,
+//! transcribes them in order and hands each finished turn to its owner
+//! ([`ListeningService::on_heard`]).
 //!
 //! Capture is native ([`delulu_audio::ListenCapture`] behind
-//! [`NativeListenBackend`]) instead of the renderer's `listen:command` /
-//! `listen:event` IPC. The capture interrupts the player itself on barge-in;
-//! this service then cancels synthesis and the queue through
+//! [`NativeListenBackend`]). The capture interrupts the player itself on
+//! barge-in; this service then cancels synthesis and the queue through
 //! [`SpeechOutput::interrupt_speech`].
+//!
+//! Every accepted recording is kept under the private `voice/pending-audio/`
+//! until its owner has handled the turn ([`ListeningService::discard`]), so a
+//! quit or a stop in between never loses it: the next start transcribes the
+//! leftovers again before opening the microphone.
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
-use std::time::Duration;
 
 use delulu_audio::{ListenCapture, ListenConfig, ListenEvent as CaptureEvent, ListenState, Player};
-use delulu_core::util::truncate_utf16;
-use delulu_core::{now_ms, uuid};
+use delulu_core::util::write_private_atomic;
+use delulu_core::{now_ms, uuid, DomainError, DomainResult};
 use delulu_domain::js;
 use delulu_domain::listening::{
-    ListenEvent, ListenInterruptedEvent, ListenNextResult, ListenSessionInfo, ListenSessionState, ListenStatus,
-    ListenStoppedEvent, ListenUtteranceEvent, LISTEN_LIMITS,
+    ListenSessionInfo, ListenSessionState, ListenStatus, ListenUtteranceEvent, LISTEN_LIMITS,
 };
 use delulu_domain::AppSettings;
 use delulu_runtime::SerialQueue;
 use parking_lot::{Mutex, ReentrantMutex};
-use tokio::sync::oneshot;
-use tokio_util::sync::CancellationToken;
+use serde_json::{json, Value};
 
 use crate::host::{ListenTranscriber, VoiceProfile};
 use crate::service::VoiceService;
 
 const RECENT_UTTERANCES: usize = 20;
+/// The private directory of accepted recordings.
+pub const PENDING_AUDIO: &str = "pending-audio";
+/// Failed retries before a leftover recording is given up.
+const RECOVERY_ATTEMPTS: u64 = 3;
+const CLIENT: &str = "delulu";
 // Sounds people make while thinking or that recognizers emit for noise.
 const NOT_A_TURN: [&str; 12] = ["", "uh", "um", "hm", "hmm", "mm", "mhm", "ah", "oh", "eh", "er", "huh"];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ListenErrorCode {
-    SessionBusy,
-    SessionNotFound,
-    Unavailable,
-}
-
-impl ListenErrorCode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::SessionBusy => "SESSION_BUSY",
-            Self::SessionNotFound => "SESSION_NOT_FOUND",
-            Self::Unavailable => "UNAVAILABLE",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListenError {
-    pub code: ListenErrorCode,
-    pub message: String,
-}
-
-impl std::fmt::Display for ListenError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for ListenError {}
-
-impl ListenError {
-    fn new(code: ListenErrorCode, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
-    }
-
-    /// The IPC form (`listen:start` from the Voice page): a plain error.
-    pub fn into_domain(self) -> delulu_core::DomainError {
-        delulu_core::DomainError::failed(self.message).with_cause("ListenError", None)
-    }
-}
-
-/// The parts of the voice service a listening session uses.
+/// The parts of the voice service listening uses.
 pub trait SpeechOutput: Send + Sync {
     /// Stop Delulu talking; returns the response ids that were cut off.
     fn interrupt_speech(&self) -> Vec<String>;
@@ -101,6 +66,7 @@ pub enum CaptureCommand {
         session_id: String,
         config: ListenConfig,
     },
+    /// New tuning; a different device reopens the microphone.
     Configure {
         session_id: String,
         config: ListenConfig,
@@ -132,7 +98,7 @@ impl CaptureEvents {
     }
 }
 
-/// Owns the microphone for listening sessions.
+/// Owns the microphone for listening.
 pub trait ListenBackend: Send + Sync {
     /// Returns false when the microphone cannot be used right now.
     fn command(&self, command: CaptureCommand, events: &CaptureEvents) -> bool;
@@ -224,15 +190,24 @@ pub fn is_real_turn(text: &str) -> bool {
     !heard.is_empty() && !heard.iter().all(|word| NOT_A_TURN.contains(&word.as_str()))
 }
 
+/// What a listening session reports to its owner.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Heard {
+    /// A finished, transcribed turn. Once handled, pass `recording` to
+    /// [`ListeningService::discard`]; to retry it at the next start instead,
+    /// pass it to [`ListeningService::release`].
+    Turn { turn: ListenUtteranceEvent, recording: Option<PathBuf> },
+    /// The user talked over Delulu; these responses were cut off.
+    BargeIn { response_ids: Vec<String> },
+    /// Raw microphone level in dBFS.
+    Level { db: f64 },
+}
+
 struct Session {
     id: String,
-    client: String,
     state: ListenSessionState,
     started_at: u64,
-    events: Vec<ListenEvent>,
-    acked_seq: u64,
-    last_seq: u64,
-    waiters: HashMap<u64, oneshot::Sender<ListenNextResult>>,
+    delivered: u64,
     user_speaking: bool,
     transcribing: u32,
     error: Option<String>,
@@ -250,38 +225,18 @@ impl Session {
     fn info(&self) -> ListenSessionInfo {
         ListenSessionInfo {
             id: self.id.clone(),
-            client: self.client.clone(),
+            client: CLIENT.into(),
             state: self.state,
             started_at: self.started_at,
-            acked_seq: self.acked_seq,
-            last_seq: self.last_seq,
-            queued: self.events.iter().filter(|event| event.seq() > self.acked_seq).count() as u64,
+            acked_seq: self.delivered,
+            last_seq: self.delivered,
+            queued: 0,
             user_speaking: self.user_speaking,
             transcribing: self.transcribing > 0,
-            waiters: self.waiters.len() as u64,
+            waiters: 0,
             error: self.error.clone(),
         }
     }
-
-    fn acknowledge(&mut self, after: u64) {
-        let cursor = after.min(self.last_seq);
-        if cursor <= self.acked_seq {
-            return;
-        }
-        self.acked_seq = cursor;
-        self.events.retain(|event| event.seq() > cursor);
-    }
-
-    fn first_pending(&self) -> Option<ListenEvent> {
-        self.events.iter().find(|event| event.seq() > self.acked_seq).cloned()
-    }
-}
-
-fn not_found() -> ListenError {
-    ListenError::new(
-        ListenErrorCode::SessionNotFound,
-        "That listening session does not exist. Start a new one with listen start.",
-    )
 }
 
 #[derive(Default)]
@@ -289,6 +244,8 @@ struct State {
     session: Option<Session>,
     recent: Vec<ListenUtteranceEvent>,
     capturing: bool,
+    /// Recordings handed to the owner and not yet discarded or released.
+    outstanding: HashSet<PathBuf>,
 }
 
 impl State {
@@ -299,10 +256,6 @@ impl State {
                 ListenSessionState::Starting | ListenSessionState::Listening | ListenSessionState::Paused
             )
         })
-    }
-
-    fn find(&mut self, session_id: &str) -> Result<&mut Session, ListenError> {
-        self.session.as_mut().filter(|session| session.id == session_id).ok_or_else(not_found)
     }
 
     fn current(&mut self, session_id: &str) -> Option<&mut Session> {
@@ -321,53 +274,12 @@ impl State {
             session.error = Some(reason.to_owned());
         }
         self.capturing = false;
-        self.push(
-            session_id,
-            ListenEvent::Stopped(ListenStoppedEvent {
-                seq: 0,
-                session_id: session_id.to_owned(),
-                reason: reason.to_owned(),
-                at: now_ms(),
-            }),
-        );
         Some(CaptureCommand::Stop { session_id: session_id.to_owned() })
-    }
-
-    fn push(&mut self, session_id: &str, mut event: ListenEvent) {
-        let Some(session) = self.session.as_mut().filter(|session| session.id == session_id) else { return };
-        session.last_seq += 1;
-        let seq = session.last_seq;
-        match &mut event {
-            ListenEvent::Utterance(item) => item.seq = seq,
-            ListenEvent::Interrupted(item) => item.seq = seq,
-            ListenEvent::Stopped(item) => item.seq = seq,
-        }
-        session.events.push(event.clone());
-        // Bound memory; acknowledged events are already gone.
-        let acked = session.acked_seq;
-        let unacked: Vec<u64> = session.events.iter().map(ListenEvent::seq).filter(|seq| *seq > acked).collect();
-        if unacked.len() > LISTEN_LIMITS.queue {
-            let drop = unacked[0];
-            session.events.retain(|item| item.seq() != drop);
-        }
-        if let ListenEvent::Utterance(utterance) = event {
-            self.recent.insert(0, utterance);
-            self.recent.truncate(RECENT_UTTERANCES);
-        }
-        let session = self.session.as_mut().expect("still present");
-        // Every waiter gets the first event after the shared cursor.
-        if let Some(first) = session.first_pending() {
-            let waiters: Vec<_> = session.waiters.drain().map(|(_, waiter)| waiter).collect();
-            let info = session.info();
-            for waiter in waiters {
-                let _ = waiter.send(ListenNextResult::Event { event: first.clone(), session: info.clone() });
-            }
-        }
     }
 }
 
 type Listener = Arc<dyn Fn(&ListenStatus) + Send + Sync>;
-type CoordinatorTurn = Arc<dyn Fn(&ListenUtteranceEvent) -> delulu_core::DomainResult<()> + Send + Sync>;
+type Owner = Arc<dyn Fn(Heard) + Send + Sync>;
 
 struct Inner {
     profile: Arc<dyn VoiceProfile>,
@@ -378,15 +290,16 @@ struct Inner {
     state: Mutex<State>,
     publishing: ReentrantMutex<()>,
     listeners: Mutex<Vec<Listener>>,
-    waiter_ids: AtomicU64,
+    owner: Mutex<Option<Owner>>,
     commands: ReentrantMutex<()>,
-    coordinator_turn: Mutex<Option<CoordinatorTurn>>,
     pending_transcriptions: AtomicUsize,
     transcriptions_done: tokio::sync::Notify,
     transcriptions: SerialQueue,
+    /// Serializes starts, so recovery never runs twice at once.
+    starting: tokio::sync::Mutex<()>,
 }
 
-/// Persistent listening sessions. Cheap to clone; construct inside a Tokio runtime.
+/// The listening session. Cheap to clone; construct inside a Tokio runtime.
 #[derive(Clone)]
 pub struct ListeningService {
     inner: Arc<Inner>,
@@ -410,6 +323,11 @@ fn config(settings: &AppSettings) -> ListenConfig {
     }
 }
 
+fn remove_recording(path: &Path) {
+    let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_file(path.with_extension("json"));
+}
+
 impl ListeningService {
     pub fn new(
         profile: Arc<dyn VoiceProfile>,
@@ -427,12 +345,12 @@ impl ListeningService {
                 state: Mutex::new(State::default()),
                 publishing: ReentrantMutex::new(()),
                 listeners: Mutex::new(Vec::new()),
-                waiter_ids: AtomicU64::new(1),
+                owner: Mutex::new(None),
                 commands: ReentrantMutex::new(()),
-                coordinator_turn: Mutex::new(None),
                 pending_transcriptions: AtomicUsize::new(0),
                 transcriptions_done: tokio::sync::Notify::new(),
                 transcriptions: SerialQueue::new(),
+                starting: tokio::sync::Mutex::new(()),
             }),
         }
     }
@@ -448,74 +366,20 @@ impl ListeningService {
         }
     }
 
-    pub(crate) fn on_coordinator_turn(
-        &self,
-        callback: impl Fn(&ListenUtteranceEvent) -> delulu_core::DomainResult<()> + Send + Sync + 'static,
-    ) {
-        *self.inner.coordinator_turn.lock() = Some(Arc::new(callback));
-    }
-    pub(crate) async fn finish_transcriptions(&self) {
-        loop {
-            let done = self.inner.transcriptions_done.notified();
-            tokio::pin!(done);
-            done.as_mut().enable();
-            if self.inner.pending_transcriptions.load(Ordering::SeqCst) == 0 {
-                break;
-            }
-            done.await;
-        }
+    fn pending_directory(&self) -> PathBuf {
+        self.inner.profile.paths().voice_dir().join(PENDING_AUDIO)
     }
 
-    /// Retry accepted coordinator recordings left by an interrupted ASR operation.
-    /// Called before reopening the microphone, after prior accepted jobs finish.
-    pub(crate) async fn recover_coordinator_audio(&self) -> delulu_core::DomainResult<()> {
-        self.finish_transcriptions().await;
-        let directory = self.inner.profile.paths().voice_dir().join("pending-audio");
-        if !directory.exists() {
-            return Ok(());
+    /// Who receives turns, barge-ins and levels (the talk loop).
+    pub fn on_heard(&self, owner: impl Fn(Heard) + Send + Sync + 'static) {
+        *self.inner.owner.lock() = Some(Arc::new(owner));
+    }
+
+    fn tell(&self, heard: Heard) {
+        let owner = self.inner.owner.lock().clone();
+        if let Some(owner) = owner {
+            owner(heard);
         }
-        let mut files = std::fs::read_dir(&directory)?
-            .filter_map(Result::ok)
-            .filter(|entry| {
-                entry.file_type().is_ok_and(|kind| kind.is_file())
-                    && entry.path().extension().is_some_and(|ext| ext == "wav")
-            })
-            .map(|entry| entry.path())
-            .collect::<Vec<_>>();
-        files.sort();
-        if files.is_empty() {
-            return Ok(());
-        }
-        self.inner.transcriber.prepare(&self.inner.profile.settings()).await?;
-        for path in files {
-            let metadata: serde_json::Value = std::fs::read(path.with_extension("json"))
-                .ok()
-                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-                .unwrap_or_default();
-            let duration_ms = metadata["durationMs"].as_u64().unwrap_or(0);
-            let text = self.inner.transcriber.transcribe(&path, duration_ms).await?;
-            if is_real_turn(&text) {
-                let turn = ListenUtteranceEvent {
-                    seq: 0,
-                    id: path.file_stem().unwrap_or_default().to_string_lossy().into_owned(),
-                    session_id: metadata["sessionId"].as_str().unwrap_or("recovered").into(),
-                    text,
-                    at: now_ms(),
-                    duration_ms,
-                    interrupted_response_id: metadata["interruptedResponseId"].as_str().map(str::to_owned),
-                };
-                let callback = self
-                    .inner
-                    .coordinator_turn
-                    .lock()
-                    .clone()
-                    .ok_or_else(|| delulu_core::DomainError::failed("Coordinator recovery unavailable"))?;
-                callback(&turn)?;
-            }
-            std::fs::remove_file(&path)?;
-            let _ = std::fs::remove_file(path.with_extension("json"));
-        }
-        Ok(())
     }
 
     /// Called with every status change (`listen:statusChanged`).
@@ -560,38 +424,21 @@ impl ListeningService {
         }
     }
 
-    /// Start listening, or return the running session started by this client.
-    pub async fn start(&self, client: &str) -> Result<ListenSessionInfo, ListenError> {
-        let name = match truncate_utf16(js::trim(client), 64) {
-            "" => "agent".to_owned(),
-            name => name.to_owned(),
-        };
-        let settings = self.inner.profile.settings();
+    /// Start listening (or return the running session): loads the speech
+    /// model, hands over leftover recordings, then opens the microphone.
+    pub async fn start(&self) -> DomainResult<ListenSessionInfo> {
+        let _starting = self.inner.starting.lock().await;
         let id = {
             let mut state = self.inner.state.lock();
             if state.active() {
-                let current = state.session.as_ref().expect("active");
-                if current.client == name {
-                    return Ok(current.info());
-                }
-                return Err(ListenError::new(
-                    ListenErrorCode::SessionBusy,
-                    format!(
-                        "Delulu is already listening for {}. Stop that session first; one microphone serves one conversation.",
-                        current.client
-                    ),
-                ));
+                return Ok(state.session.as_ref().expect("active").info());
             }
             let id = format!("lsn_{}", &uuid().replace('-', "")[..16]);
             state.session = Some(Session {
                 id: id.clone(),
-                client: name,
                 state: ListenSessionState::Starting,
                 started_at: now_ms(),
-                events: Vec::new(),
-                acked_seq: 0,
-                last_seq: 0,
-                waiters: HashMap::new(),
+                delivered: 0,
                 user_speaking: false,
                 transcribing: 0,
                 error: None,
@@ -603,151 +450,128 @@ impl ListeningService {
         };
         self.publish();
         // Load the speech model once; it stays loaded while the session runs.
-        if let Err(error) = self.inner.transcriber.prepare(&settings).await {
+        if let Err(error) = self.inner.transcriber.prepare(&self.inner.profile.settings()).await {
             let message = if error.message.is_empty() { "Speech is unavailable".to_owned() } else { error.message };
             return Err(self.fail_start(&id, &message));
         }
+        self.recover(&id).await;
         let commands = self.inner.commands.lock();
         {
             let mut state = self.inner.state.lock();
             let Some(session) = state.current(&id) else {
-                return Ok(state.session.as_ref().map(Session::info).expect("a session exists"));
+                return Err(DomainError::failed("Listening stopped while it started"));
             };
             if session.state != ListenSessionState::Starting {
                 return Ok(session.info());
             }
         }
+        let settings = self.inner.profile.settings();
         if !self.command(Some(CaptureCommand::Start { session_id: id.clone(), config: config(&settings) })) {
             return Err(self.fail_start(&id, "Open Delulu Talks so it can use the microphone."));
         }
         drop(commands);
         let mut state = self.inner.state.lock();
-        state.find(&id).map(|session| session.info())
+        state.current(&id).map(|session| session.info()).ok_or_else(|| DomainError::failed("Listening stopped"))
     }
 
-    fn fail_start(&self, id: &str, message: &str) -> ListenError {
+    fn fail_start(&self, id: &str, message: &str) -> DomainError {
         self.end(id, ListenSessionState::Failed, message);
         let error = self.inner.state.lock().current(id).and_then(|session| session.error.clone());
-        ListenError::new(ListenErrorCode::Unavailable, error.unwrap_or_else(|| message.to_owned()))
+        DomainError::failed(error.unwrap_or_else(|| message.to_owned()))
     }
 
-    /// Snapshot completed, unacknowledged turns before replacing a stopped session.
-    pub(crate) fn pending_utterances(&self) -> Vec<ListenUtteranceEvent> {
-        self.inner
-            .state
-            .lock()
-            .session
-            .as_ref()
-            .filter(|session| session.client == "delulu-coordinator")
-            .map(|session| {
-                session
-                    .events
-                    .iter()
-                    .filter_map(|event| match event {
-                        ListenEvent::Utterance(turn) if turn.seq > session.acked_seq => Some(turn.clone()),
-                        _ => None,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// Wait for the next event after the cursor; `after` acknowledges up to it.
-    /// Cancelling `cancel` ends the wait with a timeout and leaves the event queued.
-    pub async fn next(
-        &self,
-        session_id: &str,
-        after: Option<u64>,
-        timeout_ms: u64,
-        cancel: Option<CancellationToken>,
-    ) -> Result<ListenNextResult, ListenError> {
-        let (waiter, receiver) = {
-            let mut state = self.inner.state.lock();
-            let session = state.find(session_id)?;
-            if let Some(after) = after {
-                session.acknowledge(after);
+    /// Transcribes recordings an earlier session accepted but whose turns were
+    /// never handled, oldest first, and hands them to the owner.
+    async fn recover(&self, session_id: &str) {
+        self.finish_transcriptions().await;
+        let directory = self.pending_directory();
+        let Ok(entries) = std::fs::read_dir(&directory) else { return };
+        let mut files: Vec<PathBuf> = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "wav"))
+            .collect();
+        files.sort();
+        for path in files {
+            if self.inner.state.lock().outstanding.contains(&path) {
+                continue;
             }
-            if let Some(event) = session.first_pending() {
-                return Ok(ListenNextResult::Event { event, session: session.info() });
+            let metadata_path = path.with_extension("json");
+            let mut metadata: Value = std::fs::read(&metadata_path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                .unwrap_or_else(|| json!({}));
+            let duration_ms = metadata["durationMs"].as_u64().unwrap_or(0);
+            match self.inner.transcriber.transcribe(&path, duration_ms).await {
+                Ok(text) if is_real_turn(&text) => {
+                    let turn = ListenUtteranceEvent {
+                        seq: 0,
+                        id: path.file_stem().unwrap_or_default().to_string_lossy().into_owned(),
+                        session_id: session_id.to_owned(),
+                        text: js::trim(&text).to_owned(),
+                        at: now_ms(),
+                        duration_ms,
+                        interrupted_response_id: metadata["interruptedResponseId"].as_str().map(str::to_owned),
+                    };
+                    self.deliver(session_id, turn, Some(path));
+                }
+                Ok(_) => remove_recording(&path),
+                Err(_) => {
+                    let attempts = metadata["attempts"].as_u64().unwrap_or(0) + 1;
+                    log::warn!("could not transcribe a saved recording (attempt {attempts})");
+                    if attempts >= RECOVERY_ATTEMPTS {
+                        remove_recording(&path);
+                    } else {
+                        metadata["attempts"] = json!(attempts);
+                        let _ = serde_json::to_vec(&metadata).map(|bytes| write_private_atomic(&metadata_path, &bytes));
+                    }
+                }
             }
-            if session.ended() {
-                return Ok(ListenNextResult::Stopped {
-                    reason: session.error.clone().unwrap_or_else(|| "The listening session ended".into()),
-                    session: session.info(),
-                });
-            }
-            let timeout_ms = timeout_ms.min(LISTEN_LIMITS.max_wait_seconds * 1000);
-            if timeout_ms == 0 || cancel.as_ref().is_some_and(CancellationToken::is_cancelled) {
-                return Ok(ListenNextResult::Timeout { session: session.info() });
-            }
-            let waiter = self.inner.waiter_ids.fetch_add(1, Ordering::Relaxed);
-            let (sender, receiver) = oneshot::channel();
-            session.waiters.insert(waiter, sender);
-            (waiter, (receiver, timeout_ms))
-        };
-        self.publish();
-        let (mut receiver, timeout_ms) = receiver;
-        let cancelled = async {
-            match &cancel {
-                Some(token) => token.cancelled().await,
-                None => std::future::pending().await,
-            }
-        };
-        let result = tokio::select! {
-            result = &mut receiver => result.ok(),
-            _ = tokio::time::sleep(Duration::from_millis(timeout_ms)) => None,
-            _ = cancelled => None,
-        };
-        if let Some(result) = result {
-            self.publish();
-            return Ok(result);
-        }
-        // A cancelled or timed-out waiter leaves its event queued for the next one.
-        let result = {
-            let mut state = self.inner.state.lock();
-            let session = state.current(session_id);
-            if let Some(session) = session {
-                session.waiters.remove(&waiter);
-            }
-            match receiver.try_recv() {
-                Ok(result) => result,
-                Err(_) => match state.current(session_id) {
-                    Some(session) => ListenNextResult::Timeout { session: session.info() },
-                    None => return Err(not_found()),
-                },
-            }
-        };
-        self.publish();
-        Ok(result)
-    }
-
-    pub fn ack(&self, session_id: &str, after: u64) -> Result<ListenSessionInfo, ListenError> {
-        let info = {
-            let mut state = self.inner.state.lock();
-            let session = state.find(session_id)?;
-            session.acknowledge(after);
-            session.info()
-        };
-        self.publish();
-        Ok(info)
-    }
-
-    pub fn status(&self, session_id: Option<&str>) -> Result<Option<ListenSessionInfo>, ListenError> {
-        let mut state = self.inner.state.lock();
-        match session_id {
-            Some(id) => Ok(Some(state.find(id)?.info())),
-            None => Ok(state.session.as_ref().map(Session::info)),
         }
     }
 
-    pub fn stop(&self, session_id: &str, reason: &str) -> Result<ListenSessionInfo, ListenError> {
-        self.inner.state.lock().find(session_id)?;
-        self.end(session_id, ListenSessionState::Stopped, reason);
-        let mut state = self.inner.state.lock();
-        Ok(state.find(session_id)?.info())
+    /// Hands a turn to the owner.
+    fn deliver(&self, session_id: &str, turn: ListenUtteranceEvent, recording: Option<PathBuf>) {
+        {
+            let mut state = self.inner.state.lock();
+            if let Some(path) = &recording {
+                state.outstanding.insert(path.clone());
+            }
+            if let Some(session) = state.current(session_id) {
+                session.delivered += 1;
+                session.error = None;
+            }
+            state.recent.insert(0, turn.clone());
+            state.recent.truncate(RECENT_UTTERANCES);
+        }
+        self.tell(Heard::Turn { turn, recording });
     }
 
-    /// Stop whatever session is running (Voice page, tray, quitting).
+    /// The owner handled the turn: delete its recording.
+    pub fn discard(&self, recording: &Path) {
+        self.inner.state.lock().outstanding.remove(recording);
+        remove_recording(recording);
+    }
+
+    /// The owner dropped the turn unhandled: keep its recording for the next start.
+    pub fn release(&self, recording: &Path) {
+        self.inner.state.lock().outstanding.remove(recording);
+    }
+
+    /// Waits for transcriptions already accepted.
+    pub async fn finish_transcriptions(&self) {
+        loop {
+            let done = self.inner.transcriptions_done.notified();
+            tokio::pin!(done);
+            done.as_mut().enable();
+            if self.inner.pending_transcriptions.load(Ordering::SeqCst) == 0 {
+                break;
+            }
+            done.await;
+        }
+    }
+
+    /// Stop whatever session is running (Talk, tray, quitting).
     pub fn stop_active(&self, reason: &str) {
         let id = {
             let state = self.inner.state.lock();
@@ -799,6 +623,10 @@ impl ListeningService {
                 CaptureEvent::State { state: ListenState::Stopped, .. } => {}
                 CaptureEvent::SpeechStart { .. } => session.user_speaking = true,
                 CaptureEvent::Discarded { .. } => session.user_speaking = false,
+                CaptureEvent::Level { db } => {
+                    drop(state);
+                    return self.tell(Heard::Level { db });
+                }
                 CaptureEvent::BargeIn { .. } => {
                     drop(state);
                     return self.barge_in(session_id);
@@ -818,153 +646,88 @@ impl ListeningService {
 
     fn barge_in(&self, session_id: &str) {
         // The capture already silenced playback; cancel synthesis and the queue.
-        let responses = self.inner.speech.interrupt_speech();
-        let response_id = responses.into_iter().next();
+        let response_ids = self.inner.speech.interrupt_speech();
         {
             let mut state = self.inner.state.lock();
             let Some(session) = state.current(session_id) else { return };
             session.user_speaking = true;
-            session.interrupted_response_id = response_id.clone();
-            state.push(
-                session_id,
-                ListenEvent::Interrupted(ListenInterruptedEvent {
-                    seq: 0,
-                    session_id: session_id.to_owned(),
-                    response_id,
-                    at: now_ms(),
-                }),
-            );
+            session.interrupted_response_id = response_ids.first().cloned();
         }
+        self.tell(Heard::BargeIn { response_ids });
         self.publish();
     }
 
     fn transcribe(&self, session_id: &str, wav: Vec<u8>, duration_ms: u64) {
-        let (queue, interrupted_response_id, coordinator_owned) = {
+        let interrupted_response_id = {
             let mut state = self.inner.state.lock();
             let Some(session) = state.current(session_id) else { return };
             session.transcribing += 1;
-            (
-                self.inner.transcriptions.clone(),
-                session.interrupted_response_id.take(),
-                session.client == "delulu-coordinator",
-            )
+            session.interrupted_response_id.take()
         };
         self.inner.pending_transcriptions.fetch_add(1, Ordering::SeqCst);
         let this = self.clone();
         let session_id = session_id.to_owned();
-        // Coordinator audio has a durable namespace, separate from temporary
-        // dictation files which startup cleanup intentionally deletes.
-        let turn_id = format!("turn-{:020}-{}", now_ms(), uuid());
-        let directory = if coordinator_owned {
-            self.inner.profile.paths().voice_dir().join("pending-audio")
-        } else {
-            self.inner.profile.paths().audio_cache()
-        };
-        let path = directory.join(if coordinator_owned {
-            format!("{turn_id}.wav")
-        } else {
-            format!("dictation-{}-{}.wav", now_ms(), uuid())
-        });
-        let saved = (|| -> delulu_core::DomainResult<()> {
+        // Accepted audio lives outside the temporary dictation files, which
+        // startup cleanup deletes, until its turn is handled.
+        let turn_id = format!("turn_{:020}_{}", now_ms(), uuid().replace('-', ""));
+        let directory = self.pending_directory();
+        let path = directory.join(format!("{turn_id}.wav"));
+        let saved = (|| -> DomainResult<()> {
             crate::service::create_private_dir(&directory)?;
-            delulu_core::util::write_private_atomic(&path, &wav)?;
-            if coordinator_owned {
-                let metadata = serde_json::json!({"durationMs":duration_ms,"sessionId":session_id,"interruptedResponseId":interrupted_response_id});
-                delulu_core::util::write_private_atomic(&path.with_extension("json"), &serde_json::to_vec(&metadata)?)?;
-            }
+            write_private_atomic(&path, &wav)?;
+            let metadata = json!({ "durationMs": duration_ms, "interruptedResponseId": interrupted_response_id });
+            write_private_atomic(&path.with_extension("json"), &serde_json::to_vec(&metadata)?)?;
             Ok(())
         })();
         // Transcribe in order so turns arrive as spoken.
-        let task = queue.run(move || async move {
+        let task = self.inner.transcriptions.clone().run(move || async move {
             let result = match saved {
                 Ok(()) => this.inner.transcriber.transcribe(&path, duration_ms).await,
                 Err(error) => Err(error),
             };
             let spoken = this.inner.speech.recently_spoken();
-            let mut retain_audio = coordinator_owned && result.is_err();
-            // Accepted coordinator audio survives stop/restart: publish its original
-            // transcript durably even when its old listening session was replaced.
-            let durable_turn = result.as_ref().ok().and_then(|text| {
-                let text = js::trim(text).to_owned();
-                if !coordinator_owned
-                    || !is_real_turn(&text)
-                    || (interrupted_response_id.is_none() && sounds_like_own_speech(&text, &spoken))
-                {
-                    return None;
-                }
-                Some(ListenUtteranceEvent {
-                    seq: 0,
-                    session_id: session_id.clone(),
-                    id: turn_id.clone(),
-                    text,
-                    at: now_ms(),
-                    duration_ms,
-                    interrupted_response_id: interrupted_response_id.clone(),
-                })
-            });
-            if let Some(turn) = &durable_turn {
-                if let Some(callback) = this.inner.coordinator_turn.lock().clone() {
-                    if let Err(error) = callback(turn) {
-                        retain_audio = true;
-                        log::error!("Could not persist voice turn; audio retained: {}", error.message);
-                    }
-                }
-            }
-            if !retain_audio {
-                let _ = std::fs::remove_file(&path);
-                if coordinator_owned {
-                    let _ = std::fs::remove_file(path.with_extension("json"));
-                }
-            }
-            let coordinator_failure = if coordinator_owned {
-                result.as_ref().err().map(|error| {
-                    format!("Could not transcribe that: {}. The recording is saved for retry.", error.message)
-                })
-            } else {
-                None
-            };
-            {
+            let turn = {
                 let mut state = this.inner.state.lock();
                 let active = state.active();
-                if let Some(session) = state.current(&session_id) {
+                let session = state.current(&session_id);
+                let live = active && session.is_some();
+                if let Some(session) = session {
                     session.transcribing = session.transcribing.saturating_sub(1);
                 }
                 match result {
                     Ok(text) => {
                         let text = js::trim(&text).to_owned();
-                        let own = || sounds_like_own_speech(&text, &spoken);
-                        if active
-                            && state.current(&session_id).is_some()
-                            && is_real_turn(&text)
-                            && (interrupted_response_id.is_some() || !own())
-                        {
-                            if let Some(session) = state.current(&session_id) {
-                                session.error = None;
-                            }
-                            state.push(
-                                &session_id,
-                                ListenEvent::Utterance(durable_turn.clone().unwrap_or_else(|| ListenUtteranceEvent {
-                                    seq: 0,
-                                    session_id: session_id.clone(),
-                                    id: format!("utt_{}", &uuid().replace('-', "")[..16]),
-                                    text,
-                                    at: now_ms(),
-                                    duration_ms,
-                                    interrupted_response_id,
-                                })),
-                            );
+                        let own = interrupted_response_id.is_none() && sounds_like_own_speech(&text, &spoken);
+                        if !is_real_turn(&text) || own {
+                            remove_recording(&path);
+                            None
+                        } else if live {
+                            Some(ListenUtteranceEvent {
+                                seq: 0,
+                                session_id: session_id.clone(),
+                                id: turn_id,
+                                text,
+                                at: now_ms(),
+                                duration_ms,
+                                interrupted_response_id,
+                            })
+                        } else {
+                            // Stopped meanwhile: the recording waits for the next start.
+                            None
                         }
                     }
                     Err(error) => {
-                        // One failed transcription does not end the conversation.
+                        // One failed transcription does not end the conversation;
+                        // the recording is retried at the next start.
                         if let Some(session) = state.current(&session_id) {
                             session.error = Some(format!("Could not transcribe that: {}", error.message));
                         }
+                        None
                     }
                 }
-            }
-            if let Some(message) = coordinator_failure {
-                this.end(&session_id, ListenSessionState::Failed, &message);
+            };
+            if let Some(turn) = turn {
+                this.deliver(&session_id, turn, Some(path));
             }
             this.publish();
             this.inner.pending_transcriptions.fetch_sub(1, Ordering::SeqCst);
@@ -1012,7 +775,8 @@ impl ListeningService {
         self.publish();
     }
 
-    /// Listening settings changed; apply them to the running capture.
+    /// Listening settings changed; apply them (including the microphone) to
+    /// the running capture.
     pub fn settings_changed(&self, settings: &AppSettings) {
         let id = {
             let state = self.inner.state.lock();

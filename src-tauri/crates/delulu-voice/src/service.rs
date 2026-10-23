@@ -291,7 +291,7 @@ fn model_setup_stage(stage: &str) -> Option<SetupStage> {
 }
 
 /// Collapse whitespace and truncate for display (`summary`).
-fn summary(text: &str, limit: usize) -> String {
+pub(crate) fn summary(text: &str, limit: usize) -> String {
     let clean = text.split(js::is_whitespace).filter(|word| !word.is_empty()).collect::<Vec<_>>().join(" ");
     if utf16_len(&clean) > limit {
         format!("{}…", truncate_utf16(&clean, limit - 1))

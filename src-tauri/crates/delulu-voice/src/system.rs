@@ -5,25 +5,28 @@
 //! routes IPC channels to these methods and builds menus from
 //! [`VoiceSystem::tray_items`].
 //!
-//! Events emitted through the sink: `voice:statusChanged` ([`VoiceStatus`])
-//! and `listen:statusChanged` ([`ListenStatus`]).
+//! Events emitted through the sink: `voice:statusChanged` ([`VoiceStatus`]),
+//! `listen:statusChanged` ([`ListenStatus`]), and from [`Talk`]
+//! `talk:statusChanged` and `talk:level`.
 
 use std::sync::Arc;
 
-use delulu_core::{emit, DomainResult, SharedSink};
+use delulu_core::{emit, DomainError, DomainResult, SharedSink};
 use delulu_desktop::ClipboardBackend;
-use delulu_domain::listening::{ListenNextResult, ListenSessionInfo, ListenStatus, VoiceSkillInstall};
+use delulu_domain::listening::{ListenStatus, VoiceSkillInstall};
 use delulu_domain::voice::{VoiceAgentSetup, VoiceSource, VoiceSpeakRequest, VoiceSpeakResult, VoiceStatus};
 use delulu_domain::{AppSettings, EnginePhase};
 use parking_lot::Mutex;
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{agent_executable, install_voice_skill, refresh_legacy_agent_script, voice_agent_setup};
-use crate::bridge::{BridgeHandlers, BridgeResult, SpeakReply, VoiceBridge, VoiceBridgeSnapshot};
-use crate::coordinator::{Coordinator, CoordinatorModel};
+use crate::bridge::{BridgeHandlers, BridgeResult, SpeakReply, VoiceBridge, VoiceBridgeSnapshot, INJECT_METHOD};
 use crate::host::{BoxFuture, ListenTranscriber, VoiceProfile};
+use crate::inbox::Inbox;
 use crate::listening::{ListenBackend, ListeningService, NativeListenBackend, SpeechOutput};
 use crate::service::{VoiceOptions, VoiceService};
+use crate::talk::{HelperModel, Talk};
 
 pub struct VoiceSystemConfig {
     pub profile: Arc<dyn VoiceProfile>,
@@ -54,7 +57,8 @@ pub struct VoiceTrayItem {
 struct Inner {
     voice: VoiceService,
     listening: ListeningService,
-    coordinator: Coordinator,
+    inbox: Inbox,
+    talk: Talk,
     bridge: tokio::sync::Mutex<Option<Arc<VoiceBridge>>>,
     profile: Arc<dyn VoiceProfile>,
     clipboard: Arc<dyn ClipboardBackend>,
@@ -62,8 +66,8 @@ struct Inner {
     runtime: tokio::runtime::Handle,
 }
 
-/// Voice output, listening sessions and the agent bridge. Cheap to clone;
-/// construct inside a Tokio runtime.
+/// Voice output, Talk (listening and routing), the agent inbox and the agent
+/// bridge. Cheap to clone; construct inside a Tokio runtime.
 #[derive(Clone)]
 pub struct VoiceSystem {
     inner: Arc<Inner>,
@@ -113,12 +117,13 @@ impl VoiceSystem {
                 }
             }
         });
-        let coordinator =
-            Coordinator::new(config.profile.clone(), voice.clone(), listening.clone(), config.sink.clone());
-        coordinator.attach_listener();
+        let inbox = Inbox::open(config.profile.paths().voice_dir());
+        let talk =
+            Talk::new(config.profile.clone(), voice.clone(), listening.clone(), inbox.clone(), config.sink.clone());
         Self {
             inner: Arc::new(Inner {
-                coordinator,
+                inbox,
+                talk,
                 voice,
                 listening,
                 bridge: tokio::sync::Mutex::new(None),
@@ -130,11 +135,16 @@ impl VoiceSystem {
         }
     }
 
-    pub fn coordinator(&self) -> &Coordinator {
-        &self.inner.coordinator
+    pub fn talk(&self) -> &Talk {
+        &self.inner.talk
     }
-    pub fn set_coordinator_model(&self, model: Arc<dyn CoordinatorModel>) {
-        self.inner.coordinator.set_model(model);
+
+    pub fn inbox(&self) -> &Inbox {
+        &self.inner.inbox
+    }
+
+    pub fn set_helper_model(&self, model: Arc<dyn HelperModel>) {
+        self.inner.talk.set_helper_model(model);
     }
 
     pub fn voice(&self) -> &VoiceService {
@@ -145,19 +155,17 @@ impl VoiceSystem {
         &self.inner.listening
     }
 
-    /// App start: the agent bridge (when enabled) and the voice runtime check.
+    /// App start: the agent bridge (when enabled), the voice runtime check and
+    /// the helper install check.
     pub async fn start(&self) {
         let settings = self.inner.profile.settings();
-        tokio::join!(self.sync_bridge(&settings), self.inner.voice.initialize(&settings));
+        tokio::join!(self.sync_bridge(&settings), self.inner.voice.initialize(&settings), self.inner.talk.refresh());
     }
 
     /// Saved settings changed (`persistSettings` in main.ts).
     pub async fn settings_changed(&self, previous: &AppSettings, saved: &AppSettings) {
         self.inner.voice.settings_changed(previous, saved).await;
-        if previous.voice_coordinator_mode != saved.voice_coordinator_mode {
-            self.inner.coordinator.unload().await;
-            self.inner.listening.stop_active("Voice helper selection changed");
-        }
+        self.inner.talk.settings_changed(previous, saved).await;
         if saved.voice_agent_bridge != previous.voice_agent_bridge {
             self.sync_bridge(saved).await;
         }
@@ -172,8 +180,8 @@ impl VoiceSystem {
     }
 
     /// Dictation is about to open the microphone (`dictation.beforeCapture`):
-    /// answering by voice stops Delulu talking, and a listening session
-    /// leaves the microphone to dictation until it finishes.
+    /// answering by voice stops Delulu talking, and Talk leaves the
+    /// microphone to dictation until it finishes.
     pub fn before_dictation_capture(&self) {
         self.inner.voice.interrupt_for_dictation();
         self.inner.listening.pause_for_dictation();
@@ -201,8 +209,8 @@ impl VoiceSystem {
                     self.inner.app_version.clone(),
                     Arc::new(AppBridge {
                         voice: self.inner.voice.clone(),
-                        coordinator: self.inner.coordinator.clone(),
-                        listening: self.inner.listening.clone(),
+                        inbox: self.inner.inbox.clone(),
+                        talk: self.inner.talk.clone(),
                         profile: self.inner.profile.clone(),
                     }),
                     move |status| voice.set_bridge_status(status),
@@ -278,14 +286,12 @@ impl VoiceSystem {
     /// The voice part of the tray menu (`voiceMenuItems`).
     pub fn tray_items(&self, settings: &AppSettings) -> Vec<VoiceTrayItem> {
         let mut items = Vec::new();
-        if self.inner.listening.active() {
-            if let Some(session) = self.inner.listening.get_status().session {
-                items.push(VoiceTrayItem {
-                    label: format!("Stop listening ({})", session.client),
-                    enabled: true,
-                    action: VoiceTrayAction::StopListening,
-                });
-            }
+        if self.inner.talk.is_on() {
+            items.push(VoiceTrayItem {
+                label: "Stop listening".into(),
+                enabled: true,
+                action: VoiceTrayAction::StopListening,
+            });
         }
         if !settings.voice_enabled {
             return items;
@@ -313,8 +319,7 @@ impl VoiceSystem {
     pub async fn tray_action(&self, action: VoiceTrayAction) -> Option<String> {
         match action {
             VoiceTrayAction::StopListening => {
-                self.inner.coordinator.stop_listening();
-                self.inner.listening.stop_active("Stopped from the tray");
+                self.inner.talk.stop("Stopped from the tray").await;
                 None
             }
             VoiceTrayAction::StopSpeaking => {
@@ -323,22 +328,6 @@ impl VoiceSystem {
             }
             VoiceTrayAction::ReadClipboard => self.read_clipboard_aloud().await,
         }
-    }
-
-    /// `listen:start` from the Voice page.
-    pub async fn listen_start(&self) -> DomainResult<ListenStatus> {
-        if self.inner.coordinator.enabled() {
-            return self.inner.coordinator.start_listening().await;
-        }
-        self.inner.listening.start("delulu").await.map_err(|error| error.into_domain())?;
-        Ok(self.inner.listening.get_status())
-    }
-
-    /// `listen:stop` from the Voice page.
-    pub fn listen_stop(&self) -> ListenStatus {
-        self.inner.coordinator.stop_listening();
-        self.inner.listening.stop_active("Stopped in Delulu Talks");
-        self.inner.listening.get_status()
     }
 
     /// `voice:agentSetup`.
@@ -351,11 +340,11 @@ impl VoiceSystem {
         install_voice_skill(self.inner.profile.paths(), &self.agent_setup())
     }
 
-    /// Quitting: stop the bridge, end listening and release the voice worker.
+    /// Quitting: stop the bridge, end Talk and release the voice worker.
     pub async fn shutdown(&self) {
         let bridge = self.inner.bridge.lock().await.clone();
+        self.inner.talk.shutdown().await;
         self.inner.listening.shutdown();
-        self.inner.coordinator.shutdown().await;
         self.inner.listening.finish_transcriptions().await;
         tokio::join!(
             async {
@@ -368,27 +357,22 @@ impl VoiceSystem {
     }
 }
 
+fn encoded(value: impl serde::Serialize) -> DomainResult<Value> {
+    serde_json::to_value(value).map_err(|error| DomainError::failed(error.to_string()))
+}
+
 /// The bridge handlers `syncVoiceBridge` built in main.ts.
 struct AppBridge {
     voice: VoiceService,
-    listening: ListeningService,
-    coordinator: Coordinator,
+    inbox: Inbox,
+    talk: Talk,
     profile: Arc<dyn VoiceProfile>,
 }
 
 impl BridgeHandlers for AppBridge {
-    fn coordinate(
-        &self,
-        method: String,
-        params: serde_json::Value,
-        cancel: CancellationToken,
-    ) -> BoxFuture<'static, BridgeResult<serde_json::Value>> {
-        let coordinator = self.coordinator.clone();
-        Box::pin(async move { coordinator.dispatch(&method, params, cancel).await.map_err(Into::into) })
-    }
     fn speak(&self, mut request: VoiceSpeakRequest, wait: bool) -> BoxFuture<'static, BridgeResult<SpeakReply>> {
         request.source = Some(VoiceSource::Agent);
-        let queued = if self.coordinator.enabled() {self.coordinator.enqueue_agent(request)} else {self.voice.enqueue(request)};
+        let queued = self.talk.speak_for_agent(request);
         Box::pin(async move {
             let handle = queued?;
             Ok(if wait { SpeakReply::Done(handle.done().await) } else { SpeakReply::Queued(handle.queued) })
@@ -417,41 +401,18 @@ impl BridgeHandlers for AppBridge {
         }
     }
 
-    fn listen_start(&self, client: String) -> BoxFuture<'static, BridgeResult<ListenSessionInfo>> {
-        let listening = self.listening.clone();
-        let enabled = self.coordinator.enabled();
+    fn dispatch(&self, method: String, params: Value, cancel: CancellationToken) -> BoxFuture<'static, BridgeResult<Value>> {
+        let (inbox, talk) = (self.inbox.clone(), self.talk.clone());
         Box::pin(async move {
-            if enabled {
-                return Err(crate::BridgeError::new(
-                    crate::BridgeErrorCode::SessionBusy,
-                    "The local helper owns the microphone. Register an agent inbox with agent.register instead.",
-                ));
-            }
-            Ok(listening.start(&client).await?)
+            let result = match method.as_str() {
+                "talk.status" => encoded(talk.status()),
+                INJECT_METHOD if cfg!(debug_assertions) => {
+                    let text = params.get("text").and_then(Value::as_str).unwrap_or_default().to_owned();
+                    talk.inject(text).await.and_then(encoded)
+                }
+                _ => inbox.dispatch(&method, params, cancel).await,
+            };
+            Ok(result?)
         })
-    }
-
-    fn listen_next(
-        &self,
-        session_id: String,
-        after: Option<u64>,
-        timeout_ms: u64,
-        cancel: CancellationToken,
-    ) -> BoxFuture<'static, BridgeResult<ListenNextResult>> {
-        let listening = self.listening.clone();
-        Box::pin(async move { Ok(listening.next(&session_id, after, timeout_ms, Some(cancel)).await?) })
-    }
-
-    fn listen_ack(&self, session_id: &str, after: u64) -> BridgeResult<ListenSessionInfo> {
-        Ok(self.listening.ack(session_id, after)?)
-    }
-
-    fn listen_status(&self, session_id: Option<&str>) -> BridgeResult<Option<ListenSessionInfo>> {
-        Ok(self.listening.status(session_id)?)
-    }
-
-    fn listen_stop(&self, session_id: String) -> BoxFuture<'static, BridgeResult<ListenSessionInfo>> {
-        let result = self.listening.stop(&session_id, "Stopped by request");
-        Box::pin(async move { Ok(result?) })
     }
 }

@@ -11,9 +11,8 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use delulu_core::util::{create_private, truncate_utf16, utf16_len};
-use delulu_core::DomainError;
+use delulu_core::{DomainError, DomainErrorCode};
 use delulu_domain::js;
-use delulu_domain::listening::{ListenNextResult, ListenSessionInfo, LISTEN_LIMITS};
 use delulu_domain::voice::{
     VoiceBridgeStatus, VoiceEngineId, VoiceQueued, VoiceSource, VoiceSpeakRequest, VoiceSpeakResult,
     VOICE_AGENT_INSTRUCTIONS, VOICE_LIMITS,
@@ -29,7 +28,6 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::host::BoxFuture;
-use crate::listening::{ListenError, ListenErrorCode};
 use crate::service::{create_private_dir, group_thousands};
 
 pub const VOICE_BRIDGE_PROTOCOL: u64 = 1;
@@ -41,7 +39,6 @@ pub const MAX_IN_FLIGHT: usize = 4;
 const MAX_ID_BYTES: usize = 128;
 const MAX_AGENT_CHARACTERS: usize = 64;
 const MAX_ERROR_CHARACTERS: usize = 2_000;
-const MAX_CLIENT_CHARACTERS: usize = 64;
 // sun_path holds 108 bytes on Linux and 104 on macOS, including the NUL.
 const MAX_SOCKET_PATH_BYTES: usize = 100;
 
@@ -63,8 +60,6 @@ pub enum BridgeErrorCode {
     Unauthorized,
     InvalidRequest,
     VoiceUnavailable,
-    SessionBusy,
-    SessionNotFound,
     Internal,
 }
 
@@ -84,20 +79,13 @@ impl BridgeError {
     }
 }
 
-/// A handler that refuses (voice off, not set up) reports why, unchanged.
+/// A handler that refuses (voice off, not set up) reports why, unchanged;
+/// rejected arguments stay `INVALID_REQUEST`.
 impl From<DomainError> for BridgeError {
     fn from(error: DomainError) -> Self {
-        Self::new(BridgeErrorCode::VoiceUnavailable, error.message)
-    }
-}
-
-/// Listening failures keep their session codes (`bridgeError` in main.ts).
-impl From<ListenError> for BridgeError {
-    fn from(error: ListenError) -> Self {
         let code = match error.code {
-            ListenErrorCode::SessionBusy => BridgeErrorCode::SessionBusy,
-            ListenErrorCode::SessionNotFound => BridgeErrorCode::SessionNotFound,
-            ListenErrorCode::Unavailable => BridgeErrorCode::VoiceUnavailable,
+            DomainErrorCode::InvalidRequest => BridgeErrorCode::InvalidRequest,
+            _ => BridgeErrorCode::VoiceUnavailable,
         };
         Self::new(code, error.message)
     }
@@ -113,34 +101,20 @@ pub enum SpeakReply {
 
 pub type BridgeResult<T> = Result<T, BridgeError>;
 
+/// Methods [`BridgeHandlers::dispatch`] serves: the agent inbox and the talk loop.
+pub const INBOX_METHODS: [&str; 7] =
+    ["agent.register", "agent.next", "agent.ack", "agent.unregister", "task.status", "task.update", "talk.status"];
+/// Routes a finished utterance through the talk loop; debug builds only.
+pub const INJECT_METHOD: &str = "talk.inject";
+
 /// What the bridge calls; the app's implementation is in [`crate::system`].
 pub trait BridgeHandlers: Send + Sync + 'static {
-    fn coordinate(
-        &self,
-        _method: String,
-        _params: Value,
-        _cancel: CancellationToken,
-    ) -> BoxFuture<'static, BridgeResult<Value>> {
-        Box::pin(async { Err(BridgeError::invalid("Coordinator is unavailable")) })
-    }
     fn speak(&self, request: VoiceSpeakRequest, wait: bool) -> BoxFuture<'static, BridgeResult<SpeakReply>>;
     fn stop(&self) -> BoxFuture<'static, BridgeResult<()>>;
     fn status(&self) -> VoiceBridgeSnapshot;
-    /// Idempotent for the same client; `SESSION_BUSY` for another client's session.
-    fn listen_start(&self, client: String) -> BoxFuture<'static, BridgeResult<ListenSessionInfo>>;
-    /// Waits for the first event after the cursor; `after` acknowledges up to
-    /// it. `cancel` fires when the agent disconnects.
-    fn listen_next(
-        &self,
-        session_id: String,
-        after: Option<u64>,
-        timeout_ms: u64,
-        cancel: CancellationToken,
-    ) -> BoxFuture<'static, BridgeResult<ListenNextResult>>;
-    /// Acknowledges events up to `after` without waiting.
-    fn listen_ack(&self, session_id: &str, after: u64) -> BridgeResult<ListenSessionInfo>;
-    fn listen_status(&self, session_id: Option<&str>) -> BridgeResult<Option<ListenSessionInfo>>;
-    fn listen_stop(&self, session_id: String) -> BoxFuture<'static, BridgeResult<ListenSessionInfo>>;
+    /// One of [`INBOX_METHODS`] (or [`INJECT_METHOD`] in debug builds).
+    /// `cancel` fires when the agent disconnects.
+    fn dispatch(&self, method: String, params: Value, cancel: CancellationToken) -> BoxFuture<'static, BridgeResult<Value>>;
 }
 
 /// The socket path (or pipe name) for a voice directory.
@@ -186,23 +160,6 @@ fn line(value: &Value) -> String {
     });
     text.push('\n');
     text
-}
-
-fn session_id(params: &Map<String, Value>) -> BridgeResult<String> {
-    match params.get("sessionId") {
-        Some(Value::String(value)) if !value.is_empty() && utf16_len(value) <= MAX_ID_BYTES => Ok(value.clone()),
-        _ => Err(BridgeError::invalid("sessionId is required")),
-    }
-}
-
-fn cursor(value: Option<&Value>, required: bool) -> BridgeResult<Option<u64>> {
-    if value.is_none() && !required {
-        return Ok(None);
-    }
-    match value.and_then(Value::as_f64) {
-        Some(number) if js::is_safe_integer(number) && number >= 0.0 => Ok(Some(number as u64)),
-        _ => Err(BridgeError::invalid("after must be a nonnegative integer sequence number")),
-    }
 }
 
 fn is_response_id(value: &str) -> bool {
@@ -766,47 +723,14 @@ impl Shared {
                 handlers.stop().await?;
                 Ok(json!({ "stopped": true }))
             }
-            "listen.start" => {
-                let client = match params.get("client") {
-                    None | Some(Value::Null) => "agent",
-                    Some(Value::String(client)) => client.as_str(),
-                    Some(_) => "",
-                };
-                if js::trim(client).is_empty() || utf16_len(client) > MAX_CLIENT_CHARACTERS {
-                    return Err(BridgeError::invalid("client must be 1–64 characters"));
-                }
-                to_value(handlers.listen_start(js::trim(client).to_owned()).await?)
+            method if INBOX_METHODS.contains(&method) || (cfg!(debug_assertions) && method == INJECT_METHOD) => {
+                handlers.dispatch(method.into(), Value::Object(params.clone()), connection).await
             }
-            "listen.next" => {
-                let id = session_id(params)?;
-                let after = cursor(params.get("after"), false)?;
-                let seconds = match params.get("timeoutSeconds") {
-                    None | Some(Value::Null) => Some(LISTEN_LIMITS.default_wait_seconds as f64),
-                    Some(value) => value.as_f64(),
-                };
-                let max = LISTEN_LIMITS.max_wait_seconds;
-                let Some(seconds) = seconds.filter(|s| s.is_finite() && *s >= 0.0 && *s <= max as f64) else {
-                    return Err(BridgeError::invalid(format!("timeoutSeconds must be between 0 and {max}")));
-                };
-                let timeout_ms = (seconds * 1000.0).round() as u64;
-                to_value(handlers.listen_next(id, after, timeout_ms, connection).await?)
-            }
-            "listen.ack" => {
-                let id = session_id(params)?;
-                let after = cursor(params.get("after"), true)?.unwrap_or(0);
-                to_value(handlers.listen_ack(&id, after)?)
-            }
-            "listen.status" => {
-                let id = match params.get("sessionId") {
-                    None => None,
-                    Some(_) => Some(session_id(params)?),
-                };
-                Ok(json!({ "session": to_value(handlers.listen_status(id.as_deref())?)? }))
-            }
-            "listen.stop" => to_value(handlers.listen_stop(session_id(params)?).await?),
-            "coordinator.status" | "coordinator.setup" | "coordinator.load" | "coordinator.unload" | "coordinator.focus" | "coordinator.submit" | "agent.register" | "agent.next"
-            | "agent.ack" | "agent.unregister" | "task.status" | "task.update" => {
-                handlers.coordinate(method.into(), Value::Object(params.clone()), connection).await
+            method if method.starts_with("listen.") => Err(BridgeError::invalid(
+                "Listening sessions were replaced by the agent inbox: use agent.register and agent.next.",
+            )),
+            method if method.starts_with("coordinator.") => {
+                Err(BridgeError::invalid("The coordinator was replaced by Talk: use talk.status and the agent inbox."))
             }
             other => Err(BridgeError::invalid(format!("Unknown method: {}", truncate_utf16(other, 64)))),
         }

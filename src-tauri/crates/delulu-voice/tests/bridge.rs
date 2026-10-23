@@ -345,79 +345,86 @@ async fn a_stale_socket_is_replaced_but_a_live_one_or_a_regular_file_is_not() {
 }
 
 #[tokio::test]
-async fn listening_sessions_deliver_events_after_the_cursor_until_acknowledged() {
+async fn agents_collect_inbox_events_after_the_cursor_until_acknowledged() {
     let b = started_bridge("1").await;
-    let listen = &b.handlers.listen;
+    let inbox = b.handlers.inbox.clone();
     let mut agent = Client::connect(&b.endpoint).await;
     let token = b.token.clone();
-    let session = request(&mut agent, &token, "s", "listen.start", json!({ "client": "claude" })).await["result"].clone();
-    let id = session["id"].as_str().unwrap().to_owned();
-    assert!(id.starts_with("lsn_"));
-    // Idempotent for the same client, refused for another.
-    assert_eq!(request(&mut agent, &token, "s2", "listen.start", json!({ "client": "claude" })).await["result"]["id"], id.as_str());
-    assert_eq!(
-        request(&mut agent, &token, "s3", "listen.start", json!({ "client": "codex" })).await["error"]["code"],
-        "SESSION_BUSY"
-    );
-    // Speech between waits stays queued.
-    listen.say(&id, "First").await;
-    let first = request(&mut agent, &token, "n1", "listen.next", json!({ "sessionId": id, "timeoutSeconds": 5 })).await;
-    assert_eq!((first["result"]["event"]["seq"].clone(), first["result"]["event"]["text"].clone()), (json!(1), json!("First")));
-    let utterance_id = first["result"]["event"]["id"].clone();
-    // A retry without advancing the cursor gets the same event again.
-    let retry = request(&mut agent, &token, "n2", "listen.next", json!({ "sessionId": id, "timeoutSeconds": 5 })).await;
-    assert_eq!(retry["result"]["event"]["id"], utterance_id);
-    // Passing after acknowledges it; nothing new yet, so the wait times out.
-    let empty =
-        request(&mut agent, &token, "n3", "listen.next", json!({ "sessionId": id, "after": 1, "timeoutSeconds": 0.05 })).await;
-    assert_eq!(empty["result"]["status"], "timeout");
-    assert_eq!((empty["result"]["session"]["ackedSeq"].clone(), empty["result"]["session"]["queued"].clone()), (json!(1), json!(0)));
+    let registered = request(&mut agent, &token, "r", "agent.register", json!({ "client": "claude", "name": "Claude" })).await;
+    let id = registered["result"]["id"].as_str().unwrap().to_owned();
+    assert!(id.starts_with("agent_"));
+    assert_eq!(registered["result"]["queued"], 0);
+    // The same client gets a fresh inbox per session.
+    let again = request(&mut agent, &token, "r2", "agent.register", json!({ "client": "claude" })).await;
+    assert_ne!(again["result"]["id"], id.as_str());
 
-    listen.barge_in(&id, &["rsp_9"]);
-    listen.say(&id, "Wait").await;
-    let interrupted =
-        request(&mut agent, &token, "n4", "listen.next", json!({ "sessionId": id, "after": 1, "timeoutSeconds": 5 })).await;
-    assert_eq!(interrupted["result"]["event"]["type"], "interrupted");
-    assert_eq!(interrupted["result"]["event"]["responseId"], "rsp_9");
-    let acked = request(&mut agent, &token, "a", "listen.ack", json!({ "sessionId": id, "after": 2 })).await;
-    assert_eq!(acked["result"]["ackedSeq"], 2);
-    assert_eq!(request(&mut agent, &token, "st", "listen.status", json!({})).await["result"]["session"]["queued"], 1);
+    // A waiting call wakes when work arrives.
+    agent.send(json!({ "v": 1, "id": "n1", "token": token, "method": "agent.next", "params": { "agentId": id, "timeoutMs": 5000 } })).await;
+    until(|| inbox.agents().iter().any(|a| a.id == id && a.listening), "waiter").await;
+    inbox.submit("Run the tests", Some(&id), "req-1").unwrap();
+    let first = agent.response("n1").await["result"].clone();
+    assert_eq!(first["status"], "event");
+    assert_eq!((first["event"]["seq"].clone(), first["event"]["type"].clone()), (json!(1), json!("task")));
+    assert_eq!(first["event"]["text"], "Run the tests");
+    // Retrying without advancing the cursor redelivers it.
+    let retry = request(&mut agent, &token, "n2", "agent.next", json!({ "agentId": id, "timeoutMs": 0 })).await;
+    assert_eq!(retry["result"]["event"]["seq"], 1);
+    let empty = request(&mut agent, &token, "n3", "agent.next", json!({ "agentId": id, "after": 1, "timeoutMs": 20 })).await;
+    assert_eq!(empty["result"], json!({ "status": "timeout" }));
+    let acked = request(&mut agent, &token, "a", "agent.ack", json!({ "agentId": id, "after": 1 })).await;
+    assert_eq!((acked["result"]["ackedSeq"].clone(), acked["result"]["queued"].clone()), (json!(1), json!(0)));
 
-    assert_eq!(
-        request(&mut agent, &token, "x", "listen.next", json!({ "sessionId": "nope" })).await["error"]["code"],
-        "SESSION_NOT_FOUND"
-    );
-    assert_eq!(
-        request(&mut agent, &token, "y", "listen.next", json!({ "sessionId": id, "after": -1 })).await["error"]["code"],
-        "INVALID_REQUEST"
-    );
-    assert_eq!(
-        request(&mut agent, &token, "z", "speak", json!({ "text": "Hi", "responseId": "bad id!" })).await["error"]["code"],
-        "INVALID_REQUEST"
-    );
-    request(&mut agent, &token, "stop", "listen.stop", json!({ "sessionId": id })).await;
-    let stopped =
-        request(&mut agent, &token, "n5", "listen.next", json!({ "sessionId": id, "after": 4, "timeoutSeconds": 5 })).await;
-    assert_eq!(stopped["result"]["status"], "stopped");
+    let task_id = first["event"]["taskId"].as_str().unwrap().to_owned();
+    let update = json!({ "agentId": id, "taskId": task_id, "state": "running", "summary": "Running them." });
+    assert_eq!(request(&mut agent, &token, "u", "task.update", update).await["result"]["state"], "running");
+    let status = request(&mut agent, &token, "s", "task.status", json!({ "taskId": task_id })).await;
+    assert_eq!(status["result"]["summary"], "Running them.");
+    let bad = request(&mut agent, &token, "b", "task.update", json!({ "agentId": id, "taskId": task_id, "state": "done" })).await;
+    assert_eq!(bad["error"]["code"], "INVALID_REQUEST");
+    let foreign = request(&mut agent, &token, "f", "agent.ack", json!({ "agentId": "agent_nope", "after": 0 })).await;
+    assert_eq!(foreign["error"]["code"], "INVALID_REQUEST");
+
+    request(&mut agent, &token, "x", "agent.unregister", json!({ "agentId": id })).await;
+    let gone = request(&mut agent, &token, "g", "agent.next", json!({ "agentId": id, "timeoutMs": 10 })).await;
+    assert_eq!(gone["result"]["status"], "stopped");
     b.bridge.stop().await;
 }
 
 #[tokio::test]
 async fn a_disconnected_waiter_is_aborted_and_loses_nothing() {
     let b = started_bridge("1").await;
+    let inbox = b.handlers.inbox.clone();
     let mut owner = Client::connect(&b.endpoint).await;
-    let session = request(&mut owner, &b.token, "s", "listen.start", json!({})).await["result"].clone();
-    let id = session["id"].as_str().unwrap().to_owned();
+    let id = request(&mut owner, &b.token, "r", "agent.register", json!({ "client": "codex" })).await["result"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let mut waiter = Client::connect(&b.endpoint).await;
     waiter
-        .send(json!({ "v": 1, "id": "w", "token": b.token, "method": "listen.next", "params": { "sessionId": id, "timeoutSeconds": 30 } }))
+        .send(json!({ "v": 1, "id": "w", "token": b.token, "method": "agent.next", "params": { "agentId": id, "timeoutMs": 30_000 } }))
         .await;
-    let service = b.handlers.listen.service.clone();
-    until(|| service.status(None).unwrap().unwrap().waiters == 1, "waiter").await;
+    until(|| b.bridge.status().clients == 2, "waiter").await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
     drop(waiter);
-    until(|| service.status(None).unwrap().unwrap().waiters == 0, "waiter to leave").await;
-    b.handlers.listen.say(&id, "Still here").await;
-    let next = request(&mut owner, &b.token, "n", "listen.next", json!({ "sessionId": id, "timeoutSeconds": 5 })).await;
+    until(|| b.bridge.status().clients == 1, "waiter to leave").await;
+    inbox.submit("Still here", None, "req-1").unwrap();
+    let next = request(&mut owner, &b.token, "n", "agent.next", json!({ "agentId": id, "timeoutMs": 1000 })).await;
     assert_eq!(next["result"]["event"]["text"], "Still here");
+    b.bridge.stop().await;
+}
+
+#[tokio::test]
+async fn listening_and_coordinator_methods_point_at_their_replacements() {
+    let b = started_bridge("1").await;
+    let mut agent = Client::connect(&b.endpoint).await;
+    let listen = request(&mut agent, &b.token, "l", "listen.start", json!({})).await;
+    assert_eq!(listen["error"]["code"], "INVALID_REQUEST");
+    assert!(listen["error"]["message"].as_str().unwrap().contains("agent.register"));
+    let coordinator = request(&mut agent, &b.token, "c", "coordinator.status", json!({})).await;
+    assert!(coordinator["error"]["message"].as_str().unwrap().contains("talk.status"));
+    let talk = request(&mut agent, &b.token, "t", "talk.status", json!({})).await;
+    assert_eq!(talk["result"]["phase"], "listening");
+    let inject = request(&mut agent, &b.token, "i", "talk.inject", json!({ "text": "Hello" })).await;
+    assert_eq!(inject["result"]["user"], "Hello", "talk.inject is served in debug builds");
     b.bridge.stop().await;
 }
