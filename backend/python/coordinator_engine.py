@@ -34,6 +34,9 @@ MAX_INPUT_TOKENS = 8_192
 # Share of the neutral-turn prior subtracted from each tool score; measured on
 # scripts/voice-helper-eval (full calibration over-rewards rarely chosen tools).
 CALIBRATION = 0.25
+# Weight of the same utterance scored without tasks and memory: it keeps an
+# open task or a recent status turn from pulling small talk into task_status.
+BARE = 0.5
 _ID = re.compile(r"^(agent|task)_[0-9]{1,3}$")
 
 # Small word lists decide only which language to answer in.
@@ -323,6 +326,8 @@ EXAMPLES = [
     (_SAID, "Say that again?", "repeat_last", {}),
     (_SAID_NL, "Wat zei je?", "repeat_last", {}),
     (_SAID_NL, "What did you say?", "repeat_last", {}),
+    (_SAID_NL, "Top, bedankt.", "reply", {"text": "Graag gedaan."}),
+    (_FOLLOW, "Great, thank you.", "reply", {"text": "You're welcome."}),
     (_SAID, "Herhaal dat eens.", "repeat_last", {}),
     (_SAID_NL, "Sorry, nog een keer?", "repeat_last", {}),
     (_SAID_NL, "I missed that.", "repeat_last", {}),
@@ -369,10 +374,20 @@ REPLY_EXAMPLES = [
     ("Asked Claude Code to cancel \"Fix the search bug\".", "Ik heb Claude Code gevraagd \"Fix the search bug\" te annuleren."),
     ("Cancelled \"Write the docs\".", "\"Write the docs\" is geannuleerd."),
     ("Sent to Codex.", "Doorgestuurd naar Codex."),
+    ("Claude Code is working on \"Repareer de zoekbalk\".", "Claude Code is bezig met \"Repareer de zoekbalk\"."),
+    ("Codex has not started \"Voeg een exportknop toe\" yet.", "Codex is nog niet begonnen aan \"Voeg een exportknop toe\"."),
     ("Claude Code is working on \"Run the tests\". Codex has not started \"Write the docs\" yet.",
      "Claude Code is bezig met \"Run the tests\". Codex is nog niet begonnen aan \"Write the docs\"."),
 ]
 REPLY_SCHEMA = [schema for schema in TOOL_SCHEMAS if schema["function"]["name"] == "reply"]
+
+
+def _faithful(result: str, spoken: str, context: dict[str, Any]) -> bool:
+    """The rephrased result keeps every quoted title and agent name, and says more than a title."""
+    titles = re.findall(r'"([^"]+)"', result)
+    names = [agent["label"] for agent in context.get("agents", []) if agent["label"] in result]
+    return (all(title in spoken for title in titles) and all(name in spoken for name in names)
+            and spoken.strip(' ."') not in titles)
 
 
 def _reply_messages() -> list[dict[str, Any]]:
@@ -418,7 +433,7 @@ class Helper:
         text = probe[:probe.rfind("<|im_start|>user\n")]
         ids = self._ids(text)
         with self.torch.inference_mode():
-            cache = self.model(input_ids=ids, use_cache=True).past_key_values
+            cache = self.model(input_ids=ids, use_cache=True, logits_to_keep=1).past_key_values
         return text, cache, ids.shape[-1]
 
     def _suffix(self, prefix: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]], lead: str) -> str:
@@ -437,7 +452,7 @@ class Helper:
         """Run `text` on a copy of `cache`; returns the last logits and the new cache."""
         cache = copy.deepcopy(cache)
         with self.torch.inference_mode():
-            out = self.model(input_ids=self._ids(text), past_key_values=cache, use_cache=True)
+            out = self.model(input_ids=self._ids(text), past_key_values=cache, use_cache=True, logits_to_keep=1)
         return out.logits[0, -1].float().log_softmax(-1), out.past_key_values
 
     def _turn(self, context: dict[str, Any], text: str, language: str):
@@ -484,6 +499,11 @@ class Helper:
             raise ValueError("Helper produced an empty reply")
         return text[:MAX_REPLY_CHARS]
 
+    def _calibrated(self, first: Any, cache: Any, context: dict[str, Any], names: list[str], language: str) -> dict[str, float]:
+        scores = self._score(cache, first, [name + ">" for name in names])
+        prior = self._prior(context, names, language)
+        return {name: score - CALIBRATION * prior[name] for name, score in zip(names, scores)}
+
     def _prior(self, context: dict[str, Any], names: list[str], language: str) -> dict[str, float]:
         shape = (tuple(names), bool(context.get("tasks")), min(len(context.get("agents", [])), 2),
                  bool(context.get("recent")), bool(context.get("pendingCancel")), language)
@@ -514,9 +534,10 @@ class Helper:
         # Anything but a yes drops the pending cancel; it is not asked again.
         names = [name for name in TOOLS if name != "cancel_task" or context.get("tasks") and not pending]
         first, cache = self._turn(context, text, language)
-        scores = dict(zip(names, self._score(cache, first, [name + ">" for name in names])))
-        prior = self._prior(context, names, language)
-        name = max(names, key=lambda key: scores[key] - CALIBRATION * prior[key])
+        score = self._calibrated(first, cache, context, names, language)
+        bare = {"agents": context.get("agents", [])}
+        bare_score = self._calibrated(*self._turn(bare, text, language), bare, names, language)
+        name = max(names, key=lambda key: score[key] + BARE * bare_score[key])
         if name == "reply":
             args = {"text": self._generate(cache, "reply>\n<parameter=text>\n")}
         else:
@@ -538,6 +559,9 @@ class Helper:
             messages = self.reply_examples + [{"role": "user", "content": result}]
             suffix = self._suffix(self.reply_text, messages, REPLY_SCHEMA, LEAD + "reply>\n<parameter=text>\n")
             spoken = self._generate(self.reply_cache, suffix, MAX_TRANSLATION_TOKENS)
+            if not _faithful(result, spoken, context):
+                # The host speaks its own Dutch sentence instead.
+                raise ValueError("Helper reply left out a name or title")
         return {"text": spoken, "elapsedMs": round((time.perf_counter() - started) * 1000, 1)}
 
 

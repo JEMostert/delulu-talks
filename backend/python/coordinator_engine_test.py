@@ -95,6 +95,12 @@ class ResultTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             engine.validate_reply({"text": "Doorgestuurd", "elapsedMs": 1, "tool": "reply"})
 
+    def test_a_rephrased_result_keeps_names_and_titles(self):
+        result = 'Claude Code is working on "Draai de unit tests".'
+        self.assertTrue(engine._faithful(result, 'Claude Code is bezig met "Draai de unit tests".', CONTEXT))
+        for spoken in ("Draai de unit tests.", 'Codex is bezig met "Draai de unit tests".', "Claude Code is bezig."):
+            self.assertFalse(engine._faithful(result, spoken, CONTEXT), spoken)
+
     def test_named_agents(self):
         self.assertTrue(engine._names("Laat Claude Code de lint errors fixen.", "Claude Code"))
         self.assertFalse(engine._names("Laat Claude de lint errors fixen.", "Claude Code"))
