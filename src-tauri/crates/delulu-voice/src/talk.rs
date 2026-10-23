@@ -1455,7 +1455,10 @@ impl Talk {
     /// The helper's view: agents, open tasks and recent turns under short aliases.
     fn context(&self, pending: Option<&str>) -> (Value, Aliases) {
         let mut aliases = Aliases::default();
-        let all = self.inner.inbox.agents();
+        // Listening agents first; tasks of away agents cannot take a follow-up
+        // or a cancel now and would only crowd the helper's context.
+        let mut all = self.inner.inbox.agents();
+        all.sort_by_key(|agent| !agent.listening);
         let mut labels: Vec<(String, String)> = Vec::new();
         let agents: Vec<Value> = all
             .iter()
@@ -1480,6 +1483,7 @@ impl Talk {
             .inbox
             .open_tasks()
             .into_iter()
+            .filter(|task| all.iter().any(|agent| agent.id == task.agent_id && agent.listening))
             .take(CONTEXT_TASKS)
             .enumerate()
             .map(|(index, task)| {
