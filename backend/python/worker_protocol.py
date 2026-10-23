@@ -26,7 +26,8 @@ COMMANDS = frozenset({
     "status", "load", "unload", "magicStatus", "magicLoad",
     "magicRewrite", "transcribe", "shutdown", "capabilities",
     "voiceStatus", "voiceLoad", "voiceUnload", "voiceSynthesize",
-    "coordinatorStatus", "coordinatorSetup", "coordinatorLoad", "coordinatorUnload", "coordinatorClassify",
+    "coordinatorStatus", "coordinatorSetup", "coordinatorLoad", "coordinatorUnload", "coordinatorDecide",
+    "coordinatorReply",
 })
 # Spoken output (src/voice.ts is the shared source of truth for these names).
 VOICE_ENGINES = frozenset({"kokoro", "chatterbox-turbo"})
@@ -327,9 +328,9 @@ def validate_result(command: str, result: Any) -> None:
     if not isinstance(result, dict):
         raise ValueError(f"Invalid worker {command} result: expected an object")
     validate_json_value(result)
-    if command == "coordinatorClassify":
-        from coordinator_engine import validate_route
-        validate_route(result)
+    if command in ("coordinatorDecide", "coordinatorReply"):
+        from coordinator_engine import validate_decision, validate_reply
+        (validate_decision if command == "coordinatorDecide" else validate_reply)(result)
         return
     if "timings" in result:
         timings = result["timings"]

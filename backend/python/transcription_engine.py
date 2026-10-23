@@ -246,6 +246,7 @@ class Worker:
         self.magic_model_name: str | None = None
         self.magic_device: str | None = None
         self.magic_warmup = "not-started"
+        self.coordinator_helper: Any | None = None
         # Spoken output; created on first use so other roles never touch it.
         self.voice: VoiceEngine | None = None
 
@@ -300,6 +301,7 @@ class Worker:
         return self.status()
 
     def unload_magic(self) -> dict[str, Any]:
+        self.coordinator_helper = None
         self.magic_model = None
         self.magic_processor = None
         self.magic_model_name = None
@@ -606,20 +608,27 @@ class Worker:
             allowed = {
                 "speech": {"capabilities", "load", "unload", "status", "transcribe", "shutdown"},
                 "magic": {"capabilities", "magicLoad", "magicStatus", "magicRewrite", "shutdown"},
-                "coordinator": {"coordinatorStatus", "coordinatorSetup", "coordinatorLoad", "coordinatorUnload", "coordinatorClassify", "shutdown"},
+                "coordinator": {"coordinatorStatus", "coordinatorSetup", "coordinatorLoad", "coordinatorUnload",
+                                "coordinatorDecide", "coordinatorReply", "shutdown"},
                 "voice": {"voiceStatus", "voiceLoad", "voiceUnload", "voiceSynthesize", "shutdown"},
             }
             if role not in allowed or command not in allowed[role]:
                 raise ValueError(f"Command {command} is not allowed in the {role} runtime")
         if command in ("coordinatorLoad", "coordinatorSetup"):
-            return self.load_magic(request, allow_download=command == "coordinatorSetup")
+            status = self.load_magic(request, allow_download=command == "coordinatorSetup")
+            from coordinator_engine import prepare
+            prepare(self)
+            return status
         if command == "coordinatorStatus":
             return self.magic_status()
         if command == "coordinatorUnload":
             return self.unload_magic()
-        if command == "coordinatorClassify":
-            from coordinator_engine import classify
-            return classify(self, request)
+        if command == "coordinatorDecide":
+            from coordinator_engine import decide
+            return decide(self, request)
+        if command == "coordinatorReply":
+            from coordinator_engine import reply
+            return reply(self, request)
         if command == "capabilities":
             expected = "writing" if role == "magic" else "speech"
             if role and request.get("engine") != expected:
