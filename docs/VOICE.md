@@ -77,7 +77,7 @@ T3 Code runs Claude Code and Codex, so it uses their MCP configuration.
 
 `delulu-talks mcp` is the MCP server and CLI built into the app binary. It runs before any window starts, needs no Node, and reads `bridge.json` from the profile (`DELULU_VOICE_BRIDGE` overrides where). Agents registered by the Electron releases ran `node <user data>/voice/delulu-voice-mcp.mjs`; that script speaks the same protocol, so an existing copy keeps working where Node is installed, but re-register with the command above.
 
-The MCP server offers three tools:
+The MCP server offers these speech tools:
 
 - `speak`: `text` with markup, optional `interrupt`, `wait` (default false: return as soon as it is queued) and `agent` (a display label).
 - `stop_speaking`
@@ -94,6 +94,61 @@ delulu-talks mcp status
 ```
 
 Desktop shortcuts can also run the app itself: `delulu-talks --read-clipboard` reads the clipboard aloud and `delulu-talks --stop-speaking` stops. Both are in the tray menu too.
+
+## Optional local voice coordinator
+
+The optional coordinator adds a local routing layer between voice input and coding agents, using Qwen3.5 0.8B or 2B. Off/direct mode retains the existing speech and listening commands. The coordinator uses one microphone session and one speaking voice; participating workers register inboxes instead of competing for the microphone. Existing `say`/`speak` compatibility remains available through the app's coordinator routing.
+
+The coordinator forwards the **exact original task text**, without rewriting it or adding hidden instructions. Routing does not expand the user's authorization. Worker progress and concise summaries give the coordinator material for briefings; a queued submission alone is never evidence that a worker has accepted or started work.
+
+All harnesses can use the same local CLI or MCP surface. This provides durable queued delivery, not a universal host wake-up mechanism. An idle harness must run a waiter or use a host-specific adapter that can resume it; adapters are optional and support depends on the actual host. No automatic Codex/T3/other-host wake-up is implied.
+
+Every command below follows `delulu-talks mcp` and prints one JSON object:
+
+```text
+coordinator status
+coordinator focus --agent ID
+coordinator submit --text TEXT [--agent ID] [--request ID]
+agent register --client NAME [--name NAME]
+agent next --agent ID [--after SEQ] [--timeout SECONDS]
+agent ack --agent ID --after SEQ
+agent unregister --agent ID
+task status [--task ID]
+task update --agent ID --task ID --state STATE [--summary TEXT]
+```
+
+`agent register` returns `{id,client,name,ackedSeq,lastSeq,queued}`. Keep a stable, distinct client label for each worker and use the returned cursor when resuming. `coordinator focus` selects the recipient for submissions without `--agent`. An optional request id makes a submission retry identifiable as the same request. Shell quote `--text` so the original text, including whitespace, reaches the bridge unchanged.
+
+`agent next` returns `{"status":"event","event":{"seq":N,"type":"task"|"message"|"cancel","taskId":"…","text":"…",…}}`, `{"status":"timeout"}`, or `{"status":"stopped",…}`. It uses the same exit codes and wait bounds as `listen next`: 0 for an event, 3 for timeout, 4 for stopped, 1 for errors; the default CLI wait is 600 seconds and the maximum is 3600. A timeout leaves queued work intact. Repeating the same cursor redelivers unacknowledged events; advance `--after` or call `agent ack` only after handling the event. Deduplicate retries by sequence/task id.
+
+The worker explicitly reports `accepted` when it takes responsibility and `running` when work begins. Acknowledging delivery is separate from those states. Later updates can be `blocked`, `completed`, `failed`, or `cancelled`, with a short summary. `task status --task ID` inspects one task; omitting the id returns the task snapshot. For example:
+
+```text
+delulu-talks mcp agent register --client implementation --name "Implementation"
+delulu-talks mcp agent next --agent AGENT_ID --after 0 --timeout 120
+delulu-talks mcp task update --agent AGENT_ID --task TASK_ID --state accepted
+delulu-talks mcp agent ack --agent AGENT_ID --after 1
+delulu-talks mcp task update --agent AGENT_ID --task TASK_ID --state running
+delulu-talks mcp task update --agent AGENT_ID --task TASK_ID --state completed --summary "Implemented and checked."
+```
+
+Equivalent MCP tools and bridge methods:
+
+| MCP tool | Bridge method | Arguments |
+| --- | --- | --- |
+| `coordinator_status` | `coordinator.status` | `{}` |
+| `coordinator_focus` | `coordinator.focus` | `{agentId}` |
+| `coordinator_submit` | `coordinator.submit` | `{text,agentId?,requestId?}` |
+| `agent_register` | `agent.register` | `{client,name?}` |
+| `agent_next` | `agent.next` | `{agentId,after?,timeoutMs?}` |
+| `agent_ack` | `agent.ack` | `{agentId,after}` |
+| `agent_unregister` | `agent.unregister` | `{agentId}` |
+| `task_status` | `task.status` | `{taskId?}` |
+| `task_update` | `task.update` | `{agentId,taskId,state,summary?}` |
+
+MCP `agent_next` defaults to 50000 ms to fit typical tool-call timeouts and accepts integer `timeoutMs` from 0 to 3600000. The CLI converts `--timeout` seconds to milliseconds. `after` is a nonnegative u64. CLI and MCP validate nonblank strings: text/summary at most 8000 characters, client/name at most 64, ids at most 128. Unknown arguments, duplicate CLI options, invalid states and out-of-range values produce descriptive errors. Speech retains its existing 15000-character limit.
+
+The [agent skill](../skills/delulu-voice/SKILL.md) covers inbox registration, acknowledgment, actual task progress, single-speaker coordination, and direct-mode compatibility.
 
 ## Listening sessions
 
@@ -147,12 +202,12 @@ There is no acoustic echo canceller or noise suppressor: the Electron releases u
 ### Agent hosts
 
 - **Claude Code:** run `listen next` with the Bash tool in the background. A finished background task notifies the agent and wakes it even when idle, so your next utterance reaches it as soon as it is transcribed. While the agent is mid-response or running tools, it sees the result at its next turn boundary. Your speech stops Delulu's audio immediately either way, because the app does that itself.
-- **T3 Code:** behaves like the provider it runs.
+- **T3 Code:** wake-up depends on the provider and tool integration. Verify background completion notifications in the active host; no automatic wake-up adapter is implied.
 - **Codex CLI and other hosts:** a finished background command may not wake an idle agent (not verified). The fallback is a foreground `listen next` with a bounded timeout when the agent has nothing else to do. No host should poll `listen status` in a loop.
 
 ## Bridge protocol
 
-Newline-delimited JSON over the socket. Requests: `{"v":1,"id":"…","token":"…","method":"hello"|"speak"|"stop"|"status"|"listen.start"|"listen.next"|"listen.ack"|"listen.status"|"listen.stop","params":{…}}`. Responses: `{"v":1,"id":"…","ok":true,"result":…}` or `{"v":1,"id":"…","ok":false,"error":{"code":"UNAUTHORIZED"|"INVALID_REQUEST"|"VOICE_UNAVAILABLE"|"SESSION_BUSY"|"SESSION_NOT_FOUND"|"INTERNAL","message":"…"}}`.
+Newline-delimited JSON over the socket. Requests: `{"v":1,"id":"…","token":"…","method":"hello"|"speak"|"stop"|"status"|"listen.start"|"listen.next"|"listen.ack"|"listen.status"|"listen.stop"|"coordinator.status"|"coordinator.focus"|"coordinator.submit"|"agent.register"|"agent.next"|"agent.ack"|"agent.unregister"|"task.status"|"task.update","params":{…}}`. Responses: `{"v":1,"id":"…","ok":true,"result":…}` or `{"v":1,"id":"…","ok":false,"error":{"code":"UNAUTHORIZED"|"INVALID_REQUEST"|"VOICE_UNAVAILABLE"|"SESSION_BUSY"|"SESSION_NOT_FOUND"|"INTERNAL","message":"…"}}`.
 
 Limits: 256 KiB per request line, 16 connections, 4 requests in flight per connection, 15,000 characters per message (Grok's limit).
 

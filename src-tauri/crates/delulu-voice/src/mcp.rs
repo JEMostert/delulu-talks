@@ -1,11 +1,14 @@
 //! Delulu Voice for coding agents: an MCP server (stdio) and a small CLI that
-//! speak through a running Delulu Talks (`backend/voice/delulu-voice-mcp.mjs`).
+//! speak and receive tasks through a running Delulu Talks.
 //! The app binary runs it for `delulu-talks mcp …` before starting Tauri:
 //!
 //! ```text
 //! MCP:  delulu-talks mcp
 //! CLI:  delulu-talks mcp say [--wait] [--interrupt] [--agent NAME] [--response ID] <text…>
 //!       delulu-talks mcp listen start|next|ack|status|stop …
+//!       delulu-talks mcp coordinator status|focus|submit …
+//!       delulu-talks mcp agent register|next|ack|unregister …
+//!       delulu-talks mcp task status|update …
 //!       delulu-talks mcp stop | status | --help
 //! ```
 //!
@@ -30,7 +33,7 @@ const LISTEN_MARGIN_MS: f64 = 15_000.0;
 const MCP_LISTEN_SECONDS: u64 = 50;
 const MAX_LISTEN_SECONDS: u64 = 3_600;
 const DEFAULT_LISTEN_SECONDS: u64 = 600;
-/// Exit codes for `listen next`.
+/// Exit codes shared by `listen next` and `agent next`.
 const EXIT_EVENT: i32 = 0;
 const EXIT_TIMEOUT: i32 = 3;
 const EXIT_STOPPED: i32 = 4;
@@ -47,6 +50,8 @@ Expressive markup, used sparingly where a person really would:
 - Wrapping styles: <whisper>…</whisper> <happy>…</happy> <angry>…</angry> <surprised>…</surprised> <scared>…</scared> <sarcastic>…</sarcastic> <dramatic>…</dramatic> <narration>…</narration> <crying>…</crying>
 - Pacing and volume: <slow>…</slow> <fast>…</fast> <soft>…</soft> <loud>…</loud> <emphasis>…</emphasis>
 Example: \"[sigh] the build still fails on the cache path. Want me to try another way?\"
+
+When the local coordinator is enabled, it owns the single voice. Workers register an agent inbox and send short task_update summaries for briefings; the app routes existing speak compatibility through the coordinator.
 
 Returns once the speech is queued, unless wait is true.";
 
@@ -75,13 +80,27 @@ Listening sessions (each prints one JSON object on stdout):
   listen ack --session ID --after SEQ  Acknowledge up to SEQ without waiting
   listen status [--session ID]         {\"session\": … | null}
   listen stop --session ID             Stop listening; waiters return \"stopped\"
+Optional local coordinator (each prints JSON; all commands follow mcp):
+  coordinator status
+  coordinator focus --agent ID
+  coordinator submit --text TEXT [--agent ID] [--request ID]
+  agent register --client NAME [--name NAME]
+  agent next --agent ID [--after SEQ] [--timeout SECONDS]
+                                       Same defaults and exit codes as listen next.
+  agent ack --agent ID --after SEQ
+  agent unregister --agent ID
+  task status [--task ID]
+  task update --agent ID --task ID --state STATE [--summary TEXT]
+      STATE: accepted | running | blocked | completed | failed | cancelled
+      Queued delivery is not acceptance or work started; report these explicitly.
+      Text/summary: 8000 characters; client/name: 64; IDs: 128.
 Errors exit 1 with {\"error\":{\"code\",\"message\"}} on stderr.
 ";
 
-/// The MCP tool list, verbatim from the Node server.
+/// Voice tools, including the optional local coordinator inbox API.
 pub fn tools() -> Value {
     let empty = || json!({ "type": "object", "properties": {}, "additionalProperties": false });
-    json!([
+    let mut tools = json!([
         {
             "name": "speak",
             "title": "Speak out loud",
@@ -209,7 +228,142 @@ pub fn tools() -> Value {
             },
             "annotations": { "readOnlyHint": false, "destructiveHint": false },
         },
-    ])
+    ]);
+    tools
+        .as_array_mut()
+        .expect("tool list")
+        .extend(coordinator_tools());
+    tools
+}
+
+/// These flat schemas also drive CLI/MCP validation so both surfaces enforce
+/// the same bounds before contacting the bridge. Text is forwarded unchanged.
+fn coordinator_tools() -> Vec<Value> {
+    let text = |max| json!({"type": "string", "minLength": 1, "maxLength": max});
+    let id = || text(128);
+    let seq = || json!({"type": "integer", "minimum": 0});
+    let tool = |name: &str, description: &str, properties: Value, required: &[&str], read_only| {
+        json!({
+            "name": name,
+            "description": description,
+            "inputSchema": {"type": "object", "properties": properties, "required": required, "additionalProperties": false},
+            "annotations": {"readOnlyHint": read_only, "destructiveHint": false, "openWorldHint": false}
+        })
+    };
+    vec![
+        tool("coordinator_status", "Inspect the optional local voice coordinator, focused agent and task queue. Off/direct modes keep existing speak/listen behavior.", json!({}), &[], true),
+        tool("coordinator_focus", "Choose the registered agent that receives subsequent voice tasks.", json!({"agentId": id()}), &["agentId"], false),
+        tool("coordinator_submit", "Queue the exact original task text for an agent (or the focused agent). Queued does not mean accepted or running; inspect task_status. An optional requestId deduplicates retries. Does not wake arbitrary hosts.", json!({"text": text(8000), "agentId": id(), "requestId": id()}), &["text"], false),
+        tool("agent_register", "Register or reuse a durable agent inbox by client; returns id, client, name, ackedSeq, lastSeq and queued. With the coordinator enabled, use this inbox instead of starting a competing microphone listener.", json!({"client": text(64), "name": text(64)}), &["client"], false),
+        tool("agent_next", "Wait for the next task/message/cancel event in an agent inbox. Returns status event with event {seq,type,taskId,text,...}, timeout, or stopped. after acknowledges processed events; retrying the same cursor redelivers unacknowledged events. Defaults to 50000 ms, maximum 3600000 ms. Delivery does not mean work has started; report task_update accepted/running explicitly.", json!({"agentId": id(), "after": seq(), "timeoutMs": {"type": "integer", "minimum": 0, "maximum": MAX_LISTEN_SECONDS * 1000, "default": MCP_LISTEN_SECONDS * 1000}}), &["agentId"], false),
+        tool("agent_ack", "Acknowledge inbox events through after without waiting. Acknowledge only after handling the event; task acceptance is a separate task_update.", json!({"agentId": id(), "after": seq()}), &["agentId", "after"], false),
+        tool("agent_unregister", "Unregister an agent inbox; waiting calls return stopped.", json!({"agentId": id()}), &["agentId"], false),
+        tool("task_status", "Inspect a task by taskId, or the coordinator task snapshot when omitted. Distinguish queued from accepted, running and terminal states.", json!({"taskId": id()}), &[], true),
+        tool("task_update", "Report actual task progress. accepted means the worker took responsibility; running means work started. Send brief summaries for the coordinator's single voice; do not run another microphone listener.", json!({"agentId": id(), "taskId": id(), "state": {"type": "string", "enum": ["accepted", "running", "blocked", "completed", "failed", "cancelled"]}, "summary": text(8000)}), &["agentId", "taskId", "state"], false),
+    ]
+}
+
+fn coordinator_method(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "coordinator_status" => "coordinator.status",
+        "coordinator_focus" => "coordinator.focus",
+        "coordinator_submit" => "coordinator.submit",
+        "agent_register" => "agent.register",
+        "agent_next" => "agent.next",
+        "agent_ack" => "agent.ack",
+        "agent_unregister" => "agent.unregister",
+        "task_status" => "task.status",
+        "task_update" => "task.update",
+        _ => return None,
+    })
+}
+
+fn validate_coordinator(name: &str, args: &Map<String, Value>) -> Result<(), ClientError> {
+    let tools = coordinator_tools();
+    let tool = tools
+        .iter()
+        .find(|tool| tool["name"] == name)
+        .ok_or_else(|| {
+            ClientError::new(
+                format!("Unknown coordinator tool: {name}"),
+                "INVALID_REQUEST",
+            )
+        })?;
+    let schema = &tool["inputSchema"];
+    let invalid = |message: String| ClientError::new(message, "INVALID_REQUEST");
+    for field in schema["required"].as_array().expect("required fields") {
+        let key = field.as_str().expect("field name");
+        if !args.contains_key(key) {
+            return Err(invalid(format!("{name} requires {key}.")));
+        }
+    }
+    let properties = schema["properties"].as_object().expect("properties");
+    for (key, value) in args {
+        let field = properties
+            .get(key)
+            .ok_or_else(|| invalid(format!("Unknown {name} argument: {key}.")))?;
+        if field["type"] == "string" {
+            let text = value
+                .as_str()
+                .ok_or_else(|| invalid(format!("{key} must be text.")))?;
+            if let Some(max) = field["maxLength"].as_u64() {
+                if text.trim().is_empty() || text.chars().count() > max as usize {
+                    return Err(invalid(format!(
+                        "{key} must contain nonblank text of at most {max} characters."
+                    )));
+                }
+            }
+            if let Some(choices) = field["enum"].as_array() {
+                if !choices.contains(value) {
+                    return Err(invalid(format!(
+                        "{key} must be one of: {}.",
+                        choices
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )));
+                }
+            }
+        } else {
+            let number = value
+                .as_u64()
+                .ok_or_else(|| invalid(format!("{key} must be a nonnegative integer (u64).")))?;
+            if let Some(max) = field["maximum"].as_u64() {
+                if number > max {
+                    return Err(invalid(format!("{key} must be between 0 and {max}.")));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn call_coordinator(
+    bridge: &Path,
+    name: &str,
+    mut args: Map<String, Value>,
+    default_wait_ms: u64,
+) -> Result<Value, ClientError> {
+    if name == "agent_next" {
+        args.entry("timeoutMs").or_insert(json!(default_wait_ms));
+    }
+    validate_coordinator(name, &args)?;
+    let timeout = if name == "agent_next" {
+        Duration::from_millis(
+            args["timeoutMs"].as_u64().expect("validated timeout") + LISTEN_MARGIN_MS as u64,
+        )
+    } else {
+        REQUEST_TIMEOUT
+    };
+    call(
+        bridge,
+        coordinator_method(name).expect("validated tool"),
+        Value::Object(args),
+        timeout,
+        None,
+    )
+    .await
 }
 
 /* ------------------------------------------------------------------ */
@@ -426,6 +580,17 @@ async fn call_tool(bridge: &Path, params: Option<&Value>) -> Result<Value, RpcEr
     };
     let outcome: Result<Value, ToolError> = async {
         match name {
+            name if coordinator_method(name).is_some() => {
+                let result =
+                    call_coordinator(bridge, name, args.clone(), MCP_LISTEN_SECONDS * 1000).await;
+                match result {
+                    Ok(value) => Ok(json_result(value)),
+                    Err(error) if error.code == "INVALID_REQUEST" => {
+                        Err(ToolError::Rpc(RpcError::new(-32602, error.message)))
+                    }
+                    Err(error) => Err(ToolError::Bridge(error)),
+                }
+            }
             "speak" => {
                 match args.get("text") {
                     Some(Value::String(text)) if !text.trim().is_empty() => {}
@@ -726,6 +891,101 @@ async fn listen_cli(bridge: &Path, rest: &[String], out: &mut CliOutput) -> Resu
     }
 }
 
+/// Strict option parsing for the coordinator surface; existing say/listen parsing
+/// remains compatible. Both --key value and --key=value preserve value text.
+async fn coordinator_cli(
+    bridge: &Path,
+    group: &str,
+    rest: &[String],
+    out: &mut CliOutput,
+) -> Result<i32, ClientError> {
+    let action = rest.first().map(String::as_str).unwrap_or("");
+    let name = format!("{group}_{action}");
+    if coordinator_method(&name).is_none() {
+        return Err(ClientError::new(
+            format!("Unknown {group} command: {action}. See mcp --help."),
+            "INVALID_REQUEST",
+        ));
+    }
+    let mut args = Map::new();
+    let mut index = 1;
+    while index < rest.len() {
+        let raw = &rest[index];
+        let (flag, inline) = match raw.split_once('=') {
+            Some((flag, value)) => (flag, Some(value.to_owned())),
+            None => (raw.as_str(), None),
+        };
+        let key = match flag {
+            "--agent" => "agentId",
+            "--task" => "taskId",
+            "--request" => "requestId",
+            "--client" => "client",
+            "--name" => "name",
+            "--text" => "text",
+            "--summary" => "summary",
+            "--state" => "state",
+            "--after" => "after",
+            "--timeout" => "timeoutMs",
+            _ => {
+                return Err(ClientError::new(
+                    format!("Unknown {group} {action} option: {flag}."),
+                    "INVALID_REQUEST",
+                ))
+            }
+        };
+        let value = match inline {
+            Some(value) => value,
+            None => {
+                index += 1;
+                rest.get(index)
+                    .filter(|value| !value.starts_with("--"))
+                    .cloned()
+                    .ok_or_else(|| {
+                        ClientError::new(format!("{flag} requires a value."), "INVALID_REQUEST")
+                    })?
+            }
+        };
+        if args.contains_key(key) {
+            return Err(ClientError::new(
+                format!("{flag} was supplied more than once."),
+                "INVALID_REQUEST",
+            ));
+        }
+        let value = match key {
+            "after" => json!(value.parse::<u64>().map_err(|_| ClientError::new(
+                "--after must be a nonnegative integer (u64).",
+                "INVALID_REQUEST"
+            ))?),
+            "timeoutMs" => {
+                let seconds = value.parse::<f64>().map_err(|_| {
+                    ClientError::new("--timeout must be a number of seconds.", "INVALID_REQUEST")
+                })?;
+                if !seconds.is_finite() || !(0.0..=MAX_LISTEN_SECONDS as f64).contains(&seconds) {
+                    return Err(ClientError::new(
+                        format!("--timeout must be between 0 and {MAX_LISTEN_SECONDS} seconds."),
+                        "INVALID_REQUEST",
+                    ));
+                }
+                json!((seconds * 1000.0).round() as u64)
+            }
+            _ => json!(value),
+        };
+        args.insert(key.into(), value);
+        index += 1;
+    }
+    let result = call_coordinator(bridge, &name, args, DEFAULT_LISTEN_SECONDS * 1000).await?;
+    print_json(&result, &mut out.stdout);
+    Ok(if name == "agent_next" {
+        match result.get("status").and_then(Value::as_str) {
+            Some("timeout") => EXIT_TIMEOUT,
+            Some("stopped") => EXIT_STOPPED,
+            _ => EXIT_EVENT,
+        }
+    } else {
+        0
+    })
+}
+
 async fn say(bridge: &Path, rest: &[String], stdin: &mut (dyn AsyncRead + Unpin + Send), out: &mut CliOutput) -> Result<i32, ClientError> {
     let mut wait = false;
     let mut interrupt = false;
@@ -803,8 +1063,13 @@ pub async fn cli(args: &[String], bridge: &Path, stdin: &mut (dyn AsyncRead + Un
     let mut out = CliOutput::default();
     let command = args.first().map(String::as_str).unwrap_or("");
     let rest = args.get(1..).unwrap_or_default();
-    if command == "listen" {
-        out.code = match listen_cli(bridge, rest, &mut out).await {
+    if matches!(command, "listen" | "agent" | "task" | "coordinator") {
+        let result = if command == "listen" {
+            listen_cli(bridge, rest, &mut out).await
+        } else {
+            coordinator_cli(bridge, command, rest, &mut out).await
+        };
+        out.code = match result {
             Ok(code) => code,
             Err(error) => {
                 print_json(&json!({ "error": { "code": error.code, "message": error.message } }), &mut out.stderr);
