@@ -460,7 +460,7 @@ mod tests {
     #[test]
     fn default_settings_serialize_like_typescript() {
         let json = &*DEFAULT_SETTINGS_JSON;
-        assert_eq!(json.len(), 57);
+        assert_eq!(json.len(), 58);
         assert_eq!(json["historyRetention"], serde_json::json!({"maxAgeDays": null, "maxCount": null}));
         assert_eq!(json["historyLimit"], serde_json::json!(50));
         assert_eq!(json["captureSoundVolume"], serde_json::json!(0.15));

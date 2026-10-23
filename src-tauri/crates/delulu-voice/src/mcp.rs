@@ -82,6 +82,9 @@ Listening sessions (each prints one JSON object on stdout):
   listen stop --session ID             Stop listening; waiters return \"stopped\"
 Optional local coordinator (each prints JSON; all commands follow mcp):
   coordinator status
+  coordinator setup                     Explicit install/download of the selected helper
+  coordinator load                      Cached files only; no downloads
+  coordinator unload                    Stop helper microphone; keep durable tasks
   coordinator focus --agent ID
   coordinator submit --text TEXT [--agent ID] [--request ID]
   agent register --client NAME [--name NAME]
@@ -252,6 +255,9 @@ fn coordinator_tools() -> Vec<Value> {
     };
     vec![
         tool("coordinator_status", "Inspect the optional local voice coordinator, focused agent and task queue. Off/direct modes keep existing speak/listen behavior.", json!({}), &[], true),
+        tool("coordinator_setup", "Explicitly install/download the selected local helper and load it. Only call when the user requests setup; ordinary load never downloads.", json!({}), &[], false),
+        tool("coordinator_load", "Load the helper selected in Delulu Voice using cached local files only. Requires explicit setup first.", json!({}), &[], false),
+        tool("coordinator_unload", "Stop the helper microphone and unload its local model, preserving durable tasks and inboxes.", json!({}), &[], false),
         tool("coordinator_focus", "Choose the registered agent that receives subsequent voice tasks.", json!({"agentId": id()}), &["agentId"], false),
         tool("coordinator_submit", "Queue the exact original task text for an agent (or the focused agent). Queued does not mean accepted or running; inspect task_status. An optional requestId deduplicates retries. Does not wake arbitrary hosts.", json!({"text": text(8000), "agentId": id(), "requestId": id()}), &["text"], false),
         tool("agent_register", "Register or reuse a durable agent inbox by client; returns id, client, name, ackedSeq, lastSeq and queued. With the coordinator enabled, use this inbox instead of starting a competing microphone listener.", json!({"client": text(64), "name": text(64)}), &["client"], false),
@@ -266,6 +272,9 @@ fn coordinator_tools() -> Vec<Value> {
 fn coordinator_method(name: &str) -> Option<&'static str> {
     Some(match name {
         "coordinator_status" => "coordinator.status",
+        "coordinator_setup" => "coordinator.setup",
+        "coordinator_load" => "coordinator.load",
+        "coordinator_unload" => "coordinator.unload",
         "coordinator_focus" => "coordinator.focus",
         "coordinator_submit" => "coordinator.submit",
         "agent_register" => "agent.register",
@@ -307,7 +316,7 @@ fn validate_coordinator(name: &str, args: &Map<String, Value>) -> Result<(), Cli
                 .as_str()
                 .ok_or_else(|| invalid(format!("{key} must be text.")))?;
             if let Some(max) = field["maxLength"].as_u64() {
-                if text.trim().is_empty() || text.chars().count() > max as usize {
+                if text.trim().is_empty() || delulu_core::util::utf16_len(text) > max as usize {
                     return Err(invalid(format!(
                         "{key} must contain nonblank text of at most {max} characters."
                     )));
@@ -349,7 +358,7 @@ async fn call_coordinator(
         args.entry("timeoutMs").or_insert(json!(default_wait_ms));
     }
     validate_coordinator(name, &args)?;
-    let timeout = if name == "agent_next" {
+    let timeout = if name == "coordinator_setup" { Duration::from_secs(3600) } else if name == "coordinator_load" { Duration::from_secs(600) } else if name == "agent_next" {
         Duration::from_millis(
             args["timeoutMs"].as_u64().expect("validated timeout") + LISTEN_MARGIN_MS as u64,
         )

@@ -14,6 +14,7 @@
 pub mod agent;
 pub mod bridge;
 pub mod client;
+pub mod coordinator;
 pub mod host;
 pub mod listening;
 pub mod mcp;

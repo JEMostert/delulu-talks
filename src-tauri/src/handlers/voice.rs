@@ -8,10 +8,15 @@ use crate::state::AppState;
 
 pub fn register(router: &mut Router<AppState>) {
     router
-        .handle("voice:status", |state, _| async move { Ok(state.voice.voice().get_status()) })
-        .handle("voice:setup", |state, _| async move {
-            state.voice.voice().setup(&state.storage.get_settings()).await
+        .handle("voice:coordinatorStatus", |state, _| async move { Ok(state.voice.coordinator().status()) })
+        .handle("voice:coordinatorSetup", |state, _| async move { state.voice.coordinator().load(true).await })
+        .handle("voice:coordinatorLoad", |state, _| async move { state.voice.coordinator().load(false).await })
+        .handle("voice:coordinatorUnload", |state, _| async move {
+            state.voice.coordinator().unload().await;
+            Ok(())
         })
+        .handle("voice:status", |state, _| async move { Ok(state.voice.voice().get_status()) })
+        .handle("voice:setup", |state, _| async move { state.voice.voice().setup(&state.storage.get_settings()).await })
         .handle("voice:cancelSetup", |state, _| async move {
             state.voice.voice().cancel_setup().await;
             Ok(())
@@ -36,7 +41,9 @@ pub fn register(router: &mut Router<AppState>) {
         .handle("voice:chooseReference", |state, _| async move {
             let filter = Filter { name: "Audio", extensions: &["wav", "flac", "mp3", "ogg"] };
             let chosen = dialogs::open(&state.app, "Choose a voice clip", filter, false).await;
-            let Some(path) = chosen.into_iter().next() else { return Ok(None) };
+            let Some(path) = chosen.into_iter().next() else {
+                return Ok(None);
+            };
             state.voice.voice().choose_reference(&path).await.map(Some)
         })
         .handle("voice:removeReference", |state, _| async move { state.voice.voice().remove_reference().await })

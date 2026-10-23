@@ -115,6 +115,14 @@ pub type BridgeResult<T> = Result<T, BridgeError>;
 
 /// What the bridge calls; the app's implementation is in [`crate::system`].
 pub trait BridgeHandlers: Send + Sync + 'static {
+    fn coordinate(
+        &self,
+        _method: String,
+        _params: Value,
+        _cancel: CancellationToken,
+    ) -> BoxFuture<'static, BridgeResult<Value>> {
+        Box::pin(async { Err(BridgeError::invalid("Coordinator is unavailable")) })
+    }
     fn speak(&self, request: VoiceSpeakRequest, wait: bool) -> BoxFuture<'static, BridgeResult<SpeakReply>>;
     fn stop(&self) -> BoxFuture<'static, BridgeResult<()>>;
     fn status(&self) -> VoiceBridgeSnapshot;
@@ -155,7 +163,9 @@ pub fn bridge_endpoint(directory: &Path) -> String {
 }
 
 fn same_token(expected: &str, actual: Option<&Value>) -> bool {
-    let Some(Value::String(actual)) = actual else { return false };
+    let Some(Value::String(actual)) = actual else {
+        return false;
+    };
     // Hash first so different lengths still take the constant-time path.
     let (a, b) = (Sha256::digest(expected.as_bytes()), Sha256::digest(actual.as_bytes()));
     a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
@@ -704,7 +714,9 @@ impl Shared {
         let params = match object.get("params") {
             None => Map::new(),
             Some(Value::Object(params)) => params.clone(),
-            Some(_) => return respond(failure(Some(&id), BridgeErrorCode::InvalidRequest, "params must be an object.")),
+            Some(_) => {
+                return respond(failure(Some(&id), BridgeErrorCode::InvalidRequest, "params must be an object."))
+            }
         };
         if in_flight.load(Ordering::SeqCst) >= MAX_IN_FLIGHT {
             return respond(failure(
@@ -720,7 +732,9 @@ impl Shared {
         let connection = connection.clone();
         tokio::spawn(async move {
             let response = match shared.dispatch(&method, &params, connection).await {
-                Ok(result) => json!({ "v": VOICE_BRIDGE_PROTOCOL, "id": id, "ok": true, "result": result }),
+                Ok(result) => {
+                    json!({ "v": VOICE_BRIDGE_PROTOCOL, "id": id, "ok": true, "result": result })
+                }
                 Err(error) => failure(Some(&id), error.code, &error.message),
             };
             in_flight.fetch_sub(1, Ordering::SeqCst);
@@ -790,9 +804,11 @@ impl Shared {
                 Ok(json!({ "session": to_value(handlers.listen_status(id.as_deref())?)? }))
             }
             "listen.stop" => to_value(handlers.listen_stop(session_id(params)?).await?),
-            other => {
-                Err(BridgeError::invalid(format!("Unknown method: {}", truncate_utf16(other, 64))))
+            "coordinator.status" | "coordinator.setup" | "coordinator.load" | "coordinator.unload" | "coordinator.focus" | "coordinator.submit" | "agent.register" | "agent.next"
+            | "agent.ack" | "agent.unregister" | "task.status" | "task.update" => {
+                handlers.coordinate(method.into(), Value::Object(params.clone()), connection).await
             }
+            other => Err(BridgeError::invalid(format!("Unknown method: {}", truncate_utf16(other, 64)))),
         }
     }
 }

@@ -51,6 +51,7 @@ pub struct AppState {
     pub model_cache: ModelCacheService,
     pub deletion: HistoryBatchDeletion,
     pub settings_queue: SerialQueue,
+    pub coordinator_provision: Arc<tokio::sync::Mutex<()>>,
     pub updates: UpdateService,
     pub lab: Lab,
     pub shell: Shell,

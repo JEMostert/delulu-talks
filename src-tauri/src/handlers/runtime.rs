@@ -105,7 +105,11 @@ pub fn register(router: &mut Router<AppState>) {
         .handle("runtime:unload", |state, _| async move { state.speech.unload().await })
         .handle("runtime:reset", |state, _| async move { state.speech.reset().await })
         .handle("magic:status", |state, _| async move { Ok(state.speech.asr.magic_status()) })
-        .handle("magic:setup", |state, _| async move { state.speech.setup_magic().await })
+        .handle("magic:setup", |state, _| async move {
+            state.voice.coordinator().unload().await;
+            let _guard = state.coordinator_provision.lock().await;
+            state.speech.setup_magic().await
+        })
         .handle("magic:load", |state, _| async move { state.speech.load_magic().await })
         .handle("magic:unload", |state, _| async move { state.speech.unload_magic().await })
         .handle("magic:cancelRewrite", |state, args| async move {

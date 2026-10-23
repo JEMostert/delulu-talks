@@ -60,7 +60,12 @@ pub struct Built {
     pub audio_recovery: AudioCacheRecovery,
 }
 
-pub fn build(app: &AppHandle, paths: AppPaths, router: Arc<Router<AppState>>, start_hidden: bool) -> DomainResult<Built> {
+pub fn build(
+    app: &AppHandle,
+    paths: AppPaths,
+    router: Arc<Router<AppState>>,
+    start_hidden: bool,
+) -> DomainResult<Built> {
     let sink: SharedSink = Arc::new(TauriSink::new(app.clone()));
     let storage = Arc::new(StorageService::open(paths.clone())?);
     if let Err(error) = storage.enforce_history_limit() {
@@ -176,6 +181,13 @@ pub fn build(app: &AppHandle, paths: AppPaths, router: Arc<Router<AppState>>, st
             on_tray_change: Some(Arc::new(move || rebuild_tray(&tray_app))),
         })
     };
+    let coordinator_provision = Arc::new(tokio::sync::Mutex::new(()));
+    voice.set_coordinator_model(Arc::new(crate::profile::LocalCoordinator {
+        worker: delulu_speech::CoordinatorWorker::new(paths.clone()),
+        profile: profile.clone(),
+        asr: speech.asr.clone(),
+        provision: coordinator_provision.clone(),
+    }));
     let _ = voice_cell.set(voice.clone());
 
     let shortcut = {
@@ -243,6 +255,7 @@ pub fn build(app: &AppHandle, paths: AppPaths, router: Arc<Router<AppState>>, st
         model_cache,
         deletion,
         settings_queue,
+        coordinator_provision,
         updates,
         lab,
         shell: Shell::new(start_hidden),

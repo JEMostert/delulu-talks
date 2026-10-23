@@ -17,6 +17,7 @@ const resources = config.bundle.resources;
 export const REQUIRED_RESOURCES = [
   "python/transcription_engine.py",
   "python/worker_protocol.py",
+  "python/coordinator_engine.py",
   "python/onnx_speech.py",
   "python/voice_engine.py",
   "python/constraints-linux-x64.txt",

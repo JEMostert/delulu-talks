@@ -296,7 +296,11 @@ async fn shutdown(state: &Arc<AppState>) {
     drop(state.device_watcher.lock().take());
     // Wait for model workers (and their GPU children) to exit, but never hang quit.
     let work = async {
-        tokio::join!(state.paste.shutdown(), state.shortcut.shutdown(), state.speech.shutdown(), state.voice.shutdown());
+        tokio::join!(state.paste.shutdown(), state.shortcut.shutdown(), async {
+            // Let accepted microphone audio finish transcription before stopping ASR.
+            state.voice.shutdown().await;
+            state.speech.shutdown().await;
+        });
     };
     if tokio::time::timeout(Duration::from_secs(6), work).await.is_err() {
         log::warn!("Shutdown timed out; quitting anyway");

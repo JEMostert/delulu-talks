@@ -102,7 +102,9 @@ async fn bridge(patch: impl FnOnce(&mut delulu_voice::VoiceBridgeSnapshot)) -> S
                     .unwrap(),
                 )
             } else {
-                SpeakReply::Queued(serde_json::from_value(json!({ "id": "u", "responseId": response_id, "position": 2 })).unwrap())
+                SpeakReply::Queued(
+                    serde_json::from_value(json!({ "id": "u", "responseId": response_id, "position": 2 })).unwrap(),
+                )
             })
         })
     }));
@@ -148,7 +150,28 @@ async fn mcp_server_initializes_from_the_bridge_and_exposes_the_voice_tools() {
     let names: Vec<&str> = tools.as_array().unwrap().iter().map(|tool| tool["name"].as_str().unwrap()).collect();
     assert_eq!(
         names,
-        ["speak", "stop_speaking", "voice_status", "listen_start", "listen_next", "listen_ack", "listen_status", "listen_stop"]
+        [
+            "speak",
+            "stop_speaking",
+            "voice_status",
+            "listen_start",
+            "listen_next",
+            "listen_ack",
+            "listen_status",
+            "listen_stop",
+            "coordinator_status",
+            "coordinator_setup",
+            "coordinator_load",
+            "coordinator_unload",
+            "coordinator_focus",
+            "coordinator_submit",
+            "agent_register",
+            "agent_next",
+            "agent_ack",
+            "agent_unregister",
+            "task_status",
+            "task_update"
+        ]
     );
     assert_eq!(tools[0]["inputSchema"]["required"], json!(["text"]));
     for tag in ["[laugh]", "[clear-throat]", "[long-pause]", "<whisper>", "<emphasis>"] {
@@ -368,7 +391,12 @@ async fn end_to_end_an_agent_speaks_and_listens_through_the_app_bridge() {
     assert!(status["content"][0]["text"].as_str().unwrap().starts_with("Voice is on and Kokoro is ready."), "{status}");
 
     // speak with wait: synthesized by the (fake) worker, played, reported.
-    let spoken = agent.tool("speak", json!({ "text": "Done. All tests pass.", "wait": true, "agent": "Claude Code", "responseId": "rsp_1" })).await;
+    let spoken = agent
+        .tool(
+            "speak",
+            json!({ "text": "Done. All tests pass.", "wait": true, "agent": "Claude Code", "responseId": "rsp_1" }),
+        )
+        .await;
     assert_eq!(spoken["structuredContent"]["outcome"], "spoken");
     assert!(spoken["content"][0]["text"].as_str().unwrap().starts_with("Spoken ("), "{spoken}");
     assert_eq!(system.voice().get_status().recent[0].agent.as_deref(), Some("Claude Code"));

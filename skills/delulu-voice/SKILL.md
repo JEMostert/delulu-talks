@@ -61,6 +61,9 @@ To inspect or route work:
 
 ```text
 $DV coordinator status
+$DV coordinator setup    # explicit install/download of the selected helper
+$DV coordinator load     # cached files only
+$DV coordinator unload   # stop helper microphone; retain tasks
 $DV coordinator focus --agent AGENT_ID
 $DV coordinator submit --text "The exact original user task" --agent AGENT_ID --request REQUEST_ID
 $DV task status --task TASK_ID
@@ -69,7 +72,7 @@ $DV task status
 
 Omit `--agent` on submit to use the focused agent. Reuse a request id when retrying the same submission. Keep the original text unchanged, including whitespace. Text and summary are limited to 8000 characters, client/name to 64, and ids to 128; blank or oversized values are rejected. `--after` is a nonnegative u64; CLI `--timeout` is 0–3600 seconds.
 
-Equivalent MCP tools are `coordinator_status`, `coordinator_focus`, `coordinator_submit`, `agent_register`, `agent_next`, `agent_ack`, `agent_unregister`, `task_status`, and `task_update`. MCP arguments use `agentId`, `taskId`, `requestId`, `after`, `text`, `client`, `name`, `state`, and `summary` as applicable. `agent_next` takes integer `timeoutMs` (0–3600000; default 50000), rather than CLI seconds.
+Equivalent MCP tools are `coordinator_status`, `coordinator_setup`, `coordinator_load`, `coordinator_unload`, `coordinator_focus`, `coordinator_submit`, `agent_register`, `agent_next`, `agent_ack`, `agent_unregister`, `task_status`, and `task_update`. MCP arguments use `agentId`, `taskId`, `requestId`, `after`, `text`, `client`, `name`, `state`, and `summary` as applicable. `agent_next` takes integer `timeoutMs` (0–3600000; default 50000), rather than CLI seconds.
 
 The CLI and MCP expose the same inbox to every harness. **They cannot automatically wake every idle host.** Use a background waiter only where completion notifications are supported, otherwise a bounded foreground wait. Host-specific adapters are optional; never claim an adapter exists or that a task was accepted without evidence. Do not busy-poll status.
 

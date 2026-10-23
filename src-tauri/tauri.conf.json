@@ -47,6 +47,7 @@
       "../backend/python/r2t2_checkpoint.py": "python/r2t2_checkpoint.py",
       "../backend/python/cuda_preflight.py": "python/cuda_preflight.py",
       "../backend/python/transcription_engine.py": "python/transcription_engine.py",
+      "../backend/python/coordinator_engine.py": "python/coordinator_engine.py",
       "../backend/python/worker_protocol.py": "python/worker_protocol.py",
       "../backend/python/download_progress.py": "python/download_progress.py",
       "../backend/python/constraints-linux-x64.txt": "python/constraints-linux-x64.txt",

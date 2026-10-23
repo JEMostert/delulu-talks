@@ -107,6 +107,9 @@ Every command below follows `delulu-talks mcp` and prints one JSON object:
 
 ```text
 coordinator status
+coordinator setup    # explicit install/download of the selected helper
+coordinator load     # cached files only
+coordinator unload   # stop helper microphone; retain tasks
 coordinator focus --agent ID
 coordinator submit --text TEXT [--agent ID] [--request ID]
 agent register --client NAME [--name NAME]
@@ -221,3 +224,9 @@ The voice runtime role accepts `voiceStatus`, `voiceLoad`, `voiceUnload`, `voice
 - Chatterbox on a CPU works but is several times slower than real time.
 - The Windows and macOS voice runtimes use the same pins but have not been validated on native hardware.
 - Voice cloning copies the chosen clip into `<user data>/voice/references`. Only clone voices you have permission to use.
+
+The helper uses the same pinned Qwen cache and writing environment, with its own resident worker process. Explicit helper setup and writing setup are serialized. Selecting a mode never starts installation or inference. Load is local-only and requires cached weights. The helper classifies routing metadata; it does not generate agent task prompts or plans. Original task text and ordered correction messages remain separate durable records.
+
+Stopping speech affects playback only. Stopping listening or unloading the helper closes its microphone and saves completed pending turns. Accepted tasks continue when the helper is off. Cancellation sent to an agent remains requested until that agent reports `cancelled`; a model response is never evidence that work stopped. `task status` without an id also exposes saved pending and oversized unrouted turns for inspection. Inbox and task data stay in the local profile's private `voice/coordinator.json`; recent history is bounded (256 tasks, 2048 request ids).
+
+If quit interrupts accepted audio before its words are committed, the recording stays under private `voice/pending-audio/`, outside temporary dictation cleanup. Starting the helper microphone retries these recordings with the installed local speech model before accepting new audio. Successfully committed recordings are removed; a failed retry keeps the source audio. Reference/follow-up and cancellation cues are currently conservative English rules; uncertain targets are omitted rather than guessed.

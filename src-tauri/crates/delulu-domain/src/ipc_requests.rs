@@ -219,10 +219,8 @@ fn parse_rewrite_result(value: &Value) -> Result<Value, DomainError> {
     if let Some(model) = source.get("model").and_then(Value::as_str).filter(|model| MagicModelId::parse(model).is_some()) {
         result.insert("model".into(), model.into());
     }
-    result.insert(
-        "includedInferences".into(),
-        Value::Bool(source.get("includedInferences") == Some(&Value::Bool(true))),
-    );
+    result
+        .insert("includedInferences".into(), Value::Bool(source.get("includedInferences") == Some(&Value::Bool(true))));
     result.insert("processingTimeMs".into(), serde_js::number(processing_time_ms));
     if let Some(timings) = source.get("timings").and_then(normalize_timings) {
         result.insert("timings".into(), serde_json::to_value(timings)?);
@@ -292,6 +290,10 @@ const SCHEMAS: &[(&str, usize, Parse)] = &[
     ("listen:start", 0, none),
     ("listen:stop", 0, none),
     ("voice:installSkill", 0, none),
+    ("voice:coordinatorStatus", 0, none),
+    ("voice:coordinatorSetup", 0, none),
+    ("voice:coordinatorLoad", 0, none),
+    ("voice:coordinatorUnload", 0, none),
     ("voice:status", 0, none),
     ("voice:setup", 0, none),
     ("voice:cancelSetup", 0, none),

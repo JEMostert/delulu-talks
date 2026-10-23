@@ -389,6 +389,8 @@ pub fn normalize_settings_value(value: &Value) -> DomainResult<Value> {
     ];
     let mut result = source.clone();
     for (key, value) in entries {
+        // Missing optional coordinator settings mean Off without rewriting older profiles.
+        if key == "voiceCoordinatorMode" && !source.contains_key(key) { continue; }
         assign(&mut result, key, Some(value));
     }
     Ok(Value::Object(result))

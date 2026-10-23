@@ -10,13 +10,12 @@
 //! [`SpeechOutput::interrupt_speech`].
 
 use std::collections::HashMap;
-use std::io::Write;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use delulu_audio::{ListenCapture, ListenConfig, ListenEvent as CaptureEvent, ListenState, Player};
-use delulu_core::util::{create_private, truncate_utf16};
+use delulu_core::util::truncate_utf16;
 use delulu_core::{now_ms, uuid};
 use delulu_domain::js;
 use delulu_domain::listening::{
@@ -98,12 +97,24 @@ impl SpeechOutput for VoiceService {
 /// Commands to the microphone owner (the TypeScript `ListenCommand`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum CaptureCommand {
-    Start { session_id: String, config: ListenConfig },
-    Configure { session_id: String, config: ListenConfig },
+    Start {
+        session_id: String,
+        config: ListenConfig,
+    },
+    Configure {
+        session_id: String,
+        config: ListenConfig,
+    },
     /// Dictation owns the microphone; ignore audio until resumed.
-    Pause { session_id: String },
-    Resume { session_id: String },
-    Stop { session_id: String },
+    Pause {
+        session_id: String,
+    },
+    Resume {
+        session_id: String,
+    },
+    Stop {
+        session_id: String,
+    },
 }
 
 /// Delivers capture events back to the listening service (replaces the
@@ -148,7 +159,8 @@ impl NativeListenBackend {
 impl ListenBackend for NativeListenBackend {
     fn command(&self, command: CaptureCommand, events: &CaptureEvents) -> bool {
         let mut current = self.capture.lock();
-        let matches = |id: &str, current: &Option<ListenCapture>| current.as_ref().is_some_and(|c| c.session_id() == id);
+        let matches =
+            |id: &str, current: &Option<ListenCapture>| current.as_ref().is_some_and(|c| c.session_id() == id);
         match command {
             CaptureCommand::Start { session_id, config } => {
                 if let Some(previous) = current.take() {
@@ -228,7 +240,6 @@ struct Session {
     interrupted_response_id: Option<String>,
     /// Dictation owns the microphone for now.
     paused_for_dictation: bool,
-    transcriptions: SerialQueue,
 }
 
 impl Session {
@@ -283,7 +294,10 @@ struct State {
 impl State {
     fn active(&self) -> bool {
         self.session.as_ref().is_some_and(|session| {
-            matches!(session.state, ListenSessionState::Starting | ListenSessionState::Listening | ListenSessionState::Paused)
+            matches!(
+                session.state,
+                ListenSessionState::Starting | ListenSessionState::Listening | ListenSessionState::Paused
+            )
         })
     }
 
@@ -364,6 +378,11 @@ struct Inner {
     publishing: ReentrantMutex<()>,
     listeners: Mutex<Vec<Listener>>,
     waiter_ids: AtomicU64,
+    commands: ReentrantMutex<()>,
+    coordinator_turn: Mutex<Option<Arc<dyn Fn(&ListenUtteranceEvent) -> delulu_core::DomainResult<()> + Send + Sync>>>,
+    pending_transcriptions: AtomicUsize,
+    transcriptions_done: tokio::sync::Notify,
+    transcriptions: SerialQueue,
 }
 
 /// Persistent listening sessions. Cheap to clone; construct inside a Tokio runtime.
@@ -375,7 +394,11 @@ pub struct ListeningService {
 fn config(settings: &AppSettings) -> ListenConfig {
     let ms = |value: f64| value.clamp(0.0, u32::MAX as f64).round() as u32;
     ListenConfig {
-        device_id: if settings.input_device_id.is_empty() { "default".into() } else { settings.input_device_id.clone() },
+        device_id: if settings.input_device_id.is_empty() {
+            "default".into()
+        } else {
+            settings.input_device_id.clone()
+        },
         sensitivity: settings.listen_sensitivity,
         silence_ms: ms(settings.listen_silence_ms),
         min_speech_ms: 200,
@@ -404,6 +427,11 @@ impl ListeningService {
                 publishing: ReentrantMutex::new(()),
                 listeners: Mutex::new(Vec::new()),
                 waiter_ids: AtomicU64::new(1),
+                commands: ReentrantMutex::new(()),
+                coordinator_turn: Mutex::new(None),
+                pending_transcriptions: AtomicUsize::new(0),
+                transcriptions_done: tokio::sync::Notify::new(),
+                transcriptions: SerialQueue::new(),
             }),
         }
     }
@@ -417,6 +445,76 @@ impl ListeningService {
             Some(command) => self.inner.backend.command(command, &self.events()),
             None => true,
         }
+    }
+
+    pub(crate) fn on_coordinator_turn(
+        &self,
+        callback: impl Fn(&ListenUtteranceEvent) -> delulu_core::DomainResult<()> + Send + Sync + 'static,
+    ) {
+        *self.inner.coordinator_turn.lock() = Some(Arc::new(callback));
+    }
+    pub(crate) async fn finish_transcriptions(&self) {
+        loop {
+            let done = self.inner.transcriptions_done.notified();
+            tokio::pin!(done);
+            done.as_mut().enable();
+            if self.inner.pending_transcriptions.load(Ordering::SeqCst) == 0 {
+                break;
+            }
+            done.await;
+        }
+    }
+
+    /// Retry accepted coordinator recordings left by an interrupted ASR operation.
+    /// Called before reopening the microphone, after prior accepted jobs finish.
+    pub(crate) async fn recover_coordinator_audio(&self) -> delulu_core::DomainResult<()> {
+        self.finish_transcriptions().await;
+        let directory = self.inner.profile.paths().voice_dir().join("pending-audio");
+        if !directory.exists() {
+            return Ok(());
+        }
+        let mut files = std::fs::read_dir(&directory)?
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry.file_type().is_ok_and(|kind| kind.is_file())
+                    && entry.path().extension().is_some_and(|ext| ext == "wav")
+            })
+            .map(|entry| entry.path())
+            .collect::<Vec<_>>();
+        files.sort();
+        if files.is_empty() {
+            return Ok(());
+        }
+        self.inner.transcriber.prepare(&self.inner.profile.settings()).await?;
+        for path in files {
+            let metadata: serde_json::Value = std::fs::read(path.with_extension("json"))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                .unwrap_or_default();
+            let duration_ms = metadata["durationMs"].as_u64().unwrap_or(0);
+            let text = self.inner.transcriber.transcribe(&path, duration_ms).await?;
+            if is_real_turn(&text) {
+                let turn = ListenUtteranceEvent {
+                    seq: 0,
+                    id: path.file_stem().unwrap_or_default().to_string_lossy().into_owned(),
+                    session_id: metadata["sessionId"].as_str().unwrap_or("recovered").into(),
+                    text,
+                    at: now_ms(),
+                    duration_ms,
+                    interrupted_response_id: metadata["interruptedResponseId"].as_str().map(str::to_owned),
+                };
+                let callback = self
+                    .inner
+                    .coordinator_turn
+                    .lock()
+                    .clone()
+                    .ok_or_else(|| delulu_core::DomainError::failed("Coordinator recovery unavailable"))?;
+                callback(&turn)?;
+            }
+            std::fs::remove_file(&path)?;
+            let _ = std::fs::remove_file(path.with_extension("json"));
+        }
+        Ok(())
     }
 
     /// Called with every status change (`listen:statusChanged`).
@@ -498,7 +596,6 @@ impl ListeningService {
                 error: None,
                 interrupted_response_id: None,
                 paused_for_dictation: false,
-                transcriptions: SerialQueue::new(),
             });
             state.recent.clear();
             id
@@ -509,6 +606,7 @@ impl ListeningService {
             let message = if error.message.is_empty() { "Speech is unavailable".to_owned() } else { error.message };
             return Err(self.fail_start(&id, &message));
         }
+        let commands = self.inner.commands.lock();
         {
             let mut state = self.inner.state.lock();
             let Some(session) = state.current(&id) else {
@@ -521,6 +619,7 @@ impl ListeningService {
         if !self.command(Some(CaptureCommand::Start { session_id: id.clone(), config: config(&settings) })) {
             return Err(self.fail_start(&id, "Open Delulu Talks so it can use the microphone."));
         }
+        drop(commands);
         let mut state = self.inner.state.lock();
         state.find(&id).map(|session| session.info())
     }
@@ -529,6 +628,27 @@ impl ListeningService {
         self.end(id, ListenSessionState::Failed, message);
         let error = self.inner.state.lock().current(id).and_then(|session| session.error.clone());
         ListenError::new(ListenErrorCode::Unavailable, error.unwrap_or_else(|| message.to_owned()))
+    }
+
+    /// Snapshot completed, unacknowledged turns before replacing a stopped session.
+    pub(crate) fn pending_utterances(&self) -> Vec<ListenUtteranceEvent> {
+        self.inner
+            .state
+            .lock()
+            .session
+            .as_ref()
+            .filter(|session| session.client == "delulu-coordinator")
+            .map(|session| {
+                session
+                    .events
+                    .iter()
+                    .filter_map(|event| match event {
+                        ListenEvent::Utterance(turn) if turn.seq > session.acked_seq => Some(turn.clone()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Wait for the next event after the cursor; `after` acknowledges up to it.
@@ -641,6 +761,7 @@ impl ListeningService {
     }
 
     fn end(&self, session_id: &str, state: ListenSessionState, reason: &str) {
+        let _commands = self.inner.commands.lock();
         let command = self.inner.state.lock().end(session_id, state, reason);
         if command.is_some() {
             self.command(command);
@@ -717,26 +838,90 @@ impl ListeningService {
     }
 
     fn transcribe(&self, session_id: &str, wav: Vec<u8>, duration_ms: u64) {
-        let (queue, interrupted_response_id) = {
+        let (queue, interrupted_response_id, coordinator_owned) = {
             let mut state = self.inner.state.lock();
             let Some(session) = state.current(session_id) else { return };
             session.transcribing += 1;
-            (session.transcriptions.clone(), session.interrupted_response_id.take())
+            (
+                self.inner.transcriptions.clone(),
+                session.interrupted_response_id.take(),
+                session.client == "delulu-coordinator",
+            )
         };
+        self.inner.pending_transcriptions.fetch_add(1, Ordering::SeqCst);
         let this = self.clone();
         let session_id = session_id.to_owned();
+        // Coordinator audio has a durable namespace, separate from temporary
+        // dictation files which startup cleanup intentionally deletes.
+        let turn_id = format!("turn-{:020}-{}", now_ms(), uuid());
+        let directory = if coordinator_owned {
+            self.inner.profile.paths().voice_dir().join("pending-audio")
+        } else {
+            self.inner.profile.paths().audio_cache()
+        };
+        let path = directory.join(if coordinator_owned {
+            format!("{turn_id}.wav")
+        } else {
+            format!("dictation-{}-{}.wav", now_ms(), uuid())
+        });
+        let saved = (|| -> delulu_core::DomainResult<()> {
+            crate::service::create_private_dir(&directory)?;
+            delulu_core::util::write_private_atomic(&path, &wav)?;
+            if coordinator_owned {
+                let metadata = serde_json::json!({"durationMs":duration_ms,"sessionId":session_id,"interruptedResponseId":interrupted_response_id});
+                delulu_core::util::write_private_atomic(&path.with_extension("json"), &serde_json::to_vec(&metadata)?)?;
+            }
+            Ok(())
+        })();
         // Transcribe in order so turns arrive as spoken.
         let task = queue.run(move || async move {
-            let directory = this.inner.profile.paths().audio_cache();
-            let path = directory.join(format!("dictation-{}-{}.wav", now_ms(), uuid()));
-            let result = async {
-                std::fs::create_dir_all(&directory)?;
-                create_private(&path)?.write_all(&wav)?;
-                this.inner.transcriber.transcribe(&path, duration_ms).await
-            }
-            .await;
-            let _ = std::fs::remove_file(&path);
+            let result = match saved {
+                Ok(()) => this.inner.transcriber.transcribe(&path, duration_ms).await,
+                Err(error) => Err(error),
+            };
             let spoken = this.inner.speech.recently_spoken();
+            let mut retain_audio = coordinator_owned && result.is_err();
+            // Accepted coordinator audio survives stop/restart: publish its original
+            // transcript durably even when its old listening session was replaced.
+            let durable_turn = result.as_ref().ok().and_then(|text| {
+                let text = js::trim(text).to_owned();
+                if !coordinator_owned
+                    || !is_real_turn(&text)
+                    || (interrupted_response_id.is_none() && sounds_like_own_speech(&text, &spoken))
+                {
+                    return None;
+                }
+                Some(ListenUtteranceEvent {
+                    seq: 0,
+                    session_id: session_id.clone(),
+                    id: turn_id.clone(),
+                    text,
+                    at: now_ms(),
+                    duration_ms,
+                    interrupted_response_id: interrupted_response_id.clone(),
+                })
+            });
+            if let Some(turn) = &durable_turn {
+                if let Some(callback) = this.inner.coordinator_turn.lock().clone() {
+                    if let Err(error) = callback(turn) {
+                        retain_audio = true;
+                        log::error!("Could not persist voice turn; audio retained: {}", error.message);
+                    }
+                }
+            }
+            if !retain_audio {
+                let _ = std::fs::remove_file(&path);
+                if coordinator_owned {
+                    let _ = std::fs::remove_file(path.with_extension("json"));
+                }
+            }
+            let coordinator_failure = if coordinator_owned {
+                result.as_ref().err().map(|error| {
+                    format!("Could not transcribe that: {}. The recording is saved for retry.", error.message)
+                })
+            } else {
+                None
+            };
             {
                 let mut state = this.inner.state.lock();
                 let active = state.active();
@@ -757,7 +942,7 @@ impl ListeningService {
                             }
                             state.push(
                                 &session_id,
-                                ListenEvent::Utterance(ListenUtteranceEvent {
+                                ListenEvent::Utterance(durable_turn.clone().unwrap_or_else(|| ListenUtteranceEvent {
                                     seq: 0,
                                     session_id: session_id.clone(),
                                     id: format!("utt_{}", &uuid().replace('-', "")[..16]),
@@ -765,7 +950,7 @@ impl ListeningService {
                                     at: now_ms(),
                                     duration_ms,
                                     interrupted_response_id,
-                                }),
+                                })),
                             );
                         }
                     }
@@ -777,7 +962,12 @@ impl ListeningService {
                     }
                 }
             }
+            if let Some(message) = coordinator_failure {
+                this.end(&session_id, ListenSessionState::Failed, &message);
+            }
             this.publish();
+            this.inner.pending_transcriptions.fetch_sub(1, Ordering::SeqCst);
+            this.inner.transcriptions_done.notify_waiters();
         });
         self.inner.runtime.spawn(task);
     }

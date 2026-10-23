@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent::{agent_executable, install_voice_skill, refresh_legacy_agent_script, voice_agent_setup};
 use crate::bridge::{BridgeHandlers, BridgeResult, SpeakReply, VoiceBridge, VoiceBridgeSnapshot};
+use crate::coordinator::{Coordinator, CoordinatorModel};
 use crate::host::{BoxFuture, ListenTranscriber, VoiceProfile};
 use crate::listening::{ListenBackend, ListeningService, NativeListenBackend, SpeechOutput};
 use crate::service::{VoiceOptions, VoiceService};
@@ -53,6 +54,7 @@ pub struct VoiceTrayItem {
 struct Inner {
     voice: VoiceService,
     listening: ListeningService,
+    coordinator: Coordinator,
     bridge: tokio::sync::Mutex<Option<Arc<VoiceBridge>>>,
     profile: Arc<dyn VoiceProfile>,
     clipboard: Arc<dyn ClipboardBackend>,
@@ -111,8 +113,12 @@ impl VoiceSystem {
                 }
             }
         });
+        let coordinator =
+            Coordinator::new(config.profile.clone(), voice.clone(), listening.clone(), config.sink.clone());
+        coordinator.attach_listener();
         Self {
             inner: Arc::new(Inner {
+                coordinator,
                 voice,
                 listening,
                 bridge: tokio::sync::Mutex::new(None),
@@ -122,6 +128,13 @@ impl VoiceSystem {
                 runtime: tokio::runtime::Handle::current(),
             }),
         }
+    }
+
+    pub fn coordinator(&self) -> &Coordinator {
+        &self.inner.coordinator
+    }
+    pub fn set_coordinator_model(&self, model: Arc<dyn CoordinatorModel>) {
+        self.inner.coordinator.set_model(model);
     }
 
     pub fn voice(&self) -> &VoiceService {
@@ -141,6 +154,10 @@ impl VoiceSystem {
     /// Saved settings changed (`persistSettings` in main.ts).
     pub async fn settings_changed(&self, previous: &AppSettings, saved: &AppSettings) {
         self.inner.voice.settings_changed(previous, saved).await;
+        if previous.voice_coordinator_mode != saved.voice_coordinator_mode {
+            self.inner.coordinator.unload().await;
+            self.inner.listening.stop_active("Voice helper selection changed");
+        }
         if saved.voice_agent_bridge != previous.voice_agent_bridge {
             self.sync_bridge(saved).await;
         }
@@ -184,6 +201,7 @@ impl VoiceSystem {
                     self.inner.app_version.clone(),
                     Arc::new(AppBridge {
                         voice: self.inner.voice.clone(),
+                        coordinator: self.inner.coordinator.clone(),
                         listening: self.inner.listening.clone(),
                         profile: self.inner.profile.clone(),
                     }),
@@ -230,7 +248,9 @@ impl VoiceSystem {
             return Some("The clipboard has no text to read aloud.".into());
         }
         match self.inner.voice.speak(Self::clipboard_request(text)).await {
-            Ok(result) => result.error.filter(|_| result.outcome == delulu_domain::voice::VoiceUtteranceOutcome::Failed),
+            Ok(result) => {
+                result.error.filter(|_| result.outcome == delulu_domain::voice::VoiceUtteranceOutcome::Failed)
+            }
             Err(error) => Some(error.message),
         }
     }
@@ -293,6 +313,7 @@ impl VoiceSystem {
     pub async fn tray_action(&self, action: VoiceTrayAction) -> Option<String> {
         match action {
             VoiceTrayAction::StopListening => {
+                self.inner.coordinator.stop_listening();
                 self.inner.listening.stop_active("Stopped from the tray");
                 None
             }
@@ -306,12 +327,16 @@ impl VoiceSystem {
 
     /// `listen:start` from the Voice page.
     pub async fn listen_start(&self) -> DomainResult<ListenStatus> {
+        if self.inner.coordinator.enabled() {
+            return self.inner.coordinator.start_listening().await;
+        }
         self.inner.listening.start("delulu").await.map_err(|error| error.into_domain())?;
         Ok(self.inner.listening.get_status())
     }
 
     /// `listen:stop` from the Voice page.
     pub fn listen_stop(&self) -> ListenStatus {
+        self.inner.coordinator.stop_listening();
         self.inner.listening.stop_active("Stopped in Delulu Talks");
         self.inner.listening.get_status()
     }
@@ -330,6 +355,8 @@ impl VoiceSystem {
     pub async fn shutdown(&self) {
         let bridge = self.inner.bridge.lock().await.clone();
         self.inner.listening.shutdown();
+        self.inner.coordinator.shutdown().await;
+        self.inner.listening.finish_transcriptions().await;
         tokio::join!(
             async {
                 if let Some(bridge) = bridge {
@@ -345,13 +372,23 @@ impl VoiceSystem {
 struct AppBridge {
     voice: VoiceService,
     listening: ListeningService,
+    coordinator: Coordinator,
     profile: Arc<dyn VoiceProfile>,
 }
 
 impl BridgeHandlers for AppBridge {
+    fn coordinate(
+        &self,
+        method: String,
+        params: serde_json::Value,
+        cancel: CancellationToken,
+    ) -> BoxFuture<'static, BridgeResult<serde_json::Value>> {
+        let coordinator = self.coordinator.clone();
+        Box::pin(async move { coordinator.dispatch(&method, params, cancel).await.map_err(Into::into) })
+    }
     fn speak(&self, mut request: VoiceSpeakRequest, wait: bool) -> BoxFuture<'static, BridgeResult<SpeakReply>> {
         request.source = Some(VoiceSource::Agent);
-        let queued = self.voice.enqueue(request);
+        let queued = if self.coordinator.enabled() {self.coordinator.enqueue_agent(request)} else {self.voice.enqueue(request)};
         Box::pin(async move {
             let handle = queued?;
             Ok(if wait { SpeakReply::Done(handle.done().await) } else { SpeakReply::Queued(handle.queued) })
@@ -382,7 +419,16 @@ impl BridgeHandlers for AppBridge {
 
     fn listen_start(&self, client: String) -> BoxFuture<'static, BridgeResult<ListenSessionInfo>> {
         let listening = self.listening.clone();
-        Box::pin(async move { Ok(listening.start(&client).await?) })
+        let enabled = self.coordinator.enabled();
+        Box::pin(async move {
+            if enabled {
+                return Err(crate::BridgeError::new(
+                    crate::BridgeErrorCode::SessionBusy,
+                    "The local helper owns the microphone. Register an agent inbox with agent.register instead.",
+                ));
+            }
+            Ok(listening.start(&client).await?)
+        })
     }
 
     fn listen_next(

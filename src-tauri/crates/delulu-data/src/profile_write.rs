@@ -136,6 +136,7 @@ pub fn validate_profile_write(kind: ProfileKind, value: &Value) -> Check {
         let settings = v.object(Some(value), "settings")?;
         for (key, default) in DEFAULT_SETTINGS_JSON.iter() {
             let path = format!("settings.{key}");
+            if key == "voiceCoordinatorMode" && !settings.contains_key(key) { continue; }
             if !settings.contains_key(key) {
                 return Err(v.fail(&path, "is required"));
             }
@@ -145,6 +146,9 @@ pub fn validate_profile_write(kind: ProfileKind, value: &Value) -> Check {
         }
         if settings.get("workflowVersion").and_then(Value::as_f64) != Some(1.0) {
             return Err(v.fail("settings.workflowVersion", "must be the supported version 1"));
+        }
+        if settings.contains_key("voiceCoordinatorMode") {
+            v.enumeration(settings.get("voiceCoordinatorMode"), "settings.voiceCoordinatorMode", &["off", "lightweight", "conversational"])?;
         }
         v.enumeration(settings.get("theme"), "settings.theme", &["system", "light", "dark"])?;
         v.enumeration(settings.get("shortcutMode"), "settings.shortcutMode", &["hold", "toggle"])?;
