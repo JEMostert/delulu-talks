@@ -106,8 +106,8 @@ pub fn register(router: &mut Router<AppState>) {
         .handle("runtime:reset", |state, _| async move { state.speech.reset().await })
         .handle("magic:status", |state, _| async move { Ok(state.speech.asr.magic_status()) })
         .handle("magic:setup", |state, _| async move {
-            state.voice.coordinator().unload().await;
-            let _guard = state.coordinator_provision.lock().await;
+            state.voice.talk().stop("Writing setup needs the helper's runtime").await;
+            let _guard = state.helper_provision.lock().await;
             state.speech.setup_magic().await
         })
         .handle("magic:load", |state, _| async move { state.speech.load_magic().await })

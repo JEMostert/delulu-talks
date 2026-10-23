@@ -181,12 +181,12 @@ pub fn build(
             on_tray_change: Some(Arc::new(move || rebuild_tray(&tray_app))),
         })
     };
-    let coordinator_provision = Arc::new(tokio::sync::Mutex::new(()));
-    voice.set_coordinator_model(Arc::new(crate::profile::LocalCoordinator {
+    let helper_provision = Arc::new(tokio::sync::Mutex::new(()));
+    voice.set_helper_model(Arc::new(crate::profile::LocalHelper {
         worker: delulu_speech::CoordinatorWorker::new(paths.clone()),
         profile: profile.clone(),
         asr: speech.asr.clone(),
-        provision: coordinator_provision.clone(),
+        provision: helper_provision.clone(),
     }));
     let _ = voice_cell.set(voice.clone());
 
@@ -255,7 +255,7 @@ pub fn build(
         model_cache,
         deletion,
         settings_queue,
-        coordinator_provision,
+        helper_provision,
         updates,
         lab,
         shell: Shell::new(start_hidden),

@@ -13,6 +13,7 @@ use delulu_data::rule_usage::RuleUsageService;
 use delulu_data::StorageService;
 use delulu_domain::{AppSettings, TranscriptRecord};
 use delulu_speech::AsrService;
+use delulu_voice::talk::{HelperInstall, HelperModel};
 use delulu_voice::{BoxFuture, ListenTranscriber, VoiceProfile};
 use serde_json::{json, Value};
 use tauri::AppHandle;
@@ -111,50 +112,48 @@ impl ListenTranscriber for SpeechTranscriber {
     }
 }
 
-/// The voice controller owns routing; speech supplies an isolated local model.
+/// The talk loop owns routing; speech supplies an isolated local model.
 /// Provisioning shares a gate with writing setup because both activate magic-venv.
-pub struct LocalCoordinator {
+pub struct LocalHelper {
     pub worker: delulu_speech::CoordinatorWorker,
     pub profile: Arc<AppProfile>,
     pub asr: AsrService,
     pub provision: Arc<tokio::sync::Mutex<()>>,
 }
-impl delulu_voice::coordinator::CoordinatorModel for LocalCoordinator {
-    fn load(&self, mode: String, setup: bool) -> BoxFuture<'_, DomainResult<()>> {
+impl HelperModel for LocalHelper {
+    fn load(&self, download: bool) -> BoxFuture<'_, DomainResult<()>> {
         Box::pin(async move {
-            let model = match mode.as_str() {
-                "lightweight" => delulu_speech::CoordinatorModel::Lightweight,
-                "conversational" => delulu_speech::CoordinatorModel::Conversational,
-                _ => return Err(plain("Select a local helper first")),
-            };
-            if setup {
-                let _guard = self.provision.lock().await;
-                self.asr.unload_magic().await?;
-                let settings = self.profile.storage.get_settings();
-                let install = delulu_runtime::InstallSettings {
-                    python_command: settings.python_command,
-                    speech_engine: serde_json::from_value(serde_json::to_value(settings.speech_engine)?)?,
-                    voice_engine: serde_json::from_value(serde_json::to_value(settings.voice_engine)?)?,
-                };
-                self.worker
-                    .setup(&install, model, |progress| {
-                        let message = progress.detail.as_deref().unwrap_or("Provisioning local helper");
-                        log::info!("Coordinator setup: {message}");
-                        if let Some(state) = AppState::get(&self.profile.app) { state.voice.coordinator().setup_progress(&progress.message); }
-                    })
-                    .await
-            } else {
-                self.worker.load(model).await
+            if !download {
+                return self.worker.load().await;
             }
+            let _guard = self.provision.lock().await;
+            self.asr.unload_magic().await?;
+            let settings = self.profile.storage.get_settings();
+            let install = delulu_runtime::InstallSettings {
+                python_command: settings.python_command,
+                speech_engine: serde_json::from_value(serde_json::to_value(settings.speech_engine)?)?,
+                voice_engine: serde_json::from_value(serde_json::to_value(settings.voice_engine)?)?,
+            };
+            self.worker
+                .setup(&install, |progress| {
+                    if let Some(state) = AppState::get(&self.profile.app) {
+                        state.voice.talk().setup_progress(&progress.message);
+                    }
+                })
+                .await
         })
     }
     fn unload(&self) -> BoxFuture<'_, ()> {
         Box::pin(self.worker.unload())
     }
-    fn classify(&self, text: String, context: Value) -> BoxFuture<'_, DomainResult<Value>> {
-        Box::pin(async move {
-            let context = serde_json::from_value(context)?;
-            Ok(serde_json::to_value(self.worker.classify(&text, &context).await?)?)
-        })
+    fn installed(&self) -> BoxFuture<'_, HelperInstall> {
+        let (runtime, weights) = self.worker.installed();
+        Box::pin(async move { HelperInstall { runtime, weights } })
+    }
+    fn decide(&self, text: String, context: Value) -> BoxFuture<'_, DomainResult<Value>> {
+        Box::pin(async move { self.worker.decide(&text, &context).await })
+    }
+    fn reply(&self, text: String, context: Value, call: Value, result: String) -> BoxFuture<'_, DomainResult<Value>> {
+        Box::pin(async move { self.worker.reply(&text, &context, &call, &result).await })
     }
 }

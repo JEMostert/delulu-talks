@@ -1,4 +1,4 @@
-//! `electron/ipc/voice.ts`: voice output, listening sessions, agent setup.
+//! `electron/ipc/voice.ts`: voice output, Talk, agent setup.
 
 use delulu_domain::voice::VoiceSpeakRequest;
 
@@ -8,13 +8,12 @@ use crate::state::AppState;
 
 pub fn register(router: &mut Router<AppState>) {
     router
-        .handle("voice:coordinatorStatus", |state, _| async move { Ok(state.voice.coordinator().status()) })
-        .handle("voice:coordinatorSetup", |state, _| async move { state.voice.coordinator().load(true).await })
-        .handle("voice:coordinatorLoad", |state, _| async move { state.voice.coordinator().load(false).await })
-        .handle("voice:coordinatorUnload", |state, _| async move {
-            state.voice.coordinator().unload().await;
-            Ok(())
+        .handle("talk:status", |state, _| async move { Ok(state.voice.talk().status()) })
+        .handle("talk:start", |state, args| async move {
+            let options: TalkStart = args.get(0)?;
+            state.voice.talk().start(options.download).await
         })
+        .handle("talk:stop", |state, _| async move { Ok(state.voice.talk().stop("Stopped in Delulu Talks").await) })
         .handle("voice:status", |state, _| async move { Ok(state.voice.voice().get_status()) })
         .handle("voice:setup", |state, _| async move { state.voice.voice().setup(&state.storage.get_settings()).await })
         .handle("voice:cancelSetup", |state, _| async move {
@@ -48,7 +47,17 @@ pub fn register(router: &mut Router<AppState>) {
         })
         .handle("voice:removeReference", |state, _| async move { state.voice.voice().remove_reference().await })
         .handle("listen:status", |state, _| async move { Ok(state.voice.listening().get_status()) })
-        .handle("listen:start", |state, _| async move { state.voice.listen_start().await })
-        .handle("listen:stop", |state, _| async move { Ok(state.voice.listen_stop()) })
         .handle("voice:installSkill", |state, _| async move { state.voice.install_skill() });
+    // Development: route a finished utterance as if it was heard.
+    #[cfg(debug_assertions)]
+    router.handle("talk:inject", |state, args| async move {
+        let text: String = args.get(0)?;
+        state.voice.talk().inject(text).await
+    });
+}
+
+#[derive(serde::Deserialize)]
+struct TalkStart {
+    #[serde(default)]
+    download: bool,
 }
