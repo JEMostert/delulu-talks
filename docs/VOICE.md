@@ -54,9 +54,9 @@ Coding agents write markdown. Unless **Read code and file names as words** is of
 
 ## Streaming, timestamps and interruption
 
-Text is split into chunks at sentence boundaries; style changes always start a new chunk. The first chunk is short (about 140 characters), so speech starts quickly. Delulu synthesizes the next chunk while the current one plays, staying at most two chunks ahead. Each result includes timestamps for every chunk, measured from the synthesized audio, not estimated.
+Text is split into chunks at sentence boundaries; style changes always start a new chunk. The first sentence is a chunk of its own, so speech starts as soon as it is synthesized; later chunks hold up to about 140 characters. Delulu synthesizes the next chunk while the current one plays, staying at most two chunks ahead. Each result includes timestamps for every chunk, measured from the synthesized audio, not estimated.
 
-Starting a dictation stops speech, so you can answer right away (**Stop speaking when I start dictating**). Messages that arrive while Delulu is speaking wait in a queue of up to 20; an agent can also interrupt.
+Starting a dictation stops speech, so you can answer right away (**Stop speaking when I start dictating**). Messages that arrive while Delulu is speaking wait in a queue of up to 20. An agent can ask to interrupt, except while Talk is on (see [Speaking](#speaking)).
 
 Playback is native (`delulu-audio`, through cpal: PulseAudio/PipeWire or ALSA on Linux, CoreAudio, WASAPI), so it works while the window is hidden or closed to the tray. You can pick an output device.
 
@@ -79,9 +79,11 @@ T3 Code runs Claude Code and Codex, so it uses their MCP configuration.
 
 The MCP server offers these speech tools:
 
-- `speak`: `text` with markup, optional `interrupt`, `wait` (default false: return as soon as it is queued) and `agent` (a display label).
+- `speak`: `text` with markup, optional `interrupt` (ignored while Talk is on), `wait` (default false: return as soon as it is queued) and `agent` (a display label).
 - `stop_speaking`
 - `voice_status`
+
+Agents that should hear you use the [agent inbox](#agent-inbox).
 
 The server's MCP instructions tell the agent when and how to speak. Copy the same text from the Voice page into your lead agent's `CLAUDE.md` or `AGENTS.md` so it briefs you like a colleague: only when work is done, blocked, needs a decision or broke; one to three sentences; never code read aloud.
 
@@ -95,122 +97,89 @@ delulu-talks mcp status
 
 Desktop shortcuts can also run the app itself: `delulu-talks --read-clipboard` reads the clipboard aloud and `delulu-talks --stop-speaking` stops. Both are in the tray menu too.
 
-## Optional local voice coordinator
+## Talk
 
-The optional coordinator adds a local routing layer between voice input and coding agents, using Qwen3.5 0.8B or 2B. Off/direct mode retains the existing speech and listening commands. The coordinator uses one microphone session and one speaking voice; participating workers register inboxes instead of competing for the microphone. Existing `say`/`speak` compatibility remains available through the app's coordinator routing.
+**Talk** on the Voice page is one live conversation loop: microphone → voice activity → speech recognition → helper → tool executor → speech output. It stays on until you switch it off, say "stop listening", quit, or the microphone fails. Next to the switch are a live input level meter and the microphone picker (the same **Microphone** setting dictation uses), so a silent or wrong input is obvious. Talk needs a speech model from Models; dictating with your shortcut still works and pauses Talk until the dictation ends.
 
-The coordinator forwards the **exact original task text**, without rewriting it or adding hidden instructions. Routing does not expand the user's authorization. Worker progress and concise summaries give the coordinator material for briefings; a queued submission alone is never evidence that a worker has accepted or started work.
+Every finished utterance is routed on its own, the moment it is transcribed: nothing is joined with earlier turns and there is no listen timeout. The transcript strip under the switch shows your last turns, what Delulu did and what it said.
 
-All harnesses can use the same local CLI or MCP surface. This provides durable queued delivery, not a universal host wake-up mechanism. An idle harness must run a waiter or use a host-specific adapter that can resume it; adapters are optional and support depends on the actual host. No automatic Codex/T3/other-host wake-up is implied.
+### The helper
 
-Every command below follows `delulu-talks mcp` and prints one JSON object:
+The helper is a model picker: **Off** or **Lightweight · 0.8B** (Qwen3.5 0.8B, pinned, running locally in the writing runtime). Turning Talk on with the helper selected loads it from cached files automatically; only the first download asks once (**Download (~1.7 GB)**, more if the writing runtime is not installed yet).
 
-```text
-coordinator status
-coordinator setup    # explicit install/download of the selected helper
-coordinator load     # cached files only
-coordinator unload   # stop helper microphone; retain tasks
-coordinator focus --agent ID
-coordinator submit --text TEXT [--agent ID] [--request ID]
-agent register --client NAME [--name NAME]
-agent next --agent ID [--after SEQ] [--timeout SECONDS]
-agent ack --agent ID --after SEQ
-agent unregister --agent ID
-task status [--task ID]
-task update --agent ID --task ID --state STATE [--summary TEXT]
-```
+With the helper on, every turn is exactly one tool call in Qwen's native tool format:
 
-`agent register` returns `{id,client,name,ackedSeq,lastSeq,queued}`. Keep a stable, distinct client label for each worker and use the returned cursor when resuming. `coordinator focus` selects the recipient for submissions without `--agent`. An optional request id makes a submission retry identifiable as the same request. Shell quote `--text` so the original text, including whitespace, reaches the bridge unchanged.
+| Tool | What it does |
+| --- | --- |
+| `send_to_agent(agent?, task?)` | Forwards your exact words to a coding agent. `agent` only when you name one; `task` when you correct or follow up on an existing task. |
+| `task_status(task?)` | Reports how tasks are going in one sentence. |
+| `cancel_task(task)` | Asks first ("Cancel "Run the unit tests"? Say yes."). A spoken yes on the next turn cancels; anything else drops it. |
+| `stop_speaking()` | Stops playback and the speech queue. |
+| `stop_listening()` | Ends Talk and closes the microphone. |
+| `repeat_last()` | Says the last spoken line again ("wat zei je?"). |
+| `reply(text)` | One short sentence in your language: greetings, thanks, questions about Delulu. Factual or technical questions go to the agent. |
 
-`agent next` returns `{"status":"event","event":{"seq":N,"type":"task"|"message"|"cancel","taskId":"…","text":"…",…}}`, `{"status":"timeout"}`, or `{"status":"stopped",…}`. It uses the same exit codes and wait bounds as `listen next`: 0 for an event, 3 for timeout, 4 for stopped, 1 for errors; the default CLI wait is 600 seconds and the maximum is 3600. A timeout leaves queued work intact. Repeating the same cursor redelivers unacknowledged events; advance `--after` or call `agent ack` only after handling the event. Deduplicate retries by sequence/task id.
+The model never writes task text: `send_to_agent` sends what you said, verbatim. After `send_to_agent`, `task_status` and `cancel_task` the executor reports what it did as a short English sentence ("Sent to Claude Code."); English turns hear it as is and Dutch turns hear it in Dutch, rephrased by the helper ("Doorgestuurd naar Claude Code."). The helper sees the connected agents, their open tasks and the last six turns (your words, the tool, what Delulu said, whether you interrupted it), so "Eigenlijk, sla de trage tests over" becomes a follow-up on the running task.
 
-The worker explicitly reports `accepted` when it takes responsibility and `running` when work begins. Acknowledging delivery is separate from those states. Later updates can be `blocked`, `completed`, `failed`, or `cancelled`, with a short summary. `task status --task ID` inspects one task; omitting the id returns the task snapshot. For example:
+How it decides: the prompt (system text, tool schemas, bilingual examples with contrast pairs such as "Stop de deployment" → `send_to_agent` and "Stop talking" → `stop_speaking`) is processed once and its cache reused, so a turn only runs its own context block. Each allowed tool name is scored by log probability in one batched forward, a quarter of the score the same name gets for a neutral "N/A" turn is subtracted (calibration), and arguments are chosen among the ids in the context. Only `reply` generates text, at most 32 tokens. `scripts/voice-helper-eval/` measures this offline on the production code path; see [voice-redesign.md](voice-redesign.md) for scores and latency.
 
-```text
-delulu-talks mcp agent register --client implementation --name "Implementation"
-delulu-talks mcp agent next --agent AGENT_ID --after 0 --timeout 120
-delulu-talks mcp task update --agent AGENT_ID --task TASK_ID --state accepted
-delulu-talks mcp agent ack --agent AGENT_ID --after 1
-delulu-talks mcp task update --agent AGENT_ID --task TASK_ID --state running
-delulu-talks mcp task update --agent AGENT_ID --task TASK_ID --state completed --summary "Implemented and checked."
-```
+With the helper **Off**, the loop is the same without a model: every turn goes to the active agent as `send_to_agent`, and Delulu only speaks when nobody is listening.
 
-Equivalent MCP tools and bridge methods:
+### Speaking
 
-| MCP tool | Bridge method | Arguments |
-| --- | --- | --- |
-| `coordinator_status` | `coordinator.status` | `{}` |
-| `coordinator_focus` | `coordinator.focus` | `{agentId}` |
-| `coordinator_submit` | `coordinator.submit` | `{text,agentId?,requestId?}` |
-| `agent_register` | `agent.register` | `{client,name?}` |
-| `agent_next` | `agent.next` | `{agentId,after?,timeoutMs?}` |
-| `agent_ack` | `agent.ack` | `{agentId,after}` |
-| `agent_unregister` | `agent.unregister` | `{agentId}` |
-| `task_status` | `task.status` | `{taskId?}` |
-| `task_update` | `task.update` | `{agentId,taskId,state,summary?}` |
+Delulu's own lines, agents' `say`/`speak` and briefings share one speech queue. Nothing interrupts anything except `stop_speaking`; while Talk is on an agent's `interrupt` is ignored. Talking over Delulu still stops it at once (barge-in), and the cut-off line is marked in the next turn's context.
 
-MCP `agent_next` defaults to 50000 ms to fit typical tool-call timeouts and accepts integer `timeoutMs` from 0 to 3600000. The CLI converts `--timeout` seconds to milliseconds. `after` is a nonnegative u64. CLI and MCP validate nonblank strings: text/summary at most 8000 characters, client/name at most 64, ids at most 128. Unknown arguments, duplicate CLI options, invalid states and out-of-range values produce descriptive errors. Speech retains its existing 15000-character limit.
-
-The [agent skill](../skills/delulu-voice/SKILL.md) covers inbox registration, acknowledgment, actual task progress, single-speaker coordination, and direct-mode compatibility.
-
-## Listening sessions
-
-A listening session turns Delulu into a voice conversation with a coding agent. The agent starts a session once; Delulu then keeps the microphone open and the speech model loaded across turns, detects when you start and stop talking, transcribes each completed utterance and queues it. The agent collects utterances with short waiting calls, answers aloud with `say`, and waits again. Ending a waiting call (an answer, a timeout, a cancel or a disconnect) never stops the session or unloads the model; only `listen stop`, quitting the app or an unrecoverable failure does.
-
-While a session runs, the Voice page and the tray show that Delulu is listening and offer **Stop listening**. Dictating with your shortcut still works: the session ignores the microphone during a dictation and resumes afterwards.
-
-### A complete session
-
-```text
-DV='/usr/bin/delulu-talks mcp'
-$DV listen start --client claude-code
-  → {"id":"ses_8f…","state":"listening","ackedSeq":0,"lastSeq":0,"queued":0,…}
-$DV listen next --session ses_8f… --after 0 --timeout 600     # run in the background
-  → exit 0  {"status":"event","event":{"seq":1,"type":"utterance","id":"utt_…","text":"Can you run the tests?",…}}
-$DV say --response rsp_1 "Sure, running them now."
-$DV listen next --session ses_8f… --after 1 --timeout 600     # next waiter, acknowledges seq 1
-  → exit 0  {"status":"event","event":{"seq":2,"type":"interrupted","responseId":"rsp_1",…}}
-$DV listen next --session ses_8f… --after 2 --timeout 600
-  → exit 0  {"status":"event","event":{"seq":3,"type":"utterance","text":"Actually, only the unit tests.","interruptedResponseId":"rsp_1",…}}
-$DV listen stop --session ses_8f…
-```
-
-`listen next` exits 0 for an event, 3 for a timeout (start another waiter), 4 when the session has stopped, and 1 on errors (JSON on stderr). `listen ack --session ID --after SEQ` acknowledges without waiting, and `listen status [--session ID]` reports the session. The MCP server offers the same as tools: `listen_start`, `listen_next` (50-second default wait so hosts do not time the call out), `listen_ack`, `listen_status` and `listen_stop`; `speak` takes a `responseId`.
-
-The agent skill in [`skills/delulu-voice/SKILL.md`](../skills/delulu-voice/SKILL.md) describes this loop for agents.
-
-### Delivery rules
-
-- Every event in a session has an increasing `seq`: `utterance` (your transcribed words), `interrupted` (Delulu stopped talking because you started) and `stopped` (the session ended).
-- `next` returns the first event after the acknowledged cursor and keeps it until it is acknowledged. Passing `after: N` acknowledges every event up to N. Repeating a call with the same `after` returns the same event, so retries, timeouts and reconnects never lose input. Delivery is at least once: an agent that does not advance the cursor can see an event twice and should skip repeated utterance ids.
-- Events are kept, in order, while nobody is waiting. Up to 200 unacknowledged events are kept per session.
-- A session belongs to the client that started it. Starting again with the same client returns the same session; another client gets `SESSION_BUSY` and cannot read it. Only one session listens at a time, because there is one microphone.
-- `interrupted` always comes before the utterance that caused it, so "playback stopped, you are still talking" is distinct from "a new transcript is ready". The utterance carries `interruptedResponseId`. Interrupted speech is never replayed.
+Briefings: when an agent reports `completed`, `blocked` or `failed`, Delulu queues one short line and plays it at the next pause, never while you are speaking, while a turn is being routed or while other speech plays. Several updates are coalesced into one line, in the language of your last turn.
 
 ### Speech detection
 
-Delulu captures the microphone natively (`delulu-audio::ListenCapture`) and continuously, resampled to 16 kHz, and runs voice-activity detection on 20 ms frames: energy above an adaptive noise floor, a speech-band energy ratio, and a minimum stretch of sustained speech, so a cough, a click or a door does not start a turn. Half a second of pre-roll is kept, so the first word is never clipped. An utterance ends after the quiet pause set by **Pause before your turn ends** (default 0.9 s) and is transcribed with the selected speech model. Too-short sounds and empty transcripts are dropped. **Listening sensitivity** trades quiet speech against background noise.
+Delulu captures the microphone natively (`delulu-audio::ListenCapture`) and continuously, resampled to 16 kHz, and runs voice-activity detection on 20 ms frames: energy above an adaptive noise floor, a speech-band energy ratio, and a minimum stretch of sustained speech, so a cough, a click or a door does not start a turn. Half a second of pre-roll is kept, so the first word is never clipped. An utterance ends after the quiet pause set by **Pause before a turn ends** (default 0.9 s) and is transcribed with the selected speech model. Too-short sounds and empty transcripts are dropped. **Sensitivity** trades quiet speech against background noise.
+
+If quitting interrupts an accepted recording before it is transcribed, it stays under private `voice/pending-audio/` and is retried the next time Talk starts.
 
 ### Interrupting Delulu (barge-in)
 
-Detection keeps running while Delulu speaks. When you talk over it for **Talk-over time** (default 0.3 s) of sustained speech, the listener stops native playback at once, without waiting for a transcript. The app drops the rest of that response and anything queued behind it, discards synthesis still in flight, and refuses any late audio from it, so it cannot resume. Your utterance, including its pre-roll from before playback stopped, is finalized after the normal pause and delivered as the next input.
+Detection keeps running while Delulu speaks. When you talk over it for **Interrupt after** (default 0.3 s) of sustained speech, the listener stops native playback at once, without waiting for a transcript. The app drops the rest of that response and anything queued behind it, discards synthesis still in flight, and refuses any late audio from it, so it cannot resume. Your utterance, including its pre-roll from before playback stopped, is finalized after the normal pause and routed as the next turn.
 
 Keeping Delulu's own voice out of the microphone uses two layers:
 
 1. Playback-reference gating (the echo gate): while Delulu is speaking, the detector knows its own output level from the native player and requires the microphone to be clearly louder than the echo it has learned to expect, for longer, before treating it as speech.
-2. A transcript that closely matches what Delulu said in the last minute is discarded (unless the user had just interrupted it) instead of delivered, so leaked playback cannot start a self-conversation.
+2. A transcript that closely matches what Delulu said in the last minute is discarded (unless the user had just interrupted it), so leaked playback cannot start a self-conversation.
 
-There is no acoustic echo canceller or noise suppressor: the Electron releases used Chromium's WebRTC echo cancellation, which native capture does not have. This is not full-duplex echo cancellation. With loud speakers close to the microphone, barge-in can miss quiet speech or, rarely, trigger on Delulu's own voice. Headphones make it reliable. Turn off **Talk over Delulu to interrupt** to keep listening without barge-in.
+There is no acoustic echo canceller or noise suppressor. With loud speakers close to the microphone, barge-in can miss quiet speech or, rarely, trigger on Delulu's own voice. Headphones make it reliable. Turn off **Stop Delulu when I talk over it** to keep listening without barge-in.
+
+## Agent inbox
+
+Coding agents receive your turns through one durable inbox per agent session, over the same CLI and MCP server (`delulu-talks mcp`). The [agent skill](../skills/delulu-voice/SKILL.md) teaches the loop.
+
+```text
+delulu-talks mcp agent register --client NAME [--name NAME]
+delulu-talks mcp agent next --agent ID [--after SEQ] [--timeout SECONDS]
+delulu-talks mcp agent ack --agent ID --after SEQ
+delulu-talks mcp agent unregister --agent ID
+delulu-talks mcp task status [--task ID]
+delulu-talks mcp task update --agent ID --task ID --state STATE [--summary TEXT]
+delulu-talks mcp talk status
+```
+
+- **One id per session.** `agent register` returns a fresh `agent_…` id on every call, even for the same client, so two sessions of the same agent never share an inbox.
+- **Heartbeats.** Every agent call counts. An agent with a waiting `agent next` is listening; with no waiter and no call for 120 seconds it is away. Away agents get no new tasks and Delulu says "No agent is listening right now." instead of queueing silently. After the app restarts, every agent is away until it calls again.
+- **Events.** `agent next` returns `{"status":"event","event":{"seq","type","taskId","text","at"}}` (exit 0) with `type` `task` (your exact words), `message` (a follow-up on `taskId`) or `cancel`; `{"status":"timeout"}` (exit 3); or `{"status":"stopped","reason"}` (exit 4: register again). Delivery is at least once: `--after N` acknowledges up to N, and the same cursor returns the same event again.
+- **Progress.** `task update` reports `accepted`, `running`, `blocked`, `completed`, `failed` or `cancelled` with an optional one-sentence summary. Delulu briefs `completed`, `blocked` and `failed` itself. Unregistering marks the agent's open tasks failed.
+- **Bounds.** Text and summaries up to 8000 characters, client and name 64, ids 128; at most 32 agents (away agents without open work are dropped first), 32 open tasks, 256 tasks of history and 256 queued events per agent.
+- **Storage.** `voice/inbox.json` (a snapshot) and `voice/inbox.log` (append-only JSON lines), both private to your user. New tasks, follow-ups and cancels are synced to disk; acknowledgements and updates are appended without a sync, and heartbeats are not written at all. The log is folded into the snapshot when it passes about 1000 lines. Retried submissions are recognized by a bounded list of request ids and text hashes, never full texts.
+
+MCP tools: `speak`, `stop_speaking`, `voice_status`, `agent_register`, `agent_next` (default wait 50 s), `agent_ack`, `agent_unregister`, `task_status`, `task_update` and `talk_status`. The `listen …` commands and tools of v0.2.0 are gone; the CLI prints that `agent register` / `agent next` replaced them.
 
 ### Agent hosts
 
-- **Claude Code:** run `listen next` with the Bash tool in the background. A finished background task notifies the agent and wakes it even when idle, so your next utterance reaches it as soon as it is transcribed. While the agent is mid-response or running tools, it sees the result at its next turn boundary. Your speech stops Delulu's audio immediately either way, because the app does that itself.
-- **T3 Code:** wake-up depends on the provider and tool integration. Verify background completion notifications in the active host; no automatic wake-up adapter is implied.
-- **Codex CLI and other hosts:** a finished background command may not wake an idle agent (not verified). The fallback is a foreground `listen next` with a bounded timeout when the agent has nothing else to do. No host should poll `listen status` in a loop.
+- **Claude Code:** run `agent next` with the Bash tool in the background. A finished background task wakes the agent even when idle; mid-response it sees the result at its next turn boundary.
+- **T3 Code:** wake-up depends on the provider and tool integration. Verify background completion notifications in the active host.
+- **Codex CLI and other hosts:** a finished background command may not wake an idle agent (not verified). The fallback is a foreground `agent next` with a bounded timeout when the agent has nothing else to do. No host should poll `task status` in a loop.
 
 ## Bridge protocol
 
-Newline-delimited JSON over the socket. Requests: `{"v":1,"id":"…","token":"…","method":"hello"|"speak"|"stop"|"status"|"listen.start"|"listen.next"|"listen.ack"|"listen.status"|"listen.stop"|"coordinator.status"|"coordinator.focus"|"coordinator.submit"|"agent.register"|"agent.next"|"agent.ack"|"agent.unregister"|"task.status"|"task.update","params":{…}}`. Responses: `{"v":1,"id":"…","ok":true,"result":…}` or `{"v":1,"id":"…","ok":false,"error":{"code":"UNAUTHORIZED"|"INVALID_REQUEST"|"VOICE_UNAVAILABLE"|"SESSION_BUSY"|"SESSION_NOT_FOUND"|"INTERNAL","message":"…"}}`.
+Newline-delimited JSON over the socket. Requests: `{"v":1,"id":"…","token":"…","method":"…","params":{…}}` with methods `hello`, `speak`, `stop`, `status`, `agent.register`, `agent.next`, `agent.ack`, `agent.unregister`, `task.status`, `task.update` and `talk.status` (debug builds also `talk.inject`). Responses: `{"v":1,"id":"…","ok":true,"result":…}` or `{"v":1,"id":"…","ok":false,"error":{"code":"UNAUTHORIZED"|"INVALID_REQUEST"|"VOICE_UNAVAILABLE"|"INTERNAL","message":"…"}}`.
 
 Limits: 256 KiB per request line, 16 connections, 4 requests in flight per connection, 15,000 characters per message (Grok's limit).
 
@@ -218,15 +187,13 @@ Limits: 256 KiB per request line, 16 connections, 4 requests in flight per conne
 
 The voice runtime role accepts `voiceStatus`, `voiceLoad`, `voiceUnload`, `voiceSynthesize` and `shutdown`. A synthesis request is one chunk: `{engine, voice, reference?, speed, styles, parts}` where parts are `{kind:"text", text}`, `{kind:"event", tag}` or `{kind:"pause", ms}`, with at most 600 text characters and 200 parts. The result carries 16-bit mono PCM as base64 (at most 90 seconds, inside the 8 MiB response limit), its duration, processing time, device and skipped tags. Both sides validate every request and result (`src-tauri/crates/delulu-runtime/src/protocol.rs`, `backend/python/worker_protocol.py`).
 
+The helper runs in the writing runtime with the role `coordinator`: `coordinatorSetup` (the only command that may download), `coordinatorLoad` (cached files only), `coordinatorUnload`, `coordinatorDecide` (`{text, context}` → `{tool, args, language, confirmed?, elapsedMs}`) and `coordinatorReply` (`{text, context, call, result}` → `{text, elapsedMs}`). The context carries short `agent_N`/`task_N` aliases, at most 8 agents, 16 open tasks and 6 turns of memory; both sides reject unknown tools, arguments, ids outside the context and a `confirmed` that does not match the pending cancel.
+
 ## Limits
 
 - Kokoro voices are English (American and British). Kokoro's other languages and Chatterbox's multilingual model are not offered.
 - Chatterbox on a CPU works but is several times slower than real time.
 - The Windows and macOS voice runtimes use the same pins but have not been validated on native hardware.
 - Voice cloning copies the chosen clip into `<user data>/voice/references`. Only clone voices you have permission to use.
-
-The helper uses the same pinned Qwen cache and writing environment, with its own resident worker process. Explicit helper setup and writing setup are serialized. Selecting a mode never starts installation or inference. Load is local-only and requires cached weights. The helper classifies routing metadata; it does not generate agent task prompts or plans. Original task text and ordered correction messages remain separate durable records.
-
-Stopping speech affects playback only. Stopping listening or unloading the helper closes its microphone and saves completed pending turns. Accepted tasks continue when the helper is off. Cancellation sent to an agent remains requested until that agent reports `cancelled`; a model response is never evidence that work stopped. `task status` without an id also exposes saved pending and oversized unrouted turns for inspection. Inbox and task data stay in the local profile's private `voice/coordinator.json`; recent history is bounded (256 tasks, 2048 request ids).
-
-If quit interrupts accepted audio before its words are committed, the recording stays under private `voice/pending-audio/`, outside temporary dictation cleanup. Starting the helper microphone retries these recordings with the installed local speech model before accepting new audio. Successfully committed recordings are removed; a failed retry keeps the source audio. Reference/follow-up and cancellation cues are currently conservative English rules; uncertain targets are omitted rather than guessed.
+- The helper understands English and Dutch best; other languages are routed but answered in English. Kokoro speaks Dutch lines with an English voice.
+- The helper is a 0.8B model: it can still pick the wrong tool (see the eval in [voice-redesign.md](voice-redesign.md)). Cancelling always asks first, and requests are forwarded verbatim.
