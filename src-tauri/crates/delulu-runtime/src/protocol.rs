@@ -28,6 +28,11 @@ pub const COMMANDS: &[&str] = &[
     "transcribe",
     "shutdown",
     "capabilities",
+    "coordinatorStatus",
+    "coordinatorSetup",
+    "coordinatorLoad",
+    "coordinatorUnload",
+    "coordinatorClassify",
     "voiceStatus",
     "voiceLoad",
     "voiceUnload",
@@ -47,7 +52,8 @@ const TIMING_FIELDS: &[&str] = &[
     "pasteMs",
 ];
 const STATUS_COMMANDS: &[&str] =
-    &["status", "load", "unload", "magicStatus", "magicLoad", "voiceStatus", "voiceLoad", "voiceUnload"];
+    &["status", "load", "unload", "magicStatus", "magicLoad", "voiceStatus", "voiceLoad", "voiceUnload",
+      "coordinatorStatus", "coordinatorSetup", "coordinatorLoad", "coordinatorUnload"];
 
 type Object = Map<String, Value>;
 type Checked<T = ()> = Result<T, String>;
@@ -189,6 +195,9 @@ pub fn validate_worker_request(value: &Value) -> Checked {
         return Err(format!("Unknown model worker command: {command}"));
     }
     json_value(value, 0)?;
+    if command.starts_with("coordinator") {
+        coordinator_request(request, command)?;
+    }
     if command == "load" || command == "magicLoad" {
         string_field(request, "cacheDir", false, false)?;
     }
@@ -258,6 +267,93 @@ pub fn validate_worker_request(value: &Value) -> Checked {
         }
         if outside(request, "preset", PRESETS) {
             return Err("Invalid model worker rewrite preset".into());
+        }
+    }
+    Ok(())
+}
+
+/// Context is bounded data, never executable instructions.
+pub fn validate_coordinator_context(value: &Value) -> Checked {
+    let context = object(value, "coordinator context")?;
+    if context.keys().any(|key| !["tasks", "agents", "focusedTaskId", "activeAgentId"].contains(&key.as_str())) {
+        return Err("Unexpected coordinator context field".into());
+    }
+    for key in ["tasks", "agents"] {
+        let Some(value) = context.get(key) else { continue };
+        let items = value.as_array().filter(|items| items.len() <= 32)
+            .ok_or("Coordinator context requires lists of at most 32 entries")?;
+        for (index, item) in items.iter().enumerate() {
+            let entry = object(item, "coordinator context entry")?;
+            if entry.len() != 2 || !entry.contains_key("id") || !entry.contains_key("label") {
+                return Err("Coordinator entries require only id and label".into());
+            }
+            string_field(entry, "id", true, true)?;
+            string_field(entry, "label", true, false)?;
+            if str_of(entry, "id").unwrap_or_default().len() > 128
+                || utf16_len(str_of(entry, "label").unwrap_or_default()) > 256
+                || items[..index].iter().any(|prior| prior.get("id") == item.get("id")) {
+                return Err("Coordinator context ID/label exceeds bounds or repeats an ID".into());
+            }
+        }
+    }
+    for (field, key) in [("focusedTaskId", "tasks"), ("activeAgentId", "agents")] {
+        if let Some(id) = context.get(field).filter(|id| !id.is_null()) {
+            if !context.get(key).and_then(Value::as_array).is_some_and(|items| items.iter().any(|item| item.get("id") == Some(id))) {
+                return Err("Coordinator focus ID must belong to context".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn coordinator_request(request: &Object, command: &str) -> Checked {
+    let mut fields = vec!["protocolVersion", "id", "command"];
+    if matches!(command, "coordinatorLoad" | "coordinatorSetup") {
+        fields.extend(["model", "cacheDir"]);
+        if !matches!(str_of(request, "model"), Some("qwen35Small" | "qwen35Medium")) {
+            return Err("Unsupported coordinator model".into());
+        }
+        if request.contains_key("cacheDir") {
+            string_field(request, "cacheDir", true, true)?;
+            if str_of(request, "cacheDir").unwrap_or_default().len() > 4096 {
+                return Err("Coordinator cache path exceeds bounds".into());
+            }
+        }
+    } else if command == "coordinatorClassify" {
+        fields.extend(["text", "context"]);
+        string_field(request, "text", true, true)?;
+        let text = str_of(request, "text").unwrap_or_default();
+        if text.trim().is_empty() || utf16_len(text) > 8000 {
+            return Err("Coordinator text must contain 1 to 8000 characters".into());
+        }
+        validate_coordinator_context(request.get("context").ok_or("Missing coordinator context")?)?;
+    }
+    if request.keys().any(|key| !fields.contains(&key.as_str())) {
+        return Err("Unexpected coordinator request field".into());
+    }
+    Ok(())
+}
+
+/// Reject generated content beyond the narrow routing contract.
+pub fn validate_coordinator_route(value: &Value) -> Checked {
+    let route = object(value, "coordinator route")?;
+    if route.keys().any(|key| !["intent", "taskId", "agentId"].contains(&key.as_str())) {
+        return Err("Unexpected coordinator route field".into());
+    }
+    let intent = str_of(route, "intent").ok_or("Missing coordinator intent")?;
+    if !["delegate", "status", "stop_speaking", "stop_listening", "cancel_task", "conversation"].contains(&intent) {
+        return Err("Invalid coordinator intent".into());
+    }
+    for field in ["taskId", "agentId"] {
+        if route.get(field).is_some_and(|id| !id.is_null()) {
+            string_field(route, field, true, true)?;
+            if str_of(route, field).unwrap_or_default().len() > 128 {
+                return Err("Coordinator route ID exceeds bounds".into());
+            }
+            if matches!(intent, "stop_speaking" | "stop_listening" | "conversation")
+                || (intent == "cancel_task" && field == "agentId") {
+                return Err("Coordinator intent does not accept this target".into());
+            }
         }
     }
     Ok(())
@@ -406,6 +502,9 @@ pub fn validate_worker_progress(value: &Value) -> Checked<WorkerProgress> {
 
 pub fn validate_worker_result(command: &str, value: &Value) -> Checked {
     let result = object(value, "result")?;
+    if command == "coordinatorClassify" {
+        return validate_coordinator_route(value);
+    }
     if let Some(timings) = result.get("timings") {
         let timings = object(timings, "timings")?;
         for key in timings.keys() {

@@ -372,7 +372,7 @@ class Worker:
             return "mps"
         return "cpu"
 
-    def load_magic(self, request: dict[str, Any]) -> dict[str, Any]:
+    def load_magic(self, request: dict[str, Any], *, allow_download: bool = True) -> dict[str, Any]:
         model_name = str(request.get("model", "qwen35Medium"))
         model_id = MAGIC_MODELS.get(model_name)
         if not model_id:
@@ -392,7 +392,7 @@ class Worker:
             emit_progress("Retrieving rewrite checkpoint (cached files may be reused)…", stage="download")
             model_path = snapshot_download(
                 repo_id=model_id, revision=MAGIC_REVISIONS[model_id], cache_dir=cache_dir,
-                local_files_only=os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1",
+                local_files_only=not allow_download or os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1",
                 allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.tiktoken", "*.jinja"],
                 tqdm_class=download_progress_class(),
             )
@@ -606,10 +606,20 @@ class Worker:
             allowed = {
                 "speech": {"capabilities", "load", "unload", "status", "transcribe", "shutdown"},
                 "magic": {"capabilities", "magicLoad", "magicStatus", "magicRewrite", "shutdown"},
+                "coordinator": {"coordinatorStatus", "coordinatorSetup", "coordinatorLoad", "coordinatorUnload", "coordinatorClassify", "shutdown"},
                 "voice": {"voiceStatus", "voiceLoad", "voiceUnload", "voiceSynthesize", "shutdown"},
             }
             if role not in allowed or command not in allowed[role]:
                 raise ValueError(f"Command {command} is not allowed in the {role} runtime")
+        if command in ("coordinatorLoad", "coordinatorSetup"):
+            return self.load_magic(request, allow_download=command == "coordinatorSetup")
+        if command == "coordinatorStatus":
+            return self.magic_status()
+        if command == "coordinatorUnload":
+            return self.unload_magic()
+        if command == "coordinatorClassify":
+            from coordinator_engine import classify
+            return classify(self, request)
         if command == "capabilities":
             expected = "writing" if role == "magic" else "speech"
             if role and request.get("engine") != expected:
@@ -640,7 +650,7 @@ class Worker:
         if command == "shutdown":
             if role in (None, "", "speech"):
                 self.unload()
-            if role in (None, "", "magic"):
+            if role in (None, "", "magic", "coordinator"):
                 self.unload_magic()
             if role in (None, "", "voice") and self.voice is not None:
                 self.unload_voice()

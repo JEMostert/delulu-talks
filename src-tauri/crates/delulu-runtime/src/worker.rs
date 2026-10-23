@@ -42,7 +42,7 @@ pub fn worker_script(paths: &delulu_core::AppPaths) -> PathBuf {
 /// Default deadline per command.
 pub fn operation_timeout(command: &str) -> Duration {
     Duration::from_millis(match command {
-        "load" | "magicLoad" | "voiceLoad" => 30 * 60_000,
+        "load" | "magicLoad" | "voiceLoad" | "coordinatorLoad" | "coordinatorSetup" => 30 * 60_000,
         "voiceSynthesize" | "transcribe" => 120_000,
         "magicRewrite" => 180_000,
         _ => 30_000,

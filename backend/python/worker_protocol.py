@@ -26,6 +26,7 @@ COMMANDS = frozenset({
     "status", "load", "unload", "magicStatus", "magicLoad",
     "magicRewrite", "transcribe", "shutdown", "capabilities",
     "voiceStatus", "voiceLoad", "voiceUnload", "voiceSynthesize",
+    "coordinatorStatus", "coordinatorSetup", "coordinatorLoad", "coordinatorUnload", "coordinatorClassify",
 })
 # Spoken output (src/voice.ts is the shared source of truth for these names).
 VOICE_ENGINES = frozenset({"kokoro", "chatterbox-turbo"})
@@ -223,6 +224,9 @@ def validate_request(request: Any) -> dict[str, Any]:
     if command not in COMMANDS:
         raise ValueError(f"Unknown worker command: {command}")
     validate_json_value(request)
+    if command.startswith("coordinator"):
+        from coordinator_engine import validate_coordinator_request
+        validate_coordinator_request(request)
     if command == "capabilities":
         if request.get("engine") not in ("speech", "writing"):
             raise ValueError("Worker capabilities engine must be speech or writing")
@@ -323,6 +327,10 @@ def validate_result(command: str, result: Any) -> None:
     if not isinstance(result, dict):
         raise ValueError(f"Invalid worker {command} result: expected an object")
     validate_json_value(result)
+    if command == "coordinatorClassify":
+        from coordinator_engine import validate_route
+        validate_route(result)
+        return
     if "timings" in result:
         timings = result["timings"]
         if not isinstance(timings, dict) or any(key not in TIMING_FIELDS for key in timings):
@@ -358,7 +366,7 @@ def validate_result(command: str, result: Any) -> None:
         languages = hints.get("languages")
         if not isinstance(languages, list) or any(not bounded_string(language, 64) for language in languages):
             raise ValueError("Worker capabilities languages must be nonempty bounded strings")
-    elif command in ("status", "load", "unload", "magicStatus", "magicLoad"):
+    elif command in ("status", "load", "unload", "magicStatus", "magicLoad", "coordinatorStatus", "coordinatorLoad", "coordinatorSetup", "coordinatorUnload"):
         require_boolean(result, "loaded")
         for key in ("model", "device"):
             if key in result and result[key] is not None:

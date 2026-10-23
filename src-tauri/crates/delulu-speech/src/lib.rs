@@ -20,6 +20,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod asr;
+pub mod coordinator_worker;
 pub mod dictation;
 pub mod paste_last;
 pub mod ports;
@@ -34,6 +35,10 @@ pub mod transcripts;
 mod tests;
 
 pub use asr::{speech_engine_id, speech_model_name, AsrService, SpeechWorkerModel};
+pub use coordinator_worker::{
+    CoordinatorContext, CoordinatorContextEntry, CoordinatorIntent, CoordinatorModel, CoordinatorRoute,
+    CoordinatorWorker,
+};
 pub use dictation::DictationService;
 pub use paste_last::PasteLastService;
 pub use ports::{Capture, Delivery, Indicator, SpeechEngine};
