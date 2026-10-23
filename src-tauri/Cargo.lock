@@ -875,7 +875,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-audio"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "crossbeam-channel",
  "delulu-core",
@@ -889,7 +889,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dirs 6.0.0",
  "parking_lot",
@@ -903,7 +903,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-data"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -924,7 +924,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-desktop"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "arboard",
  "ashpd",
@@ -946,7 +946,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-domain"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "delulu-core",
  "regex",
@@ -959,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-runtime"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "delulu-core",
  "dirs 6.0.0",
@@ -982,7 +982,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-speech"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "delulu-audio",
@@ -1002,7 +1002,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-talks"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "delulu-audio",
  "delulu-core",
@@ -1035,7 +1035,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-voice"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "delulu-audio",
