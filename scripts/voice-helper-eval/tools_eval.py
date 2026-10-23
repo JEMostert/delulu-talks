@@ -64,7 +64,7 @@ def result_for(tool, args, context, confirmed=False):
         return f'Asked {task["agent"]} to cancel "{task["label"]}".' if confirmed else f'Cancel "{task["label"]}"? Say yes.'
 
 
-decide_ms, reply_ms, turn_ms, mismatched = [], [], [], []
+decide_ms, reply_ms, turn_ms, mismatched, fallbacks = [], [], [], [], []
 
 
 def turn(context, text, step=None):
@@ -75,14 +75,19 @@ def turn(context, text, step=None):
     said = decision["args"].get("text", "")
     if decision["tool"] in REPLY_AFTER:
         result = result_for(decision["tool"], decision["args"], context, decision.get("confirmed", False))
-        answer = call("coordinatorReply", text=text, context=context,
-                      call={"tool": decision["tool"], "args": decision["args"]}, result=result)
-        reply_ms.append(answer["elapsedMs"])
-        said = answer["text"]
+        try:
+            answer = call("coordinatorReply", text=text, context=context,
+                          call={"tool": decision["tool"], "args": decision["args"]}, result=result)
+            reply_ms.append(answer["elapsedMs"])
+            said = answer["text"]
+        except ValueError:
+            # The app then speaks its own sentence for this result.
+            fallbacks.append(text)
+            said = f"[app sentence] {result}"
     turn_ms.append((time.perf_counter() - t) * 1000)
     # Quoted task titles stay in their own language.
     plain = re.sub(r'"[^"]*"', "", said)
-    if plain and detect_language(plain) != decision["language"] and len(plain.split()) > 2:
+    if plain and not said.startswith("[app") and detect_language(plain) != decision["language"] and len(plain.split()) > 2:
         mismatched.append((text, said))
     return decision, said
 
@@ -125,3 +130,4 @@ print(f"decide: {stats(decide_ms)} ({len(decide_ms)} calls)")
 print(f"reply:  {stats(reply_ms)} ({len(reply_ms)} calls)")
 print(f"turn (decide + reply when needed): {stats(turn_ms)}")
 print(f"reply language mismatches: {len(mismatched)}" + "".join(f"\n  {t!r} → {s!r}" for t, s in mismatched))
+print(f"rejected Dutch phrasings (app sentence used): {len(fallbacks)}" + "".join(f"\n  {t!r}" for t in fallbacks))

@@ -37,6 +37,9 @@ CALIBRATION = 0.25
 # Weight of the same utterance scored without tasks and memory: it keeps an
 # open task or a recent status turn from pulling small talk into task_status.
 BARE = 0.5
+# Log-probability bonus per word (at most two) a turn shares with a task title.
+OVERLAP = 1.5
+_FILLER = frozenset("the and for with task taak taken tasks this that het een van met voor deze die".split())
 _ID = re.compile(r"^(agent|task)_[0-9]{1,3}$")
 
 # Small word lists decide only which language to answer in.
@@ -74,6 +77,10 @@ def detect_language(text: str, recent: list[dict[str, Any]] | None = None) -> st
         if dutch != english:
             return "nl" if dutch > english else "en"
     return "en"
+
+
+def _content(text: str) -> set[str]:
+    return {word for word in _words(text) if len(word) > 2 and word not in _FILLER}
 
 
 def _names(text: str, label: str) -> bool:
@@ -512,7 +519,7 @@ class Helper:
             self.priors[shape] = dict(zip(names, self._score(cache, first, [name + ">" for name in names])))
         return self.priors[shape]
 
-    def _arguments(self, cache: Any, name: str, context: dict[str, Any]) -> dict[str, str]:
+    def _arguments(self, cache: Any, name: str, context: dict[str, Any], text: str) -> dict[str, str]:
         params = {"send_to_agent": ("agent", "task"), "task_status": ("task",), "cancel_task": ("task",)}.get(name, ())
         options: list[tuple[str, dict[str, str]]] = [] if name == "cancel_task" else [("</function>", {})]
         for param in params:
@@ -521,7 +528,12 @@ class Helper:
         if len(options) == 1:
             return options[0][1]
         first, cache = self._extend(cache, name + ">\n")
-        scores = self._score(cache, first, [text for text, _ in options])
+        scores = self._score(cache, first, [option for option, _ in options])
+        titles = {task["id"]: _content(task["label"]) for task in context.get("tasks", [])}
+        spoken = _content(text)
+        for index, (_, args) in enumerate(options):
+            # Words the user repeats from a task's title point at that task.
+            scores[index] += OVERLAP * min(len(spoken & titles.get(args.get("task"), set())), 2)
         return options[max(range(len(options)), key=scores.__getitem__)][1]
 
     def decide(self, text: str, context: dict[str, Any]) -> dict[str, Any]:
@@ -535,13 +547,16 @@ class Helper:
         names = [name for name in TOOLS if name != "cancel_task" or context.get("tasks") and not pending]
         first, cache = self._turn(context, text, language)
         score = self._calibrated(first, cache, context, names, language)
-        bare = {"agents": context.get("agents", [])}
-        bare_score = self._calibrated(*self._turn(bare, text, language), bare, names, language)
-        name = max(names, key=lambda key: score[key] + BARE * bare_score[key])
+        if not pending:
+            # An answer to Delulu's question needs its context; other turns also count bare.
+            bare = {"agents": context.get("agents", [])}
+            bare_score = self._calibrated(*self._turn(bare, text, language), bare, names, language)
+            score = {key: value + BARE * bare_score[key] for key, value in score.items()}
+        name = max(names, key=score.__getitem__)
         if name == "reply":
             args = {"text": self._generate(cache, "reply>\n<parameter=text>\n")}
         else:
-            args = self._arguments(cache, name, context)
+            args = self._arguments(cache, name, context, text)
             named = [agent["id"] for agent in context.get("agents", []) if _names(text, agent["label"])]
             if name == "send_to_agent" and "task" not in args and len(named) == 1:
                 args["agent"] = named[0]

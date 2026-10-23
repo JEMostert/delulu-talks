@@ -437,5 +437,152 @@
     "confirmed": false
    }
   ]
+ },
+ {
+  "context": {
+   "agents": [
+    {
+     "id": "agent_1",
+     "label": "Claude Code",
+     "listening": true
+    }
+   ],
+   "tasks": [
+    {
+     "id": "task_1",
+     "label": "Schrijf een README voor het project",
+     "agent": "Claude Code",
+     "state": "running"
+    },
+    {
+     "id": "task_2",
+     "label": "Fix the login bug",
+     "agent": "Claude Code",
+     "state": "queued"
+    },
+    {
+     "id": "task_3",
+     "label": "Waarom faalt de CI",
+     "agent": "Claude Code",
+     "state": "queued"
+    }
+   ]
+  },
+  "text": "Annuleer de login bug taak.",
+  "tool": "cancel_task",
+  "args": {
+   "task": "task_2"
+  }
+ },
+ {
+  "context": {
+   "agents": [
+    {
+     "id": "agent_1",
+     "label": "Claude Code",
+     "listening": true
+    }
+   ],
+   "tasks": [
+    {
+     "id": "task_1",
+     "label": "Schrijf een README voor het project",
+     "agent": "Claude Code",
+     "state": "running"
+    },
+    {
+     "id": "task_2",
+     "label": "Fix the login bug",
+     "agent": "Claude Code",
+     "state": "queued"
+    },
+    {
+     "id": "task_3",
+     "label": "Waarom faalt de CI",
+     "agent": "Claude Code",
+     "state": "queued"
+    }
+   ]
+  },
+  "text": "Hoe staat het met de README?",
+  "tool": "task_status",
+  "args": {
+   "task": "task_1"
+  }
+ },
+ {
+  "context": {
+   "agents": [
+    {
+     "id": "agent_1",
+     "label": "Claude Code",
+     "listening": true
+    }
+   ],
+   "tasks": [
+    {
+     "id": "task_1",
+     "label": "Schrijf een README voor het project",
+     "agent": "Claude Code",
+     "state": "running"
+    },
+    {
+     "id": "task_2",
+     "label": "Fix the login bug",
+     "agent": "Claude Code",
+     "state": "queued"
+    },
+    {
+     "id": "task_3",
+     "label": "Waarom faalt de CI",
+     "agent": "Claude Code",
+     "state": "queued"
+    }
+   ],
+   "pendingCancel": "task_1",
+   "recent": [
+    {
+     "user": "Cancel the README task.",
+     "tool": "cancel_task",
+     "said": "Cancel \"Schrijf een README voor het project\"? Say yes.",
+     "interrupted": false
+    }
+   ]
+  },
+  "text": "No, keep it going.",
+  "tool": "reply"
+ },
+ {
+  "context": {
+   "agents": [
+    {
+     "id": "agent_1",
+     "label": "Claude Code",
+     "listening": true
+    }
+   ],
+   "tasks": [
+    {
+     "id": "task_1",
+     "label": "Schrijf een README voor het project",
+     "agent": "Claude Code",
+     "state": "running"
+    },
+    {
+     "id": "task_2",
+     "label": "Fix the login bug",
+     "agent": "Claude Code",
+     "state": "queued"
+    },
+    {
+     "id": "task_3",
+     "label": "Waarom faalt de CI",
+     "agent": "Claude Code",
+     "state": "queued"
+    }
+   ]
+  },
+  "text": "Bedankt!",
+  "tool": "reply"
  }
 ]
