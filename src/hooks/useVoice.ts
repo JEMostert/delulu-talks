@@ -62,6 +62,7 @@ export function useVoice() {
     chooseReference: () => bridge.chooseVoiceReference(),
     removeReference: () => bridge.removeVoiceReference(),
     agentSetup: () => bridge.getVoiceAgentSetup(),
+    installSkill: () => bridge.installVoiceSkill(),
   };
 }
 

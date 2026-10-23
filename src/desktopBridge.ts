@@ -146,16 +146,13 @@ function onFilesDropped(callback: (paths: string[]) => void): () => void {
 }
 
 export const desktopApi: DeluluApi = {
-  getCoordinatorStatus: () => invoke("voice:coordinatorStatus"),
-  onCoordinatorStatus: (callback) =>
-    listener("voice:coordinatorStatusChanged", callback),
-  setupCoordinator: () => invoke("voice:coordinatorSetup"),
-  loadCoordinator: () => invoke("voice:coordinatorLoad"),
-  unloadCoordinator: () => invoke("voice:coordinatorUnload"),
+  getTalkStatus: () => invoke("talk:status"),
+  startTalk: (options) => invoke("talk:start", options ?? {}),
+  stopTalk: () => invoke("talk:stop"),
+  onTalkStatus: (callback) => listener("talk:statusChanged", callback),
+  onTalkLevel: (callback) => listener("talk:level", callback),
   getListenStatus: () => invoke("listen:status"),
   onListenStatus: (callback) => listener("listen:statusChanged", callback),
-  startListening: () => invoke("listen:start"),
-  stopListening: () => invoke("listen:stop"),
   installVoiceSkill: () => invoke("voice:installSkill"),
   getVoiceStatus: () => invoke("voice:status"),
   onVoiceStatus: (callback) => listener("voice:statusChanged", callback),

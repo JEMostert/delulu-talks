@@ -17,9 +17,8 @@ import { VoiceTryIt } from "../components/voice/VoiceTryIt";
 import { VoiceAgentConnect } from "../components/voice/VoiceAgentConnect";
 import { VoiceRecent } from "../components/voice/VoiceRecent";
 import { VoiceStep } from "../components/voice/VoiceStep";
-import { VoiceCoordinator } from "../components/voice/VoiceCoordinator";
-import { VoiceListening } from "../components/voice/VoiceListening";
-import type { ListenControls } from "../hooks/useListen";
+import { VoiceTalk } from "../components/voice/VoiceTalk";
+import type { TalkControls } from "../hooks/useTalk";
 import type { VoiceControls } from "../hooks/useVoice";
 import {
   KOKORO_VOICES,
@@ -88,7 +87,8 @@ function statusLine(status: VoiceStatus, enabled: boolean): string {
 export function VoicePage({
   settings: s,
   voice,
-  listen,
+  talk,
+  devices,
   speechReady,
   saving,
   onSave,
@@ -97,7 +97,9 @@ export function VoicePage({
 }: {
   settings: AppSettings;
   voice: VoiceControls;
-  listen: ListenControls;
+  talk: TalkControls;
+  /** Audio inputs; Talk and dictation share the selected microphone. */
+  devices: MicrophoneDevice[];
   speechReady: boolean;
   saving: boolean;
   onSave: (
@@ -206,6 +208,16 @@ export function VoicePage({
           )}
         </div>
       </section>
+
+      <VoiceTalk
+        settings={s}
+        talk={talk}
+        devices={devices}
+        speechReady={speechReady}
+        saving={saving}
+        onSave={onSave}
+        onAction={onAction}
+      />
 
       <VoiceStep
         number={1}
@@ -390,7 +402,7 @@ export function VoicePage({
       <VoiceStep
         number={3}
         title="Connect your coding agents"
-        description="Let Claude Code, Codex or another agent speak to you: turn it on, add Delulu to the agent, then give your lead agent the instructions."
+        description="Let Claude Code, Codex or another agent speak to you and hear you."
         done={
           s.voiceAgentBridge && status.bridge.listening && !status.bridge.error
         }
@@ -401,34 +413,12 @@ export function VoicePage({
           bridge={status.bridge}
           saving={saving}
           load={voice.agentSetup}
+          installSkill={voice.installSkill}
           onToggle={() => save({ voiceAgentBridge: !s.voiceAgentBridge })}
           onCopy={onCopy}
-        />
-      </VoiceStep>
-
-      <VoiceStep
-        number={4}
-        title="Talk back to your agents"
-        description="Keep the microphone open so a connected agent hears your answers in turns."
-        done={listen.active}
-        optional
-      >
-        <VoiceListening
-          settings={s}
-          listen={listen}
-          speechReady={speechReady}
-          saving={saving}
-          onSave={save}
           onAction={onAction}
         />
       </VoiceStep>
-
-      <VoiceCoordinator
-        mode={s.voiceCoordinatorMode}
-        listening={listen.active}
-        saving={saving}
-        onSave={onSave}
-      />
 
       <section className="pref-group">
         <h3>More options</h3>

@@ -12,6 +12,7 @@ import {
   type TalkStatus,
 } from "../../src/talk";
 import { microphoneOptions } from "../../src/microphoneSelection";
+import { parseTalkStart } from "../../src/ipcRequests";
 
 const status = (patch: Partial<TalkStatus> = {}): TalkStatus => ({
   ...INITIAL_TALK_STATUS,
@@ -154,4 +155,14 @@ test("the microphone picker always offers System default", () => {
       { deviceId: "usb", label: "USB Microphone" },
     ]).map((option) => option.label),
   ).toEqual(["System default", "Headset (not listed)", "USB Microphone"]);
+});
+
+test("talk:start always sends one download flag", () => {
+  expect(parseTalkStart([])).toEqual([{ download: false }]);
+  expect(parseTalkStart([undefined])).toEqual([{ download: false }]);
+  expect(parseTalkStart([{}])).toEqual([{ download: false }]);
+  expect(parseTalkStart([{ download: true }])).toEqual([{ download: true }]);
+  expect(() => parseTalkStart([{ download: "yes" }])).toThrow();
+  expect(() => parseTalkStart([{ other: true }])).toThrow();
+  expect(() => parseTalkStart([{}, {}])).toThrow();
 });

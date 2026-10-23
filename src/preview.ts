@@ -1,7 +1,9 @@
 import {
-  normalizeCoordinatorMode,
-  type CoordinatorStatus,
-} from "./coordinator";
+  normalizeHelperMode,
+  type TalkLevel,
+  type TalkStatus,
+  type VoiceHelperMode,
+} from "./talk";
 import { emptyImportQueue } from "./importQueue";
 import { stripVoiceMarkup } from "./voiceMarkup";
 import {
@@ -162,7 +164,7 @@ function syncPreviewBridge(settings: AppSettings) {
 }
 
 // Preview listening: no microphone; session state and turns are simulated.
-let listenStatus: ListenStatus = {
+const listenStatus: ListenStatus = {
   session: null,
   recent:
     previewScenario === "empty"
@@ -193,10 +195,6 @@ let listenStatus: ListenStatus = {
   message: "Preview — the browser opens no microphone",
 };
 const listenListeners = new Set<(status: ListenStatus) => void>();
-function setListenStatus(patch: Partial<ListenStatus>) {
-  listenStatus = { ...listenStatus, ...patch };
-  for (const listener of listenListeners) listener(listenStatus);
-}
 
 function mockSettings(): AppSettings {
   try {
@@ -205,9 +203,7 @@ function mockSettings(): AppSettings {
     return {
       ...DEFAULT_SETTINGS,
       ...saved,
-      voiceCoordinatorMode: normalizeCoordinatorMode(
-        saved.voiceCoordinatorMode,
-      ),
+      voiceCoordinatorMode: normalizeHelperMode(saved.voiceCoordinatorMode),
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -219,44 +215,192 @@ function desktopOnly(): never {
   );
 }
 
-const coordinatorListeners = new Set<(status: CoordinatorStatus) => void>();
-function previewCoordinatorStatus(): CoordinatorStatus {
+// Preview Talk: no microphone or helper model; status, turns and the input
+// level are simulated. The helper "downloads" once per page load, so the
+// confirmation shows the first time it is switched on or Talk starts with it.
+let helperDownloaded = false;
+const talkListeners = new Set<(status: TalkStatus) => void>();
+const talkLevelListeners = new Set<(level: TalkLevel) => void>();
+// Each start or stop begins a new run; a stopped run's pending steps end early.
+let talkRun = 0;
+let talkWaits: Array<() => void> = [];
+let talkLevelTimer: ReturnType<typeof setInterval> | null = null;
+function previewHelper(
+  mode: VoiceHelperMode,
+  on: boolean,
+): TalkStatus["helper"] {
+  if (mode === "off") return { mode, state: "off", message: "" };
+  if (!helperDownloaded) return { mode, state: "missing", message: "" };
+  return { mode, state: on ? "ready" : "installed", message: "" };
+}
+let talkStatus: TalkStatus = {
+  on: false,
+  phase: "off",
+  message: "Off",
+  helper: previewHelper(mockSettings().voiceCoordinatorMode, false),
+  needsDownload: false,
+  downloadSize: "~1.7 GB",
+  agents:
+    previewScenario === "empty"
+      ? []
+      : [
+          {
+            id: "agent_preview_1",
+            name: "Claude Code",
+            listening: true,
+            openTasks: 1,
+          },
+          {
+            id: "agent_preview_2",
+            name: "Codex",
+            listening: false,
+            openTasks: 0,
+          },
+        ],
+  turns:
+    previewScenario === "empty"
+      ? []
+      : [
+          {
+            id: "turn_preview_1",
+            at: Date.now() - 6 * 60_000,
+            user: "Draai de unit tests.",
+            tool: "send_to_agent",
+            said: "Doorgestuurd naar Claude Code.",
+            helperMs: 412,
+          },
+          {
+            id: "turn_preview_2",
+            at: Date.now() - 3 * 60_000,
+            user: "How far along are the tests?",
+            tool: "task_status",
+            said: "Claude Code is still running the unit tests.",
+            helperMs: 388,
+          },
+          {
+            id: "turn_preview_3",
+            at: Date.now() - 60_000,
+            user: "Stop maar met praten.",
+            tool: "stop_speaking",
+            said: "",
+            helperMs: 296,
+          },
+        ],
+};
+function setTalkStatus(patch: Partial<TalkStatus>) {
+  talkStatus = { ...talkStatus, ...patch };
+  for (const listener of talkListeners) listener(talkStatus);
+  syncTalkLevel();
+}
+function newTalkRun(): number {
+  for (const finish of talkWaits) finish();
+  talkWaits = [];
+  return ++talkRun;
+}
+/** Waits, then reports whether the run is still current. */
+function talkStep(run: number, ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => finish(), ms);
+    const finish = () => {
+      clearTimeout(timer);
+      talkWaits = talkWaits.filter((item) => item !== finish);
+      resolve(run === talkRun);
+    };
+    talkWaits.push(finish);
+  });
+}
+// A slowly drifting room level with speech-like bursts, ~15 Hz like `talk:level`.
+function syncTalkLevel() {
+  const active = talkStatus.on && talkLevelListeners.size > 0;
+  if (active && !talkLevelTimer) {
+    const started = performance.now();
+    talkLevelTimer = setInterval(() => {
+      const t = (performance.now() - started) / 1000;
+      const speech =
+        Math.max(0, Math.sin(t * 0.7)) * Math.abs(Math.sin(t * 3.1));
+      const db = -54 + speech * 36 + Math.random() * 3;
+      for (const listener of talkLevelListeners) listener({ db });
+    }, 66);
+  } else if (!active && talkLevelTimer) {
+    clearInterval(talkLevelTimer);
+    talkLevelTimer = null;
+  }
+}
+async function previewStartTalk(download: boolean): Promise<TalkStatus> {
   const mode = mockSettings().voiceCoordinatorMode;
-  return {
-    mode,
-    phase: mode === "off" ? "off" : "not-ready",
-    message:
-      mode === "off"
-        ? "Direct listening. No additional LLM is loaded."
-        : "Design preview · set up and load the local helper in the desktop app.",
-    model:
-      mode === "off"
-        ? null
-        : mode === "lightweight"
-          ? "qwen35Small"
-          : "qwen35Medium",
-    registeredAgents: 0,
-    queuedTasks: 0,
-    activeAgent: null,
-  };
+  if (mode === "lightweight" && !helperDownloaded && !download) {
+    setTalkStatus({
+      needsDownload: true,
+      helper: previewHelper(mode, false),
+    });
+    return talkStatus;
+  }
+  const run = newTalkRun();
+  const listening = (): Partial<TalkStatus> => ({
+    on: true,
+    phase: "listening",
+    message: "Listening",
+    needsDownload: false,
+    helper: previewHelper(mockSettings().voiceCoordinatorMode, true),
+  });
+  if (mode === "off") {
+    setTalkStatus({ on: true, phase: "starting", message: "Starting…" });
+    if (await talkStep(run, 500)) setTalkStatus(listening());
+    return talkStatus;
+  }
+  if (!helperDownloaded) {
+    setTalkStatus({
+      on: true,
+      phase: "downloading",
+      message: "Downloading the helper · 0%",
+      needsDownload: false,
+      helper: { mode, state: "loading", message: "" },
+    });
+    for (const percent of [24, 51, 78, 100]) {
+      if (!(await talkStep(run, 700))) return talkStatus;
+      setTalkStatus({ message: `Downloading the helper · ${percent}%` });
+    }
+    helperDownloaded = true;
+  }
+  setTalkStatus({
+    on: true,
+    phase: "loading",
+    message: "Loading the helper…",
+    helper: { mode, state: "loading", message: "" },
+  });
+  if (await talkStep(run, 900)) setTalkStatus(listening());
+  return talkStatus;
 }
 
 export const previewApi: DeluluApi = {
-  async getCoordinatorStatus() {
-    return previewCoordinatorStatus();
+  async getTalkStatus() {
+    return talkStatus;
   },
-  onCoordinatorStatus(callback) {
-    coordinatorListeners.add(callback);
-    return () => coordinatorListeners.delete(callback);
+  startTalk(options) {
+    return previewStartTalk(options?.download === true);
   },
-  async setupCoordinator() {
-    desktopOnly();
+  async stopTalk() {
+    newTalkRun();
+    setTalkStatus({
+      on: false,
+      phase: "off",
+      message: "Off",
+      needsDownload: false,
+      helper: previewHelper(mockSettings().voiceCoordinatorMode, false),
+    });
+    return talkStatus;
   },
-  async loadCoordinator() {
-    desktopOnly();
+  onTalkStatus(callback) {
+    talkListeners.add(callback);
+    return () => talkListeners.delete(callback);
   },
-  async unloadCoordinator() {
-    desktopOnly();
+  onTalkLevel(callback) {
+    talkLevelListeners.add(callback);
+    syncTalkLevel();
+    return () => {
+      talkLevelListeners.delete(callback);
+      syncTalkLevel();
+    };
   },
   async getListenStatus() {
     return listenStatus;
@@ -264,34 +408,6 @@ export const previewApi: DeluluApi = {
   onListenStatus(callback) {
     listenListeners.add(callback);
     return () => listenListeners.delete(callback);
-  },
-  async startListening() {
-    setListenStatus({
-      capturing: true,
-      session: {
-        id: "lst_preview",
-        client: "delulu",
-        state: "listening",
-        startedAt: Date.now(),
-        ackedSeq: 2,
-        lastSeq: 2,
-        queued: 0,
-        userSpeaking: false,
-        transcribing: false,
-        waiters: 0,
-        error: null,
-      },
-    });
-    return listenStatus;
-  },
-  async stopListening() {
-    setListenStatus({
-      capturing: false,
-      session: listenStatus.session
-        ? { ...listenStatus.session, state: "stopped", waiters: 0 }
-        : null,
-    });
-    return listenStatus;
   },
   async installVoiceSkill() {
     return desktopOnly();
@@ -558,8 +674,15 @@ export const previewApi: DeluluApi = {
     const next = { ...mockSettings(), ...settings };
     localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
     syncPreviewBridge(next);
-    for (const listener of coordinatorListeners)
-      listener(previewCoordinatorStatus());
+    const mode = next.voiceCoordinatorMode;
+    if (mode !== talkStatus.helper.mode) {
+      // Switching the helper on before its first download asks for it.
+      const ready = talkStatus.on && helperDownloaded;
+      setTalkStatus({
+        needsDownload: mode === "lightweight" && !helperDownloaded,
+        helper: previewHelper(mode, ready),
+      });
+    }
     return next;
   },
   async getStatus() {

@@ -42,8 +42,8 @@ import brandMark from "./assets/delulu-talks-mark.svg";
 import { activityLabel, engineLabel } from "./statusLabels";
 import { RecordingClock } from "./components/RecordingClock";
 import { useVoice } from "./hooks/useVoice";
-import { useListen } from "./hooks/useListen";
-import { ListeningIndicator } from "./components/voice/VoiceListening";
+import { useTalk } from "./hooks/useTalk";
+import { TalkIndicator } from "./components/voice/TalkIndicator";
 const LabPage = lazy(() =>
   import("./pages/LabPage").then((module) => ({ default: module.LabPage })),
 );
@@ -104,7 +104,7 @@ const pages: Record<Page, { title: string; subtitle: string }> = {
 function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
   const theme = useTheme(w.settings.theme);
   const voice = useVoice();
-  const listen = useListen();
+  const talk = useTalk();
   const [modelTarget, setModelTarget] = useState<
     "decode" | "diagnostics" | null
   >(null);
@@ -236,21 +236,25 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
       disabled: voice.speaking ? undefined : "Nothing is being spoken.",
       run: () => w.action(voice.stop),
     },
-    listen.active
+    talk.status.on
       ? {
-          id: "stop-listening",
-          label: "Stop listening",
-          keywords: "voice microphone agent session conversation",
-          run: () => w.action(listen.stop, "Stopped listening"),
+          id: "stop-talk",
+          label: "Stop talking to agents",
+          keywords: "talk voice microphone agent listen conversation",
+          run: () => w.action(talk.stop, "Talk is off"),
         }
       : {
-          id: "start-listening",
-          label: "Start listening",
-          keywords: "voice microphone agent session conversation",
+          id: "start-talk",
+          label: "Talk to agents",
+          keywords: "talk voice microphone agent listen conversation",
           disabled: ["missing", "error"].includes(w.status.engine)
             ? "Set up a speech model in Models first."
             : undefined,
-          run: () => w.action(listen.start),
+          run: () =>
+            w.action(async () => {
+              // The helper's one-time download is confirmed on the Voice page.
+              if ((await talk.start()).needsDownload) w.setPage("voice");
+            }),
         },
     {
       id: "read-clipboard",
@@ -441,7 +445,10 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
         <img src={brandMark} alt="" />
         Delulu Talks
       </div>
-      <ListeningIndicator listen={listen} />
+      <TalkIndicator
+        status={talk.status}
+        onStop={() => void w.action(talk.stop)}
+      />
       {w.ready && !panelOpen && (
         <button
           className="engine-chip"
@@ -770,7 +777,8 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
                   <VoicePage
                     settings={w.settings}
                     voice={voice}
-                    listen={listen}
+                    talk={talk}
+                    devices={w.devices}
                     speechReady={
                       !["missing", "error"].includes(w.status.engine)
                     }

@@ -115,13 +115,9 @@ export function parseSettingsPatch(value: unknown): Partial<AppSettings> {
     throw new Error("Unsupported workflow version");
   if (
     source.voiceCoordinatorMode !== undefined &&
-    !["off", "lightweight", "conversational"].includes(
-      String(source.voiceCoordinatorMode),
-    )
+    !["off", "lightweight"].includes(String(source.voiceCoordinatorMode))
   )
-    throw new Error(
-      "Choose off, lightweight or conversational coordinator mode",
-    );
+    throw new Error("Choose Off or Lightweight for the voice helper");
   return patch as Partial<AppSettings>;
 }
 
@@ -231,6 +227,16 @@ export function parseVoiceSpeakRequest(value: unknown): VoiceSpeakRequest {
   };
 }
 
+/** `talk:start` options; always sent as one `{download}` object. */
+export function parseTalkStart(args: readonly unknown[]): unknown[] {
+  if (args.length > 1) throw new Error("Expected at most 1 request argument");
+  const source = args[0] === undefined ? {} : object(args[0], "talk start");
+  for (const key of Object.keys(source))
+    if (key !== "download") throw new Error(`Unknown talk option: ${key}`);
+  optionalBoolean(source, "download");
+  return [{ download: source.download === true }];
+}
+
 function stringIds(value: unknown, limit = 128, count = 500): string[] {
   if (!Array.isArray(value) || value.length > count)
     throw new Error("Invalid selection list");
@@ -241,13 +247,10 @@ function stringIds(value: unknown, limit = 128, count = 500): string[] {
 }
 
 export const ipcRequestSchemas = {
-  "voice:coordinatorStatus": noArguments,
-  "voice:coordinatorSetup": noArguments,
-  "voice:coordinatorLoad": noArguments,
-  "voice:coordinatorUnload": noArguments,
+  "talk:status": noArguments,
+  "talk:start": { count: 1, parse: parseTalkStart },
+  "talk:stop": noArguments,
   "listen:status": noArguments,
-  "listen:start": noArguments,
-  "listen:stop": noArguments,
   "voice:installSkill": noArguments,
   "voice:status": noArguments,
   "voice:setup": noArguments,

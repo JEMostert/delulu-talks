@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Bot, Copy, Plug } from "lucide-react";
+import { Bot, Copy, Plug, Puzzle } from "lucide-react";
 import { Alert, SettingRow, Tabs, Toggle } from "../ui";
+import type { VoiceSkillInstall } from "../../listening";
 import type { VoiceAgentSetup, VoiceBridgeStatus } from "../../voice";
 
 const SNIPPETS = [
@@ -18,23 +19,28 @@ const HINTS: Record<Snippet, string> = {
   shell: "Agents without MCP can run this command to speak.",
 };
 
-/** Let local coding agents speak, and copy what each one needs to connect. */
+/** Let local coding agents speak and hear you, and copy what each one needs to connect. */
 export function VoiceAgentConnect({
   enabled,
   bridge,
   saving,
   load,
+  installSkill,
   onToggle,
   onCopy,
+  onAction,
 }: {
   enabled: boolean;
   bridge: VoiceBridgeStatus;
   saving: boolean;
   load: () => Promise<VoiceAgentSetup>;
+  installSkill: () => Promise<VoiceSkillInstall>;
   onToggle: () => void;
   onCopy: (text: string) => void;
+  onAction: (run: () => Promise<unknown>, success?: string) => Promise<boolean>;
 }) {
   const [setup, setSetup] = useState<VoiceAgentSetup | null>(null);
+  const [installed, setInstalled] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [snippet, setSnippet] = useState<Snippet>("claudeCode");
   useEffect(() => {
@@ -161,6 +167,33 @@ export function VoiceAgentConnect({
               </button>
             </div>
           </div>
+        </section>
+      )}
+      {enabled && (
+        <section className="pref-group">
+          <h3>d · Let your agent hear you</h3>
+          <div className="pref-list">
+            <SettingRow
+              icon={Puzzle}
+              title="Agent skill"
+              description="Teaches Claude Code to pick up what you say in Talk."
+            >
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  void onAction(async () => {
+                    const result = await installSkill();
+                    setInstalled(result.paths);
+                  }, "Skill installed")
+                }
+              >
+                Install skill for Claude Code
+              </button>
+            </SettingRow>
+          </div>
+          {installed && (
+            <p className="pref-note">Installed to {installed.join(", ")}</p>
+          )}
         </section>
       )}
     </>

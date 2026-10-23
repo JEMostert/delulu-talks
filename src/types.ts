@@ -1,4 +1,4 @@
-import type { CoordinatorStatus, VoiceCoordinatorMode } from "./coordinator";
+import type { TalkLevel, TalkStatus, VoiceHelperMode } from "./talk";
 export type SetupState =
   "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { ImportQueueSnapshot } from "./importQueue";
@@ -153,8 +153,8 @@ export type AppSettings = {
   voiceKeepLoaded: boolean;
   /** Let local coding agents speak through the MCP server and CLI. */
   voiceAgentBridge: boolean;
-  /** Optional local turn-taking helper; Off never loads an additional LLM. */
-  voiceCoordinatorMode: VoiceCoordinatorMode;
+  /** Talk's optional local helper; Off never loads an additional LLM. */
+  voiceCoordinatorMode: VoiceHelperMode;
   /** Listening sessions: 0 hears only clear speech, 1 also quiet speech. */
   listenSensitivity: number;
   /** Quiet pause, in milliseconds, that ends an utterance. */
@@ -558,19 +558,18 @@ export type ModelCacheCleanupResult = {
 export type RenderingMode = "hardware" | "software";
 
 export type DeluluApi = {
-  getCoordinatorStatus(): Promise<CoordinatorStatus>;
-  onCoordinatorStatus(
-    callback: (status: CoordinatorStatus) => void,
-  ): () => void;
-  setupCoordinator(): Promise<void>;
-  loadCoordinator(): Promise<void>;
-  unloadCoordinator(): Promise<void>;
+  getTalkStatus(): Promise<TalkStatus>;
+  /**
+   * Opens the microphone and loads the selected helper from cached files.
+   * Without `download`, a missing helper returns `needsDownload` instead.
+   */
+  startTalk(options?: { download?: boolean }): Promise<TalkStatus>;
+  stopTalk(): Promise<TalkStatus>;
+  onTalkStatus(callback: (status: TalkStatus) => void): () => void;
+  /** Raw microphone level while Talk is on, at most ~15 times a second. */
+  onTalkLevel(callback: (level: TalkLevel) => void): () => void;
   getListenStatus(): Promise<ListenStatus>;
   onListenStatus(callback: (status: ListenStatus) => void): () => void;
-  /** Start or reuse the app's own listening session (client "delulu"). */
-  startListening(): Promise<ListenStatus>;
-  /** Stop the active listening session, whoever started it. */
-  stopListening(): Promise<ListenStatus>;
   installVoiceSkill(): Promise<VoiceSkillInstall>;
   getVoiceStatus(): Promise<VoiceStatus>;
   onVoiceStatus(callback: (status: VoiceStatus) => void): () => void;
