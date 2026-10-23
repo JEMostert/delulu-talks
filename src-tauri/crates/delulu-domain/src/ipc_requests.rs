@@ -253,6 +253,31 @@ pub fn parse_voice_speak_request(value: &Value) -> Result<VoiceSpeakRequest, Dom
     })
 }
 
+/// `talk:start` options (`{download?: boolean}`, or omitted), as `{download}`.
+fn parse_talk_start(value: &Value) -> Result<Value, DomainError> {
+    let download = match value {
+        Value::Null => false,
+        _ => {
+            let options = object(value, "talk options")?;
+            if options.keys().any(|key| key != "download") {
+                return Err(plain_error("Unknown talk option"));
+            }
+            optional_boolean(options, "download")?;
+            options.get("download") == Some(&Value::Bool(true))
+        }
+    };
+    Ok(Value::Object(Object::from_iter([("download".to_owned(), Value::Bool(download))])))
+}
+
+/// A typed utterance routed like speech: never truncated, since it is forwarded verbatim.
+#[cfg(debug_assertions)]
+fn parse_utterance(value: &Value) -> Result<Value, DomainError> {
+    match value.as_str() {
+        Some(text) if !js::trim(text).is_empty() && js::utf16_len(text) <= 2000 => Ok(value.clone()),
+        _ => Err(plain_error("Expected an utterance of 1 to 2000 characters")),
+    }
+}
+
 fn string_ids(value: &Value, limit: usize, count: usize) -> Result<Value, DomainError> {
     let Value::Array(items) = value else {
         return Err(plain_error("Invalid selection list"));
@@ -284,16 +309,16 @@ fn passphrase(args: &[Value]) -> Result<Vec<Value>, DomainError> {
     Ok(vec![text_value(&args[0], 1024)?])
 }
 
-/// Every request channel with its argument count and parser.
+/// Every request channel with its argument count and parser. `talk:inject`
+/// exists only in debug builds.
 const SCHEMAS: &[(&str, usize, Parse)] = &[
     ("listen:status", 0, none),
-    ("listen:start", 0, none),
-    ("listen:stop", 0, none),
+    ("talk:status", 0, none),
+    ("talk:start", 1, |args| Ok(vec![parse_talk_start(&args[0])?])),
+    ("talk:stop", 0, none),
+    #[cfg(debug_assertions)]
+    ("talk:inject", 1, |args| Ok(vec![parse_utterance(&args[0])?])),
     ("voice:installSkill", 0, none),
-    ("voice:coordinatorStatus", 0, none),
-    ("voice:coordinatorSetup", 0, none),
-    ("voice:coordinatorLoad", 0, none),
-    ("voice:coordinatorUnload", 0, none),
     ("voice:status", 0, none),
     ("voice:setup", 0, none),
     ("voice:cancelSetup", 0, none),
@@ -448,12 +473,18 @@ pub fn is_ipc_request_channel(channel: &str) -> bool {
 /// so the router keeps one source of truth.
 pub const FIRE_AND_FORGET_CHANNELS: &[&str] = &[];
 
+/// Channels whose one argument may be omitted; it then parses as `null`.
+const OPTIONAL_ARGUMENT_CHANNELS: &[&str] = &["talk:start"];
+
 /// Validates a renderer request: unknown channels and wrong arity are
 /// rejected; each argument is parsed with the TypeScript's limits.
-pub fn parse_ipc_request(channel: &str, args: Vec<Value>) -> Result<Vec<Value>, DomainError> {
+pub fn parse_ipc_request(channel: &str, mut args: Vec<Value>) -> Result<Vec<Value>, DomainError> {
     let Some((_, count, parse)) = SCHEMAS.iter().find(|(name, _, _)| *name == channel) else {
         return Err(plain_error(format!("Unknown IPC request: {channel}")));
     };
+    if args.is_empty() && OPTIONAL_ARGUMENT_CHANNELS.contains(&channel) {
+        args.push(Value::Null);
+    }
     if args.len() != *count {
         return Err(plain_error(format!("Expected {count} request arguments")));
     }
@@ -479,6 +510,38 @@ mod tests {
         assert_eq!(error.cause.unwrap().name, "Error");
         let unique: HashSet<_> = ipc_request_channels().collect();
         assert_eq!(unique.len(), SCHEMAS.len());
+    }
+
+    #[test]
+    fn talk_channels_replace_listening_and_coordinator_controls() {
+        for removed in ["listen:start", "listen:stop", "voice:coordinatorStatus", "voice:coordinatorSetup",
+            "voice:coordinatorLoad", "voice:coordinatorUnload"] {
+            assert_eq!(parse(removed, json!([])).unwrap_err(), format!("Unknown IPC request: {removed}"));
+        }
+        assert_eq!(parse("listen:status", json!([])).unwrap(), Vec::<Value>::new());
+        assert_eq!(parse("talk:status", json!([])).unwrap(), Vec::<Value>::new());
+        assert_eq!(parse("talk:stop", json!([true])).unwrap_err(), "Expected 0 request arguments");
+        for omitted in [json!([]), json!([null]), json!([{}])] {
+            assert_eq!(parse("talk:start", omitted).unwrap(), [json!({"download": false})]);
+        }
+        assert_eq!(parse("talk:start", json!([{"download": true}])).unwrap(), [json!({"download": true})]);
+        assert_eq!(parse("talk:start", json!([{"download": "yes"}])).unwrap_err(), "Expected download to be a boolean");
+        assert_eq!(parse("talk:start", json!([{"download": true, "mode": "off"}])).unwrap_err(), "Unknown talk option");
+        assert_eq!(parse("talk:start", json!([true])).unwrap_err(), "Expected talk options object");
+        assert_eq!(parse("talk:start", json!([{}, {}])).unwrap_err(), "Expected 1 request arguments");
+    }
+
+    #[test]
+    fn talk_inject_takes_one_untruncated_utterance_in_debug_builds() {
+        if !cfg!(debug_assertions) {
+            assert_eq!(parse("talk:inject", json!(["Hi"])).unwrap_err(), "Unknown IPC request: talk:inject");
+            return;
+        }
+        assert_eq!(parse("talk:inject", json!(["Draai de tests."])).unwrap(), [json!("Draai de tests.")]);
+        for bad in [json!(""), json!("  "), json!("x".repeat(2001)), json!(1)] {
+            assert_eq!(parse("talk:inject", json!([bad])).unwrap_err(), "Expected an utterance of 1 to 2000 characters");
+        }
+        assert_eq!(parse("talk:inject", json!([])).unwrap_err(), "Expected 1 request arguments");
     }
 
     #[test]
