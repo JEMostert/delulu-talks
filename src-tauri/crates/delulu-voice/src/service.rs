@@ -109,6 +109,10 @@ const LOOKAHEAD: usize = 2;
 /// Fallback when playback never reports a chunk's end.
 const PLAYBACK_GRACE_MS: f64 = 4_000.0;
 const NO_PLAYBACK: &str = "Open Delulu Talks once so it can play audio, then try again.";
+/// The first sentence is its own chunk, so audio starts as soon as it is
+/// synthesized; later chunks stay short enough to be ready before the one
+/// playing ends.
+const CHUNKS: ChunkOptions = ChunkOptions { first_chunk_characters: Some(1), chunk_characters: Some(140) };
 
 type SharedTask<T> = Shared<BoxFuture<'static, T>>;
 
@@ -1158,7 +1162,7 @@ impl VoiceService {
         }
         let normalize = request.normalize.unwrap_or(settings.voice_normalize_text);
         let markup = parse_voice_markup(&if normalize { speakable_text(&request.text) } else { request.text.clone() });
-        let chunks = plan_voice_chunks(&markup.segments, ChunkOptions::default());
+        let chunks = plan_voice_chunks(&markup.segments, CHUNKS);
         if chunks.is_empty() {
             return Err(voice_error(DomainErrorCode::InvalidRequest, "There is nothing to say", &operation));
         }

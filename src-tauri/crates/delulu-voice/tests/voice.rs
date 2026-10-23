@@ -33,6 +33,8 @@ async fn speaks_every_chunk_in_order_and_reports_measured_timestamps() {
     assert_eq!(result.outcome, VoiceUtteranceOutcome::Spoken);
     let synthesized = f.worker.synthesized.lock().len();
     assert!(synthesized > 1);
+    // The first sentence is synthesized on its own so audio starts right away.
+    assert_eq!(f.worker.synthesized.lock()[0]["parts"], serde_json::json!([{ "kind": "text", "text": "Done." }]));
     let played: Vec<u32> = f.playback.played.lock().iter().map(|chunk| chunk.chunk).collect();
     assert_eq!(played, (0..synthesized as u32).collect::<Vec<_>>());
     assert!(f.playback.played.lock().last().unwrap().last);
