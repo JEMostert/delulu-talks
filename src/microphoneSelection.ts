@@ -40,3 +40,26 @@ export function microphoneSelection(
         message: `“${settings.inputDeviceLabel}” is not currently listed. Microphone permission may be hiding device details; recording will check the selected input.`,
       };
 }
+
+/** Picker choices: System default first, then the listed inputs; an unlisted saved input stays selectable. */
+export function microphoneOptions(
+  settings: Pick<AppSettings, "inputDeviceId" | "inputDeviceLabel">,
+  devices: MicrophoneDevice[],
+): { value: string; label: string }[] {
+  const options = [
+    { value: "default", label: "System default" },
+    ...devices
+      .filter((device) => device.deviceId && device.deviceId !== "default")
+      .map((device) => ({
+        value: device.deviceId,
+        label: device.label || "Microphone",
+      })),
+  ];
+  const saved = settings.inputDeviceId || "default";
+  if (!options.some((option) => option.value === saved))
+    options.splice(1, 0, {
+      value: saved,
+      label: `${settings.inputDeviceLabel || "Microphone"} (not listed)`,
+    });
+  return options;
+}
