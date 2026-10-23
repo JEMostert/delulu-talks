@@ -367,6 +367,7 @@ impl State {
 }
 
 type Listener = Arc<dyn Fn(&ListenStatus) + Send + Sync>;
+type CoordinatorTurn = Arc<dyn Fn(&ListenUtteranceEvent) -> delulu_core::DomainResult<()> + Send + Sync>;
 
 struct Inner {
     profile: Arc<dyn VoiceProfile>,
@@ -379,7 +380,7 @@ struct Inner {
     listeners: Mutex<Vec<Listener>>,
     waiter_ids: AtomicU64,
     commands: ReentrantMutex<()>,
-    coordinator_turn: Mutex<Option<Arc<dyn Fn(&ListenUtteranceEvent) -> delulu_core::DomainResult<()> + Send + Sync>>>,
+    coordinator_turn: Mutex<Option<CoordinatorTurn>>,
     pending_transcriptions: AtomicUsize,
     transcriptions_done: tokio::sync::Notify,
     transcriptions: SerialQueue,

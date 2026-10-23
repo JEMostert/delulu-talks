@@ -93,18 +93,15 @@ string_enum! {
 }
 
 string_enum! {
+    #[derive(Default)]
     pub enum VoiceCoordinatorMode {
+        #[default]
         Off = "off",
         Lightweight = "lightweight",
         Conversational = "conversational",
     }
 }
 
-impl Default for VoiceCoordinatorMode {
-    fn default() -> Self {
-        Self::Off
-    }
-}
 
 string_enum! {
     pub enum RuleKind { Correction = "correction", Shortcut = "shortcut" }
