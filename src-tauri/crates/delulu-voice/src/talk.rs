@@ -242,10 +242,6 @@ fn label(text: &str) -> String {
     summary(text, LABEL)
 }
 
-/// A summary for a spoken sentence, without its final punctuation.
-fn short_summary(text: &str) -> String {
-    summary(text, SUMMARY).trim_end_matches(['.', '!', '?', ';', ':']).to_owned()
-}
 
 /// How a task stands, in a spoken sentence.
 #[derive(Debug, Clone, PartialEq)]
@@ -262,15 +258,15 @@ impl TaskLine {
             agent: agent.unwrap_or("The agent").to_owned(),
             label: label(&task.text),
             state: task.state,
-            summary: task.summary.as_deref().map(short_summary).filter(|summary| !summary.is_empty()),
+            summary: task.summary.as_deref().map(|text| summary(text, SUMMARY)),
         }
     }
 
     fn render(&self, lang: Lang) -> String {
         let Self { agent, label, state, summary } = self;
-        let with = |base: String| match summary {
-            Some(summary) => format!("{base}: {summary}."),
-            None => format!("{base}."),
+        let with = |base: String| match summary.as_deref().map(|text| text.trim_end_matches(['.', '!', '?', ';', ':'])) {
+            Some(summary) if !summary.is_empty() => format!("{base}: {summary}."),
+            _ => format!("{base}."),
         };
         match (lang, state) {
             (Lang::En, TaskState::Queued) => format!("{agent} has not started \"{label}\" yet."),
@@ -768,27 +764,31 @@ impl Talk {
     /// `needs_download`.
     pub async fn start(&self, download: bool) -> DomainResult<TalkStatus> {
         let _gate = self.inner.gate.lock().await;
-        let generation = {
+        let started = {
             let mut state = self.inner.state.lock();
             if state.shutting_down {
                 return Err(DomainError::failed("Delulu Talks is shutting down"));
             }
             if state.on {
+                Err((download && !state.helper.loaded, state.generation))
+            } else {
+                state.on = true;
+                state.generation += 1;
+                state.stage = Stage::Starting;
+                state.message = "Starting…".into();
+                state.needs_download = false;
+                Ok(state.generation)
+            }
+        };
+        let generation = match started {
+            Ok(generation) => generation,
+            Err((fetch, generation)) => {
                 // Already talking: a download request fetches the helper without closing the microphone.
-                let fetch = download && !state.helper.loaded && self.helper_mode();
-                let generation = state.generation;
-                drop(state);
-                if fetch {
+                if fetch && self.helper_mode() {
                     self.load_helper(true, Some(generation), false).await;
                 }
                 return Ok(self.status());
             }
-            state.on = true;
-            state.generation += 1;
-            state.stage = Stage::Starting;
-            state.message = "Starting…".into();
-            state.needs_download = false;
-            state.generation
         };
         self.publish();
         if self.helper_mode() {
