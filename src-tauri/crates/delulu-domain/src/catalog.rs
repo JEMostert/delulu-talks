@@ -67,6 +67,7 @@ pub fn default_settings() -> AppSettings {
         voice_normalize_text: true,
         voice_keep_loaded: false,
         voice_agent_bridge: false,
+        voice_coordinator_mode: VoiceCoordinatorMode::Off,
         listen_sensitivity: 0.5,
         listen_silence_ms: 900.0,
         listen_barge_in: true,

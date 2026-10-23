@@ -17,6 +17,7 @@ import { VoiceTryIt } from "../components/voice/VoiceTryIt";
 import { VoiceAgentConnect } from "../components/voice/VoiceAgentConnect";
 import { VoiceRecent } from "../components/voice/VoiceRecent";
 import { VoiceStep } from "../components/voice/VoiceStep";
+import { VoiceCoordinator } from "../components/voice/VoiceCoordinator";
 import { VoiceListening } from "../components/voice/VoiceListening";
 import type { ListenControls } from "../hooks/useListen";
 import type { VoiceControls } from "../hooks/useVoice";
@@ -421,6 +422,12 @@ export function VoicePage({
           onAction={onAction}
         />
       </VoiceStep>
+
+      <VoiceCoordinator
+        mode={s.voiceCoordinatorMode}
+        saving={saving}
+        onSave={onSave}
+      />
 
       <section className="pref-group">
         <h3>More options</h3>

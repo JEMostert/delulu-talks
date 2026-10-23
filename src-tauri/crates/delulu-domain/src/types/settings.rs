@@ -93,6 +93,20 @@ string_enum! {
 }
 
 string_enum! {
+    pub enum VoiceCoordinatorMode {
+        Off = "off",
+        Lightweight = "lightweight",
+        Conversational = "conversational",
+    }
+}
+
+impl Default for VoiceCoordinatorMode {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
+string_enum! {
     pub enum RuleKind { Correction = "correction", Shortcut = "shortcut" }
 }
 
@@ -203,6 +217,9 @@ pub struct AppSettings {
     pub voice_keep_loaded: bool,
     /// Let local coding agents speak through the MCP server and CLI.
     pub voice_agent_bridge: bool,
+    /// Optional local turn-taking helper; disabled for existing installations.
+    #[serde(default)]
+    pub voice_coordinator_mode: VoiceCoordinatorMode,
     /// Listening sessions: 0 hears only clear speech, 1 also quiet speech.
     #[serde(serialize_with = "serde_js::f64")]
     pub listen_sensitivity: f64,

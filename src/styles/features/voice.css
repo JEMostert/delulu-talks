@@ -301,3 +301,48 @@
   box-shadow: none;
   background: none;
 }
+
+/* Optional coordinator follows the existing voice preference cards. */
+.voice-coordinator-detail {
+  display: grid;
+  gap: 12px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--line);
+}
+.voice-coordinator-status {
+  display: grid;
+  gap: 10px;
+}
+.voice-coordinator-status .voice-status-line {
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+.voice-coordinator-status .status-dot {
+  flex-shrink: 0;
+}
+.voice-coordinator-error {
+  color: var(--danger);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.voice-coordinator-detail .voice-try-actions {
+  margin-top: 0;
+}
+
+@media (max-width: 560px) {
+  .voice-coordinator .setting-row {
+    flex-wrap: wrap;
+  }
+  .voice-coordinator .setting-copy {
+    flex-basis: calc(100% - 48px);
+  }
+  .voice-coordinator .setting-control {
+    width: calc(100% - 30px);
+    max-width: calc(100% - 30px);
+    margin-left: 30px;
+  }
+  .voice-coordinator .setting-control select {
+    width: 100%;
+    max-width: 100%;
+  }
+}

@@ -1,3 +1,4 @@
+import type { CoordinatorStatus, VoiceCoordinatorMode } from "./coordinator";
 export type SetupState =
   "running" | "cancelling" | "cancelled" | "complete" | "failed";
 import type { ImportQueueSnapshot } from "./importQueue";
@@ -152,6 +153,8 @@ export type AppSettings = {
   voiceKeepLoaded: boolean;
   /** Let local coding agents speak through the MCP server and CLI. */
   voiceAgentBridge: boolean;
+  /** Optional local turn-taking helper; Off never loads an additional LLM. */
+  voiceCoordinatorMode: VoiceCoordinatorMode;
   /** Listening sessions: 0 hears only clear speech, 1 also quiet speech. */
   listenSensitivity: number;
   /** Quiet pause, in milliseconds, that ends an utterance. */
@@ -555,6 +558,13 @@ export type ModelCacheCleanupResult = {
 export type RenderingMode = "hardware" | "software";
 
 export type DeluluApi = {
+  getCoordinatorStatus(): Promise<CoordinatorStatus>;
+  onCoordinatorStatus(
+    callback: (status: CoordinatorStatus) => void,
+  ): () => void;
+  setupCoordinator(): Promise<void>;
+  loadCoordinator(): Promise<void>;
+  unloadCoordinator(): Promise<void>;
   getListenStatus(): Promise<ListenStatus>;
   onListenStatus(callback: (status: ListenStatus) => void): () => void;
   /** Start or reuse the app's own listening session (client "delulu"). */

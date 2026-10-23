@@ -113,6 +113,15 @@ export function parseSettingsPatch(value: unknown): Partial<AppSettings> {
     throw new Error("Unsupported settings schema version");
   if (source.workflowVersion !== undefined && source.workflowVersion !== 1)
     throw new Error("Unsupported workflow version");
+  if (
+    source.voiceCoordinatorMode !== undefined &&
+    !["off", "lightweight", "conversational"].includes(
+      String(source.voiceCoordinatorMode),
+    )
+  )
+    throw new Error(
+      "Choose off, lightweight or conversational coordinator mode",
+    );
   return patch as Partial<AppSettings>;
 }
 
@@ -232,6 +241,10 @@ function stringIds(value: unknown, limit = 128, count = 500): string[] {
 }
 
 export const ipcRequestSchemas = {
+  "voice:coordinatorStatus": noArguments,
+  "voice:coordinatorSetup": noArguments,
+  "voice:coordinatorLoad": noArguments,
+  "voice:coordinatorUnload": noArguments,
   "listen:status": noArguments,
   "listen:start": noArguments,
   "listen:stop": noArguments,

@@ -1,3 +1,7 @@
+import {
+  normalizeCoordinatorMode,
+  type CoordinatorStatus,
+} from "./coordinator";
 import { emptyImportQueue } from "./importQueue";
 import { stripVoiceMarkup } from "./voiceMarkup";
 import {
@@ -197,9 +201,14 @@ function setListenStatus(patch: Partial<ListenStatus>) {
 function mockSettings(): AppSettings {
   try {
     const raw = localStorage.getItem("delulu-demo-settings");
-    return raw
-      ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
-      : { ...DEFAULT_SETTINGS };
+    const saved = raw ? JSON.parse(raw) : {};
+    return {
+      ...DEFAULT_SETTINGS,
+      ...saved,
+      voiceCoordinatorMode: normalizeCoordinatorMode(
+        saved.voiceCoordinatorMode,
+      ),
+    };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -210,7 +219,45 @@ function desktopOnly(): never {
   );
 }
 
+const coordinatorListeners = new Set<(status: CoordinatorStatus) => void>();
+function previewCoordinatorStatus(): CoordinatorStatus {
+  const mode = mockSettings().voiceCoordinatorMode;
+  return {
+    mode,
+    phase: mode === "off" ? "off" : "not-ready",
+    message:
+      mode === "off"
+        ? "Direct listening. No additional LLM is loaded."
+        : "Design preview · set up and load the local helper in the desktop app.",
+    model:
+      mode === "off"
+        ? null
+        : mode === "lightweight"
+          ? "qwen35Small"
+          : "qwen35Medium",
+    registeredAgents: 0,
+    queuedTasks: 0,
+    activeAgent: null,
+  };
+}
+
 export const previewApi: DeluluApi = {
+  async getCoordinatorStatus() {
+    return previewCoordinatorStatus();
+  },
+  onCoordinatorStatus(callback) {
+    coordinatorListeners.add(callback);
+    return () => coordinatorListeners.delete(callback);
+  },
+  async setupCoordinator() {
+    desktopOnly();
+  },
+  async loadCoordinator() {
+    desktopOnly();
+  },
+  async unloadCoordinator() {
+    desktopOnly();
+  },
   async getListenStatus() {
     return listenStatus;
   },
@@ -511,6 +558,8 @@ export const previewApi: DeluluApi = {
     const next = { ...mockSettings(), ...settings };
     localStorage.setItem("delulu-demo-settings", JSON.stringify(next));
     syncPreviewBridge(next);
+    for (const listener of coordinatorListeners)
+      listener(previewCoordinatorStatus());
     return next;
   },
   async getStatus() {

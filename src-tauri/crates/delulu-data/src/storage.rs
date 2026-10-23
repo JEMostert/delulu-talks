@@ -379,6 +379,9 @@ pub fn normalize_settings_value(value: &Value) -> DomainResult<Value> {
         ("voiceNormalizeText", boolean(get("voiceNormalizeText"), "voiceNormalizeText")),
         ("voiceKeepLoaded", boolean(get("voiceKeepLoaded"), "voiceKeepLoaded")),
         ("voiceAgentBridge", boolean(get("voiceAgentBridge"), "voiceAgentBridge")),
+        ("voiceCoordinatorMode", json!(text("voiceCoordinatorMode")
+            .and_then(delulu_domain::types::VoiceCoordinatorMode::parse)
+            .unwrap_or_default().as_str())),
         ("listenSensitivity", bounded(get("listenSensitivity"), "listenSensitivity", 0.0, 1.0)),
         ("listenSilenceMs", rounded("listenSilenceMs", 300.0, 3000.0)),
         ("listenBargeIn", boolean(get("listenBargeIn"), "listenBargeIn")),

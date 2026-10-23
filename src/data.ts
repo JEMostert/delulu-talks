@@ -85,6 +85,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   voiceNormalizeText: true,
   voiceKeepLoaded: false,
   voiceAgentBridge: false,
+  voiceCoordinatorMode: "off",
   listenSensitivity: 0.5,
   listenSilenceMs: 900,
   listenBargeIn: true,
