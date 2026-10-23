@@ -761,7 +761,13 @@ impl Talk {
                 return Err(DomainError::failed("Delulu Talks is shutting down"));
             }
             if state.on {
+                // Already talking: a download request fetches the helper without closing the microphone.
+                let fetch = download && !state.helper.loaded && self.helper_mode();
+                let generation = state.generation;
                 drop(state);
+                if fetch {
+                    self.load_helper(true, Some(generation), false).await;
+                }
                 return Ok(self.status());
             }
             state.on = true;
@@ -933,6 +939,7 @@ impl Talk {
             let mut state = self.inner.state.lock();
             match result {
                 Ok(()) => {
+                    state.needs_download = false;
                     state.helper.install = Some(HelperInstall { runtime: true, weights: true });
                     state.helper.loaded = true;
                     state.helper.state = HelperState::Ready;

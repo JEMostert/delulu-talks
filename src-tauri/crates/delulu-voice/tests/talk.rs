@@ -534,6 +534,25 @@ async fn starting_asks_for_the_download_once_then_loads_cached_files() {
     assert_eq!(f.helper.unloads.load(Ordering::SeqCst), 2);
 }
 
+#[tokio::test]
+async fn choosing_the_helper_while_talking_offers_the_download_without_closing_the_microphone() {
+    let f = fixture(false, false, true, false).await;
+    f.start().await;
+    let previous = f.voice.profile.settings();
+    f.voice.profile.set(|settings| settings.voice_coordinator_mode = VoiceCoordinatorMode::Lightweight);
+    f.system.settings_changed(&previous, &f.voice.profile.settings()).await;
+    let talk = f.talk().clone();
+    until(move || talk.status().needs_download, "download offer").await;
+    let status = f.talk().status();
+    assert!(status.on && status.helper.state == HelperState::Missing);
+    let status = f.talk().start(true).await.unwrap();
+    assert!(status.on && !status.needs_download);
+    assert_eq!(status.helper.state, HelperState::Ready);
+    assert_eq!(*f.helper.loads.lock(), [true]);
+    let starts = f.backend.commands.lock().iter().filter(|c| matches!(c, CaptureCommand::Start { .. })).count();
+    assert_eq!(starts, 1, "the microphone stayed open");
+}
+
 /* End to end */
 
 #[tokio::test]
