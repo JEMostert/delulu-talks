@@ -32,7 +32,8 @@ pub const COMMANDS: &[&str] = &[
     "coordinatorSetup",
     "coordinatorLoad",
     "coordinatorUnload",
-    "coordinatorClassify",
+    "coordinatorDecide",
+    "coordinatorReply",
     "voiceStatus",
     "voiceLoad",
     "voiceUnload",
@@ -272,38 +273,174 @@ pub fn validate_worker_request(value: &Value) -> Checked {
     Ok(())
 }
 
-/// Context is bounded data, never executable instructions.
-pub fn validate_coordinator_context(value: &Value) -> Checked {
-    let context = object(value, "coordinator context")?;
-    if context.keys().any(|key| !["tasks", "agents", "focusedTaskId", "activeAgentId"].contains(&key.as_str())) {
-        return Err("Unexpected coordinator context field".into());
+pub const HELPER_TOOLS: &[&str] =
+    &["send_to_agent", "task_status", "cancel_task", "stop_speaking", "stop_listening", "repeat_last", "reply"];
+/// Tools whose executor result the helper turns into a spoken reply.
+const REPLY_TOOLS: &[&str] = &["send_to_agent", "task_status", "cancel_task"];
+
+fn only_keys(value: &Object, allowed: &[&str]) -> bool {
+    value.keys().all(|key| allowed.contains(&key.as_str()))
+}
+
+/// A string of `min..=max` UTF-16 units; a nonzero minimum also requires a nonblank string.
+fn text_within(value: Option<&Value>, min: usize, max: usize) -> bool {
+    value
+        .and_then(Value::as_str)
+        .is_some_and(|text| (min..=max).contains(&utf16_len(text)) && (min == 0 || !text.trim().is_empty()))
+}
+
+fn single_line(value: Option<&Value>) -> bool {
+    value.and_then(Value::as_str).is_some_and(|text| {
+        !text.chars().any(|c| (c.is_control() && c != '\t') || matches!(c, '\u{2028}' | '\u{2029}'))
+    })
+}
+
+/// `{kind}_N` with one to three digits: the short ids the app maps to real ones.
+fn is_alias(value: Option<&Value>, kind: &str) -> bool {
+    value
+        .and_then(Value::as_str)
+        .and_then(|id| id.strip_prefix(kind)?.strip_prefix('_'))
+        .is_some_and(|digits| (1..=3).contains(&digits.len()) && digits.bytes().all(|b| b.is_ascii_digit()))
+}
+
+fn context_list<'a>(context: &'a Object, key: &str, max: usize) -> Checked<&'a [Value]> {
+    match context.get(key) {
+        None => Ok(&[]),
+        Some(Value::Array(items)) if items.len() <= max => Ok(items),
+        _ => Err(format!("Helper context {key} must be a list of at most {max} entries")),
     }
-    for key in ["tasks", "agents"] {
-        let Some(value) = context.get(key) else { continue };
-        let items = value.as_array().filter(|items| items.len() <= 32)
-            .ok_or("Coordinator context requires lists of at most 32 entries")?;
-        for (index, item) in items.iter().enumerate() {
-            let entry = object(item, "coordinator context entry")?;
-            if entry.len() != 2 || !entry.contains_key("id") || !entry.contains_key("label") {
-                return Err("Coordinator entries require only id and label".into());
-            }
-            string_field(entry, "id", true, true)?;
-            string_field(entry, "label", true, false)?;
-            if str_of(entry, "id").unwrap_or_default().len() > 128
-                || utf16_len(str_of(entry, "label").unwrap_or_default()) > 256
-                || items[..index].iter().any(|prior| prior.get("id") == item.get("id")) {
-                return Err("Coordinator context ID/label exceeds bounds or repeats an ID".into());
-            }
+}
+
+/// Context is bounded data with short aliases, never executable instructions.
+pub fn validate_helper_context(value: &Value) -> Checked {
+    let context = object(value, "helper context")?;
+    if !only_keys(context, &["agents", "tasks", "recent", "pendingCancel"]) {
+        return Err("Unexpected helper context field".into());
+    }
+    let agents = context_list(context, "agents", 8)?;
+    for (index, item) in agents.iter().enumerate() {
+        let agent = object(item, "helper agent")?;
+        if !only_keys(agent, &["id", "label", "listening"])
+            || !is_alias(agent.get("id"), "agent")
+            || !text_within(agent.get("label"), 1, 120)
+            || !agent.get("listening").is_some_and(Value::is_boolean)
+        {
+            return Err("Invalid helper context agent".into());
+        }
+        let repeated = |key: &str| agents[..index].iter().any(|prior| prior.get(key) == item.get(key));
+        if repeated("id") || repeated("label") {
+            return Err("Helper context agents need unique IDs and labels".into());
         }
     }
-    for (field, key) in [("focusedTaskId", "tasks"), ("activeAgentId", "agents")] {
-        if let Some(id) = context.get(field).filter(|id| !id.is_null()) {
-            if !context.get(key).and_then(Value::as_array).is_some_and(|items| items.iter().any(|item| item.get("id") == Some(id))) {
-                return Err("Coordinator focus ID must belong to context".into());
-            }
+    let tasks = context_list(context, "tasks", 16)?;
+    for (index, item) in tasks.iter().enumerate() {
+        let task = object(item, "helper task")?;
+        if !only_keys(task, &["id", "label", "agent", "state", "summary"])
+            || !is_alias(task.get("id"), "task")
+            || !text_within(task.get("label"), 1, 120)
+            || (!matches!(task.get("agent"), None | Some(Value::Null)) && !text_within(task.get("agent"), 0, 120))
+            || !matches!(str_of(task, "state"), Some("queued" | "accepted" | "running" | "blocked"))
+            || (task.contains_key("summary") && !text_within(task.get("summary"), 0, 200))
+        {
+            return Err("Invalid helper context task".into());
+        }
+        if tasks[..index].iter().any(|prior| prior.get("id") == item.get("id")) {
+            return Err("Helper context task IDs must be unique".into());
+        }
+    }
+    for item in context_list(context, "recent", 6)? {
+        let turn = object(item, "helper turn")?;
+        if !only_keys(turn, &["user", "tool", "said", "interrupted"])
+            || !text_within(turn.get("user"), 1, 300)
+            || !str_of(turn, "tool").is_some_and(|tool| HELPER_TOOLS.contains(&tool))
+            || !text_within(turn.get("said"), 0, 300)
+            || !turn.get("interrupted").is_some_and(Value::is_boolean)
+        {
+            return Err("Invalid helper context turn".into());
+        }
+    }
+    if let Some(pending) = context.get("pendingCancel") {
+        if !tasks.iter().any(|task| task.get("id") == Some(pending)) {
+            return Err("Helper pending cancellation must name a task in context".into());
         }
     }
     Ok(())
+}
+
+/// Only the tool's own keys; ids are aliases, `reply` text is one short line.
+fn helper_args<'a>(tool: &str, value: Option<&'a Value>) -> Checked<&'a Object> {
+    let args = object(value.unwrap_or(&Value::Null), "helper arguments")?;
+    let allowed: &[&str] = match tool {
+        "send_to_agent" => &["agent", "task"],
+        "task_status" | "cancel_task" => &["task"],
+        "reply" => &["text"],
+        _ => &[],
+    };
+    let required = match tool {
+        "cancel_task" => Some("task"),
+        "reply" => Some("text"),
+        _ => None,
+    };
+    if !only_keys(args, allowed) || required.is_some_and(|key| !args.contains_key(key)) {
+        return Err(format!("Invalid helper arguments for {tool}"));
+    }
+    for (key, value) in args {
+        let valid = match key.as_str() {
+            "text" => text_within(Some(value), 1, 300) && single_line(Some(value)),
+            kind => is_alias(Some(value), kind),
+        };
+        if !valid {
+            return Err(format!("Invalid helper {key} for {tool}"));
+        }
+    }
+    Ok(args)
+}
+
+/// The decision's shape; ids are checked against the context separately.
+fn helper_decision(value: &Value) -> Checked<&Object> {
+    let decision = object(value, "helper decision")?;
+    if !only_keys(decision, &["tool", "args", "language", "confirmed", "elapsedMs"]) {
+        return Err("Unexpected helper decision field".into());
+    }
+    let tool = str_of(decision, "tool").filter(|tool| HELPER_TOOLS.contains(tool)).ok_or("Unknown helper tool")?;
+    let args = helper_args(tool, decision.get("args"))?;
+    if !matches!(str_of(decision, "language"), Some("en" | "nl")) {
+        return Err("Helper language must be en or nl".into());
+    }
+    boolean_field(decision, "confirmed", false)?;
+    if decision.get("confirmed") == Some(&Value::Bool(true)) && tool != "cancel_task" {
+        return Err("Only cancel_task can be confirmed".into());
+    }
+    number_field(decision, "elapsedMs", true)?;
+    Ok(args)
+}
+
+/// Rejects decisions beyond the tool contract or naming ids outside `context`.
+pub fn validate_helper_decision(value: &Value, context: &Value) -> Checked {
+    let args = helper_decision(value)?;
+    let context = object(context, "helper context")?;
+    let unknown = |key: &str, list: &str| {
+        let items = context.get(list).and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
+        args.get(key).is_some_and(|id| !items.iter().any(|item| item.get("id") == Some(id)))
+    };
+    if unknown("agent", "agents") || unknown("task", "tasks") {
+        return Err("Helper named an ID outside the supplied context".into());
+    }
+    if value.get("confirmed") == Some(&Value::Bool(true)) && args.get("task") != context.get("pendingCancel") {
+        return Err("Helper confirmed a task that is not awaiting cancellation".into());
+    }
+    Ok(())
+}
+
+pub fn validate_helper_reply(value: &Value) -> Checked {
+    let reply = object(value, "helper reply")?;
+    if !only_keys(reply, &["text", "elapsedMs"]) {
+        return Err("Unexpected helper reply field".into());
+    }
+    if !text_within(reply.get("text"), 1, 300) || !single_line(reply.get("text")) {
+        return Err("Helper reply must be one line of 1 to 300 characters".into());
+    }
+    number_field(reply, "elapsedMs", true)
 }
 
 fn coordinator_request(request: &Object, command: &str) -> Checked {
@@ -319,42 +456,27 @@ fn coordinator_request(request: &Object, command: &str) -> Checked {
                 return Err("Coordinator cache path exceeds bounds".into());
             }
         }
-    } else if command == "coordinatorClassify" {
+    } else if matches!(command, "coordinatorDecide" | "coordinatorReply") {
         fields.extend(["text", "context"]);
-        string_field(request, "text", true, true)?;
-        let text = str_of(request, "text").unwrap_or_default();
-        if text.trim().is_empty() || utf16_len(text) > 8000 {
-            return Err("Coordinator text must contain 1 to 8000 characters".into());
+        if !text_within(request.get("text"), 1, 2000) {
+            return Err("Helper text must contain 1 to 2000 characters".into());
         }
-        validate_coordinator_context(request.get("context").ok_or("Missing coordinator context")?)?;
+        validate_helper_context(request.get("context").ok_or("Missing helper context")?)?;
+        if command == "coordinatorReply" {
+            fields.extend(["call", "result"]);
+            let call = object(request.get("call").unwrap_or(&Value::Null), "helper call")?;
+            let tool = str_of(call, "tool").filter(|tool| REPLY_TOOLS.contains(tool));
+            let Some(tool) = tool.filter(|_| only_keys(call, &["tool", "args"])) else {
+                return Err("Helper replies follow send_to_agent, task_status or cancel_task calls".into());
+            };
+            helper_args(tool, call.get("args"))?;
+            if !text_within(request.get("result"), 1, 600) {
+                return Err("Helper result must contain 1 to 600 characters".into());
+            }
+        }
     }
     if request.keys().any(|key| !fields.contains(&key.as_str())) {
         return Err("Unexpected coordinator request field".into());
-    }
-    Ok(())
-}
-
-/// Reject generated content beyond the narrow routing contract.
-pub fn validate_coordinator_route(value: &Value) -> Checked {
-    let route = object(value, "coordinator route")?;
-    if route.keys().any(|key| !["intent", "taskId", "agentId"].contains(&key.as_str())) {
-        return Err("Unexpected coordinator route field".into());
-    }
-    let intent = str_of(route, "intent").ok_or("Missing coordinator intent")?;
-    if !["delegate", "status", "stop_speaking", "stop_listening", "cancel_task", "conversation"].contains(&intent) {
-        return Err("Invalid coordinator intent".into());
-    }
-    for field in ["taskId", "agentId"] {
-        if route.get(field).is_some_and(|id| !id.is_null()) {
-            string_field(route, field, true, true)?;
-            if str_of(route, field).unwrap_or_default().len() > 128 {
-                return Err("Coordinator route ID exceeds bounds".into());
-            }
-            if matches!(intent, "stop_speaking" | "stop_listening" | "conversation")
-                || (intent == "cancel_task" && field == "agentId") {
-                return Err("Coordinator intent does not accept this target".into());
-            }
-        }
     }
     Ok(())
 }
@@ -502,8 +624,11 @@ pub fn validate_worker_progress(value: &Value) -> Checked<WorkerProgress> {
 
 pub fn validate_worker_result(command: &str, value: &Value) -> Checked {
     let result = object(value, "result")?;
-    if command == "coordinatorClassify" {
-        return validate_coordinator_route(value);
+    // Helper results carry `elapsedMs`, not pipeline timings.
+    match command {
+        "coordinatorDecide" => return helper_decision(value).map(drop),
+        "coordinatorReply" => return validate_helper_reply(value),
+        _ => {}
     }
     if let Some(timings) = result.get("timings") {
         let timings = object(timings, "timings")?;
@@ -1020,6 +1145,150 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("voice engine"));
+    }
+
+    fn helper_context() -> Value {
+        json!({
+            "agents": [
+                { "id": "agent_1", "label": "Claude Code", "listening": true },
+                { "id": "agent_2", "label": "Codex", "listening": false },
+            ],
+            "tasks": [
+                { "id": "task_1", "label": "Run the unit tests", "agent": "Claude Code", "state": "running" },
+                { "id": "task_2", "label": "Fix the build", "agent": null, "state": "blocked", "summary": "Needs a key" },
+            ],
+            "recent": [{ "user": "Draai de tests.", "tool": "send_to_agent", "said": "", "interrupted": false }],
+            "pendingCancel": "task_2",
+        })
+    }
+
+    fn helper_request(command: &str, extra: Value) -> Checked {
+        let mut value =
+            json!({ "protocolVersion": 1, "id": "helper", "command": command, "text": "Hallo", "context": helper_context() });
+        value.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        validate_worker_request(&value)
+    }
+
+    #[test]
+    fn helper_requests_carry_a_bounded_context() {
+        helper_request("coordinatorDecide", json!({})).unwrap();
+        helper_request("coordinatorDecide", json!({ "context": {} })).unwrap();
+        let call =
+            json!({ "call": { "tool": "send_to_agent", "args": { "agent": "agent_1" } }, "result": "Sent to Claude Code." });
+        helper_request("coordinatorReply", call.clone()).unwrap();
+        assert!(helper_request("coordinatorClassify", json!({})).unwrap_err().contains("Unknown model worker command"));
+        assert!(helper_request("coordinatorDecide", call).unwrap_err().contains("Unexpected coordinator request field"));
+        for text in [json!(" "), json!("x".repeat(2001)), json!(1)] {
+            assert!(helper_request("coordinatorDecide", json!({ "text": text })).unwrap_err().contains("1 to 2000"));
+        }
+        let reply =
+            |call: Value, result: Value| helper_request("coordinatorReply", json!({ "call": call, "result": result }));
+        let sent = json!({ "tool": "task_status", "args": {} });
+        reply(sent.clone(), json!("Task 1 is running.")).unwrap();
+        assert!(reply(json!({ "tool": "reply", "args": { "text": "Hi" } }), json!("x")).is_err());
+        assert!(reply(json!({ "tool": "task_status", "args": {}, "confirmed": true }), json!("x")).is_err());
+        assert!(reply(json!({ "tool": "cancel_task", "args": {} }), json!("x")).is_err());
+        assert!(reply(sent.clone(), json!("x".repeat(601))).unwrap_err().contains("1 to 600"));
+        assert!(reply(sent, json!("")).unwrap_err().contains("1 to 600"));
+
+        let with = |key: &str, value: Value| {
+            let mut context = helper_context();
+            context[key] = value;
+            helper_request("coordinatorDecide", json!({ "context": context }))
+        };
+        assert!(with("activeAgentId", json!("agent_1")).unwrap_err().contains("Unexpected helper context field"));
+        let agents: Vec<Value> =
+            (1..=9).map(|n| json!({ "id": format!("agent_{n}"), "label": format!("A{n}"), "listening": true })).collect();
+        assert!(with("agents", json!(agents)).unwrap_err().contains("at most 8"));
+        let tasks: Vec<Value> =
+            (1..=17).map(|n| json!({ "id": format!("task_{n}"), "label": "T", "state": "queued" })).collect();
+        assert!(with("tasks", json!(tasks)).unwrap_err().contains("at most 16"));
+        let turn = json!({ "user": "Hi", "tool": "reply", "said": "Hi", "interrupted": false });
+        assert!(with("recent", json!(vec![turn; 7])).unwrap_err().contains("at most 6"));
+        for id in ["agent_1234", "agent-1", "agent_", "agent_1a", "task_1", "Agent_1", "agent_1\n"] {
+            let agents = json!([{ "id": id, "label": "Claude Code", "listening": true }]);
+            assert!(with("agents", agents).unwrap_err().contains("Invalid helper context agent"), "{id}");
+        }
+        let agent = |id: &str, label: &str| json!({ "id": id, "label": label, "listening": true });
+        assert!(with("agents", json!([agent("agent_1", "A"), agent("agent_1", "B")])).unwrap_err().contains("unique"));
+        assert!(with("agents", json!([agent("agent_1", "A"), agent("agent_2", "A")])).unwrap_err().contains("unique"));
+        assert!(with("agents", json!([agent("agent_1", &"x".repeat(121))])).is_err());
+        let task = |extra: Value| {
+            let mut task = json!({ "id": "task_2", "label": "Fix", "state": "running" });
+            task.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            with("tasks", json!([task]))
+        };
+        task(json!({})).unwrap();
+        for bad in [json!({ "state": "completed" }), json!({ "summary": "x".repeat(201) }), json!({ "summary": null }),
+            json!({ "agent": "x".repeat(121) }), json!({ "id": "agent_2" }), json!({ "owner": "me" })] {
+            assert!(task(bad.clone()).unwrap_err().contains("Invalid helper context task"), "{bad}");
+        }
+        assert!(task(json!({ "id": "task_3" })).unwrap_err().contains("pending cancellation"));
+        let mut duplicate = helper_context();
+        duplicate["tasks"][1]["id"] = json!("task_1");
+        assert!(helper_request("coordinatorDecide", json!({ "context": duplicate })).unwrap_err().contains("unique"));
+        for bad in [json!({ "user": "", "tool": "reply", "said": "", "interrupted": false }),
+            json!({ "user": "Hi", "tool": "shell", "said": "", "interrupted": false }),
+            json!({ "user": "Hi", "tool": "reply", "said": "x".repeat(301), "interrupted": false }),
+            json!({ "user": "Hi", "tool": "reply", "said": "" })] {
+            assert!(with("recent", json!([bad])).unwrap_err().contains("Invalid helper context turn"));
+        }
+    }
+
+    #[test]
+    fn helper_decisions_name_only_supplied_ids() {
+        let context = helper_context();
+        let decide = |tool: &str, args: Value, extra: Value| {
+            let mut value = json!({ "tool": tool, "args": args, "language": "nl", "elapsedMs": 412 });
+            value.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            validate_worker_result("coordinatorDecide", &value).and_then(|()| validate_helper_decision(&value, &context))
+        };
+        let none = json!({});
+        decide("send_to_agent", json!({ "agent": "agent_2", "task": "task_1" }), none.clone()).unwrap();
+        decide("send_to_agent", json!({}), none.clone()).unwrap();
+        decide("task_status", json!({}), none.clone()).unwrap();
+        decide("cancel_task", json!({ "task": "task_1" }), none.clone()).unwrap();
+        decide("cancel_task", json!({ "task": "task_2" }), json!({ "confirmed": true })).unwrap();
+        decide("stop_listening", json!({}), json!({ "confirmed": false })).unwrap();
+        decide("reply", json!({ "text": "Hoi! Wat kan ik doen?" }), none.clone()).unwrap();
+
+        assert!(decide("run_shell", json!({}), none.clone()).unwrap_err().contains("Unknown helper tool"));
+        assert!(decide("send_to_agent", json!({ "text": "rm -rf" }), none.clone()).unwrap_err().contains("arguments"));
+        assert!(decide("stop_speaking", json!({ "task": "task_1" }), none.clone()).unwrap_err().contains("arguments"));
+        assert!(decide("cancel_task", json!({}), none.clone()).unwrap_err().contains("arguments"));
+        let error = decide("task_status", json!({ "task": "agent_1" }), none.clone()).unwrap_err();
+        assert!(error.contains("Invalid helper task"), "{error}");
+        assert!(decide("send_to_agent", json!({ "agent": "agent_7" }), none.clone()).unwrap_err().contains("outside"));
+        assert!(decide("task_status", json!({ "task": "task_9" }), none.clone()).unwrap_err().contains("outside"));
+        let error = decide("cancel_task", json!({ "task": "task_1" }), json!({ "confirmed": true })).unwrap_err();
+        assert!(error.contains("not awaiting cancellation"), "{error}");
+        let error = decide("send_to_agent", json!({}), json!({ "confirmed": true })).unwrap_err();
+        assert!(error.contains("Only cancel_task"), "{error}");
+        assert!(decide("reply", json!({ "text": "One.\nTwo." }), none.clone()).is_err());
+        assert!(decide("reply", json!({ "text": "x".repeat(301) }), none.clone()).is_err());
+        assert!(decide("reply", json!({ "text": "  " }), none.clone()).is_err());
+        assert!(decide("reply", json!({}), none.clone()).is_err());
+        assert!(decide("reply", json!({ "text": "Hi" }), json!({ "language": "de" })).unwrap_err().contains("en or nl"));
+        assert!(decide("reply", json!({ "text": "Hi" }), json!({ "elapsedMs": -1 })).is_err());
+        assert!(decide("reply", json!({ "text": "Hi" }), json!({ "timings": {} })).unwrap_err().contains("Unexpected"));
+        let without_elapsed = json!({ "tool": "repeat_last", "args": {}, "language": "en" });
+        assert!(validate_worker_result("coordinatorDecide", &without_elapsed).unwrap_err().contains("elapsedMs"));
+        // Membership needs the request's context, so the worker transport checks only the shape.
+        let foreign = json!({ "tool": "cancel_task", "args": { "task": "task_9" }, "language": "en", "elapsedMs": 3 });
+        validate_worker_result("coordinatorDecide", &foreign).unwrap();
+        assert!(validate_helper_decision(&foreign, &json!({})).is_err());
+    }
+
+    #[test]
+    fn helper_replies_are_one_short_line() {
+        let reply = |value: Value| validate_worker_result("coordinatorReply", &value);
+        reply(json!({ "text": "Doorgestuurd naar Claude Code.", "elapsedMs": 380 })).unwrap();
+        let texts = [json!("One.\nTwo."), json!("One.\rTwo."), json!("One.\u{2028}Two."), json!("x".repeat(301)), json!(" ")];
+        for text in texts.into_iter().chain([json!(null)]) {
+            assert!(reply(json!({ "text": text, "elapsedMs": 1 })).unwrap_err().contains("one line"), "{text}");
+        }
+        assert!(reply(json!({ "text": "Okay.", "elapsedMs": 1, "tool": "reply" })).unwrap_err().contains("Unexpected"));
+        assert!(reply(json!({ "text": "Okay." })).unwrap_err().contains("elapsedMs"));
     }
 
     #[test]
