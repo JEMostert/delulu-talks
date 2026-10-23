@@ -238,8 +238,9 @@ fn detect_language(text: &str, previous: Lang) -> Lang {
     }
 }
 
+/// A task's words as a title: no closing punctuation inside the quotes.
 fn label(text: &str) -> String {
-    summary(text, LABEL)
+    summary(text.trim().trim_end_matches(['.', '!', '?', ';', ':', ',']), LABEL)
 }
 
 
@@ -1371,9 +1372,10 @@ impl Talk {
                     .and_then(|reply| spoken_text(reply.get("text")));
                 match reply {
                     Ok(text) => outcome(text),
+                    // A rejected or failed phrasing is not a helper failure: the line
+                    // has its own sentence in both languages.
                     Err(error) => {
                         log::warn!("the voice helper could not phrase a reply ({:?})", error.code);
-                        self.helper_failed("The helper could not phrase the last answer.");
                         outcome(line.render(call.language))
                     }
                 }
