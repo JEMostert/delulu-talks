@@ -182,7 +182,9 @@ impl Fixture {
         let status = self.talk().start(false).await.unwrap();
         assert!(status.on, "{status:?}");
         let id = self.system.listening().get_status().session.unwrap().id;
-        self.system.listening().capture_event(&id, CaptureEvent::State { state: ListenState::Listening, message: None });
+        self.system
+            .listening()
+            .capture_event(&id, CaptureEvent::State { state: ListenState::Listening, message: None });
     }
 
     fn capture(&self, event: CaptureEvent) {
@@ -227,13 +229,19 @@ impl Fixture {
 async fn helper_off_forwards_every_turn_verbatim_and_speaks_only_when_nobody_listens() {
     let f = fixture(false, false, true, false).await;
     let turn = f.inject("Draai de unit tests even.").await;
-    assert_eq!((turn.tool.as_deref(), turn.said.as_str(), turn.helper_ms), (Some("send_to_agent"), "Er luistert nu geen agent.", None));
+    assert_eq!(
+        (turn.tool.as_deref(), turn.said.as_str(), turn.helper_ms),
+        (Some("send_to_agent"), "Er luistert nu geen agent.", None)
+    );
     assert!(f.open_tasks().is_empty());
     let agent = f.agent("Claude Code").await;
     let turn = f.inject("Run the unit tests, then fix what breaks.").await;
     assert_eq!(turn.said, "");
     let event = f.next(&agent, 0).await["event"].clone();
-    assert_eq!((event["type"].clone(), event["text"].clone()), (json!("task"), json!("Run the unit tests, then fix what breaks.")));
+    assert_eq!(
+        (event["type"].clone(), event["text"].clone()),
+        (json!("task"), json!("Run the unit tests, then fix what breaks."))
+    );
     // A second turn is a second task, never joined with the first.
     f.inject("Also update the changelog.").await;
     assert_eq!(f.open_tasks().len(), 2);
@@ -269,7 +277,8 @@ async fn send_to_agent_creates_tasks_and_follow_ups_for_the_agent_the_helper_cho
     assert!(turn.helper_ms.is_some());
     let (text, context) = f.helper.decided.lock()[0].clone();
     assert_eq!(text, "Run the unit tests.");
-    let labels: Vec<&str> = context["agents"].as_array().unwrap().iter().map(|a| a["label"].as_str().unwrap()).collect();
+    let labels: Vec<&str> =
+        context["agents"].as_array().unwrap().iter().map(|a| a["label"].as_str().unwrap()).collect();
     assert_eq!(labels, ["Codex", "Claude Code"]);
     assert!(context["agents"][0]["id"].as_str().unwrap().starts_with("agent_"));
     assert_eq!(f.next(&claude, 0).await["event"]["text"], "Run the unit tests.");
@@ -279,12 +288,21 @@ async fn send_to_agent_creates_tasks_and_follow_ups_for_the_agent_the_helper_cho
     let turn = f.inject("Only the fast ones.").await;
     assert_eq!(turn.said, "Passed it on to Claude Code.");
     let (_, context) = f.helper.decided.lock()[1].clone();
-    assert_eq!(context["tasks"][0], json!({ "id": "task_1", "label": "Run the unit tests.", "agent": "Claude Code", "state": "queued" }));
-    assert_eq!(context["recent"][0], json!({ "user": "Run the unit tests.", "tool": "send_to_agent", "said": "Sent to Claude Code.", "interrupted": false }));
+    assert_eq!(
+        context["tasks"][0],
+        json!({ "id": "task_1", "label": "Run the unit tests.", "agent": "Claude Code", "state": "queued" })
+    );
+    assert_eq!(
+        context["recent"][0],
+        json!({ "user": "Run the unit tests.", "tool": "send_to_agent", "said": "Sent to Claude Code.", "interrupted": false })
+    );
     let event = f.next(&claude, 1).await["event"].clone();
     assert_eq!((event["type"].clone(), event["text"].clone()), (json!("message"), json!("Only the fast ones.")));
     let replied = f.helper.replied.lock().clone();
-    assert_eq!(replied[1], (json!({ "tool": "send_to_agent", "args": { "task": "task_1" } }), "Passed it on to Claude Code.".to_owned()));
+    assert_eq!(
+        replied[1],
+        (json!({ "tool": "send_to_agent", "args": { "task": "task_1" } }), "Passed it on to Claude Code.".to_owned())
+    );
     assert_eq!(f.open_tasks().len(), 1);
 }
 
@@ -299,7 +317,10 @@ async fn status_reply_and_repeat_need_no_second_call_except_for_status() {
     let task = f.open_tasks()[0].id.clone();
     f.update(&agent, &task, "blocked", "Needs the staging key.").await;
     f.decide(decision("task_status", json!({ "task": "task_1" })));
-    assert_eq!(f.inject("How are the tests doing?").await.said, "Claude Code is stuck on \"Run the tests\": Needs the staging key.");
+    assert_eq!(
+        f.inject("How are the tests doing?").await.said,
+        "Claude Code is stuck on \"Run the tests\": Needs the staging key."
+    );
     let replies = f.helper.replied.lock().len();
     f.decide(json!({ "tool": "reply", "args": { "text": "Graag gedaan." }, "language": "nl", "elapsedMs": 4 }));
     assert_eq!(f.inject("Dank je.").await.said, "Graag gedaan.");
@@ -348,7 +369,8 @@ async fn cancelling_needs_a_spoken_yes_for_the_same_task_and_forged_confirmation
     assert_eq!(f.helper.decided.lock()[4].1["pendingCancel"], "task_1");
     let event = f.next(&agent, 1).await["event"].clone();
     assert_eq!(event["type"], "cancel");
-    let calls: Vec<String> = f.helper.replied.lock().iter().map(|(call, _)| call["tool"].as_str().unwrap().to_owned()).collect();
+    let calls: Vec<String> =
+        f.helper.replied.lock().iter().map(|(call, _)| call["tool"].as_str().unwrap().to_owned()).collect();
     assert_eq!(calls, ["send_to_agent", "cancel_task", "cancel_task", "cancel_task"]);
 }
 
@@ -431,7 +453,10 @@ async fn two_quick_utterances_are_routed_one_at_a_time_in_order() {
     let mut tasks: Vec<String> = f.open_tasks().into_iter().map(|task| task.text).collect();
     tasks.sort();
     assert_eq!(tasks, ["Fix the login bug.", "Then update the changelog."]);
-    assert!(f.voice.dir.path().join("voice/pending-audio").read_dir().unwrap().next().is_none(), "handled recordings are gone");
+    assert!(
+        f.voice.dir.path().join("voice/pending-audio").read_dir().unwrap().next().is_none(),
+        "handled recordings are gone"
+    );
 }
 
 /* Speech and briefings */
@@ -561,9 +586,7 @@ async fn an_agent_gets_spoken_turns_through_the_app_bridge_and_the_tray_stops_ta
     let bridge = f.voice.dir.path().join("voice").join("bridge.json");
     let call = move |method: &'static str, params: Value| {
         let bridge = bridge.clone();
-        async move {
-            delulu_voice::client::call(&bridge, method, params, Duration::from_secs(5), None).await.unwrap()
-        }
+        async move { delulu_voice::client::call(&bridge, method, params, Duration::from_secs(5), None).await.unwrap() }
     };
     let agent = call("agent.register", json!({ "client": "claude-code", "name": "Claude Code" })).await;
     let id = agent["id"].as_str().unwrap().to_owned();

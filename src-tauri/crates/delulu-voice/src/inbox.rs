@@ -401,7 +401,12 @@ impl State {
             client: agent.client.clone(),
             name: agent.name.clone(),
             listening: self.listening(&agent.id),
-            open_tasks: self.store.tasks.iter().filter(|task| task.agent_id == agent.id && task.state.is_open()).count(),
+            open_tasks: self
+                .store
+                .tasks
+                .iter()
+                .filter(|task| task.agent_id == agent.id && task.state.is_open())
+                .count(),
         }
     }
 
@@ -439,9 +444,9 @@ impl State {
 
     fn room_for_event(&self, agent: &str) -> DomainResult<()> {
         match self.store.agents.iter().find(|record| record.id == agent) {
-            Some(record) if record.events.len() >= MAX_EVENTS => Err(DomainError::busy(
-                "That agent has too many unread events; it must acknowledge them first.",
-            )),
+            Some(record) if record.events.len() >= MAX_EVENTS => {
+                Err(DomainError::busy("That agent has too many unread events; it must acknowledge them first."))
+            }
             _ => Ok(()),
         }
     }
@@ -499,10 +504,9 @@ fn required(params: &Value, key: &str, max: usize) -> DomainResult<String> {
 fn integer(params: &Value, key: &str) -> DomainResult<Option<u64>> {
     match params.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value
-            .as_u64()
-            .map(Some)
-            .ok_or_else(|| DomainError::invalid(format!("{key} must be a nonnegative integer"))),
+        Some(value) => {
+            value.as_u64().map(Some).ok_or_else(|| DomainError::invalid(format!("{key} must be a nonnegative integer")))
+        }
     }
 }
 

@@ -209,6 +209,7 @@ enum Lang {
     Nl,
 }
 
+#[rustfmt::skip]
 const DUTCH: &[&str] = &[
     "de", "het", "een", "en", "ik", "jij", "je", "niet", "wat", "hoe", "waarom", "wanneer", "waar", "welke", "maar",
     "ook", "dat", "die", "dit", "voor", "naar", "met", "van", "zijn", "kan", "kun", "moet", "wil", "graag",
@@ -216,11 +217,12 @@ const DUTCH: &[&str] = &[
     "taak", "taken", "alles", "geen", "heb", "hebt", "heeft", "er", "zo", "dan", "nu", "mijn", "wij", "ons", "bent",
     "wordt", "op", "te", "om", "uit", "aan", "bij", "als", "stoppen", "praten", "zeg", "laat", "eigenlijk",
 ];
+#[rustfmt::skip]
 const ENGLISH: &[&str] = &[
     "the", "a", "an", "and", "i", "you", "not", "what", "how", "why", "when", "where", "which", "but", "also", "that",
-    "this", "for", "to", "with", "are", "can", "must", "want", "please", "thanks", "yes", "no", "still", "run",
-    "make", "do", "cancel", "done", "task", "tasks", "everything", "have", "has", "there", "then", "now", "my", "our",
-    "it", "be", "will", "would", "could", "should", "talking", "say", "let", "actually", "fix", "tell", "me",
+    "this", "for", "to", "with", "are", "can", "must", "want", "please", "thanks", "yes", "no", "still", "run", "make",
+    "do", "cancel", "done", "task", "tasks", "everything", "have", "has", "there", "then", "now", "my", "our", "it",
+    "be", "will", "would", "could", "should", "talking", "say", "let", "actually", "fix", "tell", "me",
 ];
 
 /// The user's language when the helper is off: a tiny word score, ties keep `previous`.
@@ -297,7 +299,10 @@ enum Line {
     /// Some tasks, and how many more were left out.
     Tasks(Vec<TaskLine>, usize),
     ConfirmCancel(String),
-    CancelAsked { agent: String, label: String },
+    CancelAsked {
+        agent: String,
+        label: String,
+    },
     Cancelled(String),
     Failed(String),
 }
@@ -388,8 +393,11 @@ fn spoken_text(value: Option<&Value>) -> DomainResult<String> {
 
 /// Checks a decision against the context it was made for.
 fn parse_call(decision: &Value, aliases: &Aliases) -> DomainResult<Call> {
-    let tool =
-        decision.get("tool").and_then(Value::as_str).and_then(Tool::parse).ok_or_else(|| helper_error("an unknown tool"))?;
+    let tool = decision
+        .get("tool")
+        .and_then(Value::as_str)
+        .and_then(Tool::parse)
+        .ok_or_else(|| helper_error("an unknown tool"))?;
     let args = decision.get("args").and_then(Value::as_object).ok_or_else(|| helper_error("no arguments"))?;
     let language = match decision.get("language").and_then(Value::as_str) {
         Some("en") => Lang::En,
@@ -566,7 +574,12 @@ impl Talk {
                     generation: 0,
                     stage: Stage::Off,
                     message: String::new(),
-                    helper: Helper { state: HelperState::Missing, message: String::new(), loaded: false, install: None },
+                    helper: Helper {
+                        state: HelperState::Missing,
+                        message: String::new(),
+                        loaded: false,
+                        install: None,
+                    },
                     needs_download: false,
                     queue: VecDeque::new(),
                     routing: false,
@@ -1243,7 +1256,9 @@ impl Talk {
                             return;
                         }
                         log::warn!("the voice helper failed on a turn ({:?}); forwarding it", error.code);
-                        self.helper_failed("The helper failed on the last turn, so your words went to the agent unchanged.");
+                        self.helper_failed(
+                            "The helper failed on the last turn, so your words went to the agent unchanged.",
+                        );
                         let mut outcome = self.forward(&job);
                         outcome.helper_ms = Some(elapsed_ms(clock));
                         outcome
@@ -1410,9 +1425,8 @@ impl Talk {
                     None => inbox.open_tasks(),
                 };
                 let agents = inbox.agents();
-                let name = |task: &Task| {
-                    agents.iter().find(|agent| agent.id == task.agent_id).map(|agent| agent.name.clone())
-                };
+                let name =
+                    |task: &Task| agents.iter().find(|agent| agent.id == task.agent_id).map(|agent| agent.name.clone());
                 task_lines(tasks.iter().map(|task| TaskLine::new(task, name(task).as_deref())))
             }
             Tool::CancelTask => {
@@ -1468,15 +1482,16 @@ impl Talk {
             .enumerate()
             .map(|(index, task)| {
                 let alias = format!("task_{}", index + 1);
-                let agent = labels
-                    .iter()
-                    .find(|(id, _)| *id == task.agent_id)
-                    .map(|(_, label)| label.clone())
-                    .or_else(|| all.iter().find(|agent| agent.id == task.agent_id).map(|agent| summary(&agent.name, 120)));
+                let agent =
+                    labels.iter().find(|(id, _)| *id == task.agent_id).map(|(_, label)| label.clone()).or_else(|| {
+                        all.iter().find(|agent| agent.id == task.agent_id).map(|agent| summary(&agent.name, 120))
+                    });
                 let mut entry = json!({
                     "id": alias, "label": summary(&task.text, 120), "agent": agent, "state": task.state.as_str(),
                 });
-                if let Some(text) = task.summary.as_deref().map(|text| summary(text, 200)).filter(|text| !text.is_empty()) {
+                if let Some(text) =
+                    task.summary.as_deref().map(|text| summary(text, 200)).filter(|text| !text.is_empty())
+                {
                     entry["summary"] = json!(text);
                 }
                 aliases.tasks.push((alias, task));
@@ -1533,7 +1548,10 @@ mod tests {
         );
         assert_eq!(line(TaskState::Cancelled, None).render(Lang::En), "\"Run the unit tests\" was cancelled.");
         assert_eq!(Line::Tasks(vec![], 0).render(Lang::En), "There are no open tasks.");
-        assert_eq!(Line::ConfirmCancel("Run the unit tests".into()).render(Lang::En), "Cancel \"Run the unit tests\"? Say yes.");
+        assert_eq!(
+            Line::ConfirmCancel("Run the unit tests".into()).render(Lang::En),
+            "Cancel \"Run the unit tests\"? Say yes."
+        );
         assert_eq!(
             Line::CancelAsked { agent: "Codex".into(), label: "Deploy".into() }.render(Lang::En),
             "Asked Codex to cancel \"Deploy\"."

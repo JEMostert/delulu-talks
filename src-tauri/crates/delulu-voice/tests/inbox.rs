@@ -70,8 +70,12 @@ async fn the_log_replays_after_reopening_and_heartbeats_are_not_stored() {
         let task = task_id(&inbox.submit("Run the tests", None, "req-1").unwrap());
         inbox.follow_up(&task, "Only the unit tests", "req-2").unwrap();
         call(&inbox, "agent.next", json!({ "agentId": agent, "after": 1, "timeoutMs": 0 })).await;
-        call(&inbox, "task.update", json!({ "agentId": agent, "taskId": task, "state": "blocked", "summary": "Needs a key." }))
-            .await;
+        call(
+            &inbox,
+            "task.update",
+            json!({ "agentId": agent, "taskId": task, "state": "blocked", "summary": "Needs a key." }),
+        )
+        .await;
         (agent, task)
     };
     let reopened = Inbox::open(dir.path().to_path_buf());
@@ -126,7 +130,9 @@ async fn the_log_is_compacted_and_dedupe_keeps_only_bounded_hashes() {
     let snapshot: Value = serde_json::from_slice(&std::fs::read(dir.path().join("inbox.json")).unwrap()).unwrap();
     let requests = snapshot["requests"].as_array().unwrap();
     assert!(requests.len() <= MAX_REQUESTS);
-    assert!(requests.iter().all(|request| request.get("text").is_none() && request["hash"].as_str().unwrap().len() == 16));
+    assert!(requests
+        .iter()
+        .all(|request| request.get("text").is_none() && request["hash"].as_str().unwrap().len() == 16));
     // The oldest request id has been forgotten; a reused id makes new work.
     assert!(matches!(inbox.submit("Private task text 0", None, "req-0").unwrap(), Sent::Task { .. }));
     assert!(inbox.submit("Different words", None, &format!("req-{}", rounds - 1)).is_err());

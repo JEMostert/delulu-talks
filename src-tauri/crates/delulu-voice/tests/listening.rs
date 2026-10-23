@@ -20,7 +20,10 @@ async fn turns_reach_the_owner_in_order_over_one_session_and_model() {
     f.say("First question.").await;
     f.say("And a second thing.").await;
     let turns = f.turns();
-    assert_eq!(turns.iter().map(|(text, _)| text.as_str()).collect::<Vec<_>>(), ["First question.", "And a second thing."]);
+    assert_eq!(
+        turns.iter().map(|(text, _)| text.as_str()).collect::<Vec<_>>(),
+        ["First question.", "And a second thing."]
+    );
     // Recordings stay private until the owner has handled the turn.
     let first = turns[0].1.clone().unwrap();
     assert!(first.starts_with(f.dir.path().join("voice").join("pending-audio")) && first.exists());
