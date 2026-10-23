@@ -425,6 +425,7 @@ export function VoicePage({
 
       <VoiceCoordinator
         mode={s.voiceCoordinatorMode}
+        listening={listen.active}
         saving={saving}
         onSave={onSave}
       />

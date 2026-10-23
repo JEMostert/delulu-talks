@@ -303,30 +303,39 @@
 }
 
 /* Optional coordinator follows the existing voice preference cards. */
-.voice-coordinator-detail {
-  display: grid;
-  gap: 12px;
-  padding: 14px 18px 18px;
+/* Voice helper: one status line with its single next action. */
+.voice-coordinator-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
   border-top: 1px solid var(--line);
 }
-.voice-coordinator-status {
-  display: grid;
-  gap: 10px;
-}
-.voice-coordinator-status .voice-status-line {
-  align-items: baseline;
-  overflow-wrap: anywhere;
-}
-.voice-coordinator-status .status-dot {
+.voice-coordinator-bar .status-dot {
   flex-shrink: 0;
 }
+.voice-coordinator-bar p {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+}
+.voice-coordinator-bar strong {
+  font-weight: 600;
+}
+.voice-coordinator-bar p span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
 .voice-coordinator-error {
+  margin: 0;
+  padding: 0 18px 12px;
   color: var(--danger);
   font-size: 13px;
   overflow-wrap: anywhere;
-}
-.voice-coordinator-detail .voice-try-actions {
-  margin-top: 0;
 }
 
 @media (max-width: 560px) {

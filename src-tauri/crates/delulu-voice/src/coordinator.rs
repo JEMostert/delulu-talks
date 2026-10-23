@@ -560,7 +560,7 @@ impl Coordinator {
             "cancel_task" => self.request_cancel(route["taskId"].as_str())?,
             _ => {
                 let command = text.trim().to_lowercase();
-                if command.starts_with("cancel") || command.starts_with("abort") {
+                if ["cancel", "abort", "annuleer"].iter().any(|word| command.starts_with(word)) {
                     "Which task should I cancel? Name the task.".into()
                 } else {
                     "I'm listening. You can give your agent a task or ask for its status.".into()

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Cpu, Download, RefreshCw } from "lucide-react";
+import { Cpu, Download } from "lucide-react";
 import { bridge } from "../../bridge";
 import type {
   CoordinatorStatus,
@@ -9,13 +9,19 @@ import type { AppSettings } from "../../types";
 import { SettingRow } from "../ui";
 import { VoiceStep } from "./VoiceStep";
 
-/** Model selection is a preference only; setup and loading are explicit actions. */
+const plural = (count: number, word: string) =>
+  `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/** Choosing a model only saves it; downloading and loading are explicit. */
 export function VoiceCoordinator({
   mode,
+  listening,
   saving,
   onSave,
 }: {
   mode: VoiceCoordinatorMode;
+  /** The microphone from step 4 is open. */
+  listening: boolean;
   saving: boolean;
   onSave: (
     patch: Partial<AppSettings>,
@@ -79,145 +85,107 @@ export function VoiceCoordinator({
   };
   const matching = status?.mode === mode;
   const loading = status?.phase === "loading";
-  const disabled = saving || !!busy || loading;
+  const failed = matching && status?.phase === "failed";
   const ready = matching && status?.phase === "ready";
+  const idle = !saving && !busy && !loading && matching;
+
+  const agents = status
+    ? status.registeredAgents === 0
+      ? "No agent connected"
+      : plural(status.registeredAgents, "agent") +
+        (status.queuedTasks ? ` · ${status.queuedTasks} queued` : "")
+    : "";
+  const [label, detail] = busy
+    ? [busy, ""]
+    : !status
+      ? [error ? "Status unavailable" : "Checking…", ""]
+      : !matching
+        ? ["Switching…", ""]
+        : loading
+          ? ["Setting up…", ""]
+          : failed
+            ? ["Couldn't start", status.message]
+            : ready
+              ? [
+                  "Ready",
+                  listening ? agents : "Turn on the microphone in step 4",
+                ]
+              : ["Not loaded", ""];
 
   return (
     <VoiceStep
       number={5}
-      title="Local voice coordinator"
+      title="Voice helper"
       optional
-      description="An optional local helper for routing, turn-taking, acknowledgments and status. Your work agents do the planning."
+      description="A small local model hears you and hands your tasks to your agent, word for word."
       done={ready}
     >
       <div className="pref-list voice-coordinator">
-        <SettingRow
-          icon={Cpu}
-          title="Coordinator"
-          description="Off keeps direct listening available without loading or downloading an additional LLM."
-        >
+        <SettingRow icon={Cpu} title="Helper">
           <select
-            aria-label="Voice coordinator"
+            aria-label="Voice helper"
             value={mode}
-            disabled={disabled}
+            disabled={saving || !!busy || loading}
             onChange={(event) => {
               const next = event.target.value as VoiceCoordinatorMode;
-              void run("Saving preference…", () =>
+              void run("Saving…", () =>
                 onSave({ voiceCoordinatorMode: next }, null),
               );
             }}
           >
-            <option value="off">Off · direct (default)</option>
-            <option value="lightweight">Lightweight · Qwen3.5-0.8B</option>
-            <option value="conversational">Conversational · Qwen3.5-2B</option>
+            <option value="off">Off</option>
+            <option value="lightweight">Lightweight · 0.8B</option>
+            <option value="conversational">Conversational · 2B</option>
           </select>
         </SettingRow>
-        <div className="voice-coordinator-detail">
-          <p className="caption">
-            Your original task wording is passed to work agents unchanged. Works
-            with local CLI and MCP agents, with no cloud keys or dependency on a
-            particular agent app.
-          </p>
-          {mode !== "off" && (
-            <p className="caption">
-              Selecting a helper only saves your preference. Set up / download
-              explicitly to install its local files, then load it when needed.
-              Loading uses existing files; it never starts a download.
-            </p>
-          )}
+        {mode !== "off" && (
           <div
+            className="voice-coordinator-bar"
             role="status"
             aria-live="polite"
-            className="voice-coordinator-status"
           >
-            <p className="voice-status-line">
-              <span
-                aria-hidden="true"
-                className={`status-dot ${error || status?.phase === "failed" ? "error" : loading || busy ? "busy" : ready ? "ready" : ""}`}
-              />
-              {busy ??
-                (status
-                  ? `${status.phase === "not-ready" ? "Not loaded" : status.phase === "failed" ? "Failed" : status.phase === "ready" ? "Ready" : status.phase === "loading" ? "Loading" : "Off"} · ${status.message}`
-                  : error
-                    ? "Coordinator status unavailable"
-                    : "Checking coordinator status…")}
+            <span
+              aria-hidden="true"
+              className={`status-dot ${error || failed ? "error" : loading || busy ? "busy" : ready ? "ready" : ""}`}
+            />
+            <p>
+              <strong>{label}</strong>
+              {detail && <span>{detail}</span>}
             </p>
-            {status && !matching && (
-              <p className="caption">
-                Waiting for the coordinator to reflect your saved preference.
-              </p>
-            )}
-            {status && status.mode !== "off" && (
-              <dl className="voice-facts">
-                <dt>Model</dt>
-                <dd>
-                  {status.model === "qwen35Small"
-                    ? "Qwen3.5-0.8B"
-                    : status.model === "qwen35Medium"
-                      ? "Qwen3.5-2B"
-                      : "None loaded"}
-                </dd>
-                <dt>Registered agents</dt>
-                <dd>{status.registeredAgents}</dd>
-                <dt>Queued tasks</dt>
-                <dd>{status.queuedTasks}</dd>
-                <dt>Active agent</dt>
-                <dd>{status.activeAgent ?? "None"}</dd>
-              </dl>
-            )}
-          </div>
-          {error && (
-            <p role="alert" className="voice-coordinator-error">
-              {error}
-            </p>
-          )}
-          <div className="voice-try-actions">
-            {mode !== "off" && (
+            {idle && !ready && (
               <>
                 <button
-                  className="secondary-button"
-                  disabled={disabled || !matching || ready}
+                  className="tool-button"
+                  title="Download and install the helper's files"
                   onClick={() =>
-                    void run(
-                      "Setting up local helper…",
-                      bridge.setupCoordinator,
-                    )
+                    void run("Downloading…", bridge.setupCoordinator)
                   }
                 >
-                  <Download /> Set up / download
+                  <Download /> Download
                 </button>
                 <button
                   className="secondary-button"
-                  disabled={disabled || !matching || ready}
-                  onClick={() =>
-                    void run("Loading local helper…", bridge.loadCoordinator)
-                  }
+                  onClick={() => void run("Loading…", bridge.loadCoordinator)}
                 >
-                  Load helper
-                </button>
-                <button
-                  className="secondary-button"
-                  disabled={disabled || !matching || !ready}
-                  onClick={() =>
-                    void run(
-                      "Unloading local helper…",
-                      bridge.unloadCoordinator,
-                    )
-                  }
-                >
-                  Unload helper
+                  Load
                 </button>
               </>
             )}
-            <button
-              className="tool-button"
-              disabled={!!busy}
-              onClick={() => void run("Refreshing status…", refresh)}
-            >
-              <RefreshCw /> Refresh status
-            </button>
+            {idle && ready && (
+              <button
+                className="tool-button"
+                onClick={() => void run("Unloading…", bridge.unloadCoordinator)}
+              >
+                Unload
+              </button>
+            )}
           </div>
-        </div>
+        )}
+        {error && error !== status?.message && (
+          <p role="alert" className="voice-coordinator-error">
+            {error}
+          </p>
+        )}
       </div>
     </VoiceStep>
   );
