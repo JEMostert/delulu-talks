@@ -2,7 +2,7 @@
 //! dictation it runs across many conversational turns: the stream is
 //! resampled to 16 kHz and fed to the utterance segmenter, which reports
 //! onsets, barge-ins and finished utterances. Delulu's playback level is the
-//! echo reference.
+//! echo reference. The raw input level is reported for a level meter.
 //!
 //! There is no WebRTC echo canceller or noise suppressor here; the segmenter's
 //! playback-reference echo gate and adaptive noise floor do that work alone.
@@ -26,6 +26,9 @@ const POLL: Duration = Duration::from_millis(10);
 const DEVICE_CHECK_INTERVAL: Duration = Duration::from_secs(2);
 const STALL_LIMIT: Duration = Duration::from_secs(3);
 const DISCONNECTED: &str = "The microphone was disconnected. Start listening again.";
+/// Input level reports per second, at most.
+pub const LEVEL_RATE: u32 = 15;
+const SILENT_DB: f64 = -100.0;
 
 /// Capture tuning (the TypeScript `ListenCaptureConfig`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -88,6 +91,37 @@ pub enum ListenEvent {
         /// Some of it was captured while Delulu was speaking.
         overlapped_playback: bool,
     },
+    /// Raw microphone level in dBFS (RMS), at most [`LEVEL_RATE`] times a second.
+    Level { db: f64 },
+}
+
+/// RMS level of the raw input over windows of `rate / LEVEL_RATE` samples.
+pub(crate) struct LevelMeter {
+    window: usize,
+    sum: f64,
+    count: usize,
+}
+
+impl LevelMeter {
+    pub fn new(sample_rate: u32) -> Self {
+        Self { window: (sample_rate / LEVEL_RATE).max(1) as usize, sum: 0.0, count: 0 }
+    }
+
+    /// Adds samples; returns the level once a full window was seen.
+    pub fn push(&mut self, samples: &[f32]) -> Option<f64> {
+        for sample in samples {
+            self.sum += f64::from(*sample) * f64::from(*sample);
+        }
+        self.count += samples.len();
+        if self.count < self.window {
+            return None;
+        }
+        let rms = (self.sum / self.count as f64).sqrt();
+        self.sum = 0.0;
+        self.count = 0;
+        let db = if rms > 0.0 { (20.0 * rms.log10()).max(SILENT_DB) } else { SILENT_DB };
+        Some((db.min(0.0) * 10.0).round() / 10.0)
+    }
 }
 
 /// What the listener needs from playback: the echo reference and barge-in.
@@ -135,6 +169,11 @@ impl Listener {
 
     pub fn resume(&mut self) {
         self.paused = false;
+    }
+
+    /// A new microphone: start over with a fresh noise floor.
+    pub fn restart(&mut self) {
+        self.segmenter.reset();
     }
 
     /// Feeds 16 kHz samples.
@@ -222,6 +261,7 @@ impl ListenCapture {
         &self.session_id
     }
 
+    /// New tuning; a different `device_id` reopens the microphone (or fails).
     pub fn configure(&self, config: ListenConfig) {
         let _ = self.commands.send(Command::Configure(config));
     }
@@ -277,15 +317,17 @@ fn run_listen(
     on_event: ListenCallback,
 ) {
     let emit = |event: ListenEvent| on_event(&session_id, event);
-    let mut input = match Input::open(&config.device_id) {
+    let failed = |error: &OpenError| {
+        emit(ListenEvent::State { state: ListenState::Failed, message: Some(open_failure(error)) });
+    };
+    let mut device_id = config.device_id.clone();
+    let mut input = match Input::open(&device_id) {
         Ok(input) => input,
-        Err(error) => {
-            emit(ListenEvent::State { state: ListenState::Failed, message: Some(open_failure(&error)) });
-            return;
-        }
+        Err(error) => return failed(&error),
     };
     let mut listener = Listener::new(config);
     let mut resampler = Resampler::new(input.sample_rate, SAMPLE_RATE);
+    let mut level = LevelMeter::new(input.sample_rate);
     emit(ListenEvent::State { state: ListenState::Listening, message: None });
     let reference = player.as_ref().map(|player| player as &dyn PlaybackReference);
     let mut raw = Vec::new();
@@ -294,7 +336,21 @@ fn run_listen(
     let mut last_check = Instant::now();
     loop {
         match commands.recv_timeout(POLL) {
-            Ok(Command::Configure(config)) => listener.configure(config),
+            Ok(Command::Configure(config)) => {
+                if config.device_id != device_id {
+                    // Release the old stream first; some backends refuse a second open.
+                    drop(input);
+                    device_id = config.device_id.clone();
+                    input = match Input::open(&device_id) {
+                        Ok(input) => input,
+                        Err(error) => return failed(&error),
+                    };
+                    resampler = Resampler::new(input.sample_rate, SAMPLE_RATE);
+                    level = LevelMeter::new(input.sample_rate);
+                    listener.restart();
+                }
+                listener.configure(config);
+            }
             Ok(Command::Pause) => listener.pause(),
             Ok(Command::Resume) => {
                 listener.resume();
@@ -311,6 +367,9 @@ fn run_listen(
         raw.clear();
         input.drain(&mut raw);
         if !listener.paused && !raw.is_empty() {
+            if let Some(db) = level.push(&raw) {
+                emit(ListenEvent::Level { db });
+            }
             converted.clear();
             resampler.process(&raw, &mut converted);
             listener.ingest(&converted, reference, &mut events);
@@ -411,6 +470,16 @@ mod tests {
         let mut paused = Listener::new(config(true));
         paused.pause();
         assert!(feed(&mut paused, &player).is_empty());
+    }
+
+    #[test]
+    fn the_level_meter_reports_dbfs_once_per_window() {
+        let mut meter = LevelMeter::new(48_000);
+        // 3200 samples per report at 48 kHz is 15 reports a second.
+        assert_eq!(meter.push(&vec![0.5; 3_199]), None);
+        assert_eq!(meter.push(&[0.5]), Some(-6.0));
+        assert_eq!(meter.push(&vec![0.0; 3_200]), Some(SILENT_DB));
+        assert_eq!(meter.push(&vec![1.0; 6_400]), Some(0.0));
     }
 
     #[test]

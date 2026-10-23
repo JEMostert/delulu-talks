@@ -32,7 +32,9 @@ pub use devices::{
     host_name, inputs, microphone_selection, outputs, DeviceLists, DeviceWatcher, MicrophoneDevice,
     MicrophoneSelection, SelectionState, DEFAULT_DEVICE_ID,
 };
-pub use listen::{ListenCapture, ListenConfig, ListenEvent, ListenState, PlaybackReference, MAX_UTTERANCE_WAV_BYTES};
+pub use listen::{
+    ListenCapture, ListenConfig, ListenEvent, ListenState, PlaybackReference, LEVEL_RATE, MAX_UTTERANCE_WAV_BYTES,
+};
 pub use player::{PlaybackChunk, PlaybackEvent, PlaybackEventKind, Player};
 pub use recorder::{Recorder, RecorderEvent, RecorderOptions, Recording, TrailingSilence};
 pub use resample::{resample, Resampler};
