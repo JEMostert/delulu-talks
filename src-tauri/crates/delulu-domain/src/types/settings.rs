@@ -93,15 +93,14 @@ string_enum! {
 }
 
 string_enum! {
+    /// The voice helper. The retired 2B `conversational` mode now means the 0.8B helper.
     #[derive(Default)]
     pub enum VoiceCoordinatorMode {
         #[default]
         Off = "off",
-        Lightweight = "lightweight",
-        Conversational = "conversational",
+        Lightweight = "lightweight" | "conversational",
     }
 }
-
 
 string_enum! {
     pub enum RuleKind { Correction = "correction", Shortcut = "shortcut" }
@@ -235,5 +234,20 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         crate::catalog::default_settings()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retired_conversational_mode_reads_as_lightweight() {
+        let legacy: VoiceCoordinatorMode = serde_json::from_value("conversational".into()).unwrap();
+        assert_eq!(legacy, VoiceCoordinatorMode::Lightweight);
+        assert_eq!(VoiceCoordinatorMode::parse("conversational"), Some(VoiceCoordinatorMode::Lightweight));
+        assert_eq!(serde_json::to_value(legacy).unwrap(), "lightweight");
+        assert_eq!(VoiceCoordinatorMode::ALL, [VoiceCoordinatorMode::Off, VoiceCoordinatorMode::Lightweight]);
+        assert_eq!(VoiceCoordinatorMode::parse("medium"), None);
     }
 }

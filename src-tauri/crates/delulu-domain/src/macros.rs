@@ -1,15 +1,18 @@
 /// A TypeScript string-literal union as a Rust enum: serde uses the exact
-/// literals, and `as_str`, `parse` and `ALL` cover validation code.
+/// literals, and `as_str`, `parse` and `ALL` cover validation code. Legacy
+/// literals after `|` still deserialize and parse, but never serialize.
 #[macro_export]
 macro_rules! string_enum {
     (
         $(#[$meta:meta])*
-        $vis:vis enum $name:ident { $($(#[$vmeta:meta])* $variant:ident = $literal:literal),+ $(,)? }
+        $vis:vis enum $name:ident {
+            $($(#[$vmeta:meta])* $variant:ident = $literal:literal $(| $legacy:literal)*),+ $(,)?
+        }
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
         $vis enum $name {
-            $($(#[$vmeta])* #[serde(rename = $literal)] $variant),+
+            $($(#[$vmeta])* #[serde(rename = $literal $(, alias = $legacy)*)] $variant),+
         }
 
         impl $name {
@@ -24,7 +27,7 @@ macro_rules! string_enum {
             /// The value for a TypeScript literal, if it is one.
             #[allow(clippy::should_implement_trait)]
             pub fn parse(value: &str) -> Option<Self> {
-                match value { $($literal => Some($name::$variant),)+ _ => None }
+                match value { $($literal $(| $legacy)* => Some($name::$variant),)+ _ => None }
             }
         }
 
