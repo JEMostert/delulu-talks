@@ -36,7 +36,7 @@ MAX_INPUT_TOKENS = 8_192
 CALIBRATION = 0.25
 # Weight of the same utterance scored without tasks and memory: it keeps an
 # open task or a recent status turn from pulling small talk into task_status.
-BARE = 0.5
+BARE = 1.0
 # Log-probability bonus per word (at most two) a turn shares with a task title.
 OVERLAP = 1.5
 _FILLER = frozenset("the and for with task taak taken tasks this that het een van met voor deze die".split())
@@ -529,11 +529,13 @@ class Helper:
             return options[0][1]
         first, cache = self._extend(cache, name + ">\n")
         scores = self._score(cache, first, [option for option, _ in options])
-        titles = {task["id"]: _content(task["label"]) for task in context.get("tasks", [])}
-        spoken = _content(text)
-        for index, (_, args) in enumerate(options):
-            # Words the user repeats from a task's title point at that task.
-            scores[index] += OVERLAP * min(len(spoken & titles.get(args.get("task"), set())), 2)
+        if name != "send_to_agent":
+            # Asking about or cancelling a task repeats words of its title. (New
+            # work often shares words with old tasks, so sending does not count them.)
+            titles = {task["id"]: _content(task["label"]) for task in context.get("tasks", [])}
+            spoken = _content(text)
+            for index, (_, args) in enumerate(options):
+                scores[index] += OVERLAP * min(len(spoken & titles.get(args.get("task"), set())), 2)
         return options[max(range(len(options)), key=scores.__getitem__)][1]
 
     def decide(self, text: str, context: dict[str, Any]) -> dict[str, Any]:
