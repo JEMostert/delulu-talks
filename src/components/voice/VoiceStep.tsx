@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
+import { Check } from "lucide-react";
 
-/** A voice setup section. */
+/** One numbered step of the Voice page; a finished step shows a check. */
 export function VoiceStep({
   number,
   title,
@@ -22,6 +23,12 @@ export function VoiceStep({
       aria-labelledby={`voice-step-${number}`}
     >
       <header className="voice-step-head">
+        <span
+          className="voice-step-number"
+          aria-label={done ? `Step ${number}, done` : `Step ${number}`}
+        >
+          {done ? <Check aria-hidden="true" /> : number}
+        </span>
         <div>
           <h2 id={`voice-step-${number}`}>
             {title}

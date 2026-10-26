@@ -447,7 +447,7 @@ fn coordinator_request(request: &Object, command: &str) -> Checked {
     let mut fields = vec!["protocolVersion", "id", "command"];
     if matches!(command, "coordinatorLoad" | "coordinatorSetup") {
         fields.extend(["model", "cacheDir"]);
-        if !matches!(str_of(request, "model"), Some("qwen35Medium" | "phi4Mini")) {
+        if !matches!(str_of(request, "model"), Some("qwen35Small" | "qwen35Medium")) {
             return Err("Unsupported coordinator model".into());
         }
         if request.contains_key("cacheDir") {
@@ -1233,6 +1233,12 @@ mod tests {
             json!({ "user": "Hi", "tool": "reply", "said": "" })] {
             assert!(with("recent", json!([bad])).unwrap_err().contains("Invalid helper context turn"));
         }
+    }
+
+    #[test]
+    fn talk_helper_accepts_its_separate_lightweight_model() {
+        let request = json!({"protocolVersion": 1, "id": "helper", "command": "coordinatorLoad", "model": "qwen35Small"});
+        validate_worker_request(&request).unwrap();
     }
 
     #[test]

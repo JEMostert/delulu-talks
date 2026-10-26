@@ -592,7 +592,11 @@ export function inspectBackup({ source, target, profiles = [] }) {
             literal: true,
           });
         if (own(record, "magicModel") && record.magicModel !== null)
-          enumeration(record.magicModel, `${path}.magicModel`, knownMagicModels);
+          enumeration(
+            record.magicModel,
+            `${path}.magicModel`,
+            knownMagicModels,
+          );
         if (own(record, "magicPreset") && record.magicPreset !== null)
           enumeration(record.magicPreset, `${path}.magicPreset`, presets);
         if (own(record, "magicIncludedInferences"))

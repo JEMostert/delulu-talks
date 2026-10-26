@@ -33,10 +33,7 @@ export type SpeechTier = "small" | "medium" | "large";
 export type ModelId = SpeechModelId | "qwen3Asr";
 /** Offered: qwen35Medium and phi4Mini. The others are retired but may name older history. */
 export type MagicModelId =
-  | "qwen35Medium"
-  | "phi4Mini"
-  | "qwen35Small"
-  | "qwen35Large";
+  "qwen35Medium" | "phi4Mini" | "qwen35Small" | "qwen35Large";
 export type MagicPreset =
   | "spoken-corrections"
   | "polish"

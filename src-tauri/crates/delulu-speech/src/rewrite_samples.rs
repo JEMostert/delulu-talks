@@ -52,7 +52,7 @@ fn write(
 ) -> std::io::Result<()> {
     use std::io::Write;
     std::fs::create_dir_all(directory)?;
-    let stem = format!("sample-{}-{}", delulu_core::now_ms(), &record.id);
+    let stem = format!("sample-{}-{}", delulu_core::now_ms(), record.id);
     delulu_core::util::create_private(&directory.join(format!("{stem}.wav")))?.write_all(wav)?;
     let sample = json!({
         "audio": format!("{stem}.wav"),
