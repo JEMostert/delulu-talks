@@ -27,7 +27,7 @@ use delulu_domain::text::normalize_transcript_title;
 use delulu_domain::voice::{is_kokoro_voice, is_voice_engine_id};
 use delulu_domain::word_packs::is_word_pack_id;
 use delulu_domain::{
-    is_magic_preset, AppSettings, SpeechModelId, SpeechTier, TranscriptRecord, AUTO_LANGUAGE, DEFAULT_SETTINGS_JSON,
+    is_magic_preset, AppSettings, MagicModelId, SpeechModelId, SpeechTier, TranscriptRecord, AUTO_LANGUAGE, DEFAULT_SETTINGS_JSON,
     LANGUAGES, LEGACY_DEFAULT_SHORTCUT, MAGIC_MODELS, MODELS,
 };
 use parking_lot::Mutex;
@@ -140,6 +140,11 @@ fn string_value(text: impl Into<String>) -> Value {
 
 fn is_valid_magic_model(value: Option<&Value>) -> bool {
     value.and_then(Value::as_str).is_some_and(|id| MAGIC_MODELS.iter().any(|model| model.id.as_str() == id))
+}
+
+/// History keeps the name of a retired writing model; settings fall back to the default.
+fn is_known_magic_model(value: Option<&Value>) -> bool {
+    value.and_then(Value::as_str).and_then(MagicModelId::parse).is_some()
 }
 
 fn is_valid_history_model(value: &str) -> bool {
@@ -528,7 +533,7 @@ pub fn migrate_record(value: &Value) -> DomainResult<Value> {
     set("personalizedText", Some(optional_text(get("personalizedText"))));
     set("editedText", Some(optional_text(edited)));
     set("magicText", Some(optional_text(get("magicText"))));
-    set("magicModel", Some(if is_valid_magic_model(get("magicModel")) { get("magicModel").cloned().unwrap() } else { Value::Null }));
+    set("magicModel", Some(if is_known_magic_model(get("magicModel")) { get("magicModel").cloned().unwrap() } else { Value::Null }));
     set(
         "magicPreset",
         Some(match get("magicPreset") {

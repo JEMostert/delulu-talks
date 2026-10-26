@@ -155,7 +155,7 @@ class MagicWarmupTests(unittest.TestCase):
         self.assertEqual(engine.MAGIC_REVISIONS, {
             "Qwen/Qwen3.5-0.8B": "2fc06364715b967f1860aea9cf38778875588b17",
             "Qwen/Qwen3.5-2B": "15852e8c16360a2fea060d615a32b45270f8a8fc",
-            "Qwen/Qwen3.5-4B": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+            "microsoft/Phi-4-mini-instruct": "cfbefacb99257ffa30c83adab238a50856ac3083",
         })
         snapshot = MagicMock(return_value="/cache/model")
 
@@ -166,8 +166,8 @@ class MagicWarmupTests(unittest.TestCase):
         hub = types.ModuleType("huggingface_hub")
         hub.snapshot_download = snapshot
         transformers = types.ModuleType("transformers")
-        transformers.AutoProcessor = SimpleNamespace(from_pretrained=lambda *a, **k: object())
-        transformers.AutoModelForMultimodalLM = SimpleNamespace(from_pretrained=lambda *a, **k: FakeModel())
+        transformers.AutoTokenizer = transformers.AutoProcessor = SimpleNamespace(from_pretrained=lambda *a, **k: object())
+        transformers.AutoModelForCausalLM = transformers.AutoModelForMultimodalLM = SimpleNamespace(from_pretrained=lambda *a, **k: FakeModel())
         progress = types.ModuleType("download_progress")
         progress.download_progress_class = lambda: None
         modules = {"torch": self.fake_torch(), "huggingface_hub": hub, "transformers": transformers,

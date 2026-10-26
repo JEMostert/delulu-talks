@@ -140,7 +140,8 @@ function jsonInput(value: unknown, depth = 0): unknown {
   );
 }
 
-const magicModels = ["qwen35Small", "qwen35Medium", "qwen35Large"];
+// Every writing model that may name a rewrite, including retired ones.
+const magicModels = ["qwen35Medium", "phi4Mini", "qwen35Small", "qwen35Large"];
 
 export function parseMagicRequest(value: unknown): MagicRewriteRequest {
   const source = object(value, "Magic rewrite request");

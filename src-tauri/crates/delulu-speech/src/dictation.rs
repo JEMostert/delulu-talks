@@ -44,6 +44,7 @@ use crate::channels;
 use crate::ports::{Capture, Delivery, Indicator, SpeechEngine};
 use crate::profile::Profile;
 use crate::retry_audio::{RetryAudioStore, Submission};
+use crate::rewrite_samples;
 use crate::support::{chars, elapsed_ms, numeric, plain, Finally};
 use crate::transcripts::{delivery as delivery_record, with_delivery_timings, Transcripts};
 
@@ -1067,6 +1068,7 @@ impl DictationService {
                 "Personalization returned no text. Review your saved rules and retry.",
             ));
         }
+        let rewrite_input = output.clone();
         let spoken = settings.magic_preset == MagicPreset::SpokenCorrections;
         let mut magic_failure: Option<String> = None;
         if settings.magic_enabled {
@@ -1127,6 +1129,13 @@ impl DictationService {
             ));
         }
         deps.profile.add_history(&record)?;
+        rewrite_samples::save(
+            &submission.wav,
+            &record,
+            settings,
+            &rewrite_input,
+            magic_failure.as_deref(),
+        );
         deps.transcripts.broadcast(record.clone());
         if let (Some(failure), true) = (&magic_failure, spoken) {
             self.set_hud(hud(

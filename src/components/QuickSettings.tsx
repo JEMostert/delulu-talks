@@ -88,23 +88,12 @@ export function QuickSettings({
         </button>
       </div>
       <div className="quick-row">
-        <span>Spoken corrections</span>
+        <span>Rewrite dictation</span>
         <Toggle
-          label="Spoken corrections"
-          value={s.magicEnabled && s.magicPreset === "spoken-corrections"}
+          label="Rewrite dictation"
+          value={s.magicEnabled}
           disabled={busy || w.saving}
-          onChange={() =>
-            save(
-              !(s.magicEnabled && s.magicPreset === "spoken-corrections")
-                ? {
-                    magicEnabled: true,
-                    magicPreset: "spoken-corrections",
-                    magicAllowInferences: false,
-                    memoryPolicy: "balanced",
-                  }
-                : { magicEnabled: false },
-            )
-          }
+          onChange={() => save({ magicEnabled: !s.magicEnabled })}
         />
       </div>
       <div className="quick-divider" />

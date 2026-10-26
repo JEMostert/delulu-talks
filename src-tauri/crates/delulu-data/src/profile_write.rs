@@ -5,7 +5,7 @@
 use delulu_core::util::utf16_len;
 use delulu_core::DomainError;
 use delulu_domain::word_packs::WORD_PACKS;
-use delulu_domain::{setting_languages, DEFAULT_SETTINGS_JSON, MAGIC_MODELS, MODELS, REWRITE_PRESETS};
+use delulu_domain::{setting_languages, MagicModelId, DEFAULT_SETTINGS_JSON, MAGIC_MODELS, MODELS, REWRITE_PRESETS};
 use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,6 +123,11 @@ fn magic_model_ids() -> Vec<&'static str> {
     MAGIC_MODELS.iter().map(|model| model.id.as_str()).collect()
 }
 
+/// History may name retired writing models; only settings must pick an offered one.
+fn known_magic_model_ids() -> Vec<&'static str> {
+    MagicModelId::ALL.iter().map(|id| id.as_str()).collect()
+}
+
 fn presets() -> Vec<&'static str> {
     REWRITE_PRESETS.iter().map(|preset| preset.id.as_str()).collect()
 }
@@ -232,7 +237,7 @@ pub fn validate_profile_write(kind: ProfileKind, value: &Value) -> Check {
             v.string(record.get("sourceName"), &format!("{path}.sourceName"), 4096, false)?;
         }
         if !matches!(record.get("magicModel"), None | Some(Value::Null)) {
-            v.enumeration(record.get("magicModel"), &format!("{path}.magicModel"), &magic_model_ids())?;
+            v.enumeration(record.get("magicModel"), &format!("{path}.magicModel"), &known_magic_model_ids())?;
         }
         if !matches!(record.get("magicPreset"), None | Some(Value::Null)) {
             v.enumeration(record.get("magicPreset"), &format!("{path}.magicPreset"), &presets())?;

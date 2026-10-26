@@ -45,9 +45,12 @@ impl From<SpeechModelId> for ModelId {
 }
 
 string_enum! {
+    /// Writing models for rewriting and the voice coordinator. `MAGIC_MODELS`
+    /// lists the offered ones; retired ids stay so older history still parses.
     pub enum MagicModelId {
-        Qwen35Small = "qwen35Small",
         Qwen35Medium = "qwen35Medium",
+        Phi4Mini = "phi4Mini",
+        Qwen35Small = "qwen35Small",
         Qwen35Large = "qwen35Large",
     }
 }

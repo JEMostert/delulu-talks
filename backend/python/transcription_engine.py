@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from worker_protocol import correlation_id, emit_progress, isolate_protocol_output, operation_scope, protocol_stream, terminal_response, validate_request, validate_result
+import clean_up
 from spoken_corrections import SpokenCorrectionError, apply_spoken_corrections
 from voice_engine import VoiceEngine, VoiceInputError
 
@@ -141,22 +142,23 @@ def recognized_language_metadata(value: Any) -> dict[str, Any]:
     }
 
 
+# Writing models, shared by rewriting and the voice coordinator. Chosen with
+# scripts/rewrite-eval: compact for any machine, phi4Mini for a GPU with
+# about 10 GB free or Apple Silicon with 16 GB.
 MAGIC_MODELS = {
-    "qwen35Small": "Qwen/Qwen3.5-0.8B",
+    "qwen35Small": "Qwen/Qwen3.5-0.8B",  # Talk helper; not offered for rewriting.
     "qwen35Medium": "Qwen/Qwen3.5-2B",
-    "qwen35Large": "Qwen/Qwen3.5-4B",
+    "phi4Mini": "microsoft/Phi-4-mini-instruct",
 }
 MAGIC_REVISIONS = {
     "Qwen/Qwen3.5-0.8B": "2fc06364715b967f1860aea9cf38778875588b17",
     "Qwen/Qwen3.5-2B": "15852e8c16360a2fea060d615a32b45270f8a8fc",
-    "Qwen/Qwen3.5-4B": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+    "microsoft/Phi-4-mini-instruct": "cfbefacb99257ffa30c83adab238a50856ac3083",
 }
 MAGIC_PRESETS = {
     "spoken-corrections": "Resolve explicit spoken self-corrections without paraphrasing.",
-    "polish": (
-        "Rewrite this transcript as clear, natural prose. Fix grammar, punctuation, "
-        "and speech artifacts while preserving its meaning and level of detail."
-    ),
+    # Polish uses clean_up.py's few-shot prompt; see generate_rewrite.
+    "polish": "Clean up the dictation.",
     "concise": (
         "Rewrite this transcript as a short, direct message. Remove repetition and "
         "nonessential wording while preserving every decision, request, and fact."
@@ -385,8 +387,7 @@ class Worker:
 
         self.unload_magic()
         try:
-            import torch
-            from transformers import AutoModelForMultimodalLM, AutoProcessor
+            from transformers import AutoModelForCausalLM, AutoTokenizer, AutoModelForMultimodalLM, AutoProcessor
 
             from huggingface_hub import snapshot_download
             from download_progress import download_progress_class
@@ -399,8 +400,12 @@ class Worker:
                 tqdm_class=download_progress_class(),
             )
             emit_progress("Loading rewrite processor and weights…", stage="load")
-            self.magic_processor = AutoProcessor.from_pretrained(model_path, local_files_only=True)
-            self.magic_model = AutoModelForMultimodalLM.from_pretrained(
+            # Text only: a multimodal checkpoint loads without its vision tower.
+            helper = os.environ.get("DELULU_RUNTIME_KIND") == "coordinator"
+            processor_class = AutoProcessor if helper else AutoTokenizer
+            model_class = AutoModelForMultimodalLM if helper else AutoModelForCausalLM
+            self.magic_processor = processor_class.from_pretrained(model_path, local_files_only=True)
+            self.magic_model = model_class.from_pretrained(
                 model_path,
                 local_files_only=True,
                 dtype="auto",
@@ -504,11 +509,11 @@ class Worker:
             raise RuntimeError("No rewrite model is loaded")
         import torch
 
+        preset = str(request.get("preset", "polish"))
+        if preset == "polish" and request.get("warmup") is not True:
+            return self.clean_up(request)
         system, user = self.magic_prompt(request)
-        messages = [
-            {"role": "system", "content": [{"type": "text", "text": system}]},
-            {"role": "user", "content": [{"type": "text", "text": user}]},
-        ]
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         inputs = self.magic_processor.apply_chat_template(
             messages,
             add_generation_prompt=True,
@@ -519,7 +524,6 @@ class Worker:
         )
         inputs = inputs.to(self.magic_device)
         input_length = int(inputs["input_ids"].shape[-1])
-        preset = str(request.get("preset", "polish"))
         max_new_tokens = 8 if request.get("warmup") is True else (1536 if preset == "concise" else 4096)
         started = time.perf_counter()
         if self.magic_warmup != "complete":
@@ -548,6 +552,21 @@ class Worker:
                 self.magic_warmup = "not-started"
             raise
         self.magic_warmup = "complete"
+        return self.rewrite_result(request, output, started)
+
+    def clean_up(self, request: dict[str, Any]) -> dict[str, Any]:
+        source = str(request.get("text", "")).strip()
+        if not source:
+            raise ValueError("Add a transcript or draft before rewriting")
+        if len(source) > 50_000:
+            raise ValueError("Rewrite input is limited to 50,000 characters")
+        started = time.perf_counter()
+        output = clean_up.Cleaner(self.magic_model, self.magic_processor, self.magic_device).clean(source)
+        self.magic_warmup = "complete"
+        return self.rewrite_result(request, output, started)
+
+    def rewrite_result(self, request: dict[str, Any], output: str, started: float) -> dict[str, Any]:
+        preset = str(request.get("preset", "polish"))
         source = str(request.get("text", "")).strip()
         return {
             "text": output,

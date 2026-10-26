@@ -179,6 +179,7 @@ fn magic_model_info(id: MagicModelId) -> (&'static str, &'static str, u64) {
     match id {
         MagicModelId::Qwen35Small => ("Qwen 3.5 · 0.8B", "0.8B", 800_000_000),
         MagicModelId::Qwen35Medium => ("Qwen 3.5 · 2B", "2B", 2_000_000_000),
+        MagicModelId::Phi4Mini => ("Phi-4 mini · 3.8B", "3.8B", 3_800_000_000),
         MagicModelId::Qwen35Large => ("Qwen 3.5 · 4B", "4B", 4_000_000_000),
     }
 }

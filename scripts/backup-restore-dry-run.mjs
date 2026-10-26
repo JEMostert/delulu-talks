@@ -36,7 +36,9 @@ const languages = [
   "ko",
   "vi",
 ];
-const magicModels = ["qwen35Small", "qwen35Medium", "qwen35Large"];
+const magicModels = ["qwen35Medium", "phi4Mini"];
+// History may still name retired writing models.
+const knownMagicModels = [...magicModels, "qwen35Small", "qwen35Large"];
 const presets = ["polish", "concise", "structured", "prompt"];
 const booleanSettings = [
   "onboardingComplete",
@@ -590,7 +592,7 @@ export function inspectBackup({ source, target, profiles = [] }) {
             literal: true,
           });
         if (own(record, "magicModel") && record.magicModel !== null)
-          enumeration(record.magicModel, `${path}.magicModel`, magicModels);
+          enumeration(record.magicModel, `${path}.magicModel`, knownMagicModels);
         if (own(record, "magicPreset") && record.magicPreset !== null)
           enumeration(record.magicPreset, `${path}.magicPreset`, presets);
         if (own(record, "magicIncludedInferences"))

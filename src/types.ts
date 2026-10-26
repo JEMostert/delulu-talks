@@ -31,7 +31,12 @@ export type SpeechModelId = "r2t2" | "r2t2Mlx";
 export type SpeechTier = "small" | "medium" | "large";
 /** Historical Qwen speech results retain their identity; it is never an active engine. */
 export type ModelId = SpeechModelId | "qwen3Asr";
-export type MagicModelId = "qwen35Small" | "qwen35Medium" | "qwen35Large";
+/** Offered: qwen35Medium and phi4Mini. The others are retired but may name older history. */
+export type MagicModelId =
+  | "qwen35Medium"
+  | "phi4Mini"
+  | "qwen35Small"
+  | "qwen35Large";
 export type MagicPreset =
   | "spoken-corrections"
   | "polish"

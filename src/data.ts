@@ -16,16 +16,16 @@ const R2T2_LICENSE = {
     "https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE",
 };
 
-function rewriteProvenance(repo: string): ModelProvenance {
+function rewriteProvenance(repo: string, licenseName: string): ModelProvenance {
   return {
-    licenseName: "Apache 2.0",
+    licenseName,
     licenseUrl: `https://huggingface.co/${repo}/blob/main/LICENSE`,
     variants: [
       {
         label: "Optional rewriting",
         revision: null,
         conversion:
-          "Original Qwen checkpoint loaded through Transformers; no Delulu format conversion.",
+          "Original checkpoint loaded through Transformers; no Delulu format conversion.",
       },
     ],
   };
@@ -251,41 +251,29 @@ export function speechTierById(id: SpeechTier) {
 
 export const MAGIC_MODELS: MagicModelInfo[] = [
   {
-    id: "qwen35Small",
-    hfId: "Qwen/Qwen3.5-0.8B",
-    name: "Qwen 3.5 · 0.8B",
-    role: "Quick polish",
-    description:
-      "The lightest option for cleanup, concise notes, and fast everyday rewrites.",
-    parameters: "0.8B",
-    memory: "~2 GB",
-    speed: "Fastest",
-    provenance: rewriteProvenance("Qwen/Qwen3.5-0.8B"),
-  },
-  {
     id: "qwen35Medium",
     hfId: "Qwen/Qwen3.5-2B",
     name: "Qwen 3.5 · 2B",
-    role: "Best balance",
+    role: "Compact",
     description:
-      "Stronger instruction following and structure without the footprint of the largest option.",
+      "Runs on any recent computer. Removes fillers, applies your spoken corrections and fixes punctuation.",
     parameters: "2B",
     memory: "~4.5 GB",
-    speed: "Balanced",
-    provenance: rewriteProvenance("Qwen/Qwen3.5-2B"),
+    speed: "Fast",
+    provenance: rewriteProvenance("Qwen/Qwen3.5-2B", "Apache 2.0"),
     recommended: true,
   },
   {
-    id: "qwen35Large",
-    hfId: "Qwen/Qwen3.5-4B",
-    name: "Qwen 3.5 · 4B",
-    role: "Deepest rewrite",
+    id: "phi4Mini",
+    hfId: "microsoft/Phi-4-mini-instruct",
+    name: "Phi-4 mini · 3.8B",
+    role: "Strong",
     description:
-      "Best for detailed prompts, coding context, and useful constraints the source only implied.",
-    parameters: "4B",
+      "Catches more corrections and cancellations. Needs a GPU with about 10 GB free, or Apple Silicon with 16 GB.",
+    parameters: "3.8B",
     memory: "~8.5 GB",
-    speed: "Deliberate",
-    provenance: rewriteProvenance("Qwen/Qwen3.5-4B"),
+    speed: "Fast on a GPU",
+    provenance: rewriteProvenance("microsoft/Phi-4-mini-instruct", "MIT"),
   },
 ];
 
@@ -330,5 +318,5 @@ export function modelById(id: AppSettings["model"]) {
 }
 
 export function magicModelById(id: AppSettings["magicModel"]) {
-  return MAGIC_MODELS.find((model) => model.id === id) ?? MAGIC_MODELS[1];
+  return MAGIC_MODELS.find((model) => model.id === id) ?? MAGIC_MODELS[0];
 }

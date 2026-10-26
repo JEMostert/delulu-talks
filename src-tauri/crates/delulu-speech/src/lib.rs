@@ -26,6 +26,7 @@ pub mod paste_last;
 pub mod ports;
 pub mod profile;
 pub mod retry_audio;
+mod rewrite_samples;
 mod speech;
 mod status;
 mod support;

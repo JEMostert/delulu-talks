@@ -96,14 +96,14 @@ fn variant(label: &str, revision: Option<&str>, conversion: &str, attribution_ur
 const R2T2_LICENSE_NAME: &str = "NetEase Youdao Model Use License Agreement";
 const R2T2_LICENSE_URL: &str = "https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE";
 
-fn rewrite_provenance(repo: &str) -> ModelProvenance {
+fn rewrite_provenance(repo: &str, license: &str) -> ModelProvenance {
     ModelProvenance {
-        license_name: "Apache 2.0".into(),
+        license_name: license.into(),
         license_url: format!("https://huggingface.co/{repo}/blob/main/LICENSE"),
         variants: vec![variant(
             "Optional rewriting",
             None,
-            "Original Qwen checkpoint loaded through Transformers; no Delulu format conversion.",
+            "Original checkpoint loaded through Transformers; no Delulu format conversion.",
             None,
         )],
     }
@@ -268,7 +268,7 @@ pub fn speech_tier_by_id(id: SpeechTier) -> &'static SpeechTierInfo {
 }
 
 pub static MAGIC_MODELS: LazyLock<Vec<MagicModelInfo>> = LazyLock::new(|| {
-    let model = |id, hf_id: &str, name: &str, role: &str, description: &str, parameters: &str, memory: &str, speed: &str, recommended| {
+    let model = |id, hf_id: &str, license: &str, name: &str, role: &str, description: &str, parameters: &str, memory: &str, speed: &str, recommended| {
         MagicModelInfo {
             id,
             hf_id: hf_id.into(),
@@ -278,42 +278,33 @@ pub static MAGIC_MODELS: LazyLock<Vec<MagicModelInfo>> = LazyLock::new(|| {
             parameters: parameters.into(),
             memory: memory.into(),
             speed: speed.into(),
-            provenance: rewrite_provenance(hf_id),
+            provenance: rewrite_provenance(hf_id, license),
             recommended,
         }
     };
     vec![
         model(
-            MagicModelId::Qwen35Small,
-            "Qwen/Qwen3.5-0.8B",
-            "Qwen 3.5 · 0.8B",
-            "Quick polish",
-            "The lightest option for cleanup, concise notes, and fast everyday rewrites.",
-            "0.8B",
-            "~2 GB",
-            "Fastest",
-            None,
-        ),
-        model(
             MagicModelId::Qwen35Medium,
             "Qwen/Qwen3.5-2B",
+            "Apache 2.0",
             "Qwen 3.5 · 2B",
-            "Best balance",
-            "Stronger instruction following and structure without the footprint of the largest option.",
+            "Compact",
+            "Runs on any recent computer. Removes fillers, applies your spoken corrections and fixes punctuation.",
             "2B",
             "~4.5 GB",
-            "Balanced",
+            "Fast",
             Some(true),
         ),
         model(
-            MagicModelId::Qwen35Large,
-            "Qwen/Qwen3.5-4B",
-            "Qwen 3.5 · 4B",
-            "Deepest rewrite",
-            "Best for detailed prompts, coding context, and useful constraints the source only implied.",
-            "4B",
+            MagicModelId::Phi4Mini,
+            "microsoft/Phi-4-mini-instruct",
+            "MIT",
+            "Phi-4 mini · 3.8B",
+            "Strong",
+            "Catches more corrections and cancellations. Needs a GPU with about 10 GB free, or Apple Silicon with 16 GB.",
+            "3.8B",
             "~8.5 GB",
-            "Deliberate",
+            "Fast on a GPU",
             None,
         ),
     ]
@@ -359,7 +350,7 @@ pub fn model_by_id(id: SpeechModelId) -> &'static ModelInfo {
 }
 
 pub fn magic_model_by_id(id: MagicModelId) -> &'static MagicModelInfo {
-    MAGIC_MODELS.iter().find(|model| model.id == id).unwrap_or(&MAGIC_MODELS[1])
+    MAGIC_MODELS.iter().find(|model| model.id == id).unwrap_or(&MAGIC_MODELS[0])
 }
 
 /* Rewrite presets */
@@ -391,10 +382,10 @@ pub const REWRITE_PRESETS: &[RewritePreset] = &[
     },
     RewritePreset {
         id: MagicPreset::Polish,
-        label: "Polish",
-        description: "Clean up grammar and speech artifacts, keeping your tone and detail.",
-        example_source: "so I checked the draft and um the second paragraph needs a clearer example",
-        example_output: "I checked the draft, and the second paragraph needs a clearer example.",
+        label: "Clean up",
+        description: "Fix grammar, drop filler words and keep only your final version after a correction.",
+        example_source: "um book the room for Tuesday, sorry, Wednesday and invite the team",
+        example_output: "Book the room for Wednesday and invite the team.",
     },
     RewritePreset {
         id: MagicPreset::BulletPoints,

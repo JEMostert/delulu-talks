@@ -51,7 +51,7 @@ VOICE_PART_FIELDS = {"text": frozenset({"kind", "text"}), "event": frozenset({"k
                      "pause": frozenset({"kind", "ms"})}
 SPEECH_MODELS = frozenset({"r2t2", "canary-180m", "parakeet-v2", "parakeet-v3"})
 MAGIC_PRESETS = frozenset({"spoken-corrections", "polish", "concise", "structured", "prompt", "bullet-points", "professional-message"})
-MAGIC_MODELS = frozenset({"qwen35Small", "qwen35Medium", "qwen35Large"})
+MAGIC_MODELS = frozenset({"qwen35Medium", "phi4Mini"})
 # Keep aligned with the shared PipelineTimings contract; unknown stages are omitted.
 TIMING_FIELDS = frozenset({
     "captureEndMs", "preprocessingMs", "speechLoadMs", "speechRequestMs",

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import type React from "react";
 import {
   AudioWaveform,
-  Check,
   Download,
   Keyboard,
   Languages,
@@ -617,93 +616,65 @@ export function SettingsPage(props: Props) {
 
         {section === "rewriting" && (
           <>
-            <div className="spoken-corrections-card">
-              <span className="cleanup-eyebrow">Spoken corrections</span>
-              <h3>Change your mind. Keep talking.</h3>
-              <p>
-                Take back a request or correct yourself naturally. What you
-                explicitly withdraw is removed; your wording and the original
-                transcript stay.
-              </p>
-              <div className="cleanup-example">
-                <s>I want a new logo.</s> Also remake this feature.{" "}
-                <s>Never mind, don’t do the logo.</s>
-              </div>
-              <div className="panel-actions">
-                <button
-                  className="primary-button"
-                  disabled={
-                    saving ||
-                    busy ||
-                    (s.magicEnabled && s.magicPreset === "spoken-corrections")
-                  }
-                  onClick={() =>
-                    save({
-                      magicEnabled: true,
-                      memoryPolicy: "balanced",
-                      magicPreset: "spoken-corrections",
-                      magicAllowInferences: false,
-                    })
-                  }
-                >
-                  {s.magicEnabled && s.magicPreset === "spoken-corrections" ? (
-                    <>
-                      <Check /> Spoken corrections on
-                    </>
-                  ) : (
-                    "Use spoken corrections"
-                  )}
-                </button>
-                {magicStatus.engine === "missing" && (
-                  <button
-                    className="secondary-button"
-                    disabled={busy}
-                    onClick={props.onSetupMagic}
-                  >
-                    Set up rewriting model
-                  </button>
-                )}
-              </div>
-            </div>
             <Group title="After dictation">
               <SettingRow
-                title="Rewrite after dictation"
-                description="Apply a style before delivery; the original stays in History."
+                title="Rewrite dictation"
+                description={`Style: ${REWRITE_PRESETS.find((preset) => preset.id === s.magicPreset)?.label ?? "Clean up"}. The original stays in History.`}
               >
-                {toggle("magicEnabled", "Rewrite after dictation", busy)}
-              </SettingRow>
-              <SettingRow title="Style">
-                <select
-                  aria-label="Rewrite style"
-                  value={s.magicPreset}
-                  disabled={saving}
-                  onChange={(e) =>
-                    save({
-                      ...(e.target.value === "spoken-corrections"
-                        ? { magicAllowInferences: false }
-                        : {}),
-                      magicPreset: e.target.value as AppSettings["magicPreset"],
-                    })
-                  }
-                >
-                  {REWRITE_PRESETS.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </SettingRow>
-              <SettingRow
-                title="Allow added assumptions"
-                description="Let rewriting fill in missing detail."
-              >
-                {toggle(
-                  "magicAllowInferences",
-                  "Allow added assumptions",
-                  s.magicPreset === "spoken-corrections",
-                )}
+                <Toggle
+                  value={s.magicEnabled}
+                  label="Rewrite dictation"
+                  disabled={saving || busy}
+                  onChange={() => save({ magicEnabled: !s.magicEnabled })}
+                />
               </SettingRow>
             </Group>
+            {magicStatus.engine === "missing" && s.magicEnabled && (
+              <button
+                className="secondary-button"
+                disabled={busy}
+                onClick={props.onSetupMagic}
+              >
+                Set up rewriting model
+              </button>
+            )}
+            <details className="disclosure">
+              <summary>Other rewrite styles</summary>
+              <div className="pref-list">
+                <SettingRow title="Style">
+                  <select
+                    aria-label="Rewrite style"
+                    value={s.magicPreset}
+                    disabled={saving}
+                    onChange={(e) =>
+                      save({
+                        ...(e.target.value === "spoken-corrections"
+                          ? { magicAllowInferences: false }
+                          : {}),
+                        magicPreset: e.target
+                          .value as AppSettings["magicPreset"],
+                      })
+                    }
+                  >
+                    {REWRITE_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                </SettingRow>
+                <SettingRow
+                  title="Allow added assumptions"
+                  description="Let rewriting fill in missing detail."
+                >
+                  {toggle(
+                    "magicAllowInferences",
+                    "Allow added assumptions",
+                    s.magicPreset === "spoken-corrections",
+                  )}
+                </SettingRow>
+              </div>
+            </details>
             <Group title="Rewriting model">
               <SettingRow title="Model">
                 <select

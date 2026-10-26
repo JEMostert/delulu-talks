@@ -16,7 +16,7 @@ pub const PROGRESS_PREFIX: &str = "@delulu-progress:";
 
 const PRESETS: &[&str] =
     &["spoken-corrections", "polish", "concise", "structured", "prompt", "bullet-points", "professional-message"];
-const MAGIC_MODELS: &[&str] = &["qwen35Small", "qwen35Medium", "qwen35Large"];
+const MAGIC_MODELS: &[&str] = &["qwen35Medium", "phi4Mini"];
 const SPEECH_MODELS: &[&str] = &["r2t2", "canary-180m", "parakeet-v2", "parakeet-v3"];
 pub const COMMANDS: &[&str] = &[
     "status",
@@ -447,7 +447,7 @@ fn coordinator_request(request: &Object, command: &str) -> Checked {
     let mut fields = vec!["protocolVersion", "id", "command"];
     if matches!(command, "coordinatorLoad" | "coordinatorSetup") {
         fields.extend(["model", "cacheDir"]);
-        if !matches!(str_of(request, "model"), Some("qwen35Small" | "qwen35Medium")) {
+        if !matches!(str_of(request, "model"), Some("qwen35Medium" | "phi4Mini")) {
             return Err("Unsupported coordinator model".into());
         }
         if request.contains_key("cacheDir") {

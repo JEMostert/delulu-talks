@@ -22,10 +22,12 @@ pub enum SpeechTier {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MagicModelId {
-    #[serde(rename = "qwen35Small")]
-    Qwen35Small,
     #[serde(rename = "qwen35Medium")]
     Qwen35Medium,
+    #[serde(rename = "phi4Mini")]
+    Phi4Mini,
+    #[serde(rename = "qwen35Small")]
+    Qwen35Small,
     #[serde(rename = "qwen35Large")]
     Qwen35Large,
 }

@@ -319,7 +319,7 @@ function App({ workspace: w }: { workspace: ReturnType<typeof useWorkspace> }) {
     {
       id: "load-rewrite",
       label: "Load rewriting model",
-      detail: "Prepare the selected optional Qwen 3.5 model.",
+      detail: "Prepare the selected rewriting model.",
       disabled: busy
         ? "Finish the current capture or model operation first."
         : w.magicStatus.engine === "missing"

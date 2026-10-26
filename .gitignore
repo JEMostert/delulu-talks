@@ -31,3 +31,4 @@ __pycache__
 artifacts/
 test-results/
 playwright-report/
+.rewrite-samples/

@@ -27,13 +27,12 @@ export const REWRITE_PRESETS: ReadonlyArray<{
   },
   {
     id: "polish",
-    label: "Polish",
+    label: "Clean up",
     description:
-      "Clean up grammar and speech artifacts, keeping your tone and detail.",
+      "Fix grammar, drop filler words and keep only your final version after a correction.",
     exampleSource:
-      "so I checked the draft and um the second paragraph needs a clearer example",
-    exampleOutput:
-      "I checked the draft, and the second paragraph needs a clearer example.",
+      "um book the room for Tuesday, sorry, Wednesday and invite the team",
+    exampleOutput: "Book the room for Wednesday and invite the team.",
   },
   {
     id: "bullet-points",
