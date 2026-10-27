@@ -1,58 +1,46 @@
+import { useCallback } from "react";
 import { useAppState, type Page } from "./state";
+import { useScheme } from "./useScheme";
+import { Header, Wordmark } from "./components/Header";
+import { Toast } from "./components/Toast";
+import { Pearl } from "./pearl/Pearl";
 import { FirstRun } from "./screens/FirstRun";
 import { Home } from "./screens/Home";
 import { History } from "./screens/History";
 import { Settings } from "./screens/Settings";
-import "./style.css";
+import "./styles/index.css";
 
 export default function App() {
   const state = useAppState();
   const { status, settings, notice, setNotice, page, setPage, setQuery } =
     state;
+  useScheme(settings?.theme);
+  const dismiss = useCallback(() => setNotice(""), [setNotice]);
+  const navigate = useCallback(
+    (next: Page) => {
+      setPage(next);
+      setQuery("");
+    },
+    [setPage, setQuery],
+  );
   if (!status || !settings)
     return (
-      <main className="loading">
-        <img src="/delulu-talks-icon.svg" alt="" />
-        <p>{notice || "Starting Delulu Talks…"}</p>
+      <main className="launch">
+        <Wordmark />
+        <Pearl mode="loadingModel" label="Starting" className="launch-pearl" />
+        <p role="status">{notice || "Starting Delulu Talks…"}</p>
       </main>
     );
   if (status.phase === "needsSetup") return <FirstRun state={state} />;
   return (
     <div className="app">
-      <aside>
-        <div className="brand">
-          <img src="/delulu-talks-icon.svg" alt="" />
-          <span>Delulu Talks</span>
-        </div>
-        <nav aria-label="Main navigation">
-          {(["Home", "History", "Settings"] as Page[]).map((item) => (
-            <button
-              key={item}
-              className={page === item ? "selected" : ""}
-              onClick={() => {
-                setPage(item);
-                setQuery("");
-              }}
-            >
-              {item}
-            </button>
-          ))}
-        </nav>
-        <p className="aside-note">Your voice, on your machine.</p>
-      </aside>
-      <main className="content">
-        {notice && (
-          <div className="notice" role="status">
-            {notice}
-            <button aria-label="Dismiss message" onClick={() => setNotice("")}>
-              ×
-            </button>
-          </div>
-        )}
+      <Header page={page} phase={status.phase} onNavigate={navigate} />
+      <main className={`page page-${page.toLowerCase()}`} key={page}>
         {page === "Home" && <Home state={state} />}
         {page === "History" && <History state={state} />}
         {page === "Settings" && <Settings state={state} />}
       </main>
+      <Toast notice={notice} onDismiss={dismiss} />
     </div>
   );
 }

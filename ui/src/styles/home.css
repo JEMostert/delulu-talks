@@ -1,0 +1,209 @@
+.home {
+  display: grid;
+  grid-template-columns: minmax(330px, 1fr) minmax(0, 1.08fr);
+  gap: clamp(20px, 3vw, 40px);
+  height: 100%;
+  padding: 2px 20px 20px;
+}
+
+/* Hero: the pearl in its well */
+.hero {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding: 18px 30px 30px;
+}
+.hero-stage {
+  position: relative;
+  min-height: 0;
+  margin: 0 -30px;
+}
+.hero-stage .pearl {
+  position: absolute;
+  inset: 0;
+}
+.hero-copy {
+  position: relative;
+  display: grid;
+  gap: 12px;
+}
+.hero-title {
+  font-size: var(--t-hero);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  transition: color 300ms;
+}
+.phase-recording .hero-title {
+  color: var(--coral);
+}
+.phase-transcribing .hero-title,
+.phase-loadingModel .hero-title {
+  color: var(--foam);
+}
+.phase-error .hero-title {
+  color: var(--amber);
+}
+.hero-title.flash-success {
+  color: var(--seaglass);
+}
+.hero-title.flash-warning {
+  color: var(--amber);
+}
+.hero-hint {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  align-content: start;
+  min-height: 84px;
+  color: rgba(234, 246, 255, 0.68);
+  font-size: var(--t-body);
+}
+.hero-hold {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--pearl-ink);
+  font-size: 1.05rem;
+  font-weight: 560;
+}
+.well kbd {
+  background: rgba(234, 246, 255, 0.08);
+  color: var(--pearl-ink);
+  box-shadow:
+    inset 0 0 0 1px rgba(234, 246, 255, 0.2),
+    inset 0 -2px 0 rgba(234, 246, 255, 0.16);
+}
+.keys-large kbd {
+  min-width: 36px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: var(--t-body);
+}
+.hero-action {
+  margin-top: 4px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgba(234, 246, 255, 0.28);
+  border-radius: var(--r-pill);
+  background: rgba(234, 246, 255, 0.06);
+  color: var(--pearl-ink);
+  font-weight: 560;
+}
+.hero-action:hover {
+  background: rgba(234, 246, 255, 0.14);
+}
+.well :focus-visible {
+  outline-color: var(--foam);
+}
+
+/* Recent transcripts */
+.recent {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 4px 0 0;
+}
+.recent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 8px;
+}
+.entries {
+  display: grid;
+}
+.entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 14px 0 15px;
+  border-top: 1px solid var(--line);
+}
+.entry-text {
+  font-family: var(--font-text);
+  font-size: var(--t-text);
+  line-height: 1.5;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.home .entry-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.entry-text mark {
+  border-radius: 3px;
+  background: var(--mark);
+  color: inherit;
+}
+.entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin-top: 6px;
+  color: var(--ink-3);
+  font-size: var(--t-meta);
+  font-variant-numeric: tabular-nums;
+}
+.entry-lang {
+  color: var(--ink-2);
+  font-weight: 560;
+}
+.entry-actions {
+  display: flex;
+  align-self: start;
+  margin-top: -3px;
+}
+
+.recovery {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  border-radius: var(--r-group);
+  background: var(--amber-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 35%, transparent);
+}
+.recovery-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--amber-ink);
+  font-weight: 600;
+}
+.recovery-text {
+  font-family: var(--font-text);
+  font-size: var(--t-text);
+}
+
+.empty {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  max-width: 42ch;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+.empty-title {
+  font-family: var(--font-text);
+  font-size: 1.5rem;
+  font-weight: 450;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+@media (max-width: 760px) {
+  .home {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(340px, 58%) auto;
+    height: auto;
+    min-height: 100%;
+  }
+}

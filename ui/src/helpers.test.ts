@@ -1,12 +1,20 @@
 import { expect, test } from "bun:test";
 import {
+  dayLabel,
+  groupByDay,
+  highlight,
+  hotkeyKeys,
+  isTransientNotice,
+  noticeTone,
+  resultWord,
+  whenLabel,
   formatMs,
   formatDate,
   languageName,
   settingsPatch,
   insertMessage,
 } from "./helpers";
-import type { Settings } from "./ipc";
+import type { HistoryEntry, Settings } from "./ipc";
 test("formats timings and dates", () => {
   expect(formatMs(250)).toBe("250 ms");
   expect(formatMs(1250)).toBe("1.3 s");
@@ -28,6 +36,7 @@ test("maps language names and settings without changing other values", () => {
     insert: "off",
     theme: "system",
     language: "auto",
+    overlay: true,
   };
   expect(settingsPatch(settings, "theme", "dark")).toEqual({
     ...settings,
@@ -42,4 +51,65 @@ test("delivery messages preserve recovery information", () => {
   expect(
     insertMessage({ kind: "failed", reason: "Clipboard unavailable" }),
   ).toContain("Clipboard unavailable");
+});
+
+test("hotkey triggers become keycaps", () => {
+  expect(hotkeyKeys("Super+Z")).toEqual(["Super", "Z"]);
+  expect(hotkeyKeys("<Super>z")).toEqual(["Super", "Z"]);
+  expect(hotkeyKeys("Press <Control><Alt>space")).toEqual([
+    "Ctrl",
+    "Alt",
+    "Space",
+  ]);
+  expect(hotkeyKeys(null)).toEqual([]);
+});
+test("days and times read like a person would say them", () => {
+  const now = new Date(2026, 9, 27, 15, 0).getTime();
+  expect(dayLabel(now - 3600000, now)).toBe("Today");
+  expect(dayLabel(new Date(2026, 9, 26, 23, 59).getTime(), now)).toBe(
+    "Yesterday",
+  );
+  expect(whenLabel(now - 20000, now)).toBe("Just now");
+  expect(whenLabel(now - 5 * 60000, now)).toBe("5 min ago");
+});
+test("history groups by day in order", () => {
+  const now = new Date(2026, 9, 27, 15, 0).getTime();
+  const entry = (id: string, createdAt: number): HistoryEntry => ({
+    id,
+    createdAt,
+    text: id,
+    language: "en",
+    model: "m",
+    audioMs: 0,
+    sttMs: 0,
+    totalMs: 0,
+  });
+  const groups = groupByDay(
+    [
+      entry("a", now - 1000),
+      entry("b", now - 2000),
+      entry("c", now - 86400000),
+    ],
+    now,
+  );
+  expect(groups.map((g) => [g.label, g.entries.length])).toEqual([
+    ["Today", 2],
+    ["Yesterday", 1],
+  ]);
+});
+test("search highlights every case-insensitive match", () => {
+  expect(highlight("Koffie and koffie", "KOFFIE")).toEqual([
+    { text: "Koffie", match: true },
+    { text: " and ", match: false },
+    { text: "koffie", match: true },
+  ]);
+  expect(highlight("plain", " ")).toEqual([{ text: "plain", match: false }]);
+});
+test("result words and notice tones", () => {
+  expect(resultWord({ kind: "pasted" })).toBe("Inserted");
+  expect(resultWord({ kind: "skipped" })).toBe("Nothing heard");
+  expect(noticeTone("Could not copy: denied")).toBe("error");
+  expect(noticeTone("Copied to clipboard")).toBe("info");
+  expect(isTransientNotice("Copied to clipboard")).toBe(true);
+  expect(isTransientNotice("Copied — press Ctrl+V")).toBe(false);
 });

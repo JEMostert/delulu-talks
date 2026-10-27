@@ -1,19 +1,14 @@
-import * as ipc from "../ipc";
 import { insertMessage } from "../helpers";
+import { Hero } from "../components/Hero";
+import { Icon } from "../components/Icon";
+import { Keys } from "../components/Controls";
 import { Transcript } from "../components/Transcript";
 import type { AppState } from "../state";
-const phases: Record<ipc.Phase, string> = {
-  needsSetup: "Getting ready",
-  loadingModel: "Preparing",
-  idle: "Ready to listen",
-  recording: "Listening",
-  transcribing: "Turning speech into text",
-  error: "Needs attention",
-};
+
 export function Home({ state }: { state: AppState }) {
   const {
     status,
-    trigger,
+    level,
     recovery,
     copy,
     setQuery,
@@ -23,60 +18,70 @@ export function Home({ state }: { state: AppState }) {
     insert,
   } = state;
   if (!status) return null;
+  const go = (page: "History" | "Settings") => {
+    setQuery("");
+    setPage(page);
+  };
   return (
-    <>
-      <div className="page-heading">
-        <h1>Home</h1>
-        <p>Your space to speak freely.</p>
-      </div>
-      <section className={`status status-${status.phase}`}>
-        <div className="status-orb" aria-hidden="true">
-          <span />
+    <div className="home">
+      <Hero
+        status={status}
+        level={level}
+        recovery={recovery}
+        onSettings={() => go("Settings")}
+      />
+      <section className="recent" aria-labelledby="recent-title">
+        <div className="recent-head">
+          <h2 id="recent-title">Recent</h2>
+          {history.length > 0 && (
+            <button
+              type="button"
+              className="link"
+              onClick={() => go("History")}
+            >
+              All history
+            </button>
+          )}
         </div>
-        <div>
-          <p className="status-label">Dictation</p>
-          <h2>{phases[status.phase]}</h2>
-          <p>
-            {status.message ||
-              (status.phase === "idle"
-                ? `Hold ${trigger} to speak, or tap to start and stop.`
-                : status.hotkey.error || "")}
-          </p>
-        </div>
+        {recovery?.insert.kind === "failed" && (
+          <div className="recovery" role="alert">
+            <div className="recovery-head">
+              <Icon name="alert" size={17} />
+              <span>{insertMessage(recovery.insert)}</span>
+            </div>
+            <p className="recovery-text">{recovery.entry.text}</p>
+            <button
+              type="button"
+              className="button"
+              onClick={() => void copy(recovery.entry.text)}
+            >
+              <Icon name="copy" size={16} />
+              Copy text
+            </button>
+          </div>
+        )}
+        {history.length === 0 ? (
+          <div className="empty empty-recent">
+            <p className="empty-title">Nothing said yet</p>
+            <p>
+              Hold <Keys trigger={status.hotkey.trigger} /> in any app and say
+              something. Your words show up here.
+            </p>
+          </div>
+        ) : (
+          <ol className="entries">
+            {history.map((entry) => (
+              <Transcript
+                key={entry.id}
+                entry={entry}
+                languages={languages}
+                onCopy={copy}
+                onInsert={insert}
+              />
+            ))}
+          </ol>
+        )}
       </section>
-      {recovery?.insert.kind === "failed" && (
-        <section className="recovery">
-          <h2>Recover transcript</h2>
-          <p>{recovery.entry.text}</p>
-          <p className="error">{insertMessage(recovery.insert)}</p>
-          <button onClick={() => void copy(recovery.entry.text)}>Copy</button>
-        </section>
-      )}
-      <div className="section-title">
-        <h2>Recent transcripts</h2>
-        <button
-          className="link"
-          onClick={() => {
-            setQuery("");
-            setPage("History");
-          }}
-        >
-          View history
-        </button>
-      </div>
-      {history.length === 0 ? (
-        <p className="empty">Your recent transcripts will appear here.</p>
-      ) : (
-        history.map((entry) => (
-          <Transcript
-            key={entry.id}
-            entry={entry}
-            languages={languages}
-            onCopy={copy}
-            onInsert={insert}
-          />
-        ))
-      )}
-    </>
+    </div>
   );
 }

@@ -1,143 +1,97 @@
+import { useCallback } from "react";
 import * as ipc from "../ipc";
+import { Wordmark } from "../components/Header";
+import { Toast } from "../components/Toast";
+import { Pearl } from "../pearl/Pearl";
 import { errorText, type AppState } from "../state";
+import { MicrophoneStep, ModelStep, TypingStep } from "./SetupSteps";
+
+const steps = [
+  { title: "Microphone", Body: MicrophoneStep },
+  { title: "Talk key", Body: TypingStep },
+  { title: "Model", Body: ModelStep },
+];
+
+const pearlCaption = ["Say something.", "Hold, talk, let go.", "Almost there."];
+
 export function FirstRun({ state }: { state: AppState }) {
-  const {
-    settings,
-    microphones,
-    step,
-    setStep,
-    level,
-    trigger,
-    permission,
-    setPermission,
-    modelControl,
-    modelReady,
-    notice,
-    setNotice,
-    setStatus,
-    update,
-  } = state;
+  const { settings, step, setStep, level, modelReady, notice, setNotice } =
+    state;
+  const dismiss = useCallback(() => setNotice(""), [setNotice]);
   if (!settings) return null;
+  const last = step === steps.length - 1;
+  const { Body } = steps[step];
+  const finish = () =>
+    void ipc
+      .finishFirstRun()
+      .then(() => ipc.getStatus())
+      .then(state.setStatus)
+      .catch((e) => setNotice(errorText(e)));
   return (
     <main className="setup">
-      <header className="brand">
-        <img src="/delulu-talks-icon.svg" alt="" />
-        <span>Delulu Talks</span>
-      </header>
-      <div className="setup-body">
-        <div className="steps" aria-label={`Step ${step + 1} of 3`}>
-          <span className={step === 0 ? "active" : ""}>
-            1 <b>Microphone</b>
-          </span>
-          <span className={step === 1 ? "active" : ""}>
-            2 <b>Typing</b>
-          </span>
-          <span className={step === 2 ? "active" : ""}>
-            3 <b>Model</b>
-          </span>
+      <aside className="well setup-well">
+        <Wordmark />
+        <div className="setup-stage">
+          <Pearl
+            mode={
+              step === 0
+                ? "micTest"
+                : modelReady && last
+                  ? "idle"
+                  : "needsSetup"
+            }
+            level={step === 0 ? level : 0}
+            flash={modelReady && last ? "success" : null}
+            label={step === 0 ? "Microphone level" : "Setup"}
+          />
         </div>
-        <div className="setup-content">
-          {step === 0 && (
-            <>
-              <h1>Let’s hear you.</h1>
-              <p>Choose a microphone and speak to check its level.</p>
-              <label htmlFor="setup-mic">Microphone</label>
-              <select
-                id="setup-mic"
-                value={settings.microphone ?? ""}
-                onChange={(e) =>
-                  void update("microphone", e.target.value || null)
-                }
-              >
-                <option value="">System default</option>
-                {microphones.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                    {m.isDefault ? " (default)" : ""}
-                  </option>
-                ))}
-              </select>
-              <div
-                className="meter"
-                role="meter"
-                aria-label="Microphone level"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(level * 100)}
-              >
-                <span style={{ width: `${Math.min(100, level * 100)}%` }} />
-              </div>
-              <p className="muted">Input level</p>
-            </>
-          )}
-          {step === 1 && (
-            <>
-              <h1>Ready when you are.</h1>
-              <p>
-                Hold {trigger} to speak, then release to finish. You can also
-                tap to start and tap again to stop.
-              </p>
-              <div className="shortcut">{trigger}</div>
-              <p>Allow Delulu Talks to type into the app you’re using.</p>
-              <button
-                onClick={() =>
-                  void ipc
-                    .prepareInsert()
-                    .then(setPermission)
-                    .catch((e) =>
-                      setPermission({ ready: false, error: errorText(e) }),
-                    )
-                }
-              >
-                Allow typing into other apps
-              </button>
-              {permission && (
-                <p className={permission.ready ? "success" : "error"}>
-                  {permission.ready
-                    ? "Typing permission is ready."
-                    : permission.error ||
-                      "Typing permission was not granted. You can still copy transcripts."}
-                </p>
-              )}
-            </>
-          )}
-          {step === 2 && (
-            <>
-              <h1>One last download.</h1>
-              <p>
-                Your speech stays on this machine. Download a model to get
-                started.
-              </p>
-              {modelControl}
-            </>
-          )}
-          {notice && (
-            <p className="notice" role="status">
-              {notice}
-            </p>
-          )}
-          <div className="setup-actions">
-            {step > 0 && (
-              <button onClick={() => setStep(step - 1)}>Back</button>
-            )}
-            <button
-              className="primary"
-              disabled={step === 2 && !modelReady}
-              onClick={() => {
-                if (step < 2) setStep(step + 1);
-                else
-                  void ipc
-                    .finishFirstRun()
-                    .then(() => ipc.getStatus())
-                    .then(setStatus)
-                    .catch((e) => setNotice(errorText(e)));
-              }}
+        <p className="setup-caption">
+          {last && modelReady ? "All set." : pearlCaption[step]}
+        </p>
+      </aside>
+      <section className="setup-panel" aria-labelledby="setup-step">
+        <ol
+          className="stepper"
+          id="setup-step"
+          aria-label={`Step ${step + 1} of ${steps.length}`}
+        >
+          {steps.map(({ title }, i) => (
+            <li
+              key={title}
+              className={i === step ? "now" : i < step ? "done" : ""}
+              aria-current={i === step ? "step" : undefined}
             >
-              {step === 2 ? "Finish setup" : "Continue"}
-            </button>
-          </div>
+              <span className="stepper-bar" />
+              <span className="stepper-label">
+                {i + 1}. {title}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <div className="setup-body" key={step}>
+          <Body state={state} />
         </div>
-      </div>
+        <div className="setup-actions">
+          {step > 0 && (
+            <button
+              type="button"
+              className="button quiet"
+              onClick={() => setStep(step - 1)}
+            >
+              Back
+            </button>
+          )}
+          <button
+            type="button"
+            className="button primary"
+            disabled={last && !modelReady}
+            onClick={() => (last ? finish() : setStep(step + 1))}
+          >
+            {last ? "Start talking" : "Continue"}
+          </button>
+        </div>
+      </section>
+      <Toast notice={notice} onDismiss={dismiss} />
     </main>
   );
 }

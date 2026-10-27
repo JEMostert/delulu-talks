@@ -1,0 +1,91 @@
+/*
+ * Deep well, living pearl.
+ * Light is "Nacre": the cool inside of a shell. Dark is "Abyss".
+ * The well (the dark panel that holds the pearl) is dark in both, like the
+ * recording pill, so the pearl always sits in deep water.
+ */
+:root {
+  color-scheme: light;
+  --font-ui: "Bricolage Grotesque Variable", "Cantarell", system-ui, sans-serif;
+  --font-text: "Newsreader Variable", "Iowan Old Style", Georgia, serif;
+
+  /* Brand constants, shared with the recording pill */
+  --shell: #06192b;
+  --abyss: #030e1a;
+  --pearl-ink: #eaf6ff;
+  --foam: #75e4ff;
+  --coral: #ff6f86;
+  --seaglass: #5fdcbf;
+  --amber: #f6c979;
+  --lavender: #c2addb;
+
+  /* Nacre */
+  --bg: #e9edf4;
+  --surface: #f8f9fc;
+  --surface-hover: #ffffff;
+  --sunken: #dfe4ee;
+  --ink: #0b2135;
+  --ink-2: #47596d;
+  --ink-3: #6d7d90;
+  --line: rgba(11, 33, 53, 0.09);
+  --line-strong: rgba(11, 33, 53, 0.18);
+  --accent: #0a6a8f;
+  --accent-soft: rgba(10, 106, 143, 0.1);
+  --primary: #0b2135;
+  --primary-hover: #143552;
+  --primary-ink: #eaf6ff;
+  --coral-ink: #c0304b;
+  --seaglass-ink: #0b7560;
+  --amber-ink: #8a5800;
+  --amber-soft: rgba(214, 150, 30, 0.13);
+  --mark: rgba(194, 173, 219, 0.55);
+  --focus: #0a6a8f;
+  --shadow-1: 0 1px 2px rgba(11, 33, 53, 0.06);
+  --shadow-2:
+    0 1px 2px rgba(11, 33, 53, 0.05), 0 10px 30px -12px rgba(11, 33, 53, 0.22);
+
+  /* Shape: the well is the biggest curve, everything inside steps down */
+  --r-well: 26px;
+  --r-group: 16px;
+  --r-control: 10px;
+  --r-pill: 999px;
+
+  /* Type scale, ~1.2 from 14.5px */
+  --t-meta: 0.78rem;
+  --t-small: 0.84rem;
+  --t-body: 0.906rem;
+  --t-text: 1.06rem;
+  --t-h2: 1.3rem;
+  --t-h1: 1.75rem;
+  --t-hero: clamp(2.3rem, 4.6vw, 3.4rem);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+
+:root[data-scheme="dark"] {
+  color-scheme: dark;
+  --bg: #051424;
+  --surface: #0a2034;
+  --surface-hover: #0e2740;
+  --sunken: #031020;
+  --ink: #eaf6ff;
+  --ink-2: #9db6cb;
+  --ink-3: #7590a8;
+  --line: rgba(234, 246, 255, 0.08);
+  --line-strong: rgba(234, 246, 255, 0.16);
+  --accent: #75e4ff;
+  --accent-soft: rgba(117, 228, 255, 0.1);
+  --primary: #eaf6ff;
+  --primary-hover: #ffffff;
+  --primary-ink: #06192b;
+  --coral-ink: #ff8a9e;
+  --seaglass-ink: #5fdcbf;
+  --amber-ink: #f6c979;
+  --amber-soft: rgba(246, 201, 121, 0.1);
+  --mark: rgba(194, 173, 219, 0.32);
+  --focus: #75e4ff;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2:
+    0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -12px rgba(0, 0, 0, 0.6);
+}
