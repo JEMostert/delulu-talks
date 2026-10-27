@@ -1,0 +1,33 @@
+[workspace]
+members = ["crates/*", "src-tauri"]
+resolver = "2"
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+log = "0.4"
+tokio = { version = "1", features = ["full"] }
+handy-cpal = { version = "=0.18.2", features = ["pulseaudio"] }
+rubato = "0.16"
+whisper-rs = { version = "=0.16.0", features = ["vulkan"] }
+ureq = "3"
+sha2 = "0.10"
+arboard = { version = "3", features = ["wayland-data-control"] }
+ashpd = { version = "0.13", features = ["tokio", "remote_desktop", "screencast", "global_shortcuts"] }
+zbus = "5"
+futures-util = "0.3"
+dirs = "6"
+uuid = { version = "1", features = ["v4"] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-build = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-opener = "2"
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

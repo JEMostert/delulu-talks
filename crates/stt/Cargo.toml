@@ -1,0 +1,12 @@
+[package]
+name = "delulu-stt"
+version.workspace = true
+edition.workspace = true
+[dependencies]
+thiserror.workspace = true
+log.workspace = true
+whisper-rs.workspace = true
+ureq.workspace = true
+sha2.workspace = true
+[features]
+cuda = ["whisper-rs/cuda"]

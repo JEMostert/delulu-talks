@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name={{name}}
-Comment={{comment}}
-Exec={{exec}}
-Icon={{icon}}
-Terminal=false
+Name=Delulu Talks
+Comment=Local push-to-talk dictation
+Exec=delulu-talks
+Icon=delulu-talks
 Categories=AudioVideo;Utility;
 NoDisplay=true
+Terminal=false

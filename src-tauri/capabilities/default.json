@@ -1,7 +1,1 @@
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "The main window reaches the backend only through the ipc_* commands and window drag-and-drop events.",
-  "windows": ["main"],
-  "permissions": ["core:event:default", "core:webview:allow-internal-toggle-devtools", "core:window:default", "core:webview:default"]
-}
+{"identifier":"default","windows":["main"],"permissions":["core:default",{"identifier":"opener:allow-open-url","allow":[{"url":"https://github.com/JEMostert/delulu-talks*"}]}]}

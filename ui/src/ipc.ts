@@ -1,0 +1,103 @@
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
+export type Phase =
+  | "needsSetup"
+  | "loadingModel"
+  | "idle"
+  | "recording"
+  | "transcribing"
+  | "error";
+export type HotkeyStatus = {
+  bound: boolean;
+  trigger: string | null;
+  error: string | null;
+};
+export type InsertStatus = { ready: boolean; error: string | null };
+export type Status = {
+  phase: Phase;
+  message: string | null;
+  hotkey: HotkeyStatus;
+  insert: InsertStatus;
+  backend: string | null;
+  model: string | null;
+};
+export type InsertResult =
+  | { kind: "pasted" }
+  | { kind: "copied"; reason: string | null }
+  | { kind: "failed"; reason: string }
+  | { kind: "skipped" };
+export type Settings = {
+  version: number;
+  microphone: string | null;
+  startAtLogin: boolean;
+  model: string;
+  language: string;
+  insert: "shift-insert" | "ctrl-v" | "ctrl-shift-v" | "off";
+  theme: "system" | "light" | "dark";
+};
+export type InputDevice = { id: string; name: string; isDefault: boolean };
+export type Language = { code: string; name: string };
+export type ModelStatus = {
+  id: string;
+  label: string;
+  bytes: number;
+  downloaded: boolean;
+};
+export type HistoryEntry = {
+  id: string;
+  createdAt: number;
+  text: string;
+  language: string;
+  model: string;
+  audioMs: number;
+  sttMs: number;
+  totalMs: number;
+};
+export type TranscriptEvent = { entry: HistoryEntry; insert: InsertResult };
+export type ModelDownload = {
+  id: string;
+  doneBytes: number;
+  totalBytes: number;
+  finished: boolean;
+  error: string | null;
+};
+export const getStatus = () => invoke<Status>("get_status");
+export const getSettings = () => invoke<Settings>("get_settings");
+export const setSettings = (settings: Settings) =>
+  invoke<Settings>("set_settings", { settings });
+export const listMicrophones = () => invoke<InputDevice[]>("list_microphones");
+export const listLanguages = () => invoke<Language[]>("list_languages");
+export const listModels = () => invoke<ModelStatus[]>("list_models");
+export const downloadModel = (id: string) =>
+  invoke<void>("download_model", { id });
+export const cancelDownload = () => invoke<void>("cancel_download");
+export const startMicTest = () => invoke<void>("start_mic_test");
+export const stopMicTest = () => invoke<void>("stop_mic_test");
+export const startDictation = () => invoke<void>("start_dictation");
+export const stopDictation = () => invoke<void>("stop_dictation");
+export const prepareInsert = () => invoke<InsertStatus>("prepare_insert");
+export const changeHotkey = () => invoke<void>("change_hotkey");
+export const getHistory = (query: string | null, limit: number) =>
+  invoke<HistoryEntry[]>("get_history", { query, limit });
+export const deleteHistory = (id: string) =>
+  invoke<void>("delete_history", { id });
+export const clearHistory = () => invoke<void>("clear_history");
+export const copyText = (text: string) => invoke<void>("copy_text", { text });
+export const reinsert = (id: string) =>
+  invoke<InsertResult>("reinsert", { id });
+export const finishFirstRun = () => invoke<void>("finish_first_run");
+export const openProjectPage = () =>
+  openUrl("https://github.com/JEMostert/delulu-talks");
+export const onStatus = (fn: (value: Status) => void): Promise<UnlistenFn> =>
+  listen<Status>("status", (e) => fn(e.payload));
+export const onMicLevel = (fn: (value: number) => void): Promise<UnlistenFn> =>
+  listen<number>("mic-level", (e) => fn(e.payload));
+export const onTranscript = (
+  fn: (value: TranscriptEvent) => void,
+): Promise<UnlistenFn> =>
+  listen<TranscriptEvent>("transcript", (e) => fn(e.payload));
+export const onModelDownload = (
+  fn: (value: ModelDownload) => void,
+): Promise<UnlistenFn> =>
+  listen<ModelDownload>("model-download", (e) => fn(e.payload));

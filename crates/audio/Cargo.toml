@@ -1,0 +1,10 @@
+[package]
+name = "delulu-audio"
+version.workspace = true
+edition.workspace = true
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+log.workspace = true
+handy-cpal.workspace = true
+rubato.workspace = true

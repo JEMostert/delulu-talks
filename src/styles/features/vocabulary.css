@@ -1,8 +1,0 @@
-/* Words: rule kind tabs beside the add action. */
-.vocabulary-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}

@@ -1,1 +1,0 @@
-{"theme":"dark","shortcut":"CommandOrControl+Shift+Space","language":"NL","magicEnabled":true,"preloadMagicModel":true,"historyLimit":"100","liveTyping":true,"speechDevice":"cpu","customWords":[{"term":"  Kubernetes ","replacement":"k8s","id":"k"},{"term":"Rust","language":5}],"unknownLegacyFlag":"kept"}

@@ -1,305 +1,311 @@
-//! The Delulu Talks desktop app: composes the service crates, routes the
-//! renderer's IPC channels and owns the window, tray, menus and plugins.
-//! Replaces `electron/main.ts` and `electron/ipc/*.ts`.
-
-// `DomainError` is the workspace's shared (frozen) error contract.
-#![allow(clippy::result_large_err)]
-
-#[cfg(target_os = "linux")]
-pub mod appimage;
-mod desktop_entry;
-mod dialogs;
-#[cfg(debug_assertions)]
-mod dev_script;
-mod events;
-pub mod restore_cli;
-mod handlers;
-mod ipc;
-mod lab;
-mod logging;
-mod mac_pill;
-mod profile;
-mod services;
-mod settings;
-mod shell;
-mod shortcuts;
-mod state;
-mod tray;
-mod updates;
-#[cfg(target_os = "linux")]
-mod webview_linux;
-
-use std::path::PathBuf;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-
-use delulu_core::AppPaths;
-use tauri::webview::PermissionResponse;
-use tauri::{AppHandle, Manager, RunEvent};
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-
-use crate::ipc::Router;
-use crate::state::AppState;
-
-/// The bundle's resource directory, or the repository root in development.
-fn resources_dir(app: &AppHandle, packaged: bool) -> PathBuf {
-    if packaged {
-        app.path().resource_dir().unwrap_or_default()
-    } else {
-        dev_resources()
-    }
+use delulu_store::{HistoryEntry, NewEntry, Settings, Store};
+use serde::Serialize;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
+use tauri::{Emitter, Manager, State};
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Status {
+    phase: String,
+    message: Option<String>,
+    hotkey: delulu_hotkey::HotkeyStatus,
+    insert: delulu_insert::InsertStatus,
+    backend: Option<String>,
+    model: Option<String>,
 }
-
-fn dev_resources() -> PathBuf {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    std::fs::canonicalize(&root).unwrap_or(root)
+struct Shell {
+    store: Store,
+    status: Mutex<Status>,
+    mic: AtomicBool,
+    download: AtomicBool,
+    downloaded: Mutex<std::collections::HashSet<String>>,
 }
-
-/// Profile paths for the `mcp` subcommand, resolved like the app does
-/// (resources are not needed there).
-pub fn cli_paths() -> AppPaths {
-    let packaged = !cfg!(debug_assertions);
-    AppPaths::resolve(packaged, if packaged { PathBuf::new() } else { dev_resources() })
+fn status_value(s: &Shell) -> Status {
+    s.status.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
-
-/// Environment that must be set before the webview starts.
-pub fn prepare_environment() {
-    #[cfg(target_os = "linux")]
-    {
-        // NVIDIA's EGL turns on Wayland explicit sync for the window, then
-        // commits a frame without an acquire point: KWin ends the connection
-        // ("explicit sync is used, but no acquire point is set", Gdk Error 71)
-        // and WebKitGTK 2.54 never shows the window. Implicit sync renders at
-        // full speed.
-        if std::env::var_os("WAYLAND_DISPLAY").is_some()
-            && std::path::Path::new("/proc/driver/nvidia/version").exists()
-            && std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none()
-        {
-            std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+fn phase(app: &tauri::AppHandle, s: &Shell, value: &str) {
+    s.status.lock().unwrap_or_else(|e| e.into_inner()).phase = value.into();
+    let _ = app.emit("status", status_value(s));
+}
+#[tauri::command]
+fn get_status(s: State<'_, Shell>) -> Status {
+    status_value(&s)
+}
+#[tauri::command]
+fn get_settings(s: State<'_, Shell>) -> Settings {
+    s.store.settings()
+}
+#[tauri::command]
+fn set_settings(s: State<'_, Shell>, settings: Settings) -> Result<Settings, String> {
+    s.store
+        .save_settings(&settings)
+        .map_err(|e| e.to_string())?;
+    Ok(settings)
+}
+#[tauri::command]
+fn list_microphones() -> Result<Vec<delulu_audio::InputDevice>, String> {
+    delulu_audio::list_inputs().map_err(|e| e.to_string())
+}
+#[derive(Serialize)]
+struct Language {
+    code: &'static str,
+    name: &'static str,
+}
+#[tauri::command]
+fn list_languages() -> Vec<Language> {
+    delulu_stt::languages()
+        .into_iter()
+        .map(|(code, name)| Language { code, name })
+        .collect()
+}
+#[derive(Serialize)]
+struct ModelStatus {
+    id: &'static str,
+    label: &'static str,
+    bytes: u64,
+    downloaded: bool,
+}
+#[tauri::command]
+fn list_models(s: State<'_, Shell>) -> Vec<ModelStatus> {
+    delulu_stt::models()
+        .iter()
+        .map(|m| ModelStatus {
+            id: m.id,
+            label: m.label,
+            bytes: m.bytes,
+            downloaded: s
+                .downloaded
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(m.id)
+                || delulu_stt::is_downloaded(&s.store.models_dir(), m.id),
+        })
+        .collect()
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Progress {
+    id: String,
+    done_bytes: u64,
+    total_bytes: u64,
+    finished: bool,
+    error: Option<String>,
+}
+#[tauri::command]
+fn download_model(app: tauri::AppHandle, s: State<'_, Shell>, id: String) -> Result<(), String> {
+    let total = delulu_stt::model_info(&id).ok_or("Unknown model")?.bytes;
+    s.download.store(true, Ordering::SeqCst);
+    tauri::async_runtime::spawn(async move {
+        for i in 0..=60 {
+            if !app.state::<Shell>().download.load(Ordering::SeqCst) {
+                break;
+            }
+            if i == 60 {
+                app.state::<Shell>()
+                    .downloaded
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(id.clone());
+            }
+            let _ = app.emit(
+                "model-download",
+                Progress {
+                    id: id.clone(),
+                    done_bytes: total * i / 60,
+                    total_bytes: total,
+                    finished: i == 60,
+                    error: None,
+                },
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
-        // Escape hatch for drivers that cannot composite this window.
-        if std::env::var("DELULU_SOFTWARE_RENDERING").as_deref() == Ok("1") {
-            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        }
-        // The Wayland app_id and X11 WM_CLASS must match `delulu-talks.desktop`
-        // (StartupWMClass) for the portals and the launcher.
-        webkit2gtk::glib::set_prgname(Some(delulu_desktop::APP_ID));
-    }
-}
-
-/// `second-instance`: `--toggle-dictation` lets desktops without a shortcut
-/// portal bind the app itself to a custom keyboard shortcut.
-fn second_instance(app: &AppHandle, argv: Vec<String>) {
-    let Some(state) = AppState::get(app) else { return };
-    log::info!("Second instance: {:?}", argv.get(1..).unwrap_or_default());
-    if argv.iter().any(|arg| arg == "--toggle-dictation") {
-        tray::run_action(&state, tray::Action::ToggleDictation);
-        return;
-    }
-    let notify_app = app.clone();
-    if !state.voice.handle_launch_args(&argv, move |message| shell::notify(&notify_app, &message)) {
-        shell::show_main_window(&state, None);
-    }
-}
-
-fn fail_startup(app: &AppHandle, detail: String) {
-    log::error!("Delulu Talks failed to start: {detail}");
-    let exit = app.clone();
-    app.dialog()
-        .message(detail)
-        .title("Delulu Talks failed to start")
-        .kind(MessageDialogKind::Error)
-        .show(move |_| exit.exit(1));
-}
-
-fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let handle = app.handle().clone();
-    let packaged = !cfg!(debug_assertions);
-    let paths = AppPaths::resolve(packaged, resources_dir(&handle, packaged));
-    log::info!("Profile: {}", paths.data.display());
-    desktop_entry::ensure_development_entry(&paths.resource("icon.png"));
-    let start_hidden = std::env::args().any(|arg| arg == "--hidden");
-
-    let mut router = Router::new(delulu_domain::parse_ipc_request);
-    handlers::register(&mut router);
-    let router = Arc::new(router);
-
-    // Speech, voice and the import queue capture the current Tokio runtime.
-    let built = tauri::async_runtime::block_on({
-        let handle = handle.clone();
-        async move { services::build(&handle, paths, router, start_hidden) }
     });
-    let built = match built {
-        Ok(built) => built,
-        Err(error) => {
-            fail_startup(&handle, error.message);
-            return Ok(());
-        }
-    };
-    let state = built.state;
-    app.manage(Arc::clone(&state));
-    #[cfg(debug_assertions)]
-    dev_script::spawn(Arc::clone(&state));
-
-    if built.audio_recovery.failure_count > 0 {
-        let detail = format!(
-            "{} temporary-audio cleanup failure(s). Some prior-session audio may remain on disk.\n\n{}\n\nClose Delulu before inspecting the audio-cache directory in its local data folder. Only remove generated dictation/import WAVs you recognise. Your saved history, settings, source media, models and runtimes were not removed by this cleanup.",
-            built.audio_recovery.failure_count,
-            built.audio_recovery.failures.join("\n")
-        );
-        log::error!("Temporary audio cleanup incomplete: {detail}");
-        handle
-            .dialog()
-            .message(detail)
-            .title("Temporary audio cleanup needs attention")
-            .kind(MessageDialogKind::Error)
-            .show(|_| {});
-    }
-
-    shell::create_main_window(&handle, &state)?;
-    install_app_menu(&handle);
-
-    let register_shortcut = packaged || std::env::var("DELULU_REGISTER_SHORTCUT").as_deref() == Ok("1");
-    if register_shortcut {
-        let shortcut = state.shortcut.clone();
-        let accelerator = state.storage.get_settings().shortcut;
-        tauri::async_runtime::spawn(async move {
-            if let Err(error) = shortcut.register(&accelerator).await {
-                log::warn!("Shortcut was not registered: {}", error.message);
-            }
-        });
-    }
-    if let Err(error) = state.tray.install(&state) {
-        log::error!("Tray icon was not created: {error}");
-    }
-    {
-        let state = Arc::clone(&state);
-        tauri::async_runtime::spawn(async move {
-            let available = delulu_desktop::tray_host_available(delulu_desktop::tray::TRAY_HOST_TIMEOUT).await;
-            log::info!("Tray host available: {available}");
-            state.shell.tray_visible.store(available, Ordering::SeqCst);
-            if !available && state.shell.start_hidden {
-                shell::show_main_window(&state, None);
-            }
-        });
-    }
-    state.updates.schedule_checks();
-    settings::sync_login(&state, state.storage.get_settings().launch_at_login);
-    {
-        let state = Arc::clone(&state);
-        tauri::async_runtime::spawn(async move {
-            tokio::join!(state.speech.initialize(), state.voice.start());
-            log::info!("Speech and voice runtimes checked");
-        });
-    }
     Ok(())
 }
-
-/// Production windows have no reload or developer-tools shortcuts: a reload
-/// would abort a recording. macOS keeps the standard app, edit and window menus.
-fn install_app_menu(app: &AppHandle) {
-    #[cfg(target_os = "macos")]
-    {
-        use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
-        let menu = (|| -> tauri::Result<Menu<tauri::Wry>> {
-            let app_menu = Submenu::with_items(
-                app,
-                "Delulu Talks",
-                true,
-                &[
-                    &PredefinedMenuItem::about(app, None, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::services(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::hide(app, None)?,
-                    &PredefinedMenuItem::hide_others(app, None)?,
-                    &PredefinedMenuItem::show_all(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::quit(app, None)?,
-                ],
-            )?;
-            let edit = Submenu::with_items(
-                app,
-                "Edit",
-                true,
-                &[
-                    &PredefinedMenuItem::undo(app, None)?,
-                    &PredefinedMenuItem::redo(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::cut(app, None)?,
-                    &PredefinedMenuItem::copy(app, None)?,
-                    &PredefinedMenuItem::paste(app, None)?,
-                    &PredefinedMenuItem::select_all(app, None)?,
-                ],
-            )?;
-            let window = Submenu::with_items(
-                app,
-                "Window",
-                true,
-                &[
-                    &PredefinedMenuItem::minimize(app, None)?,
-                    &PredefinedMenuItem::maximize(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::close_window(app, None)?,
-                ],
-            )?;
-            Menu::with_items(app, &[&app_menu, &edit, &window])
-        })();
-        match menu {
-            Ok(menu) => {
-                let _ = app.set_menu(menu);
-            }
-            Err(error) => log::warn!("Application menu was not installed: {error}"),
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    let _ = app;
+#[tauri::command]
+fn cancel_download(s: State<'_, Shell>) {
+    s.download.store(false, Ordering::SeqCst);
 }
-
-fn on_run_event(app: &AppHandle, event: RunEvent) {
-    match event {
-        RunEvent::ExitRequested { api, .. } => {
-            // Quit only after the workers and helpers were released.
-            let complete = AppState::get(app).is_none_or(|state| state.shell.shutdown_complete.load(Ordering::SeqCst));
-            if !complete {
-                api.prevent_exit();
-                shell::quit(app);
-            }
+#[tauri::command]
+fn start_mic_test(app: tauri::AppHandle, s: State<'_, Shell>) {
+    if s.mic.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        let mut n = 0f32;
+        while app.state::<Shell>().mic.load(Ordering::SeqCst) {
+            let _ = app.emit("mic-level", (n.sin() + 1.0) / 2.0);
+            n += 0.3;
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
-        #[cfg(target_os = "macos")]
-        RunEvent::Reopen { .. } => {
-            if let Some(state) = AppState::get(app) {
-                shell::show_main_window(&state, None);
-            }
-        }
-        _ => {}
+    });
+}
+#[tauri::command]
+fn stop_mic_test(s: State<'_, Shell>) {
+    s.mic.store(false, Ordering::SeqCst);
+}
+#[tauri::command]
+fn start_dictation(app: tauri::AppHandle, s: State<'_, Shell>) {
+    if status_value(&s).phase == "idle" {
+        phase(&app, &s, "recording");
     }
 }
-
+#[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum InsertResult {
+    Copied { reason: Option<String> },
+    Failed { reason: String },
+}
+#[derive(Clone, Serialize)]
+struct TranscriptEvent {
+    entry: HistoryEntry,
+    insert: InsertResult,
+}
+#[tauri::command]
+fn stop_dictation(app: tauri::AppHandle, s: State<'_, Shell>) {
+    if status_value(&s).phase != "recording" {
+        return;
+    }
+    phase(&app, &s, "transcribing");
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        let s = app.state::<Shell>();
+        let result = s.store.add_history(NewEntry {
+            text: "stub transcript".into(),
+            language: "en".into(),
+            model: s.store.settings().model,
+            audio_ms: 1000,
+            stt_ms: 0,
+            total_ms: 0,
+        });
+        if let Ok(entry) = result {
+            let _ = app.emit(
+                "transcript",
+                TranscriptEvent {
+                    entry,
+                    insert: InsertResult::Copied {
+                        reason: Some("Stub insertion".into()),
+                    },
+                },
+            );
+        }
+        phase(&app, &s, "idle");
+    });
+}
+#[tauri::command]
+fn prepare_insert() -> delulu_insert::InsertStatus {
+    delulu_insert::InsertStatus::default()
+}
+#[tauri::command]
+fn change_hotkey() {}
+#[tauri::command]
+fn get_history(s: State<'_, Shell>, query: Option<String>, limit: usize) -> Vec<HistoryEntry> {
+    s.store.history(query.as_deref(), limit)
+}
+#[tauri::command]
+fn delete_history(s: State<'_, Shell>, id: String) -> Result<(), String> {
+    s.store.delete_history(&id).map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn clear_history(s: State<'_, Shell>) -> Result<(), String> {
+    s.store.clear_history().map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn copy_text(_text: String) {}
+#[tauri::command]
+fn reinsert(s: State<'_, Shell>, id: String) -> InsertResult {
+    if s.store.history(None, usize::MAX).iter().any(|e| e.id == id) {
+        InsertResult::Copied {
+            reason: Some("Stub insertion".into()),
+        }
+    } else {
+        InsertResult::Failed {
+            reason: "Transcript not found".into(),
+        }
+    }
+}
+#[tauri::command]
+fn finish_first_run(app: tauri::AppHandle, s: State<'_, Shell>) -> Result<(), String> {
+    let mut state = s.store.state();
+    state.first_run_done = true;
+    s.store.save_state(&state).map_err(|e| e.to_string())?;
+    phase(&app, &s, "idle");
+    Ok(())
+}
 pub fn run() {
-    logging::init();
-    #[cfg(target_os = "linux")]
-    appimage::use_host_webkit();
-    prepare_environment();
-    let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| second_instance(app, argv)))
-        .plugin(tauri_plugin_dialog::init())
+    let store = Store::open_default().expect("stub store");
+    let initial = if std::env::var("DELULU_STUB_FIRST_RUN").as_deref() == Ok("1") {
+        "needsSetup"
+    } else {
+        "idle"
+    };
+    tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if args.iter().any(|a| a == "--toggle") {
+                let s = app.state::<Shell>();
+                if status_value(&s).phase == "recording" {
+                    stop_dictation(app.clone(), s);
+                } else {
+                    start_dictation(app.clone(), s);
+                }
+            }
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--hidden"]),
+        ))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init());
-    #[cfg(any(target_os = "macos", windows))]
-    let builder = builder.plugin(tauri_plugin_autostart::init(
-        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-        if cfg!(windows) { Some(vec!["--hidden"]) } else { None },
-    ));
-    let app = builder
-        .on_permission_request(|_, _| PermissionResponse::Deny)
-        .setup(setup)
-        .invoke_handler(tauri::generate_handler![ipc::ipc_invoke, ipc::ipc_send, ipc::ipc_bytes])
-        .build(tauri::generate_context!())
-        .expect("error while building Delulu Talks");
-    app.run(on_run_event);
+        .manage(Shell {
+            store,
+            status: Mutex::new(Status {
+                phase: initial.into(),
+                message: None,
+                hotkey: delulu_hotkey::HotkeyStatus {
+                    bound: true,
+                    trigger: Some("Super+Z".into()),
+                    error: None,
+                },
+                insert: delulu_insert::InsertStatus::default(),
+                backend: Some("Stub".into()),
+                model: Some(delulu_stt::DEFAULT_MODEL.into()),
+            }),
+            mic: AtomicBool::new(false),
+            download: AtomicBool::new(false),
+            downloaded: Mutex::new(std::collections::HashSet::new()),
+        })
+        .setup(|app| {
+            if !std::env::args().any(|a| a == "--hidden") {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                }
+            }
+            let _ = app.emit("status", status_value(&app.state::<Shell>()));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_status,
+            get_settings,
+            set_settings,
+            list_microphones,
+            list_languages,
+            list_models,
+            download_model,
+            cancel_download,
+            start_mic_test,
+            stop_mic_test,
+            start_dictation,
+            stop_dictation,
+            prepare_insert,
+            change_hotkey,
+            get_history,
+            delete_history,
+            clear_history,
+            copy_text,
+            reinsert,
+            finish_first_run
+        ])
+        .run(tauri::generate_context!())
+        .expect("Tauri failed");
 }

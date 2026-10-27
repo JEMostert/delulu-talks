@@ -1,8 +1,0 @@
-node_modules
-out
-release
-dist
-artifacts
-test-results
-playwright-report
-bun.lock

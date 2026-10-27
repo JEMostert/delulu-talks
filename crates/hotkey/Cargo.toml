@@ -1,0 +1,13 @@
+[package]
+name = "delulu-hotkey"
+version.workspace = true
+edition.workspace = true
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+log.workspace = true
+ashpd.workspace = true
+zbus.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+dirs.workspace = true
