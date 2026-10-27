@@ -122,7 +122,14 @@ fn engine_thread(app: tauri::AppHandle, rx: mpsc::Receiver<EngineJob>) {
                     }
                     Err(e) => {
                         engine = None;
-                        phase(&app, "error", Some(e));
+                        let shell = app.state::<Shell>();
+                        if !shell.store.state().first_run_done
+                            && !delulu_stt::is_downloaded(&dir, &id)
+                        {
+                            phase(&app, "needsSetup", None);
+                        } else {
+                            phase(&app, "error", Some(e));
+                        }
                     }
                 }
             }
