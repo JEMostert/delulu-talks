@@ -10,3 +10,4 @@ arboard.workspace = true
 ashpd.workspace = true
 zbus.workspace = true
 tokio.workspace = true
+async-trait = "0.1"
