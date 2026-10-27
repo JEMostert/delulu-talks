@@ -882,6 +882,7 @@ version = "1.0.0"
 dependencies = [
  "arboard",
  "ashpd",
+ "async-trait",
  "log",
  "serde",
  "thiserror 2.0.21",
