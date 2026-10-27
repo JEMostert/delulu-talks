@@ -891,6 +891,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "delulu-overlay"
+version = "1.0.0"
+dependencies = [
+ "cairo-rs",
+ "gtk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "delulu-store"
 version = "1.0.0"
 dependencies = [
@@ -922,6 +932,7 @@ dependencies = [
  "delulu-audio",
  "delulu-hotkey",
  "delulu-insert",
+ "delulu-overlay",
  "delulu-store",
  "delulu-stt",
  "log",
