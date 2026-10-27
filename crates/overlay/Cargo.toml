@@ -1,0 +1,9 @@
+[package]
+name = "delulu-overlay"
+version.workspace = true
+edition.workspace = true
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+gtk.workspace = true
+cairo-rs.workspace = true

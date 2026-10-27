@@ -41,6 +41,8 @@ pub struct Settings {
     pub language: String,
     pub insert: InsertMode,
     pub theme: Theme,
+    /// Show the recording pill while dictating.
+    pub overlay: bool,
 }
 
 impl Default for Settings {
@@ -53,6 +55,7 @@ impl Default for Settings {
             language: "auto".into(),
             insert: InsertMode::default(),
             theme: Theme::default(),
+            overlay: true,
         }
     }
 }
@@ -495,6 +498,29 @@ mod tests {
             },
             Settings::default()
         );
+    }
+
+    #[test]
+    fn overlay_defaults_on_and_round_trips() {
+        let t = TempDir::new();
+        fs::create_dir_all(t.config()).unwrap();
+        fs::write(
+            t.config().join(SETTINGS_FILE),
+            r#"{"version":1,"theme":"dark"}"#,
+        )
+        .unwrap();
+        let store = open(&t);
+        assert!(store.settings().overlay);
+
+        let off = Settings {
+            overlay: false,
+            ..store.settings()
+        };
+        store.save_settings(&off).unwrap();
+        let saved = fs::read_to_string(t.config().join(SETTINGS_FILE)).unwrap();
+        assert!(saved.contains(r#""overlay": false"#), "{saved}");
+        drop(store);
+        assert!(!open(&t).settings().overlay);
     }
 
     #[test]

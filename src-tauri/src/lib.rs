@@ -1,5 +1,6 @@
 use delulu_hotkey::{Command, Gesture, Hotkey, KeyEvent};
 use delulu_insert::{InsertOutcome, Inserter, PasteKey};
+use delulu_overlay::{Pill, PillState};
 use delulu_store::{HistoryEntry, InsertMode, NewEntry, Settings, Store};
 use serde::Serialize;
 use std::{
@@ -96,6 +97,7 @@ pub fn run() {
             last_release: Mutex::new(None),
             mic: AtomicBool::new(false),
             pending_toggle: AtomicBool::new(std::env::args().any(|a| a == "--toggle")),
+            pill: Pill::new(),
         })
         .setup(move |app| {
             let handle = app.handle().clone();

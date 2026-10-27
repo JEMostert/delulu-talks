@@ -19,3 +19,4 @@ delulu-stt = { path = "../crates/stt" }
 delulu-insert = { path = "../crates/insert" }
 delulu-hotkey = { path = "../crates/hotkey" }
 delulu-store = { path = "../crates/store" }
+delulu-overlay = { path = "../crates/overlay" }

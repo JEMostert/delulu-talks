@@ -26,6 +26,8 @@ tauri-build = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-opener = "2"
+gtk = "0.18"
+cairo-rs = { version = "0.18", features = ["png"] }
 [profile.release]
 lto = true
 codegen-units = 1
