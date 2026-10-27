@@ -29,10 +29,15 @@ Vulkan, CPU fallback. One binary, no Python, no runtime installer.
     insert text with (Shift+Insert / Ctrl+V / Ctrl+Shift+V / Off = copy only)
   - Voice: step 2
   - Models and providers: step 2/3 (API keys, LLMs)
-  - Appearance: theme (system / light / dark)
+  - Appearance: theme (system / light / dark), show the recording pill
   - About: version, GPU backend in use, data folder, project link
 
-No quick-settings panel, no separate Models page, no overlay window.
+- **Recording pill**: a small click-through pearl at the bottom of the
+  screen while you dictate (glows with your voice, breathes while
+  transcribing, one word for results). It never takes focus, so the text
+  still lands in the app you were using. Not a second home for settings.
+
+No quick-settings panel, no separate Models page.
 A new screen, panel or setting is added only after this page says where it
 belongs.
 
