@@ -8,8 +8,8 @@ pub(crate) fn event(app: &tauri::AppHandle, ev: KeyEvent) {
         if matches!(ev, KeyEvent::Released) && gesture.keys_down() {
             *shell.last_release.lock().unwrap_or_else(|e| e.into_inner()) = Some(received_at);
         }
-        let current = status_value(&shell).phase;
-        if current == "transcribing" && !matches!(ev, KeyEvent::Released) {
+        if status_value(&shell).phase == "transcribing" {
+            gesture.track(ev);
             return;
         }
         gesture.feed(

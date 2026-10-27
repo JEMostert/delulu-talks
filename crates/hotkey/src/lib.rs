@@ -30,6 +30,23 @@ impl Gesture {
     pub fn keys_down(&self) -> bool {
         self.down
     }
+    /// Follows the physical key while the app is busy, without producing
+    /// commands, so `keys_down` stays truthful and the release of a press made
+    /// while busy never stops a later recording.
+    pub fn track(&mut self, event: KeyEvent) {
+        match event {
+            KeyEvent::Pressed => {
+                self.down = true;
+                self.ignore_release = true;
+            }
+            KeyEvent::Released => {
+                self.down = false;
+                self.ignore_release = false;
+                self.started = None;
+            }
+            KeyEvent::Activated => {}
+        }
+    }
     pub fn feed(&mut self, event: KeyEvent, now_ms: u64) -> Option<Command> {
         match event {
             KeyEvent::Activated => {
@@ -264,6 +281,19 @@ mod tests {
         assert!(!g.keys_down());
     }
     #[test]
+    fn busy_presses_are_tracked_but_ignored() {
+        let mut g = Gesture::new();
+        g.track(KeyEvent::Pressed);
+        assert!(g.keys_down());
+        // Released after the app became idle again: no command, key is up.
+        assert_eq!(g.feed(KeyEvent::Released, 10), None);
+        assert!(!g.keys_down());
+        g.track(KeyEvent::Pressed);
+        g.track(KeyEvent::Released);
+        assert!(!g.keys_down());
+        assert_eq!(g.feed(KeyEvent::Pressed, 20), Some(Command::Start));
+    }
+    #[test]
     fn app_id() {
         assert_eq!(APP_ID, "com.joran.delulu-talks");
     }
@@ -371,7 +401,13 @@ mod portal_tests {
         std::fs::write(&file, "existing").unwrap();
         portal::ensure_desktop_entry(&system, &target).unwrap();
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "existing");
+        std::fs::write(system.join(format!("{APP_ID}.desktop")), "system").unwrap();
+        portal::ensure_desktop_entry(&system, &target).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "existing");
         std::fs::remove_file(&file).unwrap();
+        std::fs::remove_file(system.join(format!("{APP_ID}.desktop"))).unwrap();
+        portal::ensure_desktop_entry(&system, &target).unwrap();
+        assert!(file.exists());
         std::fs::write(system.join(format!("{APP_ID}.desktop")), "system").unwrap();
         portal::ensure_desktop_entry(&system, &target).unwrap();
         assert!(!file.exists());

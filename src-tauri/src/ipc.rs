@@ -149,11 +149,21 @@ pub(crate) async fn prepare_insert(app: tauri::AppHandle) -> delulu_insert::Inse
 #[tauri::command]
 pub(crate) async fn change_hotkey(app: tauri::AppHandle) -> Result<(), String> {
     let s = app.state::<Shell>();
-    let hotkey = s.hotkey.lock().await;
-    match hotkey.as_ref() {
-        Some(h) => h.configure().await,
-        None => Err("Hotkey is unavailable".into()),
+    if s.no_portals {
+        return Err("Hotkey is unavailable".into());
     }
+    {
+        let mut hotkey = s.hotkey.lock().await;
+        if let Some(h) = hotkey.as_ref().filter(|h| h.status().bound) {
+            return h.configure().await;
+        }
+        // Skipped or declined during first run: drop the unbound session and bind again.
+        if let Some(h) = hotkey.take() {
+            h.close().await;
+        }
+    }
+    bind_hotkey(&app).await;
+    Ok(())
 }
 #[tauri::command]
 pub(crate) fn get_history(

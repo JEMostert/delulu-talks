@@ -25,6 +25,8 @@ pub(crate) struct Shell {
     pub(crate) no_portals: bool,
     pub(crate) last_release: Mutex<Option<Instant>>,
     pub(crate) mic: AtomicBool,
+    /// `--toggle` started the app: start recording once the model is ready.
+    pub(crate) pending_toggle: AtomicBool,
 }
 pub(crate) enum EngineJob {
     Load(String),

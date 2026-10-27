@@ -22,6 +22,16 @@ export function useAppState() {
   const [permission, setPermission] = useState<ipc.InsertStatus>();
   const [confirmClear, setConfirmClear] = useState(false);
   const [hotkeyHint, setHotkeyHint] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  // Listing microphones can fail while PipeWire restarts; it must never block startup.
+  const refreshMicrophones = useCallback(
+    () =>
+      ipc
+        .listMicrophones()
+        .then(setMicrophones)
+        .catch((e) => setNotice(`Could not list microphones: ${errorText(e)}`)),
+    [],
+  );
   const refreshModels = useCallback(
     () =>
       ipc
@@ -51,15 +61,13 @@ export function useAppState() {
     Promise.all([
       ipc.getStatus(),
       ipc.getSettings(),
-      ipc.listMicrophones(),
       ipc.listLanguages(),
       ipc.listModels(),
     ])
-      .then(([s, config, inputs, langs, available]) => {
+      .then(([s, config, langs, available]) => {
         if (active) {
           setStatus(s);
           setSettings(config);
-          setMicrophones(inputs);
           setLanguages(langs);
           setModels(available);
         }
@@ -71,10 +79,7 @@ export function useAppState() {
       ipc.onTranscript((value) => {
         setRecovery(value);
         setNotice(insertMessage(value.insert));
-        ipc
-          .getHistory(null, 5)
-          .then(setHistory)
-          .catch((e) => setNotice(errorText(e)));
+        setHistoryVersion((v) => v + 1);
       }),
     );
     subscribe(
@@ -104,7 +109,10 @@ export function useAppState() {
     return () => {
       active = false;
     };
-  }, [query, page]);
+  }, [query, page, historyVersion]);
+  useEffect(() => {
+    if (page === "Settings" || step === 0) void refreshMicrophones();
+  }, [page, step, refreshMicrophones]);
   useEffect(() => {
     if (!settings) return;
     document.documentElement.dataset.theme = settings.theme;

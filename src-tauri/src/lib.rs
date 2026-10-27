@@ -95,6 +95,7 @@ pub fn run() {
             no_portals,
             last_release: Mutex::new(None),
             mic: AtomicBool::new(false),
+            pending_toggle: AtomicBool::new(std::env::args().any(|a| a == "--toggle")),
         })
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -121,7 +122,8 @@ pub fn run() {
             } else {
                 phase(&handle, "needsSetup", None);
             }
-            if !std::env::args().any(|a| a == "--hidden") {
+            // `--toggle` on a cold start (GNOME custom shortcut fallback) records without a window.
+            if !std::env::args().any(|a| a == "--hidden" || a == "--toggle") {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.show();
                 }

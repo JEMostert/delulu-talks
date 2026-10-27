@@ -27,9 +27,22 @@ pub(crate) trait PortalSession: Send + Sync {
     fn close(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
 }
 
+/// Marks the hidden entry dev runs write, so it can be told apart from the user's own.
+const MANAGED: &str = "X-Delulu-Managed=true";
+
+/// GNOME only lets an app register with the portal when a desktop entry with its
+/// id exists. Dev runs get a hidden user entry; once the package installs the
+/// system entry, ours is removed so it can't shadow the visible launcher.
 pub(crate) fn ensure_desktop_entry(system: &Path, target: &Path) -> std::io::Result<()> {
-    let name = format!("{APP_ID}.desktop");
-    if system.join(&name).exists() || target.join(&name).exists() {
+    let file = target.join(format!("{APP_ID}.desktop"));
+    let managed = std::fs::read_to_string(&file).is_ok_and(|c| c.contains(MANAGED));
+    if system.join(format!("{APP_ID}.desktop")).exists() {
+        if managed {
+            std::fs::remove_file(&file)?;
+        }
+        return Ok(());
+    }
+    if file.exists() && !managed {
         return Ok(());
     }
     std::fs::create_dir_all(target)?;
@@ -40,19 +53,11 @@ pub(crate) fn ensure_desktop_entry(system: &Path, target: &Path) -> std::io::Res
         .replace('"', "\\\"")
         .replace('`', "\\`")
         .replace('$', "\\$");
-    let contents = format!("[Desktop Entry]\nType=Application\nName=Delulu Talks\nExec=\"{exec}\"\nNoDisplay=true\nCategories=Utility;\n");
-    match std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(target.join(name))
-    {
-        Ok(mut file) => {
-            use std::io::Write;
-            file.write_all(contents.as_bytes())
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
-        Err(e) => Err(e),
-    }
+    // Rewritten every run so Exec follows the current dev binary.
+    std::fs::write(
+        &file,
+        format!("[Desktop Entry]\nType=Application\nName=Delulu Talks\nExec=\"{exec}\"\nNoDisplay=true\nCategories=Utility;\n{MANAGED}\n"),
+    )
 }
 
 pub(crate) struct AshpdPortal;

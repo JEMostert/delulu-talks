@@ -34,6 +34,13 @@ pub(crate) fn engine_thread(app: tauri::AppHandle, rx: mpsc::Receiver<EngineJob>
                             s.message = None;
                             s.phase = ready_phase(&app.state::<Shell>()).into();
                         });
+                        if app
+                            .state::<Shell>()
+                            .pending_toggle
+                            .swap(false, Ordering::SeqCst)
+                        {
+                            event(&app, KeyEvent::Activated);
+                        }
                     }
                     Err(e) => {
                         engine = None;
