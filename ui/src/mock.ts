@@ -20,6 +20,7 @@ let status: Status = {
     ? "needsSetup"
     : "idle",
   message: null,
+  dataDir: "/home/example/.local/share/delulu-talks",
   hotkey: { bound: true, trigger: "Super+Z", error: null },
   insert: { ready: false, error: null },
   backend: "Stub backend",
