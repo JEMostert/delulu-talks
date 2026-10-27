@@ -6,7 +6,11 @@ edition.workspace = true
 thiserror.workspace = true
 log.workspace = true
 whisper-rs.workspace = true
+whisper-rs-sys = "=0.15.0"
 ureq.workspace = true
 sha2.workspace = true
 [features]
 cuda = ["whisper-rs/cuda"]
+
+[dev-dependencies]
+hound = "3"
