@@ -12,7 +12,7 @@ Add a third Python runtime role, `voice`, with its own environment and worker, f
 
 Parse markup and plan chunks in TypeScript (`src/voiceMarkup.ts`, `src/voiceChunks.ts`). The worker synthesizes one chunk per request and returns PCM, which keeps the existing request/response protocol: streaming comes from synthesizing the next chunk while the renderer plays the current one. Each engine adapter maps markup to what it can perform and reports what it skipped, instead of failing.
 
-Coding agents reach Delulu through a token-protected local socket and a dependency-free MCP server/CLI copied into the user data directory. Delulu does not integrate with any particular agent product; Claude Code, Codex and T3 Code's providers all speak MCP. How the lead agent decides when to speak is an instruction to that agent, served as MCP instructions and copyable from the Siren page, not logic in Delulu.
+Coding agents reach Delulu through a token-protected local socket and a dependency-free MCP server/CLI copied into the user data directory. Delulu does not integrate with any particular agent product; Claude Code, Codex and T3 Code's providers all speak MCP. How the lead agent decides when to speak is an instruction to that agent, served as MCP instructions and copyable from the Voice page, not logic in Delulu.
 
 ## Consequences and alternatives
 

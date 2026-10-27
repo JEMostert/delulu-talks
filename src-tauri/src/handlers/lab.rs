@@ -53,7 +53,7 @@ pub fn register(router: &mut Router<AppState>) {
         .handle("lab:queueEnqueue", |state, args| async move {
             let file = validate_audio_file(&args.get::<String>(0)?)?;
             if !state.lab.selected.lock().contains(&file.path) {
-                return Err(plain("Select this source through Audio files first"));
+                return Err(plain("Choose this file in History first"));
             }
             state.lab.queue()?.enqueue(&file)
         })
@@ -96,7 +96,7 @@ pub fn register(router: &mut Router<AppState>) {
             ensure_queue_idle(&state, "Wait for the active queued import")?;
             let file = validate_audio_file(&request.path)?;
             if !state.lab.selected.lock().contains(&file.path) {
-                return Err(plain("Choose or drop the source file through Audio files first"));
+                return Err(plain("Choose or drop the file in History first"));
             }
             let jobs = state.lab.jobs()?;
             jobs.update(
@@ -153,7 +153,7 @@ pub fn register(router: &mut Router<AppState>) {
         })
         .handle_bytes("lab:loadSource", |state, args| async move {
             let key = resolved(&args.get::<String>(0)?);
-            require_job(&state, &key, "Link this source through Audio files before reviewing it")?;
+            require_job(&state, &key, "Choose this file in History before listening to it")?;
             validate_audio_file(&key)?;
             blocking(move || Ok(load_linked_audio(std::path::Path::new(&key))?.bytes)).await
         })
@@ -194,7 +194,7 @@ pub fn register(router: &mut Router<AppState>) {
         .handle("lab:inspectAudio", |state, args| async move {
             let path = resolved(&args.get::<String>(0)?);
             if !state.lab.selected.lock().contains(&path) || !std::path::Path::new(&path).exists() {
-                return Err(plain("Choose the source file through Audio files first"));
+                return Err(plain("Choose the file in History first"));
             }
             let python = delulu_runtime::location::runtime_python(&state.paths.speech_venv()).ok().filter(|p| p.exists());
             blocking(move || Ok(inspect_media(std::path::Path::new(&path), python.as_deref()))).await

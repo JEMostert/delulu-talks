@@ -1,11 +1,8 @@
-/* Siren: spoken replies, its engine, Try it and the agent connection. */
+/* Voice page: Siren and its engine, the agent connection, Sonar and Tuning. */
 
-/* Room for the speaking line, so it never pushes the card down. */
+/* Room for the speaking line and Stop, so they never resize the card. */
 .siren-main {
   min-height: 68px;
-}
-.siren-main .setting-copy p:empty {
-  margin: 0;
 }
 
 /* Several actions share a row here; let them wrap in compact windows. */
@@ -32,16 +29,33 @@
   margin-top: 6px;
 }
 
-/* Alerts and the setup snippet sit inside a list, padded like its rows. */
+/* Alerts sit inside a list, padded like its rows. */
 .siren-block {
   padding: 12px 18px;
   border-bottom: 1px solid var(--line);
+}
+
+/* Setup instructions: a quiet row that opens onto the snippets. */
+.siren-setup {
+  margin: 0;
+  padding: 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+}
+.siren-setup > summary {
+  width: auto;
+  padding: 12px 18px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.siren-setup[open] > summary {
+  color: var(--ink);
 }
 .siren-snippet {
   display: grid;
   justify-items: start;
   gap: 8px;
-  padding-bottom: 16px;
+  padding: 0 18px 16px;
 }
 .siren-snippet pre {
   width: 100%;
@@ -58,7 +72,7 @@
   overflow-wrap: anywhere;
 }
 
-/* Try it: the text, then Speak, Stop and one quiet line. */
+/* Try your own text: the text, then Speak, Stop and one quiet line. */
 .siren-try {
   padding: 14px 18px 16px;
 }
@@ -84,28 +98,13 @@
   margin-top: 10px;
 }
 
-/* Connect agents and Tuning: quiet disclosures at the end of the page. */
+/* Tuning: a quiet disclosure at the end of the page. */
 .siren-more .disclosure {
   margin-top: 0;
-}
-.siren-more .disclosure + .disclosure {
-  margin-top: 4px;
 }
 .siren-more .disclosure > .pref-group + .pref-group {
   margin-top: 18px;
 }
 .siren-more .disclosure[open] {
   padding-bottom: 16px;
-}
-.siren-summary-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--muted);
-}
-.siren-more .disclosure[open] .siren-summary-state {
-  display: none;
 }

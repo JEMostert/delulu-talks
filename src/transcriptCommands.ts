@@ -60,7 +60,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     ) {
       return Promise.reject(
         new Error(
-          `All ${MAX_HINT_WORDS} words are in use. Turn off a word pack or remove a word in Lingo first.`,
+          `All ${MAX_HINT_WORDS} words are in use. Turn off a word pack or remove a word in Words first.`,
         ),
       );
     }
@@ -94,7 +94,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     onCopy: w.copy,
     onRewrite: bridge.rewriteMagic,
     onCancelRewrite: bridge.cancelRewrite,
-    onRewriteSetup: () => w.setPage("models"),
+    onRewriteSetup: () => w.setPage("rewrite"),
     rewriteStatus: w.magicStatus,
     onSetRewrite: async (
       id: string,
@@ -148,7 +148,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
       await bridge.clearHistory();
       clearCorrectionDrafts();
       w.setHistory([]);
-    }, "Logbook cleared");
+    }, "History cleared");
   };
   return { actions, onClearHistory };
 }

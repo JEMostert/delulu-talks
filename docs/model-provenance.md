@@ -1,6 +1,6 @@
 # Model download provenance
 
-Engines → “source, revision & license” exposes the configured repository,
+The model cards' Details → “source, revision & license” exposes the configured repository,
 download revision policy, conversion attribution and upstream weight license.
 The disclosure is available beside speech and the currently selected optional
 rewrite model. These are configuration details, not an inspection of a resident

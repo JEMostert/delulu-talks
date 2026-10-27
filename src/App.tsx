@@ -3,12 +3,11 @@ import { bridge } from "./bridge";
 import { LatestResult } from "./components/LatestResult";
 import { OceanBackground } from "./components/OceanBackground";
 import { OceanController } from "./components/OceanController";
-import { QuickSettings } from "./components/QuickSettings";
 import { TalkIndicator } from "./components/voice/TalkIndicator";
 import { useTalk } from "./hooks/useTalk";
 import { useTheme } from "./hooks/useTheme";
 import { useVoice } from "./hooks/useVoice";
-import { Dock } from "./shell/Dock";
+import { DockItems } from "./shell/Dock";
 import { EngineChip } from "./shell/EngineChip";
 import { pageTitle } from "./shell/navigation";
 import { Notices } from "./shell/Notices";
@@ -39,7 +38,15 @@ function App({ workspace: w }: { workspace: Workspace }) {
     latest
       ? w.action(() => bridge.copyText(deliveredText(latest)))
       : Promise.resolve(false);
-  const title = panel.quick ? "Quick settings" : pageTitle(w.page);
+  const title = pageTitle(w.page);
+  const dock = (side: 0 | 1) => (
+    <DockItems
+      side={side}
+      page={w.page}
+      onNavigate={panel.navigate}
+      onHome={panel.close}
+    />
+  );
   return (
     <main
       className={`ocean-app ${panel.open ? "panel-open" : ""}`}
@@ -74,9 +81,9 @@ function App({ workspace: w }: { workspace: Workspace }) {
       </a>
       <section
         ref={panel.ref}
-        className={`workspace-sheet ${panel.quick ? "quick-sheet" : "wide-sheet"}`}
+        className="workspace-sheet wide-sheet"
         data-open={panel.open}
-        aria-label={panel.quick ? title : `${title} panel`}
+        aria-label={`${title} panel`}
         tabIndex={-1}
       >
         <SheetHeader
@@ -84,7 +91,7 @@ function App({ workspace: w }: { workspace: Workspace }) {
           status={w.status}
           magicStatus={w.magicStatus}
           closeLabel={
-            !w.settings.onboardingComplete && w.page === "models"
+            !w.settings.onboardingComplete && w.page === "settings"
               ? "Dismiss setup"
               : "Close panel"
           }
@@ -103,15 +110,8 @@ function App({ workspace: w }: { workspace: Workspace }) {
           id="page-content"
           tabIndex={-1}
           role="region"
-          aria-label={panel.quick ? "Quick settings controls" : title}
+          aria-label={title}
         >
-          {panel.quick && (
-            <QuickSettings
-              workspace={w}
-              busy={busy}
-              onNavigate={panel.navigate}
-            />
-          )}
           <PageViews
             workspace={w}
             voice={voice}
@@ -123,27 +123,16 @@ function App({ workspace: w }: { workspace: Workspace }) {
         </div>
       </section>
       <OceanController
-        navigation={
-          panel.open ? (
-            <Dock
-              page={w.page}
-              quickSheet={panel.quick}
-              onNavigate={panel.navigate}
-              onHome={panel.close}
-            />
-          ) : undefined
-        }
+        leading={dock(0)}
+        trailing={dock(1)}
         status={w.status}
         ready={w.ready}
         busy={busy}
         panelOpen={panel.open}
-        canCopy={!!latest}
         resultId={latest?.id}
         message={homeCaption(w)}
         onRecord={() => w.action(() => bridge.toggleDictation())}
-        onCopy={copyLatest}
         onSetup={() => panel.navigate("models")}
-        onSettings={panel.toggleQuick}
         onPause={() =>
           w.action(() =>
             w.status.phase === "paused"
@@ -164,7 +153,7 @@ function App({ workspace: w }: { workspace: Workspace }) {
             onOpen={() => panel.navigate("history")}
           />
         )}
-      <RewriteHost workspace={w} onSetup={() => panel.navigate("models")} />
+      <RewriteHost workspace={w} onSetup={() => panel.navigate("rewrite")} />
       <Toast message={w.toast} onDismiss={() => w.setToast(null)} />
     </main>
   );

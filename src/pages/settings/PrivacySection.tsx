@@ -16,7 +16,7 @@ export function PrivacySection({
   const { settings: s, saving, save } = section;
   return (
     <>
-      <Group title="Logbook">
+      <Group title="History">
         <SettingRow
           title="Save transcripts"
           description={

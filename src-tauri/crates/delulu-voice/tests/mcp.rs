@@ -239,7 +239,7 @@ async fn mcp_server_still_initializes_when_delulu_talks_is_not_running() {
     let speak = server.tool("speak", json!({ "text": "Hi" })).await;
     assert_eq!(
         speak["content"][0]["text"],
-        "Delulu Talks isn't running, or Let coding agents speak is off on its Siren page."
+        "Delulu Talks isn't running, or Siren is off on its Voice page."
     );
     assert_eq!(speak["isError"], true);
 }
@@ -331,7 +331,7 @@ async fn cli_explains_when_delulu_talks_is_not_running() {
         CliOutput {
             code: 1,
             stdout: String::new(),
-            stderr: "Delulu Talks isn't running, or Let coding agents speak is off on its Siren page.\n".into(),
+            stderr: "Delulu Talks isn't running, or Siren is off on its Voice page.\n".into(),
         }
     );
 }

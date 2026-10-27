@@ -102,13 +102,12 @@ export function phaseLabel(phase: TalkPhase): string {
   return PHASES[phase] ?? "Off";
 }
 
-/** The Sonar row's one line. */
-export function talkLine(status: TalkStatus, speechReady: boolean): string {
+/** The Sonar row's one line; what Sonar still needs is listed below it. */
+export function talkLine(status: TalkStatus): string {
   const message = status.message.trim();
   if (status.on) return message || phaseLabel(status.phase);
   if (status.phase === "failed") return message || phaseLabel("failed");
   if (status.needsDownload) return "Pilot needs a one-time download";
-  if (!speechReady) return "Set up speech in Engines first";
   return "Talk to your agents hands-free";
 }
 

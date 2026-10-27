@@ -894,7 +894,7 @@ impl VoiceService {
                 this.refresh_environment(&task_settings).await;
                 return Err(voice_error(
                     DomainErrorCode::WorkerUnavailable,
-                    format!("Set up {} on the Siren page first.", engine_name(task_settings.voice_engine)),
+                    format!("Set up {} on the Voice page first.", engine_name(task_settings.voice_engine)),
                     "voice:load",
                 ));
             }
@@ -1143,12 +1143,12 @@ impl VoiceService {
             }
             if source != VoiceSource::App && !settings.voice_enabled {
                 return Err(unavailable(
-                    "Siren is turned off in Delulu Talks. Switch on Speak replies aloud on the Siren page.".into(),
+                    "Siren is off in Delulu Talks. Turn on Siren on the Voice page.".into(),
                 ));
             }
             if state.status.engine == EnginePhase::Missing || state.setup.is_some() {
                 return Err(unavailable(format!(
-                    "Set up {} on the Siren page first.",
+                    "Set up {} on the Voice page first.",
                     engine_name(settings.voice_engine)
                 )));
             }

@@ -61,25 +61,16 @@ test("legacy conversational mode is Lightweight", () => {
 });
 
 test("the Sonar line follows the loop and explains why it is off", () => {
-  expect(talkLine(status(), true)).toBe("Talk to your agents hands-free");
-  expect(talkLine(status(), false)).toBe("Set up speech in Engines first");
-  expect(talkLine(status({ needsDownload: true }), true)).toBe(
+  expect(talkLine(status())).toBe("Talk to your agents hands-free");
+  expect(talkLine(status({ needsDownload: true }))).toBe(
     "Pilot needs a one-time download",
   );
-  expect(talkLine(status({ on: true, phase: "thinking" }), true)).toBe(
-    "Thinking…",
-  );
+  expect(talkLine(status({ on: true, phase: "thinking" }))).toBe("Thinking…");
   expect(
-    talkLine(
-      status({ on: true, phase: "hearing", message: "Hearing you" }),
-      true,
-    ),
+    talkLine(status({ on: true, phase: "hearing", message: "Hearing you" })),
   ).toBe("Hearing you");
   expect(
-    talkLine(
-      status({ phase: "failed", message: "Microphone unavailable" }),
-      true,
-    ),
+    talkLine(status({ phase: "failed", message: "Microphone unavailable" })),
   ).toBe("Microphone unavailable");
 });
 

@@ -23,8 +23,24 @@ export type {
   RetryPolicy,
 } from "./domainErrors";
 
+/**
+ * Where navigation can point. The tray and IPC still send the older ids:
+ * `models` and `rewrite` open their Settings section, `lab` opens History.
+ */
 export type Page =
-  "home" | "lab" | "models" | "vocabulary" | "history" | "voice" | "settings";
+  | "home"
+  | "lab"
+  | "models"
+  | "rewrite"
+  | "vocabulary"
+  | "history"
+  | "voice"
+  | "settings";
+/** The pages that render; every `Page` resolves to one of these. */
+export type ShownPage =
+  "home" | "history" | "vocabulary" | "voice" | "settings";
+export type SettingsSection =
+  "dictation" | "rewrite" | "output" | "app" | "privacy" | "advanced";
 
 export type SpeechModelId = "r2t2" | "r2t2Mlx";
 /** Speech model size the user picks: Small and Medium run on any CPU, Large is R2T2. */

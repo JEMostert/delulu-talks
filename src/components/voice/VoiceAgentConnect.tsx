@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Bot, Copy, Puzzle } from "lucide-react";
-import { Alert, SettingRow, Tabs, Toggle } from "../ui";
+import { Bot, Copy, Info, Puzzle, Users } from "lucide-react";
+import { Alert, SettingRow, Tabs } from "../ui";
 import type { VoiceSkillInstall } from "../../listening";
+import { agentsLine, type DotTone, type TalkAgent } from "../../talk";
 import type { VoiceAgentSetup, VoiceBridgeStatus } from "../../voice";
 
 const SNIPPETS = [
@@ -21,7 +22,7 @@ const HINTS: Record<Snippet, string> = {
   instructions: "Paste into your lead agent's CLAUDE.md or AGENTS.md.",
 };
 
-/** The agent connection in a few words, for the row and the summary. */
+/** The agent connection in a few words. */
 export function bridgeLine(bridge: VoiceBridgeStatus): string {
   if (bridge.error) return "Needs attention";
   if (!bridge.listening) return "Starting…";
@@ -31,23 +32,30 @@ export function bridgeLine(bridge: VoiceBridgeStatus): string {
     : `${bridge.clients} agents connected`;
 }
 
-/** Let local coding agents speak and hear you, and copy what each one needs. */
+/** How local coding agents reach Siren and Sonar, and what each one needs. */
 export function VoiceAgentConnect({
+  sirenOn,
   enabled,
   bridge,
+  agents,
   saving,
   load,
   installSkill,
-  onToggle,
+  onEnable,
   onCopy,
   onAction,
 }: {
+  /** Siren is on; agents only connect while it is. */
+  sirenOn: boolean;
+  /** The saved agent connection; older settings may have it off. */
   enabled: boolean;
   bridge: VoiceBridgeStatus;
+  /** Agents taking tasks from Sonar. */
+  agents: readonly TalkAgent[];
   saving: boolean;
   load: () => Promise<VoiceAgentSetup>;
   installSkill: () => Promise<VoiceSkillInstall>;
-  onToggle: () => void;
+  onEnable: () => void;
   onCopy: (text: string) => void;
   onAction: (run: () => Promise<unknown>, success?: string) => Promise<boolean>;
 }) {
@@ -55,6 +63,10 @@ export function VoiceAgentConnect({
   const [installed, setInstalled] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [snippet, setSnippet] = useState<Snippet>("claudeCode");
+  // Open for someone connecting their first agent.
+  const [showSetup, setShowSetup] = useState(
+    sirenOn && enabled && bridge.clients === 0,
+  );
   useEffect(() => {
     let alive = true;
     load()
@@ -72,28 +84,75 @@ export function VoiceAgentConnect({
     };
     // The script is installed when the bridge starts; read it again then.
   }, [enabled, bridge.listening]);
+
+  const connected = sirenOn && enabled;
+  let tone: DotTone = "";
+  let line = "Turn on Siren to let agents connect";
+  if (sirenOn && !enabled) {
+    tone = "warning";
+    line = "Agent connection is off";
+  } else if (connected) {
+    tone = bridge.error ? "error" : bridge.listening ? "ready" : "busy";
+    line = bridgeLine(bridge);
+  }
+
   return (
-    <div className="pref-list">
-      <SettingRow
-        icon={Bot}
-        title="Let coding agents speak"
-        description={enabled ? bridgeLine(bridge) : undefined}
-        help="Agents on this computer connect through a local socket only your user account can open, with a token Delulu creates for you. Nothing leaves this device."
-      >
-        <Toggle
-          value={enabled}
-          label="Let coding agents speak"
-          disabled={saving}
-          onChange={onToggle}
-        />
-      </SettingRow>
-      {enabled && bridge.error && (
+    <section className="pref-list" aria-label="Connect your agents">
+      <div className="setting-row">
+        <Bot className="setting-icon" aria-hidden="true" />
+        <div className="setting-copy">
+          <strong>Connect your agents</strong>
+          <details className="setting-help">
+            <summary
+              aria-label="About connecting agents"
+              title="About connecting agents"
+            >
+              <Info />
+            </summary>
+            <p>
+              Agents on this computer connect through a local socket only your
+              user account can open, with a token Delulu creates for you.
+              Nothing leaves this device.
+            </p>
+          </details>
+          <p className="siren-state" role="status" aria-live="polite">
+            <span className={`status-dot ${tone}`} aria-hidden="true" />
+            {line}
+          </p>
+        </div>
+        <div className="setting-control">
+          {sirenOn && !enabled && (
+            <button
+              className="secondary-button"
+              disabled={saving}
+              onClick={onEnable}
+            >
+              Turn on
+            </button>
+          )}
+        </div>
+      </div>
+      {connected && bridge.error && (
         <div className="siren-block">
           <Alert>{bridge.error}</Alert>
         </div>
       )}
-      {enabled && (
-        <div className="siren-block siren-snippet">
+      {connected && agents.length > 0 && (
+        <SettingRow
+          icon={Users}
+          title="Agents"
+          description={agentsLine(agents)}
+        >
+          {null}
+        </SettingRow>
+      )}
+      <details
+        className="siren-setup"
+        open={showSetup}
+        onToggle={(event) => setShowSetup(event.currentTarget.open)}
+      >
+        <summary>Setup instructions</summary>
+        <div className="siren-snippet">
           {error ? (
             <Alert tone="info">{error}</Alert>
           ) : !setup ? (
@@ -119,30 +178,28 @@ export function VoiceAgentConnect({
             </>
           )}
         </div>
-      )}
-      {enabled && (
-        <SettingRow
-          icon={Puzzle}
-          title="Agent skill"
-          description={
-            installed
-              ? `Installed to ${installed.join(", ")}`
-              : "Lets Claude Code and Codex take tasks from Sonar"
+      </details>
+      <SettingRow
+        icon={Puzzle}
+        title="Agent skill"
+        description={
+          installed
+            ? `Installed to ${installed.join(", ")}`
+            : "Lets Claude Code and Codex take tasks from Sonar"
+        }
+      >
+        <button
+          className="secondary-button"
+          onClick={() =>
+            void onAction(async () => {
+              const result = await installSkill();
+              setInstalled(result.paths);
+            }, "Skill installed")
           }
         >
-          <button
-            className="secondary-button"
-            onClick={() =>
-              void onAction(async () => {
-                const result = await installSkill();
-                setInstalled(result.paths);
-              }, "Skill installed")
-            }
-          >
-            {installed ? "Reinstall" : "Install"}
-          </button>
-        </SettingRow>
-      )}
-    </div>
+          {installed ? "Reinstall" : "Install"}
+        </button>
+      </SettingRow>
+    </section>
   );
 }

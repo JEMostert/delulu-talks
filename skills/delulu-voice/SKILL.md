@@ -87,7 +87,7 @@ $DV talk status                  # Sonar: on, phase, Pilot, agents (listening or
 
 ## Failures
 
-- `Delulu Talks isn't running…`: ask the user to open Delulu and turn on **Let coding agents speak** on its Siren page.
+- `Delulu Talks isn't running…`: ask the user to open Delulu and turn on **Siren** on its Voice page.
 - Exit 4, or `Unknown agent` from `agent ack` / `task update`: your id is gone (unregistered or replaced). Register again; never reuse the old id.
 - `listen …` commands are gone; they now only print that `agent register` / `agent next` replaced them.
 - Any other error: tell the user in text once; do not retry in a loop.

@@ -1,4 +1,4 @@
-import { Cpu, Download, LoaderCircle, Play } from "lucide-react";
+import { Cpu, Download, LoaderCircle } from "lucide-react";
 import {
   CANARY_MODEL,
   modelById,
@@ -24,8 +24,6 @@ export type SpeechSetupProps = {
   setupPending?: boolean;
   onSetup: () => void;
   onCancelSetup?: () => void;
-  onLoad: () => void;
-  onUnload: () => void;
   /** Present where the engine may be switched in place. */
   onUpdateSettings?: (patch: Partial<AppSettings>) => void;
 };
@@ -37,8 +35,6 @@ export function SpeechSetup({
   setupPending = false,
   onSetup,
   onCancelSetup,
-  onLoad,
-  onUnload,
   onUpdateSettings,
 }: SpeechSetupProps) {
   const execution = status.speechExecution;
@@ -70,7 +66,7 @@ export function SpeechSetup({
                 : "Choose a size"
               : status.engine === "error"
                 ? "Fix speech setup"
-                : "Speech"}
+                : "Speech recognition"}
           </h2>
         </div>
         <EngineBadge engine={status.engine} />
@@ -103,46 +99,15 @@ export function SpeechSetup({
               : "Cancel setup"}
           </button>
         )}
-        {status.engine === "ready" ? (
-          <button
-            className="secondary-button"
-            disabled={busy}
-            onClick={onUnload}
-          >
-            Unload
-          </button>
-        ) : (
-          status.engine === "unloaded" && (
-            <button
-              className="primary-button"
-              disabled={busy || setupPending}
-              onClick={onLoad}
-            >
-              <Play /> Load
-            </button>
-          )
-        )}
-        {installed && (
-          <button
-            className="tool-button"
-            disabled={busy || setupPending}
-            onClick={onSetup}
-            title="Reinstall the runtime included with this app"
-          >
-            {speechBusy ? <LoaderCircle className="spin" /> : <Download />}
-            Repair
-          </button>
-        )}
-        {(status.engine === "missing" || status.engine === "error") && (
+        {/* A failed setup offers Fix setup in the alert below. */}
+        {status.engine === "missing" && (
           <button
             className="primary-button"
             disabled={busy || setupPending}
             onClick={onSetup}
           >
             {speechBusy ? <LoaderCircle className="spin" /> : <Download />}
-            {status.engine === "missing"
-              ? `Download & set up ${tier.name}`
-              : "Repair"}
+            Download & set up {tier.name}
           </button>
         )}
       </div>

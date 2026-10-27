@@ -12,7 +12,7 @@ import { bridge } from "../bridge";
 import type { useTalk } from "../hooks/useTalk";
 import type { useVoice } from "../hooks/useVoice";
 import { createTranscriptCommands } from "../transcriptCommands";
-import type { Page } from "../types";
+import type { Page, ShownPage } from "../types";
 import { workspaceCommands, type Workspace } from "./workspace";
 
 /** Lazy-load a named page export, keeping its prop types. */
@@ -22,8 +22,6 @@ const named = <M extends Record<K, ComponentType<any>>, K extends string>(
 ) => lazy(() => load().then((module) => ({ default: module[name] })));
 
 const HistoryPage = named(() => import("../pages/HistoryPage"), "HistoryPage");
-const LabPage = named(() => import("../pages/LabPage"), "LabPage");
-const ModelsPage = named(() => import("../pages/ModelsPage"), "ModelsPage");
 const VocabularyPage = named(
   () => import("../pages/VocabularyPage"),
   "VocabularyPage",
@@ -41,9 +39,9 @@ function View({
   visited,
   children,
 }: {
-  page: Page;
-  current: Page;
-  visited: Set<Page>;
+  page: ShownPage;
+  current: ShownPage;
+  visited: Set<ShownPage>;
   children: ReactNode;
 }) {
   if (current !== page && !visited.has(page)) return null;
@@ -69,7 +67,9 @@ export function PageViews({
   onNavigate: (page: Page) => void;
   onClose: () => void;
 }) {
-  const [visited, setVisited] = useState<Set<Page>>(() => new Set([w.page]));
+  const [visited, setVisited] = useState<Set<ShownPage>>(
+    () => new Set([w.page]),
+  );
   useEffect(() => {
     setVisited((previous) =>
       previous.has(w.page) ? previous : new Set([...previous, w.page]),
@@ -96,7 +96,11 @@ export function PageViews({
         <HistoryPage
           historyLimit={w.settings.historyLimit}
           keepHistory={w.settings.keepHistory}
-          onOpenSettings={() => onNavigate("settings")}
+          onOpenSettings={() => {
+            w.setSettingsSection("privacy");
+            onNavigate("settings");
+          }}
+          busy={busy}
           history={w.history}
           view={w.historyView}
           onViewChange={w.setHistoryView}
@@ -105,31 +109,6 @@ export function PageViews({
           onExportSelection={w.exportSelection}
           onDeleteSelection={w.deleteSelection}
           deletionPending={w.historyDeletion?.phase === "pending"}
-        />
-      </View>
-      <View page="lab" {...view}>
-        <LabPage {...transcriptActions} history={w.history} busy={busy} />
-      </View>
-      <View page="models" {...view}>
-        <ModelsPage
-          largeSpeechAvailable={w.capabilities?.largeSpeechAvailable}
-          onDone={onClose}
-          onCancelSetup={c.cancelSetup}
-          onCancelSetupMagic={c.cancelSetupMagic}
-          status={w.status}
-          magicStatus={w.magicStatus}
-          settings={w.settings}
-          busy={busy || w.saving}
-          saving={w.saving}
-          onUpdateSettings={(patch) => {
-            void w.saveSettings(patch, null);
-          }}
-          onSetupMagic={c.setupMagic}
-          onLoadMagic={c.loadMagic}
-          onUnloadMagic={c.unloadMagic}
-          onSetup={c.setup}
-          onLoad={c.load}
-          onUnload={c.unload}
         />
       </View>
       <View page="vocabulary" {...view}>
@@ -157,6 +136,7 @@ export function PageViews({
           talk={talk}
           devices={w.devices}
           speechReady={!["missing", "error"].includes(w.status.engine)}
+          onSetupSpeech={() => onNavigate("models")}
           saving={w.saving}
           onSave={w.saveSettings}
           onAction={w.action}
@@ -165,6 +145,9 @@ export function PageViews({
       </View>
       <View page="settings" {...view}>
         <SettingsPage
+          section={w.settingsSection}
+          onSectionChange={w.setSettingsSection}
+          onDone={w.settings.onboardingComplete ? undefined : onClose}
           onCancelSetup={c.cancelSetup}
           onCancelSetupMagic={c.cancelSetupMagic}
           settings={w.settings}

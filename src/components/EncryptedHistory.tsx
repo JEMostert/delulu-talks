@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { bridge } from "../bridge";
 
-/** A passphrase-protected backup of the saved Logbook; decrypting never replaces it. */
+/** A passphrase-protected backup of the saved history; decrypting never replaces it. */
 export function EncryptedHistory() {
   const [passphrase, setPassphrase] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -19,7 +19,7 @@ export function EncryptedHistory() {
       if (path)
         setMessage(
           recover
-            ? "Decrypted copy saved. Your Logbook is unchanged."
+            ? "Decrypted copy saved. Your history is unchanged."
             : "Backup exported. Keep the passphrase somewhere safe.",
         );
     } catch (reason) {
@@ -85,7 +85,7 @@ export function EncryptedHistory() {
         </div>
         <p className="caption">
           Decrypting writes a readable JSON copy; it never replaces your
-          Logbook.
+          history.
         </p>
         {busy && <p role="status">Working…</p>}
         {message && <p role="status">{message}</p>}

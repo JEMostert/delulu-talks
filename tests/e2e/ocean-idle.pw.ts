@@ -116,10 +116,9 @@ test("hidden decoration stops without changing the recording phase", async ({
 test("workspace scrolling keeps decoration paused and respects reduced motion", async ({
   page,
 }) => {
+  // Home recording hides the dock, so open a page first.
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await phase(page, "toggleDictation");
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
   await expect(page.locator("[data-ocean]")).toHaveAttribute(
     "data-covered",
     "true",

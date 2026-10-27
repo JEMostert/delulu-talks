@@ -83,7 +83,7 @@ export function DownloadedModels({
           onClose={() => setConfirm(null)}
         >
           <p>
-            It downloads again if you use it later. Your Logbook and settings
+            It downloads again if you use it later. Your history and settings
             stay.
           </p>
         </ConfirmDialog>

@@ -1,4 +1,5 @@
-/* Sonar: the switch, live input level, recent turns and the global indicator. */
+/* Sonar: the switch, what it needs, live input level, recent turns and the
+   global indicator. */
 .sonar {
   display: grid;
   gap: 10px;
@@ -8,6 +9,34 @@
   align-items: center;
   gap: 7px;
   overflow-wrap: anywhere;
+}
+
+/* The shared dictation microphone, with its level while Sonar is on. */
+.sonar-mic {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.sonar-mic svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+.sonar-mic-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What Sonar still needs: one row each, the dot in the icon column. */
+.sonar-need {
+  min-height: 48px;
+  font-size: 13px;
+}
+.sonar-need > .status-dot {
+  margin: 0 5px;
 }
 
 /* Coral marks an open microphone, as on the record orb. */
@@ -72,7 +101,7 @@
   overflow-wrap: anywhere;
 }
 
-/* The meter stays beside its picker; the picker gives way first. */
+/* Pilot's download button stays beside its picker; the picker gives way. */
 .siren .sonar-picker .setting-control {
   flex-wrap: nowrap;
 }

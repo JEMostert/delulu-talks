@@ -75,9 +75,9 @@ colors, radius, border, or shadow.
 
 - **Home:** the ocean, the floating controller (copy · pearl orb · settings),
   one status line, and a glass _latest result_ card showing the last transcript
-  with copy and open-in-Logbook actions.
+  with copy and open-in-History actions.
 - **Recording:** the orb turns coral with a voice-level halo; the status line
   shows elapsed time and the silence countdown when auto-stop is armed.
 - **Workspace:** a sheet rises above a compact dock. The sheet header shows the
-  page title and close. The dock carries Home, Logbook, Bottles,
-  Engines, Lingo, Siren and Settings around the orb.
+  page title and close. The labeled dock carries History, Words,
+  Voice and Settings around the orb.

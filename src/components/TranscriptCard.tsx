@@ -84,7 +84,7 @@ export function TranscriptCard({
   rewriteStatus,
 }: TranscriptActions & {
   record: TranscriptRecord;
-  /** "detail" is always expanded, for the logbook's list/detail layout. */
+  /** "detail" is always expanded, for History's list/detail layout. */
   variant?: "card" | "detail";
 }) {
   const pendingDraft = useCorrectionDraft(record.id);
@@ -620,7 +620,7 @@ export function TranscriptCard({
           )}
           <p>
             Fixes this phrase in future {record.language} results. Edit it later
-            in Lingo.
+            in Words.
           </p>
           <label className="field">
             Recognized text

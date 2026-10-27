@@ -15,7 +15,7 @@ export function EngineChip({
     <button
       className="engine-chip"
       title={engine.detail}
-      aria-label={`${engine.label}. Open Engines`}
+      aria-label={`${engine.label}. Open speech settings`}
       onClick={onOpen}
     >
       <span className={`status-dot ${engine.tone}`} />

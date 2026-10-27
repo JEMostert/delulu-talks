@@ -25,7 +25,7 @@ export function RetryNotice({
 }: {
   status: DictationStatus;
   busy: boolean;
-  /** Absent on the Engines page, where errors already have their own controls. */
+  /** Absent in Settings › Dictation, where errors already have their own controls. */
   onEngines?: () => void;
   onRetry: () => void;
   onDiscard: () => void;
@@ -38,7 +38,7 @@ export function RetryNotice({
       action={
         !recoverable ? (
           <button className="secondary-button compact" onClick={onEngines}>
-            Open Engines
+            Speech settings
           </button>
         ) : retained ? (
           <div className="panel-actions">

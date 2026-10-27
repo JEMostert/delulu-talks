@@ -56,8 +56,8 @@ export function LatestResult({
           {copied ? <Check /> : <Copy />}
         </button>
         <button
-          aria-label="Open in Logbook"
-          title="Open in Logbook"
+          aria-label="Open in History"
+          title="Open in History"
           onClick={onOpen}
         >
           <Clock3 />

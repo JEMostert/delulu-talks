@@ -97,7 +97,7 @@ impl ListenTranscriber for SpeechTranscriber {
         let settings = settings.clone();
         Box::pin(async move {
             if !self.asr.is_environment_ready(&settings).await? {
-                return Err(plain("Set up a speech model on the Models page before listening."));
+                return Err(plain("Set up speech in Settings → Dictation before listening."));
             }
             self.asr.ensure_loaded(&settings).await
         })

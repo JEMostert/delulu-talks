@@ -206,7 +206,7 @@ impl AudioJobsService {
             Ok(jobs) => Ok(service(jobs)),
             Err(None) => Ok(service(Vec::new())),
             Err(Some(detail)) => Err(plain_error(format!(
-                "Could not load audio jobs at {}: {detail}. The file has been preserved. Restore a compatible backup or repair this metadata file before reopening Audio files.",
+                "Could not load audio jobs at {}: {detail}. The file has been preserved. Restore a compatible backup or repair this metadata file before importing files again.",
                 file_path.display()
             ))),
         }

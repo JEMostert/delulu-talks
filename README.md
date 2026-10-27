@@ -27,16 +27,17 @@ Delulu Talks is private, local-first, system-wide dictation for Linux and macOS.
 
 ## What's inside
 
-| Feature                 | What it does                                                                                                                                                    |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Dictation + Rewrite** | Hold-to-talk (or toggle) from any app, pasted when you stop. **Rewrite** beside a result polishes, shortens or restructures it, with preview and undo.          |
-| **Siren**               | Local text-to-speech: Kokoro on any CPU, or expressive Chatterbox Turbo on a GPU. Coding agents (Claude Code, Codex, T3 Code) speak through a local MCP server. |
-| **Sonar**               | A hands-free conversation loop with your lead agent. Each sentence goes out as soon as it is transcribed, and the agent briefs you out loud.                    |
-| **Pilot**               | A small local model (Qwen 3.5 0.8B) that routes what you say in Sonar: forward it to your agent, ask for status, cancel, stop or repeat. Off sends every word.  |
-| **Logbook**             | Your transcript history: search, quick filters, edits, corrections and export.                                                                                  |
-| **Bottles**             | Transcribe audio or video files locally.                                                                                                                        |
-| **Engines**             | Set up the speech and rewrite models: Small, Medium or Large, matched to your hardware.                                                                         |
-| **Lingo**               | Word packs (Programming, Gaming), your own words and names, and text shortcuts that expand a spoken trigger into an exact saved block.                          |
+| Feature       | What it does                                                                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Dictation** | Hold-to-talk (or toggle) from any app, pasted when you stop. Pick the speech model, microphone and shortcut in **Settings → Dictation**.                        |
+| **Rewrite**   | A local model cleans up or restyles your text: every dictation (**Settings → Rewrite**) or one transcript at a time from History, with preview and undo.        |
+| **History**   | Your transcripts: search, quick filters, edits, corrections and export. Import or drop audio and video files to transcribe them locally.                        |
+| **Words**     | Word packs (Programming, Gaming), your own words and names, and text shortcuts that expand a spoken trigger into an exact saved block.                          |
+| **Siren**     | Local text-to-speech: Kokoro on any CPU, or expressive Chatterbox Turbo on a GPU. Coding agents (Claude Code, Codex, T3 Code) speak through a local MCP server. |
+| **Sonar**     | A hands-free conversation loop with your lead agent. Each sentence goes out as soon as it is transcribed, and the agent briefs you out loud.                    |
+| **Pilot**     | A small local model (Qwen 3.5 0.8B) that routes what you say in Sonar: forward it to your agent, ask for status, cancel, stop or repeat. Off sends every word.  |
+
+Siren, Sonar and Pilot live on the **Voice** page. The dock around the record button has four destinations: History, Words, Voice and Settings.
 
 Speech engine sizes:
 
@@ -46,7 +47,7 @@ Speech engine sizes:
 | **Medium** (default) | NVIDIA Parakeet TDT 0.6B | Any CPU (English, or 25 languages with auto)  | ~630 MB  |
 | **Large**            | Confucius4-R2T2          | NVIDIA GPU with ~4 GB (Linux) · Apple Silicon | ~4 GB    |
 
-Rewriting is optional: install a rewrite engine (Qwen 3.5 2B or Phi-4 mini) and use **Rewrite** when you want it. Automatic rewriting is off by default. On Wayland desktops with layer-shell (KDE Plasma, wlroots; not GNOME) a small recording pill floats above your apps.
+Rewriting is optional: set it up in **Settings → Rewrite** (Qwen 3.5 2B or Phi-4 mini), then turn on **Rewrite every dictation** or use **Rewrite** on single transcripts in History. It is off by default. On Wayland desktops with layer-shell (KDE Plasma, wlroots; not GNOME) a small recording pill floats above your apps.
 
 ## Install
 
@@ -63,18 +64,18 @@ Download a package from [GitHub Releases](https://github.com/JEMostert/delulu-ta
 - The rpm, deb and pacman packages pull in FFmpeg and Python. With the AppImage, install FFmpeg and Python 3.11–3.13 yourself.
 - The recording pill needs gtk4-layer-shell and PyGObject with cairo: `sudo dnf install gtk4-layer-shell python3-gobject python3-cairo` (Fedora) or `sudo pacman -S gtk4-layer-shell python-gobject python-cairo` (Arch, CachyOS).
 - The macOS app is not code-signed or notarized. If macOS blocks it, use System Settings → Privacy & Security → Open Anyway. It needs native arm64 Python 3.12 (`brew install python@3.12`).
-- The AppImage and the macOS app update themselves from GitHub Releases. The rpm, deb and pacman packages update by installing the newer package. Your settings, Logbook and models stay put either way.
+- The AppImage and the macOS app update themselves from GitHub Releases. The rpm, deb and pacman packages update by installing the newer package. Your settings, history and models stay put either way.
 
 ## Your first minute
 
-1. Open Delulu Talks and follow the **Set up speech** chip to **Engines**.
-2. Pick a size and choose **Install engine**. The app sets up a local runtime and downloads the model.
+1. Open Delulu Talks. The first time, it opens **Settings → Dictation**.
+2. Pick a size and choose **Download & set up**. The app sets up a local runtime and downloads the model.
 3. Click into any text field and hold your shortcut (<kbd>Super</kbd> + <kbd>Z</kbd> by default), speak, then let go.
-4. Your words are pasted where you were typing. Use **Rewrite** beside the result if you want it cleaned up.
+4. Your words are pasted where you were typing. Open **History** to review them, or turn on **Settings → Rewrite → Rewrite every dictation** to have them cleaned up automatically.
 
 ## Privacy
 
-Speech, rewriting and voice models all run on your computer. Nothing leaves the machine except model downloads and the update check against GitHub Releases; there is no telemetry and no cloud transcription. The Logbook is kept locally (your latest 50 transcripts by default) and you can turn it off or trim it in **Settings → Privacy**. Recordings are deleted once they are transcribed.
+Speech, rewriting and voice models all run on your computer. Nothing leaves the machine except model downloads and the update check against GitHub Releases; there is no telemetry and no cloud transcription. History is kept locally (your latest 50 transcripts by default) and you can turn it off or trim it in **Settings → Privacy**. Recordings are deleted once they are transcribed.
 
 ## Run from source
 
@@ -94,7 +95,7 @@ bun run dev        # the desktop app with hot reload
 bun run dev:web    # renderer only, with safe demo data
 ```
 
-Development builds use their own **Delulu Talks Dev** profile, so they never touch your everyday settings or Logbook.
+Development builds use their own **Delulu Talks Dev** profile, so they never touch your everyday settings or history.
 
 ## Build and test
 

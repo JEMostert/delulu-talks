@@ -2,7 +2,7 @@ import type { EnginePhase } from "../../types";
 
 const BADGES: Record<EnginePhase, [string, string]> = {
   ready: ["Ready", "success"],
-  unloaded: ["Standby", "neutral"],
+  unloaded: ["Installed", "neutral"],
   loading: ["Loading", ""],
   settingUp: ["Installing", ""],
   missing: ["Not set up", "warning"],

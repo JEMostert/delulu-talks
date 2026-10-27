@@ -2,7 +2,7 @@
 
 Turn on **Rewrite dictation** and choose the **Spoken corrections** style in **Settings → Rewriting**. It runs after prose dictation and vocabulary replacements, before clipboard delivery. The original speech remains in history (or the current session when history is off). Manual rewrite previews offer the same style.
 
-The activation shortcut selects balanced memory, which runs speech and writing in turn. A local writing runtime/model is required; manage it under Engines. Existing settings remain unchanged until activation.
+The activation shortcut selects balanced memory, which runs speech and writing in turn. A local writing runtime/model is required; manage it under Settings → Rewrite. Existing settings remain unchanged until activation.
 
 ## Model choice
 

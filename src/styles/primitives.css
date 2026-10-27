@@ -771,6 +771,14 @@
     background: var(--surface-sheet);
     padding: 14px 22px;
   }
+
+  /* ── Rewrite dialog ──────────────────────────────────── */
+  .modal.rewrite-dialog {
+    width: min(720px, calc(100vw - 32px));
+  }
+  .rewrite-bar > button {
+    min-height: 38px;
+  }
 }
 
 @keyframes spin {

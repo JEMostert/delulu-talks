@@ -20,7 +20,7 @@ function resultLine(result: VoiceSpeakResult): string {
   return parts.join(" · ");
 }
 
-/** Type or paste text with tags and hear it. */
+/** Type or paste text with tags and hear it; lives under Tuning. */
 export function VoiceTryIt({
   engine,
   unavailableReason,
@@ -65,7 +65,7 @@ export function VoiceTryIt({
 
   return (
     <section className="pref-group">
-      <h3>Try it</h3>
+      <h3>Try your own text</h3>
       <div className="pref-list siren-try">
         <label className="sr-only" htmlFor="siren-try-text">
           Text to speak

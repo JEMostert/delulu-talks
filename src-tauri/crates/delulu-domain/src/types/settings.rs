@@ -14,6 +14,7 @@ string_enum! {
         Home = "home",
         Lab = "lab",
         Models = "models",
+        Rewrite = "rewrite",
         Vocabulary = "vocabulary",
         History = "history",
         Voice = "voice",

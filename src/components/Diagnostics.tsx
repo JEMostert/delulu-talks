@@ -85,7 +85,7 @@ export function Diagnostics() {
               <dt>FFmpeg</dt>
               <dd>
                 {data.ffmpeg === "Not available"
-                  ? "Not installed · Bottles needs it"
+                  ? "Not installed · needed to transcribe files"
                   : "Installed"}
               </dd>
             </div>

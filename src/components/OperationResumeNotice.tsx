@@ -40,7 +40,7 @@ export function OperationResumeNotice({
               {imported.file ? ` · ${imported.file.name}` : ""}
             </span>
             <button className="secondary-button compact" onClick={onImport}>
-              Open Bottles
+              Open History
             </button>
           </div>
         )}

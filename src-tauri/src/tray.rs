@@ -318,7 +318,7 @@ fn rewrite_menu(state: &AppState, settings: &AppSettings) -> Vec<Entry> {
     let action = match magic.engine {
         EnginePhase::Ready => item_if("Unload model", !busy, Action::MagicUnload),
         EnginePhase::Unloaded => item_if("Load model now", !busy, Action::MagicLoad),
-        _ => item_if("Set up rewriting…", !busy, Action::Show(Some(Page::Models))),
+        _ => item_if("Set up rewriting…", !busy, Action::Show(Some(Page::Rewrite))),
     };
     let mut entries =
         vec![check("Off", !settings.magic_enabled, true, Some(patch(json!({ "magicEnabled": false }))))];
@@ -444,7 +444,7 @@ pub fn describe(state: &AppState) -> (Vec<Entry>, delulu_desktop::TrayState) {
         .skip(1)
         .map(|record| item(menu_preview(delivered_text(record), 48), Action::Copy(record.id.clone())))
         .collect();
-    recent.extend([Entry::Separator, item("Open logbook", Action::Show(Some(Page::History)))]);
+    recent.extend([Entry::Separator, item("Open history", Action::Show(Some(Page::History)))]);
     menu.push(Entry::Submenu { label: "Recent".into(), enabled: history.len().min(5) > 1, items: recent });
     menu.push(if pending.phase == PasteLastPhase::Pending {
         item(
@@ -518,11 +518,9 @@ pub fn describe(state: &AppState) -> (Vec<Entry>, delulu_desktop::TrayState) {
         label: "Go to".into(),
         enabled: true,
         items: vec![
-            item("Logbook", Action::Show(Some(Page::History))),
-            item("Bottles", Action::Show(Some(Page::Lab))),
-            item("Engines", Action::Show(Some(Page::Models))),
-            item("Lingo", Action::Show(Some(Page::Vocabulary))),
-            item("Siren", Action::Show(Some(Page::Voice))),
+            item("History", Action::Show(Some(Page::History))),
+            item("Words", Action::Show(Some(Page::Vocabulary))),
+            item("Voice", Action::Show(Some(Page::Voice))),
             item("Settings", Action::Show(Some(Page::Settings))),
         ],
     });

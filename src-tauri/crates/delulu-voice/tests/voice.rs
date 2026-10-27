@@ -125,7 +125,7 @@ async fn agents_cannot_speak_while_voice_is_turned_off_but_the_app_can() {
     let f = voice_fixture(|s| s.voice_enabled = false, 1_000.0, true, true);
     f.service.initialize(&defaults()).await;
     let refused = f.service.enqueue(VoiceSpeakRequest { source: Some(VoiceSource::Agent), ..request("Hi") });
-    assert!(refused.err().unwrap().message.contains("turned off"));
+    assert!(refused.err().unwrap().message.contains("Siren is off"));
     let spoken = f.service.speak(VoiceSpeakRequest { source: Some(VoiceSource::App), ..request("Hi") }).await.unwrap();
     assert_eq!(spoken.outcome, VoiceUtteranceOutcome::Spoken);
 }

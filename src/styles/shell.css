@@ -450,8 +450,6 @@ button.engine-chip:hover {
 /* ── Compact dock when a sheet is open ─────────────────── */
 .with-panel .ocean-controller {
   height: var(--dock-height-compact);
-  gap: 22px;
-  padding: 6px 24px;
 }
 .with-panel .ocean-record {
   width: 50px;
@@ -461,53 +459,31 @@ button.engine-chip:hover {
   width: 21px;
   height: 21px;
 }
-.ocean-controller.has-navigation {
+.ocean-controller {
   gap: 4px;
   padding: 6px 10px;
 }
-.has-navigation .panel-navigation {
-  display: contents;
-}
-.has-navigation .record-well {
-  order: 3;
-  margin: 0 8px;
-}
-.has-navigation .panel-navigation button:nth-child(1) {
-  order: 0;
-}
-.has-navigation .panel-navigation button:nth-child(2) {
-  order: 1;
-}
-.has-navigation .panel-navigation button:nth-child(3) {
-  order: 2;
-}
-.has-navigation .panel-navigation button:nth-child(4) {
-  order: 4;
-}
-.has-navigation .panel-navigation button:nth-child(5) {
-  order: 5;
-}
-.has-navigation .panel-navigation button:nth-child(6) {
-  order: 6;
-}
-.has-navigation .panel-navigation button:nth-child(7) {
-  order: 7;
-}
-.has-navigation > .ocean-icon:last-child {
-  order: 8;
+.record-well {
+  margin: 0 10px;
 }
 .dock-item {
   position: relative;
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 62px;
+  height: 52px;
   flex-shrink: 0;
-  padding: 0;
+  padding: 0 8px;
   border: 0;
-  border-radius: 50%;
+  border-radius: 16px;
   color: var(--dock-ink-muted);
   background: transparent;
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1;
 }
 .dock-item svg {
   width: 20px;
@@ -522,43 +498,13 @@ button.engine-chip:hover {
   background: var(--dock-active);
   box-shadow: inset 0 1px 0 rgba(216, 246, 255, 0.24);
 }
-.dock-item[aria-current="page"]::after {
-  content: "";
-  position: absolute;
-  bottom: 3px;
-  left: 50%;
-  width: 4px;
-  height: 4px;
-  margin-left: -2px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
+/* Home recording keeps only pause, stop and cancel. */
+.controller-anchor:not(.with-panel) .is-recording {
+  gap: 24px;
+  padding: 10px 26px;
 }
-.dock-item .dock-tip {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 50%;
-  padding: 4px 9px;
-  border-radius: var(--r-xs);
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-2);
-  font-size: 11.5px;
-  font-weight: 560;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transform: translate(-50%, 4px);
-  transition:
-    opacity var(--t-fast),
-    transform var(--t-fast) var(--ease-out);
-}
-.dock-item:hover .dock-tip,
-.dock-item:focus-visible .dock-tip {
-  opacity: 1;
-  transform: translate(-50%, 0);
-  transition-delay: 350ms;
+.controller-anchor:not(.with-panel) .is-recording .dock-item {
+  display: none;
 }
 
 /* ── Workspace sheet ───────────────────────────────────── */
@@ -603,18 +549,6 @@ button.engine-chip:hover {
 }
 .workspace-sheet[data-open="false"]::before {
   display: none;
-}
-.workspace-sheet.quick-sheet {
-  backdrop-filter: blur(16px) saturate(1.2);
-  width: min(440px, calc(100% - 2 * var(--stage-gap)));
-  height: auto;
-  max-height: calc(
-    100dvh - var(--dock-height-compact) - 3 * var(--stage-gap) - 4px
-  );
-  top: max(
-    var(--stage-gap),
-    calc(100dvh - var(--dock-height-compact) - 2 * var(--stage-gap) - 520px)
-  );
 }
 @keyframes sheet-in {
   from {
@@ -717,10 +651,6 @@ button.engine-chip:hover {
 .wide-sheet .sheet-content {
   flex: 1;
 }
-.quick-sheet .sheet-content {
-  padding: 2px 16px 14px;
-  scrollbar-gutter: auto;
-}
 .workspace-view {
   min-width: 0;
   max-width: 920px;
@@ -731,62 +661,6 @@ button.engine-chip:hover {
   place-items: center;
   min-height: 160px;
   color: var(--muted);
-}
-
-/* ── Quick settings ────────────────────────────────────── */
-.quick-settings {
-  display: flex;
-  flex-direction: column;
-}
-.quick-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  min-height: 54px;
-  padding: 0 10px;
-  font-size: 13px;
-  font-weight: 520;
-  border-radius: 12px;
-  transition: background-color var(--t-base);
-}
-.quick-row:hover {
-  background: var(--surface-hover);
-}
-.quick-row > span {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  white-space: nowrap;
-}
-.quick-row > span > svg {
-  width: 18px;
-  height: 18px;
-  color: var(--muted);
-}
-.quick-row select {
-  width: 190px;
-  max-width: 55%;
-  min-height: 34px;
-  font-size: 12.5px;
-}
-.shortcut-key {
-  border: 0;
-  padding: 4px 0;
-  background: transparent;
-}
-.shortcut-key kbd {
-  padding: 6px 11px;
-  font-size: 12px;
-  color: var(--ink);
-  border-bottom-width: 2px;
-}
-.shortcut-key:hover:not(:disabled) kbd {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
-}
-.quick-divider {
-  margin: 8px 10px;
-  border-top: 1px solid var(--line);
 }
 
 /* ── Latest result (home) ─────────────────────────────── */
@@ -970,30 +844,17 @@ button.engine-chip:hover {
   .sheet-content {
     padding: 16px;
   }
-  .quick-sheet .sheet-content {
-    padding: 2px 10px 12px;
-  }
   .ocean-controller {
-    gap: 26px;
-    padding: 10px 26px;
-  }
-  .ocean-controller.has-navigation {
     gap: 1px;
     padding: 6px;
   }
-  .has-navigation .record-well {
+  .record-well {
     margin: 0 4px;
   }
   .dock-item {
-    width: 38px;
-    height: 40px;
-  }
-  .has-navigation.is-recording .panel-navigation button:first-child {
-    display: none;
-  }
-  .quick-row {
-    gap: 10px;
-    min-height: 50px;
+    min-width: 52px;
+    padding: 0 4px;
+    font-size: 10.5px;
   }
   .engine-chip {
     display: none;

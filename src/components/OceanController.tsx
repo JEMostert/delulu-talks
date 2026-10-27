@@ -7,14 +7,11 @@ import {
   type ReactNode,
 } from "react";
 import {
-  Check,
-  Copy,
   Download,
   LoaderCircle,
   Mic,
   Pause,
   Play,
-  Settings,
   Square,
   X,
 } from "lucide-react";
@@ -37,33 +34,31 @@ function AudioHalo() {
   );
 }
 
+/** The pearl with its dock: destinations on either side, recording controls beside it. */
 export function OceanController({
   status,
   ready,
   busy,
   panelOpen,
-  canCopy,
   resultId,
   message,
   onRecord,
-  onCopy,
-  onSettings,
   onSetup,
   onPause,
   onCancel,
-  navigation,
+  leading,
+  trailing,
 }: {
-  navigation?: ReactNode;
+  /** Dock items left and right of the pearl. */
+  leading: ReactNode;
+  trailing: ReactNode;
   status: DictationStatus;
   ready: boolean;
   busy: boolean;
   panelOpen: boolean;
-  canCopy: boolean;
   resultId?: string;
   message?: string;
   onRecord: () => Promise<boolean>;
-  onCopy: () => Promise<boolean>;
-  onSettings: () => void;
   onSetup: () => void;
   onPause: () => Promise<boolean>;
   onCancel: () => Promise<boolean>;
@@ -74,7 +69,6 @@ export function OceanController({
   const countdown = status.silenceCountdownSeconds;
   const needsSetup = ["missing", "error"].includes(status.engine);
   const [pending, setPending] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [completed, setCompleted] = useState(false);
   const previousResult = useRef(resultId);
   const armed = useRef(false);
@@ -87,13 +81,10 @@ export function OceanController({
     if (ready) armed.current = true;
   }, [resultId, ready]);
   useEffect(() => {
-    if (!copied && !completed) return;
-    const timer = setTimeout(() => {
-      setCopied(false);
-      setCompleted(false);
-    }, 1500);
+    if (!completed) return;
+    const timer = setTimeout(() => setCompleted(false), 1500);
     return () => clearTimeout(timer);
-  }, [copied, completed]);
+  }, [completed]);
   const invoke = async (operation: () => Promise<boolean>) => {
     if (pending) return;
     setPending(true);
@@ -114,12 +105,12 @@ export function OceanController({
   return (
     <div className={`controller-anchor ${panelOpen ? "with-panel" : ""}`}>
       <div
-        className={`ocean-controller ${recording ? "is-recording" : ""} ${paused ? "is-paused" : ""} ${transcribing ? "is-transcribing" : ""} ${completed ? "is-complete" : ""} ${navigation ? "has-navigation" : ""}`}
+        className={`ocean-controller ${recording ? "is-recording" : ""} ${paused ? "is-paused" : ""} ${transcribing ? "is-transcribing" : ""} ${completed ? "is-complete" : ""}`}
         role="toolbar"
         aria-label="Dictation controls"
       >
-        {navigation}
-        {recording ? (
+        {leading}
+        {recording && (
           <button
             className="ocean-icon"
             aria-label={paused ? "Resume recording" : "Pause recording"}
@@ -129,21 +120,7 @@ export function OceanController({
           >
             {paused ? <Play /> : <Pause />}
           </button>
-        ) : !navigation ? (
-          <button
-            className="ocean-icon"
-            aria-label={copied ? "Copied" : "Copy last result"}
-            title={canCopy ? "Copy last result" : "Nothing to copy yet"}
-            disabled={!canCopy || pending}
-            onClick={() =>
-              void invoke(onCopy).then((ok) => {
-                if (ok) setCopied(true);
-              })
-            }
-          >
-            {copied ? <Check /> : <Copy />}
-          </button>
-        ) : null}
+        )}
         <div className="record-well">
           {recording && !paused && <AudioHalo />}
           <button
@@ -180,29 +157,17 @@ export function OceanController({
             <X />
           </button>
         )}
-        {!navigation && (
-          <button
-            className={`ocean-icon ${panelOpen ? "is-selected" : ""}`}
-            aria-label="Open settings"
-            title="Settings"
-            aria-expanded={panelOpen}
-            onClick={onSettings}
-          >
-            <Settings />
-          </button>
-        )}
+        {trailing}
       </div>
       <div className={`controller-status ${paused ? "is-paused-status" : ""}`}>
         {/* Outside the live region so ticks are not re-announced. */}
         <RecordingClock phase={status.phase} />
         <span role="status" aria-live="polite" aria-atomic="true">
-          {copied
-            ? "Copied to clipboard"
-            : completed
-              ? "Transcript ready"
-              : recording && typeof countdown === "number" && countdown > 0
-                ? `Silence detected — stopping in ${countdown}s`
-                : (message ?? status.message)}
+          {completed
+            ? "Transcript ready"
+            : recording && typeof countdown === "number" && countdown > 0
+              ? `Silence detected — stopping in ${countdown}s`
+              : (message ?? status.message)}
         </span>
       </div>
     </div>

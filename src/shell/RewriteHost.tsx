@@ -31,6 +31,7 @@ export function RewriteHost({
       }
       sourceLanguage={rewrite.sourceLanguage}
       status={w.magicStatus}
+      defaultPreset={w.settings.magicPreset}
       visible={rewrite.visible}
       onBackground={w.operations.hideRewrite}
       onOperationState={(phase) =>

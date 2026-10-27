@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { Bot, Compass, Download, Mic, Radar } from "lucide-react";
-import { SettingRow, Toggle } from "../ui";
+import { Compass, Download, Mic, Radar } from "lucide-react";
+import { Toggle } from "../ui";
 import type { TalkControls } from "../../hooks/useTalk";
 import { microphoneOptions } from "../../microphoneSelection";
 import {
-  agentsLine,
   helperLine,
   helperTone,
   normalizeHelperMode,
@@ -16,20 +15,29 @@ import { TalkLevelMeter } from "./TalkLevelMeter";
 import { TalkTurns } from "./TalkTurns";
 import "../../styles/features/talk.css";
 
-/** Sonar: one switch to talk with your agents, the mic it hears and Pilot. */
+/** Something Sonar needs before it can start, and the button that fixes it. */
+export type SonarNeed = {
+  text: string;
+  /** Without an action the need resolves by itself, e.g. a running setup. */
+  action?: { label: string; run: () => void };
+};
+
+/** Sonar: one switch to talk with your agents, what it still needs and Pilot. */
 export function VoiceTalk({
   settings: s,
   talk,
   devices,
-  speechReady,
+  needs,
   saving,
   onSave,
   onAction,
 }: {
   settings: AppSettings;
   talk: TalkControls;
+  /** Audio inputs, to name the shared dictation microphone. */
   devices: MicrophoneDevice[];
-  speechReady: boolean;
+  /** Unmet prerequisites; the switch stays off until there are none. */
+  needs: SonarNeed[];
   saving: boolean;
   onSave: (
     patch: Partial<AppSettings>,
@@ -70,6 +78,10 @@ export function VoiceTalk({
   const pilotBusy =
     status.phase === "downloading" || status.phase === "loading";
   const offerDownload = status.needsDownload && mode === "lightweight";
+  const selected = s.inputDeviceId || "default";
+  const microphone =
+    microphoneOptions(s, devices).find((option) => option.value === selected)
+      ?.label ?? "System default";
 
   return (
     <section className="sonar" aria-label="Sonar">
@@ -85,47 +97,42 @@ export function VoiceTalk({
                   aria-hidden="true"
                 />
               )}
-              {talkLine(status, speechReady)}
+              {talkLine(status)}
+            </p>
+            <p className="sonar-mic">
+              <Mic aria-hidden="true" />
+              <span className="sr-only">Microphone: </span>
+              <span className="sonar-mic-name">{microphone}</span>
+              {status.on && <TalkLevelMeter />}
             </p>
           </div>
           <div className="setting-control">
             <Toggle
               value={on}
               label="Sonar"
-              disabled={stopping || (!on && !speechReady)}
+              disabled={stopping || (!on && needs.length > 0)}
               onChange={() => void (on ? stop() : start(false))}
             />
           </div>
         </div>
-        <div className="setting-row sonar-picker">
-          <Mic className="setting-icon" aria-hidden="true" />
-          <div className="setting-copy">
-            <strong>Microphone</strong>
-          </div>
-          <div className="setting-control">
-            {status.on && <TalkLevelMeter />}
-            <select
-              aria-label="Microphone"
-              value={s.inputDeviceId || "default"}
-              disabled={saving}
-              onChange={(event) =>
-                void onSave({
-                  inputDeviceId: event.target.value,
-                  inputDeviceLabel:
-                    devices.find(
-                      (device) => device.deviceId === event.target.value,
-                    )?.label ?? "System default",
-                })
-              }
-            >
-              {microphoneOptions(s, devices).map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+        {!on &&
+          needs.map((need) => (
+            <div key={need.text} className="setting-row sonar-need">
+              <span className="status-dot warning" aria-hidden="true" />
+              <div className="setting-copy">{need.text}</div>
+              {need.action && (
+                <div className="setting-control">
+                  <button
+                    className="secondary-button compact"
+                    disabled={saving}
+                    onClick={need.action.run}
+                  >
+                    {need.action.label}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
         <div className="setting-row sonar-picker">
           <Compass className="setting-icon" aria-hidden="true" />
           <div className="setting-copy">
@@ -142,7 +149,7 @@ export function VoiceTalk({
             {offerDownload && (
               <button
                 className="primary-button compact"
-                disabled={starting || pilotBusy}
+                disabled={starting || pilotBusy || needs.length > 0}
                 onClick={() => void start(true)}
               >
                 <Download />
@@ -164,13 +171,6 @@ export function VoiceTalk({
             </select>
           </div>
         </div>
-        <SettingRow
-          icon={Bot}
-          title="Agents"
-          description={agentsLine(status.agents)}
-        >
-          {null}
-        </SettingRow>
       </div>
       <TalkTurns turns={status.turns} />
     </section>

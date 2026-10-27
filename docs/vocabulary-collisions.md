@@ -1,6 +1,6 @@
-# Lingo collision diagnostics
+# Words collision diagnostics
 
-In Lingo, when a correction or text shortcut shares a complete trigger with another
+On the Words page, when a correction or text shortcut shares a complete trigger with another
 saved rule, the editor explains which draft trigger collided, the existing
 rule's kind and name, and its saved trigger. Alternative triggers are checked
 as well as the primary trigger of a shortcut. Both spellings are shown for

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Tabs } from "../components/ui";
 import type {
   AppSettings,
@@ -6,28 +6,31 @@ import type {
   MagicStatus,
   MicrophoneDevice,
   PlatformCapabilities,
+  SettingsSection,
   ShortcutStatus,
   UpdateStatus,
 } from "../types";
 import type { SectionProps } from "./settings/shared";
-import { GeneralSection } from "./settings/GeneralSection";
-import { SpeechSection } from "./settings/SpeechSection";
+import { DictationSection } from "./settings/DictationSection";
 import { OutputSection } from "./settings/OutputSection";
 import { RewritingSection } from "./settings/RewritingSection";
+import { AppSection } from "./settings/AppSection";
 import { PrivacySection } from "./settings/PrivacySection";
 import { AdvancedSection } from "./settings/AdvancedSection";
 
-const SECTIONS = [
-  ["general", "General"],
-  ["speech", "Speech"],
+/** One section per feature; each holds its switch, its model and its options. */
+const SECTIONS: readonly (readonly [SettingsSection, string])[] = [
+  ["dictation", "Dictation"],
+  ["rewrite", "Rewrite"],
   ["output", "Output"],
-  ["rewriting", "Rewriting"],
+  ["app", "App"],
   ["privacy", "Privacy"],
   ["advanced", "Advanced"],
-] as const;
-type Section = (typeof SECTIONS)[number][0];
+];
 
 type Props = {
+  section: SettingsSection;
+  onSectionChange: (section: SettingsSection) => void;
   settings: AppSettings;
   devices: MicrophoneDevice[];
   capabilities: PlatformCapabilities | null;
@@ -53,11 +56,12 @@ type Props = {
   onLoadMagic: () => void;
   onUnloadMagic: () => void;
   onReset: () => void;
+  /** First-run setup: closes Settings once speech is ready. */
+  onDone?: () => void;
 };
 
 export function SettingsPage(props: Props) {
-  const { status, magicStatus, capabilities } = props;
-  const [section, setSection] = useState<Section>("general");
+  const { section, status, magicStatus, capabilities } = props;
   useEffect(() => {
     const content = document.getElementById("page-content");
     if (content) content.scrollTop = 0;
@@ -80,7 +84,7 @@ export function SettingsPage(props: Props) {
         idPrefix="settings"
         tabs={SECTIONS}
         value={section}
-        onChange={setSection}
+        onChange={props.onSectionChange}
         trailing={
           <span className="settings-saving" aria-live="polite">
             {props.saving ? "Saving…" : ""}
@@ -93,19 +97,25 @@ export function SettingsPage(props: Props) {
         role="tabpanel"
         aria-labelledby={`settings-tab-${section}`}
       >
-        {section === "general" && (
-          <GeneralSection
+        {section === "dictation" && (
+          <DictationSection
             {...common}
+            status={status}
             devices={props.devices}
             capabilities={capabilities}
             shortcutStatus={props.shortcutStatus}
             onConfigureShortcut={props.onConfigureShortcut}
+            onSetup={props.onSetup}
+            onCancelSetup={props.onCancelSetup}
+            onDone={props.onDone}
           />
         )}
-        {section === "speech" && (
-          <SpeechSection
+        {section === "rewrite" && (
+          <RewritingSection
             {...common}
-            largeSpeechAvailable={!!capabilities?.largeSpeechAvailable}
+            magicStatus={magicStatus}
+            onSetupMagic={props.onSetupMagic}
+            onCancelSetupMagic={props.onCancelSetupMagic}
           />
         )}
         {section === "output" && (
@@ -117,11 +127,14 @@ export function SettingsPage(props: Props) {
             onTestCaptureCue={props.onTestCaptureCue}
           />
         )}
-        {section === "rewriting" && (
-          <RewritingSection
+        {section === "app" && (
+          <AppSection
             {...common}
-            magicStatus={magicStatus}
-            onSetupMagic={props.onSetupMagic}
+            capabilities={capabilities}
+            update={props.updateStatus}
+            onCheckForUpdates={props.onCheckForUpdates}
+            onDownloadUpdate={props.onDownloadUpdate}
+            onInstallUpdate={props.onInstallUpdate}
           />
         )}
         {section === "privacy" && (
@@ -132,7 +145,6 @@ export function SettingsPage(props: Props) {
             {...common}
             status={status}
             magicStatus={magicStatus}
-            update={props.updateStatus}
             speech={{
               onSetup: props.onSetup,
               onCancelSetup: props.onCancelSetup,
@@ -146,9 +158,6 @@ export function SettingsPage(props: Props) {
               onUnload: props.onUnloadMagic,
             }}
             onReset={props.onReset}
-            onCheckForUpdates={props.onCheckForUpdates}
-            onDownloadUpdate={props.onDownloadUpdate}
-            onInstallUpdate={props.onInstallUpdate}
           />
         )}
       </div>

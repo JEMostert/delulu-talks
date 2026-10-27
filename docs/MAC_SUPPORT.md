@@ -18,7 +18,7 @@ A static checkpoint audit matched all 707 stored BF16 tensor keys/shapes to the 
 
 1. Install native Python 3.12, for example `brew install python@3.12`, and FFmpeg for formats requiring conversion.
 2. If discovery picks another Python, set the native interpreter's absolute path in Settings → Advanced.
-3. Open Engines and choose Install/Update setup or Repair for the speech runtime. Existing vLLM Metal environments do not contain the new MLX Audio dependencies.
+3. Open Settings → Dictation to set up speech, or Settings → Advanced → Repair for an existing runtime. Existing vLLM Metal environments do not contain the new MLX Audio dependencies.
 4. Let checkpoint loading and synthetic decoder warmup finish before recording. Choose Dutch or English explicitly when appropriate.
 5. Check Microphone permission for recording and Accessibility permission if automatic paste fails.
 
@@ -45,4 +45,4 @@ On a real Apple Silicon Mac:
 6. Exercise permission denial/re-grant, shortcut behavior, sleep/wake, and paste into actual applications.
 7. Build the package with `bun run build`. Record native evidence in a new document before publishing this backend as validated.
 
-There is no native inference harness yet; after Engines finishes setup, `DELULU_DEV_SCRIPT` in a debug build can drive setup and dictation through the IPC router (`src-tauri/src/dev_script.rs`), and `scripts/decoder-contract.py --backend mlx` checks the installed decoders. Record actual hardware, checkpoint/runtime revisions, permission behavior, microphone recognition and delivery into applications separately; passing unit/browser tests does not establish native inference.
+There is no native inference harness yet; after speech setup finishes, `DELULU_DEV_SCRIPT` in a debug build can drive setup and dictation through the IPC router (`src-tauri/src/dev_script.rs`), and `scripts/decoder-contract.py --backend mlx` checks the installed decoders. Record actual hardware, checkpoint/runtime revisions, permission behavior, microphone recognition and delivery into applications separately; passing unit/browser tests does not establish native inference.

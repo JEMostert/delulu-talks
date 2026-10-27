@@ -6,11 +6,11 @@ Delulu Talks can speak as well as listen. Everything runs on your machine.
 - **Sonar** is a hands-free conversation with your agents: it keeps the microphone open, routes every turn to an agent and answers out loud through Siren.
 - **Pilot** is Sonar's optional local model (Qwen3.5 0.8B) that decides what each turn means.
 
-All three live on the **Siren** page. The main use is a voice loop with one lead coding agent: it runs its own subagents or threads (Claude Code subagents, Codex, T3 Code's orchestration) and briefs you out loud, the way a CEO briefs a board: what is done, what it needs from you, what broke.
+All three live on the **Voice** page, top to bottom in the order they depend on each other: Siren, then **Connect your agents**, then Sonar. The main use is a voice loop with one lead coding agent: it runs its own subagents or threads (Claude Code subagents, Codex, T3 Code's orchestration) and briefs you out loud, the way a CEO briefs a board: what is done, what it needs from you, what broke.
 
 ## Siren
 
-Turn on **Speak replies aloud**, pick an engine and press **Set up** once.
+Pick an engine and turn on **Siren**. If the engine is not installed yet, turning Siren on starts its setup; **Set up** does the same without switching it on. The same switch opens the agent connection, so agents can reach Siren as soon as it is on. **Preview** and **Try your own text** work whenever the engine is installed, even with Siren off.
 
 | Engine             | Model                                                                                                | Runs on                                  | Tags                                                                       |
 | ------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------- |
@@ -49,7 +49,7 @@ Done. All 212 tests pass [chuckle], and the cache fix is merged.
 | Emotions, whisper | Native style tokens   | Whisper is quieter and slower; other emotions are skipped |
 | Pacing, volume    | Time-stretch and gain | Native speed and gain                                     |
 
-Each result reports the tags the engine skipped. **Try it** on the Siren page speaks any text with markup.
+Each result reports the tags the engine skipped. **Tuning → Try your own text** on the Voice page speaks any text with markup.
 
 ### Code and file names
 
@@ -65,7 +65,7 @@ Playback is native (`delulu-audio` through cpal: PulseAudio/PipeWire or ALSA on 
 
 ## Connecting coding agents
 
-Open **Connect agents** on the Siren page and turn on **Let coding agents speak**. Delulu then listens on a local socket (`<user data>/voice/agent.sock` on Linux and macOS, a named pipe on Windows) and writes `bridge.json` beside it with a fresh random token. Both are readable only by your user; requests without the token are refused.
+Turn on **Siren** on the Voice page; **Connect your agents** below it shows the setup for each agent and which agents are connected. Delulu then listens on a local socket (`<user data>/voice/agent.sock` on Linux and macOS, a named pipe on Windows) and writes `bridge.json` beside it with a fresh random token. Both are readable only by your user; requests without the token are refused.
 
 The tabs below the switch hold copyable setup:
 
@@ -91,7 +91,7 @@ Desktop shortcuts can run the app itself: `delulu-talks --read-clipboard` reads 
 
 ## Sonar
 
-**Sonar** on the Siren page is one live loop: microphone → voice activity → speech recognition → Pilot → tool executor → Siren. It stays on until you switch it off, say "stop listening", press **Stop** on the Sonar badge or in the tray, quit, or the microphone fails. The live level meter next to the microphone picker (the same **Microphone** setting dictation uses) makes a silent or wrong input obvious. Sonar needs a speech engine from Engines; dictating with your shortcut still works and pauses Sonar until the dictation ends.
+**Sonar** on the Voice page is one live loop: microphone → voice activity → speech recognition → Pilot → tool executor → Siren. It stays on until you switch it off, say "stop listening", press **Stop** on the Sonar badge or in the tray, quit, or the microphone fails. It uses the microphone chosen in Settings → Dictation; a live level meter makes a silent or wrong input obvious. Sonar needs speech recognition (Settings → Dictation) and Siren with an installed engine; until both are there, the Sonar card lists what is missing with a button for each. Turning Siren off also stops Sonar. Dictating with your shortcut still works and pauses Sonar until the dictation ends.
 
 Every finished utterance is routed on its own, the moment it is transcribed: nothing is joined with earlier turns and there is no listen timeout. The strip under the Sonar card shows your last turns, what Delulu did and what it said.
 

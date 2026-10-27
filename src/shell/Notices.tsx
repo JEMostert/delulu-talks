@@ -55,7 +55,11 @@ export function Notices({
       <RetryNotice
         status={w.status}
         busy={busy}
-        onEngines={w.page === "models" ? undefined : () => onNavigate("models")}
+        onEngines={
+          w.page === "settings" && w.settingsSection === "dictation"
+            ? undefined
+            : () => onNavigate("models")
+        }
         onRetry={commands.retryRecording}
         onDiscard={commands.discardRecording}
       />

@@ -78,9 +78,7 @@ test("recording controls follow the desktop status", async ({ page }) => {
 });
 
 test("the microphone picker lists the desktop inputs", async ({ page }) => {
-  await page
-    .getByRole("button", { name: "Open settings", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   const picker = page.getByRole("combobox", { name: "Microphone" }).first();
   await expect(picker.locator("option")).toHaveText([
     "System default",
@@ -89,21 +87,18 @@ test("the microphone picker lists the desktop inputs", async ({ page }) => {
   ]);
 });
 
-test("home stays quiet while ready and the dock opens the logbook", async ({
+test("home stays quiet while ready and the dock opens history", async ({
   page,
 }) => {
   await expect(page.locator(".controller-status [role=status]")).toHaveText("");
   await expect(page.locator(".engine-chip")).toHaveCount(0);
 
-  const settings = page.getByRole("button", {
-    name: "Open settings",
-    exact: true,
-  });
-  await settings.click();
-  await page.getByRole("button", { name: "Logbook", exact: true }).click();
+  await page.getByRole("button", { name: "History", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Logbook", level: 1 }),
+    page.getByRole("heading", { name: "History", level: 1 }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(settings).toBeFocused();
+  await expect(
+    page.getByRole("button", { name: "Start dictation", exact: true }),
+  ).toBeFocused();
 });

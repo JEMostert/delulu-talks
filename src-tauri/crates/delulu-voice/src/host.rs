@@ -39,7 +39,7 @@ pub trait ListenTranscriber: Send + Sync {
     /// Makes sure speech can be transcribed and loads the model, which stays
     /// loaded while the session runs. Replaces `prepareSpeech` in `main.ts`:
     /// `asr.isEnvironmentReady(settings)` (failing with "Set up a speech model
-    /// on the Models page before listening." when it is not) followed by
+    /// in Settings → Dictation before listening." when it is not) followed by
     /// `asr.ensureLoaded(settings)`.
     ///
     /// The speech service should also keep its model resident while

@@ -1,37 +1,50 @@
 import { useEffect, useState } from "react";
-import { Keyboard, Languages, Mic, Monitor, SpellCheck } from "lucide-react";
+import {
+  AudioWaveform,
+  Check,
+  Keyboard,
+  Languages,
+  Mic,
+  SpellCheck,
+} from "lucide-react";
 import { AUTO_LANGUAGE } from "../../data";
 import {
   speechLanguageCapability,
   speechLanguageHelp,
 } from "../../speechCapabilities";
-import { SettingRow } from "../../components/ui";
+import { NumberField, SettingRow } from "../../components/ui";
 import { MicrophoneNotice } from "../../components/MicrophoneNotice";
+import { SpeechSetup } from "../../components/models/SpeechSetup";
 import type {
   AppSettings,
+  DictationStatus,
   MicrophoneDevice,
   PlatformCapabilities,
   ShortcutStatus,
 } from "../../types";
 import { Group, SettingToggle, type SectionProps } from "./shared";
 
-const THEMES = [
-  ["system", "Auto"],
-  ["light", "Light"],
-  ["dark", "Dark"],
-] as const;
-
-export function GeneralSection({
+/** Dictation: the speech model first, then what you speak into and how. */
+export function DictationSection({
+  status,
   devices,
   capabilities,
   shortcutStatus,
   onConfigureShortcut,
+  onSetup,
+  onCancelSetup,
+  onDone,
   ...section
 }: SectionProps & {
+  status: DictationStatus;
   devices: MicrophoneDevice[];
   capabilities: PlatformCapabilities | null;
   shortcutStatus: ShortcutStatus;
   onConfigureShortcut: () => void;
+  onSetup: () => void;
+  onCancelSetup?: () => void;
+  /** Shown while first-run setup is open; closes it. */
+  onDone?: () => void;
 }) {
   const { settings: s, saving, busy, save } = section;
   const [shortcut, setShortcut] = useState(s.shortcut);
@@ -39,9 +52,33 @@ export function GeneralSection({
   const language = speechLanguageCapability(s.speechEngine, s.model);
   const mac = capabilities?.platform === "darwin";
   const portal = shortcutStatus.method === "portal";
+  const accelerator = portal
+    ? shortcutStatus.accelerator.replace("Super", "Meta")
+    : s.shortcut;
 
   return (
     <>
+      <SpeechSetup
+        largeSpeechAvailable={!!capabilities?.largeSpeechAvailable}
+        status={status}
+        settings={s}
+        busy={busy || saving}
+        onSetup={onSetup}
+        onCancelSetup={onCancelSetup}
+        onUpdateSettings={save}
+      />
+      {onDone && status.engine === "ready" && status.warmup === "complete" && (
+        <div className="setup-finished">
+          <span className="flex items-center gap-2">
+            <Check className="text-success" />
+            Ready. Press {accelerator} in any app to dictate.
+          </span>
+          <button className="primary-button" onClick={onDone}>
+            Done
+          </button>
+        </div>
+      )}
+
       <Group title="Input">
         <SettingRow icon={Mic} title="Microphone">
           <div className="flex flex-col items-end gap-1">
@@ -97,7 +134,7 @@ export function GeneralSection({
           <SettingRow
             icon={SpellCheck}
             title="Word hints"
-            description="Large listens for your Lingo words."
+            description="Large listens for the words on the Words page."
           >
             <SettingToggle
               {...section}
@@ -122,7 +159,7 @@ export function GeneralSection({
           <div className="inline-control">
             {portal ? (
               <>
-                <kbd>{shortcutStatus.accelerator.replace("Super", "Meta")}</kbd>
+                <kbd>{accelerator}</kbd>
                 <button
                   className="secondary-button compact"
                   onClick={onConfigureShortcut}
@@ -171,38 +208,79 @@ export function GeneralSection({
         </SettingRow>
       </Group>
 
-      <Group title="App">
-        <SettingRow icon={Monitor} title="Theme">
-          <div className="segmented" role="group" aria-label="Theme">
-            {THEMES.map(([theme, label]) => (
-              <button
-                key={theme}
-                aria-pressed={s.theme === theme}
-                className={s.theme === theme ? "active" : ""}
-                disabled={saving}
-                onClick={() => save({ theme })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </SettingRow>
-        <SettingRow title="Launch at login">
+      <Group title="While you speak">
+        <SettingRow icon={AudioWaveform} title="Stop after silence">
           <SettingToggle
             {...section}
-            name="launchAtLogin"
-            label="Launch at login"
+            name="trailingSilenceStopEnabled"
+            label="Stop after silence"
+            disabled={busy}
           />
         </SettingRow>
-        {mac && (
-          <SettingRow title="Menu bar only" description="Hides the Dock icon.">
-            <SettingToggle
-              {...section}
-              name="menuBarOnly"
-              label="Menu bar only"
-            />
-          </SettingRow>
+        {s.trailingSilenceStopEnabled && (
+          <>
+            <SettingRow title="Silence length (seconds)">
+              <NumberField
+                label="Silence duration in seconds"
+                min={2}
+                max={30}
+                value={s.trailingSilenceSeconds}
+                disabled={busy}
+                onCommit={(trailingSilenceSeconds) =>
+                  save({ trailingSilenceSeconds })
+                }
+              />
+            </SettingRow>
+            <SettingRow
+              title="Silence level (dB)"
+              description="Anything quieter counts as silence."
+            >
+              <NumberField
+                label="Silence threshold in dB"
+                min={-60}
+                max={-20}
+                value={s.trailingSilenceThresholdDb}
+                disabled={busy}
+                onCommit={(trailingSilenceThresholdDb) =>
+                  save({ trailingSilenceThresholdDb })
+                }
+              />
+            </SettingRow>
+          </>
         )}
+      </Group>
+
+      <Group title="Formatting">
+        <SettingRow
+          title="Punctuation"
+          description="Spoken: say “insert comma”. English and Dutch."
+        >
+          <select
+            aria-label="Dictation formatting"
+            value={s.dictationFormatting ?? "preserve"}
+            disabled={saving || busy}
+            onChange={(e) =>
+              save({
+                dictationFormatting: e.target
+                  .value as AppSettings["dictationFormatting"],
+              })
+            }
+          >
+            <option value="preserve">Recognized</option>
+            <option value="spoken">Spoken</option>
+          </select>
+        </SettingRow>
+        <SettingRow
+          title="Line commands"
+          description="Say “command new line” or “commando nieuwe alinea”."
+        >
+          <SettingToggle
+            {...section}
+            name="spokenFormattingCommands"
+            label="Interpret spoken line commands"
+            disabled={busy}
+          />
+        </SettingRow>
       </Group>
     </>
   );

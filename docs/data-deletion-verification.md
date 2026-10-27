@@ -4,6 +4,6 @@ Clear history removes durable transcripts and their corrections/rewrites, the ba
 
 Paste last waits three seconds for focus. After that delay it resolves the requested id again: deleting/clearing it cancels delivery, and correcting it during the delay uses the current text. It does not substitute a different latest transcript. Clear history does not cancel ongoing capture or transcription; a newly completed operation can create a new record afterward. Previously exported files and an already populated system clipboard are outside clear history.
 
-Reset Python environments is a distinct Engines action. It stops workers and removes the speech and rewriting environment directories; settings, history and the model cache are excluded. This is not a factory reset or history deletion command.
+Reset Python environments is a distinct Settings → Advanced action (Remove runtimes). It stops workers and removes the speech and rewriting environment directories; settings, history and the model cache are excluded. This is not a factory reset or history deletion command.
 
 Current checks: `cargo test -p delulu-data --test storage` verifies that deletion revokes backup copies and that retention requires a current preview, and `cargo test -p delulu-speech` verifies that paste last delivers after its countdown and cancels when the text changes. They use temporary profiles and fakes, no downloaded models and no user data. They do not establish native filesystem behavior, native inference, manual focus/delivery, or actual history-disabled inference.

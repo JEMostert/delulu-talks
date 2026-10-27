@@ -11,8 +11,10 @@ import {
   CheckSquare,
   Clock3,
   FileAudio,
+  LoaderCircle,
   Mic,
   Search,
+  Upload,
   WandSparkles,
   X,
 } from "lucide-react";
@@ -22,6 +24,12 @@ import {
 } from "../components/TranscriptCard";
 import { ConfirmDialog, EmptyState } from "../components/ui";
 import { HistorySearchMatches } from "../components/HistorySearchMatches";
+import {
+  FileDropOverlay,
+  FileImportList,
+  FileSource,
+  useFileImports,
+} from "../components/FileImports";
 import type { ExportFormat, TranscriptRecord } from "../types";
 import {
   EMPTY_HISTORY_FILTERS,
@@ -59,7 +67,10 @@ const CHIPS: readonly [string, string, Partial<HistoryFilters>][] = [
   ["rewritten", "Rewritten", { source: "all", rewritten: "yes" }],
 ];
 
-/** The logbook: a list beside the selected transcript. Scan left, act right. */
+/**
+ * History: a list beside the selected transcript. Scan left, act right.
+ * Audio and video files are chosen or dropped here and land in the list.
+ */
 export function HistoryPage({
   history,
   historyLimit,
@@ -71,6 +82,7 @@ export function HistoryPage({
   onDeleteSelection,
   deletionPending,
   onOpenSettings,
+  busy = false,
   ...actions
 }: TranscriptActions & {
   history: TranscriptRecord[];
@@ -83,6 +95,7 @@ export function HistoryPage({
   view: HistoryViewState;
   onViewChange: Dispatch<SetStateAction<HistoryViewState>>;
   onOpenSettings?: () => void;
+  busy?: boolean;
 }) {
   const { filters, sort } = view;
   const deferredFilters = useDeferredValue(filters);
@@ -169,23 +182,54 @@ export function HistoryPage({
       else if (next.size < 500) next.add(id);
       return next;
     });
+  const imports = useFileImports(busy, () => {
+    setOpenId(null);
+    setFilters({ ...EMPTY_HISTORY_FILTERS, source: "file" });
+  });
 
   if (!history.length)
     return (
-      <EmptyState icon={Clock3} title="No transcripts yet">
-        {!keepHistory && "Saving is off; only this session shows here."}
-      </EmptyState>
+      <div className="history-empty" {...imports.dropTarget}>
+        <FileImportList imports={imports} />
+        <EmptyState
+          icon={Clock3}
+          title="No transcripts yet"
+          action={
+            <button
+              className="secondary-button"
+              disabled={imports.pending || !!imports.blocked}
+              title={imports.blocked ?? undefined}
+              onClick={imports.choose}
+            >
+              <Upload /> Transcribe a file
+            </button>
+          }
+        >
+          Press your shortcut to dictate, or transcribe a file.
+          {!keepHistory && (
+            <>
+              <br />
+              Saving is off; only this session shows here.
+            </>
+          )}
+        </EmptyState>
+        <FileDropOverlay imports={imports} />
+      </div>
     );
 
+  const source = open?.source === "file" ? imports.sourceFor(open.id) : null;
   return (
-    <div className={`history-shell ${showDetail ? "show-detail" : ""}`}>
+    <div
+      className={`history-shell ${showDetail ? "show-detail" : ""}`}
+      {...imports.dropTarget}
+    >
       <aside className="history-pane" aria-label="Transcripts">
         <div className="history-pane-head">
           <div className="history-search-row">
             <label className="search-box">
               <Search aria-hidden="true" />
               <input
-                aria-label="Search Logbook"
+                aria-label="Search History"
                 placeholder="Search"
                 value={filters.query}
                 onChange={(e) => setFilters({ query: e.target.value })}
@@ -200,6 +244,15 @@ export function HistoryPage({
                 </button>
               )}
             </label>
+            <button
+              className="sheet-icon"
+              aria-label="Transcribe audio or video files"
+              title={imports.blocked ?? "Transcribe a file"}
+              disabled={imports.pending || !!imports.blocked}
+              onClick={imports.choose}
+            >
+              {imports.pending ? <LoaderCircle className="spin" /> : <Upload />}
+            </button>
             <button
               className={`sheet-icon ${selecting ? "is-selected" : ""}`}
               aria-label={selecting ? "Finish selection" : "Select transcripts"}
@@ -280,8 +333,9 @@ export function HistoryPage({
             </button>
           </div>
         )}
+        <FileImportList imports={imports} />
         <div className="history-scroll">
-          {!filtered.length && (
+          {!filtered.length && !imports.rows.length && (
             <p className="history-none">No transcripts match.</p>
           )}
           {groups.map(([day, records]) => (
@@ -379,6 +433,7 @@ export function HistoryPage({
               variant="detail"
               {...actions}
             />
+            {source && <FileSource key={source.path} job={source} />}
             <HistorySearchMatches record={open} query={deferredFilters.query} />
           </>
         ) : (
@@ -387,7 +442,7 @@ export function HistoryPage({
       </section>
       {confirm && (
         <ConfirmDialog
-          title="Clear the Logbook?"
+          title="Clear History?"
           confirmLabel="Clear all"
           onClose={() => setConfirm(false)}
           onConfirm={onClear}
@@ -417,6 +472,7 @@ export function HistoryPage({
           <p>You can undo for 30 seconds.</p>
         </ConfirmDialog>
       )}
+      <FileDropOverlay imports={imports} />
     </div>
   );
 }

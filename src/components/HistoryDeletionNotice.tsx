@@ -45,7 +45,7 @@ export function HistoryDeletionNotice({
         ) : (
           <div className="panel-actions">
             <button className="secondary-button compact" onClick={onHistory}>
-              Open Logbook
+              Open History
             </button>
             <button
               className="tool-button compact"

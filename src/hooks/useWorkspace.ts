@@ -6,6 +6,7 @@ import { readStartupService } from "../startupServices";
 import { useWorkspaceOperations } from "./useWorkspaceOperations";
 import { DEFAULT_HISTORY_VIEW, type HistoryViewState } from "../historyView";
 import { useServiceRecovery, type RecoveryService } from "./useServiceRecovery";
+import { resolvePage } from "../shell/navigation";
 import type {
   AppSettings,
   DictationStatus,
@@ -17,13 +18,23 @@ import type {
   Page,
   PasteLastStatus,
   PlatformCapabilities,
+  SettingsSection,
   ShortcutStatus,
+  ShownPage,
   TranscriptRecord,
   UpdateStatus,
 } from "../types";
 
 export function useWorkspace() {
-  const [page, setPage] = useState<Page>("home");
+  const [page, showPage] = useState<ShownPage>("home");
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>("dictation");
+  /** Opens a page, or the Settings section that now holds an older page. */
+  const setPage = (target: Page) => {
+    const [next, section] = resolvePage(target);
+    if (section) setSettingsSection(section);
+    showPage(next);
+  };
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [ready, setReady] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
@@ -437,6 +448,8 @@ export function useWorkspace() {
     operations,
     page,
     setPage,
+    settingsSection,
+    setSettingsSection,
     settings,
     ready,
     startupError,

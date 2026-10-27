@@ -102,7 +102,7 @@ export function RuleUsagePanel({ words }: { words: CustomWord[] }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-[12px] text-muted">
           {desktop
-            ? "Matches in new dictations and Bottles. Only counts are stored."
+            ? "Matches in new dictations and file transcripts. Only counts are stored."
             : "Usage counts are available in the desktop app."}
         </p>
         <div className="flex flex-wrap gap-2">
