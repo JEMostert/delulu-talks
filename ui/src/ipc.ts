@@ -1,6 +1,19 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+// The mock is only reachable in Vite development outside a Tauri window.
+const mock =
+  import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)
+    ? import("./mock")
+    : null;
+const invoke: typeof tauriInvoke = async (command, args) =>
+  mock
+    ? (await mock).invoke(command, args as Record<string, unknown> | undefined)
+    : tauriInvoke(command, args);
+const listen: typeof tauriListen = async (event, handler, options) =>
+  mock
+    ? (await mock).listen(event, handler)
+    : tauriListen(event, handler, options);
 export type Phase =
   | "needsSetup"
   | "loadingModel"
@@ -88,7 +101,15 @@ export const reinsert = (id: string) =>
   invoke<InsertResult>("reinsert", { id });
 export const finishFirstRun = () => invoke<void>("finish_first_run");
 export const openProjectPage = () =>
-  openUrl("https://github.com/JEMostert/delulu-talks");
+  mock
+    ? Promise.resolve(
+        window.open(
+          "https://github.com/JEMostert/delulu-talks",
+          "_blank",
+          "noopener",
+        ),
+      ).then(() => {})
+    : openUrl("https://github.com/JEMostert/delulu-talks");
 export const onStatus = (fn: (value: Status) => void): Promise<UnlistenFn> =>
   listen<Status>("status", (e) => fn(e.payload));
 export const onMicLevel = (fn: (value: number) => void): Promise<UnlistenFn> =>
