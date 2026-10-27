@@ -224,6 +224,28 @@ impl Store {
             .collect()
     }
 
+    /// Atomically persist the completed delivery timing before updating memory.
+    pub fn set_total_ms(&self, id: &str, total_ms: u64) -> Result<HistoryEntry, StoreError> {
+        let mut data = self.lock();
+        let mut history = data.history.clone();
+        let entry = history
+            .iter_mut()
+            .find(|e| e.id == id)
+            .ok_or_else(|| StoreError::Io(format!("history entry not found: {id}")))?;
+        entry.total_ms = total_ms;
+        let updated = entry.clone();
+        let mut out = Vec::new();
+        for entry in &history {
+            serde_json::to_writer(&mut out, entry)
+                .map_err(|e| StoreError::Io(format!("history entry: {e}")))?;
+            out.push(b'\n');
+        }
+        write_atomic(&self.data_dir.join(HISTORY_FILE), &out)?;
+        data.history = history;
+        data.history_needs_newline = false;
+        Ok(updated)
+    }
+
     pub fn delete_history(&self, id: &str) -> Result<(), StoreError> {
         let mut data = self.lock();
         if !data.history.iter().any(|e| e.id == id) {
@@ -536,6 +558,21 @@ mod tests {
         assert!(store.history(None, 10).is_empty());
         drop(store);
         assert!(open(&t).history(None, 10).is_empty());
+    }
+
+    #[test]
+    fn delivery_timing_survives_reopen() {
+        let t = TempDir::new();
+        let store = open(&t);
+        let first = store.add_history(entry("first")).unwrap();
+        let second = store.add_history(entry("second")).unwrap();
+        assert_eq!(store.set_total_ms(&first.id, 987).unwrap().total_ms, 987);
+        assert!(store.set_total_ms("missing", 1).is_err());
+        assert_eq!(store.history(None, 10)[1].total_ms, 987);
+        drop(store);
+        let entries = open(&t).history(None, 10);
+        assert_eq!(entries[0], second);
+        assert_eq!(entries[1].total_ms, 987);
     }
 
     #[test]
