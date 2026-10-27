@@ -29,6 +29,7 @@ export type HotkeyStatus = {
 export type InsertStatus = { ready: boolean; error: string | null };
 export type Status = {
   phase: Phase;
+  dataDir: string;
   message: string | null;
   hotkey: HotkeyStatus;
   insert: InsertStatus;
