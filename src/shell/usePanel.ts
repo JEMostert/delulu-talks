@@ -42,13 +42,15 @@ export function usePanel(w: Workspace) {
   const navigate = (page: Page) => w.setPage(page);
 
   useEffect(() => {
+    // Tracked outside the frame: a quick Escape can cancel the opening frame.
+    const closing = wasOpen.current && !open;
+    wasOpen.current = open;
     const frame = requestAnimationFrame(() => {
       if (open) {
         ref.current?.focus({ preventScroll: true });
         const content = document.getElementById("page-content");
         if (content) content.scrollTop = 0;
-      } else if (wasOpen.current) homeFocusTarget()?.focus();
-      wasOpen.current = open;
+      } else if (closing) homeFocusTarget()?.focus();
     });
     return () => cancelAnimationFrame(frame);
   }, [open, w.page]);
