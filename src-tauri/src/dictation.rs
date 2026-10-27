@@ -39,18 +39,49 @@ pub(crate) fn start(app: &tauri::AppHandle) {
         s.gesture.lock().unwrap_or_else(|e| e.into_inner()).reset();
         return;
     }
+    let settings = s.store.settings();
+    // Show the pill before the stream opens so the first levels aren't dropped.
+    if settings.overlay {
+        s.pill.show(PillState::Listening, None);
+    }
     let app2 = app.clone();
+    let overlay = settings.overlay;
     match s.recorder.start(
-        s.store.settings().microphone.as_deref(),
+        settings.microphone.as_deref(),
         Box::new(move |level| {
             let _ = app2.emit("mic-level", level);
+            if overlay {
+                app2.state::<Shell>().pill.level(level);
+            }
         }),
     ) {
         Ok(()) => phase(app, "recording", None),
         Err(e) => {
             s.gesture.lock().unwrap_or_else(|e| e.into_inner()).reset();
+            pill(&s, PillState::Error, Some(audio_word(&e)));
             phase(app, "error", Some(e.to_string()));
         }
+    }
+}
+/// Show the recording pill unless it's turned off in Settings › Appearance.
+pub(crate) fn pill(s: &Shell, state: PillState, label: Option<&str>) {
+    if s.store.settings().overlay {
+        s.pill.show(state, label);
+    }
+}
+/// The pill's one word for a recorder problem.
+fn audio_word(e: &delulu_audio::AudioError) -> &'static str {
+    match e {
+        delulu_audio::AudioError::NoDevice(_) => "No microphone",
+        _ => "Mic error",
+    }
+}
+/// The pill's one word for how the text arrived.
+pub(crate) fn insert_word(insert: &InsertResult) -> (PillState, &'static str) {
+    match insert {
+        InsertResult::Pasted => (PillState::Success, "Typed"),
+        InsertResult::Copied { .. } => (PillState::Success, "Copied"),
+        InsertResult::Failed { .. } => (PillState::Error, "Not typed"),
     }
 }
 #[derive(Clone, Serialize)]
@@ -130,23 +161,26 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
         .keys_down();
     *s.last_release.lock().unwrap_or_else(|e| e.into_inner()) = None;
     phase(app, "transcribing", None);
+    pill(&s, PillState::Transcribing, None);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let start = started;
         let app2 = app.clone();
         let clip = tokio::task::spawn_blocking(move || app2.state::<Shell>().recorder.stop()).await;
+        let s = app.state::<Shell>();
         let clip = match clip {
             Ok(Ok(c)) => c,
             Ok(Err(e)) => {
+                pill(&s, PillState::Error, Some(audio_word(&e)));
                 phase(&app, "error", Some(e.to_string()));
                 return;
             }
             Err(e) => {
+                pill(&s, PillState::Error, Some("Mic error"));
                 phase(&app, "error", Some(e.to_string()));
                 return;
             }
         };
-        let s = app.state::<Shell>();
         let settings = s.store.settings();
         let (tx, rx) = tokio::sync::oneshot::channel();
         if s.engine
@@ -157,21 +191,26 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
             ))
             .is_err()
         {
+            pill(&s, PillState::Error, Some("Not transcribed"));
             phase(&app, "error", Some("Engine thread stopped".into()));
             return;
         }
         let transcript = match rx.await {
             Ok(Ok(t)) => t,
             Ok(Err(e)) => {
+                pill(&s, PillState::Error, Some("Not transcribed"));
                 phase(&app, "error", Some(e));
                 return;
             }
             Err(e) => {
+                pill(&s, PillState::Error, Some("Not transcribed"));
                 phase(&app, "error", Some(e.to_string()));
                 return;
             }
         };
-        if !transcript.text.is_empty() {
+        if transcript.text.is_empty() {
+            pill(&s, PillState::Error, Some("Nothing heard"));
+        } else {
             let entry = s.store.add_history(NewEntry {
                 text: transcript.text.clone(),
                 language: transcript.language.clone(),
@@ -222,9 +261,12 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
                         start.elapsed().as_millis(),
                         transcript.language, entry.text, entry.id
                     );
+                    let (state, word) = insert_word(&insert);
+                    pill(&s, state, Some(word));
                     let _ = app.emit("transcript", TranscriptEvent { entry, insert });
                 }
                 Err(e) => {
+                    pill(&s, PillState::Error, Some("Not saved"));
                     phase(&app, "error", Some(e.to_string()));
                     return;
                 }

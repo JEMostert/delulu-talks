@@ -58,6 +58,9 @@ pub(crate) fn set_settings(
     if diff.autostart {
         apply_autostart(&app, settings.start_at_login)?;
     }
+    if !settings.overlay {
+        s.pill.hide();
+    }
     if diff.model {
         load_model(&app, settings.model.clone());
     }

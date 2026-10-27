@@ -27,6 +27,7 @@ pub(crate) struct Shell {
     pub(crate) mic: AtomicBool,
     /// `--toggle` started the app: start recording once the model is ready.
     pub(crate) pending_toggle: AtomicBool,
+    pub(crate) pill: Pill,
 }
 pub(crate) enum EngineJob {
     Load(String),
