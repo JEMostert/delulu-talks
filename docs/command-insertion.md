@@ -7,8 +7,8 @@ you intend to run it. Copy-only delivery lets you choose when and where to paste
 
 Command-looking text stays clipboard data, including shell substitutions,
 semicolons, Unicode, line breaks, and strings such as `{ENTER}`. It is never
-interpolated into AppleScript, PowerShell, or an input-injection command. The
-current adapters send Command+V on Mac, Ctrl+V on Windows/X11, or the Ctrl+V
+interpolated into AppleScript or an input-injection command. The
+current adapters send Command+V on Mac, Ctrl+V on X11, or the Ctrl+V
 press/release sequence through the Wayland portal. Failed injection retains the
 copied text and reports failure; it does not fall back to executing text.
 

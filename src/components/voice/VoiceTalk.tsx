@@ -1,16 +1,6 @@
 import { useState } from "react";
-import {
-  AudioLines,
-  Bot,
-  Cpu,
-  Download,
-  Ear,
-  Hourglass,
-  MessagesSquare,
-  Mic,
-  Timer,
-} from "lucide-react";
-import { RangeField, SettingRow, Toggle } from "../ui";
+import { Bot, Compass, Download, Mic, Radar } from "lucide-react";
+import { SettingRow, Toggle } from "../ui";
 import type { TalkControls } from "../../hooks/useTalk";
 import { microphoneOptions } from "../../microphoneSelection";
 import {
@@ -26,7 +16,7 @@ import { TalkLevelMeter } from "./TalkLevelMeter";
 import { TalkTurns } from "./TalkTurns";
 import "../../styles/features/talk.css";
 
-/** One switch to talk with your agents, the microphone it hears and the helper. */
+/** Sonar: one switch to talk with your agents, the mic it hears and Pilot. */
 export function VoiceTalk({
   settings: s,
   talk,
@@ -49,7 +39,7 @@ export function VoiceTalk({
 }) {
   const { status } = talk;
   const mode = normalizeHelperMode(s.voiceCoordinatorMode);
-  // A start can take a while (loading or downloading the helper); Stop stays available.
+  // A start can take a while (loading or downloading Pilot); Stop stays available.
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const on = status.on || starting;
@@ -73,24 +63,22 @@ export function VoiceTalk({
       setStopping(false);
     }
   };
-  const save = (patch: Partial<AppSettings>) => void onSave(patch);
-  const chooseHelper = async (next: VoiceHelperMode) => {
+  const choosePilot = async (next: VoiceHelperMode) => {
     if (await onSave({ voiceCoordinatorMode: next }, null))
       await talk.refresh().catch(() => undefined);
   };
-  const helperBusy =
+  const pilotBusy =
     status.phase === "downloading" || status.phase === "loading";
   const offerDownload = status.needsDownload && mode === "lightweight";
 
   return (
-    <section className="pref-group voice-talk" aria-labelledby="voice-talk">
-      <h3 id="voice-talk">Talk to your agents</h3>
+    <section className="sonar" aria-label="Sonar">
       <div className="pref-list">
         <div className="setting-row">
-          <MessagesSquare className="setting-icon" aria-hidden="true" />
+          <Radar className="setting-icon" aria-hidden="true" />
           <div className="setting-copy">
-            <strong>Talk</strong>
-            <p className="talk-line" role="status" aria-live="polite">
+            <strong>Sonar</strong>
+            <p className="sonar-line" role="status" aria-live="polite">
               {status.on && (
                 <span
                   className={`talk-dot ${status.phase === "hearing" ? "speaking" : ""}`}
@@ -101,27 +89,15 @@ export function VoiceTalk({
             </p>
           </div>
           <div className="setting-control">
-            {offerDownload && (
-              <button
-                className="primary-button compact"
-                disabled={starting || helperBusy}
-                onClick={() => void start(true)}
-              >
-                <Download />
-                {status.downloadSize
-                  ? `Download (${status.downloadSize})`
-                  : "Download"}
-              </button>
-            )}
             <Toggle
               value={on}
-              label="Talk"
+              label="Sonar"
               disabled={stopping || (!on && !speechReady)}
               onChange={() => void (on ? stop() : start(false))}
             />
           </div>
         </div>
-        <div className="setting-row talk-picker-row">
+        <div className="setting-row sonar-picker">
           <Mic className="setting-icon" aria-hidden="true" />
           <div className="setting-copy">
             <strong>Microphone</strong>
@@ -133,7 +109,7 @@ export function VoiceTalk({
               value={s.inputDeviceId || "default"}
               disabled={saving}
               onChange={(event) =>
-                save({
+                void onSave({
                   inputDeviceId: event.target.value,
                   inputDeviceLabel:
                     devices.find(
@@ -150,11 +126,11 @@ export function VoiceTalk({
             </select>
           </div>
         </div>
-        <div className="setting-row talk-picker-row">
-          <Cpu className="setting-icon" aria-hidden="true" />
+        <div className="setting-row sonar-picker">
+          <Compass className="setting-icon" aria-hidden="true" />
           <div className="setting-copy">
-            <strong>Helper</strong>
-            <p className="talk-line">
+            <strong>Pilot</strong>
+            <p className="sonar-line">
               <span
                 className={`status-dot ${helperTone(status, mode)}`}
                 aria-hidden="true"
@@ -163,12 +139,24 @@ export function VoiceTalk({
             </p>
           </div>
           <div className="setting-control">
+            {offerDownload && (
+              <button
+                className="primary-button compact"
+                disabled={starting || pilotBusy}
+                onClick={() => void start(true)}
+              >
+                <Download />
+                {status.downloadSize
+                  ? `Download ${status.downloadSize}`
+                  : "Download"}
+              </button>
+            )}
             <select
-              aria-label="Voice helper"
+              aria-label="Pilot"
               value={mode}
-              disabled={saving || helperBusy}
+              disabled={saving || pilotBusy}
               onChange={(event) =>
-                void chooseHelper(event.target.value as VoiceHelperMode)
+                void choosePilot(event.target.value as VoiceHelperMode)
               }
             >
               <option value="off">Off</option>
@@ -184,76 +172,7 @@ export function VoiceTalk({
           {null}
         </SettingRow>
       </div>
-
       <TalkTurns turns={status.turns} />
-
-      <details className="disclosure">
-        <summary>Listening options</summary>
-        <div className="pref-list">
-          <SettingRow
-            icon={Ear}
-            title="Sensitivity"
-            description="Low hears only clear speech; high also quiet speech."
-          >
-            <RangeField
-              label="Listening sensitivity"
-              min={0}
-              max={1}
-              step={0.05}
-              value={s.listenSensitivity}
-              format={(value) => `${Math.round(value * 100)}%`}
-              disabled={saving}
-              onCommit={(listenSensitivity) => save({ listenSensitivity })}
-            />
-          </SettingRow>
-          <SettingRow
-            icon={Hourglass}
-            title="Pause before a turn ends"
-            description="How long you stay quiet before it is sent."
-          >
-            <RangeField
-              label="Pause before a turn ends"
-              min={300}
-              max={3000}
-              step={100}
-              value={s.listenSilenceMs}
-              format={(value) => `${(value / 1000).toFixed(1)} s`}
-              disabled={saving}
-              onCommit={(listenSilenceMs) => save({ listenSilenceMs })}
-            />
-          </SettingRow>
-          <SettingRow
-            icon={AudioLines}
-            title="Stop Delulu when I talk over it"
-            description="Headphones give the most reliable interruptions."
-          >
-            <Toggle
-              value={s.listenBargeIn}
-              label="Stop Delulu when I talk over it"
-              disabled={saving}
-              onChange={() => save({ listenBargeIn: !s.listenBargeIn })}
-            />
-          </SettingRow>
-          {s.listenBargeIn && (
-            <SettingRow
-              icon={Timer}
-              title="Interrupt after"
-              description="Longer ignores coughs and short noises."
-            >
-              <RangeField
-                label="Interrupt after"
-                min={100}
-                max={1000}
-                step={100}
-                value={s.listenBargeInMs}
-                format={(value) => `${(value / 1000).toFixed(1)} s`}
-                disabled={saving}
-                onCommit={(listenBargeInMs) => save({ listenBargeInMs })}
-              />
-            </SettingRow>
-          )}
-        </div>
-      </details>
     </section>
   );
 }

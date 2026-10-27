@@ -147,7 +147,7 @@ export function EmptyState({
 }: {
   icon: LucideIcon;
   title: string;
-  children: ReactNode;
+  children?: ReactNode;
   action?: ReactNode;
 }) {
   return (
@@ -156,7 +156,7 @@ export function EmptyState({
         <Icon />
       </span>
       <h3>{title}</h3>
-      <p>{children}</p>
+      {children && <p>{children}</p>}
       {action}
     </div>
   );

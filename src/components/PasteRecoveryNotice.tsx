@@ -65,7 +65,7 @@ export function PasteRecoveryNotice({ onCopied }: { onCopied: () => void }) {
             disabled={pending}
             onClick={() => void act(true)}
           >
-            {pending ? "Working…" : "Copy instead"}
+            {pending ? "Copying…" : "Copy"}
           </button>
           <button
             className="tool-button compact"
@@ -77,11 +77,8 @@ export function PasteRecoveryNotice({ onCopied }: { onCopied: () => void }) {
         </div>
       }
     >
-      <strong>Automatic paste failed</strong>
+      <strong>Paste failed</strong>
       <p className="caption break-words">{recovery.detail}</p>
-      <p className="caption">
-        Copy the transcript and paste it yourself. It is also in History.
-      </p>
       {failure?.id === id && (
         <p className="caption text-danger">{failure.message}</p>
       )}

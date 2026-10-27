@@ -4,11 +4,11 @@ Reviewed 18 October 2026. English is the main dictation language; other language
 
 ## Decision: three sizes
 
-| Size   | Model                                                         | English WER | Dutch WER | CPU speed (Ryzen 4750U) | Download | Runtime                  |
-| ------ | ------------------------------------------------------------- | ----------- | --------- | ----------------------- | -------- | ------------------------ |
-| Small  | Canary 180M Flash (en, de, fr, es)                            | 5.98%       | —         | ~22× real time          | 200 MB   | sherpa-onnx, CPU, INT8   |
+| Size   | Model                                                         | English WER   | Dutch WER | CPU speed (Ryzen 4750U) | Download | Runtime                  |
+| ------ | ------------------------------------------------------------- | ------------- | --------- | ----------------------- | -------- | ------------------------ |
+| Small  | Canary 180M Flash (en, de, fr, es)                            | 5.98%         | —         | ~22× real time          | 200 MB   | sherpa-onnx, CPU, INT8   |
 | Medium | Parakeet TDT 0.6B v2 (English) / v3 (25 languages, automatic) | 4.11% / 4.83% | — / 7.66% | ~14× real time          | 630 MB   | sherpa-onnx, CPU, INT8   |
-| Large  | R2T2 (fine-tune of Qwen3-ASR-1.7B)                            | 3.23%*      | 7.43%*    | GPU or Apple Silicon    | ~4 GB    | Transformers CUDA or MLX |
+| Large  | R2T2 (fine-tune of Qwen3-ASR-1.7B)                            | 3.23%*        | 7.43%*    | GPU or Apple Silicon    | ~4 GB    | Transformers CUDA or MLX |
 
 WER is FLEURS test at Q8_0 from the [Handy / transcribe.cpp benchmark](https://models.handy.computer/) (English) and its [Dutch table](https://models.handy.computer/languages/nl). *Measured on base Qwen3-ASR-1.7B, not the R2T2 fine-tune. Read speech, not dictation; check on your own audio before changing defaults.
 
@@ -45,7 +45,7 @@ Implementation pins:
 
 - Mac checkpoint: `mlx-community/Confucius4-R2T2-bf16`, revision `747f5fc5f84bc9976baa2f02714e2fed67ed8611`.
 - Mac packages: MLX `0.32.2`, MLX Audio `0.5.7`, Transformers `5.15.0`.
-- Windows original checkpoint revision: `185ce639118ad1362d049ca0d8ed04b6ec5cd6c9`; native PyTorch/Transformers conversion and validation requirements are recorded in Windows support (dropped in v0.1.0).
+- Linux CUDA original checkpoint revision: `185ce639118ad1362d049ca0d8ed04b6ec5cd6c9`, loaded through PyTorch/Transformers.
 - Inspected MLX Audio source commit: `94c7716212b2228f178d2f9c7619a591fd1b0b78`.
 
 Weight licensing remains distinct from the app/code licenses. Link the original [R2T2 model license](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE) for both original and converted weights; conversion does not change the upstream terms.

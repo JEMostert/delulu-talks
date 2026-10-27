@@ -22,20 +22,12 @@ export function DecodeControls({
   );
   const cpu = settings.speechEngine !== "large";
   return (
-    <section
-      className="card"
-      id="models-decode"
-      tabIndex={-1}
-      aria-labelledby="models-decode-title"
-    >
+    <section className="card" aria-labelledby="models-decode-title">
       <div className="section-heading">
-        <div>
-          <span className="eyebrow">SPEECH DECODING</span>
-          <h3 id="models-decode-title">Language & backend defaults</h3>
-        </div>
+        <h3 id="models-decode-title">Decoding</h3>
       </div>
       <label className="mt-4 flex items-center justify-between gap-4">
-        <span>Recognition language</span>
+        <span>Language</span>
         <select
           aria-label="Model recognition language"
           value={settings.language}
@@ -59,7 +51,7 @@ export function DecodeControls({
         <dd>
           {cpu
             ? `Split at quiet moments into pieces of up to ${settings.speechEngine === "small" ? 30 : 60} seconds`
-            : "4,096 · fixed by the speech backend"}
+            : "4,096, fixed by the backend"}
         </dd>
         <dt>Generation</dt>
         <dd>
@@ -67,7 +59,7 @@ export function DecodeControls({
             ? "CPU · INT8 · greedy decoding"
             : settings.model === "r2t2Mlx"
               ? "MLX · temperature 0"
-              : "CUDA · backend defaults (native Transformers disables sampling)"}
+              : "CUDA · no sampling"}
         </dd>
       </dl>
       <p className="caption mt-3">

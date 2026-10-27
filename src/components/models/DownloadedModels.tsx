@@ -53,7 +53,7 @@ export function DownloadedModels({
   if (!downloads.length) return null;
   return (
     <div className="downloaded-models">
-      <h3>Downloaded models</h3>
+      <h3>Downloaded</h3>
       <ul>
         {downloads.map((download) => (
           <li key={download.id}>
@@ -83,8 +83,8 @@ export function DownloadedModels({
           onClose={() => setConfirm(null)}
         >
           <p>
-            This frees {sizeLabel(confirm.bytes)}. If you use this model again,
-            it downloads again first. Your history and settings are kept.
+            It downloads again if you use it later. Your Logbook and settings
+            stay.
           </p>
         </ConfirmDialog>
       )}

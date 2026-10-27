@@ -1,8 +1,9 @@
-/* Talk: the switch, live input level, recent turns and the global indicator. */
-.voice-talk > * + * {
-  margin-top: 10px;
+/* Sonar: the switch, live input level, recent turns and the global indicator. */
+.sonar {
+  display: grid;
+  gap: 10px;
 }
-.talk-line {
+.sonar-line {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -72,27 +73,27 @@
 }
 
 /* The meter stays beside its picker; the picker gives way first. */
-.voice-page .talk-picker-row .setting-control {
+.siren .sonar-picker .setting-control {
   flex-wrap: nowrap;
 }
-.talk-picker-row .setting-control select {
+.sonar-picker .setting-control select {
   min-width: 0;
 }
 
 @media (max-width: 560px) {
-  .talk-picker-row {
+  .sonar-picker {
     flex-wrap: wrap;
   }
-  .talk-picker-row .setting-copy {
+  .sonar-picker .setting-copy {
     flex-basis: calc(100% - 48px);
   }
-  .talk-picker-row .setting-control {
+  .sonar-picker .setting-control {
     width: calc(100% - 31px);
     max-width: calc(100% - 31px);
     margin-left: 31px;
     justify-content: flex-start;
   }
-  .talk-picker-row .setting-control select {
+  .sonar-picker .setting-control select {
     flex: 1;
     min-width: 0;
   }
@@ -113,6 +114,9 @@
   background: var(--dock-bg);
   box-shadow: var(--shadow-1);
   font-size: 13px;
+}
+.talk-indicator-label strong {
+  font-weight: 620;
 }
 .talk-stop {
   display: inline-flex;

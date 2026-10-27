@@ -28,7 +28,7 @@ export function SpeechTierPicker({
       ),
     });
   return (
-    <div className="engine-choice" role="radiogroup" aria-label="Speech model">
+    <div className="engine-choice" role="radiogroup" aria-label="Speech engine">
       {SPEECH_TIERS.map((tier) => {
         const Icon = ICONS[tier.id];
         const unavailable = tier.id === "large" && !largeAvailable;
@@ -49,13 +49,11 @@ export function SpeechTierPicker({
                   <span className="tier-tag">Recommended</span>
                 )}
               </strong>
-              <small>
-                {tier.summary} {tier.detail}
-              </small>
+              <small>{tier.summary}</small>
               <small className="tier-meta">
                 {unavailable
                   ? "Not available on this computer"
-                  : `${tier.download} download · ${tier.hardware}`}
+                  : `${tier.download} · ${tier.hardware}`}
               </small>
             </span>
             {settings.speechEngine === tier.id && (

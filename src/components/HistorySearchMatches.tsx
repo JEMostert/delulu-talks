@@ -16,7 +16,7 @@ export function HistorySearchMatches({
       aria-label="Matching transcript text"
       className="mt-2 rounded-md border border-line bg-soft p-3"
     >
-      <h4 className="caption mb-2">Search matches by source</h4>
+      <h4 className="caption mb-2">Matches</h4>
       <ul className="grid gap-3">
         {results.map((result) => (
           <li key={result.source} className="min-w-0">

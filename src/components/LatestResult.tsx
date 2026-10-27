@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, FileAudio, History, Mic, X } from "lucide-react";
+import { Check, Clock3, Copy, FileAudio, Mic, X } from "lucide-react";
 import { deliveredText } from "../transcriptText";
 import { relativeTime } from "../statusLabels";
 import type { TranscriptRecord } from "../types";
@@ -31,7 +31,6 @@ export function LatestResult({
   }, [copied]);
   const text = deliveredText(record).trim();
   if (dismissed === record.id || !text) return null;
-  const seconds = Math.round(record.durationMs / 1000);
   const Source = record.source === "file" ? FileAudio : Mic;
   return (
     <section
@@ -41,10 +40,7 @@ export function LatestResult({
     >
       <header>
         <Source aria-hidden="true" />
-        <span>
-          Latest · {relativeTime(record.createdAt, now)}
-          {seconds > 0 && ` · ${seconds}s`}
-        </span>
+        <span>{relativeTime(record.createdAt, now)}</span>
       </header>
       <p title={text.length > 240 ? text.slice(0, 600) : undefined}>{text}</p>
       <div className="latest-actions">
@@ -60,11 +56,11 @@ export function LatestResult({
           {copied ? <Check /> : <Copy />}
         </button>
         <button
-          aria-label="Open in history"
-          title="Open in history"
+          aria-label="Open in Logbook"
+          title="Open in Logbook"
           onClick={onOpen}
         >
-          <History />
+          <Clock3 />
         </button>
         <button
           aria-label="Hide latest transcript"

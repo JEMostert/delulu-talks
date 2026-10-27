@@ -88,3 +88,22 @@ test("the microphone picker lists the desktop inputs", async ({ page }) => {
     "Built-in Audio Analog Stereo",
   ]);
 });
+
+test("home stays quiet while ready and the dock opens the logbook", async ({
+  page,
+}) => {
+  await expect(page.locator(".controller-status [role=status]")).toHaveText("");
+  await expect(page.locator(".engine-chip")).toHaveCount(0);
+
+  const settings = page.getByRole("button", {
+    name: "Open settings",
+    exact: true,
+  });
+  await settings.click();
+  await page.getByRole("button", { name: "Logbook", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Logbook", level: 1 }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeFocused();
+});

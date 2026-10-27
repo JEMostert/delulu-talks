@@ -2,7 +2,7 @@
 //!
 //! The markup follows Grok's text-to-speech design: one-off inline tags in
 //! square brackets fire a single sound, and wrapping tags change how a span is
-//! spoken. See docs/VOICE.md for the specification.
+//! spoken. See docs/SIREN.md for the specification.
 
 pub mod chunks;
 pub mod markup;

@@ -8,9 +8,8 @@ containing the decoder packages pinned in `src-tauri/crates/delulu-runtime/src/m
 /path/to/mac-speech-venv/bin/python scripts/decoder-contract.py --backend mlx
 ```
 
-The Windows decoder path can be checked on Linux because this test never calls
-CUDA or constructs a model. That result establishes its decoder behavior on
-Linux; it is not a native Windows result. The MLX path requires Apple Silicon
+The CUDA decoder path can be checked on any Linux machine because this test
+never calls CUDA or constructs a model. The MLX path requires Apple Silicon
 and its installed MLX Audio runtime. Missing packages or unsupported codecs fail
 explicitly. The suite installs nothing and downloads no models.
 
@@ -32,9 +31,6 @@ stderr are expected for deliberately corrupt media. This suite proves neither
 recognition accuracy nor GPU execution, packaging, or manual desktop behavior.
 Ordinary dependency-free unit tests do not run this suite implicitly.
 
-Implementation evidence for issue #258: all ten contracts passed for both the
-Linux Worker decode path and the Windows adapter decode path on Linux using an
-isolated Python 3.11 environment with NumPy 2.3.5, SoundFile 0.13.1, soxr 1.0.0,
-and librosa 0.11.0. The same Windows path also passed on Python 3.14. These runs
-used real installed decoders and stubbed recognition. Mac MLX and native
-Windows execution remain unverified; use the commands above on those machines.
+All ten contracts have passed for the CUDA decode path on Linux (Python 3.11,
+NumPy 2.3.5, SoundFile 0.13.1, soxr 1.0.0, librosa 0.11.0) with real decoders
+and stubbed recognition. The Mac MLX path remains unverified.

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   activityLabel,
-  engineLabel,
+  engineAttention,
   formatClock,
+  isRestingMessage,
   relativeTime,
 } from "./statusLabels";
 import type { DictationStatus, MagicStatus } from "./types";
@@ -43,29 +44,39 @@ describe("activityLabel", () => {
   });
 });
 
-describe("engineLabel", () => {
-  test("names the backend when ready", () => {
-    expect(
-      engineLabel(
-        speech({
-          capabilities: {
-            schemaVersion: 1,
-            engine: "speech",
-            backend: "cuda-vllm",
-            modelFamily: "r2t2",
-            timestamps: false,
-            languageHints: { supported: true, languages: [] },
-            vocabularyBiasing: false,
-          },
-        }),
-      ).label,
-    ).toBe("Speech ready · CUDA");
+describe("engineAttention", () => {
+  test("stays quiet when speech is ready or on standby", () => {
+    expect(engineAttention(speech({}))).toBeNull();
+    expect(engineAttention(speech({ engine: "unloaded" }))).toBeNull();
   });
   test("asks for setup when the model is missing", () => {
-    expect(engineLabel(speech({ engine: "missing" }))).toMatchObject({
+    expect(engineAttention(speech({ engine: "missing" }))).toMatchObject({
       label: "Set up speech",
       tone: "warning",
     });
+    expect(
+      engineAttention(speech({ engine: "missing", migrationRequired: true }))
+        ?.label,
+    ).toBe("Update speech");
+  });
+});
+
+describe("isRestingMessage", () => {
+  test("hides idle readiness reports", () => {
+    expect(isRestingMessage(speech({}))).toBe(true);
+    expect(isRestingMessage(speech({ message: "Parakeet v3 ready" }))).toBe(
+      true,
+    );
+  });
+  test("keeps outcomes and other phases", () => {
+    expect(isRestingMessage(speech({ message: "Recording cancelled" }))).toBe(
+      false,
+    );
+    expect(
+      isRestingMessage(speech({ message: "Speech Lab result ready" })),
+    ).toBe(false);
+    expect(isRestingMessage(speech({ phase: "listening" }))).toBe(false);
+    expect(isRestingMessage(speech({ engine: "missing" }))).toBe(false);
   });
 });
 

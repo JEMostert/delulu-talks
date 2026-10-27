@@ -133,11 +133,7 @@ export function OceanController({
           <button
             className="ocean-icon"
             aria-label={copied ? "Copied" : "Copy last result"}
-            title={
-              canCopy
-                ? "Copy last result"
-                : "Your next result will be available here"
-            }
+            title={canCopy ? "Copy last result" : "Nothing to copy yet"}
             disabled={!canCopy || pending}
             onClick={() =>
               void invoke(onCopy).then((ok) => {

@@ -12,7 +12,7 @@ Add a third Python runtime role, `voice`, with its own environment and worker, f
 
 Parse markup and plan chunks in TypeScript (`src/voiceMarkup.ts`, `src/voiceChunks.ts`). The worker synthesizes one chunk per request and returns PCM, which keeps the existing request/response protocol: streaming comes from synthesizing the next chunk while the renderer plays the current one. Each engine adapter maps markup to what it can perform and reports what it skipped, instead of failing.
 
-Coding agents reach Delulu through a token-protected local socket and a dependency-free MCP server/CLI copied into the user data directory. Delulu does not integrate with any particular agent product; Claude Code, Codex and T3 Code's providers all speak MCP. How the lead agent decides when to speak is an instruction to that agent, served as MCP instructions and copyable from the Voice page, not logic in Delulu.
+Coding agents reach Delulu through a token-protected local socket and a dependency-free MCP server/CLI copied into the user data directory. Delulu does not integrate with any particular agent product; Claude Code, Codex and T3 Code's providers all speak MCP. How the lead agent decides when to speak is an instruction to that agent, served as MCP instructions and copyable from the Siren page, not logic in Delulu.
 
 ## Consequences and alternatives
 
@@ -22,7 +22,7 @@ Rejected: a single shared Python environment; vLLM-served Orpheus (gated weights
 
 Starting a dictation interrupts speech by default, so the microphone does not record Delulu's own voice.
 
-Owners (since ADR 0006): [contracts](../../src/voice.ts), [markup](../../src/voiceMarkup.ts), [speakable text](../../src/speakableText.ts), [chunks](../../src/voiceChunks.ts), [player](../../src-tauri/crates/delulu-audio/src/player.rs), [service](../../src-tauri/crates/delulu-voice/src/service.rs), [bridge](../../src-tauri/crates/delulu-voice/src/bridge.rs), [MCP server](../../src-tauri/crates/delulu-voice/src/mcp.rs), [engine](../../backend/python/voice_engine.py), [manifest](../../src-tauri/crates/delulu-runtime/src/manifest.rs). See [Delulu Voice](../VOICE.md).
+Owners (since ADR 0006): [contracts](../../src/voice.ts), [markup](../../src/voiceMarkup.ts), [speakable text](../../src/speakableText.ts), [chunks](../../src/voiceChunks.ts), [player](../../src-tauri/crates/delulu-audio/src/player.rs), [service](../../src-tauri/crates/delulu-voice/src/service.rs), [bridge](../../src-tauri/crates/delulu-voice/src/bridge.rs), [MCP server](../../src-tauri/crates/delulu-voice/src/mcp.rs), [engine](../../backend/python/voice_engine.py), [manifest](../../src-tauri/crates/delulu-runtime/src/manifest.rs). See [Siren](../SIREN.md).
 
 ## Amendment (v0.1.0, ADR 0006)
 

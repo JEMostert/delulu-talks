@@ -423,7 +423,6 @@
       border-color var(--t-base),
       box-shadow var(--t-base);
   }
-  .card.interactive:hover,
   .card:focus-within {
     border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
   }
@@ -665,6 +664,8 @@
   }
   .alert > .panel-actions,
   .alert > button {
+    flex: 0 1 auto;
+    justify-content: flex-end;
     align-self: center;
   }
   .alert .icon-button {
@@ -705,11 +706,6 @@
     min-width: 160px;
     flex: 1;
     overflow-wrap: anywhere;
-  }
-  .control-warning {
-    padding: 0 14px 12px;
-    font-size: 11px;
-    color: var(--warning);
   }
 
   /* ── Dialogs ─────────────────────────────────────────── */

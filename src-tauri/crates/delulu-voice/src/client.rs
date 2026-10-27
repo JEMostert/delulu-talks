@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
-pub const NOT_RUNNING: &str = "Delulu Talks isn't running, or agent voice is turned off in its Voice page.";
+pub const NOT_RUNNING: &str = "Delulu Talks isn't running, or Let coding agents speak is off on its Siren page.";
 pub const CONNECT_TIMEOUT: Duration = Duration::from_millis(2_000);
 pub const REQUEST_TIMEOUT: Duration = Duration::from_millis(30_000);
 /// Waiting for speech covers the queue ahead of it as well as its own audio.
@@ -57,7 +57,7 @@ fn read_bridge(file: &Path) -> Result<Bridge, ClientError> {
             Ok(Bridge { endpoint: endpoint.to_owned(), token: token.to_owned() })
         }
         _ => Err(ClientError::unavailable(
-            "Delulu Talks wrote a bridge file this script does not understand. Update the agent setup from the Voice page.",
+            "Delulu Talks wrote a bridge file this script does not understand. Update the agent setup from the Siren page.",
         )),
     }
 }

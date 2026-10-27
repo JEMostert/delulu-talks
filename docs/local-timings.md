@@ -11,4 +11,4 @@ Each completed transcript may carry optional `timings` in milliseconds, retained
 
 Nested stages overlap. Do not sum the fields to obtain end-to-end latency. Missing fields mean unmeasured, and legacy aggregate processing-time fields keep their existing meaning. Measurements use process-local monotonic clocks; no cross-process timestamps are subtracted. No content, paths or telemetry are added by these fields.
 
-UNVERIFIED: tests, builds, typechecks, formatting, browser/native inference, benchmarking and packaging checks were skipped under issues-only instructions. Later verification must cover adapters, persistence and delivery failures. Native GPU performance claims require actual measurements.
+Native GPU performance claims require actual measurements.

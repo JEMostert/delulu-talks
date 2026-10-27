@@ -14,22 +14,22 @@ export function OperationResumeNotice({
   if (!hasImport && !rewrite) return null;
   const importLabel =
     imported.phase === "running"
-      ? "Import running"
+      ? "Transcribing"
       : imported.phase === "choosing"
-        ? "Choosing import"
+        ? "Choosing files"
         : imported.phase === "ready"
-          ? "Import result ready"
+          ? "Transcript ready"
           : imported.phase === "error"
-            ? "Import needs attention"
-            : "Import selected";
+            ? "Import failed"
+            : "File selected";
   const rewriteLabel =
     rewrite?.phase === "working"
-      ? "Rewrite running"
+      ? "Rewriting"
       : rewrite?.phase === "ready"
-        ? "Rewrite preview ready"
+        ? "Rewrite ready"
         : rewrite?.phase === "error"
-          ? "Rewrite needs attention"
-          : "Rewrite draft saved for this session";
+          ? "Rewrite failed"
+          : "Rewrite draft";
   return (
     <Alert tone="info">
       <div className="flex flex-col gap-2" aria-label="Resumable operations">
@@ -40,7 +40,7 @@ export function OperationResumeNotice({
               {imported.file ? ` · ${imported.file.name}` : ""}
             </span>
             <button className="secondary-button compact" onClick={onImport}>
-              Open Audio files
+              Open Bottles
             </button>
           </div>
         )}
@@ -54,7 +54,7 @@ export function OperationResumeNotice({
                 className="secondary-button compact"
                 onClick={operations.showRewrite}
               >
-                Resume rewrite
+                Resume
               </button>
             )}
           </div>

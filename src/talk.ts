@@ -1,7 +1,8 @@
 /**
- * Talk: one switch opens the microphone, every finished turn is routed (by the
- * optional local helper, or straight to the active agent) and Delulu answers
- * out loud. The desktop owns the loop; the renderer shows `TalkStatus`.
+ * Talk (shown as Sonar): one switch opens the microphone, every finished turn
+ * is routed (by the optional local helper, shown as Pilot, or straight to the
+ * active agent) and Delulu answers out loud. The desktop owns the loop; the
+ * renderer shows `TalkStatus`.
  */
 
 /** Off forwards every turn verbatim; Lightweight loads the local 0.8B helper. */
@@ -88,33 +89,33 @@ export const INITIAL_TALK_STATUS: TalkStatus = {
 const PHASES: Record<TalkPhase, string> = {
   off: "Off",
   starting: "Starting…",
-  loading: "Loading the helper…",
-  downloading: "Downloading the helper…",
+  loading: "Loading Pilot…",
+  downloading: "Downloading Pilot…",
   listening: "Listening",
   hearing: "Hearing you",
   thinking: "Thinking…",
   speaking: "Speaking",
-  failed: "Talk stopped after an error",
+  failed: "Sonar stopped after an error",
 };
 
 export function phaseLabel(phase: TalkPhase): string {
   return PHASES[phase] ?? "Off";
 }
 
-/** The Talk row's one line. */
+/** The Sonar row's one line. */
 export function talkLine(status: TalkStatus, speechReady: boolean): string {
   const message = status.message.trim();
   if (status.on) return message || phaseLabel(status.phase);
   if (status.phase === "failed") return message || phaseLabel("failed");
-  if (status.needsDownload) return "The helper needs a one-time download";
-  if (!speechReady) return "Set up speech in Models first";
-  return "Speak to your coding agents hands-free";
+  if (status.needsDownload) return "Pilot needs a one-time download";
+  if (!speechReady) return "Set up speech in Engines first";
+  return "Talk to your agents hands-free";
 }
 
-/** The helper row's one line for the selected mode. */
+/** The Pilot row's one line for the selected mode. */
 export function helperLine(status: TalkStatus, mode: VoiceHelperMode): string {
   if (mode === "off") return "Your words go straight to your agent";
-  // Progress usually shows on the Talk line; avoid repeating it here.
+  // Progress usually shows on the Sonar line; avoid repeating it here.
   if (status.phase === "downloading")
     return status.helper.message.trim() || "Downloading…";
   // The desktop has not picked up the new choice yet.
@@ -124,13 +125,13 @@ export function helperLine(status: TalkStatus, mode: VoiceHelperMode): string {
     case "missing":
       return "Not downloaded";
     case "installed":
-      return "Downloaded · loads when Talk is on";
+      return "Downloaded · loads with Sonar";
     case "loading":
       return message || "Loading…";
     case "ready":
       return "Ready";
     case "failed":
-      return message || "Couldn't load the helper";
+      return message || "Couldn't load Pilot";
     default:
       return "Off";
   }

@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, HardDrive, RefreshCw, Terminal } from "lucide-react";
+import { Check, Copy, RefreshCw } from "lucide-react";
 import { bridge } from "../bridge";
 import { diagnosticReport } from "../diagnosticReport";
 import { readStartupService } from "../startupServices";
 import type { RuntimeDiagnostics } from "../types";
 import { Alert } from "./ui";
 
-export function Diagnostics({
-  refreshButtonId,
-}: { refreshButtonId?: string } = {}) {
+/** Memory, Python, FFmpeg and permissions, with a privacy-safe copyable report. */
+export function Diagnostics() {
   const [data, setData] = useState<RuntimeDiagnostics | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -58,94 +57,64 @@ export function Diagnostics({
   return (
     <section className="card">
       <div className="section-heading">
-        <div>
-          <span className="eyebrow">YOUR DEVICE</span>
-          <h3>A quick health check</h3>
-        </div>
+        <h3>Health check</h3>
         <button
           className="tool-button"
-          id={refreshButtonId}
           disabled={busy}
           onClick={() => void refresh()}
         >
           <RefreshCw className={busy ? "spin" : ""} />
-          {busy ? "Checking…" : error ? "Retry diagnostics" : "Refresh"}
+          {busy ? "Checking…" : error ? "Retry" : "Refresh"}
         </button>
       </div>
       {error && <Alert>{error}</Alert>}
       {data && (
         <>
-          <div className="mt-[22px] mb-[18px] grid grid-cols-3 gap-[15px] max-[1150px]:grid-cols-1">
-            <div className="flex gap-2.5 rounded-xl bg-soft p-[15px] text-muted">
-              <HardDrive />
-              <span className="text-[11px]">
-                Memory
-                <strong className="mt-[5px] block text-xs text-ink">
-                  {data.memoryGB} GB total · {data.freeMemoryGB} GB free
-                </strong>
-              </span>
+          <dl className="health-list">
+            <div>
+              <dt>Memory</dt>
+              <dd>
+                {data.memoryGB} GB total · {data.freeMemoryGB} GB free
+              </dd>
             </div>
-            <div className="flex gap-2.5 rounded-xl bg-soft p-[15px] text-muted">
-              <Terminal />
-              <span className="text-[11px]">
-                Python
-                <strong className="mt-[5px] block text-xs text-ink">
-                  {data.python}
-                </strong>
-              </span>
+            <div>
+              <dt>Python</dt>
+              <dd>{data.python}</dd>
             </div>
-            <div className="flex gap-2.5 rounded-xl bg-soft p-[15px] text-muted">
-              <Check />
-              <span className="text-[11px]">
-                Media imports
-                <strong className="mt-[5px] block text-xs text-ink">
-                  {data.ffmpeg === "Not available"
-                    ? "FFmpeg needs installing"
-                    : "FFmpeg available"}
-                </strong>
-              </span>
+            <div>
+              <dt>FFmpeg</dt>
+              <dd>
+                {data.ffmpeg === "Not available"
+                  ? "Not installed · Bottles needs it"
+                  : "Installed"}
+              </dd>
             </div>
-          </div>
-          {data.microphone && (
-            <div
-              className="mb-[18px] rounded-xl bg-soft p-[15px]"
-              role="status"
-            >
-              <strong className="text-xs text-ink">
-                Microphone permission:{" "}
-                {data.microphone.state.replace(/-/g, " ")}
-              </strong>
-              <p className="caption mt-2">{data.microphone.detail}</p>
-            </div>
+            {(
+              [
+                ["Microphone", data.microphone],
+                ["Accessibility", data.accessibility],
+              ] as const
+            ).map(
+              ([label, permission]) =>
+                permission &&
+                permission.state !== "not-applicable" && (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>
+                      {permission.state.replace(/-/g, " ")}
+                      {permission.state !== "granted" && (
+                        <small>{permission.detail}</small>
+                      )}
+                    </dd>
+                  </div>
+                ),
+            )}
+          </dl>
+          {data.platform === "darwin" && data.arch === "arm64" && (
+            <p className="caption">
+              Large on Apple Silicon needs native arm64 Python 3.12.
+            </p>
           )}
-          {data.accessibility && (
-            <div
-              className="mb-[18px] rounded-xl bg-soft p-[15px]"
-              role="status"
-            >
-              <strong className="text-xs text-ink">
-                Accessibility permission:{" "}
-                {data.accessibility.state.replace(/-/g, " ")}
-              </strong>
-              <p className="caption mt-2">{data.accessibility.detail}</p>
-              {data.platform === "darwin" &&
-                data.accessibility.canAttemptPaste && (
-                  <p className="caption mt-2">
-                    Permission allows a paste attempt. It does not confirm that
-                    the destination accepted the text.
-                  </p>
-                )}
-            </div>
-          )}
-          <p className="caption">
-            {data.platform === "darwin" && data.arch === "arm64"
-              ? "R2T2 runs directly through MLX on Apple Silicon. The speech runtime needs native arm64 Python 3.12."
-              : data.platform === "win32"
-                ? "R2T2 uses native PyTorch with CUDA on Windows. An NVIDIA GPU and 64-bit Python 3.12 are required. Native Windows inference validation is pending."
-                : data.memoryGB < 16
-                  ? "Speech uses the CUDA GPU when present. Keep one model loaded at a time if memory is tight."
-                  : "R2T2 loads on your CUDA GPU. Rewriting is optional and uses more memory while loaded."}
-          </p>
           <details>
             <summary>Technical details</summary>
             <dl>
@@ -165,9 +134,7 @@ export function Diagnostics({
               ))}
             </dl>
             <p className="caption">
-              The copied report includes device and selected package versions.
-              Local paths, transcript content and backend output are excluded.
-              The local data path above is shown only in these expanded details.
+              The copied report leaves out local paths and transcripts.
             </p>
             <button
               className="secondary-button"

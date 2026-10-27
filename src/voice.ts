@@ -1,10 +1,10 @@
 /**
- * Shared contracts for spoken output: Delulu Voice. No Electron or platform
+ * Shared contracts for spoken output: Siren. No Electron or platform
  * dependencies, so the renderer, the main process and tests share them.
  *
  * The markup follows Grok's text-to-speech design: one-off inline tags in
  * square brackets fire a single sound, and wrapping tags change how a span is
- * spoken. See docs/VOICE.md for the specification.
+ * spoken. See docs/SIREN.md for the specification.
  */
 import type {
   DownloadBytes,
@@ -42,11 +42,10 @@ export const VOICE_ENGINE_INFO: Record<VoiceEngineId, VoiceEngineInfo> = {
   kokoro: {
     id: "kokoro",
     tier: "small",
-    name: "Kokoro 82M",
+    name: "Kokoro",
     runtime: "CPU · sherpa-onnx",
-    description:
-      "Clear, natural speech on any CPU, about five times faster than real time. Pauses and pacing tags work; laughs, sighs and emotions are skipped.",
-    downloadSize: "~330 MB",
+    description: "Quick and clear on any computer",
+    downloadSize: "330 MB",
     license: "Apache-2.0",
     repository: "csukuangfj/kokoro-multi-lang-v1_0",
     revision: "f7b96bb6bef5c5da4d3aa4f4e0498fbbf62dc78b",
@@ -55,11 +54,10 @@ export const VOICE_ENGINE_INFO: Record<VoiceEngineId, VoiceEngineInfo> = {
   "chatterbox-turbo": {
     id: "chatterbox-turbo",
     tier: "large",
-    name: "Chatterbox Turbo",
+    name: "Chatterbox",
     runtime: "GPU · PyTorch",
-    description:
-      "Expressive speech that really laughs, sighs and whispers. Can speak in a voice cloned from a short clip. About 3 GB of GPU memory.",
-    downloadSize: "~4 GB with its runtime",
+    description: "Laughs, sighs, whispers and clones a voice",
+    downloadSize: "4 GB",
     license: "MIT",
     repository: "ResembleAI/chatterbox-turbo",
     revision: "749d1c1a46eb10492095d68fbcf55691ccf137cd",

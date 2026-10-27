@@ -117,7 +117,7 @@ export function parseSettingsPatch(value: unknown): Partial<AppSettings> {
     source.voiceCoordinatorMode !== undefined &&
     !["off", "lightweight"].includes(String(source.voiceCoordinatorMode))
   )
-    throw new Error("Choose Off or Lightweight for the voice helper");
+    throw new Error("Choose Off or Lightweight for Pilot");
   return patch as Partial<AppSettings>;
 }
 

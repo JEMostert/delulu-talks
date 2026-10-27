@@ -7,7 +7,7 @@
 //! cursor and keeps it until acknowledged. Passing `after: N` acknowledges every
 //! event up to N (they are dropped), so a retried or reconnected waiter that
 //! passes the same `after` gets the same event again instead of losing it.
-//! See docs/VOICE.md.
+//! See docs/SIREN.md.
 
 use serde::{Deserialize, Serialize};
 

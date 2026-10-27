@@ -84,7 +84,7 @@ export function TranscriptCard({
   rewriteStatus,
 }: TranscriptActions & {
   record: TranscriptRecord;
-  /** "detail" is always expanded, for the History list/detail layout. */
+  /** "detail" is always expanded, for the logbook's list/detail layout. */
   variant?: "card" | "detail";
 }) {
   const pendingDraft = useCorrectionDraft(record.id);
@@ -311,15 +311,6 @@ export function TranscriptCard({
                 Speech
               </button>
             </div>
-            <span className="caption">
-              {showSource
-                ? edited
-                  ? "Your correction"
-                  : "Original speech"
-                : record.magicText
-                  ? "Rewritten result"
-                  : "Corrections and shortcuts applied"}
-            </span>
           </div>
           {pendingDraft?.error && (
             <p className="field-error" role="alert">
@@ -329,8 +320,7 @@ export function TranscriptCard({
           {pendingDraft &&
             pendingDraft.savedText !== transcriptText(record) && (
               <p className="caption">
-                The saved transcript changed while this draft was open. Review
-                the current speech before replacing it.
+                This transcript changed since you started editing.
               </p>
             )}
           {editing ? (
@@ -344,7 +334,11 @@ export function TranscriptCard({
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (savingRef.current) return;
-                if (event.key === "Escape") setEditing(false);
+                if (event.key === "Escape") {
+                  // Close only the editor, not the sheet around it.
+                  event.preventDefault();
+                  setEditing(false);
+                }
                 if (
                   event.key === "Enter" &&
                   (event.metaKey || event.ctrlKey) &&
@@ -361,6 +355,8 @@ export function TranscriptCard({
               <>
                 <button
                   className="primary-button"
+                  title="Save (Ctrl+Enter)"
+                  aria-keyshortcuts="Control+Enter Meta+Enter"
                   disabled={
                     saving ||
                     !draft.trim() ||
@@ -386,7 +382,6 @@ export function TranscriptCard({
                 >
                   Discard draft
                 </button>
-                <span className="caption">Ctrl+Enter saves · Esc closes</span>
               </>
             ) : (
               <>
@@ -491,12 +486,6 @@ export function TranscriptCard({
               </button>
             </div>
           )}
-          {record.dictationFormatting === "spoken" && (
-            <p className="caption">
-              Spoken formatting commands were applied; the original recognition
-              is under Speech.
-            </p>
-          )}
           <details className="disclosure transcript-facts">
             <summary>Details</summary>
             <dl>
@@ -506,8 +495,6 @@ export function TranscriptCard({
               <dd title="The backend label may reflect a forced decoder hint; it is not an independent language detection.">
                 {language}
               </dd>
-              <dt>Confidence</dt>
-              <dd>No calibrated score — review the text before using it.</dd>
             </dl>
             <CaptureDiagnostics value={record.captureDiagnostics} />
             <PipelineTimingDetails timings={record.timings} />
@@ -551,9 +538,7 @@ export function TranscriptCard({
           onClose={() => setDeleting(false)}
           onConfirm={() => onDelete?.(record.id)}
         >
-          <p>
-            This removes the transcript and its corrections from local history.
-          </p>
+          <p>This can’t be undone.</p>
         </ConfirmDialog>
       )}
       {fillerPreview && (
@@ -634,9 +619,8 @@ export function TranscriptCard({
             </p>
           )}
           <p>
-            Replace this recognized phrase in future {record.language} results.
-            You can change its language scope in Vocabulary. This does not train
-            the speech model.
+            Fixes this phrase in future {record.language} results. Edit it later
+            in Lingo.
           </p>
           <label className="field">
             Recognized text

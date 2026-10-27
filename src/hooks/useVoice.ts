@@ -5,7 +5,7 @@ import type { VoiceSpeakRequest, VoiceStatus } from "../voice";
 export const INITIAL_VOICE_STATUS: VoiceStatus = {
   engine: "unloaded",
   phase: "idle",
-  message: "Checking your voice…",
+  message: "Checking Siren…",
   model: null,
   current: null,
   queued: 0,
@@ -39,7 +39,7 @@ export function useVoice() {
         if (alive && !received)
           setStatus((previous) => ({
             ...previous,
-            message: "Voice is unavailable in this window",
+            message: "Siren is unavailable in this window",
           }));
       });
     return () => {

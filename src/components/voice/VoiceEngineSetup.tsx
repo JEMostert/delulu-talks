@@ -1,51 +1,68 @@
 import {
   Check,
+  Cpu,
   Download,
   Feather,
+  Info,
   LoaderCircle,
   Play,
   Sparkles,
-  Speech,
 } from "lucide-react";
-import { Alert } from "../ui";
-import { EngineBadge } from "../models/EngineBadge";
 import {
   VOICE_ENGINE_INFO,
   VOICE_ENGINES,
   type VoiceEngineId,
+  type VoiceEngineInfo,
   type VoiceStatus,
 } from "../../voice";
-import type { AppSettings, SetupStage } from "../../types";
+import type { DotTone } from "../../talk";
+import type { DownloadBytes, SetupStage } from "../../types";
 
 const ICONS = { kokoro: Feather, "chatterbox-turbo": Sparkles } as const;
 
 const STAGES: Partial<Record<SetupStage, string>> = {
-  "runtime-check": "Checking the setup interpreter",
-  "runtime-prepare": "Creating the isolated voice runtime",
-  "runtime-packages": "Resolving and installing runtime packages",
-  "runtime-download": "Downloading or reusing runtime packages",
-  "runtime-install": "Installing retrieved runtime packages",
-  "runtime-build": "Building runtime packages",
-  "runtime-validate": "Validating runtime dependencies",
-  "model-prepare": "Starting the voice model",
-  "model-download": "Downloading or reusing voice model files",
-  "model-load": "Loading voice model weights",
-  warmup: "Speaking a short warmup",
-  "model-loaded": "Voice model loaded",
+  "runtime-check": "Checking the setup",
+  "runtime-prepare": "Preparing the runtime",
+  "runtime-packages": "Installing packages",
+  "runtime-download": "Downloading packages",
+  "runtime-install": "Installing packages",
+  "runtime-build": "Building packages",
+  "runtime-validate": "Checking packages",
+  "model-prepare": "Starting the engine",
+  "model-download": "Downloading the engine",
+  "model-load": "Loading the engine",
+  warmup: "Warming up",
+  "model-loaded": "Engine loaded",
   ready: "Ready",
 };
 
+const hardware = (info: VoiceEngineInfo) =>
+  info.tier === "small" ? "CPU" : "GPU";
+
 function formatBytes(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes < 0) return "Unavailable";
   const gib = 1024 ** 3;
-  const unit = bytes >= gib ? "GiB" : "MiB";
-  return `${(bytes / (bytes >= gib ? gib : 1024 ** 2)).toFixed(2)} ${unit}`;
+  return bytes >= gib
+    ? `${(bytes / gib).toFixed(1)} GB`
+    : `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
-/** Kokoro or Chatterbox Turbo, with the same setup controls as speech models. */
+function progressNote(
+  detail: string | null | undefined,
+  bytes?: DownloadBytes | null,
+) {
+  const amount =
+    bytes && Number.isFinite(bytes.completed) && bytes.completed >= 0
+      ? bytes.total == null
+        ? `${formatBytes(bytes.completed)} so far`
+        : `${formatBytes(bytes.completed)} of ${formatBytes(bytes.total)}`
+      : "";
+  return [detail, amount].filter(Boolean).join(" · ");
+}
+
+/** Pick Small or Large, then set up, load or repair the chosen engine. */
 export function VoiceEngineSetup({
   status,
-  settings,
+  engine,
   saving,
   onSelect,
   onSetup,
@@ -54,7 +71,7 @@ export function VoiceEngineSetup({
   onUnload,
 }: {
   status: VoiceStatus;
-  settings: AppSettings;
+  engine: VoiceEngineId;
   saving: boolean;
   onSelect: (engine: VoiceEngineId) => void;
   onSetup: () => void;
@@ -62,7 +79,7 @@ export function VoiceEngineSetup({
   onLoad: () => void;
   onUnload: () => void;
 }) {
-  const info = VOICE_ENGINE_INFO[settings.voiceEngine];
+  const info = VOICE_ENGINE_INFO[engine];
   const installing = ["running", "cancelling"].includes(
     status.setupState ?? "",
   );
@@ -75,35 +92,42 @@ export function VoiceEngineSetup({
   const failed = status.engine === "error";
   // A crash or timeout only needs a reload; a failed setup needs Repair.
   const reloadable = failed && status.setupState !== "failed";
-  const bytes = status.downloadBytes;
+
+  let tone: DotTone = "";
+  let line: string;
+  if (working) {
+    tone = "busy";
+    line =
+      (status.setupStage && STAGES[status.setupStage]) ??
+      (status.engine === "loading" ? "Loading the engine" : "Setting up");
+  } else if (failed) {
+    tone = "error";
+    line = status.failure?.message ?? status.message;
+  } else if (status.engine === "missing") {
+    tone = "warning";
+    line =
+      status.setupState === "cancelled"
+        ? "Setup cancelled"
+        : status.migrationRequired
+          ? "Needs a runtime update"
+          : info.tier === "small"
+            ? `Not set up · ${info.downloadSize} download`
+            : `Not set up · ${info.downloadSize} download, needs an NVIDIA GPU or Apple Silicon`;
+  } else if (status.engine === "ready") {
+    tone = "ready";
+    line = status.device ? `Ready · ${status.device.toUpperCase()}` : "Ready";
+  } else {
+    line = "Asleep · wakes when something is said";
+  }
+  const note = working ? progressNote(status.detail, status.downloadBytes) : "";
+
   return (
-    <section className="setup-card" aria-label="Voice model setup">
-      <div className="setup-card-heading">
-        <Speech />
-        <div>
-          <h2>
-            {status.engine === "missing"
-              ? status.migrationRequired
-                ? `Update the runtime for ${info.name}`
-                : "Choose a voice model"
-              : failed
-                ? "Fix voice setup"
-                : "Voice model"}
-          </h2>
-          <p>
-            {info.name} ·{" "}
-            {status.device
-              ? `${info.runtime} · ${status.device}`
-              : info.runtime}
-          </p>
-        </div>
-        <EngineBadge engine={status.engine} />
-      </div>
-      <div className="engine-choice" role="radiogroup" aria-label="Voice model">
+    <>
+      <div className="engine-choice" role="radiogroup" aria-label="Engine">
         {VOICE_ENGINES.map((id) => {
-          const engine = VOICE_ENGINE_INFO[id];
+          const option = VOICE_ENGINE_INFO[id];
           const Icon = ICONS[id];
-          const selected = settings.voiceEngine === id;
+          const selected = engine === id;
           return (
             <button
               key={id}
@@ -117,14 +141,11 @@ export function VoiceEngineSetup({
               <Icon aria-hidden="true" />
               <span>
                 <strong>
-                  {engine.tier === "small" ? "Small" : "Large"} · {engine.name}
-                  {engine.expressive && (
-                    <span className="tier-tag">Expressive</span>
-                  )}
+                  {option.tier === "small" ? "Small" : "Large"} · {option.name}
                 </strong>
-                <small>{engine.description}</small>
+                <small>{option.description}</small>
                 <small className="tier-meta">
-                  {engine.downloadSize} · {engine.runtime}
+                  {option.downloadSize} · {hardware(option)}
                 </small>
               </span>
               {selected && (
@@ -134,151 +155,103 @@ export function VoiceEngineSetup({
           );
         })}
       </div>
-      {status.engine === "missing" && (
-        <p className="setup-status-copy">
-          {info.name}: {info.downloadSize} download
-          {info.tier === "large"
-            ? ". Needs an NVIDIA GPU or Apple Silicon for real-time speech."
-            : ", runs on the CPU you already have."}{" "}
-          Nothing is downloaded until you press set up.
-        </p>
-      )}
-      <div className="runtime-actions">
-        {installing && (
-          <button
-            className="secondary-button"
-            disabled={status.setupState === "cancelling"}
-            onClick={onCancelSetup}
-          >
-            {status.setupState === "cancelling"
-              ? "Cancelling…"
-              : "Cancel setup"}
-          </button>
-        )}
-        {status.engine === "ready" && (
-          <button
-            className="secondary-button"
-            disabled={locked}
-            onClick={onUnload}
-          >
-            Unload
-          </button>
-        )}
-        {(status.engine === "unloaded" || reloadable) && (
-          <button className="primary-button" disabled={locked} onClick={onLoad}>
-            <Play /> {reloadable ? "Load again" : "Load now"}
-          </button>
-        )}
-        {(status.engine === "ready" || status.engine === "unloaded") && (
-          <button
-            className="tool-button"
-            disabled={locked}
-            onClick={onSetup}
-            title="Reinstall the voice runtime"
-          >
-            <Download /> Repair
-          </button>
-        )}
-        {(status.engine === "missing" || failed) && (
-          <button
-            className={reloadable ? "tool-button" : "primary-button"}
-            disabled={locked}
-            onClick={onSetup}
-          >
-            {working ? <LoaderCircle className="spin" /> : <Download />}
-            {status.engine === "missing"
-              ? `Download & set up ${info.name}`
-              : "Repair"}
-          </button>
-        )}
-      </div>
-      {working && (
-        <section className="progress-panel" aria-live="polite">
-          <div>
-            <strong>
-              {(status.setupStage && STAGES[status.setupStage]) ??
-                (status.engine === "loading"
-                  ? "Loading the voice model"
-                  : "Preparing the voice runtime")}
-            </strong>
-            <span>Working…</span>
-          </div>
-          {typeof status.progress === "number" ? (
-            <progress
-              aria-label="Voice setup progress"
-              max={1}
-              value={status.progress}
-            />
-          ) : (
-            <progress aria-label="Voice setup progress" max={1} />
-          )}
-          {status.detail && (
-            <p className="caption" role="status">
-              {status.detail}
+      <div className="setting-row siren-engine">
+        <Cpu className="setting-icon" aria-hidden="true" />
+        <div className="setting-copy">
+          <strong>{info.name}</strong>
+          <details className="setting-help">
+            <summary
+              aria-label={`About ${info.name}`}
+              title={`About ${info.name}`}
+            >
+              <Info />
+            </summary>
+            <p>
+              {info.repository} at {info.revision.slice(0, 7)} · {info.license}{" "}
+              · {info.runtime}
+              {info.id === "chatterbox-turbo" &&
+                ". Adds an inaudible watermark to everything it says."}
             </p>
+          </details>
+          <p
+            className={`siren-state ${failed ? "failed" : ""}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className={`status-dot ${tone}`} aria-hidden="true" />
+            {line}
+          </p>
+          {working && (
+            <>
+              <progress
+                aria-label={`${info.name} setup progress`}
+                max={1}
+                value={
+                  typeof status.progress === "number"
+                    ? status.progress
+                    : undefined
+                }
+              />
+              {note && <p className="caption">{note}</p>}
+            </>
           )}
-          {bytes ? (
-            <p className="caption">
-              <strong>
-                {bytes.kind === "transfer"
-                  ? "Network transfer"
-                  : "Cache reconstruction"}
-              </strong>
-              {": "}
-              {formatBytes(bytes.completed)} completed
-              {bytes.total == null
-                ? " · total unavailable"
-                : ` / ${formatBytes(bytes.total)} reported total`}
-            </p>
-          ) : null}
-        </section>
-      )}
-      {!working && status.engine === "ready" && (
-        <p className="caption mt-3" role="status">
-          {status.warmup === "complete"
-            ? "Ready to speak"
-            : "Loaded · checked on the first sentence"}
-        </p>
-      )}
-      {failed && (
-        <Alert
-          action={
+        </div>
+        <div className="setting-control">
+          {installing && (
+            <button
+              className="secondary-button"
+              disabled={status.setupState === "cancelling"}
+              onClick={onCancelSetup}
+            >
+              {status.setupState === "cancelling" ? "Cancelling…" : "Cancel"}
+            </button>
+          )}
+          {status.engine === "ready" && (
+            <button
+              className="tool-button"
+              disabled={locked}
+              onClick={onUnload}
+            >
+              Unload
+            </button>
+          )}
+          {(status.engine === "unloaded" || reloadable) && (
             <button
               className="secondary-button"
               disabled={locked}
-              onClick={reloadable ? onLoad : onSetup}
+              onClick={onLoad}
             >
-              Try again
+              <Play /> {reloadable ? "Try again" : "Load"}
             </button>
-          }
-        >
-          {status.failure?.message ?? status.message}
-        </Alert>
-      )}
-      {status.setupState === "cancelled" && (
-        <p className="setup-status-copy" role="status">
-          {status.message}
-        </p>
-      )}
-      <details className="setup-details">
-        <summary>Model details & license</summary>
-        <dl className="voice-facts" aria-label="Voice model details">
-          <dt>Checkpoint</dt>
-          <dd>{info.repository}</dd>
-          <dt>Revision</dt>
-          <dd>{info.revision}</dd>
-          <dt>License</dt>
-          <dd>{info.license}</dd>
-          <dt>Runs on</dt>
-          <dd>{info.runtime}</dd>
-        </dl>
-        {info.id === "chatterbox-turbo" && (
-          <p className="caption mt-2">
-            Chatterbox adds an inaudible watermark to every sentence it speaks,
-            so the audio can be identified as synthetic.
-          </p>
-        )}
-      </details>
-    </section>
+          )}
+          {(status.engine === "ready" ||
+            status.engine === "unloaded" ||
+            reloadable) && (
+            <button
+              className="tool-button"
+              disabled={locked}
+              onClick={onSetup}
+              title={`Reinstall ${info.name}`}
+            >
+              <Download /> Repair
+            </button>
+          )}
+          {(status.engine === "missing" || (failed && !reloadable)) && (
+            <button
+              className="primary-button"
+              disabled={locked}
+              onClick={onSetup}
+            >
+              {working ? <LoaderCircle className="spin" /> : <Download />}
+              {status.engine === "missing"
+                ? status.migrationRequired
+                  ? "Update"
+                  : "Set up"
+                : "Repair"}
+            </button>
+          )}
+        </div>
+      </div>
+    </>
   );
 }

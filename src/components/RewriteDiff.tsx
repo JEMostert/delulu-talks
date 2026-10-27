@@ -19,15 +19,10 @@ export function RewriteDiff({
       <h3 id={heading} className="mb-2 font-semibold">
         Changes from current text
       </h3>
-      <p className="mb-2 text-sm text-muted">
-        Removed text is struck through; added text is underlined. Spaces and
-        line breaks are included.
-      </p>
       {!changed && <p role="status">No changes from current text.</p>}
       {simplified && (
         <p className="mb-2 text-sm text-muted">
-          Large change: the changed passage is shown together rather than
-          matching individual words. Both texts remain complete above.
+          Large change, shown as one passage.
         </p>
       )}
       {changed && (

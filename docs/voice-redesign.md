@@ -3,6 +3,10 @@
 Status: implemented for v0.3.0; see [Overnight results](#overnight-results).
 The sections before it describe v0.2.0 and the plan.
 
+Since the rebrand the Voice page is called Siren, Talk is Sonar and the helper
+is Pilot. This record keeps the names used at the time; code identifiers
+(`talk.rs`, `coordinator_engine.py`) did not change.
+
 ## What goes wrong in v0.2.0
 
 Found while testing v0.2.0 live on CachyOS / KDE Wayland with a USB headset.
@@ -191,9 +195,9 @@ Left out on purpose:
 Requests go through the worker's protocol validation and dispatch, exactly as
 the app sends them.
 
-| Set | Score |
-| --- | --: |
-| `cases.json` (34) | 34/34 |
+| Set                                 | Score |
+| ----------------------------------- | ----: |
+| `cases.json` (34)                   | 34/34 |
 | `heldout.json` (34 cases, 36 steps) | 33/34 |
 
 The held-out set covers memory follow-ups ("Eigenlijk, sla de trage tests
@@ -206,11 +210,11 @@ not fully blind. Remaining miss: "Stop the tests, they're too slow." →
 Latency on the GPU, 70 decide calls and 41 Dutch reply calls (English
 results need no second call):
 
-| Call | Median | p90 | Max |
-| --- | --: | --: | --: |
+| Call                                       | Median |    p90 |    Max |
+| ------------------------------------------ | -----: | -----: | -----: |
 | decide (tool + arguments, or `reply` text) | 304 ms | 400 ms | 517 ms |
-| reply (Dutch rephrasing) | 140 ms | 184 ms | 251 ms |
-| whole helper turn | 356 ms | 476 ms | 672 ms |
+| reply (Dutch rephrasing)                   | 140 ms | 184 ms | 251 ms |
+| whole helper turn                          | 356 ms | 476 ms | 672 ms |
 
 The prototype took about 1.5 s per call. Loading the model and building the
 prefix cache takes about 4.5 s, and the first Talk start pays it.
@@ -290,4 +294,3 @@ The first end-to-end runs found five problems, all fixed:
    pause.
 6. Stop the agent session and wait 2 minutes. A new task should get "Er
    luistert nu geen agent".
-

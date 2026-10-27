@@ -12,7 +12,6 @@ type PackWord = readonly [term: string, ...heardAs: string[]];
 export type WordPack = {
   id: WordPackId;
   name: string;
-  description: string;
   words: readonly PackWord[];
 };
 
@@ -20,7 +19,6 @@ export const WORD_PACKS: readonly WordPack[] = [
   {
     id: "programming",
     name: "Programming",
-    description: "Languages, tools and terms for talking about code.",
     words: [
       ["TypeScript", "typescript", "type script"],
       ["JavaScript", "javascript", "java script"],
@@ -88,7 +86,6 @@ export const WORD_PACKS: readonly WordPack[] = [
   {
     id: "gaming",
     name: "Gaming",
-    description: "Game slang and titles for voice chat, such as Discord.",
     words: [
       ["GG", "gg", "gee gee", "g g"],
       ["noob"],

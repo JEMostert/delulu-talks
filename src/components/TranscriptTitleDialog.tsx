@@ -67,10 +67,6 @@ export function TranscriptTitleDialog({
         </>
       }
     >
-      <p>
-        Give this transcript an optional title. Leave it blank to remove the
-        title.
-      </p>
       <label className="field">
         Transcript title
         <input

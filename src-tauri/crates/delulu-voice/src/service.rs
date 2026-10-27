@@ -321,7 +321,7 @@ fn engine_name(engine: VoiceEngineId) -> &'static str {
 }
 
 fn unsupported_runtime(settings: &AppSettings) -> String {
-    format!("Voice runtime update required for {}", engine_name(settings.voice_engine))
+    format!("{} needs a runtime update", engine_name(settings.voice_engine))
 }
 
 fn initial_status() -> VoiceStatus {
@@ -333,7 +333,7 @@ fn initial_status() -> VoiceStatus {
         },
         engine: EnginePhase::Missing,
         phase: VoicePhase::Idle,
-        message: "Voice setup required".into(),
+        message: "Siren setup required".into(),
         detail: None,
         progress: None,
         setup_stage: None,
@@ -579,7 +579,7 @@ impl VoiceService {
     pub async fn initialize(&self, settings: &AppSettings) {
         self.inner.state.lock().shutting_down = false;
         self.update(Some(EnginePhase::Unloaded), |status| {
-            status.message = "Checking your voice runtime…".into();
+            status.message = "Checking Siren…".into();
         });
         let ready = self.is_environment_ready(settings).await;
         if self.inner.state.lock().setup.is_some() {
@@ -588,11 +588,11 @@ impl VoiceService {
         let installed = self.runtime_installed();
         if ready {
             self.update(Some(EnginePhase::Unloaded), |status| {
-                status.message = "Voice ready — the model loads when something is said".into();
+                status.message = "Siren ready — the engine loads when something is said".into();
                 status.migration_required = Some(false);
             });
         } else {
-            let message = if installed { unsupported_runtime(settings) } else { "Voice setup required".into() };
+            let message = if installed { unsupported_runtime(settings) } else { "Siren setup required".into() };
             self.update(Some(EnginePhase::Missing), |status| {
                 status.message = message;
                 status.migration_required = Some(installed);
@@ -624,7 +624,7 @@ impl VoiceService {
         }
         if !ready {
             let installed = self.runtime_installed();
-            let message = if installed { unsupported_runtime(settings) } else { "Voice setup required".into() };
+            let message = if installed { unsupported_runtime(settings) } else { "Siren setup required".into() };
             self.update(Some(EnginePhase::Missing), |status| {
                 status.message = message;
                 status.migration_required = Some(installed);
@@ -632,7 +632,7 @@ impl VoiceService {
             });
         } else if self.get_status().engine == EnginePhase::Missing {
             self.update(Some(EnginePhase::Unloaded), |status| {
-                status.message = "Voice ready — the model loads when something is said".into();
+                status.message = "Siren ready — the engine loads when something is said".into();
                 status.migration_required = Some(false);
             });
         }
@@ -695,7 +695,7 @@ impl VoiceService {
         token.cancel();
         self.update(None, |status| {
             status.setup_state = Some(SetupState::Cancelling);
-            status.message = "Cancelling voice setup — releasing runtime resources…".into();
+            status.message = "Cancelling Siren setup…".into();
             status.progress = None;
         });
         if started.load(Ordering::SeqCst) {
@@ -717,12 +717,12 @@ impl VoiceService {
         installer.record_setup_stage("Preparing owned voice runtime candidate");
         self.update(Some(EnginePhase::SettingUp), |status| {
             status.setup_state = Some(SetupState::Running);
-            status.message = "Preparing voice setup".into();
+            status.message = "Preparing Siren setup".into();
             status.progress = None;
         });
         let aborted = || {
             if token.is_cancelled() {
-                Err(DomainError::cancelled("Voice setup cancelled"))
+                Err(DomainError::cancelled("Siren setup cancelled"))
             } else {
                 Ok(())
             }
@@ -773,7 +773,7 @@ impl VoiceService {
             let runtime = self.load_worker(settings).await?;
             aborted()?;
             if !runtime.loaded || runtime.warmup.unwrap_or(WarmupState::Complete) != WarmupState::Complete {
-                return Err(plain("Voice warmup did not complete; the previous runtime remains selected"));
+                return Err(plain("Siren warmup did not complete; the previous runtime stays in use"));
             }
             installer.commit()?;
             let attempt = installer.setup_log.lock().active_id();
@@ -816,9 +816,9 @@ impl VoiceService {
             self.update(Some(if installed { EnginePhase::Unloaded } else { EnginePhase::Missing }), |status| {
                 status.setup_state = Some(SetupState::Cancelled);
                 status.message = if installed {
-                    "Setup cancelled. Your previous voice runtime is preserved.".into()
+                    "Setup cancelled. Your previous Siren runtime is kept.".into()
                 } else {
-                    "Setup cancelled. Voice setup is still required.".into()
+                    "Setup cancelled. Siren still needs setup.".into()
                 };
                 status.detail = None;
                 status.progress = None;
@@ -864,7 +864,7 @@ impl VoiceService {
 
     pub async fn load(&self, settings: &AppSettings) -> DomainResult<()> {
         if self.inner.state.lock().setup.is_some() {
-            return Err(voice_error(DomainErrorCode::Busy, "Voice setup is still running", "voice:load"));
+            return Err(voice_error(DomainErrorCode::Busy, "Siren setup is still running", "voice:load"));
         }
         // Speech arriving during an unload waits for it, then loads again.
         let unloading = self.inner.state.lock().unloading.clone();
@@ -894,7 +894,7 @@ impl VoiceService {
                 this.refresh_environment(&task_settings).await;
                 return Err(voice_error(
                     DomainErrorCode::WorkerUnavailable,
-                    format!("Set up {} on the Voice page first.", engine_name(task_settings.voice_engine)),
+                    format!("Set up {} on the Siren page first.", engine_name(task_settings.voice_engine)),
                     "voice:load",
                 ));
             }
@@ -949,7 +949,7 @@ impl VoiceService {
             }
             if this.get_status().engine != EnginePhase::Missing {
                 this.update(Some(EnginePhase::Unloaded), |status| {
-                    status.message = "Voice model unloaded — it loads when something is said".into();
+                    status.message = "Siren engine unloaded — it loads when something is said".into();
                 });
             }
         });
@@ -1143,12 +1143,12 @@ impl VoiceService {
             }
             if source != VoiceSource::App && !settings.voice_enabled {
                 return Err(unavailable(
-                    "Speaking out loud is turned off in Delulu Talks. Turn it on in Voice.".into(),
+                    "Siren is turned off in Delulu Talks. Switch on Speak replies aloud on the Siren page.".into(),
                 ));
             }
             if state.status.engine == EnginePhase::Missing || state.setup.is_some() {
                 return Err(unavailable(format!(
-                    "Set up {} on the Voice page first.",
+                    "Set up {} on the Siren page first.",
                     engine_name(settings.voice_engine)
                 )));
             }

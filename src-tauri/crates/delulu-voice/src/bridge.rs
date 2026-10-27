@@ -730,7 +730,7 @@ impl Shared {
                 "Listening sessions were replaced by the agent inbox: use agent.register and agent.next.",
             )),
             method if method.starts_with("coordinator.") => {
-                Err(BridgeError::invalid("The coordinator was replaced by Talk: use talk.status and the agent inbox."))
+                Err(BridgeError::invalid("The coordinator was replaced by Sonar: use talk.status and the agent inbox."))
             }
             other => Err(BridgeError::invalid(format!("Unknown method: {}", truncate_utf16(other, 64)))),
         }

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PipelineTimingDetails } from "./PipelineTimingDetails";
 import { bridge } from "../bridge";
 import { LoaderCircle, WandSparkles } from "lucide-react";
@@ -20,7 +20,6 @@ import type {
 export function RewriteDialog({
   text,
   title = "Rewrite transcript",
-  description = "Preview a change before using it. Original speech stays available and text shortcuts stay exactly as saved.",
   baseline,
   sourceRevision = 0,
   sourceLanguage,
@@ -37,7 +36,6 @@ export function RewriteDialog({
 }: {
   text: string;
   title?: string;
-  description?: string;
   baseline: string;
   sourceRevision?: number;
   sourceLanguage?: string;
@@ -56,7 +54,6 @@ export function RewriteDialog({
   ) => Promise<boolean>;
   onCancelRewrite?: (operationId: string) => Promise<boolean>;
 }) {
-  const instructionHelpId = useId();
   const [source, setSource] = useState(text);
   const [expectedOutput, setExpectedOutput] = useState(baseline);
   const [expectedRevision, setExpectedRevision] = useState(sourceRevision);
@@ -209,9 +206,7 @@ export function RewriteDialog({
               onClick={async () => {
                 try {
                   await bridge.copyText(result.text);
-                  setNotice(
-                    "Preview copied — paste manually into the intended destination.",
-                  );
+                  setNotice("Preview copied.");
                 } catch (reason) {
                   setError(String(reason));
                 }
@@ -245,7 +240,7 @@ export function RewriteDialog({
                     closeDialog();
                   else
                     setError(
-                      "Could not apply this rewrite. The transcript may have changed; close this preview and review the current result.",
+                      "Couldn’t apply this rewrite. The transcript may have changed.",
                     );
                 } catch (reason) {
                   setError(
@@ -262,23 +257,13 @@ export function RewriteDialog({
         </>
       }
     >
-      <p>{description}</p>
-      {contextLabel && (
-        <p className="caption">
-          Rewriting: {contextLabel}. This session stays attached to this
-          transcript when you navigate or open another card.
-        </p>
-      )}
+      {contextLabel && <p className="caption">{contextLabel}</p>}
       {stale && (
         <div
           className="rewrite-setup my-3 rounded-panel border border-line p-3"
           role="alert"
         >
-          <p>
-            The transcript changed after this preview opened. This preview
-            cannot be applied. Refresh to use the current text and generate a
-            new preview.
-          </p>
+          <p>The transcript changed since this preview opened.</p>
           <button
             className="secondary-button"
             disabled={busy}
@@ -290,7 +275,7 @@ export function RewriteDialog({
               setError(null);
             }}
           >
-            Refresh rewrite source
+            Refresh
           </button>
         </div>
       )}
@@ -299,7 +284,7 @@ export function RewriteDialog({
           <p>
             {status?.engine === "error"
               ? status.message
-              : "Install a local rewrite model to use this optional tool. Dictation is ready without it."}
+              : "Rewriting needs a local model."}
           </p>
           <button
             className="secondary-button"
@@ -310,7 +295,7 @@ export function RewriteDialog({
               onSetup();
             }}
           >
-            Set up rewriting in Models
+            Set up
           </button>
         </div>
       ) : null}
@@ -335,10 +320,9 @@ export function RewriteDialog({
           </select>
         </label>
         <label className="field">
-          Instructions for this rewrite <small>Optional</small>
+          Instructions <small>Optional</small>
           <textarea
             aria-label="Rewrite instructions"
-            aria-describedby={instructionHelpId}
             rows={3}
             maxLength={MAX_REWRITE_INSTRUCTIONS}
             disabled={busy || preset === "spoken-corrections"}
@@ -352,19 +336,13 @@ export function RewriteDialog({
           />
         </label>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <p id={instructionHelpId} className="flex-1 text-xs text-muted">
-          Kept for retries in this dialog and discarded when you close it. Never
-          saved as a writing preference or transcript metadata. Instructions
-          request tone or format; they do not guarantee factual accuracy.
-          Compare the full preview before applying it. Saved shortcut blocks
-          stay protected.
-        </p>
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-3">
         <span className="text-xs text-muted">
           {instructions.length.toLocaleString()} / 4,000
         </span>
         <button
           className="secondary-button"
+          aria-label="Clear instructions"
           disabled={busy || !instructions}
           onClick={() => {
             setInstructions("");
@@ -372,11 +350,11 @@ export function RewriteDialog({
             setError(null);
           }}
         >
-          Clear instructions
+          Clear
         </button>
       </div>
       <details className="my-3 rounded-panel border border-line p-3">
-        <summary>Optional language and editor context</summary>
+        <summary>Context</summary>
         <label className="mt-2 flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -387,13 +365,8 @@ export function RewriteDialog({
               setResult(null);
             }}
           />
-          Include the context below for this local rewrite
+          Use this context
         </label>
-        <p className="caption mt-2">
-          Only context you enter is used. It is discarded with this dialog and
-          never saved with the transcript. Fenced and indented code or terminal
-          blocks in the source stay exact.
-        </p>
         {contextEnabled && (
           <div className="grid gap-3 mt-3">
             <label className="field">
@@ -444,12 +417,8 @@ export function RewriteDialog({
         {presetDetails.description}
       </p>
       <details className="my-3 rounded-panel border border-line p-3">
-        <summary>Illustrative example: {presetDetails.label}</summary>
-        <p className="my-2">
-          Written examples only; your local model's output may differ. Generate
-          a preview to rewrite your transcript.
-        </p>
-        <p>
+        <summary>Example: {presetDetails.label}</summary>
+        <p className="mt-2">
           <strong>Example source</strong>
         </p>
         <p className="whitespace-pre-wrap break-words">
@@ -479,7 +448,7 @@ export function RewriteDialog({
             className="min-h-[200px] w-full"
             value={result?.text ?? ""}
             disabled={!result || busy}
-            placeholder="Generate a preview to compare it here"
+            placeholder="Your preview appears here"
             onChange={(e) =>
               setResult(
                 result
@@ -516,8 +485,8 @@ export function RewriteDialog({
         {generating ? <LoaderCircle className="spin" /> : <WandSparkles />}
         {generating
           ? cancelling
-            ? "Cancelling preview…"
-            : "Rewriting locally…"
+            ? "Cancelling…"
+            : "Rewriting…"
           : result
             ? "Try again"
             : "Generate preview"}
@@ -528,13 +497,12 @@ export function RewriteDialog({
           disabled={cancelling}
           onClick={cancelPreview}
         >
-          {cancelling ? "Cancelling preview…" : "Cancel rewrite"}
+          {cancelling ? "Cancelling…" : "Stop"}
         </button>
       )}
       {source.length > 50_000 && (
         <p className="field-error">
-          This source exceeds the 50,000-character rewrite limit. Choose a
-          shorter source before generating a preview.
+          Too long to rewrite (50,000 characters at most).
         </p>
       )}
       {result && <PipelineTimingDetails timings={result.timings} />}

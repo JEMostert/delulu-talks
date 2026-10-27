@@ -9,6 +9,7 @@ import {
 } from "../components/TranscriptCard";
 import { Alert } from "../components/ui";
 import { MAX_AUDIO_BATCH_FILES } from "../audioFormats";
+import { formatClock } from "../statusLabels";
 import type {
   AudioFileMetadata,
   AudioImportJob,
@@ -23,6 +24,26 @@ const JOB_STATES: Record<AudioImportJob["state"], [string, string]> = {
   cancelled: ["Cancelled", "neutral"],
 };
 
+/** "2:05 · Stereo · 48 kHz", leaving out what inspection could not tell. */
+function mediaSummary(media: AudioFileMetadata) {
+  const channels =
+    media.channels === 1
+      ? "Mono"
+      : media.channels === 2
+        ? "Stereo"
+        : media.channels && `${media.channels} channels`;
+  return [
+    media.durationSeconds === null
+      ? "Length unknown"
+      : formatClock(media.durationSeconds * 1000),
+    channels,
+    media.sampleRate && `${media.sampleRate / 1000} kHz`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Bottles: imported recordings, their queue and their transcripts. */
 export function LabPage({
   history,
   busy,
@@ -133,20 +154,12 @@ export function LabPage({
         <span className="file-drop-icon" aria-hidden="true">
           {pending ? <LoaderCircle className="spin" /> : <Upload />}
         </span>
-        <strong>Drop recordings here or choose files</strong>
-        <small>
-          Audio and video · up to {MAX_AUDIO_BATCH_FILES} files · transcribed on
-          this device
-        </small>
+        <strong>Drop audio or video</strong>
+        <small>or click to choose · up to {MAX_AUDIO_BATCH_FILES} files</small>
       </button>
       <ImportQueue />
-      {!jobs.length && !file && (
-        <p className="caption text-center">
-          Results appear here and in History. Nothing leaves this device.
-        </p>
-      )}
-      {!!jobs.length && <h3 className="lab-heading">Linked files</h3>}
-      <ul className="lab-files" aria-label="Linked source files">
+      {!!jobs.length && <h3 className="lab-heading">Files</h3>}
+      <ul className="lab-files" aria-label="Files">
         {jobs.map((job) => (
           <li
             key={job.path}
@@ -173,30 +186,33 @@ export function LabPage({
             <div className="panel-actions">
               <button
                 className="tool-button compact"
+                aria-label={`Listen to ${job.name}`}
                 disabled={job.sourceAvailable === false}
                 onClick={() => setReview(job)}
               >
-                Review linked audio
+                Listen
               </button>
               {job.sourceAvailable === false && (
                 <button
                   className="tool-button compact"
+                  aria-label={`Relink ${job.name}`}
                   disabled={pending || busy}
                   onClick={() =>
                     void select(() => bridge.relinkAudioJob(job.path))
                   }
                 >
-                  Relink source…
+                  Relink…
                 </button>
               )}
               <button
                 className="tool-button compact"
+                aria-label={`Remove ${job.name} from the list`}
                 disabled={pending || busy}
                 onClick={() =>
                   void select(() => bridge.removeAudioJob(job.path))
                 }
               >
-                Remove from list
+                Remove
               </button>
             </div>
           </li>
@@ -205,40 +221,21 @@ export function LabPage({
       {file && (
         <section className="lab-detail" aria-live="polite">
           <h3>{file.name}</h3>
-          {inspecting ? (
-            <p className="caption">Inspecting media…</p>
-          ) : metadata ? (
-            <>
-              <p className="caption">
-                {metadata.durationSeconds === null
-                  ? "Duration unknown"
-                  : `${metadata.durationSeconds.toFixed(1)} seconds`}{" "}
-                · {metadata.channels ?? "unknown"} channels ·{" "}
-                {metadata.sampleRate ?? "unknown"} Hz
-              </p>
-              <p className="caption">{metadata.decoderDetail}</p>
-              <p className="caption">{metadata.processingTimeEstimate}</p>
-              {metadata.estimatedPcmBytes !== null && (
-                <p>
-                  Estimated mono 16 kHz PCM:{" "}
-                  {(metadata.estimatedPcmBytes / 1048576).toFixed(1)} MiB
-                </p>
-              )}
-            </>
-          ) : (
-            <p>
-              Media metadata unavailable. Duration and decoder readiness remain
-              unknown.
-            </p>
+          <p className="caption">
+            {inspecting
+              ? "Inspecting…"
+              : metadata
+                ? mediaSummary(metadata)
+                : "Details unavailable"}
+          </p>
+          {metadata && !metadata.decoderReady && (
+            <p className="caption">{metadata.decoderDetail}</p>
           )}
           {result ? (
             <TranscriptCard record={result} {...actions} />
           ) : (
             file.resultId && (
-              <p>
-                The referenced transcript is no longer retained. Source media
-                has not been deleted.
-              </p>
+              <p className="caption">Transcript no longer in the Logbook.</p>
             )
           )}
         </section>

@@ -352,20 +352,20 @@ async function previewStartTalk(download: boolean): Promise<TalkStatus> {
     setTalkStatus({
       on: true,
       phase: "downloading",
-      message: "Downloading the helper · 0%",
+      message: "Downloading Pilot · 0%",
       needsDownload: false,
       helper: { mode, state: "loading", message: "" },
     });
     for (const percent of [24, 51, 78, 100]) {
       if (!(await talkStep(run, 700))) return talkStatus;
-      setTalkStatus({ message: `Downloading the helper · ${percent}%` });
+      setTalkStatus({ message: `Downloading Pilot · ${percent}%` });
     }
     helperDownloaded = true;
   }
   setTalkStatus({
     on: true,
     phase: "loading",
-    message: "Loading the helper…",
+    message: "Loading Pilot…",
     helper: { mode, state: "loading", message: "" },
   });
   if (await talkStep(run, 900)) setTalkStatus(listening());

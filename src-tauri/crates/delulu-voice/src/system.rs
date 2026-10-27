@@ -288,7 +288,7 @@ impl VoiceSystem {
         let mut items = Vec::new();
         if self.inner.talk.is_on() {
             items.push(VoiceTrayItem {
-                label: "Stop listening".into(),
+                label: "Stop Sonar".into(),
                 enabled: true,
                 action: VoiceTrayAction::StopListening,
             });
@@ -396,7 +396,7 @@ impl BridgeHandlers for AppBridge {
             message: if settings.voice_enabled {
                 status.message
             } else {
-                "Speaking out loud is turned off in Delulu Talks.".into()
+                "Siren is turned off in Delulu Talks.".into()
             },
         }
     }

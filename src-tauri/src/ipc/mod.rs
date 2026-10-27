@@ -1,4 +1,4 @@
-//! The renderer-facing Tauri commands. See `docs/TAURI_MIGRATION.md`.
+//! The renderer-facing Tauri commands. See `docs/ARCHITECTURE.md`.
 
 pub mod router;
 

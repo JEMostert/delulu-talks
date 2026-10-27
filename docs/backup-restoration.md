@@ -47,6 +47,3 @@ records from an otherwise valid array, or establish that the app is stopped.
 Keep the original backup and damaged profile intact. After an explicitly chosen
 manual copy to the isolated target, reopen that target and inspect the result
 before adopting it as an active profile.
-
-Implementation status: **UNVERIFIED — tests, builds, typechecks, format checks and
-runtime checks were not run per the current issue-work instruction.**

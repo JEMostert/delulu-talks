@@ -34,7 +34,7 @@ def make_probe(backend):
             return types.SimpleNamespace(text="decoder probe", language=["English"])
         engine.model = types.SimpleNamespace(generate=generate)
     else:
-        # Linux and Windows share the Transformers R2T2 adapter since v0.12.0.
+        # Linux CUDA uses the Transformers R2T2 adapter.
         from r2t2_speech import R2T2Speech
         engine = R2T2Speech()
         engine.model = object()

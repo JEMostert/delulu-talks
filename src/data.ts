@@ -101,8 +101,7 @@ export const MODELS: ModelInfo[] = [
     downloadSize: "~4 GB",
     hfId: "netease-youdao/Confucius4-R2T2",
     name: "R2T2",
-    description:
-      "R2T2 speech recognition on NVIDIA GPUs through Transformers on Linux and Windows. About 4 GB of GPU memory.",
+    description: "R2T2 on an NVIDIA GPU. Uses about 4 GB of GPU memory.",
     recommended: true,
     provenance: {
       ...R2T2_LICENSE,
@@ -113,7 +112,7 @@ export const MODELS: ModelInfo[] = [
           conversion:
             "Delulu converts original R2T2 keys in memory using the official Transformers mappings, with strict weight loading. Conversion cache: transformers-5.15.0-v1.",
           attributionUrl:
-            "https://github.com/JEMostert/delulu-talks/blob/main/electron/python/r2t2_checkpoint.py",
+            "https://github.com/JEMostert/delulu-talks/blob/main/backend/python/r2t2_checkpoint.py",
         },
       ],
     },
@@ -126,8 +125,7 @@ export const MODELS: ModelInfo[] = [
     name: "R2T2",
     runtime: "MLX Audio · BF16 · Apple Silicon",
     downloadSize: "~4.1 GB",
-    description:
-      "The Confucius4-R2T2 fine-tune runs directly through MLX on Apple Silicon. Uses an unquantized BF16 conversion, with selectable language. Requires macOS 15+ and native Python 3.12. Mac hardware validation is pending.",
+    description: "R2T2 on Apple Silicon. Needs macOS 15 and Python 3.12.",
     recommended: true,
     provenance: {
       ...R2T2_LICENSE,
@@ -159,8 +157,7 @@ export const CANARY_MODEL: Omit<ModelInfo, "id"> = {
   downloadSize: "200 MB",
   hfId: "csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8",
   name: "Canary 180M Flash",
-  description:
-    "NVIDIA Canary 180M Flash on the CPU. The smallest option: English, German, French and Spanish, with punctuation. Speak, then stop to transcribe.",
+  description: "Canary on the CPU. English, German, French and Spanish.",
   provenance: {
     ...NVIDIA_LICENSE,
     variants: [
@@ -182,7 +179,7 @@ export const PARAKEET_MODEL: Omit<ModelInfo, "id"> = {
   hfId: "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
   name: "Parakeet TDT 0.6B",
   description:
-    "NVIDIA Parakeet TDT 0.6B on the CPU. English uses v2, the English model; Automatic uses v3, which detects 25 European languages. Speak, then stop to transcribe.",
+    "Parakeet on the CPU. English uses v2; Automatic uses v3 for 25 European languages.",
   provenance: {
     ...NVIDIA_LICENSE,
     variants: [
@@ -209,8 +206,7 @@ export const SPEECH_TIERS = [
     name: "Small",
     model: "Canary 180M",
     download: "200 MB",
-    summary: "Runs on almost any computer.",
-    detail: "English, German, French and Spanish. Least accurate of the three.",
+    summary: "Lightest. English, German, French, Spanish.",
     hardware: "Any CPU",
   },
   {
@@ -218,9 +214,7 @@ export const SPEECH_TIERS = [
     name: "Medium",
     model: "Parakeet 0.6B",
     download: "630 MB",
-    summary: "Fast and accurate on the CPU.",
-    detail:
-      "English, or automatic detection across 25 European languages. Recommended for most computers.",
+    summary: "Fast and accurate. 25 European languages.",
     hardware: "Any CPU",
     recommended: true,
   },
@@ -229,9 +223,7 @@ export const SPEECH_TIERS = [
     name: "Large",
     model: "R2T2",
     download: "~4 GB",
-    summary: "Most accurate.",
-    detail:
-      "30 languages, automatic detection and vocabulary hints. Needs an NVIDIA GPU with about 4 GB of memory, or Apple Silicon.",
+    summary: "Most accurate. 30 languages and word hints.",
     hardware: "NVIDIA GPU or Apple Silicon",
   },
 ] as const satisfies readonly {
@@ -240,7 +232,6 @@ export const SPEECH_TIERS = [
   model: string;
   download: string;
   summary: string;
-  detail: string;
   hardware: string;
   recommended?: boolean;
 }[];
@@ -255,8 +246,7 @@ export const MAGIC_MODELS: MagicModelInfo[] = [
     hfId: "Qwen/Qwen3.5-2B",
     name: "Qwen 3.5 · 2B",
     role: "Compact",
-    description:
-      "Runs on any recent computer. Removes fillers, applies your spoken corrections and fixes punctuation.",
+    description: "Light and quick. Runs on any recent computer.",
     parameters: "2B",
     memory: "~4.5 GB",
     speed: "Fast",
@@ -269,7 +259,7 @@ export const MAGIC_MODELS: MagicModelInfo[] = [
     name: "Phi-4 mini · 3.8B",
     role: "Strong",
     description:
-      "Catches more corrections and cancellations. Needs a GPU with about 10 GB free, or Apple Silicon with 16 GB.",
+      "Catches more corrections. Needs a GPU with 10 GB free, or Apple Silicon with 16 GB.",
     parameters: "3.8B",
     memory: "~8.5 GB",
     speed: "Fast on a GPU",

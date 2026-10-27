@@ -6,6 +6,7 @@ import { ModelProvenance } from "./ModelProvenance";
 import { ModelLifecycle } from "./ModelLifecycle";
 import { BackendCapabilities } from "./BackendCapabilities";
 import { EngineBadge } from "./EngineBadge";
+import { RuntimeSetupLog } from "./RuntimeSetupLog";
 
 export type RewriteSetupProps = {
   magicStatus: MagicStatus;
@@ -35,19 +36,18 @@ export function RewriteSetup({
   const writingBusy = ["preparing", "loading", "rewriting"].includes(
     magicStatus.phase,
   );
+  const installed =
+    magicStatus.engine === "ready" || magicStatus.engine === "unloaded";
   return (
     <section className="setup-card" aria-labelledby="rewrite-model-heading">
       <div className="setup-card-heading">
         <WandSparkles />
         <div>
           <h2 id="rewrite-model-heading">Rewriting</h2>
-          <p>{writingModel.name} · optional, runs locally</p>
         </div>
         <EngineBadge engine={magicStatus.engine} />
       </div>
-      {(magicStatus.engine === "ready" || magicStatus.engine === "unloaded") &&
-        magicStatus.residency && <ModelLifecycle status={magicStatus} />}
-      <div className="mt-4 flex flex-wrap items-end gap-4">
+      <div className="flex flex-wrap items-end gap-4">
         <label className="field min-w-[180px] flex-1">
           Model
           <select
@@ -62,7 +62,7 @@ export function RewriteSetup({
           >
             {MAGIC_MODELS.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name}
+                {item.name} · {item.memory}
               </option>
             ))}
           </select>
@@ -96,11 +96,10 @@ export function RewriteSetup({
               disabled={busy || setupPending}
               onClick={onLoadMagic}
             >
-              <Play /> Load now
+              <Play /> Load
             </button>
           ) : null}
-          {(magicStatus.engine === "ready" ||
-            magicStatus.engine === "unloaded") && (
+          {installed && (
             <button
               className="tool-button"
               disabled={busy || setupPending}
@@ -126,6 +125,7 @@ export function RewriteSetup({
           )}
         </div>
       </div>
+      <p className="setup-status-copy">{writingModel.description}</p>
       <ModelSetupStatus
         status={magicStatus}
         kind="rewrite"
@@ -138,10 +138,15 @@ export function RewriteSetup({
         </p>
       )}
       <details className="setup-details">
-        <summary>Model details & license</summary>
-        <p className="setup-status-copy">{writingModel.description}</p>
-        <ModelProvenance {...writingModel} />
+        <summary>Details</summary>
+        {installed && magicStatus.residency && (
+          <ModelLifecycle status={magicStatus} />
+        )}
         <BackendCapabilities capabilities={magicStatus.capabilities} />
+        <ModelProvenance {...writingModel} />
+        <div className="runtime-actions mt-4">
+          <RuntimeSetupLog kind="rewrite" />
+        </div>
       </details>
     </section>
   );

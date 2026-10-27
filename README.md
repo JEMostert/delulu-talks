@@ -1,6 +1,6 @@
 <div align="center">
   <img src="docs/assets/readme-header.svg" width="100%" alt="Delulu Talks — private desktop dictation, with the deep-sea voice ribbon" />
-  <p><strong>Native clean dictation. Personal corrections. Optional local rewriting.</strong></p>
+  <p><strong>Private dictation that runs on your machine. It can talk back, too.</strong></p>
   <p>
     <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><img src="https://img.shields.io/github/v/release/JEMostert/delulu-talks?style=for-the-badge&amp;label=release&amp;color=16b3e8&amp;labelColor=0a2942" alt="Latest release" /></a>
     <img src="https://img.shields.io/badge/Linux%20%C2%B7%20macOS-Desktop-16b3e8?style=for-the-badge&amp;labelColor=0a2942" alt="Linux and macOS" />
@@ -8,9 +8,8 @@
   </p>
   <p>
     <a href="https://github.com/JEMostert/delulu-talks/releases/latest"><strong>Download the latest release</strong></a> ·
+    <a href="docs/SIREN.md">Siren and Sonar</a> ·
     <a href="docs/ARCHITECTURE.md">Architecture</a> ·
-    <a href="docs/VOICE.md">Voice</a> ·
-    <a href="https://github.com/JEMostert/delulu-talks/issues/14">GitHub roadmap</a> ·
     <a href="docs/MODEL_RESEARCH.md">Model research</a> ·
     <a href="docs/MAC_SUPPORT.md">Mac support</a>
   </p>
@@ -18,58 +17,7 @@
 
 ---
 
-Delulu Talks turns speech into text in the app you are using. You choose one of three local speech models when you first open it: **Small** (Canary 180M) and **Medium** (Parakeet 0.6B) run on any CPU, and **Large** (R2T2) uses an NVIDIA GPU or Apple Silicon for the best accuracy. Nothing is downloaded until you pick one. Speech is transcribed after you stop recording. Qwen rewriting is an optional tool. Microphone, language, shortcut, and delivery settings are available as soon as you open the app.
-
-[v0.1.0](docs/releases/v0.1.0.md) is a rewrite of the desktop app on Tauri with a Rust backend: smaller packages, native microphone capture and voice playback, a voice MCP server that needs no Node, and native packages for Fedora, Debian/Ubuntu and Arch/CachyOS. Your profile, models, runtimes and history carry over from the Electron releases. Release numbers restart at v0.1.0.
-
-## Dictate, review, keep working
-
-```text
-Hold your shortcut → Speak → Release
-                              │
-                  R2T2: local transcription
-                              │
-                  Corrections + exact text shortcuts
-                              │
-                      Paste into your app
-                              │
-                  Review · edit · optionally rewrite
-```
-
-Dictation delivers the whole text at once after you stop recording. With hold-to-talk, that happens after you release the shortcut, so paste keys cannot interrupt the held shortcut.
-
-Automatic rewriting is off; use **Rewrite** beside a result when you want to shorten or restructure it.
-
-On Wayland desktops with layer-shell (KDE Plasma and wlroots compositors; not GNOME), a small pearl pill with wave bars stays above your apps without taking focus. Hold-to-talk uses the desktop shortcut portal; other desktops use toggle shortcuts. If automatic paste is blocked, the result stays available on the clipboard.
-
-## What it brings
-
-| Feature                       | What it does                                                                                                                   |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **System dictation**          | Hold-to-talk by default, optional press-to-toggle, tray controls and desktop-owned shortcut remapping.                         |
-| **Optional rewriting**        | Optional local transformations with preview, apply and undo beside each transcript. Automatic rewriting is off by default.     |
-| **Native Wayland experience** | Uses XDG GlobalShortcuts, secure Remote Desktop paste, and a click-through layer-shell recording pill on supported desktops.   |
-| **Audio files**               | Imports audio or video for local transcription.                                                                                |
-| **Voice**                     | Speaks text aloud with a local voice: Kokoro on any CPU, or expressive Chatterbox Turbo on a GPU. Coding agents can brief you. |
-| **Local by design**           | Runs speech and writing models on your machine. There is no telemetry or cloud transcription.                                  |
-
-### Voice: your agent talks back
-
-Turn on **Speak out loud** on the Voice page and Delulu can talk as well as listen. Text goes in, speech comes out, with Grok-style tags: `[laugh]`, `[sigh]` and `[pause]` for one-off sounds, `<whisper>…</whisper>` and `<slow>…</slow>` for spans. **Small** is Kokoro 82M on any CPU; **Large** is Chatterbox Turbo on a GPU, which really laughs and whispers and can clone a voice from a short clip.
-
-Turn on **Let coding agents speak** to connect Claude Code, Codex or T3 Code through a local MCP server. You dictate to one lead agent as usual; it runs its own subagents and briefs you out loud, briefly, when work is done, blocked or needs a decision. Starting a dictation stops it talking so you can answer. The tray can also read the clipboard aloud. See [Delulu Voice](docs/VOICE.md).
-
-### Corrections and text shortcuts
-
-Open **Personalization** from the dock or the command palette. Turn on a **word pack** (Programming or Gaming) to get its terms recognized and spelled right, and add your own names and terms by just typing them. Up to 150 words, packs and your own together, are used at once; the page shows how many are in use. On R2T2 CUDA the words are recognition hints; on every engine, known misspellings such as "git hub" are fixed afterwards. Text shortcuts expand a spoken trigger into an exact saved block. Editing a transcript can suggest a word to remember, with explicit confirmation.
-
-Speech output stays untouched. Personalization creates a separate result, and exact shortcut blocks stay outside the writing model; only the surrounding text is rewritten. Failed automatic rewriting delivers the preserved transcript instead.
-
-Upgrading from an older release turns automatic rewriting and writing-model preloading off once, because earlier defaults did not establish an explicit choice. You can enable either independently afterward. Existing history and rules are retained. Old spelling-only entries are marked as needing a recognized phrase; historical transcripts cannot recover speech text already replaced by an older version.
-
-## The interface
-
-Delulu Talks opens onto a living ocean with one pearl record button. Press it — or your shortcut from any app — and the pearl turns coral with a voice-level halo and a running clock; when you stop, your words are pasted where you were typing and the latest transcript floats beneath the controls with copy and open-in-history actions.
+Delulu Talks is private, local-first, system-wide dictation for Linux and macOS. Hold your shortcut, speak, let go, and the text lands in whatever app you were typing in. It can also speak: your coding agents can talk back, and you can hold a hands-free conversation with them.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/controls-dark.png" />
@@ -77,192 +25,104 @@ Delulu Talks opens onto a living ocean with one pearl record button. Press it �
   <img src="docs/assets/controls-dark.png" width="100%" alt="Delulu Talks home: a pearl record button on a deep-sea background with the latest transcript beneath it" />
 </picture>
 
-_Captured from the browser preview with demo text. The image follows your light or dark theme._
+## What's inside
 
-The **Deep Sea** design system has two themes — _Abyss_ (dark) and _Shallows_ (sunlit, light) — and follows your system by default. A glass sheet rises above a compact dock for History, Audio files, Models, Personalization and Settings; <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd> opens the command palette. The tray icon shows whether you are recording, busy, need attention or have an update; its menu switches the speech engine and rewriting style, and copies any of your five most recent transcripts. See the [design system](docs/DESIGN-SYSTEM.md) and [brand assets](docs/BRAND.md).
+| Feature                 | What it does                                                                                                                                                    |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Dictation + Rewrite** | Hold-to-talk (or toggle) from any app, pasted when you stop. **Rewrite** beside a result polishes, shortens or restructures it, with preview and undo.          |
+| **Siren**               | Local text-to-speech: Kokoro on any CPU, or expressive Chatterbox Turbo on a GPU. Coding agents (Claude Code, Codex, T3 Code) speak through a local MCP server. |
+| **Sonar**               | A hands-free conversation loop with your lead agent. Each sentence goes out as soon as it is transcribed, and the agent briefs you out loud.                    |
+| **Pilot**               | A small local model (Qwen 3.5 0.8B) that routes what you say in Sonar: forward it to your agent, ask for status, cancel, stop or repeat. Off sends every word.  |
+| **Logbook**             | Your transcript history: search, quick filters, edits, corrections and export.                                                                                  |
+| **Bottles**             | Transcribe audio or video files locally.                                                                                                                        |
+| **Engines**             | Set up the speech and rewrite models: Small, Medium or Large, matched to your hardware.                                                                         |
+| **Lingo**               | Word packs (Programming, Gaming), your own words and names, and text shortcuts that expand a spoken trigger into an exact saved block.                          |
 
-- **Configure quickly:** the gear opens quick settings for microphone, language, shortcut, paste and theme.
-- **Recover results:** paste the latest transcript, retry failed audio from memory, or discard it explicitly.
-- **Preserve originals:** corrections stay separate from model output and optional rewrites.
-- **Keep history small:** History keeps your latest 50 transcripts by default (25–500 in Settings → Privacy), shown as a list beside the selected transcript.
-- **Manage locally:** Settings is organized as General, Speech, Output, Rewriting, Privacy and Advanced; Advanced covers runtimes and updates.
+Speech engine sizes:
 
-## Local speech and writing models
+| Size                 | Model                    | Runs on                                       | Download |
+| -------------------- | ------------------------ | --------------------------------------------- | -------- |
+| **Small**            | NVIDIA Canary 180M Flash | Any CPU (English, German, French, Spanish)    | ~200 MB  |
+| **Medium** (default) | NVIDIA Parakeet TDT 0.6B | Any CPU (English, or 25 languages with auto)  | ~630 MB  |
+| **Large**            | Confucius4-R2T2          | NVIDIA GPU with ~4 GB (Linux) · Apple Silicon | ~4 GB    |
 
-Speech stays ready by default. The optional writing model loads on demand; you can keep either model loaded or let it unload after a configurable idle period.
-
-| Size                 | Model                                  | Good for                                                                                                                                                   |
-| -------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Small**            | NVIDIA Canary 180M Flash · CPU         | Older or low-memory computers. English, German, French and Spanish, with punctuation. About 200 MB.                                                        |
-| **Medium** (default) | NVIDIA Parakeet TDT 0.6B v2 / v3 · CPU | Fast, accurate dictation on any CPU. English uses v2; Automatic uses v3, which detects 25 European languages. About 630 MB.                                |
-| **Large**            | Confucius4-R2T2 · CUDA or MLX          | Most accurate. 30 languages, automatic detection and vocabulary hints. NVIDIA GPU with about 4 GB of memory (Linux) or Apple Silicon. About 4 GB. |
-| **Qwen 3.5 writing** | 0.8B · 2B · 4B                         | Lightweight cleanup through richer prompt and technical-context enhancement. 2B is the balanced default.                                                   |
-
-Small and Medium run through [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with INT8 weights. Their runtime is about 140 MB and installs no PyTorch or GPU drivers; Large adds the PyTorch/CUDA or MLX runtime. Switching between Small and Medium, or down from Large, needs no new setup.
-
-On Apple Silicon with macOS 15+, Delulu selects the approximately 4.1 GB [R2T2 BF16 MLX conversion](https://huggingface.co/mlx-community/Confucius4-R2T2-bf16). This preserves the preferred fine-tune instead of substituting Qwen3-ASR-0.6B. The checkpoint revision and runtime packages are pinned. Language hints are available; missing or mixed detected language stays unknown. Older Mac installations need **Update setup/Repair** for the new runtime.
-
-**The new R2T2 Mac route is implemented but has not passed native Apple Silicon inference validation in this development pass.** See [Mac support, evidence boundaries and acceptance steps](docs/MAC_SUPPORT.md#native-release-acceptance). The [historical v0.9.4 validation](docs/mac-release-validation.md) applies to Qwen3-ASR-0.6B through vLLM Metal, not the current direct R2T2 MLX Audio route. On Mac, capture completes before transcription and paste.
-
-On Linux, Large runs through PyTorch/Transformers on CUDA; v0.12.0 removed the earlier vLLM server, which reserved most of the GPU's memory. Windows is not supported. Intel Macs and Rosetta Python are unsupported. [Model research](docs/MODEL_RESEARCH.md) keeps other models as external benchmark references. Optional Qwen 3.5 rewriting remains available.
+Rewriting is optional: install a rewrite engine (Qwen 3.5 2B or Phi-4 mini) and use **Rewrite** when you want it. Automatic rewriting is off by default. On Wayland desktops with layer-shell (KDE Plasma, wlroots; not GNOME) a small recording pill floats above your apps.
 
 ## Install
 
-Download the package for your platform from [GitHub Releases](https://github.com/JEMostert/delulu-talks/releases/latest). Linux/Wayland is the primary and most thoroughly exercised platform.
+Download a package from [GitHub Releases](https://github.com/JEMostert/delulu-talks/releases/latest). Linux/Wayland is the most thoroughly exercised platform. Windows is not supported.
 
-### Linux
+| Platform                         | Package                   | Install                                                     |
+| -------------------------------- | ------------------------- | ----------------------------------------------------------- |
+| Linux, any distribution (x86_64) | AppImage                  | `chmod +x Delulu*_amd64.AppImage` and run it                |
+| Fedora                           | rpm                       | `sudo dnf install ./Delulu*.x86_64.rpm`                     |
+| Debian, Ubuntu                   | deb                       | `sudo apt install ./Delulu*_amd64.deb`                      |
+| Arch, CachyOS, EndeavourOS       | pacman `delulu-talks-bin` | `sudo pacman -U delulu-talks-bin-*-x86_64.pkg.tar.zst`      |
+| macOS 15+ (Apple Silicon)        | DMG                       | Open `Delulu*_aarch64.dmg` and drag the app to Applications |
 
-| Distribution | Package | Install | Updates |
-| --- | --- | --- | --- |
-| Any (x86_64) | AppImage | `chmod +x Delulu*_amd64.AppImage` and run it | In the app |
-| Fedora | rpm | `sudo dnf install ./Delulu*.x86_64.rpm` | New rpm from Releases |
-| Debian, Ubuntu | deb | `sudo apt install ./Delulu*_amd64.deb` | New deb from Releases |
-| CachyOS, Arch, EndeavourOS | pacman `delulu-talks-bin` | `sudo pacman -U delulu-talks-bin-*-x86_64.pkg.tar.zst` | New package from Releases |
-
-The rpm, deb and pacman packages pull in FFmpeg and Python and install `delulu-talks.desktop`, the desktop entry the Wayland shortcut portal identifies the app by. With the AppImage, install FFmpeg and Python yourself; on first start the AppImage writes a hidden `delulu-talks.desktop` to `~/.local/share/applications` so the portal recognizes it. The recording pill needs gtk4-layer-shell and PyGObject with cairo:
-
-```bash
-sudo pacman -S gtk4-layer-shell python-gobject python-cairo        # CachyOS, Arch
-sudo dnf install gtk4-layer-shell python3-gobject python3-cairo    # Fedora
-```
-
-GNOME has no layer-shell, so the pill is not available there; the main window and tray show recording state instead.
-
-### macOS
-
-Use the macOS DMG (`*_aarch64.dmg`, Apple Silicon only) from the same release page. It is not code-signed or notarized. If macOS blocks launch, use System Settings → Privacy & Security → Open Anyway for the app you downloaded from this repository. The build is produced in CI but has not yet been run on a real Mac for this release.
-
-### Updates
-
-The AppImage and the macOS app check GitHub Releases for signed updates. Downloads are explicit, progress is visible, and restart waits until recording, inference, and setup are idle. The rpm, deb and pacman packages update by installing the newer package; their tray links to the releases page. Settings, history, and models stay in the profile directory across updates and package types.
+- The rpm, deb and pacman packages pull in FFmpeg and Python. With the AppImage, install FFmpeg and Python 3.11–3.13 yourself.
+- The recording pill needs gtk4-layer-shell and PyGObject with cairo: `sudo dnf install gtk4-layer-shell python3-gobject python3-cairo` (Fedora) or `sudo pacman -S gtk4-layer-shell python-gobject python-cairo` (Arch, CachyOS).
+- The macOS app is not code-signed or notarized. If macOS blocks it, use System Settings → Privacy & Security → Open Anyway. It needs native arm64 Python 3.12 (`brew install python@3.12`).
+- The AppImage and the macOS app update themselves from GitHub Releases. The rpm, deb and pacman packages update by installing the newer package. Your settings, Logbook and models stay put either way.
 
 ## Your first minute
 
-1. Open Delulu Talks. The pearl record button is ready immediately; the “Set up speech” chip and the Models page guide model installation.
-2. Choose **Install engine**. The app installs the local runtime and downloads the model weights.
-3. Focus a text field and use the shortcut shown in quick settings. On supported Wayland desktops, hold <kbd>Meta</kbd> + <kbd>Z</kbd>, speak, then release; toggle mode uses a second press to finish.
-4. Dictate immediately with native clean output. Optionally install the rewriting engine in **Models**, then use **Rewrite** beside any result to preview, apply, or undo it. Automatic rewriting is a separate opt-in setting.
+1. Open Delulu Talks and follow the **Set up speech** chip to **Engines**.
+2. Pick a size and choose **Install engine**. The app sets up a local runtime and downloads the model.
+3. Click into any text field and hold your shortcut (<kbd>Super</kbd> + <kbd>Z</kbd> by default), speak, then let go.
+4. Your words are pasted where you were typing. Use **Rewrite** beside the result if you want it cleaned up.
 
-The app manages separate isolated Python environments for platform-selected speech and rewriting, plus a shared model cache, inside the platform application-data directory. Existing shared runtimes are detected as an “Update setup” migration instead of failing with a package conflict. Setup uses versioned dependency specifications, checks package compatibility, and records installed versions. Models → device health check reports Python, FFmpeg, memory, and runtime details; Settings → Advanced offers repair controls and updates.
+## Privacy
+
+Speech, rewriting and voice models all run on your computer. Nothing leaves the machine except model downloads and the update check against GitHub Releases; there is no telemetry and no cloud transcription. The Logbook is kept locally (your latest 50 transcripts by default) and you can turn it off or trim it in **Settings → Privacy**. Recordings are deleted once they are transcribed.
 
 ## Run from source
 
-You will need [Bun](https://bun.sh/), stable [Rust](https://rustup.rs/), Python 3.11–3.13 on Linux, **native arm64 Python 3.12 on Apple Silicon**, and FFmpeg for compressed audio or video imports. On Mac, install Python using `brew install python@3.12` or `uv python install 3.12`; set its full path under Settings → Advanced if necessary. The Mac speech environment installs pinned MLX, MLX Audio, and Transformers packages.
-
-On Linux, install the Tauri build dependencies first:
+You need [Bun](https://bun.sh/), stable [Rust](https://rustup.rs/), FFmpeg, and Python 3.11–3.13 on Linux or native arm64 Python 3.12 on Apple Silicon. On Linux, install the Tauri build dependencies first:
 
 ```bash
-sudo dnf install webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel alsa-lib-devel          # Fedora
-sudo pacman -S --needed webkit2gtk-4.1 libayatana-appindicator librsvg alsa-lib                       # CachyOS, Arch
-sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev       # Debian, Ubuntu
+sudo dnf install webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel alsa-lib-devel      # Fedora
+sudo pacman -S --needed webkit2gtk-4.1 libayatana-appindicator librsvg alsa-lib                   # Arch, CachyOS
+sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev   # Debian, Ubuntu
 ```
 
 Then:
 
 ```bash
 bun install
-bun run dev        # tauri dev: the desktop app with hot reload
+bun run dev        # the desktop app with hot reload
+bun run dev:web    # renderer only, with safe demo data
 ```
 
-For a renderer-only preview with safe demo data:
+Development builds use their own **Delulu Talks Dev** profile, so they never touch your everyday settings or Logbook.
 
-```bash
-bun run dev:web
-```
-
-## How it fits together
-
-```text
-Tauri app (Rust)
-├── lifecycle, tray, updater, global shortcuts, validated IPC router
-├── native audio: capture, cues, listening detection, voice playback (cpal)
-├── Wayland portals: GlobalShortcuts, RemoteDesktop paste, clipboard
-├── GTK4 layer-shell overlay helper (Python)
-├── persistent Python workers
-│   ├── speech runtime (sherpa-onnx, R2T2)
-│   ├── Qwen writing runtime
-│   └── voice runtime (Kokoro, Chatterbox)
-└── React renderer in the system webview (WebKitGTK, WKWebView, WebView2)
-    ├── ocean shell, dock + contextual transcript rewriting
-    ├── Audio files + History + Personalization + Voice
-    └── Models + Settings + onboarding
-```
-
-<details>
-<summary><strong>Build and package</strong></summary>
+## Build and test
 
 ```bash
 bun run typecheck
-bun run test
-bun run test:e2e
-bun run build      # tauri build: bundles for the current platform
+bun run test:unit     # TypeScript renderer units
+bun run test:python   # Python worker units, no model dependencies
+bun run test:rust     # cargo test --workspace
+bun run build         # typecheck + bundles for the current platform
 ```
 
-On Linux, `bun run build` produces the AppImage, deb and rpm under `src-tauri/target/release/bundle/`. The release workflow runs on version tags: it runs the renderer, Python and Rust checks, builds Linux and macOS packages, signs the updater artifacts, repackages the deb as the pacman package (`packaging/arch/PKGBUILD`), and publishes a release with a `latest.json` updater manifest. A tag must match the package version before it can publish.
+`bun run test` runs all three unit suites; `bun run test:e2e` runs the Playwright browser checks. On Linux, `bun run build` writes the AppImage, deb and rpm to `src-tauri/target/release/bundle/`. See [testing](docs/VERIFICATION.md) for scope.
 
-</details>
+## Docs
 
-<details>
-<summary><strong>Repository map</strong></summary>
+- [Siren and Sonar](docs/SIREN.md): spoken output, the conversation loop, Pilot and connecting coding agents
+- [Architecture](docs/ARCHITECTURE.md) and [decision records](docs/decisions/README.md)
+- [Deep Sea design system](docs/DESIGN-SYSTEM.md) and [brand assets](docs/BRAND.md)
+- [Model research](docs/MODEL_RESEARCH.md) and [model provenance](docs/model-provenance.md)
+- [Mac support](docs/MAC_SUPPORT.md)
+- [Testing](docs/VERIFICATION.md)
+- [Release notes](docs/releases/)
 
-```text
-src/                  React renderer
-  components/         app shell components
-  pages/              Audio files, History, Models, Personalization, Voice, Settings
-  styles/             Deep Sea tokens, primitives, shell and feature styles
-  bridge.ts           typed renderer boundary
-  desktopBridge.ts    window.delulu over Tauri commands and events
-  data.ts             speech, rewriting and language catalogs
-src-tauri/            Tauri app: IPC router, handlers, windows, tray, updater, CLI
-  crates/             delulu-core, -domain, -runtime, -audio, -desktop, -data, -speech, -voice
-backend/
-  python/             persistent speech, rewriting and voice workers
-  overlay/            GTK4 layer-shell recording pill helper
-packaging/arch/       PKGBUILD for the pacman package
-```
+## Licenses
 
-See [architecture](docs/ARCHITECTURE.md) for what each crate owns.
+Delulu Talks is [MIT licensed](LICENSE). It does not bundle model weights; each model keeps its own license:
 
-</details>
-
-File transcription reads media metadata after you explicitly select a source file. Before starting, it shows duration, channels, sample rate, decoder availability and an estimated mono 16 kHz PCM size. Elapsed processing time remains explicitly unknown because hardware, model residency and media length affect it. Inspection uses bounded header-only soundfile/FFprobe probes and an FFmpeg availability check; it does not load a speech model, download dependencies, convert media or modify the source. Full decoding still occurs only when transcription starts. Missing metadata is shown as unknown.
-
-## Privacy and licenses
-
-Microphone recordings are written to a temporary WAV only after capture, processed locally, and deleted after success or failure. Failed captures can remain in memory for Retry during the session; Discard releases them, and closing the app loses that recovery copy. Imported media is never modified; temporary FFmpeg conversions are deleted too. Settings, optional transcript history, corrections, the Python environments, and downloaded models stay in the profile directory: `~/.config/Delulu Talks` on Linux, `~/Library/Application Support/Delulu Talks` on macOS. Audio is captured natively; the webview has no microphone access.
-
-With **Keep local history** off, new dictation and imported-file results are session-only, including their original text, personalization, corrections, and rewrites. The backend and renderer retain at most the newest 20 session records and 8 MiB of UTF-8 strings per transcript collection; the newest record is kept whole even if it alone exceeds that budget. Older records are evicted whole, never truncated. These are text retention limits, not a total process RAM cap: active inference, failed-recording retry audio and bounded worker diagnostics use separate memory. Session results disappear on exit, are never automatically promoted to saved history when the setting is re-enabled, and remain explicitly exportable while retained. Existing saved history remains on disk and edits to those saved records still persist. Disabling history also suppresses automatic speech/writing error-log writes, which can include model diagnostics; existing logs are not deleted. Explicit clipboard/paste delivery and exports can create copies outside the app.
-
-Temporary microphone WAVs and converted import audio still use the app audio-cache directory while processing, regardless of the history setting; normal success and failure paths delete them. An abrupt process exit can leave temporary audio behind. The app does not automatically write transcript-text sidecars for these files.
-
-Delulu Talks is [MIT licensed](LICENSE). Vendored conversion helpers and their license are recorded in [third-party notices](docs/THIRD_PARTY_NOTICES.md). R2T2 inference code is Apache-2.0; the [model weights](https://huggingface.co/netease-youdao/Confucius4-R2T2) use the [NetEase Model Use License](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE); R2T2 on Linux requires an NVIDIA CUDA GPU; NVIDIA [Canary 180M Flash](https://huggingface.co/nvidia/canary-180m-flash) and [Parakeet TDT 0.6B](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) weights (Small and Medium) use [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and run on the CPU through the Apache-2.0 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx); the MLX conversion targets Apple Silicon. Delulu Talks does not bundle weights. Optional [Qwen 3.5 checkpoints](https://huggingface.co/Qwen/Qwen3.5-2B) are Apache-2.0 licensed.
-
-## Development checks
-
-The focused unit suites cover data preservation, dictation recovery, paste safety,
-worker messages, exact text blocks, and runtime rollback.
-`bun run test` runs the TypeScript renderer units, the dependency-free Python units and
-`cargo test --workspace`; the Playwright browser tests run separately against the renderer preview.
-See [testing](docs/VERIFICATION.md) for commands and scope.
-
-Development uses its own **Delulu Talks Dev** profile, audio cache, and Linux desktop entry (written to `~/.local/share/applications` only when no `delulu-talks.desktop` exists, because the Wayland shortcut portal requires one). It does not import production history, overwrite the installed launcher, automatically bind the production shortcut, or change login startup. `DELULU_USER_DATA_DIR` is an explicit development/test override; do not point it at your everyday profile. Debug builds also accept `DELULU_DEV_SCRIPT` (a JSON list of IPC steps run at startup, see `src-tauri/src/dev_script.rs`) and `DELULU_IPC_LOG=1` (logs every IPC request).
-
-Repairs build a fresh environment under `speech-venv/generations/` (or the Writing runtime root), validate dependencies and imports, then atomically activate it. Virtualenv directories are never renamed. Failed installation leaves the previous runtime selected; a failed initial model load rolls activation back. Previous and interrupted generations are retained for recovery, so repairs temporarily require extra disk space. The existing `asr-venv` can still be the active Writing runtime; do not delete it merely because its name is old.
-
-Cold starts load model weights into GPU memory. **Settings → Speech → Keep the model ready** keeps speech resident between recordings; turn it off when you prefer to reclaim VRAM after the idle delay. Unload stops the worker process tree.
-
-```bash
-bun run format:check
-bun run typecheck
-bun run test
-bunx playwright install chromium
-bun run test:e2e
-```
-
-The [native inference harness](docs/NATIVE_HARNESS.md) and the cold-start speech benchmark were removed with the Electron app and are not available in the Tauri app yet.
-
-Ready now follows a bounded synthetic transcription warm-up. Recording timings include worker communication and any on-demand model load, rather than just GPU inference; they do not include microphone capture, optional Writing, or paste delivery. Short dictations time out after two minutes, longer captures scale up to fifteen minutes, and imported files allow fifteen minutes. Model installation/loading retains a separate download-sized deadline. Busy shortcut notices dismiss on release, cancellation, readiness, or after two seconds, without queuing an unexpected recording.
-
-See [architecture](docs/ARCHITECTURE.md), [design system](docs/GUI_DESIGN.md), and the [rebuild plan and validation record](docs/REBUILD_PLAN.md).
-
-The [historical roadmap](https://github.com/JEMostert/delulu-talks/issues/14) now serves as a record of the broader plan. The current scope is the desktop dictation app: R2T2 speech, word packs and vocabulary, optional local Qwen 3.5 rewrite previews, and local history and audio imports. CLI/API servers, editor extensions, watched folders, cloud/account features and meeting-summary pipelines are outside this scope. The unfinished live streaming experiment has been removed; all platforms use buffered capture. Automated fixtures do not establish native MLX/CUDA inference, physical microphone behavior or delivery into another application. Native platform acceptance remains pending.
+- R2T2 (Large): Apache-2.0 inference code; the [weights](https://huggingface.co/netease-youdao/Confucius4-R2T2) use the [NetEase Model Use License](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE).
+- [Canary 180M Flash](https://huggingface.co/nvidia/canary-180m-flash) and [Parakeet TDT 0.6B](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) (Small, Medium): [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), run through the Apache-2.0 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
+- [Qwen 3.5](https://huggingface.co/Qwen/Qwen3.5-2B) (rewriting, Pilot): Apache-2.0. [Phi-4 mini](https://huggingface.co/microsoft/Phi-4-mini-instruct): MIT.
+- Vendored conversion helpers and their license are listed in the [third-party notices](docs/THIRD_PARTY_NOTICES.md).

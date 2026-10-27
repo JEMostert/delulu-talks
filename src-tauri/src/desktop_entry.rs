@@ -3,9 +3,10 @@
 //! when a `delulu-talks.desktop` file is installed. The deb, rpm and pacman
 //! packages ship one; development builds and AppImages write a hidden one to
 //! `$XDG_DATA_HOME/applications` pointing at the current executable or
-//! `$APPIMAGE`. A package's entry is never shadowed, and a user-local entry is
-//! only rewritten when this app wrote it (`X-Delulu-Managed`) and the
-//! executable moved.
+//! `$APPIMAGE`. A user-local entry is only rewritten when this app wrote it and
+//! the executable moved. Once a package provides the entry, a hidden one this
+//! app left in the user's data directory is removed, because it would shadow
+//! the package's launcher.
 
 use std::path::{Path, PathBuf};
 
@@ -52,23 +53,54 @@ pub fn entry(executable: &Path, icon: &Path) -> String {
     .join("\n")
 }
 
+/// True for an entry this app wrote. Current builds mark it with
+/// `X-Delulu-Managed`. Older builds wrote the same entry without the marker;
+/// that one must match line for line, so a user's own edited launcher is
+/// never mistaken for it.
+fn written_by_us(text: &str) -> bool {
+    if text.contains(MANAGED) {
+        return true;
+    }
+    let lines: Vec<&str> = text.lines().filter(|line| !line.is_empty()).collect();
+    let [header, kind, name, exec, icon, terminal, hidden, categories, wm_class] = lines[..] else { return false };
+    header == "[Desktop Entry]"
+        && kind == "Type=Application"
+        && (name == "Name=Delulu Talks" || name == "Name=Delulu Talks Dev")
+        && exec.strip_prefix("Exec=\"").is_some_and(|rest| rest.ends_with("delulu-talks\"") && !rest.contains("\" "))
+        && icon.starts_with("Icon=")
+        && terminal == "Terminal=false"
+        && hidden == "NoDisplay=true"
+        && categories == "Categories=AudioVideo;Utility;"
+        && wm_class == "StartupWMClass=delulu-talks"
+}
+
 /// Writes `$XDG_DATA_HOME/applications/delulu-talks.desktop` for a
-/// development build or an AppImage when no package provides the entry.
+/// development build or an AppImage when no package provides the entry, and
+/// removes one this app wrote once a package does.
 pub fn ensure_development_entry(icon: &Path) {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    let target = data_home().join("applications").join(FILE);
+    let existing = std::fs::read_to_string(&target).ok();
+    let ours = existing.as_deref().is_some_and(written_by_us);
+    if data_dirs().into_iter().any(|dir| dir.join("applications").join(FILE).exists()) {
+        if ours {
+            match std::fs::remove_file(&target) {
+                Ok(()) => log::info!("Removed {}; the installed package provides it", target.display()),
+                Err(error) => log::warn!("Could not remove {}: {error}", target.display()),
+            }
+        }
+        return;
+    }
     let appimage = std::env::var_os("APPIMAGE").filter(|path| !path.is_empty()).map(PathBuf::from);
-    if !cfg!(target_os = "linux") || !(cfg!(debug_assertions) || appimage.is_some()) {
+    if !(cfg!(debug_assertions) || appimage.is_some()) {
         return;
     }
     let Some(executable) = appimage.or_else(|| std::env::current_exe().ok()) else { return };
-    let target = data_home().join("applications").join(FILE);
-    if data_dirs().into_iter().any(|dir| dir.join("applications").join(FILE).exists()) {
-        return;
-    }
     let content = entry(&executable, icon);
-    if let Ok(existing) = std::fs::read_to_string(&target) {
-        if !existing.contains(MANAGED) || existing == content {
-            return;
-        }
+    if existing.is_some() && (!ours || existing.as_deref() == Some(content.as_str())) {
+        return;
     }
     let result = (|| -> std::io::Result<()> {
         std::fs::create_dir_all(target.parent().unwrap_or(Path::new(".")))?;
@@ -95,5 +127,21 @@ mod tests {
         let text = entry(Path::new("/opt/my \"app\"/delulu-talks"), Path::new("/repo/build/icon.png"));
         assert!(text.contains("Exec=\"/opt/my \\\"app\\\"/delulu-talks\"\n"));
         assert!(text.contains("StartupWMClass=delulu-talks\n"));
+    }
+
+    #[test]
+    fn recognizes_current_and_legacy_entries_but_not_user_ones() {
+        assert!(written_by_us(&entry(Path::new("/x/delulu-talks"), Path::new("/x/icon.png"))));
+        let legacy = entry(Path::new("/repo/target/debug/delulu-talks"), Path::new("/repo/build/icon.png"))
+            .replace(&format!("{MANAGED}\n"), "");
+        assert!(written_by_us(&legacy));
+        // A hidden copy of the packaged launcher with a customized Exec stays the user's.
+        let customized = legacy.replace(
+            "Exec=\"/repo/target/debug/delulu-talks\"",
+            "Exec=\"/usr/bin/delulu-talks\" --verbose",
+        );
+        assert!(!written_by_us(&customized));
+        let packaged_copy = "[Desktop Entry]\nCategories=AudioVideo;Utility;\nComment=Dictation\nExec=delulu-talks\nIcon=delulu-talks\nName=Delulu Talks\nNoDisplay=true\nStartupWMClass=delulu-talks\nTerminal=false\nType=Application\n";
+        assert!(!written_by_us(packaged_copy));
     }
 }

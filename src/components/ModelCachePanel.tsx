@@ -73,9 +73,7 @@ export function ModelCachePanel({
     try {
       await bridge.unloadModel();
       await bridge.unloadMagic();
-      setMessage(
-        "Unload requested for both engines. Cleanup is available once both report unloaded.",
-      );
+      setMessage("Unloading. Cleanup unlocks once both engines are unloaded.");
     } catch (reason) {
       setError(String(reason));
     } finally {
@@ -94,7 +92,7 @@ export function ModelCachePanel({
     try {
       const result = await bridge.cleanupModelCache(preview.token, selected);
       setMessage(
-        `Deleted ${result.deletedIds.length} cache ${result.deletedIds.length === 1 ? "entry" : "entries"}. Preview again before another cleanup.`,
+        `Deleted ${result.deletedIds.length} cache ${result.deletedIds.length === 1 ? "entry" : "entries"}.`,
       );
       if (result.failures.length)
         setError(
@@ -117,16 +115,12 @@ export function ModelCachePanel({
   return (
     <section className="card" aria-labelledby="model-cache-heading">
       <div className="section-heading">
-        <div>
-          <span className="eyebrow">LOCAL STORAGE</span>
-          <h3 id="model-cache-heading">Clean up cached models</h3>
-        </div>
+        <h3 id="model-cache-heading">Model cache</h3>
         <HardDrive className="h-5 w-5 text-accent-ink" />
       </div>
       <p className="mt-3 text-sm text-muted">
-        Preview downloaded model folders before choosing what to delete. Removed
-        weights must be downloaded again when needed. Transcripts, settings and
-        Python environments are kept.
+        Deleted files download again when needed. Transcripts, settings and
+        runtimes stay.
       </p>
       <div className="runtime-actions mt-4">
         <button
@@ -134,7 +128,7 @@ export function ModelCachePanel({
           disabled={working}
           onClick={() => void refresh()}
         >
-          <RefreshCw className={working ? "spin" : ""} /> Preview cache
+          <RefreshCw className={working ? "spin" : ""} /> Scan
         </button>
         {!unloaded && (
           <button
@@ -146,11 +140,11 @@ export function ModelCachePanel({
           </button>
         )}
       </div>
-      {blocked && (
+      {blocked && (unloaded || preview) && (
         <p className="mt-3 text-xs text-muted">
-          Finish recording or model operations, then explicitly unload both
-          engines before deleting anything. An engine error also requires an
-          explicit unload.
+          {unloaded
+            ? "Wait until recording or setup finishes."
+            : "Unload speech and rewriting to delete."}
         </p>
       )}
       {error && <Alert>{error}</Alert>}
@@ -162,9 +156,7 @@ export function ModelCachePanel({
       {preview && (
         <>
           {preview.entries.length === 0 ? (
-            <p className="mt-4 text-sm text-muted">
-              No removable cache entries were found.
-            </p>
+            <p className="mt-4 text-sm text-muted">Nothing to clean up.</p>
           ) : (
             <div className="mt-4 flex flex-col gap-3">
               {preview.entries.map((entry) => (
@@ -197,22 +189,18 @@ export function ModelCachePanel({
               ))}
             </div>
           )}
-          <p className="mt-3 text-xs text-muted">
-            Sizes count local files without following symbolic links. A preview
-            expires after ten minutes.
-          </p>
           <button
             className="danger-button mt-4"
             disabled={working || blocked || entries.length === 0}
             onClick={() => setConfirming(true)}
           >
-            <Trash2 /> Delete selected cache…
+            <Trash2 /> Delete selected…
           </button>
         </>
       )}
       {confirming && (
         <Modal
-          title="Delete selected model cache?"
+          title="Delete cached files?"
           busy={working}
           onClose={() => setConfirming(false)}
           footer={
@@ -239,7 +227,7 @@ export function ModelCachePanel({
             This permanently deletes {entries.length} selected cache{" "}
             {entries.length === 1 ? "entry" : "entries"}
             {complete ? " totalling " : " containing at least "}
-            {sizeLabel(bytes)}. Downloads will be required again.
+            {sizeLabel(bytes)}. They download again when needed.
           </p>
           <ul className="mt-3 list-disc pl-5 text-sm [overflow-wrap:anywhere]">
             {entries.map((entry) => (
@@ -247,9 +235,7 @@ export function ModelCachePanel({
             ))}
           </ul>
           {blocked && (
-            <p className="mt-3 text-sm">
-              Cleanup is blocked until both engines are unloaded and idle.
-            </p>
+            <p className="mt-3 text-sm">Unload speech and rewriting first.</p>
           )}
         </Modal>
       )}

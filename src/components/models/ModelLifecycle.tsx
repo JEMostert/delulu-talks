@@ -3,15 +3,15 @@ import type { RuntimeLifecycle } from "../../types";
 const RESIDENCY = {
   unknown: "Not reported",
   unloaded: "Unloaded",
-  loading: "Loading weights",
-  resident: "Resident",
+  loading: "Loading",
+  resident: "Loaded",
   unloading: "Unloading",
 };
 const WARMUP = {
   unknown: "Not reported",
-  "not-started": "Not exercised",
-  warming: "Exercising inference",
-  complete: "Inference exercised",
+  "not-started": "Not yet",
+  warming: "Warming up",
+  complete: "Done",
 };
 
 export function ModelLifecycle({ status }: { status: RuntimeLifecycle }) {
@@ -23,7 +23,7 @@ export function ModelLifecycle({ status }: { status: RuntimeLifecycle }) {
   const idleCheck =
     deadline && !Number.isNaN(deadline.getTime())
       ? deadline.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      : "None scheduled";
+      : "Not scheduled";
   const rows = [
     ["Memory", RESIDENCY[status.residency ?? "unknown"]],
     [

@@ -45,7 +45,7 @@ export function HistoryDeletionNotice({
         ) : (
           <div className="panel-actions">
             <button className="secondary-button compact" onClick={onHistory}>
-              Open history
+              Open Logbook
             </button>
             <button
               className="tool-button compact"
@@ -60,13 +60,11 @@ export function HistoryDeletionNotice({
       <strong>
         {state.phase === "failed"
           ? state.error
-          : `${state.ids.length} ${state.ids.length === 1 ? "transcript" : "transcripts"} queued for deletion`}
+          : `${state.ids.length} ${state.ids.length === 1 ? "transcript" : "transcripts"} deleted`}
       </strong>
       {state.phase === "pending" && (
         <p className="caption">
-          {remaining > 0
-            ? `${remaining}s to undo. Quitting now cancels the deletion of saved transcripts.`
-            : "Finishing deletion…"}
+          {remaining > 0 ? `${remaining}s to undo` : "Finishing…"}
         </p>
       )}
     </Alert>

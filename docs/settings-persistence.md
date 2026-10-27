@@ -8,4 +8,4 @@ cargo test -p delulu-data --test storage
 
 The rebuilt unit suite checks corrupt and future profiles, failed atomic publication and temporary-file cleanup, failed settings/transcript updates with intentional retry, history ownership, and private results staying unsaved after persistence is re-enabled. It also reopens a v0.10.0 profile and migrates a legacy profile to the same bytes the Electron app wrote. It uses small isolated profiles and injected failure boundaries, without subprocess mocks.
 
-The former settings/desktop integration test commands are no longer part of this project. See [testing](VERIFICATION.md) for current commands and evidence limits.
+See [testing](VERIFICATION.md) for current commands and evidence limits.

@@ -54,8 +54,8 @@ export function RuleUsagePanel({ words }: { words: CustomWord[] }) {
   }, [refresh]);
 
   useEffect(() => {
-    void refresh();
-  }, [words, refresh]);
+    if (desktop) void refresh();
+  }, [words, refresh, desktop]);
 
   const closeReset = () => {
     if (!resetting.current) setConfirmReset(false);
@@ -100,14 +100,18 @@ export function RuleUsagePanel({ words }: { words: CustomWord[] }) {
   return (
     <section className="rounded-panel border border-line bg-surface p-[18px]">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2>Rule usage</h2>
+        <p className="text-[12px] text-muted">
+          {desktop
+            ? "Matches in new dictations and Bottles. Only counts are stored."
+            : "Usage counts are available in the desktop app."}
+        </p>
         <div className="flex flex-wrap gap-2">
           <button
             className="secondary-button"
             disabled={loading || resetBusy || !desktop}
             onClick={() => void refresh()}
           >
-            {loading ? "Refreshing…" : "Refresh counts"}
+            {loading ? "Refreshing…" : "Refresh"}
           </button>
           <button
             className="secondary-button"
@@ -117,36 +121,19 @@ export function RuleUsagePanel({ words }: { words: CustomWord[] }) {
               setConfirmReset(true);
             }}
           >
-            Reset all counts
+            Reset
           </button>
         </div>
       </div>
-      <p className="mt-3 text-[12px] text-muted">
-        Counts track source phrase matches in new dictations and audio imports,
-        including sessions with history disabled. They do not measure deliveries
-        or accepted rewrites. Previews do not count. Editing a rule keeps its
-        counter while its ID stays the same. Only numeric counts are stored.
-      </p>
-      {!desktop && (
-        <p className="mt-3 text-[12px] text-muted">
-          Usage counts are available in the installed desktop app. This browser
-          preview cannot load or reset them.
-        </p>
-      )}
       {error && (
         <p className="field-error" role="alert">
           {error}
           {counts !== null && " Showing the last available counts."}
         </p>
       )}
-      {loading && counts !== null && (
-        <p className="caption mt-3" role="status">
-          Refreshing usage counts…
-        </p>
-      )}
       {counts === null ? (
         <p className="mt-3 text-[12px] text-muted" role="status">
-          {loading ? "Loading usage counts…" : "No usage counts loaded."}
+          {loading ? "Loading usage counts…" : "No counts yet."}
         </p>
       ) : words.length ? (
         <div className="mt-3 max-h-[320px] overflow-y-auto">
@@ -154,7 +141,7 @@ export function RuleUsagePanel({ words }: { words: CustomWord[] }) {
             <thead>
               <tr className="border-b border-line text-muted">
                 <th className="py-2 font-normal" scope="col">
-                  Current rule
+                  Word
                 </th>
                 <th className="py-2 text-right font-normal" scope="col">
                   Matches
@@ -186,12 +173,12 @@ export function RuleUsagePanel({ words }: { words: CustomWord[] }) {
         </div>
       ) : (
         <p className="mt-3 text-[12px] text-muted">
-          Add a rule to see its count.
+          Add a word to see its count.
         </p>
       )}
       {confirmReset && (
         <Modal
-          title="Reset all rule usage counts?"
+          title="Reset all usage counts?"
           busy={resetBusy}
           onClose={closeReset}
           footer={
@@ -208,17 +195,15 @@ export function RuleUsagePanel({ words }: { words: CustomWord[] }) {
                 disabled={resetBusy}
                 onClick={() => void reset()}
               >
-                {resetBusy ? "Resetting…" : "Reset all counts permanently"}
+                {resetBusy ? "Resetting…" : "Reset counts"}
               </button>
             </>
           }
         >
           <p>
-            Permanently clear all stored usage counts, including counters for
-            deleted rules. This also replaces an unreadable counter file with
-            empty counts. This cannot be undone.
+            This clears every count and can’t be undone. Your words, settings
+            and transcripts stay.
           </p>
-          <p>Rules, settings, and transcripts are not deleted.</p>
           {resetError && (
             <p className="field-error" role="alert">
               {resetError}

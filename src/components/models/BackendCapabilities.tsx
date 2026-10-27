@@ -7,7 +7,7 @@ export function BackendCapabilities({
 }) {
   if (!capabilities)
     return (
-      <p className="mt-3 text-xs text-muted">Capabilities not negotiated.</p>
+      <p className="mt-3 text-xs text-muted">Capabilities not reported yet.</p>
     );
   const rows = [
     ["Timestamps", capabilities.timestamps ? "Supported" : "Unsupported"],
@@ -27,7 +27,7 @@ export function BackendCapabilities({
       className="mt-4 text-xs"
       aria-label="Negotiated backend capabilities"
     >
-      <p className="text-muted">Worker adapter: {capabilities.backend}</p>
+      <p className="text-muted">Adapter: {capabilities.backend}</p>
       <dl className="mt-2 grid grid-cols-2 gap-x-5 gap-y-3 min-[700px]:grid-cols-4">
         {rows.map(([label, value]) => (
           <div key={label}>
@@ -36,9 +36,6 @@ export function BackendCapabilities({
           </div>
         ))}
       </dl>
-      <p className="mt-2 text-muted">
-        Adapter controls; native hardware validation is separate.
-      </p>
     </section>
   );
 }

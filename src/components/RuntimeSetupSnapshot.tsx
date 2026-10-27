@@ -3,16 +3,15 @@ import { bridge } from "../bridge";
 import { SetupSpace } from "./SetupSpace";
 import type { MagicModelId, RuntimeSetupSnapshot as Snapshot } from "../types";
 
+/** Read-only interpreter and module discovery: no downloads, imports or model loading. */
 export function RuntimeSetupSnapshot({
   pythonCommand,
   magicModel,
   busy,
-  onPending,
 }: {
   pythonCommand: string;
   magicModel: MagicModelId;
   busy: boolean;
-  onPending: (pending: boolean) => void;
 }) {
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +22,6 @@ export function RuntimeSetupSnapshot({
     const generation = ++request.current;
     setLoading(true);
     setError(null);
-    onPending(true);
     bridge
       .getRuntimeSetupSnapshot()
       .then((value) => {
@@ -40,44 +38,31 @@ export function RuntimeSetupSnapshot({
         }
       })
       .finally(() => {
-        if (request.current === generation) {
-          setLoading(false);
-          onPending(false);
-        }
+        if (request.current === generation) setLoading(false);
       });
     return () => {
       request.current += 1;
     };
-  }, [pythonCommand, magicModel, refresh, onPending]);
+  }, [pythonCommand, magicModel, refresh]);
 
   return (
-    <section
-      className="card"
-      aria-labelledby="setup-snapshot-heading"
-      aria-busy={loading}
-    >
+    <section className="card" aria-label="Runtime snapshot" aria-busy={loading}>
       <div className="section-heading">
-        <div>
-          <span className="eyebrow">BEFORE SETUP OR LOADING</span>
-          <h3 id="setup-snapshot-heading">Runtime setup snapshot</h3>
-        </div>
+        <p className="text-xs text-muted" role="status">
+          {loading
+            ? "Checking interpreters…"
+            : data
+              ? `${data.platform} / ${data.arch} · checked ${new Date(data.checkedAt).toLocaleString()}`
+              : ""}
+        </p>
         <button
           className="secondary-button"
           disabled={loading || busy}
           onClick={() => setRefresh((value) => value + 1)}
         >
-          Refresh snapshot
+          Refresh
         </button>
       </div>
-      <p className="mt-3 text-sm text-muted">
-        Read-only interpreter and module discovery. No package downloads,
-        runtime package imports or model loading.
-      </p>
-      {loading && (
-        <p className="mt-3" role="status">
-          Checking interpreters and saved setup records…
-        </p>
-      )}
       {error && (
         <p className="field-error" role="alert">
           {error}
@@ -85,16 +70,8 @@ export function RuntimeSetupSnapshot({
       )}
       {data && !loading && (
         <>
-          <p className="mt-3 text-xs text-muted">
-            {data.platform} / {data.arch} · Observed{" "}
-            {new Date(data.checkedAt).toLocaleString()}. Refresh after setup or
-            changes.
-          </p>
           {data.source === "preview" && (
-            <p className="mt-3">
-              Desktop app required. Browser preview cannot observe interpreters,
-              imports or devices.
-            </p>
+            <p className="mt-3">Available in the desktop app.</p>
           )}
           {data.space && <SetupSpace space={data.space} />}
           {data.runtimes.map((runtime) => (
@@ -102,11 +79,7 @@ export function RuntimeSetupSnapshot({
               key={runtime.kind}
               className="mt-4 rounded-panel border border-line p-4 [overflow-wrap:anywhere]"
             >
-              <h4>
-                {runtime.kind === "speech"
-                  ? "R2T2 speech"
-                  : "Optional Qwen 3.5 rewriting"}
-              </h4>
+              <h4>{runtime.kind === "speech" ? "Speech" : "Rewriting"}</h4>
               <dl className="mt-3 grid grid-cols-[minmax(100px,160px)_1fr] gap-x-3 gap-y-2 text-sm max-[700px]:grid-cols-1">
                 <dt>Runtime files</dt>
                 <dd>
@@ -138,7 +111,7 @@ export function RuntimeSetupSnapshot({
                         <p key={module.name}>
                           {module.name}: {module.status}
                           {module.status === "missing" &&
-                            " — run Setup/Repair to install dependencies"}
+                            " · Repair installs it"}
                           {module.location && (
                             <span className="block text-xs text-muted">
                               {module.location}

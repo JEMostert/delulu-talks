@@ -49,6 +49,9 @@ function dayLabel(timestamp: number) {
         });
 }
 
+const transcripts = (count: number) =>
+  `${count} ${count === 1 ? "transcript" : "transcripts"}`;
+
 const CHIPS: readonly [string, string, Partial<HistoryFilters>][] = [
   ["all", "All", { source: "all", rewritten: "all" }],
   ["dictation", "Dictation", { source: "dictation", rewritten: "all" }],
@@ -56,13 +59,11 @@ const CHIPS: readonly [string, string, Partial<HistoryFilters>][] = [
   ["rewritten", "Rewritten", { source: "all", rewritten: "yes" }],
 ];
 
-/** History as a list beside the selected transcript: scan left, act right. */
+/** The logbook: a list beside the selected transcript. Scan left, act right. */
 export function HistoryPage({
   history,
   historyLimit,
   keepHistory,
-  focusSearch,
-  onSearchFocused,
   onClear,
   view,
   onViewChange,
@@ -75,8 +76,6 @@ export function HistoryPage({
   history: TranscriptRecord[];
   historyLimit: number;
   keepHistory: boolean;
-  focusSearch?: boolean;
-  onSearchFocused?: () => void;
   onClear: () => void;
   onExportSelection: (ids: string[], format: ExportFormat) => Promise<boolean>;
   onDeleteSelection: (ids: string[]) => Promise<boolean>;
@@ -85,16 +84,6 @@ export function HistoryPage({
   onViewChange: Dispatch<SetStateAction<HistoryViewState>>;
   onOpenSettings?: () => void;
 }) {
-  useEffect(() => {
-    if (!focusSearch) return;
-    const frame = requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLInputElement>("[data-history-search]")
-        ?.focus();
-      onSearchFocused?.();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [focusSearch, onSearchFocused]);
   const { filters, sort } = view;
   const deferredFilters = useDeferredValue(filters);
   const [confirm, setConfirm] = useState(false);
@@ -184,9 +173,7 @@ export function HistoryPage({
   if (!history.length)
     return (
       <EmptyState icon={Clock3} title="No transcripts yet">
-        {keepHistory
-          ? "Your dictations and imported files will appear here."
-          : "Saving history is off, so only this session’s results appear here."}
+        {!keepHistory && "Saving is off; only this session shows here."}
       </EmptyState>
     );
 
@@ -198,8 +185,7 @@ export function HistoryPage({
             <label className="search-box">
               <Search aria-hidden="true" />
               <input
-                aria-label="Search transcript history"
-                data-history-search
+                aria-label="Search Logbook"
                 placeholder="Search"
                 value={filters.query}
                 onChange={(e) => setFilters({ query: e.target.value })}
@@ -252,7 +238,7 @@ export function HistoryPage({
                 setFilters({ ...EMPTY_HISTORY_FILTERS, query: filters.query })
               }
             >
-              Older filters are active — show everything
+              Clear hidden filters
             </button>
           )}
         </div>
@@ -396,28 +382,25 @@ export function HistoryPage({
             <HistorySearchMatches record={open} query={deferredFilters.query} />
           </>
         ) : (
-          <EmptyState icon={Search} title="Nothing selected">
-            Pick a transcript on the left.
-          </EmptyState>
+          <EmptyState icon={Search} title="Nothing selected" />
         )}
       </section>
       {confirm && (
         <ConfirmDialog
-          title="Clear your history?"
-          confirmLabel="Clear history"
+          title="Clear the Logbook?"
+          confirmLabel="Clear all"
           onClose={() => setConfirm(false)}
           onConfirm={onClear}
         >
           <p>
-            This permanently removes {history.length} transcripts and their
-            corrections from this device. Export anything you want to keep
-            first.
+            Removes {transcripts(history.length)} for good. Export anything you
+            want to keep first.
           </p>
         </ConfirmDialog>
       )}
       {confirmSelection && (
         <ConfirmDialog
-          title={`Delete ${confirmSelection.length} transcripts?`}
+          title={`Delete ${transcripts(confirmSelection.length)}?`}
           confirmLabel={`Delete ${confirmSelection.length}`}
           onClose={() => setConfirmSelection(null)}
           onConfirm={() => {
@@ -431,10 +414,7 @@ export function HistoryPage({
               .finally(() => setBatchBusy(false));
           }}
         >
-          <p>
-            They disappear right away; you have 30 seconds to undo before they
-            are removed from this device.
-          </p>
+          <p>You can undo for 30 seconds.</p>
         </ConfirmDialog>
       )}
     </div>

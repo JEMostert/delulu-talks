@@ -60,7 +60,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
     ) {
       return Promise.reject(
         new Error(
-          `All ${MAX_HINT_WORDS} words are in use. Turn off a word pack or remove a word in Personalization first.`,
+          `All ${MAX_HINT_WORDS} words are in use. Turn off a word pack or remove a word in Lingo first.`,
         ),
       );
     }
@@ -148,7 +148,7 @@ export function createTranscriptCommands(w: TranscriptWorkspace) {
       await bridge.clearHistory();
       clearCorrectionDrafts();
       w.setHistory([]);
-    }, "History cleared");
+    }, "Logbook cleared");
   };
   return { actions, onClearHistory };
 }

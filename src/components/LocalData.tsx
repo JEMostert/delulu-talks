@@ -37,27 +37,22 @@ export function LocalData() {
         </div>
         <button
           className="tool-button"
+          aria-label="Refresh storage"
           disabled={busy || !window.delulu}
           onClick={() => void refresh()}
         >
           <RefreshCw className={busy ? "spin" : ""} />
-          {busy ? "Scanning…" : "Refresh local data"}
+          {busy ? "Scanning…" : "Refresh"}
         </button>
       </div>
       {!window.delulu && (
         <p className="caption">Open the desktop app to view storage.</p>
       )}
-      {error && <Alert>{error} Use Refresh local data to try again.</Alert>}
+      {error && <Alert>{error}</Alert>}
       {data && (
         <>
           <p className="caption break-all mt-4">
             App data: {data.dataDirectory}
-          </p>
-          <p className="caption">
-            Checked {new Date(data.checkedAt).toLocaleString()}. Sizes are
-            logical file bytes, not disk allocation. Links are excluded to avoid
-            counting shared model blobs twice or scanning outside the app. Files
-            may change during a scan.
           </p>
           {data.categories.map((category) => (
             <section
@@ -67,7 +62,6 @@ export function LocalData() {
             >
               <div className="group-heading">
                 <h4>{category.label}</h4>
-                <p>{category.description}</p>
               </div>
               <ul className="space-y-3 px-5 py-4">
                 {category.locations.map((location) => (
@@ -90,11 +84,6 @@ export function LocalData() {
               </ul>
             </section>
           ))}
-          <p className="caption">
-            This overview covers app-managed data at the paths above. Other app
-            files, external backups, exports and imported audio are not
-            included. No data is removed here.
-          </p>
         </>
       )}
     </section>

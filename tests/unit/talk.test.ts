@@ -60,13 +60,11 @@ test("legacy conversational mode is Lightweight", () => {
   expect(normalizeHelperMode(undefined)).toBe("off");
 });
 
-test("the Talk line follows the loop and explains why it is off", () => {
-  expect(talkLine(status(), true)).toBe(
-    "Speak to your coding agents hands-free",
-  );
-  expect(talkLine(status(), false)).toBe("Set up speech in Models first");
+test("the Sonar line follows the loop and explains why it is off", () => {
+  expect(talkLine(status(), true)).toBe("Talk to your agents hands-free");
+  expect(talkLine(status(), false)).toBe("Set up speech in Engines first");
   expect(talkLine(status({ needsDownload: true }), true)).toBe(
-    "The helper needs a one-time download",
+    "Pilot needs a one-time download",
   );
   expect(talkLine(status({ on: true, phase: "thinking" }), true)).toBe(
     "Thinking…",
@@ -85,7 +83,7 @@ test("the Talk line follows the loop and explains why it is off", () => {
   ).toBe("Microphone unavailable");
 });
 
-test("the helper line reports its state for the selected mode", () => {
+test("the Pilot line reports its state for the selected mode", () => {
   const helper = (state: TalkStatus["helper"]["state"], message = "") =>
     status({ helper: { mode: "lightweight", state, message } });
   expect(helperLine(status(), "off")).toBe(

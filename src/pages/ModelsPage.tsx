@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Check } from "lucide-react";
 import { Tabs } from "../components/ui";
 import { RuntimeSetupSnapshot } from "../components/RuntimeSetupSnapshot";
@@ -14,7 +14,7 @@ import {
   type RewriteSetupProps,
 } from "../components/models/RewriteSetup";
 
-const MODEL_TABS = [
+const ENGINE_TABS = [
   ["speech", "Speech"],
   ["rewrite", "Rewriting"],
   ["details", "Runtime & storage"],
@@ -22,30 +22,19 @@ const MODEL_TABS = [
 
 type Props = SpeechSetupProps &
   RewriteSetupProps & {
-    focusTarget?: "decode" | "diagnostics" | null;
-    onTargetHandled?: () => void;
     onDone?: () => void;
   };
+
+/** Engines: set up, load and repair the speech and rewriting models. */
 export function ModelsPage(props: Props) {
-  const [tab, setTab] = useState<(typeof MODEL_TABS)[number][0]>("speech");
-  const [, setSnapshotPending] = useState(false);
-  useEffect(() => {
-    if (props.focusTarget) setTab("details");
-  }, [props.focusTarget]);
-  useEffect(() => {
-    if (tab !== "details" || !props.focusTarget) return;
-    const target = document.getElementById(`models-${props.focusTarget}`);
-    const disclosure = target?.closest("details");
-    if (disclosure) disclosure.open = true;
-    target?.focus();
-    target?.scrollIntoView({ block: "start" });
-    props.onTargetHandled?.();
-  }, [tab, props.focusTarget, props.onTargetHandled]);
+  const [tab, setTab] = useState<(typeof ENGINE_TABS)[number][0]>("speech");
+  // The snapshot probes interpreters, so it only runs once someone looks.
+  const [runtimeOpen, setRuntimeOpen] = useState(false);
   return (
     <div className="content-stack">
       <Tabs
-        label="Model settings"
-        tabs={MODEL_TABS}
+        label="Engine sections"
+        tabs={ENGINE_TABS}
         value={tab}
         onChange={setTab}
       />
@@ -57,7 +46,7 @@ export function ModelsPage(props: Props) {
               <div className="setup-finished">
                 <span className="flex items-center gap-2">
                   <Check className="text-success" />
-                  Ready to dictate — press your shortcut anywhere.
+                  Ready. Press your shortcut anywhere.
                 </span>
                 <button className="primary-button" onClick={props.onDone}>
                   Done
@@ -69,37 +58,26 @@ export function ModelsPage(props: Props) {
       {tab === "rewrite" && <RewriteSetup {...props} />}
       {tab === "details" && (
         <>
-          <section className="model-section">
-            <h3>Runtime</h3>
-            <RuntimeSetupSnapshot
-              pythonCommand={props.settings.pythonCommand}
-              magicModel={props.settings.magicModel}
-              busy={props.busy}
-              onPending={setSnapshotPending}
-            />
-          </section>
-          <section className="model-section">
-            <h3>Storage</h3>
-            <ModelCachePanel
-              status={props.status}
-              magicStatus={props.magicStatus}
-              busy={props.busy || props.saving}
-            />
-          </section>
-          <section className="model-section">
-            <h3>Speech options</h3>
-            <DecodeControls {...props} />
-          </section>
-          <section className="model-section">
-            <h3>Device diagnostics</h3>
-            <div
-              id="models-diagnostics"
-              tabIndex={-1}
-              aria-label="Model device diagnostics"
-            >
-              <Diagnostics refreshButtonId="runtime-diagnostics-refresh" />
-            </div>
-          </section>
+          <Diagnostics />
+          <ModelCachePanel
+            status={props.status}
+            magicStatus={props.magicStatus}
+            busy={props.busy || props.saving}
+          />
+          <DecodeControls {...props} />
+          <details
+            className="disclosure"
+            onToggle={(event) => setRuntimeOpen(event.currentTarget.open)}
+          >
+            <summary>Runtime details</summary>
+            {runtimeOpen && (
+              <RuntimeSetupSnapshot
+                pythonCommand={props.settings.pythonCommand}
+                magicModel={props.settings.magicModel}
+                busy={props.busy}
+              />
+            )}
+          </details>
         </>
       )}
     </div>

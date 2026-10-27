@@ -68,9 +68,6 @@ export function ImportQueue() {
   const finished = queue.jobs.some((job) =>
     ["completed", "failed", "cancelled"].includes(job.state),
   );
-  const active = queue.jobs.some(
-    (job) => job.state === "running" || job.state === "cancelling",
-  );
 
   // The drop zone above already says what to do; an empty queue adds nothing.
   if (ready && !queue.jobs.length && !error) return null;
@@ -82,10 +79,10 @@ export function ImportQueue() {
     >
       <div className="section-heading">
         <div>
-          <h3>Import queue</h3>
+          <h3>Queue</h3>
           <p>
-            {queue.jobs.length} of {IMPORT_QUEUE_LIMIT} files ·{" "}
-            {queue.paused ? "paused" : "one at a time"}
+            {queue.jobs.length} of {IMPORT_QUEUE_LIMIT}
+            {queue.paused && " · paused"}
           </p>
         </div>
       </div>
@@ -93,13 +90,14 @@ export function ImportQueue() {
         <div className="panel-actions">
           <button
             className="secondary-button compact"
+            aria-label={queue.paused ? "Resume queue" : "Pause queue"}
             disabled={disabled}
             onClick={() =>
               void command(() => bridge.pauseImportQueue(!queue.paused))
             }
           >
-            {queue.paused ? <Play /> : <Pause />}{" "}
-            {queue.paused ? "Resume queue" : "Pause queue"}
+            {queue.paused ? <Play /> : <Pause />}
+            {queue.paused ? "Resume" : "Pause"}
           </button>
           <button
             className="tool-button compact"
@@ -114,24 +112,10 @@ export function ImportQueue() {
               disabled={pending}
               onClick={() => void command(() => bridge.getImportQueue())}
             >
-              <RotateCcw /> Reload queue
+              <RotateCcw /> Reload
             </button>
           )}
         </div>
-      )}
-      {!!queue.jobs.length && (
-        <details className="disclosure">
-          <summary>How the queue works</summary>
-          <p className="caption">
-            {queue.paused
-              ? active
-                ? "Queue paused; current work finishes before the next job can start."
-                : "Queue paused. Resume to process queued files one at a time."
-              : "Files are processed one at a time. Pausing lets current work finish."}{" "}
-            Cancellation stops media conversion where possible. Native inference
-            may need to settle; cancelled results are discarded.
-          </p>
-        </details>
       )}
       {error && (
         <p className="field-error break-words" role="alert">

@@ -93,7 +93,7 @@ async fn bridge(patch: impl FnOnce(&mut delulu_voice::VoiceBridgeSnapshot)) -> S
     *handlers.speak.lock() = Some(Arc::new(|request: VoiceSpeakRequest, wait| {
         Box::pin(async move {
             if request.text.contains("fail") {
-                return Err(DomainError::failed("Voice is turned off in Delulu Talks.").into());
+                return Err(DomainError::failed("Siren is turned off in Delulu Talks.").into());
             }
             let response_id = request.response_id.unwrap_or_else(|| "rsp_auto".into());
             Ok(if wait {
@@ -147,7 +147,7 @@ async fn mcp_server_initializes_from_the_bridge_and_exposes_the_voice_tools() {
         json!({
             "protocolVersion": "2025-03-26",
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "delulu-voice", "title": "Delulu Voice", "version": "0.17.0" },
+            "serverInfo": { "name": "delulu-voice", "title": "Delulu Siren", "version": "0.17.0" },
             "instructions": format!("{VOICE_AGENT_INSTRUCTIONS}\n\n{INBOX_INSTRUCTIONS}"),
         })
     );
@@ -193,7 +193,7 @@ async fn mcp_server_initializes_from_the_bridge_and_exposes_the_voice_tools() {
         ]
     );
     let refused = server.tool("speak", json!({ "text": "this will fail" })).await;
-    assert_eq!(refused["content"], json!([{ "type": "text", "text": "Voice is turned off in Delulu Talks." }]));
+    assert_eq!(refused["content"], json!([{ "type": "text", "text": "Siren is turned off in Delulu Talks." }]));
     assert_eq!(refused["isError"], true);
     let stopped = server.tool("stop_speaking", json!({})).await;
     assert_eq!(stopped["content"][0]["text"], "Stopped speaking and cleared the queue.");
@@ -201,7 +201,7 @@ async fn mcp_server_initializes_from_the_bridge_and_exposes_the_voice_tools() {
     let status = server.request("tools/call", json!({ "name": "voice_status" })).await;
     assert_eq!(
         status["result"]["content"][0]["text"],
-        "Voice is on and Chatterbox Turbo is ready. Speaking now. 1 message queued. Speaking for Claude Code"
+        "Siren is on and Chatterbox Turbo is ready. Speaking now. 1 message queued. Speaking for Claude Code"
     );
     b.bridge.stop().await;
 }
@@ -239,7 +239,7 @@ async fn mcp_server_still_initializes_when_delulu_talks_is_not_running() {
     let speak = server.tool("speak", json!({ "text": "Hi" })).await;
     assert_eq!(
         speak["content"][0]["text"],
-        "Delulu Talks isn't running, or agent voice is turned off in its Voice page."
+        "Delulu Talks isn't running, or Let coding agents speak is off on its Siren page."
     );
     assert_eq!(speak["isError"], true);
 }
@@ -312,7 +312,7 @@ async fn cli_says_reads_stdin_stops_and_reports_status() {
     let stop = run(&["stop"], &file, "").await;
     assert_eq!((stop.code, stop.stdout.as_str()), (0, "Stopped speaking.\n"));
     assert_eq!(b.handlers.stops.load(Ordering::SeqCst), 1);
-    assert_eq!(run(&["status"], &file, "").await.stdout, "Voice is on and Chatterbox Turbo is ready.\n");
+    assert_eq!(run(&["status"], &file, "").await.stdout, "Siren is on and Chatterbox Turbo is ready.\n");
     let help = run(&["--help"], &file, "").await.stdout;
     assert!(help.contains("Usage:") && help.contains("agent next --agent ID"));
     assert!(!help.contains("listen start"));
@@ -331,7 +331,7 @@ async fn cli_explains_when_delulu_talks_is_not_running() {
         CliOutput {
             code: 1,
             stdout: String::new(),
-            stderr: "Delulu Talks isn't running, or agent voice is turned off in its Voice page.\n".into(),
+            stderr: "Delulu Talks isn't running, or Let coding agents speak is off on its Siren page.\n".into(),
         }
     );
 }

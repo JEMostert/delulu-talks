@@ -3,9 +3,9 @@ name: delulu-voice
 description: Take the user's spoken tasks and talk back through Delulu Talks. Use when the user asks to talk by voice, to "listen", to work hands-free, or to be briefed out loud; covers registering with Delulu's agent inbox, background waiting, task updates, speaking and stopping.
 ---
 
-# Delulu Voice
+# Delulu Sonar and Siren
 
-Delulu Talks owns the microphone. Its **Talk** loop hears the user and routes their spoken words to an agent through one **inbox**. You never listen yourself: you register, keep a waiter running, and report what you did. Run everything through the CLI:
+Delulu Talks owns the microphone. Its **Sonar** loop hears the user and routes their spoken words to an agent through one **inbox**. You never listen yourself: you register, keep a waiter running, and report what you did. Run everything through the CLI:
 
 ```
 DV={{SCRIPT}}
@@ -68,17 +68,17 @@ Every `agent`, `task` and `talk` command prints one JSON object on stdout. Error
 ```
 $DV task status --task task_…   # one task
 $DV task status                  # {"tasks":[…]}: open and recently finished
-$DV talk status                  # Talk: on, phase, helper, agents (listening or away, open tasks), last turns
+$DV talk status                  # Sonar: on, phase, Pilot, agents (listening or away, open tasks), last turns
 ```
 
-`coordinator status` still works as an alias of `talk status`. If Talk is off (`"on": false`), nothing routes speech yet and your waiter just times out; do not try to turn it on yourself.
+`coordinator status` still works as an alias of `talk status`. If Sonar is off (`"on": false`), nothing routes speech yet and your waiter just times out; do not try to turn it on yourself.
 
 ## Speaking
 
 - `$DV say "…"` (`--response ID` names the line, `--wait` blocks until it was spoken). Use it for real answers and questions to the user: what they asked, a decision you need, something important that broke. One to three short sentences, like a colleague. Never read code, diffs, logs or long lists aloud; name the file or the outcome instead.
-- While Talk is on, your speech queues behind Delulu's own lines and never cuts anyone off (`--interrupt` is ignored).
+- While Sonar is on, your speech queues behind Delulu's own lines and never cuts anyone off (`--interrupt` is ignored).
 - Expressive tags, sparingly: `[laugh] [chuckle] [sigh] [gasp] [cough] [clear-throat] [sniff] [groan] [shush] [pause] [long-pause]`, and spans `<whisper>…</whisper> <happy>… <angry>… <surprised>… <scared>… <sarcastic>… <dramatic>… <narration>… <crying>… <slow>… <fast>… <soft>… <loud>… <emphasis>…`.
-- `$DV stop` stops speech only. It never stops Talk or your work.
+- `$DV stop` stops speech only. It never stops Sonar or your work.
 
 ## Limits and MCP
 
@@ -87,7 +87,7 @@ $DV talk status                  # Talk: on, phase, helper, agents (listening or
 
 ## Failures
 
-- `Delulu Talks isn't running…`: ask the user to open Delulu and turn on agent voice on its Voice page.
+- `Delulu Talks isn't running…`: ask the user to open Delulu and turn on **Let coding agents speak** on its Siren page.
 - Exit 4, or `Unknown agent` from `agent ack` / `task update`: your id is gone (unregistered or replaced). Register again; never reuse the old id.
 - `listen …` commands are gone; they now only print that `agent register` / `agent next` replaced them.
 - Any other error: tell the user in text once; do not retry in a loop.

@@ -1,86 +1,45 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { LoaderCircle, Play, Square } from "lucide-react";
 import { Alert } from "../ui";
 import {
-  VOICE_EMOTION_STYLES,
-  VOICE_EVENT_TAGS,
   VOICE_LIMITS,
-  VOICE_PAUSES,
-  VOICE_PROSODY_STYLES,
   type VoiceEngineId,
   type VoiceSpeakResult,
 } from "../../voice";
 
-export const VOICE_SAMPLE =
+const SAMPLE =
   "Done. All 212 tests pass [chuckle], and the cache fix is merged. <whisper>Between us, that refactor was bigger than it looked.</whisper>";
 
-const GROUPS = [
-  { label: "Sounds", kind: "inline", tags: VOICE_EVENT_TAGS },
-  { label: "Pauses", kind: "inline", tags: Object.keys(VOICE_PAUSES) },
-  { label: "Styles", kind: "wrap", tags: VOICE_EMOTION_STYLES },
-  { label: "Pacing", kind: "wrap", tags: VOICE_PROSODY_STYLES },
-] as const;
-
-/** What Kokoro cannot perform; whisper is approximated by speaking softly. */
-function skippedBy(engine: VoiceEngineId, group: string, tag: string) {
-  if (engine !== "kokoro") return false;
-  return group === "Sounds" || (group === "Styles" && tag !== "whisper");
+/** What happened to the last try, in one line. */
+function resultLine(result: VoiceSpeakResult): string {
+  const parts = [
+    `${result.outcome === "stopped" ? "Stopped" : "Spoken"} · ${(result.durationMs / 1000).toFixed(1)} s`,
+  ];
+  if (result.unsupported.length)
+    parts.push(`skipped ${result.unsupported.join(", ")}`);
+  return parts.join(" · ");
 }
 
-const seconds = (ms: number) => (ms / 1000).toFixed(1);
-
-/** Type or paste markup, insert tags from chips, and hear the result. */
+/** Type or paste text with tags and hear it. */
 export function VoiceTryIt({
   engine,
-  available,
   unavailableReason,
   speaking,
   onSpeak,
   onStop,
 }: {
   engine: VoiceEngineId;
-  available: boolean;
+  /** Why Speak is disabled; empty when speech can run. */
   unavailableReason: string;
   speaking: boolean;
   onSpeak: (text: string) => Promise<VoiceSpeakResult>;
   onStop: () => void;
 }) {
-  const [text, setText] = useState(VOICE_SAMPLE);
+  const [text, setText] = useState(SAMPLE);
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<VoiceSpeakResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const field = useRef<HTMLTextAreaElement>(null);
-
-  const insert = (kind: "inline" | "wrap", tag: string) => {
-    const element = field.current;
-    const start = element?.selectionStart ?? text.length;
-    const end = element?.selectionEnd ?? text.length;
-    const before = text.slice(0, start);
-    const selected = text.slice(start, end);
-    const after = text.slice(end);
-    let insertion: string;
-    let cursorStart: number;
-    let cursorEnd: number;
-    if (kind === "inline") {
-      const lead = before && !/\s$/.test(before) ? " " : "";
-      const trail = after && !/^[\s.,!?;:]/.test(after) ? " " : "";
-      insertion = `${lead}[${tag}]${trail}`;
-      cursorStart = cursorEnd = start + insertion.length;
-    } else {
-      insertion = `<${tag}>${selected}</${tag}>`;
-      cursorStart = start + tag.length + 2;
-      cursorEnd = cursorStart + selected.length;
-    }
-    const next = (before + insertion + after).slice(
-      0,
-      VOICE_LIMITS.requestCharacters,
-    );
-    setText(next);
-    requestAnimationFrame(() => {
-      element?.focus();
-      element?.setSelectionRange(cursorStart, cursorEnd);
-    });
-  };
+  const available = !unavailableReason;
 
   const speak = async () => {
     if (!text.trim()) return;
@@ -96,16 +55,27 @@ export function VoiceTryIt({
     }
   };
 
+  const note = !available
+    ? unavailableReason
+    : result && result.outcome !== "failed"
+      ? resultLine(result)
+      : engine === "kokoro"
+        ? "Tags like [laugh] or <whisper>…</whisper> come alive on Large."
+        : "Tags like [laugh] or <whisper>…</whisper> come alive here.";
+
   return (
-    <div className="voice-try">
-      <label className="field voice-field">
-        <span className="sr-only">Text to speak</span>
+    <section className="pref-group">
+      <h3>Try it</h3>
+      <div className="pref-list siren-try">
+        <label className="sr-only" htmlFor="siren-try-text">
+          Text to speak
+        </label>
         <textarea
-          ref={field}
+          id="siren-try-text"
           value={text}
           maxLength={VOICE_LIMITS.requestCharacters}
           spellCheck
-          rows={4}
+          rows={3}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -114,107 +84,40 @@ export function VoiceTryIt({
             }
           }}
         />
-      </label>
-      <div className="voice-tag-groups" aria-label="Insert speech tags">
-        {GROUPS.map((group) => (
-          <div className="voice-tag-group" key={group.label}>
-            <span className="eyebrow">{group.label}</span>
-            <div className="voice-chips">
-              {group.tags.map((tag) => {
-                const skipped = skippedBy(engine, group.label, tag);
-                const label = group.kind === "inline" ? `[${tag}]` : `<${tag}>`;
-                return (
-                  <button
-                    key={tag}
-                    type="button"
-                    className={`voice-chip ${skipped ? "skipped" : ""}`}
-                    title={
-                      skipped
-                        ? `Kokoro skips ${label}; Chatterbox Turbo performs it`
-                        : group.kind === "wrap"
-                          ? `Wrap the selection in ${label}`
-                          : `Insert ${label}`
-                    }
-                    onClick={() => insert(group.kind, tag)}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-      {engine === "kokoro" && (
-        <p className="caption">
-          Kokoro performs pauses and pacing. It skips sounds and emotions, and
-          approximates a whisper by speaking softly. Switch to Chatterbox Turbo
-          to hear them.
-        </p>
-      )}
-      <div className="voice-try-actions">
-        <button
-          className="primary-button"
-          disabled={!available || pending || !text.trim()}
-          onClick={() => void speak()}
-          aria-keyshortcuts="Control+Enter"
-          title={available ? "Speak (Ctrl+Enter)" : unavailableReason}
-        >
-          {pending ? <LoaderCircle className="spin" /> : <Play />}
-          {pending ? "Speaking…" : "Speak"}
-        </button>
-        <button
-          className="secondary-button"
-          disabled={!speaking && !pending}
-          onClick={onStop}
-        >
-          <Square /> Stop
-        </button>
-        <span className="caption voice-count" aria-live="off">
-          {text.length.toLocaleString()} /{" "}
-          {VOICE_LIMITS.requestCharacters.toLocaleString()}
-        </span>
-      </div>
-      {!available && <p className="caption">{unavailableReason}</p>}
-      {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
-      {result && (
-        <div className="voice-result" aria-live="polite">
-          {result.outcome === "failed" ? (
-            <Alert>{result.error ?? "Speech failed."}</Alert>
-          ) : (
-            <p className="caption">
-              {result.outcome === "stopped" ? "Stopped" : "Spoken"} ·{" "}
-              {seconds(result.durationMs)} s
-            </p>
-          )}
-          {result.warnings.length > 0 && (
-            <Alert tone="warning">
-              <ul className="voice-notes">
-                {result.warnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            </Alert>
-          )}
-          {result.unsupported.length > 0 && (
-            <p className="caption">
-              Skipped by this voice: {result.unsupported.join(", ")}
-            </p>
-          )}
-          {result.timestamps.length > 0 && (
-            <ol className="voice-timestamps" aria-label="Spoken timing">
-              {result.timestamps.map((stamp, index) => (
-                <li key={index}>
-                  <span className="voice-time">
-                    {seconds(stamp.startMs)}–{seconds(stamp.endMs)} s
-                  </span>
-                  <span>{stamp.text}</span>
-                </li>
-              ))}
-            </ol>
-          )}
+        <div className="siren-try-actions">
+          <button
+            className="primary-button"
+            disabled={!available || pending || !text.trim()}
+            onClick={() => void speak()}
+            aria-keyshortcuts="Control+Enter"
+            title={available ? "Speak (Ctrl+Enter)" : unavailableReason}
+          >
+            {pending ? <LoaderCircle className="spin" /> : <Play />}
+            {pending ? "Speaking…" : "Speak"}
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!speaking && !pending}
+            onClick={onStop}
+          >
+            <Square /> Stop
+          </button>
+          <p className="caption" aria-live="polite">
+            {note}
+          </p>
         </div>
-      )}
-    </div>
+        {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
+        {result?.outcome === "failed" && (
+          <Alert onDismiss={() => setResult(null)}>
+            {result.error ?? "Speech failed."}
+          </Alert>
+        )}
+        {result && result.warnings.length > 0 && (
+          <Alert tone="warning" onDismiss={() => setResult(null)}>
+            {result.warnings.join(" ")}
+          </Alert>
+        )}
+      </div>
+    </section>
   );
 }

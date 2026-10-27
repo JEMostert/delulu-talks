@@ -96,21 +96,21 @@ function SetupLogDialog({
       }
     >
       <p className="caption">
-        The latest setup attempt is kept in memory and resets on the next setup
-        or app restart. Refresh to get a new snapshot. Copying is manual and may
-        include local paths and technical output.
+        The latest setup attempt. It may include local paths.
       </p>
       {loading && <p role="status">Loading setup log…</p>}
       {error && <p role="alert">{error}</p>}
-      {copied && <p role="status">Setup log copied.</p>}
+      <p role="status" className="sr-only">
+        {copied ? "Setup log copied." : ""}
+      </p>
       {snapshot && (
         <>
-          <p className="caption">
-            Local limits: {snapshot.maxEntries} entries and{" "}
-            {snapshot.maxCharacters} characters.
-            {snapshot.truncated &&
-              " This log was truncated to stay within these limits."}
-          </p>
+          {snapshot.truncated && (
+            <p className="caption">
+              Truncated to {snapshot.maxEntries} entries and{" "}
+              {snapshot.maxCharacters} characters.
+            </p>
+          )}
           <textarea
             aria-label="Setup log snapshot"
             readOnly

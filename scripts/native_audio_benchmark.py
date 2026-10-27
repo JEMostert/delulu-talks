@@ -56,7 +56,7 @@ def bind_worker(args):
     sys.path.insert(0, str(ROOT / "backend/python"))
     import transcription_engine as engine
     worker = engine.Worker()
-    expected = {"mlx": "mlx", "cuda-windows": "cuda", "cuda-linux": "cuda"}[args.backend]
+    expected = {"mlx": "mlx", "cuda-linux": "cuda"}[args.backend]
     if worker.speech_backend != expected:
         raise ValueError("Selected runner must execute on its native platform; cross-platform emulation is not supported")
     if args.backend == "mlx":
@@ -142,7 +142,7 @@ def run(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute-native", action="store_true", help="Required explicit opt-in; loads cached weights and performs inference")
-    parser.add_argument("--backend", choices=("mlx", "cuda-linux", "cuda-windows"), required=True)
+    parser.add_argument("--backend", choices=("mlx", "cuda-linux"), required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--provenance", type=Path, required=True)
     parser.add_argument("--cache-dir", type=Path, required=True)

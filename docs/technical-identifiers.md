@@ -13,5 +13,3 @@ Commands have an explicit start and end:
 `einde naam` also ends a command. Ordinary prose outside a command is preserved exactly. Case styles use whitespace-separated words, lowercasing words before applying the selected convention; acronym guesses are intentionally absent. Literal spelling accepts individual letters/digits, English/Dutch digit names, underscores, and explicit `capital`/`hoofdletter` letter instructions. Unrecognized words, invalid leading digits, punctuation, incomplete commands and oversized identifiers remain unchanged rather than guessing.
 
 The pure `parseTechnicalIdentifier` and `renderIdentifierCommands` exports in `src/technicalIdentifiers.ts` back the Identifier dialog and personalization technical grammar. Recognition remains R2T2; this parser never runs code, shell commands, models or automatic rewriting. The Identifier dialog provides manual preview/copy. Native accuracy and comparison with vocabulary/rewrite pipelines remain separate evaluation work.
-
-UNVERIFIED — unit/browser tests, builds, typechecks, formatting and native inference were skipped per user instruction.

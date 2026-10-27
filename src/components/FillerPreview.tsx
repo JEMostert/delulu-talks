@@ -20,7 +20,7 @@ export function FillerPreview({
   const oversized = source.length > 50_000;
   return (
     <Modal
-      title="Preview filler removal"
+      title="Remove filler words"
       onClose={onClose}
       footer={
         <>
@@ -39,36 +39,27 @@ export function FillerPreview({
               if (!stale && !oversized) onDraft(source, preview.text);
             }}
           >
-            Open as correction draft
+            Edit as correction
           </button>
         </>
       }
     >
-      <p>
-        Experimental Dutch/English hesitation-word preview. These words can
-        carry meaning; compare both versions before choosing. Original
-        recognition stays available. This opens a draft, which you must save
-        separately.
-      </p>
+      <p>Some of these words carry meaning; compare before you save.</p>
       {stale && (
         <div role="alert">
-          <p className="field-error">
-            The transcript changed. Refresh before opening this result as a
-            draft.
-          </p>
+          <p className="field-error">The transcript changed.</p>
           <button className="secondary-button" onClick={() => setSource(text)}>
-            Refresh source
+            Refresh
           </button>
         </div>
       )}
       {oversized && (
         <p className="field-error">
-          This preview supports up to 50,000 characters. No shortened result can
-          be applied.
+          Too long for this preview (50,000 characters at most).
         </p>
       )}
       <fieldset className="flex flex-wrap gap-3.5">
-        <legend>Words to evaluate</legend>
+        <legend>Words</legend>
         {fillerCandidates.map((word) => (
           <label key={word} className="flex items-center gap-2">
             <input
@@ -110,7 +101,7 @@ export function FillerPreview({
           ? [...preview.counts]
               .map(([word, count]) => `${word}: ${count}`)
               .join(" · ")
-          : "No selected hesitation words matched."}
+          : "None found."}
       </p>
     </Modal>
   );

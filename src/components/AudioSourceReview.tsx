@@ -84,7 +84,7 @@ export function AudioSourceReview({ path, name, onClose }: Props) {
       stopDrawing();
       if (!disposed)
         setPlaybackError(
-          "This browser could not play the source audio or its codec. Transcription support is separate; you can still try transcribing this file.",
+          "This format can’t play here, but it can still be transcribed.",
         );
     };
     const onMotionChange = () => {
@@ -137,13 +137,10 @@ export function AudioSourceReview({ path, name, onClose }: Props) {
   return (
     <section
       className="rounded-panel border border-line bg-surface p-4 flex flex-col gap-3"
-      aria-label={`Review source audio: ${name}`}
+      aria-label={`Listen to ${name}`}
     >
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h3>Review linked audio</h3>
-          <p className="text-sm break-all">{name}</p>
-        </div>
+        <h3 className="min-w-0 break-all">{name}</h3>
         <button
           className="secondary-button"
           onClick={() => {
@@ -154,7 +151,7 @@ export function AudioSourceReview({ path, name, onClose }: Props) {
           Close
         </button>
       </div>
-      {loading && <p role="status">Loading source audio…</p>}
+      {loading && <p role="status">Loading…</p>}
       {readError && (
         <p role="alert" className="field-error">
           Could not read the source audio: {readError}
@@ -182,14 +179,9 @@ export function AudioSourceReview({ path, name, onClose }: Props) {
           aria-hidden="true"
         />
       )}
-      <p className="text-xs text-muted">
-        {reducedMotion
-          ? "Waveform animation is disabled by your reduced motion preference."
-          : (waveformError ??
-            "The live waveform shows playback activity when you press Play.")}{" "}
-        This is a visual playback aid; it does not show speech timestamps or
-        speaker labels.
-      </p>
+      {waveformError && !reducedMotion && (
+        <p className="text-xs text-muted">{waveformError}</p>
+      )}
     </section>
   );
 }

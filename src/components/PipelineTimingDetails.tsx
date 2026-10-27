@@ -26,10 +26,6 @@ export function PipelineTimingDetails({
           ),
         )}
       </dl>
-      <p className="caption">
-        Stages can overlap, so they do not add up to total latency. Paste
-        dispatch does not confirm insertion in another app.
-      </p>
     </section>
   );
 }

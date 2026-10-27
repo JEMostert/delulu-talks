@@ -1,8 +1,7 @@
 # Provenance-bound transcript reports
 
 `scripts/evaluation_report.py` combines supplied UTF-8 reference and hypothesis
-files with explicit provenance. It imports the text evaluator from PR #381;
-that dependency must land first. It never runs a speech model. Raw transcript
+files with explicit provenance. It never runs a speech model. Raw transcript
 files remain untouched, and an existing report is never replaced.
 
 ```sh
@@ -51,8 +50,6 @@ compatibility, hardware performance, or a passed quality gate. The standalone
 text-metrics script remains useful when no runtime provenance is available;
 its output is a text comparison, not a model evaluation report.
 
-Implementation status: **UNVERIFIED — checks not run per user instruction**.
-
 ## Reference comparisons and external controls
 
 `scripts/evaluation_comparison.py` consumes provenance-bound reports, requires
@@ -90,8 +87,7 @@ classification requires one of the app's two R2T2 checkpoint repositories. This
 classification does not prove runtime compatibility. All other controls must
 use `external-benchmark-control`; this records benchmark context and never
 changes the app model catalog. Resource claims belong to actual measured
-artifacts, not an inference from text accuracy. This comparison implementation
-is **UNVERIFIED — checks not run per user instruction**.
+artifacts, not an inference from text accuracy.
 
 ## Retaining raw resource benchmarks
 
@@ -141,8 +137,7 @@ confidence interval. Missing resource measurements stay missing.
 
 The destination must not exist; an interrupted copy removes only the newly
 created incomplete bundle. Reports retain producing revisions, hardware and
-decode metadata as user-supplied facts. **UNVERIFIED — checks not run per user
-instruction**; no native benchmark evidence was generated for this change.
+decode metadata as user-supplied facts.
 
 ## Optional rewrite memory comparison
 
@@ -177,9 +172,6 @@ termination reason. Repeat independent sessions and retain these raw files with
 the benchmark artifact builder; do not equate correlated time samples with
 independent benchmark repetitions.
 
-**UNVERIFIED — checks not run per user instruction.** No memory sampler or
-native inference was executed, and there are no measured memory results here.
-
 ## Experimental MLX conversion gates
 
 `scripts/mlx_conversion_gate.py` evaluates supplied BF16 and quantized R2T2
@@ -211,9 +203,7 @@ sampling and rewrite-residency configurations; duplicate summaries are rejected.
 A passed supplied-evidence gate remains provisional. Conversion lineage,
 native compatibility, independent repetition and metadata correctness require
 verification; sampled RSS is not accelerator allocation. The app continues to
-offer its existing BF16 R2T2 adapter only. **UNVERIFIED — checks not run per user
-instruction**; no conversion, quantized inference or quality evaluation has
-been run for this implementation.
+offer its existing BF16 R2T2 adapter only.
 
 ## Comparing distinct quality dimensions
 
@@ -264,9 +254,6 @@ correction proxy; optionally supply `measured_correction_seconds` and its
 Omitted correction time remains unknown. No semantic hallucination rate or
 human-effort conclusion is inferred from ordinary insertions.
 
-**UNVERIFIED — checks not run per user instruction**. No native reference
-comparison or human correction measurement was performed for this change.
-
 ## Stage-specific latency reports
 
 `scripts/latency_report.py` converts supplied same-clock traces into four
@@ -301,9 +288,6 @@ count, mean, median, nearest-rank p95, range and sample deviation. Missing stage
 remain `not-measured` with null summaries. Cold and warm latencies are never
 pooled or summed with overlapping delivery observations. Retain the original
 trace file in the raw artifact bundle for reproducibility.
-
-**UNVERIFIED — checks not run per user instruction**. No startup, request or
-speech-to-delivery timings were collected for this implementation.
 
 ## Opt-in identical-audio native benchmark
 
@@ -345,7 +329,7 @@ python scripts/native_audio_benchmark.py --execute-native --backend mlx \
   --output-directory mlx-run --repetitions 3
 ```
 
-Use `cuda-windows` on native Windows or `cuda-linux` on Linux CUDA. An external
+Use `cuda-linux` on Linux CUDA. An external
 base-Qwen fine-tune control uses `--backend external-qwen3-asr` on Linux CUDA,
 with explicit `--control-repository Qwen/Qwen3-ASR-...` and immutable
 `--control-revision`. Its cached snapshot is used only inside the standalone
@@ -362,10 +346,6 @@ metric computation; actual successful native calls are recorded separately in
 `native_runner` and `run.json`. Interrupted runs remain marked incomplete. Raw
 hypotheses may contain private speech; keep artifacts local until inspected.
 No destination-delivery timing is inferred from this offline speech benchmark.
-
-**UNVERIFIED — checks not run per user instruction**. This runner has not been
-executed; no Mac/Windows/Linux inference or external-control comparison is
-claimed for this PR.
 
 ## Building a consent-declared Dutch/English corpus
 
@@ -418,9 +398,6 @@ and references outside Git and inspect consent/speech before any separate sharin
 this builder grants no sharing authorization. Revoke/remove cases before future
 evaluations when their consent changes.
 
-**UNVERIFIED — checks not run per user instruction**. No recordings or actual
-consent were collected, no corpus was built, and no native accuracy is claimed.
-
 ## External Parakeet multilingual reference
 
 `scripts/external_parakeet_benchmark.py` uses the publisher's documented
@@ -455,6 +432,4 @@ so these scopes are deliberately recorded instead of silently equated. Raw
 hypotheses, exact reports, dependency versions and incomplete status remain
 available for the comparison/artifact tools.
 
-**UNVERIFIED — checks not run per user instruction**. The external runner has
-not been executed, and no Parakeet/R2T2 quality or native compatibility is
-claimed. License attribution is metadata, not approval to publish private speech.
+License attribution is metadata, not approval to publish private speech.

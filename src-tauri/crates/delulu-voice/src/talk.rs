@@ -706,9 +706,9 @@ impl Talk {
         let session = listen.session.as_ref();
         let (phase, message) = match state.stage {
             Stage::Off if state.needs_download => {
-                (TalkPhase::Off, format!("The voice helper needs a one-time download ({DOWNLOAD_SIZE})"))
+                (TalkPhase::Off, format!("Pilot needs a one-time download ({DOWNLOAD_SIZE})"))
             }
-            Stage::Off => (TalkPhase::Off, "Talk is off".to_owned()),
+            Stage::Off => (TalkPhase::Off, "Sonar is off".to_owned()),
             Stage::Failed => (TalkPhase::Failed, state.message.clone()),
             Stage::Starting => (TalkPhase::Starting, state.message.clone()),
             Stage::Loading => (TalkPhase::Loading, state.message.clone()),
@@ -838,12 +838,12 @@ impl Talk {
                 Ok(self.status())
             }
             Ok(_) => {
-                self.inner.listening.stop_active("Talk stopped while starting");
+                self.inner.listening.stop_active("Sonar stopped while starting");
                 Ok(self.status())
             }
             Err(error) => {
                 if current {
-                    self.finish("Talk could not start", Some(error.message.clone())).await;
+                    self.finish("Sonar could not start", Some(error.message.clone())).await;
                 }
                 Err(error)
             }
@@ -900,7 +900,7 @@ impl Talk {
             {
                 let mut state = self.inner.state.lock();
                 state.helper.state = HelperState::Failed;
-                state.helper.message = "The voice helper is not available in this build.".into();
+                state.helper.message = "Pilot is not available in this build.".into();
             }
             self.publish();
             return Load::Failed;
@@ -918,7 +918,7 @@ impl Talk {
             }
             if !install.complete() && !download {
                 state.helper.state = HelperState::Missing;
-                state.helper.message = format!("The voice helper needs a one-time download ({DOWNLOAD_SIZE}).");
+                state.helper.message = format!("Pilot needs a one-time download ({DOWNLOAD_SIZE}).");
                 drop(state);
                 self.publish();
                 return Load::NeedsDownload;
@@ -928,10 +928,10 @@ impl Talk {
             if staged {
                 if install.complete() {
                     state.stage = Stage::Loading;
-                    state.message = "Loading the voice helper…".into();
+                    state.message = "Loading Pilot…".into();
                 } else {
                     state.stage = Stage::Downloading;
-                    state.message = format!("Downloading the voice helper ({DOWNLOAD_SIZE})…");
+                    state.message = format!("Downloading Pilot ({DOWNLOAD_SIZE})…");
                 }
             }
         }
@@ -1124,7 +1124,7 @@ impl Talk {
         });
         self.inner.signal.notify_one();
         self.publish();
-        receiver.await.map_err(|_| DomainError::failed("Talk closed before handling that turn"))
+        receiver.await.map_err(|_| DomainError::failed("Sonar closed before handling that turn"))
     }
 
     /* -------------------------------------------------------------- */
@@ -1258,7 +1258,7 @@ impl Talk {
                         }
                         log::warn!("the voice helper failed on a turn ({:?}); forwarding it", error.code);
                         self.helper_failed(
-                            "The helper failed on the last turn, so your words went to the agent unchanged.",
+                            "Pilot failed on the last turn, so your words went to the agent unchanged.",
                         );
                         let mut outcome = self.forward(&job);
                         outcome.helper_ms = Some(elapsed_ms(clock));
@@ -1336,7 +1336,7 @@ impl Talk {
         let (context, aliases) = self.context(pending);
         let decision = model.decide(job.text.clone(), context.clone()).await?;
         if self.stale(job) {
-            return Err(DomainError::cancelled("Talk stopped"));
+            return Err(DomainError::cancelled("Sonar stopped"));
         }
         let call = parse_call(&decision, &aliases)?;
         let outcome = |said: String| Outcome {

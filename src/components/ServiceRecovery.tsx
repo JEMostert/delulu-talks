@@ -21,13 +21,12 @@ export function ServiceRecovery({
           action={
             <button
               className="secondary-button compact"
+              aria-label={`Retry ${serviceNames[service].toLowerCase()} status`}
               disabled={recovery.retrying[service]}
               onClick={() => void recovery.retry(service)}
             >
               <RefreshCw className={recovery.retrying[service] ? "spin" : ""} />
-              {recovery.retrying[service]
-                ? "Retrying…"
-                : `Retry ${serviceNames[service].toLowerCase()} status`}
+              {recovery.retrying[service] ? "Retrying…" : "Retry"}
             </button>
           }
         >

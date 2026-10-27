@@ -9,17 +9,15 @@ import type {
 import { Modal, SettingRow } from "./ui";
 
 const reasonLabels = {
-  age: "Older than the age limit",
-  count: "Outside the newest-record count",
-  ageAndCount: "Outside both age and count limits",
+  age: "Too old",
+  count: "Beyond the count",
+  ageAndCount: "Too old and beyond the count",
 };
 
 function RecordText({ record }: { record: TranscriptRecord }) {
   return (
     <details className="mt-2">
-      <summary className="cursor-pointer text-sm">
-        Review stored text and provenance
-      </summary>
+      <summary className="cursor-pointer text-sm">Show stored text</summary>
       {[
         ["Original", record.text],
         ["Personalized", record.personalizedText],
@@ -75,7 +73,7 @@ export function HistoryRetention({
       const next = Number(value);
       if (!Number.isInteger(next) || next < minimum || next > maximum)
         throw new Error(
-          `${label} must be a whole number from ${minimum} to ${maximum}, or leave it empty for unlimited.`,
+          `${label} must be a whole number from ${minimum} to ${maximum}, or empty for no limit.`,
         );
       return next;
     };
@@ -109,12 +107,8 @@ export function HistoryRetention({
   const savePolicy = () =>
     void run(async () => {
       if (!(await onSave({ historyRetention: policy() })))
-        throw new Error(
-          "Could not save the retention policy. Your previous policy remains saved.",
-        );
-      setMessage(
-        "Policy saved. No records were removed. Preview and apply when you choose.",
-      );
+        throw new Error("Could not save. Your previous limits still apply.");
+      setMessage("Limits saved. Nothing was removed.");
     });
   const apply = () => {
     if (!preview) return;
@@ -124,7 +118,7 @@ export function HistoryRetention({
         const removed = await bridge.applyHistoryRetention(token);
         setPreview(null);
         setMessage(
-          `Removed ${removed.length} saved ${removed.length === 1 ? "record" : "records"}.`,
+          `Removed ${removed.length} ${removed.length === 1 ? "transcript" : "transcripts"}.`,
         );
       } catch (cause) {
         setPreview(null);
@@ -135,40 +129,29 @@ export function HistoryRetention({
 
   return (
     <section className="settings-group">
-      <div className="group-heading">
-        <h3>History retention</h3>
-        <p>
-          Choose limits for saved history. Cleanup is manual: preview first,
-          then explicitly apply.
-        </p>
-      </div>
-      <SettingRow
-        title="Maximum age"
-        description="Records strictly older than this many 24-hour days are selected. Empty means unlimited."
-      >
+      <SettingRow title="Older than (days)">
         <input
+          className="w-28"
           aria-label="History maximum age in days"
           type="number"
           min={1}
           max={36_500}
           step={1}
-          placeholder="Unlimited"
+          placeholder="No limit"
           value={days}
           disabled={pending || saving}
           onChange={(event) => change(setDays, event.target.value)}
         />
       </SettingRow>
-      <SettingRow
-        title="Maximum count"
-        description="Keep the newest saved records by recording date. Empty means unlimited; 0 selects every saved record."
-      >
+      <SettingRow title="Keep the newest" description="0 keeps none.">
         <input
+          className="w-28"
           aria-label="History maximum record count"
           type="number"
           min={0}
           max={500}
           step={1}
-          placeholder="Unlimited"
+          placeholder="No limit"
           value={count}
           disabled={pending || saving}
           onChange={(event) => change(setCount, event.target.value)}
@@ -176,9 +159,7 @@ export function HistoryRetention({
       </SettingRow>
       <div className="px-6 py-4">
         <p className="text-sm text-muted">
-          Either limit can select a record. Saving a policy never starts
-          automatic deletion. Session-only results that were not saved are
-          excluded.
+          Nothing is removed until you review and apply.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
@@ -186,19 +167,19 @@ export function HistoryRetention({
             disabled={pending || saving}
             onClick={savePolicy}
           >
-            Save policy
+            Save limits
           </button>
           <button
             className="secondary-button"
             disabled={pending || saving}
             onClick={previewRecords}
           >
-            Preview affected records
+            Review
           </button>
         </div>
         {error && (
           <p role="alert" className="mt-3 text-sm text-danger">
-            {error} Preview again before applying.
+            {error} Review again before applying.
           </p>
         )}
         {message && (
@@ -209,7 +190,7 @@ export function HistoryRetention({
       </div>
       {preview && (
         <Modal
-          title="Review history retention"
+          title="Remove old transcripts?"
           busy={pending}
           onClose={() => setPreview(null)}
           footer={
@@ -226,28 +207,25 @@ export function HistoryRetention({
                 disabled={pending || preview.affected.length === 0}
                 onClick={apply}
               >
-                {pending
-                  ? "Applying…"
-                  : `Remove ${preview.affected.length} saved ${preview.affected.length === 1 ? "record" : "records"}`}
+                {pending ? "Applying…" : `Remove ${preview.affected.length}`}
               </button>
             </>
           }
         >
           <p>
-            {preview.affected.length} of {preview.totalSaved} saved records will
-            be removed; {preview.retainedCount} will remain.
+            {preview.affected.length} of {preview.totalSaved} transcripts will
+            be removed; {preview.retainedCount} stay.
           </p>
           <p className="mt-2 text-sm text-muted">
             Limits:{" "}
             {preview.policy.maxAgeDays === null
-              ? "unlimited age"
-              : `${preview.policy.maxAgeDays} days`}{" "}
-            and{" "}
+              ? "any age"
+              : `${preview.policy.maxAgeDays} days`}
+            ,{" "}
             {preview.policy.maxCount === null
-              ? "unlimited count"
-              : `newest ${preview.policy.maxCount} records`}
-            . Preview calculated{" "}
-            {new Date(preview.previewedAt).toLocaleString()}.
+              ? "any count"
+              : `newest ${preview.policy.maxCount}`}
+            . Checked {new Date(preview.previewedAt).toLocaleString()}.
           </p>
           <dl
             className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm"
@@ -267,27 +245,11 @@ export function HistoryRetention({
             <dd>{preview.effects.audioFilesDeleted}</dd>
           </dl>
           <p className="mt-3 text-sm">
-            Removal is permanent and deletes each selected record’s original
-            transcript, personalized text, correction, rewrite and history
-            metadata together. Export anything you want to keep before applying.
-            Imported source audio files, model cache, runtimes and other
-            settings are preserved. Any source-file reference stored with a
-            removed record is removed from history; the external audio stays
-            where you saved it.
-          </p>
-          <p className="mt-2 text-sm text-muted">
-            Previously exported files and existing backups are separate copies
-            and are not erased by retention. This is not a secure-erasure
-            operation.
-          </p>
-          <p className="mt-2 text-sm text-muted">
-            If history changes, apply will stop and ask you to preview again.
-            Retained records keep all their text and provenance.
+            Removal is permanent. Exports, backups and imported audio files are
+            separate copies and stay.
           </p>
           {preview.affected.length === 0 ? (
-            <p className="mt-4">
-              No saved records match these limits. Nothing will be removed.
-            </p>
+            <p className="mt-4">Nothing matches these limits.</p>
           ) : (
             <ul className="mt-4 list-none space-y-3 p-0">
               {preview.affected.map(({ record, reason }) => (

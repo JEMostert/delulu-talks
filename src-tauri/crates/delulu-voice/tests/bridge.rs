@@ -229,13 +229,13 @@ async fn invalid_requests_get_specific_errors_without_reaching_handlers() {
 async fn handler_refusals_reach_the_agent_as_voice_unavailable() {
     let handlers = TestHandlers::new();
     *handlers.speak.lock() = Some(Arc::new(|_, _| {
-        Box::pin(async { Err(DomainError::failed("Voice is turned off in Delulu Talks.").into()) })
+        Box::pin(async { Err(DomainError::failed("Siren is turned off in Delulu Talks.").into()) })
     }));
     *handlers.stop_error.lock() = Some(BridgeError::new(BridgeErrorCode::InvalidRequest, "Nothing to stop."));
     let b = started_bridge_in(tempfile::tempdir().unwrap(), "1", handlers).await;
     let mut agent = Client::connect(&b.endpoint).await;
     let speak = request(&mut agent, &b.token, "s", "speak", json!({ "text": "Hi" })).await;
-    assert_eq!(speak["error"], json!({ "code": "VOICE_UNAVAILABLE", "message": "Voice is turned off in Delulu Talks." }));
+    assert_eq!(speak["error"], json!({ "code": "VOICE_UNAVAILABLE", "message": "Siren is turned off in Delulu Talks." }));
     assert_eq!(request(&mut agent, &b.token, "t", "stop", json!({})).await["error"]["code"], "INVALID_REQUEST");
     b.bridge.stop().await;
 }

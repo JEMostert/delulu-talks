@@ -1,6 +1,6 @@
 # Worker protocol bounds
 
-Speech (R2T2) and optional writing (Qwen 3.5) use independent `WorkerClient` instances. Audio is sent as a file path; transport requests contain metadata and text, not encoded audio. Transport limits bound buffering and admission separately from GPU/model memory.
+Speech and optional writing use independent `WorkerClient` instances (`delulu-runtime::worker`). Audio is sent as a file path; transport requests contain metadata and text, not encoded audio. Transport limits bound buffering and admission separately from GPU/model memory.
 
 | Resource           | Per-worker limit                                                      | Overflow behavior                                                                                                                                                 |
 | ------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |

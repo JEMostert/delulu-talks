@@ -17,7 +17,7 @@ export function IdentifierPreview({
   const changed = preview !== input;
   return (
     <Modal
-      title="Identifier preview"
+      title="Identifiers"
       onClose={onClose}
       footer={
         <>
@@ -29,15 +29,12 @@ export function IdentifierPreview({
             disabled={!preview.trim() || !changed}
             onClick={() => onCopy(preview)}
           >
-            <Copy /> Copy preview
+            <Copy /> Copy
           </button>
         </>
       }
     >
-      <p>
-        Say a style, the identifier words, then “end identifier”. Only marked
-        identifiers change. Review and copy the result when ready.
-      </p>
+      <p>Say a style, the words, then “end identifier”.</p>
       <ul className="text-[12px] text-muted space-y-1">
         <li>camel case user account end identifier → userAccount</li>
         <li>pascal case user account end identifier → UserAccount</li>
@@ -48,7 +45,7 @@ export function IdentifierPreview({
         </li>
       </ul>
       <label className="field">
-        Recognized text / identifier commands
+        Recognized text
         <textarea
           autoFocus
           className="w-full min-h-[130px] whitespace-pre-wrap font-mono"
@@ -58,21 +55,16 @@ export function IdentifierPreview({
         />
       </label>
       <p className="caption" role="status">
-        {changed
-          ? "Identifier commands rendered. Original transcript stays preserved."
-          : "No valid complete identifier command found. Text is unchanged."}
+        {changed ? "Identifiers rendered." : "No complete identifier found."}
       </p>
       <label className="field">
-        Exact preview
+        Preview
         <textarea
           readOnly
           className="w-full min-h-[130px] whitespace-pre-wrap font-mono"
           value={preview}
         />
       </label>
-      <p className="caption">
-        This preview stays local and copies only on request.
-      </p>
     </Modal>
   );
 }

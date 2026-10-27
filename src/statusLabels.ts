@@ -45,34 +45,12 @@ export function activityLabel(
   return null;
 }
 
-const BACKEND_NAMES: Record<
-  NonNullable<DictationStatus["capabilities"]>["backend"],
-  string
-> = {
-  mlx: "MLX",
-  "cuda-vllm": "CUDA",
-  "cuda-transformers": "CUDA",
-  transformers: "Transformers",
-  "onnx-cpu": "CPU",
-};
-
-/** Speech engine readiness, phrased for the home screen chip. */
-export function engineLabel(speech: DictationStatus): ActivityLabel {
-  const backend = speech.capabilities?.backend;
-  const suffix = backend ? ` · ${BACKEND_NAMES[backend]}` : "";
+/**
+ * The home chip, shown only while speech needs setup, attention or is getting
+ * ready. A ready or standby engine needs no announcement.
+ */
+export function engineAttention(speech: DictationStatus): ActivityLabel | null {
   switch (speech.engine) {
-    case "ready":
-      return {
-        label: `Speech ready${suffix}`,
-        tone: "ready",
-        detail: speech.message,
-      };
-    case "unloaded":
-      return {
-        label: "Speech on standby",
-        tone: "idle",
-        detail: "The speech model loads when you start dictating.",
-      };
     case "loading":
     case "settingUp":
       return {
@@ -82,9 +60,9 @@ export function engineLabel(speech: DictationStatus): ActivityLabel {
       };
     case "missing":
       return {
-        label: "Set up speech",
+        label: speech.migrationRequired ? "Update speech" : "Set up speech",
         tone: "warning",
-        detail: "Install the speech model to start dictating.",
+        detail: speech.message,
       };
     case "error":
       return {
@@ -92,7 +70,24 @@ export function engineLabel(speech: DictationStatus): ActivityLabel {
         tone: "error",
         detail: speech.message,
       };
+    default:
+      return null;
   }
+}
+
+const RESTING =
+  /^(?!.*result).*\bready$|loads on demand$|^speech model unloaded$|^runtime activated|warmup not reported complete$/i;
+
+/**
+ * True for idle readiness reports ("Ready", "Parakeet v3 ready") that the
+ * pearl already conveys. Outcomes such as "Recording cancelled" stay visible.
+ */
+export function isRestingMessage(speech: DictationStatus): boolean {
+  return (
+    speech.phase === "idle" &&
+    (speech.engine === "ready" || speech.engine === "unloaded") &&
+    RESTING.test(speech.message)
+  );
 }
 
 /** Elapsed recording time as m:ss (or h:mm:ss past an hour). */

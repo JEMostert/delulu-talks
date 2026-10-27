@@ -15,6 +15,7 @@ export function UpdateNotice({
 }) {
   if (!["available", "downloading", "downloaded"].includes(status.phase))
     return null;
+  const version = status.version ? `Version ${status.version}` : "An update";
   return (
     <Alert
       tone={status.phase === "downloaded" ? "success" : "info"}
@@ -29,23 +30,21 @@ export function UpdateNotice({
             disabled={busy}
             onClick={onInstall}
           >
-            <RotateCw /> Restart & update
+            <RotateCw /> Restart
           </button>
         ) : undefined
       }
     >
       <strong>
         {status.phase === "downloaded"
-          ? "A new version is ready"
-          : `Delulu Talks ${status.version ?? "update"} is available`}
+          ? `${version} is ready`
+          : status.phase === "downloading"
+            ? `Downloading ${version.toLowerCase()}…`
+            : `${version} is available`}
       </strong>
-      <p className="caption">
-        {status.phase === "downloaded"
-          ? busy
-            ? "Finish your current task before restarting."
-            : "Restart when you’re ready. Your words and models stay put."
-          : status.message}
-      </p>
+      {status.phase === "downloaded" && busy && (
+        <p className="caption">Finish your current task first.</p>
+      )}
       {status.phase === "downloading" && (
         <progress
           className="mt-2"

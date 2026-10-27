@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { bridge } from "../bridge";
 import { INITIAL_TALK_STATUS, type TalkStatus } from "../talk";
 
-/** Talk status and actions; one subscription for the whole app. */
+/** Sonar (Talk) status and actions; one subscription for the whole app. */
 export function useTalk() {
   const [status, setStatus] = useState<TalkStatus>(INITIAL_TALK_STATUS);
   useEffect(() => {

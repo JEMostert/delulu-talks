@@ -14,6 +14,7 @@ import { BackendCapabilities } from "./BackendCapabilities";
 import { EngineBadge } from "./EngineBadge";
 import { SpeechTierPicker } from "./SpeechTierPicker";
 import { DownloadedModels } from "./DownloadedModels";
+import { RuntimeSetupLog } from "./RuntimeSetupLog";
 
 export type SpeechSetupProps = {
   largeSpeechAvailable?: boolean;
@@ -49,8 +50,6 @@ export function SpeechSetup({
       : tier.id === "medium" || !largeSpeechAvailable
         ? PARAKEET_MODEL
         : r2t2;
-  // First run: nothing is installed yet, so the user chooses before any download.
-  const choosing = status.engine === "missing" && !status.migrationRequired;
   const backend = execution ? speechBackendById(execution.backendId) : null;
   const speechBusy = ["preparing", "loading", "transcribing"].includes(
     status.phase,
@@ -58,32 +57,24 @@ export function SpeechSetup({
   const installing = ["running", "cancelling"].includes(
     status.setupState ?? "",
   );
+  const installed = status.engine === "ready" || status.engine === "unloaded";
   return (
-    <section className="setup-card" aria-label="Speech setup">
+    <section className="setup-card" aria-labelledby="speech-engine-heading">
       <div className="setup-card-heading">
         <Cpu />
         <div>
-          <h2>
+          <h2 id="speech-engine-heading">
             {status.engine === "missing"
               ? status.migrationRequired
                 ? `Set up ${tier.name}`
-                : "Choose a speech model"
+                : "Choose a size"
               : status.engine === "error"
                 ? "Fix speech setup"
                 : "Speech"}
           </h2>
-          <p>
-            {model.name} · {backend?.label ?? model.runtime}
-          </p>
         </div>
         <EngineBadge engine={status.engine} />
       </div>
-      {choosing && (
-        <p className="setup-status-copy">
-          Pick a size for this computer. Nothing is downloaded until you press
-          Download &amp; set up, and you can switch later in Settings.
-        </p>
-      )}
       {onUpdateSettings && (
         <SpeechTierPicker
           settings={settings}
@@ -92,14 +83,12 @@ export function SpeechSetup({
           onSelect={onUpdateSettings}
         />
       )}
-      {(status.engine === "ready" || status.engine === "unloaded") &&
-        status.residency && <ModelLifecycle status={status} />}
       {status.engine === "missing" && (
         <p className="setup-status-copy">
-          {tier.name}: {tier.download} download
+          Downloads {tier.download}, plus{" "}
           {tier.id === "large"
-            ? ", plus the GPU runtime (several GB)."
-            : ", plus a small CPU runtime."}
+            ? "a GPU runtime of several GB."
+            : "a small CPU runtime."}
         </p>
       )}
       <div className="runtime-actions">
@@ -129,11 +118,11 @@ export function SpeechSetup({
               disabled={busy || setupPending}
               onClick={onLoad}
             >
-              <Play /> Load now
+              <Play /> Load
             </button>
           )
         )}
-        {(status.engine === "ready" || status.engine === "unloaded") && (
+        {installed && (
           <button
             className="tool-button"
             disabled={busy || setupPending}
@@ -170,9 +159,15 @@ export function SpeechSetup({
       )}
       <DownloadedModels status={status} busy={busy || installing} />
       <details className="setup-details">
-        <summary>Model details & license</summary>
-        <BackendCapabilities capabilities={status.capabilities} />
-        <p className="setup-status-copy">{model.description}</p>
+        <summary>Details</summary>
+        <p className="setup-status-copy">
+          <strong className="text-ink">
+            {model.name} · {backend?.label ?? model.runtime}
+          </strong>
+          <br />
+          {model.description}
+        </p>
+        {installed && status.residency && <ModelLifecycle status={status} />}
         {execution && (
           <dl aria-label="Reported speech execution">
             <dt>Backend</dt>
@@ -192,7 +187,11 @@ export function SpeechSetup({
             </dd>
           </dl>
         )}
+        <BackendCapabilities capabilities={status.capabilities} />
         <ModelProvenance {...model} />
+        <div className="runtime-actions mt-4">
+          <RuntimeSetupLog kind="speech" />
+        </div>
       </details>
     </section>
   );

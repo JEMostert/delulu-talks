@@ -4,7 +4,7 @@ Current implementation, 29 September 2026. **Native R2T2 inference has not been 
 
 ## What changed
 
-The previous Mac route substituted Qwen3-ASR-0.6B and served it through vLLM Metal. The new route selects `r2t2Mlx` on native Apple Silicon, loads the R2T2 BF16 MLX conversion directly, and keeps R2T2 on PyTorch/Transformers CUDA on Linux and Windows. CUDA is NVIDIA's backend; its absence on a Mac does not mean the underlying Qwen-derived weights cannot run through another implementation.
+The previous Mac route substituted Qwen3-ASR-0.6B and served it through vLLM Metal. The new route selects `r2t2Mlx` on native Apple Silicon, loads the R2T2 BF16 MLX conversion directly, and keeps R2T2 on PyTorch/Transformers CUDA on Linux. CUDA is NVIDIA's backend; its absence on a Mac does not mean the underlying Qwen-derived weights cannot run through another implementation.
 
 The checkpoint is [`mlx-community/Confucius4-R2T2-bf16`](https://huggingface.co/mlx-community/Confucius4-R2T2-bf16), pinned to revision `747f5fc5f84bc9976baa2f02714e2fed67ed8611`. It is an unquantized conversion of the user's preferred fine-tune. The download is approximately 4.1 GB; inference and runtime installation require additional memory/disk space. No local HTTP service is needed.
 
@@ -17,8 +17,8 @@ A static checkpoint audit matched all 707 stored BF16 tensor keys/shapes to the 
 ## Installation and migration
 
 1. Install native Python 3.12, for example `brew install python@3.12`, and FFmpeg for formats requiring conversion.
-2. If discovery picks another Python, set the native interpreter's absolute path in Settings → Runtime.
-3. Open Models and choose Install/Update setup or Repair for the speech runtime. Existing vLLM Metal environments do not contain the new MLX Audio dependencies.
+2. If discovery picks another Python, set the native interpreter's absolute path in Settings → Advanced.
+3. Open Engines and choose Install/Update setup or Repair for the speech runtime. Existing vLLM Metal environments do not contain the new MLX Audio dependencies.
 4. Let checkpoint loading and synthetic decoder warmup finish before recording. Choose Dutch or English explicitly when appropriate.
 5. Check Microphone permission for recording and Accessibility permission if automatic paste fails.
 
@@ -28,14 +28,10 @@ A corrupted settings/history file now stops loading with an explicit preserved-f
 
 ## Native release acceptance
 
-The historical [v0.9.4 validation](mac-release-validation.md) concerns the previous Qwen/vLLM Metal route. Its successful inference does **not** validate this adapter.
-
-| Evidence                                      | What it establishes                                                                                                   | What remains unverified                                                                   |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Historical Qwen3-ASR-0.6B / vLLM Metal record | The older backend executed fixture inference and package replacement on its recorded Mac                              | Current R2T2 checkpoint, direct MLX Audio loader, current decoder and memory behavior     |
-| Current dependency-free contracts             | R2T2 routing, language hints, chunk/token guards, failure cleanup and source preservation with synthetic dependencies | Native Metal execution, recognition quality and actual allocator release                  |
-| Recorded BF16 key/shape audit                 | Checkpoint layout matched the pinned loader                                                                           | Loading/warmup/inference on an actual Apple Silicon machine                               |
-| Package check without runtime                 | Package replacement, persistent fixtures and manual-update guidance                                                   | Speech inference, live microphone, Accessibility and focus/paste into another application |
+| Evidence                          | What it establishes                                                                                                   | What remains unverified                                                  |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Current dependency-free contracts | R2T2 routing, language hints, chunk/token guards, failure cleanup and source preservation with synthetic dependencies | Native Metal execution, recognition quality and actual allocator release |
+| Recorded BF16 key/shape audit     | Checkpoint layout matched the pinned loader                                                                           | Loading/warmup/inference on an actual Apple Silicon machine              |
 
 No tested RAM minimum, sustained latency target or thermal budget is established for this R2T2 route. Chunk requests and token guards bound the adapter's behavior but are not measurements of peak memory or recognition quality. R2T2-only speech selection does not remove optional Qwen 3.5 rewriting; it uses its separate Python environment and may compete for the same physical memory.
 
@@ -47,6 +43,6 @@ On a real Apple Silicon Mac:
 4. Restart offline with cached weights and prove transcription still works.
 5. Upgrade an existing Mac profile and verify settings, historical attribution, corrections, and failure rollback.
 6. Exercise permission denial/re-grant, shortcut behavior, sleep/wake, and paste into actual applications.
-7. Build the package and run the isolated package replacement check. Record native evidence in a new document before publishing this backend as validated.
+7. Build the package with `bun run build`. Record native evidence in a new document before publishing this backend as validated.
 
-After Models finishes setup, use the active speech generation’s Python and already-cached weights with the [native inference harness](NATIVE_HARNESS.md). The previous desktop/package smoke test commands were removed from the focused test suite. Record actual hardware, checkpoint/runtime revisions, permission behavior, microphone recognition and delivery into applications separately; passing unit/browser tests does not establish native inference.
+There is no native inference harness yet; after Engines finishes setup, `DELULU_DEV_SCRIPT` in a debug build can drive setup and dictation through the IPC router (`src-tauri/src/dev_script.rs`), and `scripts/decoder-contract.py --backend mlx` checks the installed decoders. Record actual hardware, checkpoint/runtime revisions, permission behavior, microphone recognition and delivery into applications separately; passing unit/browser tests does not establish native inference.

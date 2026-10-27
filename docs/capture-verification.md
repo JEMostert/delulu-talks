@@ -2,8 +2,6 @@
 
 Capture is native in the Tauri app: `src-tauri/crates/delulu-audio` records through cpal on its own thread, encodes 16 kHz mono WAV and reports levels, trailing silence, limits and input loss. The renderer only displays the recorder's state.
 
-The Electron app recorded in the renderer with an AudioWorklet. Its browser suites (`capture.pw.ts`, `capture-stress.pw.ts` with 100 captures through one recorder, and `capture-races.pw.ts` with six held-boundary race cases) verified final-flush delivery sample by sample, resource release between sessions and Cancel/Stop races against Chromium's synthetic microphone. They were removed with renderer capture and have no Tauri equivalent; their results apply only to that recorder.
-
 ## Current checks
 
 - `cargo test -p delulu-audio`: recorder block processing, levels and retained audio, the sample cap, the trailing-silence countdown, pause/resume, 16 kHz WAV encoding with cancellation, resampling, the voice-activity detector and the playback queue. These run without a microphone.

@@ -19,9 +19,7 @@ function Example({
     <section className="border border-line rounded-panel p-3.5">
       <h3>{label}</h3>
       {text.length > excerptLength && (
-        <p className="caption">
-          Preview shows the first {excerptLength} characters only.
-        </p>
+        <p className="caption">Showing the first {excerptLength} characters.</p>
       )}
       <div className="grid grid-cols-2 gap-3.5 max-[700px]:grid-cols-1">
         <div>
@@ -31,15 +29,13 @@ function Example({
           </p>
         </div>
         <div>
-          <h4>With suggested rule</h4>
+          <h4>With this word</h4>
           <p className="whitespace-pre-wrap break-words max-h-[160px] overflow-auto">
             {result || "No source text."}
           </p>
         </div>
       </div>
-      {source === result && (
-        <p className="caption">No change in this example.</p>
-      )}
+      {source === result && <p className="caption">No change here.</p>}
     </section>
   );
 }
@@ -74,17 +70,10 @@ export function SuggestedRulePreview({
     : [];
   return (
     <div className="content-stack">
-      <p className="text-muted">
-        Preview this suggested rule on original speech text. Other saved rules
-        are excluded from this comparison. Nothing here changes existing
-        transcripts or saves a rule.
-      </p>
       {!valid ? (
-        <p className="caption">
-          Enter different recognized and replacement phrases to preview.
-        </p>
+        <p className="caption">Enter two different phrases to see a preview.</p>
       ) : (
-        <Example label="Source transcript" text={source.text} rule={rule} />
+        <Example label="This transcript" text={source.text} rule={rule} />
       )}
       <label className="flex items-start gap-3.5">
         <input
@@ -94,14 +83,11 @@ export function SuggestedRulePreview({
           onChange={(event) => setConsent(event.target.checked)}
         />
         <span>
-          Use up to five recent available transcripts as examples for this
-          preview only. Their text stays local and is not copied into the rule.
+          Also preview on up to five recent transcripts. Nothing is saved.
         </span>
       </label>
       {!examples.some((record) => record.id !== source.id) && (
-        <p className="caption">
-          No other examples are available, or history is currently disabled.
-        </p>
+        <p className="caption">No other transcripts to preview.</p>
       )}
       {consent &&
         valid &&

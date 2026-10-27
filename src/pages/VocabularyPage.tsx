@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   BookOpenText,
   CodeXml,
@@ -75,7 +75,6 @@ export function VocabularyPage({
   const [phrases, setPhrases] = useState("");
   const [remove, setRemove] = useState<CustomWord | null>(null);
   const [testPhrase, setTestPhrase] = useState("");
-  const previewTitleId = useId();
   const rules = useMemo(
     () => activeRules({ customWords: words, wordPacks: packs }),
     [words, packs],
@@ -131,10 +130,6 @@ export function VocabularyPage({
       <section className="settings-group">
         <div className="group-heading">
           <h3>Word packs</h3>
-          <p>
-            Turn on a pack and its words are recognized and spelled right. Your
-            own words always come first.
-          </p>
         </div>
         {WORD_PACKS.map((pack) => {
           const on = packs.includes(pack.id);
@@ -159,9 +154,6 @@ export function VocabularyPage({
                     {pack.words.length} words
                   </span>
                 </h3>
-                <p className="text-[12px] text-muted mt-1">
-                  {pack.description}
-                </p>
                 <p className="text-[12px] text-muted mt-1 break-words">
                   {pack.words
                     .slice(0, 10)
@@ -172,7 +164,7 @@ export function VocabularyPage({
                 {blocked && (
                   <p className="text-[12px] text-warning mt-1">
                     Needs {needed} words, {Math.max(0, MAX_HINT_WORDS - used)}{" "}
-                    left. Turn off another pack or remove some of your words.
+                    left.
                   </p>
                 )}
               </div>
@@ -207,13 +199,15 @@ export function VocabularyPage({
               }}
             />
           </div>
-          <p className="caption">
-            {used > MAX_HINT_WORDS
-              ? `Only the first ${MAX_HINT_WORDS} words are sent to the speech model. Turn off a pack or some of your words.`
-              : hintsActive
-                ? "R2T2 listens for these words while it recognizes your speech. Known misspellings are fixed afterwards."
-                : "Known misspellings are fixed after recognition. R2T2 on an NVIDIA GPU with Vocabulary hints on also listens for these words."}
-          </p>
+          {(hintsActive || used > MAX_HINT_WORDS) && (
+            <p
+              className={`caption ${used > MAX_HINT_WORDS ? "text-warning" : ""}`}
+            >
+              {used > MAX_HINT_WORDS
+                ? `Only the first ${MAX_HINT_WORDS} are used. Turn off a pack or some words.`
+                : "Large listens for these words as you speak."}
+            </p>
+          )}
         </div>
       </section>
 
@@ -263,13 +257,12 @@ export function VocabularyPage({
               value={newWord}
               maxLength={256}
               onChange={(event) => setNewWord(event.target.value)}
-              placeholder="Add a word, name or term, such as Delulu…"
+              placeholder="Add a word or name…"
             />
             {duplicate && <small>That word is already in your list.</small>}
             {typed && !duplicate && !quickFits && (
               <small className="text-warning">
-                All {MAX_HINT_WORDS} words are in use. Turn off a pack or remove
-                a word first.
+                All {MAX_HINT_WORDS} words are in use.
               </small>
             )}
           </label>
@@ -379,35 +372,24 @@ export function VocabularyPage({
               query
                 ? "Nothing found"
                 : kind === "correction"
-                  ? "No words of your own yet"
-                  : "No text shortcuts yet"
+                  ? "No words yet"
+                  : "No shortcuts yet"
             }
           >
             {query
-              ? "Try a different search."
+              ? "Try another search."
               : kind === "correction"
-                ? "Add names and terms the word packs don't cover. Correcting a transcript can also remember a word."
-                : "Say a trigger such as “my signature” to insert a saved block of text."}
+                ? "Add names and terms the packs miss."
+                : "Say a trigger like “my signature” to insert saved text."}
           </EmptyState>
         )}
       </section>
       <details className="disclosure">
-        <summary>Try a phrase</summary>{" "}
-        <section
-          className="border border-line rounded-panel bg-surface p-[18px] content-stack"
-          aria-labelledby={previewTitleId}
-        >
-          <div>
-            <h3 id={previewTitleId}>Try your words</h3>
-            <p className="text-[12px] text-muted mt-2">
-              Type text as the recognizer might write it to see what gets fixed.
-              Nothing is saved.
-            </p>
-          </div>
+        <summary>Try a phrase</summary>
+        <div className="border border-line rounded-panel bg-surface p-[18px] grid gap-3">
           <label className="field">
-            Test phrase
+            Type it as speech might come out
             <textarea
-              aria-label="Test saved rules"
               maxLength={2000}
               value={testPhrase}
               onChange={(event) => setTestPhrase(event.target.value)}
@@ -443,7 +425,7 @@ export function VocabularyPage({
               </p>
             </div>
           )}
-        </section>
+        </div>
       </details>
       <details className="disclosure">
         <summary>Usage</summary>

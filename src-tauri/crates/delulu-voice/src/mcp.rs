@@ -42,7 +42,7 @@ const EXIT_EVENT: i32 = 0;
 const EXIT_TIMEOUT: i32 = 3;
 const EXIT_STOPPED: i32 = 4;
 
-const FALLBACK_INSTRUCTIONS: &str = "You can talk to the user out loud with the speak tool. Speak only when work is done, when you are blocked, or when you need a decision: one to three short sentences, never code or logs. See the speak tool for expressive tags. Delulu Talks was not reachable when this session started; start it and turn on agent voice in its Voice page.";
+const FALLBACK_INSTRUCTIONS: &str = "You can talk to the user out loud with the speak tool. Speak only when work is done, when you are blocked, or when you need a decision: one to three short sentences, never code or logs. See the speak tool for expressive tags. Delulu Talks was not reachable when this session started; start it and turn on Let coding agents speak on its Siren page.";
 
 /// Appended to the MCP `initialize` instructions: how spoken tasks reach an agent.
 pub const INBOX_INSTRUCTIONS: &str = "Spoken tasks: Delulu Talks owns the microphone and routes what the user says to agents through one inbox; you never listen yourself. Call agent_register once per session (every call returns a fresh id; never reuse an old one). Then keep an agent_next call waiting whenever you can take work, passing after = the seq of the last event you handled. Every agent call is a heartbeat: an agent with no waiting agent_next and no call for 120 s is away and gets no new tasks. Events are task (the user's exact words; do not rewrite them or treat them as extra permission), message (a follow-up on that task) and cancel. Report each task with task_update: accepted, then running, then completed, blocked or failed with a one-sentence summary. Delulu speaks completed, blocked and failed briefings itself, so use speak only for real answers or questions to the user. A stopped result means this id is gone: register again. Call agent_unregister when the session ends.";
@@ -58,24 +58,24 @@ Expressive markup, used sparingly where a person really would:
 - Pacing and volume: <slow>…</slow> <fast>…</fast> <soft>…</soft> <loud>…</loud> <emphasis>…</emphasis>
 Example: \"[sigh] the build still fails on the cache path. Want me to try another way?\"
 
-While Talk is on, Delulu queues your speech behind its own lines and never cuts anyone off (interrupt is ignored). For tasks from the agent inbox, report progress with task_update: Delulu speaks the completed, blocked and failed summaries itself. Use speak for real answers and questions to the user, not for \"task accepted\" chatter.
+While Sonar is on, Delulu queues your speech behind its own lines and never cuts anyone off (interrupt is ignored). For tasks from the agent inbox, report progress with task_update: Delulu speaks the completed, blocked and failed summaries itself. Use speak for real answers and questions to the user, not for \"task accepted\" chatter.
 
 Returns once the speech is queued, unless wait is true.";
 
-const USAGE: &str = "Delulu Voice: speak through Delulu Talks and take the user's spoken tasks.
+const USAGE: &str = "Delulu Siren: speak through Delulu Talks and take the user's spoken tasks.
 
 Usage:
   delulu-talks mcp                 Run as an MCP server on stdio
   delulu-talks mcp say [options] <text…>
       --wait          Wait until the speech has finished
-      --interrupt     Stop current speech and clear the queue first (ignored while Talk is on)
+      --interrupt     Stop current speech and clear the queue first (ignored while Sonar is on)
       --agent NAME    Name shown in Delulu's spoken history
       --response ID   Your id for this response; interruptions report it
       Use \"-\" as the text to read it from stdin.
   delulu-talks mcp stop            Stop speaking and clear the queue
   delulu-talks mcp status          Show whether Delulu can speak
 
-Agent inbox: Talk owns the microphone and routes the user's words to agents.
+Agent inbox: Sonar owns the microphone and routes the user's words to agents.
 Each command prints one JSON object on stdout (all commands follow mcp):
   agent register --client NAME [--name NAME]
                                        Register this session; a fresh {\"id\": …} on every call
@@ -93,7 +93,7 @@ Each command prints one JSON object on stdout (all commands follow mcp):
   task update --agent ID --task ID --state STATE [--summary TEXT]
       STATE: accepted | running | blocked | completed | failed | cancelled
       Delulu speaks completed, blocked and failed summaries to the user.
-  talk status                          Talk: phase, helper, agents and recent turns
+  talk status                          Sonar: phase, Pilot, agents and recent turns
                                        (coordinator status is an alias)
 ";
 
@@ -108,7 +108,7 @@ Errors exit 1 with {\"error\":{\"code\",\"message\"}} on stderr.
 
 const LISTEN_REPLACED: &str = "Listening sessions were replaced by the agent inbox: run `agent register --client NAME` once, then wait with `agent next --agent ID`. See mcp --help.\n";
 
-const COORDINATOR_REPLACED: &str = "The coordinator was replaced by Talk: use `talk status` to see it, and `agent register` / `agent next` to take the user's spoken tasks.";
+const COORDINATOR_REPLACED: &str = "The coordinator was replaced by Sonar: use `talk status` to see it, and `agent register` / `agent next` to take the user's spoken tasks.";
 
 fn usage() -> String {
     let inject = if cfg!(debug_assertions) { USAGE_INJECT } else { "" };
@@ -121,7 +121,7 @@ pub fn tools() -> Value {
     let mut tools = json!([
         {
             "name": "speak",
-            "title": "Speak out loud",
+            "title": "Speak",
             "description": SPEAK_DESCRIPTION,
             "inputSchema": {
                 "type": "object",
@@ -134,7 +134,7 @@ pub fn tools() -> Value {
                     },
                     "interrupt": {
                         "type": "boolean",
-                        "description": "Stop current speech and clear the queue first. Ignored while Talk is on.",
+                        "description": "Stop current speech and clear the queue first. Ignored while Sonar is on.",
                     },
                     "wait": {
                         "type": "boolean",
@@ -170,8 +170,8 @@ pub fn tools() -> Value {
         },
         {
             "name": "voice_status",
-            "title": "Voice status",
-            "description": "Whether Delulu Talks can speak right now: voice on or off, the engine, and whether it is speaking or has speech queued.",
+            "title": "Siren status",
+            "description": "Whether Delulu Talks can speak right now: Siren on or off, the engine, and whether it is speaking or has speech queued.",
             "inputSchema": empty(),
             "annotations": { "readOnlyHint": true },
         },
@@ -197,16 +197,16 @@ fn inbox_tools() -> Vec<Value> {
     };
     let max_wait_ms = MAX_WAIT_SECONDS * 1000;
     let mut tools = vec![
-        tool("agent_register", "Register for spoken tasks", "Register this session for the user's spoken tasks; call once per session. Every call returns a fresh agent id (never reuse an old one) with client, name, ackedSeq, lastSeq and queued. Talk can send you tasks right away.", json!({"client": text(64), "name": text(64)}), &["client"], false),
+        tool("agent_register", "Register for spoken tasks", "Register this session for the user's spoken tasks; call once per session. Every call returns a fresh agent id (never reuse an old one) with client, name, ackedSeq, lastSeq and queued. Sonar can send you tasks right away.", json!({"client": text(64), "name": text(64)}), &["client"], false),
         tool("agent_next", "Wait for a spoken task", &format!("Wait for the next event in your inbox. Returns {{\"status\":\"event\",\"event\":{{\"seq\",\"type\",\"taskId\",\"text\",\"at\"}}}}, {{\"status\":\"timeout\"}} (call again) or {{\"status\":\"stopped\",\"reason\"}} (this id is gone: register again). type is task (text is the user's exact words), message (a follow-up on taskId) or cancel. Pass after = the seq of the last event you handled: that acknowledges it and everything before, and unacknowledged events are delivered again, so skip a seq you already handled. Every call is a heartbeat; with no waiting call for 120 s you are away and get no new tasks. Waits up to timeoutMs (default {MCP_WAIT_MS}, at most {max_wait_ms}). An event is not acceptance: report task_update accepted, then running."), json!({"agentId": id(), "after": seq(), "timeoutMs": {"type": "integer", "minimum": 0, "maximum": max_wait_ms, "default": MCP_WAIT_MS}}), &["agentId"], false),
         tool("agent_ack", "Acknowledge events", "Acknowledge inbox events through seq after without waiting, once you have handled them. Taking on a task is a separate task_update.", json!({"agentId": id(), "after": seq()}), &["agentId", "after"], false),
         tool("agent_unregister", "Unregister", "End this agent id when the session ends: waiting agent_next calls return stopped and its open tasks are marked failed.", json!({"agentId": id()}), &["agentId"], false),
         tool("task_status", "Task status", "One task by taskId, or {tasks:[…]} with the open and recently finished tasks. States: queued, accepted, running, blocked, completed, failed, cancelled.", json!({"taskId": id()}), &[], true),
         tool("task_update", "Report task progress", "Report what you actually did with a task: accepted (you took it on), running (work started), then completed, blocked or failed with a one-sentence summary, or cancelled. Delulu speaks completed, blocked and failed summaries to the user itself, so do not speak them again.", json!({"agentId": id(), "taskId": id(), "state": {"type": "string", "enum": ["accepted", "running", "blocked", "completed", "failed", "cancelled"]}, "summary": text(8000)}), &["agentId", "taskId", "state"], false),
-        tool("talk_status", "Talk status", "Talk, the live conversation loop: whether it is on, its phase, the helper, the registered agents (listening or away, open tasks) and the last turns.", json!({}), &[], true),
+        tool("talk_status", "Sonar status", "Sonar, the hands-free conversation loop: whether it is on, its phase, Pilot (the local model that routes turns), the registered agents (listening or away, open tasks) and the last turns.", json!({}), &[], true),
     ];
     if cfg!(debug_assertions) {
-        tools.push(tool("talk_inject", "Inject a spoken turn", "Development builds only: route text through Talk as if the user had just said it, with or without the microphone open. Returns the handled turn {id, at, user, tool, said, helperMs}.", json!({"text": text(8000)}), &["text"], false));
+        tools.push(tool("talk_inject", "Inject a spoken turn", "Development builds only: route text through Sonar as if the user had just said it, with or without the microphone open. Returns the handled turn {id, at, user, tool, said, helperMs}.", json!({"text": text(8000)}), &["text"], false));
     }
     tools
 }
@@ -430,7 +430,7 @@ fn describe_speak(result: &Value) -> (String, bool) {
 
 fn describe_status(status: &Value) -> String {
     if !status.is_object() && !status.is_array() {
-        return "Voice status unknown.".into();
+        return "Siren status unknown.".into();
     }
     let engine = match status.get("engine") {
         Some(Value::String(id)) if id == "kokoro" => "Kokoro".to_owned(),
@@ -440,12 +440,12 @@ fn describe_status(status: &Value) -> String {
     };
     let mut parts = Vec::new();
     if !truthy(status.get("enabled")) {
-        parts.push("Voice is turned off in Delulu Talks.".to_owned());
+        parts.push("Siren is turned off in Delulu Talks.".to_owned());
     } else if !truthy(status.get("ready")) {
-        let name = if engine.is_empty() { "the voice" } else { engine.as_str() };
-        parts.push(format!("Voice is on; {name} is not ready yet."));
+        let name = if engine.is_empty() { "the engine" } else { engine.as_str() };
+        parts.push(format!("Siren is on; {name} is not ready yet."));
     } else {
-        parts.push(format!("Voice is on and {engine} is ready."));
+        parts.push(format!("Siren is on and {engine} is ready."));
     }
     if truthy(status.get("speaking")) {
         parts.push("Speaking now.".into());
@@ -591,7 +591,7 @@ async fn initialize(bridge: &Path, params: Option<&Value>) -> Value {
     json!({
         "protocolVersion": protocol,
         "capabilities": { "tools": {} },
-        "serverInfo": { "name": "delulu-voice", "title": "Delulu Voice", "version": version },
+        "serverInfo": { "name": "delulu-voice", "title": "Delulu Siren", "version": version },
         "instructions": format!("{instructions}\n\n{INBOX_INSTRUCTIONS}"),
     })
 }

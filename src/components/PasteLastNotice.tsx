@@ -32,8 +32,14 @@ export function PasteLastNotice({
       tone={status.phase === "error" ? "danger" : "info"}
       action={
         status.phase === "pending" ? (
-          <button className="secondary-button compact" onClick={onCancel}>
-            Cancel paste
+          <button
+            className="secondary-button compact"
+            aria-label="Cancel paste"
+            aria-keyshortcuts="Escape"
+            title="Cancel (Esc)"
+            onClick={onCancel}
+          >
+            Cancel
           </button>
         ) : status.phase !== "delivering" ? (
           <button
@@ -57,11 +63,6 @@ export function PasteLastNotice({
           {status.message}
         </p>
       </div>
-      {status.phase === "pending" && (
-        <p className="caption">
-          Press Escape here or use the tray to cancel. No Enter key is sent.
-        </p>
-      )}
     </Alert>
   );
 }
