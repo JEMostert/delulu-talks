@@ -1,0 +1,10 @@
+@import "@fontsource-variable/bricolage-grotesque/wght.css";
+@import "@fontsource-variable/newsreader/wght.css";
+@import "./tokens.css";
+@import "./base.css";
+@import "./controls.css";
+@import "./shell.css";
+@import "./home.css";
+@import "./history.css";
+@import "./settings.css";
+@import "./setup.css";

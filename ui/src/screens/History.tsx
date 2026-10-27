@@ -1,6 +1,9 @@
 import * as ipc from "../ipc";
+import { groupByDay } from "../helpers";
+import { Icon } from "../components/Icon";
 import { Transcript } from "../components/Transcript";
 import { errorText, type AppState } from "../state";
+
 export function History({ state }: { state: AppState }) {
   const {
     query,
@@ -14,32 +17,50 @@ export function History({ state }: { state: AppState }) {
     copy,
     insert,
   } = state;
+  const count = history.length;
+  const summary = query
+    ? `${count} ${count === 1 ? "match" : "matches"}`
+    : `${count} ${count === 1 ? "transcript" : "transcripts"}`;
   return (
-    <>
-      <div className="page-heading">
-        <h1>History</h1>
-        <p>Find and manage your past transcripts.</p>
-      </div>
-      <div className="history-tools">
+    <div className="history">
+      <div className="history-head">
+        <div className="title-block">
+          <h1>History</h1>
+          {(count > 0 || query) && <p className="count">{summary}</p>}
+        </div>
         <label className="search">
-          <span>Search transcripts</span>
+          <Icon name="search" size={17} />
+          <span className="visually-hidden">Search transcripts</span>
           <input
             type="search"
-            placeholder="Search transcripts"
+            placeholder="Search what you said"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
-        {history.length > 0 && (
-          <button onClick={() => setConfirmClear(true)}>Clear history</button>
+        {count > 0 && !query && (
+          <button
+            type="button"
+            className="button quiet"
+            onClick={() => setConfirmClear(true)}
+          >
+            Clear all
+          </button>
         )}
       </div>
       {confirmClear && (
         <div className="confirm" role="alert">
-          <p>Delete all transcripts? This cannot be undone.</p>
-          <button onClick={() => setConfirmClear(false)}>Cancel</button>
+          <p>Delete every transcript? This can’t be undone.</p>
           <button
-            className="danger"
+            type="button"
+            className="button"
+            onClick={() => setConfirmClear(false)}
+          >
+            Keep them
+          </button>
+          <button
+            type="button"
+            className="button danger"
             onClick={() =>
               void ipc
                 .clearHistory()
@@ -54,27 +75,53 @@ export function History({ state }: { state: AppState }) {
           </button>
         </div>
       )}
-      {history.length === 0 ? (
-        <p className="empty">
-          {query ? "No transcripts match your search." : "No transcripts yet."}
-        </p>
+      {count === 0 ? (
+        <div className="empty empty-history">
+          {query ? (
+            <>
+              <p className="empty-title">Nothing matches “{query}”</p>
+              <p>Try fewer words, or another language.</p>
+              <button
+                type="button"
+                className="button"
+                onClick={() => setQuery("")}
+              >
+                Clear search
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="empty-title">No transcripts yet</p>
+              <p>Everything you dictate is kept here, on this computer only.</p>
+            </>
+          )}
+        </div>
       ) : (
-        history.map((entry) => (
-          <Transcript
-            key={entry.id}
-            entry={entry}
-            languages={languages}
-            onCopy={copy}
-            onInsert={insert}
-            onDelete={() =>
-              void ipc
-                .deleteHistory(entry.id)
-                .then(refreshHistory)
-                .catch((e) => setNotice(errorText(e)))
-            }
-          />
+        groupByDay(history).map((group) => (
+          <section className="day" key={group.label} aria-label={group.label}>
+            <h2 className="day-label">{group.label}</h2>
+            <ol className="entries">
+              {group.entries.map((entry) => (
+                <Transcript
+                  key={entry.id}
+                  entry={entry}
+                  languages={languages}
+                  query={query}
+                  timeInGutter
+                  onCopy={copy}
+                  onInsert={insert}
+                  onDelete={() =>
+                    void ipc
+                      .deleteHistory(entry.id)
+                      .then(refreshHistory)
+                      .catch((e) => setNotice(errorText(e)))
+                  }
+                />
+              ))}
+            </ol>
+          </section>
         ))
       )}
-    </>
+    </div>
   );
 }

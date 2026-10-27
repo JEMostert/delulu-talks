@@ -49,6 +49,7 @@ export type Settings = {
   language: string;
   insert: "shift-insert" | "ctrl-v" | "ctrl-shift-v" | "off";
   theme: "system" | "light" | "dark";
+  overlay: boolean;
 };
 export type InputDevice = { id: string; name: string; isDefault: boolean };
 export type Language = { code: string; name: string };
