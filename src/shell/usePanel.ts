@@ -2,6 +2,14 @@ import { useEffect, useRef } from "react";
 import type { Page } from "../types";
 import type { Workspace } from "./workspace";
 
+/** The pearl, or the first dock item while the pearl is disabled (busy). */
+export function homeFocusTarget() {
+  return (
+    document.querySelector<HTMLElement>(".ocean-record:not(:disabled)") ??
+    document.querySelector<HTMLElement>(".dock-item")
+  );
+}
+
 /**
  * The sheet over the ocean: open whenever a page other than Home is shown.
  * Focus moves into the sheet when it opens and back to the pearl when it
@@ -39,8 +47,7 @@ export function usePanel(w: Workspace) {
         ref.current?.focus({ preventScroll: true });
         const content = document.getElementById("page-content");
         if (content) content.scrollTop = 0;
-      } else if (wasOpen.current)
-        document.querySelector<HTMLButtonElement>(".ocean-record")?.focus();
+      } else if (wasOpen.current) homeFocusTarget()?.focus();
       wasOpen.current = open;
     });
     return () => cancelAnimationFrame(frame);

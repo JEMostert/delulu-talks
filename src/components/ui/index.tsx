@@ -253,7 +253,9 @@ export function Modal({
         ? previous
         : visible(page)
           ? page
-          : document.querySelector<HTMLElement>('[aria-label="Open settings"]');
+          : (document.querySelector<HTMLElement>(
+              ".ocean-record:not(:disabled)",
+            ) ?? document.querySelector<HTMLElement>(".dock-item"));
       target?.focus({ preventScroll: true });
     };
   }, [visible]);

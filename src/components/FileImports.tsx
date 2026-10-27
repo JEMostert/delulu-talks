@@ -66,6 +66,8 @@ export function useFileImports(busy: boolean, onAdded: () => void) {
   const [pending, setPending] = useState(false);
   const [dragging, setDragging] = useState(false);
   const submitting = useRef(false);
+  // Set by Pause; adding, retrying or relinking files clears it.
+  const userPaused = useRef(false);
   const generation = useRef(0);
   const depth = useRef(0);
 
@@ -124,21 +126,20 @@ export function useFileImports(busy: boolean, onAdded: () => void) {
       void reload();
     }
   }
-  const resume = async () => accept(await bridge.pauseImportQueue(false));
+  const resume = async () => {
+    userPaused.current = false;
+    accept(await bridge.pauseImportQueue(false));
+  };
+  // Changing the list pauses the queue on the desktop; keep it going unless
+  // the user paused it.
+  const keepGoing = async () => {
+    if (!userPaused.current) accept(await bridge.pauseImportQueue(false));
+  };
 
-  // Completed jobs are History records already. Pruning them keeps the queue
-  // limit for open work; failed and cancelled files keep their error.
-  async function pruneCompleted() {
-    const snapshot = await bridge.getImportQueue();
-    const done = snapshot.jobs.filter((job) => job.state === "completed");
-    if (!done.length) return;
-    if (!snapshot.jobs.some(stopped))
-      accept(await bridge.clearFinishedImports());
-    else for (const job of done) await bridge.removeAudioJob(job.path);
-  }
+  // When the queue is full, the desktop drops the oldest completed imports
+  // (already in History) to make room.
   const add = (pick: () => Promise<AudioFileSelection[]>) =>
     run(async () => {
-      await pruneCompleted();
       if (!(await pick()).length) return;
       // Adding files pauses the queue; start it so they transcribe right away.
       await resume();
@@ -189,10 +190,24 @@ export function useFileImports(busy: boolean, onAdded: () => void) {
       run(async () => {
         if (await bridge.relinkAudioJob(job.path)) await resume();
       }),
-    remove: (job: ImportQueueJob) => run(() => bridge.removeAudioJob(job.path)),
+    remove: (job: ImportQueueJob) =>
+      run(async () => {
+        await bridge.removeAudioJob(job.path);
+        await keepGoing();
+      }),
+    pause: () =>
+      run(async () => {
+        userPaused.current = true;
+        accept(await bridge.pauseImportQueue(true));
+      }),
     resume: () => run(resume),
+    // Completed imports stay, so their transcripts keep the Listen button.
     clearStopped: () =>
-      run(async () => accept(await bridge.clearFinishedImports())),
+      run(async () => {
+        for (const job of queue.jobs.filter(stopped))
+          await bridge.removeAudioJob(job.path);
+        await keepGoing();
+      }),
     dropTarget: {
       onDragEnter(event: DragEvent) {
         if (!files(event)) return;
@@ -241,10 +256,10 @@ export function FileDropOverlay({ imports }: { imports: FileImports }) {
 export function FileImportList({ imports }: { imports: FileImports }) {
   const { rows, pending, blocked } = imports;
   if (!rows.length && !imports.error) return null;
-  const stalled =
-    imports.paused &&
-    !imports.running &&
-    rows.some((job) => job.state === "queued");
+  const queued = rows.some((job) => job.state === "queued");
+  const waiting = imports.paused && queued;
+  // Dictation waits while a file transcribes; Pause frees it after this file.
+  const pausable = !imports.paused && (queued || imports.running);
   return (
     <section
       className="file-imports"
@@ -257,9 +272,13 @@ export function FileImportList({ imports }: { imports: FileImports }) {
       {!!rows.length && (
         <div className="file-imports-head">
           <h3>Files</h3>
-          {stalled && <span>Paused</span>}
+          {waiting && (
+            <span>
+              {imports.running ? "Pausing after this file" : "Paused"}
+            </span>
+          )}
           <span className="flex-1" />
-          {stalled && (
+          {waiting && (
             <button
               className="text-button compact"
               aria-label="Resume transcribing files"
@@ -267,6 +286,17 @@ export function FileImportList({ imports }: { imports: FileImports }) {
               onClick={() => void imports.resume()}
             >
               Resume
+            </button>
+          )}
+          {pausable && (
+            <button
+              className="text-button compact"
+              aria-label="Pause after the current file"
+              title="Finish the current file, then wait. Dictation is free again once it is done."
+              disabled={pending}
+              onClick={() => void imports.pause()}
+            >
+              Pause
             </button>
           )}
           {rows.filter(stopped).length > 1 && (

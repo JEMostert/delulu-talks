@@ -114,7 +114,9 @@ impl Lab {
     }
 
     /// `selectAudioFiles`: validates the whole batch, adds new sources to the
-    /// queue and remembers them as selected. `busy` is the dictation/runtime check.
+    /// queue and remembers them as selected. When the queue would overflow,
+    /// the oldest completed imports (already in History) make room.
+    /// `busy` is the dictation/runtime check.
     pub fn select(&self, paths: &[String], busy: bool) -> DomainResult<Vec<AudioFileSelection>> {
         if paths.len() > MAX_AUDIO_BATCH_FILES {
             return Err(plain(format!("Choose at most {MAX_AUDIO_BATCH_FILES} files at once")));
@@ -142,10 +144,19 @@ impl Lab {
                 transcript_id: None,
             });
         }
-        if existing.len() + additions.len() > MAX_AUDIO_BATCH_FILES {
-            return Err(plain("Clear finished imports before adding more files"));
+        let mut excess = (existing.len() + additions.len()).saturating_sub(MAX_AUDIO_BATCH_FILES);
+        let mut kept = existing;
+        kept.retain(|job| {
+            let drop = excess > 0 && job.state == ImportJobState::Completed;
+            excess -= usize::from(drop);
+            !drop
+        });
+        if excess > 0 {
+            return Err(plain(format!(
+                "Up to {MAX_AUDIO_BATCH_FILES} files can wait at once. Remove some before adding more"
+            )));
         }
-        queue.replace(existing.into_iter().chain(additions).collect())?;
+        queue.replace(kept.into_iter().chain(additions).collect())?;
         let mut selected = self.selected.lock();
         for file in &files {
             selected.insert(file.path.clone());
