@@ -13,6 +13,9 @@ tokio = { version = "1", features = ["full"] }
 handy-cpal = { version = "=0.18.2", features = ["pulseaudio"] }
 rubato = "0.16"
 whisper-rs = { version = "=0.16.0", features = ["vulkan"] }
+# The cleanup helper only. No openmp (no libgomp at runtime) and no `common`.
+llama-cpp-2 = { version = "=0.1.160", default-features = false, features = ["vulkan"] }
+libc = "0.2"
 ureq = "3"
 sha2 = "0.10"
 arboard = { version = "3", features = ["wayland-data-control"] }

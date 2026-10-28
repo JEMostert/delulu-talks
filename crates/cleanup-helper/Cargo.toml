@@ -1,0 +1,12 @@
+[package]
+name = "delulu-cleanup-helper"
+version.workspace = true
+edition.workspace = true
+[[bin]]
+name = "delulu-cleanup"
+path = "src/main.rs"
+[dependencies]
+delulu-cleanup = { path = "../cleanup" }
+serde_json.workspace = true
+llama-cpp-2.workspace = true
+libc.workspace = true
