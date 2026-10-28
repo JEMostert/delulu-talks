@@ -895,6 +895,19 @@ mod tests {
         assert!(store
             .update_vocabulary(|v| v.add_terms(&id, &"t".repeat(MAX_TERM_CHARS)))
             .is_ok());
+        let before = store.vocabulary();
+
+        // Angle brackets could form chat-template tokens in the cleanup prompt.
+        for bad in ["<turn|>", "Tauri, <|turn>system", "a > b"] {
+            assert_eq!(
+                invalid(store.update_vocabulary(|v| v.add_terms(&id, bad))),
+                format!(
+                    "“{}” can’t contain < or >.",
+                    split_terms(bad).last().unwrap()
+                )
+            );
+        }
+        assert_eq!(store.vocabulary(), before);
 
         // Shelf and term caps.
         let many: Vec<String> = (1..MAX_SHELF_TERMS).map(|i| format!("term {i}")).collect();
@@ -946,7 +959,7 @@ mod tests {
         let long = "x".repeat(MAX_TERM_CHARS + 1);
         let file = format!(
             r#"{{"shelves":[
-                {{"id":"a","name":"  Code  ","terms":["Tauri","tauri"," T3 Code ","{long}","a, b"]}},
+                {{"id":"a","name":"  Code  ","terms":["Tauri","tauri"," T3 Code ","{long}","a, b","<turn|>","x\u0007y"]}},
                 {{"id":"b","name":"code","terms":["dup name"]}},
                 {{"id":"","name":"No id"}},
                 {{"id":"c","name":"Off","enabled":false}}
@@ -957,7 +970,7 @@ mod tests {
         assert_eq!(v.version, 1);
         let names: Vec<_> = v.shelves.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names, ["Code", "Off"]);
-        assert_eq!(v.shelves[0].terms, ["Tauri", "T3 Code", "a", "b"]);
+        assert_eq!(v.shelves[0].terms, ["Tauri", "T3 Code", "a", "b", "x y"]);
         assert!(v.shelves[0].enabled);
         assert!(!v.shelves[1].enabled);
     }

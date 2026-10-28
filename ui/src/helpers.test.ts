@@ -17,6 +17,8 @@ import {
   splitTerms,
   isTermList,
   termCount,
+  serialQueue,
+  restorePaste,
 } from "./helpers";
 import type { HistoryEntry, Settings } from "./ipc";
 test("formats timings and dates", () => {
@@ -142,4 +144,42 @@ test("splits pasted vocabulary lists like the backend", () => {
   expect(isTermList("T3 Code\nTauri")).toBe(true);
   expect(termCount(1)).toBe("1 term");
   expect(termCount(0)).toBe("0 terms");
+});
+test("serial queue runs tasks in call order, past failures", async () => {
+  const run = serialQueue();
+  const log: string[] = [];
+  const later =
+    (name: string, ms: number, fail = false) =>
+    () =>
+      new Promise<string>((resolve, reject) =>
+        setTimeout(() => {
+          log.push(name);
+          if (fail) reject(new Error(name));
+          else resolve(name);
+        }, ms),
+      );
+  // The slow first task still finishes before the fast second one starts.
+  const results = await Promise.allSettled([
+    run(later("slow", 30)),
+    run(later("broken", 1, true)),
+    run(later("fast", 1)),
+  ]);
+  expect(log).toEqual(["slow", "broken", "fast"]);
+  expect(results.map((r) => r.status)).toEqual([
+    "fulfilled",
+    "rejected",
+    "fulfilled",
+  ]);
+});
+test("a failed paste goes back into the term field", () => {
+  // Untouched field: at the caret, or over the selection.
+  expect(restorePaste("", "", 0, 0, "T3 Code\nTauri")).toBe("T3 Code, Tauri");
+  expect(restorePaste("Whisper", "Whisper", 7, 7, "a,b")).toBe("Whisper, a, b");
+  expect(restorePaste("x OLD y", "x OLD y", 2, 5, "a\nb")).toBe("x a, b y");
+  expect(restorePaste("Claude", "Claude", 0, 0, "a, b")).toBe("a, b, Claude");
+  // Typed meanwhile: keep it and append the list.
+  expect(restorePaste("Gem", "", 0, 0, "a\nb")).toBe("Gem, a, b");
+  expect(restorePaste("Gem, ", "x", 1, 1, "a\nb")).toBe("Gem, a, b");
+  expect(restorePaste("  ", "x", 1, 1, "a\nb")).toBe("a, b");
+  expect(restorePaste("keep", "keep", 4, 4, " , \n")).toBe("keep");
 });

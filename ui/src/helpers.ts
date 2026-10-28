@@ -169,3 +169,39 @@ export const splitTerms = (text: string): string[] =>
 export const isTermList = (text: string) => /[,\n\r]/.test(text.trim());
 export const termCount = (count: number) =>
   `${count} ${count === 1 ? "term" : "terms"}`;
+/**
+ * Runs async tasks one at a time, in call order, so replies can never arrive out
+ * of order. A failed task does not stop the ones queued after it.
+ */
+export function serialQueue() {
+  let tail: Promise<unknown> = Promise.resolve();
+  return <T>(task: () => Promise<T>): Promise<T> => {
+    const result = tail.then(task);
+    tail = result.catch(() => undefined);
+    return result;
+  };
+}
+/**
+ * Puts a pasted list that failed to save back into the term field. `before` and the
+ * selection are from the moment of the paste; if the field changed since, the list
+ * goes at the end so nothing typed meanwhile is lost. Single-line, comma-separated.
+ */
+export function restorePaste(
+  now: string,
+  before: string,
+  start: number,
+  end: number,
+  pasted: string,
+): string {
+  const list = splitTerms(pasted).join(", ");
+  if (!list) return now;
+  if (now === before) {
+    const head = before.slice(0, start);
+    const tail = before.slice(end);
+    const lead = head && !/[,\s]$/.test(head) ? ", " : "";
+    const trail = tail && !/^[,\s]/.test(tail) ? ", " : "";
+    return `${head}${lead}${list}${trail}${tail}`;
+  }
+  if (!now.trim()) return list;
+  return `${now.replace(/[,\s]*$/, "")}, ${list}`;
+}

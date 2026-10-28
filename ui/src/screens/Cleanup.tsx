@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as ipc from "../ipc";
-import { isTermList, termCount } from "../helpers";
+import { isTermList, restorePaste, serialQueue, termCount } from "../helpers";
 import { CleanupControl } from "../components/CleanupControl";
 import { IconButton, Row, Switch } from "../components/Controls";
 import { Icon } from "../components/Icon";
 import { errorText, type AppState } from "../state";
 
-/** Runs one vocabulary change and keeps the result; errors become a notice. */
+/**
+ * Runs one vocabulary change and keeps the result; errors become a notice. Changes
+ * run one at a time, so every reply is newer than the one before it.
+ */
 type Run = (
   call: () => Promise<ipc.Vocabulary>,
 ) => Promise<ipc.Vocabulary | undefined>;
@@ -16,10 +19,10 @@ export function Cleanup({ state }: { state: AppState }) {
   const [vocabulary, setVocabulary] = useState<ipc.Vocabulary>();
   // The shelf just created, so its term field takes focus.
   const [created, setCreated] = useState<string>();
+  const [queue] = useState(() => serialQueue());
   useEffect(() => {
     let active = true;
-    ipc
-      .getVocabulary()
+    queue(ipc.getVocabulary)
       .then((value) => {
         if (active) setVocabulary(value);
       })
@@ -29,11 +32,11 @@ export function Cleanup({ state }: { state: AppState }) {
     return () => {
       active = false;
     };
-  }, [setNotice]);
+  }, [queue, setNotice]);
   const run = useCallback<Run>(
     async (call) => {
       try {
-        const value = await call();
+        const value = await queue(call);
         setVocabulary(value);
         return value;
       } catch (e) {
@@ -41,7 +44,7 @@ export function Cleanup({ state }: { state: AppState }) {
         return undefined;
       }
     },
-    [setNotice],
+    [queue, setNotice],
   );
   if (!settings) return null;
   const shelves = vocabulary?.shelves ?? [];
@@ -138,8 +141,10 @@ function NewShelf({
       onSubmit={(e) => {
         e.preventDefault();
         if (!name.trim()) return;
-        void onAdd(name).then((ok) => {
-          if (ok) setName("");
+        const submitted = name;
+        void onAdd(submitted).then((ok) => {
+          // Keep a name typed while the shelf was saving.
+          if (ok) setName((now) => (now === submitted ? "" : now));
         });
       }}
     >
@@ -210,14 +215,12 @@ function ShelfCard({
         {renaming ? (
           <RenameField
             name={shelf.name}
-            onDone={async (name) => {
-              if (name.trim() && name.trim() !== shelf.name) {
-                const value = await run(() => ipc.renameShelf(shelf.id, name));
-                if (!value) return;
-              }
-              setRenaming(false);
-            }}
-            onCancel={() => setRenaming(false)}
+            onSave={async (name) =>
+              !name.trim() ||
+              name.trim() === shelf.name ||
+              (await run(() => ipc.renameShelf(shelf.id, name))) !== undefined
+            }
+            onClose={() => setRenaming(false)}
           />
         ) : (
           <h3 className="shelf-name">{shelf.name}</h3>
@@ -312,42 +315,62 @@ function ShelfCard({
           const text = e.clipboardData.getData("text");
           if (!isTermList(text)) return;
           e.preventDefault();
-          void add(text);
+          const input = e.currentTarget;
+          const start = input.selectionStart ?? draft.length;
+          const end = input.selectionEnd ?? start;
+          const before = draft;
+          void add(text).then((ok) => {
+            // Not saved: put the list in the field so it can be fixed.
+            if (!ok)
+              setDraft((now) => restorePaste(now, before, start, end, text));
+          });
         }}
       />
     </article>
   );
 }
 
+/** Saves on Enter or blur; closes once the saved name is still the one shown. */
 function RenameField({
   name,
-  onDone,
-  onCancel,
+  onSave,
+  onClose,
 }: {
   name: string;
-  onDone: (name: string) => Promise<void>;
-  onCancel: () => void;
+  onSave: (name: string) => Promise<boolean>;
+  onClose: () => void;
 }) {
   const [value, setValue] = useState(name);
+  const latest = useRef(name);
+  const input = useRef<HTMLInputElement>(null);
   const saving = useRef(false);
   // Escape closes the field; the blur that may follow must not save.
   const cancelled = useRef(false);
   const done = () => {
     if (saving.current || cancelled.current) return;
     saving.current = true;
-    void onDone(value).finally(() => {
+    const saved = latest.current;
+    void onSave(saved).then((ok) => {
       saving.current = false;
+      if (!ok || cancelled.current) return;
+      if (latest.current === saved) onClose();
+      // Edited while saving and left meanwhile: that blur was skipped, save again.
+      else if (document.activeElement !== input.current) done();
     });
   };
   return (
     <input
+      ref={input}
       className="field shelf-rename"
       aria-label="Shelf name"
       maxLength={40}
       autoComplete="off"
       autoFocus
       value={value}
-      onChange={(e) => setValue(e.target.value)}
+      onChange={(e) => {
+        latest.current = e.target.value;
+        setValue(e.target.value);
+      }}
       onBlur={done}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
@@ -356,7 +379,7 @@ function RenameField({
         } else if (e.key === "Escape") {
           e.preventDefault();
           cancelled.current = true;
-          onCancel();
+          onClose();
         }
       }}
     />

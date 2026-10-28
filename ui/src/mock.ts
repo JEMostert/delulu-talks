@@ -40,26 +40,65 @@ let cleanupStatus: CleanupStatus = {
 if (cleanupParam === "off") settings.cleanup = false;
 if (cleanupParam === "missing") settings.cleanupModelOk = false;
 let cleanupDownload: ReturnType<typeof setInterval> | undefined;
-// ?empty also starts without vocabularies.
+const demoShelves = (): Shelf[] => [
+  {
+    id: crypto.randomUUID(),
+    name: "Programming",
+    enabled: true,
+    terms: ["T3 Code", "Tauri", "Claude Code"],
+  },
+  {
+    id: crypto.randomUUID(),
+    name: "Places",
+    enabled: false,
+    terms: ["Scheveningen", "Utrecht"],
+  },
+];
+const VOCABULARY_KEY = "mock-vocabulary";
+/** Shelves saved by an earlier mock session, or undefined. */
+function storedShelves(): Shelf[] | undefined {
+  try {
+    const value: unknown = JSON.parse(
+      localStorage.getItem(VOCABULARY_KEY) ?? "null",
+    );
+    const ok =
+      Array.isArray(value) &&
+      value.every(
+        (s) =>
+          typeof s?.id === "string" &&
+          typeof s.name === "string" &&
+          typeof s.enabled === "boolean" &&
+          Array.isArray(s.terms) &&
+          s.terms.every((t: unknown) => typeof t === "string"),
+      );
+    return ok ? (value as Shelf[]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+// ?empty also starts without vocabularies; otherwise they survive a reload.
 let shelves: Shelf[] = params.has("empty")
   ? []
-  : [
-      {
-        id: crypto.randomUUID(),
-        name: "Programming",
-        enabled: true,
-        terms: ["T3 Code", "Tauri", "Claude Code"],
-      },
-      {
-        id: crypto.randomUUID(),
-        name: "Places",
-        enabled: false,
-        terms: ["Scheveningen", "Utrecht"],
-      },
-    ];
+  : (storedShelves() ?? demoShelves());
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-/** The backend's rules, in short: tidy, dedupe, cap. */
+/** Like delulu_cleanup::vocabulary_terms: at most 100 terms and 1,500 characters. */
+function usedTerms(active: string[]) {
+  let used = 0;
+  let chars = 0;
+  for (const term of active) {
+    chars += [...term].length;
+    if (used === 100 || chars > 1500) break;
+    used += 1;
+  }
+  return used;
+}
+/** The backend's rules, in short: tidy, dedupe, cap. Saves for the next reload. */
 function vocabulary() {
+  try {
+    localStorage.setItem(VOCABULARY_KEY, JSON.stringify(shelves));
+  } catch {
+    // Storage full or blocked: the mock just forgets on reload.
+  }
   const active: string[] = [];
   for (const shelf of shelves.filter((s) => s.enabled))
     for (const term of shelf.terms)
@@ -68,7 +107,7 @@ function vocabulary() {
     version: 1,
     shelves,
     activeTerms: active.length,
-    usedTerms: Math.min(active.length, 100),
+    usedTerms: usedTerms(active),
   };
 }
 function changeShelf(id: unknown, change: (shelf: Shelf) => Shelf) {
@@ -211,6 +250,7 @@ export async function invoke<T>(
         for (const term of splitTerms(String(args?.text))) {
           if (term.length > 48)
             throw `“${term}” is too long; terms can be at most 48 characters.`;
+          if (/[<>]/.test(term)) throw `“${term}” can’t contain < or >.`;
           if (!terms.some((t) => same(t, term))) terms.push(term);
         }
         if (terms.length > 200) throw "A shelf can hold at most 200 terms.";

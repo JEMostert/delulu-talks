@@ -54,6 +54,12 @@ fn tidy(text: &str) -> String {
         .join(" ")
 }
 
+/// Angle brackets could form chat-template tokens like `<turn|>` in the cleanup prompt.
+/// Control characters never survive `tidy`.
+fn safe_term(term: &str) -> bool {
+    !term.contains(['<', '>'])
+}
+
 fn same(a: &str, b: &str) -> bool {
     a.to_lowercase() == b.to_lowercase()
 }
@@ -130,8 +136,8 @@ impl Vocabulary {
     }
 
     /// Adds every term in a comma- or newline-separated `text`, skipping ones already
-    /// on the shelf (case-insensitive). All or nothing: a term that is too long or a
-    /// full shelf adds none. Returns how many were added.
+    /// on the shelf (case-insensitive). All or nothing: a term that is too long or holds
+    /// `<` or `>`, or a full shelf, adds none. Returns how many were added.
     pub fn add_terms(&mut self, id: &str, text: &str) -> Result<usize, StoreError> {
         let shelf = self.shelf_mut(id)?;
         let mut new: Vec<String> = Vec::new();
@@ -140,6 +146,9 @@ impl Vocabulary {
                 return Err(invalid(format!(
                     "“{term}” is too long; terms can be at most {MAX_TERM_CHARS} characters."
                 )));
+            }
+            if !safe_term(&term) {
+                return Err(invalid(format!("“{term}” can’t contain < or >.")));
             }
             if !shelf.terms.iter().chain(&new).any(|t| same(t, &term)) {
                 new.push(term);
@@ -209,7 +218,7 @@ impl Vocabulary {
             }
             let mut terms: Vec<String> = Vec::new();
             for term in shelf.terms.iter().flat_map(|t| split_terms(t)) {
-                let fits = term.chars().count() <= MAX_TERM_CHARS;
+                let fits = term.chars().count() <= MAX_TERM_CHARS && safe_term(&term);
                 if fits && terms.len() < MAX_SHELF_TERMS && !terms.iter().any(|t| same(t, &term)) {
                     terms.push(term);
                 }
