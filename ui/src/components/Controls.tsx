@@ -121,7 +121,7 @@ export function Select({
   );
 }
 
-/** The hotkey as keycaps, or a quiet note when GNOME has none bound. */
+/** The hotkey as keycaps, or a quiet note when the desktop has none bound. */
 export function Keys({
   trigger,
   large,

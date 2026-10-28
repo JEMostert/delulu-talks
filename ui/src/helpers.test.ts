@@ -13,6 +13,7 @@ import {
   languageName,
   settingsPatch,
   insertMessage,
+  meterLevel,
 } from "./helpers";
 import type { HistoryEntry, Settings } from "./ipc";
 test("formats timings and dates", () => {
@@ -115,4 +116,13 @@ test("result words and notice tones", () => {
   expect(noticeTone("Copied to clipboard")).toBe("info");
   expect(isTransientNotice("Copied to clipboard")).toBe(true);
   expect(isTransientNotice("Copied — press Ctrl+V")).toBe(false);
+});
+
+test("mic meter uses a dB scale so normal speech fills the middle", () => {
+  expect(meterLevel(0)).toBe(0);
+  expect(meterLevel(Number.NaN)).toBe(0);
+  expect(meterLevel(0.001)).toBe(0);
+  expect(meterLevel(0.6)).toBe(1);
+  expect(meterLevel(0.03)).toBeGreaterThan(0.45);
+  expect(meterLevel(0.03)).toBeLessThan(0.6);
 });

@@ -211,7 +211,7 @@ export async function invoke<T>(
     case "start_mic_test":
       clearInterval(mic);
       mic = setInterval(
-        () => emit("mic-level", 0.1 + Math.random() * 0.55),
+        () => emit("mic-level", 0.005 + Math.random() * 0.08),
         50,
       );
       break;
@@ -283,10 +283,7 @@ export async function invoke<T>(
       voice = setInterval(() => {
         const t = (performance.now() - started) / 1000;
         const syllables = Math.max(0, Math.sin(t * 9) * Math.sin(t * 2.3 + 1));
-        emit(
-          "mic-level",
-          Math.min(1, 0.08 + syllables * 0.85 + Math.random() * 0.1),
-        );
+        emit("mic-level", 0.002 + syllables * 0.12 + Math.random() * 0.01);
       }, 50);
       break;
     }

@@ -1,7 +1,7 @@
 import { ModelControl } from "./components/ModelControl";
 import { useCallback, useEffect, useState } from "react";
 import * as ipc from "./ipc";
-import { insertMessage, settingsPatch } from "./helpers";
+import { insertMessage, meterLevel, settingsPatch } from "./helpers";
 export type Page = "Home" | "History" | "Settings";
 export const errorText = (error: unknown) => String(error);
 export function useAppState() {
@@ -80,7 +80,7 @@ export function useAppState() {
       .then(setCleanupStatus)
       .catch((e) => setNotice(errorText(e)));
     subscribe(ipc.onStatus(setStatus));
-    subscribe(ipc.onMicLevel(setLevel));
+    subscribe(ipc.onMicLevel((rms) => setLevel(meterLevel(rms))));
     subscribe(
       ipc.onTranscript((value) => {
         setRecovery(value);

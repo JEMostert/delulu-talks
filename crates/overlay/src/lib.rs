@@ -9,6 +9,6 @@ mod helper;
 mod model;
 
 pub use client::Pill;
-pub use draw::render_preview;
+pub use draw::{render_demo, render_preview};
 pub use helper::{run_pill, UNAVAILABLE};
 pub use model::{audible_level, Message, PillState};

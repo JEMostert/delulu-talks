@@ -2,10 +2,10 @@
 //! (XWayland on Wayland desktops), driven by JSON lines on stdin.
 
 use crate::draw;
-use crate::model::{Model, PillState, HEIGHT};
+use crate::model::{Model, CANVAS_H, CANVAS_W, HEIGHT, PAD_TOP};
 use crate::Message;
 use gtk::prelude::*;
-use gtk::{gdk, glib};
+use gtk::{gdk, gio, glib};
 use std::cell::{Cell, RefCell};
 use std::io::Read;
 use std::os::fd::{AsFd, AsRawFd};
@@ -14,6 +14,15 @@ use std::rc::Rc;
 /// Exit code when there is no X display to draw on; the client stops trying.
 pub const UNAVAILABLE: i32 = 3;
 const BOTTOM_MARGIN: i32 = 28;
+/// XWayland often reports the full screen as work area, hiding Wayland panels
+/// (a KDE panel is ~54 px plus its floating gap); stay clear of them then.
+const PANEL_CLEARANCE: i32 = 80;
+/// The pill is drawn at this size relative to its logical layout.
+const SCALE: f64 = 1.2;
+
+fn scaled(px: f64) -> i32 {
+    (px * SCALE).round() as i32
+}
 
 struct Pill {
     window: gtk::Window,
@@ -21,7 +30,6 @@ struct Pill {
     tick: RefCell<Option<gtk::TickCallbackId>>,
     last_frame: Cell<Option<i64>>,
     hide_timer: RefCell<Option<glib::SourceId>>,
-    width: Cell<i32>,
     mapped_once: Cell<bool>,
 }
 
@@ -47,6 +55,9 @@ pub fn run_pill() -> i32 {
         }
         _ => eprintln!("pill: no compositor, drawing without transparency"),
     }
+    // One fixed canvas with room for glow and bursts; the pill animates inside it.
+    window.set_size_request(scaled(CANVAS_W), scaled(CANVAS_H));
+    window.resize(scaled(CANVAS_W), scaled(CANVAS_H));
     window.realize();
 
     let reduce_motion = gtk::Settings::default().is_some_and(|s| !s.is_gtk_enable_animations());
@@ -59,13 +70,13 @@ pub fn run_pill() -> i32 {
         tick: RefCell::new(None),
         last_frame: Cell::new(None),
         hide_timer: RefCell::new(None),
-        width: Cell::new(0),
         mapped_once: Cell::new(false),
     });
 
     let p = pill.clone();
-    window.connect_draw(move |w, cr| {
-        if let Err(e) = draw::draw(cr, &p.model.borrow(), f64::from(w.allocated_width())) {
+    window.connect_draw(move |_, cr| {
+        cr.scale(SCALE, SCALE);
+        if let Err(e) = draw::draw(cr, &p.model.borrow()) {
             eprintln!("pill: draw: {e}");
         }
         glib::Propagation::Stop
@@ -75,8 +86,9 @@ pub fn run_pill() -> i32 {
         if !p.mapped_once.replace(true) {
             let (x, y) = w.position();
             eprintln!(
-                "pill: mapped at {x},{y} ({}x{HEIGHT}, scale {})",
+                "pill: mapped at {x},{y} ({}x{}, scale {})",
                 w.allocated_width(),
+                w.allocated_height(),
                 w.scale_factor()
             );
         }
@@ -165,23 +177,26 @@ impl Pill {
         if let Some(id) = self.hide_timer.take() {
             id.remove();
         }
-        let (width, auto_hide) = {
+        let (visible, leaving, auto_hide) = {
             let mut model = self.model.borrow_mut();
             model.apply(m);
-            if model.state == PillState::Hidden {
-                drop(model);
-                self.hide();
-                return;
+            if model.visible && model.leaving.is_none() {
+                let width = draw::width(&model);
+                model.set_target_width(f64::from(width));
             }
-            (draw::width(&model), model.auto_hide())
+            (model.visible, model.leaving.is_some(), model.auto_hide())
         };
-        if width != self.width.replace(width) {
-            self.window.set_size_request(width, HEIGHT);
-            self.window.resize(width, HEIGHT);
+        if !visible {
+            self.hide();
+            return;
         }
-        self.place(width);
         self.sync_tick();
+        if leaving {
+            // Sinking away; the tick hides the window when it is done.
+            return;
+        }
         if !self.window.is_visible() {
+            self.place();
             // Click-through: an empty input shape lets every click fall to the app below.
             self.window
                 .input_shape_combine_region(Some(&cairo::Region::create()));
@@ -193,8 +208,14 @@ impl Pill {
             let id = glib::timeout_add_local_once(after, move || {
                 if let Some(p) = weak.upgrade() {
                     p.hide_timer.take();
-                    p.model.borrow_mut().state = PillState::Hidden;
-                    p.hide();
+                    Pill::apply(
+                        &p,
+                        &Message {
+                            state: crate::PillState::Hidden,
+                            level: None,
+                            label: None,
+                        },
+                    );
                 }
             });
             *self.hide_timer.borrow_mut() = Some(id);
@@ -206,23 +227,34 @@ impl Pill {
         self.window.hide();
     }
 
-    /// Bottom centre of the primary monitor's work area, so KDE panels stay clear.
-    fn place(&self, width: i32) {
+    /// Bottom centre of the active monitor's work area, so KDE panels stay clear.
+    fn place(&self) {
         let display = self.window.display();
-        let Some(monitor) = display.primary_monitor().or_else(|| display.monitor(0)) else {
+        let Some(monitor) = active_monitor(&display)
+            .or_else(|| display.primary_monitor())
+            .or_else(|| display.monitor(0))
+        else {
             return;
         };
+        let geometry = monitor.geometry();
         let mut area = monitor.workarea();
         if area.width() <= 0 || area.height() <= 0 {
-            area = monitor.geometry();
+            area = geometry;
         }
         if area.width() <= 0 || area.height() <= 0 {
             // No monitor right now (screen off or unplugged); place it on the next update.
             return;
         }
+        let bottom = area.y() + area.height();
+        let margin = if bottom >= geometry.y() + geometry.height() {
+            PANEL_CLEARANCE
+        } else {
+            BOTTOM_MARGIN
+        };
+        // The pill's bottom edge sits `margin` above the bottom; glow room hangs below.
         self.window.move_(
-            area.x() + (area.width() - width) / 2,
-            area.y() + area.height() - HEIGHT - BOTTOM_MARGIN,
+            area.x() + (area.width() - scaled(CANVAS_W)) / 2,
+            bottom - margin - scaled(PAD_TOP + f64::from(HEIGHT)),
         );
     }
 
@@ -241,8 +273,22 @@ impl Pill {
                     .last_frame
                     .replace(Some(now))
                     .map_or(1.0 / 60.0, |last| (now - last) as f64 / 1e6);
-                p.model.borrow_mut().step(dt);
+                let visible = {
+                    let mut model = p.model.borrow_mut();
+                    model.step(dt);
+                    model.visible
+                };
                 w.queue_draw();
+                if !visible {
+                    // Done sinking away; hide outside this callback.
+                    let p = p.clone();
+                    glib::idle_add_local_once(move || {
+                        // A new message may have brought it back meanwhile.
+                        if !p.model.borrow().visible {
+                            p.hide();
+                        }
+                    });
+                }
                 glib::ControlFlow::Continue
             }));
         } else if !animate {
@@ -252,4 +298,27 @@ impl Pill {
             self.last_frame.set(None);
         }
     }
+}
+
+/// The monitor KWin calls active (where the pointer or focus is). XWayland only
+/// sees the pointer over X windows, so ask the compositor. None off KDE.
+fn active_monitor(display: &gdk::Display) -> Option<gdk::Monitor> {
+    let bus = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE).ok()?;
+    let reply = bus
+        .call_sync(
+            Some("org.kde.KWin"),
+            "/KWin",
+            "org.kde.KWin",
+            "activeOutputName",
+            None,
+            Some(glib::VariantTy::new("(s)").ok()?),
+            gio::DBusCallFlags::NO_AUTO_START,
+            200,
+            gio::Cancellable::NONE,
+        )
+        .ok()?;
+    let (name,): (String,) = reply.get()?;
+    (0..display.n_monitors())
+        .filter_map(|i| display.monitor(i))
+        .find(|m| m.model().is_some_and(|model| model == name))
 }

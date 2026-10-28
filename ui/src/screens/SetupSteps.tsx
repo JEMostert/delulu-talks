@@ -68,7 +68,7 @@ export function TypingStep({ state }: Props) {
         <div>
           <p className="permission-title">Typing into other apps</p>
           <p className="muted">
-            GNOME asks once whether Delulu Talks may type for you.
+            Your desktop asks once whether Delulu Talks may type for you.
           </p>
         </div>
         {permission?.ready ? (

@@ -204,7 +204,7 @@ mod tests {
         pill.show(PillState::Listening, None);
         assert_eq!(rx.try_recv().unwrap().state, PillState::Listening);
         pill.level(0.1);
-        assert!((rx.try_recv().unwrap().level.unwrap() - 0.42).abs() < 1e-6);
+        assert_eq!(rx.try_recv().unwrap().level, Some(audible_level(0.1)));
         pill.level(0.2);
         assert!(rx.try_recv().is_err(), "too soon after the last level");
         pill.show(PillState::Transcribing, None);

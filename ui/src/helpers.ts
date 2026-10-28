@@ -11,6 +11,12 @@ export const formatTime = (timestamp: number) =>
     hour: "numeric",
     minute: "2-digit",
   });
+/** Raw mic RMS (0–1) to a 0–1 meter value on a dB scale: −60 dBFS reads as
+ * empty, −6 dBFS as full, so normal speech (−40 to −20 dBFS) fills the middle. */
+export const meterLevel = (rms: number) =>
+  rms > 0 && Number.isFinite(rms)
+    ? Math.min(1, Math.max(0, (20 * Math.log10(rms) + 60) / 54))
+    : 0;
 export const languageName = (code: string, languages: Language[]) => {
   const name =
     languages.find((language) => language.code === code)?.name ?? code;

@@ -36,7 +36,10 @@ export function InputSection({ state }: Props) {
               <span className="row-error">{status.hotkey.error}</span>
             )}
             {hotkeyHint ? (
-              <span>Change it in GNOME Settings › Apps › Delulu Talks.</span>
+              <span>
+                Pick a new key in the window that opened, or in your system’s
+                shortcut settings.
+              </span>
             ) : (
               <span>Hold to talk, or tap to start and stop.</span>
             )}

@@ -3,13 +3,21 @@ use std::time::Duration;
 
 pub(crate) const BARS: usize = 9;
 pub(crate) const HEIGHT: i32 = 40;
+/// Transparent room around the pill for glow, ripples, bubbles and bursts.
+pub(crate) const PAD_X: f64 = 44.0;
+pub(crate) const PAD_TOP: f64 = 50.0;
+pub(crate) const PAD_BOTTOM: f64 = 22.0;
+/// The widest pill; the canvas is sized for it so the window never resizes.
+pub(crate) const MAX_PILL: f64 = 300.0;
+pub(crate) const CANVAS_W: f64 = MAX_PILL + 2.0 * PAD_X;
+pub(crate) const CANVAS_H: f64 = PAD_TOP + HEIGHT as f64 + PAD_BOTTOM;
+/// How long the pill takes to sink away after it is hidden.
+pub(crate) const LEAVE_SECS: f64 = 0.34;
 /// Words only where they help, and never long ones.
 const LABEL_CHARS: usize = 28;
 
 pub(crate) type Rgb = (f64, f64, f64);
 // Deep Sea palette, as in the legacy pill.
-pub(crate) const SHELL: (f64, f64, f64, f64) = (0.024, 0.098, 0.169, 0.95);
-pub(crate) const RIM: (f64, f64, f64, f64) = (0.745, 0.91, 1.0, 0.22);
 pub(crate) const INK: Rgb = (0.918, 0.965, 1.0);
 pub(crate) const CORAL: Rgb = (1.0, 0.435, 0.525);
 pub(crate) const FOAM: Rgb = (0.459, 0.894, 1.0);
@@ -36,11 +44,11 @@ pub struct Message {
     pub label: Option<String>,
 }
 
-/// Raw RMS from the recorder (speech sits around 0.02–0.2) to the 0–1 meter
-/// value the legacy pill was tuned for.
+/// Raw RMS from the recorder to a 0–1 meter value on a dB scale: −60 dBFS is
+/// silent, −6 dBFS full, so normal speech (−40 to −20 dBFS) fills the middle.
 pub fn audible_level(rms: f32) -> f32 {
-    if rms.is_finite() {
-        (rms * 4.2).clamp(0.0, 1.0)
+    if rms > 0.0 && rms.is_finite() {
+        ((20.0 * rms.log10() + 60.0) / 54.0).clamp(0.0, 1.0)
     } else {
         0.0
     }
@@ -56,6 +64,15 @@ pub(crate) struct Model {
     /// Seconds since the current state began, advanced only while animating.
     pub(crate) phase: f64,
     pub(crate) reduce_motion: bool,
+    /// On screen, including while sinking away.
+    pub(crate) visible: bool,
+    /// Seconds since the pill appeared.
+    pub(crate) age: f64,
+    /// Seconds into the exit animation, once hidden.
+    pub(crate) leaving: Option<f64>,
+    /// The pill width the content wants, and the width drawn (eased toward it).
+    pub(crate) target_width: f64,
+    pub(crate) shown_width: f64,
 }
 
 impl Default for Model {
@@ -67,6 +84,11 @@ impl Default for Model {
             shown_level: 0.0,
             phase: 0.0,
             reduce_motion: false,
+            visible: false,
+            age: 0.0,
+            leaving: None,
+            target_width: 52.0,
+            shown_width: 52.0,
         }
     }
 }
@@ -74,9 +96,21 @@ impl Default for Model {
 impl Model {
     pub(crate) fn apply(&mut self, m: &Message) {
         if m.state == PillState::Hidden {
-            self.state = PillState::Hidden;
+            // Keep the last look so it can sink away; without motion it just goes.
+            if self.visible && !self.reduce_motion {
+                self.leaving.get_or_insert(0.0);
+            } else {
+                self.visible = false;
+                self.leaving = None;
+            }
             return;
         }
+        if !self.visible {
+            self.visible = true;
+            self.age = 0.0;
+            self.state = PillState::Hidden;
+        }
+        self.leaving = None;
         if let Some(level) = m.level.filter(|l| l.is_finite()) {
             self.level = f64::from(level.clamp(0.0, 1.0));
         }
@@ -104,7 +138,15 @@ impl Model {
     }
 
     pub(crate) fn animates(&self) -> bool {
-        self.shows_bars() && !self.reduce_motion
+        self.visible && !self.reduce_motion
+    }
+
+    /// Set the width the content needs; a fresh pill starts at it.
+    pub(crate) fn set_target_width(&mut self, width: f64) {
+        self.target_width = width.min(MAX_PILL);
+        if self.age == 0.0 || self.reduce_motion {
+            self.shown_width = self.target_width;
+        }
     }
 
     pub(crate) fn accent(&self) -> Rgb {
@@ -143,6 +185,16 @@ impl Model {
     pub(crate) fn step(&mut self, dt: f64) {
         let dt = dt.clamp(0.0, 0.1);
         self.phase += dt;
+        self.age += dt;
+        if let Some(leaving) = self.leaving.as_mut() {
+            *leaving += dt;
+            if *leaving >= LEAVE_SECS {
+                self.visible = false;
+                self.leaving = None;
+            }
+        }
+        let k = 1.0 - (1.0 - 0.2_f64).powf(dt * 60.0);
+        self.shown_width += (self.target_width - self.shown_width) * k;
         // Rise quickly with the voice, fall back gently like water. The legacy
         // rates were per frame at 60 Hz; scale them so 144 Hz looks the same.
         let rate: f64 = if self.level > self.shown_level {
@@ -251,6 +303,8 @@ mod tests {
         };
         m.apply(&msg(PillState::Listening, Some(0.6), None));
         assert!(!m.animates());
+        m.apply(&msg(PillState::Hidden, None, None));
+        assert!(!m.visible, "no exit animation without motion");
         assert_eq!(m.shown_level, f64::from(0.6_f32));
     }
 
@@ -266,10 +320,28 @@ mod tests {
     }
 
     #[test]
-    fn audible_level_scales_and_clamps() {
+    fn audible_level_uses_decibels() {
         assert_eq!(audible_level(0.0), 0.0);
-        assert!((audible_level(0.1) - 0.42).abs() < 1e-6);
-        assert_eq!(audible_level(0.5), 1.0);
+        assert_eq!(audible_level(0.001), 0.0);
+        assert!((audible_level(0.1) - 40.0 / 54.0).abs() < 1e-5);
+        assert_eq!(audible_level(0.6), 1.0);
         assert_eq!(audible_level(f32::NAN), 0.0);
+    }
+
+    #[test]
+    fn hiding_sinks_away_then_goes() {
+        let mut m = Model::default();
+        m.apply(&msg(PillState::Success, None, Some("Typed")));
+        assert!(m.visible && m.animates());
+        m.apply(&msg(PillState::Hidden, None, None));
+        assert!(m.visible, "still sinking away");
+        assert_eq!(m.state, PillState::Success, "keeps its look while leaving");
+        for _ in 0..30 {
+            m.step(1.0 / 60.0);
+        }
+        assert!(!m.visible);
+        m.apply(&msg(PillState::Listening, None, None));
+        assert!(m.visible);
+        assert_eq!(m.age, 0.0, "a new appearance pops in again");
     }
 }

@@ -19,6 +19,6 @@ fn main() {
     ] {
         let path = dir.join(format!("{name}.png"));
         let width = render_preview(state, level, label, &path).expect("render");
-        println!("{} ({width}x40 @2x)", path.display());
+        println!("{} (pill {width} wide, @2x)", path.display());
     }
 }
