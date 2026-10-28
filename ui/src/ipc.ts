@@ -50,6 +50,9 @@ export type Settings = {
   insert: "shift-insert" | "ctrl-v" | "ctrl-shift-v" | "off";
   theme: "system" | "light" | "dark";
   overlay: boolean;
+  firstRunDone: boolean;
+  cleanup: boolean;
+  cleanupModelOk: boolean;
 };
 export type InputDevice = { id: string; name: string; isDefault: boolean };
 export type Language = { code: string; name: string };
@@ -59,7 +62,16 @@ export type ModelStatus = {
   bytes: number;
   downloaded: boolean;
 };
+export type CleanupStatus = {
+  state: "off" | "missing" | "downloading" | "loading" | "ready" | "error";
+  doneBytes: number;
+  totalBytes: number;
+  error: string | null;
+  backend: string | null;
+};
 export type HistoryEntry = {
+  raw?: string;
+  cleanupMs?: number;
   id: string;
   createdAt: number;
   text: string;
@@ -77,6 +89,15 @@ export type ModelDownload = {
   finished: boolean;
   error: string | null;
 };
+export const getCleanupStatus = () =>
+  invoke<CleanupStatus>("get_cleanup_status");
+export const startCleanup = () => invoke<void>("start_cleanup");
+export const cancelCleanupDownload = () =>
+  invoke<void>("cancel_cleanup_download");
+export const onCleanupStatus = (
+  fn: (value: CleanupStatus) => void,
+): Promise<UnlistenFn> =>
+  listen<CleanupStatus>("cleanup-status", (e) => fn(e.payload));
 export const getStatus = () => invoke<Status>("get_status");
 export const getSettings = () => invoke<Settings>("get_settings");
 export const setSettings = (settings: Settings) =>

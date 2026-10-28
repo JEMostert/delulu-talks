@@ -112,6 +112,10 @@ export function ModelStep({ state }: Props) {
         Speech recognition runs on this computer, so it needs a model. After
         this, nothing you say leaves your machine.
       </p>
+      <p className="muted">
+        Text cleanup (5.2 GB) downloads in the background afterwards. You can
+        turn it off in Settings.
+      </p>
       <div className="field">
         <label htmlFor="model">Model</label>
         {state.modelControl}

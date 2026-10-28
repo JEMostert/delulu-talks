@@ -6,6 +6,7 @@ export type Page = "Home" | "History" | "Settings";
 export const errorText = (error: unknown) => String(error);
 export function useAppState() {
   const [status, setStatus] = useState<ipc.Status>();
+  const [cleanupStatus, setCleanupStatus] = useState<ipc.CleanupStatus>();
   const [settings, setSettings] = useState<ipc.Settings>();
   const [microphones, setMicrophones] = useState<ipc.InputDevice[]>([]);
   const [languages, setLanguages] = useState<ipc.Language[]>([]);
@@ -73,6 +74,11 @@ export function useAppState() {
         }
       })
       .catch((e) => setNotice(errorText(e)));
+    subscribe(ipc.onCleanupStatus(setCleanupStatus));
+    void ipc
+      .getCleanupStatus()
+      .then(setCleanupStatus)
+      .catch((e) => setNotice(errorText(e)));
     subscribe(ipc.onStatus(setStatus));
     subscribe(ipc.onMicLevel(setLevel));
     subscribe(
@@ -128,6 +134,19 @@ export function useAppState() {
       void ipc.stopMicTest().catch(() => {});
     };
   }, [status?.phase, step, settings?.microphone]);
+  useEffect(() => {
+    if (
+      settings?.firstRunDone &&
+      !settings.cleanupModelOk &&
+      cleanupStatus?.state === "missing" &&
+      !localStorage.getItem("cleanup-notice")
+    ) {
+      localStorage.setItem("cleanup-notice", "1");
+      setNotice(
+        "New: text cleanup. Download it (5.2 GB) in Settings → Dictation.",
+      );
+    }
+  }, [settings, cleanupStatus]);
   async function update<K extends keyof ipc.Settings>(
     key: K,
     value: ipc.Settings[K],
@@ -209,6 +228,7 @@ export function useAppState() {
   );
   return {
     status,
+    cleanupStatus,
     setStatus,
     settings,
     microphones,
