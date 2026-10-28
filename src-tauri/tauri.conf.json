@@ -7,7 +7,7 @@
   "build": {
     "beforeDevCommand": "bun run dev:web",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build:web",
+    "beforeBuildCommand": "bun run build:web && bun run build:helper",
     "frontendDist": "../dist"
   },
   "app": {
@@ -40,7 +40,8 @@
         ],
         "desktopTemplate": "linux/generated.desktop",
         "files": {
-          "/usr/share/applications/com.joran.delulu-talks.desktop": "linux/com.joran.delulu-talks.desktop"
+          "/usr/share/applications/com.joran.delulu-talks.desktop": "linux/com.joran.delulu-talks.desktop",
+          "/usr/lib/delulu-talks/delulu-cleanup": "../target/release/delulu-cleanup"
         }
       },
       "rpm": {
@@ -49,7 +50,8 @@
         ],
         "desktopTemplate": "linux/generated.desktop",
         "files": {
-          "/usr/share/applications/com.joran.delulu-talks.desktop": "linux/com.joran.delulu-talks.desktop"
+          "/usr/share/applications/com.joran.delulu-talks.desktop": "linux/com.joran.delulu-talks.desktop",
+          "/usr/lib/delulu-talks/delulu-cleanup": "../target/release/delulu-cleanup"
         }
       }
     }
