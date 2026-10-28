@@ -24,11 +24,13 @@ pub fn model_path(dir: &Path, id: &str) -> Option<PathBuf> {
     model_info(id).map(|m| dir.join(m.file))
 }
 pub fn is_downloaded(dir: &Path, id: &str) -> bool {
-    model_info(id).is_some_and(|m| {
-        dir.join(m.file)
-            .metadata()
-            .is_ok_and(|v| v.len() == m.bytes)
-    })
+    model_info(id).is_some_and(|m| file_ready(dir, m))
+}
+/// True when the model file is in `dir` at its expected size.
+pub fn file_ready(dir: &Path, info: &ModelInfo) -> bool {
+    dir.join(info.file)
+        .metadata()
+        .is_ok_and(|v| v.len() == info.bytes)
 }
 pub fn download(
     dir: &Path,
@@ -37,6 +39,16 @@ pub fn download(
     cancel: &AtomicBool,
 ) -> Result<PathBuf, SttError> {
     let info = model_info(id).ok_or_else(|| SttError::Model(format!("unknown model: {id}")))?;
+    download_file(dir, info, progress, cancel)
+}
+/// Downloads any model-shaped file into `dir`, verifying size and SHA-256
+/// before it appears under its final name.
+pub fn download_file(
+    dir: &Path,
+    info: &ModelInfo,
+    progress: &mut dyn FnMut(u64, u64),
+    cancel: &AtomicBool,
+) -> Result<PathBuf, SttError> {
     if cancel.load(Ordering::Relaxed) {
         return Err(SttError::Cancelled);
     }
@@ -331,6 +343,25 @@ mod tests {
             Err(SttError::Cancelled)
         ));
         assert!(!dir.join("model.bin.part").exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn file_ready_checks_size_and_static_model_info() {
+        static INFO: ModelInfo = ModelInfo {
+            id: "static-test",
+            label: "static test",
+            file: "static-test.bin",
+            url: "",
+            sha256: "",
+            bytes: 3,
+        };
+        let dir = std::env::temp_dir().join(format!("delulu-stt-ready-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!file_ready(&dir, &INFO));
+        std::fs::write(dir.join("static-test.bin"), b"ab").unwrap();
+        assert!(!file_ready(&dir, &INFO));
+        std::fs::write(dir.join("static-test.bin"), b"abc").unwrap();
+        assert!(file_ready(&dir, &INFO));
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]

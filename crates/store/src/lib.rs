@@ -43,6 +43,11 @@ pub struct Settings {
     pub theme: Theme,
     /// Show the recording pill while dictating.
     pub overlay: bool,
+    /// Clean up transcripts with the local language model.
+    pub cleanup: bool,
+    /// The user has accepted the cleanup model download, so it may start on
+    /// its own. Internal; not a toggle.
+    pub cleanup_model_ok: bool,
 }
 
 impl Default for Settings {
@@ -56,6 +61,8 @@ impl Default for Settings {
             insert: InsertMode::default(),
             theme: Theme::default(),
             overlay: true,
+            cleanup: true,
+            cleanup_model_ok: false,
         }
     }
 }
@@ -78,6 +85,11 @@ pub struct HistoryEntry {
     pub audio_ms: u64,
     pub stt_ms: u64,
     pub total_ms: u64,
+    /// The raw transcript, kept only when cleanup changed `text`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup_ms: Option<u64>,
 }
 
 pub struct NewEntry {
@@ -87,6 +99,8 @@ pub struct NewEntry {
     pub audio_ms: u64,
     pub stt_ms: u64,
     pub total_ms: u64,
+    pub raw: Option<String>,
+    pub cleanup_ms: Option<u64>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -196,6 +210,8 @@ impl Store {
             audio_ms: e.audio_ms,
             stt_ms: e.stt_ms,
             total_ms: e.total_ms,
+            raw: e.raw,
+            cleanup_ms: e.cleanup_ms,
         };
         let line = serde_json::to_string(&entry)
             .map_err(|e| StoreError::Io(format!("history entry: {e}")))?;
@@ -432,6 +448,8 @@ mod tests {
             audio_ms: 1000,
             stt_ms: 200,
             total_ms: 300,
+            raw: None,
+            cleanup_ms: None,
         }
     }
 
@@ -498,6 +516,34 @@ mod tests {
             },
             Settings::default()
         );
+    }
+
+    #[test]
+    fn cleanup_settings_default_and_round_trip() {
+        let t = TempDir::new();
+        fs::create_dir_all(t.config()).unwrap();
+        fs::write(
+            t.config().join(SETTINGS_FILE),
+            r#"{"version":1,"theme":"dark"}"#,
+        )
+        .unwrap();
+        let store = open(&t);
+        assert!(store.settings().cleanup);
+        assert!(!store.settings().cleanup_model_ok);
+
+        let off = Settings {
+            cleanup: false,
+            cleanup_model_ok: true,
+            ..store.settings()
+        };
+        store.save_settings(&off).unwrap();
+        let saved = fs::read_to_string(t.config().join(SETTINGS_FILE)).unwrap();
+        assert!(saved.contains(r#""cleanup": false"#), "{saved}");
+        assert!(saved.contains(r#""cleanupModelOk": true"#), "{saved}");
+        drop(store);
+        let reloaded = open(&t).settings();
+        assert!(!reloaded.cleanup);
+        assert!(reloaded.cleanup_model_ok);
     }
 
     #[test]
@@ -639,6 +685,53 @@ mod tests {
             .map(|e| e.text)
             .collect();
         assert_eq!(texts, ["b", "a"]);
+    }
+
+    #[test]
+    fn cleanup_fields_round_trip_and_survive_timing_update() {
+        let t = TempDir::new();
+        let store = open(&t);
+        let cleaned = store
+            .add_history(NewEntry {
+                raw: Some("eh hello".into()),
+                cleanup_ms: Some(412),
+                ..entry("Hello.")
+            })
+            .unwrap();
+        let plain = store.add_history(entry("plain")).unwrap();
+        assert_eq!(cleaned.raw.as_deref(), Some("eh hello"));
+
+        let updated = store.set_total_ms(&cleaned.id, 900).unwrap();
+        assert_eq!(updated.raw.as_deref(), Some("eh hello"));
+        assert_eq!(updated.cleanup_ms, Some(412));
+        drop(store);
+
+        let entries = open(&t).history(None, 10);
+        assert_eq!(entries[0], plain);
+        assert_eq!(entries[1].total_ms, 900);
+        assert_eq!(entries[1].raw.as_deref(), Some("eh hello"));
+        assert_eq!(entries[1].cleanup_ms, Some(412));
+        let lines = fs::read_to_string(t.data().join(HISTORY_FILE)).unwrap();
+        assert!(lines.contains(r#""cleanupMs":412"#), "{lines}");
+        assert!(!lines.contains(r#""raw":null"#), "{lines}");
+        // The file is oldest first: the cleaned entry is line 1, the plain one line 2.
+        let mut file_lines = lines.lines();
+        assert!(file_lines.next().unwrap().contains(r#""raw":"eh hello""#));
+        assert!(!file_lines.next().unwrap().contains("raw"));
+    }
+
+    #[test]
+    fn old_history_line_without_cleanup_fields_loads() {
+        let t = TempDir::new();
+        fs::create_dir_all(t.data()).unwrap();
+        let old = r#"{"id":"a","createdAt":1,"text":"a","language":"en","model":"m","audioMs":1,"sttMs":1,"totalMs":1}"#;
+        fs::write(t.data().join(HISTORY_FILE), format!("{old}\n")).unwrap();
+
+        let store = open(&t);
+        let entries = store.history(None, 10);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].raw, None);
+        assert_eq!(entries[0].cleanup_ms, None);
     }
 
     #[test]
