@@ -211,8 +211,11 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
         if transcript.text.is_empty() {
             pill(&s, PillState::Error, Some("Nothing heard"));
         } else {
+            let cleaned = cleanup::clean(&app, &transcript.language, transcript.text.clone()).await;
             let entry = s.store.add_history(NewEntry {
-                text: transcript.text.clone(),
+                text: cleaned.text,
+                raw: cleaned.raw,
+                cleanup_ms: cleaned.cleanup_ms,
                 language: transcript.language.clone(),
                 model: settings.model,
                 audio_ms: transcript.audio_ms,
@@ -234,7 +237,7 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
                     let delivery_start = Instant::now();
                     let insert = deliver(
                         &s.inserter,
-                        &transcript.text,
+                        &entry.text,
                         settings.insert,
                         !released,
                         s.no_portals,
@@ -254,12 +257,13 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
                         }
                     };
                     eprintln!(
-                        "dictation audio={}ms stt={}ms insert={}ms total={}ms lang={} transcript={:?} history={}",
+                        "dictation audio={}ms stt={}ms cleanup={}ms insert={}ms total={}ms lang={} transcript={:?} raw={:?} history={}",
                         transcript.audio_ms,
                         transcript.elapsed_ms,
+                        entry.cleanup_ms.map_or("-".into(), |ms| ms.to_string()),
                         delivery_start.elapsed().as_millis(),
                         start.elapsed().as_millis(),
-                        transcript.language, entry.text, entry.id
+                        transcript.language, entry.text, entry.raw, entry.id
                     );
                     let (state, word) = insert_word(&insert);
                     pill(&s, state, Some(word));

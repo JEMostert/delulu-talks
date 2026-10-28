@@ -1,6 +1,8 @@
 use super::*;
 
 pub(crate) fn load_model(app: &tauri::AppHandle, id: String) {
+    // Whisper loads first; cleanup frees the GPU and reloads once it has settled.
+    cleanup::whisper_loading(app);
     phase(
         app,
         "loadingModel",
@@ -41,6 +43,7 @@ pub(crate) fn engine_thread(app: tauri::AppHandle, rx: mpsc::Receiver<EngineJob>
                         {
                             event(&app, KeyEvent::Activated);
                         }
+                        cleanup::whisper_settled(&app);
                     }
                     Err(e) => {
                         engine = None;
@@ -53,6 +56,7 @@ pub(crate) fn engine_thread(app: tauri::AppHandle, rx: mpsc::Receiver<EngineJob>
                         } else {
                             phase(&app, "error", Some(e));
                         }
+                        cleanup::whisper_settled(&app);
                     }
                 }
             }

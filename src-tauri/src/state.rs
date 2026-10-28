@@ -28,6 +28,7 @@ pub(crate) struct Shell {
     /// `--toggle` started the app: start recording once the model is ready.
     pub(crate) pending_toggle: AtomicBool,
     pub(crate) pill: Pill,
+    pub(crate) cleanup: cleanup::Cleanup,
 }
 pub(crate) enum EngineJob {
     Load(String),

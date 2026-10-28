@@ -952,6 +952,7 @@ name = "delulu-talks"
 version = "1.0.0"
 dependencies = [
  "delulu-audio",
+ "delulu-cleanup",
  "delulu-hotkey",
  "delulu-insert",
  "delulu-overlay",
