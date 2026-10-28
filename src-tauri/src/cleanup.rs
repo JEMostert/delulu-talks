@@ -427,6 +427,15 @@ pub(crate) fn whisper_loading(app: &tauri::AppHandle) {
         .update(app, |i| i.whisper_loading());
     run(app, action);
 }
+/// Blocks until no cleanup helper process is alive (or `timeout` passes), so Whisper
+/// never competes with a retired helper for GPU memory. Call it off the main thread.
+pub(crate) fn wait_released(app: &tauri::AppHandle, timeout: Duration) {
+    let live = app.state::<Shell>().cleanup.live.clone();
+    let started = Instant::now();
+    while live.load(Ordering::SeqCst) > 0 && started.elapsed() < timeout {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
 /// Called when Whisper finished loading or failed.
 pub(crate) fn whisper_settled(app: &tauri::AppHandle) {
     app.state::<Shell>().cleanup.lock().whisper_settled = true;
@@ -449,7 +458,9 @@ fn spawn_load(app: tauri::AppHandle, generation: u64) {
         // One helper at a time: wait until the previous one is reaped.
         let waited = Instant::now();
         let live = loop {
-            match cleanup.lock().reserve(generation, &cleanup.live) {
+            // Bind first so the guard drops before an arm locks again or sleeps.
+            let reserved = cleanup.lock().reserve(generation, &cleanup.live);
+            match reserved {
                 None => return,
                 Some(true) => break Live(cleanup.live.clone()),
                 Some(false) if waited.elapsed() > RETIRE_TIMEOUT => {
@@ -610,8 +621,13 @@ pub(crate) async fn clean(app: &tauri::AppHandle, language: &str, raw: String) -
     let error = match joined {
         Ok(Ok((helper, result))) => {
             // A result from a helper that was retired meanwhile is not used.
-            let current = s.cleanup.lock().is_current(generation);
-            let stale = s.cleanup.lock().put_back(generation, helper);
+            let (current, stale) = {
+                let mut inner = s.cleanup.lock();
+                (
+                    inner.is_current(generation),
+                    inner.put_back(generation, helper),
+                )
+            };
             drop(stale);
             let result = if current {
                 CleanResult::Done(result)

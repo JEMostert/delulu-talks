@@ -22,6 +22,7 @@ pub(crate) fn engine_thread(app: tauri::AppHandle, rx: mpsc::Receiver<EngineJob>
     for job in rx {
         match job {
             EngineJob::Load(id) => {
+                cleanup::wait_released(&app, Duration::from_secs(5));
                 let dir = app.state::<Shell>().store.models_dir();
                 let result = delulu_stt::model_path(&dir, &id)
                     .ok_or_else(|| "Unknown model".to_string())
