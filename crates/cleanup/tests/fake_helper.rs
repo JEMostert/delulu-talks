@@ -16,7 +16,8 @@ const SCRIPTS: [(&str, &str); 7] = [
         "normal",
         r#"while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed 's/^{"id":\([0-9]*\).*/\1/')
-  echo "{\"type\":\"result\",\"id\":$id,\"text\":\" everyday\\nOutput: So hello there.\",\"truncated\":false,\"ms\":1}"
+  # printf, not echo: dash's echo would turn the JSON \n escape into a line break.
+  printf '%s\n' "{\"type\":\"result\",\"id\":$id,\"text\":\" everyday\\nOutput: So hello there.\",\"truncated\":false,\"ms\":1}"
 done"#,
     ),
     // Never reads stdin again.
