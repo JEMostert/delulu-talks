@@ -60,7 +60,7 @@ export function Cleanup({ state }: { state: AppState }) {
         <Row
           label="Clean up text"
           htmlFor="cleanup"
-          help="Removes filler words and adds punctuation, on this computer. Dutch and English."
+          help="Removes filler words, adds punctuation and fixes misheard words that fit the topic, on this computer. Dutch and English."
           stack
         >
           <Switch

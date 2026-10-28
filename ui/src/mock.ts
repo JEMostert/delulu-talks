@@ -187,6 +187,7 @@ const sampleEntry = (i: number, createdAt: number): HistoryEntry => {
       i === 0
         ? "Um, can you move the stand-up to half past ten? I need to finish the release notes first."
         : undefined,
+    topic: (["work", "programming", "everyday", "programming"] as const)[i % 4],
     language,
     model: settings.model,
     audioMs,

@@ -216,6 +216,7 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
                 text: cleaned.text,
                 raw: cleaned.raw,
                 cleanup_ms: cleaned.cleanup_ms,
+                topic: cleaned.topic,
                 language: transcript.language.clone(),
                 model: settings.model,
                 audio_ms: transcript.audio_ms,

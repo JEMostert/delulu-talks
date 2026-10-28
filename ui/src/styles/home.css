@@ -153,6 +153,22 @@
   color: var(--ink-2);
   font-weight: 560;
 }
+/* The topic as a small pearl-tagged chip */
+.entry-topic {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-2);
+  font-weight: 560;
+}
+.entry-topic::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, #e3dcf2 50%, #9fd9ec);
+  box-shadow: 0 0 0 1px rgba(3, 14, 26, 0.15);
+}
 .entry-actions {
   display: flex;
   align-self: start;

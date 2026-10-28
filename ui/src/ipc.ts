@@ -72,6 +72,8 @@ export type CleanupStatus = {
 export type HistoryEntry = {
   raw?: string;
   cleanupMs?: number;
+  /** What cleanup thought it was about, like "programming". */
+  topic?: string;
   id: string;
   createdAt: number;
   text: string;

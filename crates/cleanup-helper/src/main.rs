@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use delulu_cleanup::{max_tokens, prompt, sanitize, Reply, Request};
+use delulu_cleanup::{max_tokens, prompt, sanitize, split_reply, Reply, Request};
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -226,7 +226,9 @@ fn once(
     eprintln!(
         "backend: {backend}\nload: {load_ms} ms\nclean: {clean_ms} ms ({tokens} prompt tokens)"
     );
-    match sanitize(text, &raw, truncated) {
+    let (topic, reply) = split_reply(&raw);
+    eprintln!("topic: {}", topic.as_deref().unwrap_or("(none)"));
+    match sanitize(text, &reply, truncated) {
         Some(clean) => {
             let _ = writeln!(out, "{clean}");
         }

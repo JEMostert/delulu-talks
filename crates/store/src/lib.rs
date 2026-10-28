@@ -97,6 +97,9 @@ pub struct HistoryEntry {
     pub raw: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cleanup_ms: Option<u64>,
+    /// What cleanup thought the dictation was about, like "programming".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
 }
 
 pub struct NewEntry {
@@ -108,6 +111,7 @@ pub struct NewEntry {
     pub total_ms: u64,
     pub raw: Option<String>,
     pub cleanup_ms: Option<u64>,
+    pub topic: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -247,6 +251,7 @@ impl Store {
             total_ms: e.total_ms,
             raw: e.raw,
             cleanup_ms: e.cleanup_ms,
+            topic: e.topic,
         };
         let line = serde_json::to_string(&entry)
             .map_err(|e| StoreError::Io(format!("history entry: {e}")))?;
@@ -485,6 +490,7 @@ mod tests {
             total_ms: 300,
             raw: None,
             cleanup_ms: None,
+            topic: None,
         }
     }
 
@@ -730,6 +736,7 @@ mod tests {
             .add_history(NewEntry {
                 raw: Some("eh hello".into()),
                 cleanup_ms: Some(412),
+                topic: Some("everyday".into()),
                 ..entry("Hello.")
             })
             .unwrap();
@@ -739,6 +746,7 @@ mod tests {
         let updated = store.set_total_ms(&cleaned.id, 900).unwrap();
         assert_eq!(updated.raw.as_deref(), Some("eh hello"));
         assert_eq!(updated.cleanup_ms, Some(412));
+        assert_eq!(updated.topic.as_deref(), Some("everyday"));
         drop(store);
 
         let entries = open(&t).history(None, 10);

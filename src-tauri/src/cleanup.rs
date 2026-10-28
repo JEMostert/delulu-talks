@@ -568,32 +568,37 @@ pub(crate) struct Cleaned {
     pub(crate) text: String,
     pub(crate) raw: Option<String>,
     pub(crate) cleanup_ms: Option<u64>,
+    /// What the model thought the dictation was about.
+    pub(crate) topic: Option<String>,
 }
 #[derive(Debug)]
 pub(crate) enum CleanResult {
     /// Cleanup is off, not ready, or the language isn't supported.
     Skipped,
     /// The helper answered (`None` = keep raw).
-    Done(Option<String>),
+    Done(Option<delulu_cleanup::Cleaned>),
     /// The helper failed, or its result is stale.
     Failed,
 }
 pub(crate) fn choose(raw: String, result: CleanResult, ms: u64) -> Cleaned {
     match result {
-        CleanResult::Done(Some(text)) if text != raw => Cleaned {
-            text,
+        CleanResult::Done(Some(clean)) if clean.text != raw => Cleaned {
+            text: clean.text,
             raw: Some(raw),
             cleanup_ms: Some(ms),
+            topic: clean.topic,
         },
-        CleanResult::Done(_) => Cleaned {
+        CleanResult::Done(clean) => Cleaned {
             text: raw,
             raw: None,
             cleanup_ms: Some(ms),
+            topic: clean.and_then(|c| c.topic),
         },
         CleanResult::Skipped | CleanResult::Failed => Cleaned {
             text: raw,
             raw: None,
             cleanup_ms: None,
+            topic: None,
         },
     }
 }
@@ -683,28 +688,44 @@ mod tests {
     #[test]
     fn chooses_pasted_text_and_history_fields() {
         let raw = || "eh hallo".to_string();
+        let done = |text: &str| {
+            CleanResult::Done(Some(delulu_cleanup::Cleaned {
+                text: text.into(),
+                topic: Some("everyday".into()),
+            }))
+        };
         assert_eq!(
-            choose(raw(), CleanResult::Done(Some("Hallo.".into())), 300),
+            choose(raw(), done("Hallo."), 300),
             Cleaned {
                 text: "Hallo.".into(),
                 raw: Some(raw()),
-                cleanup_ms: Some(300)
+                cleanup_ms: Some(300),
+                topic: Some("everyday".into()),
             }
         );
-        let unchanged = Cleaned {
-            text: raw(),
-            raw: None,
-            cleanup_ms: Some(300),
-        };
         assert_eq!(
-            choose(raw(), CleanResult::Done(Some(raw())), 300),
-            unchanged
+            choose(raw(), done("eh hallo"), 300),
+            Cleaned {
+                text: raw(),
+                raw: None,
+                cleanup_ms: Some(300),
+                topic: Some("everyday".into()),
+            }
         );
-        assert_eq!(choose(raw(), CleanResult::Done(None), 300), unchanged);
+        assert_eq!(
+            choose(raw(), CleanResult::Done(None), 300),
+            Cleaned {
+                text: raw(),
+                raw: None,
+                cleanup_ms: Some(300),
+                topic: None,
+            }
+        );
         let untouched = Cleaned {
             text: raw(),
             raw: None,
             cleanup_ms: None,
+            topic: None,
         };
         assert_eq!(choose(raw(), CleanResult::Failed, 300), untouched);
         assert_eq!(choose(raw(), CleanResult::Skipped, 0), untouched);

@@ -16,7 +16,7 @@ const SCRIPTS: [(&str, &str); 7] = [
         "normal",
         r#"while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed 's/^{"id":\([0-9]*\).*/\1/')
-  echo "{\"type\":\"result\",\"id\":$id,\"text\":\"Output: So hello there.\",\"truncated\":false,\"ms\":1}"
+  echo "{\"type\":\"result\",\"id\":$id,\"text\":\" everyday\\nOutput: So hello there.\",\"truncated\":false,\"ms\":1}"
 done"#,
     ),
     // Never reads stdin again.
@@ -87,7 +87,9 @@ fn normal_helper_cleans_text() {
     assert_eq!(cleaner.backend(), "Fake: test");
     for _ in 0..2 {
         let clean = cleaner.clean("en", "so hello there", &[]).unwrap();
-        assert_eq!(clean.as_deref(), Some("So hello there."));
+        let clean = clean.expect("cleaned");
+        assert_eq!(clean.text, "So hello there.");
+        assert_eq!(clean.topic.as_deref(), Some("everyday"));
     }
     // Unsupported language: no request, paste raw.
     assert_eq!(cleaner.clean("de", "hallo", &[]).unwrap(), None);

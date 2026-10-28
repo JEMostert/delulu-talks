@@ -74,6 +74,11 @@ export function Transcript({
           <span className="entry-lang">
             {languageName(entry.language, languages)}
           </span>
+          {entry.topic && (
+            <span className="entry-topic" title="Topic cleanup heard">
+              {entry.topic}
+            </span>
+          )}
           <span title="From letting go of the hotkey to text inserted">
             {formatMs(entry.totalMs)}
           </span>
