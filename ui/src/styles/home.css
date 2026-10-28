@@ -143,11 +143,19 @@
 .entry-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 14px;
+  align-items: center;
+  gap: 4px 14px;
   margin-top: 6px;
   color: var(--ink-3);
   font-size: var(--t-meta);
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+/* The "Cleaned up" toggle sits in the line of small text, so it is small too */
+.entry-meta .button {
+  height: 26px;
+  padding: 0 11px;
+  font-size: var(--t-meta);
 }
 .entry-lang {
   color: var(--ink-2);
