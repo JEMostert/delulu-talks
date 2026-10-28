@@ -18,6 +18,10 @@ const paths = {
   system: "M4 5h16v11H4zM9 20h6m-3-4v4",
   external: "M14 5h5v5m0-5-8 8M17 14v5H5V7h5",
   chevron: "m9 6 6 6-6 6",
+  cleanup:
+    "M10 4.5 11.4 8.6 15.5 10 11.4 11.4 10 15.5 8.6 11.4 4.5 10 8.6 8.6ZM17 14l.8 2.2L20 17l-2.2.8L17 20l-.8-2.2L14 17l2.2-.8Z",
+  plus: "M12 5v14M5 12h14",
+  edit: "M5 19h4L19 9l-4-4L5 15v4ZM13 7l4 4",
 } as const;
 
 export type IconName = keyof typeof paths;

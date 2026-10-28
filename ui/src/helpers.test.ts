@@ -14,6 +14,9 @@ import {
   settingsPatch,
   insertMessage,
   meterLevel,
+  splitTerms,
+  isTermList,
+  termCount,
 } from "./helpers";
 import type { HistoryEntry, Settings } from "./ipc";
 test("formats timings and dates", () => {
@@ -125,4 +128,18 @@ test("mic meter uses a dB scale so normal speech fills the middle", () => {
   expect(meterLevel(0.6)).toBe(1);
   expect(meterLevel(0.03)).toBeGreaterThan(0.45);
   expect(meterLevel(0.03)).toBeLessThan(0.6);
+});
+test("splits pasted vocabulary lists like the backend", () => {
+  expect(splitTerms(" T3  Code ,Tauri\r\n\n  ,\tClaude\u0000Code ")).toEqual([
+    "T3 Code",
+    "Tauri",
+    "Claude Code",
+  ]);
+  expect(splitTerms(" , \n ")).toEqual([]);
+  expect(isTermList("T3 Code")).toBe(false);
+  expect(isTermList("T3 Code\n")).toBe(false);
+  expect(isTermList("T3 Code, Tauri")).toBe(true);
+  expect(isTermList("T3 Code\nTauri")).toBe(true);
+  expect(termCount(1)).toBe("1 term");
+  expect(termCount(0)).toBe("0 terms");
 });

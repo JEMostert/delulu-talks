@@ -89,6 +89,34 @@ export type ModelDownload = {
   finished: boolean;
   error: string | null;
 };
+export type Shelf = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  terms: string[];
+};
+export type Vocabulary = {
+  version: number;
+  shelves: Shelf[];
+  /** Distinct terms on enabled shelves. */
+  activeTerms: number;
+  /** How many of those the cleanup prompt uses; it caps count and length. */
+  usedTerms: number;
+};
+export const getVocabulary = () => invoke<Vocabulary>("get_vocabulary");
+export const addShelf = (name: string) =>
+  invoke<Vocabulary>("add_shelf", { name });
+export const renameShelf = (id: string, name: string) =>
+  invoke<Vocabulary>("rename_shelf", { id, name });
+export const deleteShelf = (id: string) =>
+  invoke<Vocabulary>("delete_shelf", { id });
+export const setShelfEnabled = (id: string, enabled: boolean) =>
+  invoke<Vocabulary>("set_shelf_enabled", { id, enabled });
+/** `text` may hold several terms separated by commas or newlines. */
+export const addTerms = (id: string, text: string) =>
+  invoke<Vocabulary>("add_terms", { id, text });
+export const removeTerm = (id: string, term: string) =>
+  invoke<Vocabulary>("remove_term", { id, term });
 export const getCleanupStatus = () =>
   invoke<CleanupStatus>("get_cleanup_status");
 export const startCleanup = () => invoke<void>("start_cleanup");

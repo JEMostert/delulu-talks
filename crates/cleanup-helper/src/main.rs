@@ -2,7 +2,7 @@
 //!
 //! Serve mode: `delulu-cleanup --model <gguf>` reads one JSON `Request` per stdin line and
 //! writes one JSON `Reply` per stdout line. Smoke mode:
-//! `delulu-cleanup --model <gguf> --once <nl|en> <text…>`.
+//! `delulu-cleanup --model <gguf> [--vocab <term>]… --once <nl|en> <text…>`.
 
 use std::fs::File;
 use std::io::{BufRead, Write};
@@ -35,18 +35,25 @@ const WARM_UPS: [(&str, &str); 2] = [
     ),
 ];
 
+const USAGE: &str =
+    "usage: delulu-cleanup --model <gguf> [--vocab <term>]… [--once <nl|en> <text…>]";
+
 struct Args {
     model: PathBuf,
     once: Option<(String, String)>,
+    /// Vocabulary terms for `--once`; serve mode gets them inside each prompt.
+    vocab: Vec<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
     let mut args = std::env::args().skip(1);
     let mut model = None;
     let mut once = None;
+    let mut vocab = Vec::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--model" => model = args.next().map(PathBuf::from),
+            "--vocab" => vocab.push(args.next().ok_or("--vocab needs a term")?),
             "--once" => {
                 let language = args.next().ok_or("--once needs a language")?;
                 let text = args.by_ref().collect::<Vec<_>>().join(" ");
@@ -55,8 +62,11 @@ fn parse_args() -> Result<Args, String> {
             other => return Err(format!("unknown argument {other}")),
         }
     }
-    let model = model.ok_or("usage: delulu-cleanup --model <gguf> [--once <nl|en> <text…>]")?;
-    Ok(Args { model, once })
+    let model = model.ok_or(USAGE)?;
+    if !vocab.is_empty() && once.is_none() {
+        return Err(format!("--vocab only works with --once\n{USAGE}"));
+    }
+    Ok(Args { model, once, vocab })
 }
 
 /// Keep stdout for the protocol only: anything a C library prints goes to stderr.
@@ -116,7 +126,7 @@ fn main() -> ExitCode {
         batch: LlamaBatch::new(N_BATCH as usize, 1),
     };
     for (language, text) in WARM_UPS {
-        let warm = prompt(language, text).expect("warm-up prompt");
+        let warm = prompt(language, text, &[]).expect("warm-up prompt");
         if let Err(e) = engine.generate(&warm, max_tokens(text)) {
             return load_failed(&mut out, &format!("warm-up: {e}"));
         }
@@ -132,6 +142,7 @@ fn main() -> ExitCode {
             load_ms,
             &language,
             &text,
+            &args.vocab,
         );
     }
 
@@ -191,8 +202,9 @@ fn once(
     load_ms: u64,
     language: &str,
     text: &str,
+    vocab: &[String],
 ) -> ExitCode {
-    let Some(rendered) = prompt(language, text) else {
+    let Some(rendered) = prompt(language, text, vocab) else {
         eprintln!("delulu-cleanup: kept raw (unsupported language, empty or too long)");
         let _ = writeln!(out, "{text}");
         return ExitCode::SUCCESS;

@@ -4,7 +4,9 @@ import type {
   HistoryEntry,
   ModelDownload,
   CleanupStatus,
+  Shelf,
 } from "./ipc";
+import { splitTerms } from "./helpers";
 import type {
   Event,
   EventName,
@@ -38,6 +40,49 @@ let cleanupStatus: CleanupStatus = {
 if (cleanupParam === "off") settings.cleanup = false;
 if (cleanupParam === "missing") settings.cleanupModelOk = false;
 let cleanupDownload: ReturnType<typeof setInterval> | undefined;
+// ?empty also starts without vocabularies.
+let shelves: Shelf[] = params.has("empty")
+  ? []
+  : [
+      {
+        id: crypto.randomUUID(),
+        name: "Programming",
+        enabled: true,
+        terms: ["T3 Code", "Tauri", "Claude Code"],
+      },
+      {
+        id: crypto.randomUUID(),
+        name: "Places",
+        enabled: false,
+        terms: ["Scheveningen", "Utrecht"],
+      },
+    ];
+const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+/** The backend's rules, in short: tidy, dedupe, cap. */
+function vocabulary() {
+  const active: string[] = [];
+  for (const shelf of shelves.filter((s) => s.enabled))
+    for (const term of shelf.terms)
+      if (!active.some((t) => same(t, term))) active.push(term);
+  return {
+    version: 1,
+    shelves,
+    activeTerms: active.length,
+    usedTerms: Math.min(active.length, 100),
+  };
+}
+function changeShelf(id: unknown, change: (shelf: Shelf) => Shelf) {
+  if (!shelves.some((s) => s.id === id)) throw "That shelf no longer exists.";
+  shelves = shelves.map((s) => (s.id === id ? change(s) : s));
+}
+function shelfName(name: unknown, except?: unknown) {
+  const tidy = splitTerms(String(name)).join(" ");
+  if (!tidy) throw "Give the shelf a name.";
+  if (tidy.length > 40) throw "Shelf names can be at most 40 characters.";
+  if (shelves.some((s) => s.id !== except && same(s.name, tidy)))
+    throw `There is already a shelf called “${tidy}”.`;
+  return tidy;
+}
 const startPhase = params.get("phase") as Status["phase"] | null;
 let status: Status = {
   phase: params.has("firstRun") ? "needsSetup" : (startPhase ?? "idle"),
@@ -130,6 +175,56 @@ export async function invoke<T>(
 ): Promise<T> {
   let result: unknown;
   switch (command) {
+    case "get_vocabulary":
+      result = vocabulary();
+      break;
+    case "add_shelf":
+      if (shelves.length >= 32) throw "You can have at most 32 shelves.";
+      shelves = [
+        ...shelves,
+        {
+          id: crypto.randomUUID(),
+          name: shelfName(args?.name),
+          enabled: true,
+          terms: [],
+        },
+      ];
+      result = vocabulary();
+      break;
+    case "rename_shelf": {
+      const name = shelfName(args?.name, args?.id);
+      changeShelf(args?.id, (s) => ({ ...s, name }));
+      result = vocabulary();
+      break;
+    }
+    case "delete_shelf":
+      shelves = shelves.filter((s) => s.id !== args?.id);
+      result = vocabulary();
+      break;
+    case "set_shelf_enabled":
+      changeShelf(args?.id, (s) => ({ ...s, enabled: Boolean(args?.enabled) }));
+      result = vocabulary();
+      break;
+    case "add_terms":
+      changeShelf(args?.id, (s) => {
+        const terms = [...s.terms];
+        for (const term of splitTerms(String(args?.text))) {
+          if (term.length > 48)
+            throw `“${term}” is too long; terms can be at most 48 characters.`;
+          if (!terms.some((t) => same(t, term))) terms.push(term);
+        }
+        if (terms.length > 200) throw "A shelf can hold at most 200 terms.";
+        return { ...s, terms };
+      });
+      result = vocabulary();
+      break;
+    case "remove_term":
+      changeShelf(args?.id, (s) => ({
+        ...s,
+        terms: s.terms.filter((t) => t !== args?.term),
+      }));
+      result = vocabulary();
+      break;
     case "get_cleanup_status":
       result = cleanupStatus;
       break;

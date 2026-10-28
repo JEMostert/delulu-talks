@@ -5,6 +5,7 @@ import { Icon, type IconName } from "./Icon";
 const pages: { page: Page; icon: IconName }[] = [
   { page: "Home", icon: "home" },
   { page: "History", icon: "history" },
+  { page: "Cleanup", icon: "cleanup" },
   { page: "Settings", icon: "settings" },
 ];
 

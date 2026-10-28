@@ -7,6 +7,7 @@ import { Pearl } from "./pearl/Pearl";
 import { FirstRun } from "./screens/FirstRun";
 import { Home } from "./screens/Home";
 import { History } from "./screens/History";
+import { Cleanup } from "./screens/Cleanup";
 import { Settings } from "./screens/Settings";
 import "./styles/index.css";
 
@@ -38,6 +39,7 @@ export default function App() {
       <main className={`page page-${page.toLowerCase()}`} key={page}>
         {page === "Home" && <Home state={state} />}
         {page === "History" && <History state={state} />}
+        {page === "Cleanup" && <Cleanup state={state} />}
         {page === "Settings" && <Settings state={state} />}
       </main>
       <Toast notice={notice} onDismiss={dismiss} />

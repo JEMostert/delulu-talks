@@ -1,4 +1,3 @@
-import { CleanupControl } from "../components/CleanupControl";
 import * as ipc from "../ipc";
 import { languageName } from "../helpers";
 import { Keys, Row, Segmented, Select, Switch } from "../components/Controls";
@@ -105,22 +104,6 @@ export function DictationSection({ state }: Props) {
             </option>
           ))}
         </Select>
-      </Row>
-      <Row
-        label="Clean up text"
-        htmlFor="cleanup"
-        help="Removes filler words and adds punctuation, on this computer. Dutch and English."
-        stack
-      >
-        <Switch
-          id="cleanup"
-          checked={settings.cleanup}
-          onChange={(value) => void update("cleanup", value)}
-        />
-        <CleanupControl
-          status={state.cleanupStatus}
-          onError={(e) => state.setNotice(errorText(e))}
-        />
       </Row>
       <Row
         label="Insert text with"

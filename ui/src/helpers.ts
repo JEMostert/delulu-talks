@@ -153,3 +153,19 @@ export const noticeTone = (notice: string): "error" | "info" =>
 /** Confirmations that can fade on their own; anything else waits for a dismiss. */
 export const isTransientNotice = (notice: string) =>
   ["Copied to clipboard", "Inserted", "Nothing to insert"].includes(notice);
+/** Splits a comma- or newline-separated list into tidy terms, like the backend does. */
+export const splitTerms = (text: string): string[] =>
+  text
+    .split(/[,\n\r]/)
+    .map((term) =>
+      term
+        .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+        .split(/\s+/)
+        .filter(Boolean)
+        .join(" "),
+    )
+    .filter(Boolean);
+/** Pasted text that holds a list rather than one term. */
+export const isTermList = (text: string) => /[,\n\r]/.test(text.trim());
+export const termCount = (count: number) =>
+  `${count} ${count === 1 ? "term" : "terms"}`;

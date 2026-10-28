@@ -86,17 +86,17 @@ fn normal_helper_cleans_text() {
     let mut cleaner = start("normal");
     assert_eq!(cleaner.backend(), "Fake: test");
     for _ in 0..2 {
-        let clean = cleaner.clean("en", "so hello there").unwrap();
+        let clean = cleaner.clean("en", "so hello there", &[]).unwrap();
         assert_eq!(clean.as_deref(), Some("So hello there."));
     }
     // Unsupported language: no request, paste raw.
-    assert_eq!(cleaner.clean("de", "hallo").unwrap(), None);
+    assert_eq!(cleaner.clean("de", "hallo", &[]).unwrap(), None);
 }
 
 #[test]
 fn rejected_output_keeps_raw() {
     let mut cleaner = start("rambling");
-    assert_eq!(cleaner.clean("en", "so hello there").unwrap(), None);
+    assert_eq!(cleaner.clean("en", "so hello there", &[]).unwrap(), None);
 }
 
 #[test]
@@ -147,14 +147,14 @@ fn start_times_out_and_kills() {
 fn helper_that_stops_reading_times_out() {
     let mut cleaner = start("deaf");
     let started = Instant::now();
-    let err = cleaner.clean("en", "hi").unwrap_err();
+    let err = cleaner.clean("en", "hi", &[]).unwrap_err();
     assert!(matches!(err, CleanupError::Timeout), "{err:?}");
     let elapsed = started.elapsed();
     assert!(elapsed >= Duration::from_millis(2000), "{elapsed:?}");
     assert!(elapsed < Duration::from_millis(3000), "{elapsed:?}");
     // The helper is dead now; later calls fail at once.
     let started = Instant::now();
-    assert!(cleaner.clean("en", "hi").is_err());
+    assert!(cleaner.clean("en", "hi", &[]).is_err());
     assert!(started.elapsed() < Duration::from_millis(200));
 }
 
@@ -162,7 +162,7 @@ fn helper_that_stops_reading_times_out() {
 fn wrong_ids_never_extend_the_deadline() {
     let mut cleaner = start("wrong_ids");
     let started = Instant::now();
-    let err = cleaner.clean("en", "hi").unwrap_err();
+    let err = cleaner.clean("en", "hi", &[]).unwrap_err();
     assert!(matches!(err, CleanupError::Timeout), "{err:?}");
     let elapsed = started.elapsed();
     assert!(elapsed >= Duration::from_millis(2000), "{elapsed:?}");
@@ -173,7 +173,7 @@ fn wrong_ids_never_extend_the_deadline() {
 fn silent_helper_times_out_and_is_killed() {
     let mut cleaner = start("silent");
     let started = Instant::now();
-    let err = cleaner.clean("en", "hi").unwrap_err();
+    let err = cleaner.clean("en", "hi", &[]).unwrap_err();
     assert!(matches!(err, CleanupError::Timeout), "{err:?}");
     assert!(started.elapsed() < Duration::from_millis(3000));
 }
@@ -187,12 +187,12 @@ fn kill_during_clean_returns_quickly() {
         kill.kill();
     });
     let started = Instant::now();
-    let err = cleaner.clean("en", "hi").unwrap_err();
+    let err = cleaner.clean("en", "hi", &[]).unwrap_err();
     killer.join().unwrap();
     assert!(matches!(err, CleanupError::Helper(_)), "{err:?}");
     assert!(started.elapsed() < Duration::from_millis(1000));
     // A killed Cleaner stays unusable.
-    assert!(cleaner.clean("en", "hi").is_err());
+    assert!(cleaner.clean("en", "hi", &[]).is_err());
 }
 
 #[test]

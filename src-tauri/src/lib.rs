@@ -19,12 +19,17 @@ mod ipc;
 mod models;
 mod state;
 mod tray;
+mod vocabulary;
 use cleanup::{cancel_cleanup_download, get_cleanup_status, start_cleanup};
 use dictation::*;
 use engine::*;
 use ipc::*;
 use models::*;
 use state::*;
+use vocabulary::{
+    add_shelf, add_terms, delete_shelf, get_vocabulary, remove_term, rename_shelf,
+    set_shelf_enabled,
+};
 
 pub fn run() {
     let store = Arc::new(Store::open_default().expect("open store"));
@@ -171,7 +176,14 @@ pub fn run() {
             finish_first_run,
             get_cleanup_status,
             start_cleanup,
-            cancel_cleanup_download
+            cancel_cleanup_download,
+            get_vocabulary,
+            add_shelf,
+            rename_shelf,
+            delete_shelf,
+            set_shelf_enabled,
+            add_terms,
+            remove_term
         ])
         .run(tauri::generate_context!())
         .expect("Tauri failed");

@@ -601,9 +601,10 @@ pub(crate) fn choose(raw: String, result: CleanResult, ms: u64) -> Cleaned {
 /// Clean one transcript if the helper is ready right now; never waits for it.
 pub(crate) async fn clean(app: &tauri::AppHandle, language: &str, raw: String) -> Cleaned {
     let s = app.state::<Shell>();
-    if !s.store.settings().cleanup || delulu_cleanup::prompt(language, &raw).is_none() {
+    if !s.store.settings().cleanup || delulu_cleanup::prompt(language, &raw, &[]).is_none() {
         return choose(raw, CleanResult::Skipped, 0);
     }
+    let vocabulary = s.store.vocabulary().active_terms();
     let Some((mut helper, generation)) = s.cleanup.lock().take() else {
         return choose(raw, CleanResult::Skipped, 0);
     };
@@ -613,7 +614,7 @@ pub(crate) async fn clean(app: &tauri::AppHandle, language: &str, raw: String) -
         // On Err the helper is dropped (killed) here, off the async runtime.
         helper
             .cleaner
-            .clean(&language, &text)
+            .clean(&language, &text, &vocabulary)
             .map(|result| (helper, result))
     })
     .await;

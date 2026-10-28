@@ -6,11 +6,18 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
+mod vocabulary;
+pub use vocabulary::{
+    split_terms, Shelf, Vocabulary, MAX_SHELF_NAME_CHARS, MAX_SHELF_TERMS, MAX_SHELVES,
+    MAX_TERM_CHARS,
+};
+
 pub const APP_ID: &str = "com.joran.delulu-talks";
 
 const SETTINGS_FILE: &str = "settings.json";
 const STATE_FILE: &str = "state.json";
 const HISTORY_FILE: &str = "history.jsonl";
+const VOCABULARY_FILE: &str = "vocabulary.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -107,6 +114,9 @@ pub struct NewEntry {
 pub enum StoreError {
     #[error("store: {0}")]
     Io(String),
+    /// A change the user asked for breaks a rule; the message is for the user.
+    #[error("{0}")]
+    Invalid(String),
 }
 
 fn io_error(path: &Path, e: io::Error) -> StoreError {
@@ -116,6 +126,7 @@ fn io_error(path: &Path, e: io::Error) -> StoreError {
 struct Data {
     settings: Settings,
     state: AppState,
+    vocabulary: Vocabulary,
     /// Oldest first, the same order as the lines in `history.jsonl`.
     history: Vec<HistoryEntry>,
     /// The history file ends without a newline (torn write or hand edit), so
@@ -130,11 +141,14 @@ pub struct Store {
 }
 
 impl Store {
-    /// `config_dir` holds `settings.json` and `state.json`; `data_dir` holds
+    /// `config_dir` holds `settings.json`, `state.json` and `vocabulary.json`; `data_dir` holds
     /// `history.jsonl` and `models/`. Both are app-specific directories.
     pub fn open(config_dir: &Path, data_dir: &Path) -> Result<Store, StoreError> {
         let settings = load_or_default(&config_dir.join(SETTINGS_FILE), "settings");
         let state = load_or_default(&config_dir.join(STATE_FILE), "state");
+        let vocabulary =
+            load_or_default::<Vocabulary>(&config_dir.join(VOCABULARY_FILE), "vocabulary")
+                .normalized();
         let (history, history_needs_newline) = load_history(&data_dir.join(HISTORY_FILE))?;
         Ok(Store {
             config_dir: config_dir.into(),
@@ -142,6 +156,7 @@ impl Store {
             data: Mutex::new(Data {
                 settings,
                 state,
+                vocabulary,
                 history,
                 history_needs_newline,
             }),
@@ -193,6 +208,26 @@ impl Store {
         write_json(&self.config_dir.join(STATE_FILE), s)?;
         data.state = s.clone();
         Ok(())
+    }
+
+    pub fn vocabulary(&self) -> Vocabulary {
+        self.lock().vocabulary.clone()
+    }
+
+    /// Apply `change` to a copy, write it to disk, then keep it in memory. A rule
+    /// error or a failed write leaves both untouched.
+    pub fn update_vocabulary<R>(
+        &self,
+        change: impl FnOnce(&mut Vocabulary) -> Result<R, StoreError>,
+    ) -> Result<(R, Vocabulary), StoreError> {
+        let mut data = self.lock();
+        let mut vocabulary = data.vocabulary.clone();
+        let result = change(&mut vocabulary)?;
+        if vocabulary != data.vocabulary {
+            write_json(&self.config_dir.join(VOCABULARY_FILE), &vocabulary)?;
+            data.vocabulary = vocabulary.clone();
+        }
+        Ok((result, vocabulary))
     }
 
     /// Appends one line to `history.jsonl`. The entry is only kept in memory
@@ -755,6 +790,185 @@ mod tests {
             .map(|e| e.text)
             .collect();
         assert_eq!(texts, ["new", "a"]);
+    }
+
+    fn shelf_id(store: &Store, name: &str) -> String {
+        store
+            .update_vocabulary(|v| v.add_shelf(name).map(|s| s.id.clone()))
+            .unwrap()
+            .0
+    }
+
+    fn invalid<R: std::fmt::Debug>(result: Result<R, StoreError>) -> String {
+        match result {
+            Err(StoreError::Invalid(message)) => message,
+            other => panic!("expected a rule error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vocabulary_shelf_crud_survives_reopen() {
+        let t = TempDir::new();
+        let store = open(&t);
+        assert_eq!(store.vocabulary(), Vocabulary::default());
+
+        let code = shelf_id(&store, "  Programming ");
+        let food = shelf_id(&store, "Food");
+        store
+            .update_vocabulary(|v| v.add_terms(&code, "T3 Code"))
+            .unwrap();
+        let (added, _) = store
+            .update_vocabulary(|v| {
+                v.add_terms(&code, "Tauri, claude   code\n t3 code,,\nClaude Code")
+            })
+            .unwrap();
+        assert_eq!(added, 2);
+        store
+            .update_vocabulary(|v| v.rename_shelf(&code, "Code"))
+            .unwrap();
+        store
+            .update_vocabulary(|v| v.add_terms(&food, "Stroopwafel"))
+            .unwrap();
+        store
+            .update_vocabulary(|v| v.set_enabled(&food, false))
+            .unwrap();
+        store
+            .update_vocabulary(|v| v.remove_term(&code, "TAURI"))
+            .unwrap();
+        drop(store);
+
+        let store = open(&t);
+        let v = store.vocabulary();
+        assert_eq!(v.shelves.len(), 2);
+        assert_eq!(v.shelves[0].name, "Code");
+        assert_eq!(v.shelves[0].terms, ["T3 Code", "claude code"]);
+        assert!(v.shelves[0].enabled);
+        assert!(!v.shelves[1].enabled);
+        assert_eq!(v.active_terms(), ["T3 Code", "claude code"]);
+
+        store
+            .update_vocabulary(|v| {
+                v.delete_shelf(&code);
+                v.delete_shelf("gone");
+                Ok(())
+            })
+            .unwrap();
+        drop(store);
+        let v = open(&t).vocabulary();
+        assert_eq!(v.shelves.len(), 1);
+        assert_eq!(v.shelves[0].id, food);
+    }
+
+    #[test]
+    fn vocabulary_rules_reject_without_writing() {
+        let t = TempDir::new();
+        let store = open(&t);
+        let id = shelf_id(&store, "Programming");
+        let before = store.vocabulary();
+
+        assert_eq!(
+            invalid(store.update_vocabulary(|v| v.add_shelf("programming").map(|_| ()))),
+            "There is already a shelf called “programming”."
+        );
+        assert_eq!(
+            invalid(store.update_vocabulary(|v| v.add_shelf(" \n ").map(|_| ()))),
+            "Give the shelf a name."
+        );
+        let long_name = "n".repeat(MAX_SHELF_NAME_CHARS + 1);
+        invalid(store.update_vocabulary(|v| v.add_shelf(&long_name).map(|_| ())));
+        // Renaming a shelf to its own name in another case is fine.
+        store
+            .update_vocabulary(|v| v.rename_shelf(&id, "PROGRAMMING"))
+            .unwrap();
+        store
+            .update_vocabulary(|v| v.rename_shelf(&id, "Programming"))
+            .unwrap();
+        assert_eq!(
+            invalid(store.update_vocabulary(|v| v.rename_shelf("gone", "X"))),
+            "That shelf no longer exists."
+        );
+        // One long term rejects the whole list.
+        let long = "t".repeat(MAX_TERM_CHARS + 1);
+        invalid(store.update_vocabulary(|v| v.add_terms(&id, &format!("Tauri, {long}"))));
+        assert_eq!(store.vocabulary(), before);
+        assert_eq!(open(&t).vocabulary(), before);
+        assert!(store
+            .update_vocabulary(|v| v.add_terms(&id, &"t".repeat(MAX_TERM_CHARS)))
+            .is_ok());
+
+        // Shelf and term caps.
+        let many: Vec<String> = (1..MAX_SHELF_TERMS).map(|i| format!("term {i}")).collect();
+        store
+            .update_vocabulary(|v| v.add_terms(&id, &many.join("\n")))
+            .unwrap();
+        assert_eq!(store.vocabulary().shelves[0].terms.len(), MAX_SHELF_TERMS);
+        assert_eq!(
+            store
+                .update_vocabulary(|v| v.add_terms(&id, "term 1"))
+                .unwrap()
+                .0,
+            0,
+            "a duplicate on a full shelf is not an error"
+        );
+        invalid(store.update_vocabulary(|v| v.add_terms(&id, "one more")));
+        for i in 1..MAX_SHELVES {
+            shelf_id(&store, &format!("Shelf {i}"));
+        }
+        invalid(store.update_vocabulary(|v| v.add_shelf("Too many").map(|_| ())));
+    }
+
+    #[test]
+    fn active_terms_skip_disabled_shelves_and_duplicates() {
+        let mut v = Vocabulary::default();
+        let a = v.add_shelf("A").unwrap().id.clone();
+        let b = v.add_shelf("B").unwrap().id.clone();
+        let c = v.add_shelf("C").unwrap().id.clone();
+        v.add_terms(&a, "Tauri, T3 Code").unwrap();
+        v.add_terms(&b, "tauri, Claude Code").unwrap();
+        v.add_terms(&c, "Whisper").unwrap();
+        v.set_enabled(&c, false).unwrap();
+        assert_eq!(v.active_terms(), ["Tauri", "T3 Code", "Claude Code"]);
+    }
+
+    #[test]
+    fn split_terms_handles_lists_and_junk() {
+        assert_eq!(
+            split_terms(" T3  Code ,Tauri\r\n\n  ,\tClaude\u{0}Code "),
+            ["T3 Code", "Tauri", "Claude Code"]
+        );
+        assert!(split_terms(" , \n ").is_empty());
+    }
+
+    #[test]
+    fn hand_edited_vocabulary_is_brought_within_limits() {
+        let t = TempDir::new();
+        fs::create_dir_all(t.config()).unwrap();
+        let long = "x".repeat(MAX_TERM_CHARS + 1);
+        let file = format!(
+            r#"{{"shelves":[
+                {{"id":"a","name":"  Code  ","terms":["Tauri","tauri"," T3 Code ","{long}","a, b"]}},
+                {{"id":"b","name":"code","terms":["dup name"]}},
+                {{"id":"","name":"No id"}},
+                {{"id":"c","name":"Off","enabled":false}}
+            ]}}"#
+        );
+        fs::write(t.config().join(VOCABULARY_FILE), file).unwrap();
+        let v = open(&t).vocabulary();
+        assert_eq!(v.version, 1);
+        let names: Vec<_> = v.shelves.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["Code", "Off"]);
+        assert_eq!(v.shelves[0].terms, ["Tauri", "T3 Code", "a", "b"]);
+        assert!(v.shelves[0].enabled);
+        assert!(!v.shelves[1].enabled);
+    }
+
+    #[test]
+    fn unreadable_vocabulary_falls_back_and_is_kept() {
+        let t = TempDir::new();
+        fs::create_dir_all(t.config()).unwrap();
+        fs::write(t.config().join(VOCABULARY_FILE), "[oops").unwrap();
+        assert_eq!(open(&t).vocabulary(), Vocabulary::default());
+        assert!(t.config().join("vocabulary.json.bad").exists());
     }
 
     #[test]

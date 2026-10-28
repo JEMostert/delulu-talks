@@ -2,7 +2,7 @@ import { ModelControl } from "./components/ModelControl";
 import { useCallback, useEffect, useState } from "react";
 import * as ipc from "./ipc";
 import { insertMessage, meterLevel, settingsPatch } from "./helpers";
-export type Page = "Home" | "History" | "Settings";
+export type Page = "Home" | "History" | "Cleanup" | "Settings";
 export const errorText = (error: unknown) => String(error);
 export function useAppState() {
   const [status, setStatus] = useState<ipc.Status>();
@@ -142,9 +142,7 @@ export function useAppState() {
       !localStorage.getItem("cleanup-notice")
     ) {
       localStorage.setItem("cleanup-notice", "1");
-      setNotice(
-        "New: text cleanup. Download it (5.2 GB) in Settings → Dictation.",
-      );
+      setNotice("New: text cleanup. Download it (5.2 GB) on the Cleanup page.");
     }
   }, [settings, cleanupStatus]);
   async function update<K extends keyof ipc.Settings>(
