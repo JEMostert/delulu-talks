@@ -73,10 +73,6 @@
 /* A group of rows on one surface, rows split by hairlines */
 .group {
   border-radius: var(--r-group);
-  background: var(--surface);
-  box-shadow:
-    var(--shadow-1),
-    inset 0 0 0 1px var(--line);
 }
 .row {
   display: flex;

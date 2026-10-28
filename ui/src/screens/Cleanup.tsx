@@ -17,8 +17,6 @@ type Run = (
 export function Cleanup({ state }: { state: AppState }) {
   const { settings, update, cleanupStatus, setNotice } = state;
   const [vocabulary, setVocabulary] = useState<ipc.Vocabulary>();
-  // The shelf just created, so its term field takes focus.
-  const [created, setCreated] = useState<string>();
   const [queue] = useState(() => serialQueue());
   useEffect(() => {
     let active = true;
@@ -46,8 +44,10 @@ export function Cleanup({ state }: { state: AppState }) {
     },
     [queue, setNotice],
   );
+  const [openId, setOpenId] = useState<string>();
   if (!settings) return null;
   const shelves = vocabulary?.shelves ?? [];
+  const open = shelves.find((shelf) => shelf.id === openId);
   return (
     <div className="cleanup">
       <div className="title-block">
@@ -93,81 +93,134 @@ export function Cleanup({ state }: { state: AppState }) {
           </p>
         )}
         {vocabulary && shelves.length === 0 && (
-          <div className="empty empty-vocab">
-            <p className="empty-title">No vocabularies yet</p>
-            <p>
-              Speech recognition sometimes mishears names and jargon. Put them
-              on a shelf, like “T3 Code” on a Programming shelf, and cleanup
-              turns “ghthree code” back into “T3 Code”.
-            </p>
-          </div>
-        )}
-        {shelves.map((shelf) => (
-          <ShelfCard
-            key={shelf.id}
-            shelf={shelf}
-            run={run}
-            focus={shelf.id === created}
-            setNotice={setNotice}
-          />
-        ))}
-        {vocabulary && vocabulary.presets.length > 0 && (
-          <StarterShelves
-            presets={vocabulary.presets}
-            onAdd={(key) => void run(() => ipc.addPresetShelf(key))}
-          />
+          <p className="vocab-intro">
+            Speech recognition sometimes mishears names and jargon. Put them in
+            a jar, like “T3 Code” on a Programming shelf, and cleanup turns
+            “ghthree code” back into “T3 Code”.
+          </p>
         )}
         {vocabulary && (
-          <NewShelf
-            first={shelves.length === 0}
-            onAdd={async (name) => {
-              const value = await run(() => ipc.addShelf(name));
-              const shelf = value?.shelves[value.shelves.length - 1];
-              if (shelf) setCreated(shelf.id);
-              return value !== undefined;
-            }}
-          />
+          <div className="reef">
+            {shelves.map((shelf) => (
+              <div key={shelf.id} className="reef-slot">
+                <Jar shelf={shelf} onOpen={() => setOpenId(shelf.id)} />
+              </div>
+            ))}
+            <div className="reef-slot">
+              <NewJar
+                first={shelves.length === 0}
+                onAdd={async (name) => {
+                  const value = await run(() => ipc.addShelf(name));
+                  const shelf = value?.shelves[value.shelves.length - 1];
+                  if (shelf) {
+                    setOpenId(shelf.id);
+                  }
+                  return value !== undefined;
+                }}
+              />
+            </div>
+          </div>
+        )}
+        {vocabulary && vocabulary.presets.length > 0 && (
+          <div className="starters">
+            <p className="starters-title">
+              Starter shelves, ready to put on the reef
+            </p>
+            <div className="reef reef-ghost">
+              {vocabulary.presets.map((preset) => (
+                <div key={preset.key} className="reef-slot">
+                  <button
+                    type="button"
+                    className="jar jar-ghost"
+                    aria-label={`Add ${preset.name}, ${termCount(preset.terms.length)}`}
+                    onClick={() =>
+                      void run(() => ipc.addPresetShelf(preset.key))
+                    }
+                  >
+                    <JarBody
+                      name={preset.name}
+                      words={preset.terms}
+                      meta={termCount(preset.terms.length)}
+                      badge="plus"
+                    />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </section>
+      {open && (
+        <ShelfDialog
+          key={open.id}
+          shelf={open}
+          run={run}
+          setNotice={setNotice}
+          onClose={() => {
+            setOpenId(undefined);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-/** Ready-made shelves, one click each; they disappear once added. */
-function StarterShelves({
-  presets,
-  onAdd,
+/** A glass jar on the reef: its first words float inside, the name is on its tag. */
+function JarBody({
+  name,
+  words,
+  meta,
+  badge,
 }: {
-  presets: ipc.Preset[];
-  onAdd: (key: string) => void;
+  name: string;
+  words: string[];
+  meta: string;
+  badge?: "plus";
 }) {
   return (
-    <div className="starters">
-      <p className="starters-title">Starter shelves</p>
-      <div className="starters-list">
-        {presets.map((preset) => (
-          <button
-            key={preset.key}
-            type="button"
-            className="starter"
-            onClick={() => onAdd(preset.key)}
-          >
-            <span className="starter-head">
-              <Icon name="plus" size={16} />
-              <span className="starter-name">{preset.name}</span>
-              <span className="starter-count">{preset.terms.length} terms</span>
+    <>
+      <span className="jar-lid" aria-hidden="true" />
+      <span className="jar-glass" aria-hidden="true">
+        <span className="jar-words">
+          {words.slice(0, 4).map((word, i) => (
+            <span key={`${word}-${i}`} className="jar-word">
+              {word}
             </span>
-            <span className="starter-sample">
-              {preset.terms.slice(0, 5).join(", ")}…
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
+          ))}
+        </span>
+        {badge && (
+          <span className="jar-badge">
+            <Icon name="plus" size={16} />
+          </span>
+        )}
+      </span>
+      <span className="jar-tag">
+        <span className="jar-name">{name}</span>
+        <span className="jar-meta">{meta}</span>
+      </span>
+    </>
   );
 }
 
-function NewShelf({
+function Jar({ shelf, onOpen }: { shelf: ipc.Shelf; onOpen: () => void }) {
+  const meta = shelf.enabled
+    ? termCount(shelf.terms.length)
+    : `Off · ${termCount(shelf.terms.length)}`;
+  return (
+    <button
+      type="button"
+      className={`jar ${shelf.enabled ? "" : "off"}`}
+      aria-label={`Open ${shelf.name}, ${meta}`}
+      aria-haspopup="dialog"
+      onClick={onOpen}
+    >
+      <JarBody name={shelf.name} words={shelf.terms} meta={meta} />
+    </button>
+  );
+}
+
+/** An empty jar outline: name it and press Enter to make a new shelf. */
+function NewJar({
   first,
   onAdd,
 }: {
@@ -177,7 +230,7 @@ function NewShelf({
   const [name, setName] = useState("");
   return (
     <form
-      className="new-shelf"
+      className="jar jar-new"
       onSubmit={(e) => {
         e.preventDefault();
         if (!name.trim()) return;
@@ -188,48 +241,58 @@ function NewShelf({
         });
       }}
     >
-      <label className="visually-hidden" htmlFor="new-shelf">
-        New shelf name
-      </label>
-      <input
-        id="new-shelf"
-        className="field"
-        placeholder={
-          first ? "Name your first shelf, like Programming" : "New shelf name"
-        }
-        maxLength={40}
-        autoComplete="off"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
-      <button
-        type="submit"
-        className={first ? "button primary" : "button"}
-        disabled={!name.trim()}
-      >
-        <Icon name="plus" size={16} />
-        Add shelf
-      </button>
+      <span className="jar-lid" aria-hidden="true" />
+      <span className="jar-glass">
+        <label className="visually-hidden" htmlFor="new-shelf">
+          New shelf name
+        </label>
+        <input
+          id="new-shelf"
+          className="field"
+          placeholder={first ? "Programming" : "New shelf"}
+          maxLength={40}
+          autoComplete="off"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button
+          type="submit"
+          className="button primary"
+          disabled={!name.trim()}
+        >
+          <Icon name="plus" size={16} />
+          Add shelf
+        </button>
+      </span>
     </form>
   );
 }
 
-function ShelfCard({
+/** Everything on one shelf, in a glass panel over the reef. */
+function ShelfDialog({
   shelf,
   run,
-  focus,
   setNotice,
+  onClose,
 }: {
   shelf: ipc.Shelf;
   run: Run;
-  focus: boolean;
   setNotice: (notice: string) => void;
+  onClose: () => void;
 }) {
+  const dialog = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const field = useRef<HTMLInputElement>(null);
   const fieldId = `terms-${shelf.id}`;
+  useEffect(() => {
+    const node = dialog.current;
+    if (node && !node.open) node.showModal();
+    // Open ready to add a word, not on the first button.
+    field.current?.focus();
+    return () => node?.close();
+  }, []);
   async function add(text: string) {
     const value = await run(() => ipc.addTerms(shelf.id, text));
     if (!value) return false;
@@ -239,134 +302,167 @@ function ShelfCard({
     return true;
   }
   return (
-    <article
-      className={`group shelf ${shelf.enabled ? "" : "off"}`}
-      aria-label={shelf.name}
+    <dialog
+      ref={dialog}
+      className="vocab-dialog"
+      aria-labelledby={`dialog-${shelf.id}`}
+      onCancel={(e) => {
+        // Escape: let a rename field handle it first.
+        e.preventDefault();
+        if (!renaming) onClose();
+      }}
+      onClick={(e) => {
+        // A click on the backdrop lands on the dialog itself.
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <div className="shelf-head">
-        <Switch
-          id={`shelf-${shelf.id}`}
-          label={`Use ${shelf.name}`}
-          checked={shelf.enabled}
-          onChange={(enabled) =>
-            void run(() => ipc.setShelfEnabled(shelf.id, enabled))
-          }
-        />
-        {renaming ? (
-          <RenameField
-            name={shelf.name}
-            onSave={async (name) =>
-              !name.trim() ||
-              name.trim() === shelf.name ||
-              (await run(() => ipc.renameShelf(shelf.id, name))) !== undefined
+      <div className="dialog-inner">
+        <header className="dialog-head">
+          {renaming ? (
+            <RenameField
+              name={shelf.name}
+              onSave={async (name) =>
+                !name.trim() ||
+                name.trim() === shelf.name ||
+                (await run(() => ipc.renameShelf(shelf.id, name))) !== undefined
+              }
+              onClose={() => setRenaming(false)}
+            />
+          ) : (
+            <h2 id={`dialog-${shelf.id}`} className="dialog-title">
+              {shelf.name}
+            </h2>
+          )}
+          {!renaming && (
+            <IconButton
+              icon="edit"
+              label={`Rename ${shelf.name}`}
+              onClick={() => setRenaming(true)}
+            />
+          )}
+          <IconButton icon="close" label="Close" onClick={onClose} />
+        </header>
+        <div className="dialog-use">
+          <Switch
+            id={`shelf-${shelf.id}`}
+            checked={shelf.enabled}
+            onChange={(enabled) =>
+              void run(() => ipc.setShelfEnabled(shelf.id, enabled))
             }
-            onClose={() => setRenaming(false)}
           />
-        ) : (
-          <h3 className="shelf-name">{shelf.name}</h3>
-        )}
-        <span className="shelf-count">{termCount(shelf.terms.length)}</span>
-        {!renaming && (
-          <IconButton
-            icon="edit"
-            label={`Rename ${shelf.name}`}
-            onClick={() => setRenaming(true)}
-          />
-        )}
-        <IconButton
-          icon="trash"
-          tone="danger"
-          label={`Delete ${shelf.name}`}
-          onClick={() =>
-            shelf.terms.length
-              ? setConfirming(true)
-              : void run(() => ipc.deleteShelf(shelf.id))
-          }
-        />
-      </div>
-      {confirming && (
-        <div className="confirm" role="alert">
-          <p>
-            Delete {shelf.name} and its {termCount(shelf.terms.length)}?
-          </p>
-          <button
-            type="button"
-            className="button"
-            onClick={() => setConfirming(false)}
-          >
-            Keep it
-          </button>
-          <button
-            type="button"
-            className="button danger"
-            onClick={() => void run(() => ipc.deleteShelf(shelf.id))}
-          >
-            Delete
-          </button>
+          <label htmlFor={`shelf-${shelf.id}`}>
+            {shelf.enabled
+              ? "Cleanup listens for these words"
+              : "Off: cleanup ignores this shelf"}
+          </label>
+          <span className="shelf-count">{termCount(shelf.terms.length)}</span>
         </div>
-      )}
-      {shelf.terms.length > 0 && (
-        <ul className="terms" aria-label={`Terms on ${shelf.name}`}>
-          {shelf.terms.map((term) => (
-            <li key={term} className="term">
-              <span>{term}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${term}`}
-                title={`Remove ${term}`}
-                onClick={() => {
-                  field.current?.focus();
-                  void run(() => ipc.removeTerm(shelf.id, term));
-                }}
-              >
-                <Icon name="close" size={13} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <label className="visually-hidden" htmlFor={fieldId}>
-        Add terms to {shelf.name}
-      </label>
-      <input
-        id={fieldId}
-        ref={field}
-        className="field"
-        placeholder={
-          shelf.terms.length
-            ? "Add a term"
-            : "Add a term, like T3 Code. Paste a list to add several."
-        }
-        autoComplete="off"
-        spellCheck={false}
-        autoFocus={focus}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key !== "Enter" || !draft.trim()) return;
-          e.preventDefault();
-          const text = draft;
-          void add(text).then((ok) => {
-            // Keep anything typed while the change was saving.
-            if (ok) setDraft((now) => (now === text ? "" : now));
-          });
-        }}
-        onPaste={(e) => {
-          const text = e.clipboardData.getData("text");
-          if (!isTermList(text)) return;
-          e.preventDefault();
-          const input = e.currentTarget;
-          const start = input.selectionStart ?? draft.length;
-          const end = input.selectionEnd ?? start;
-          const before = draft;
-          void add(text).then((ok) => {
-            // Not saved: put the list in the field so it can be fixed.
-            if (!ok)
-              setDraft((now) => restorePaste(now, before, start, end, text));
-          });
-        }}
-      />
-    </article>
+        {shelf.terms.length > 0 ? (
+          <ul className="terms" aria-label={`Terms on ${shelf.name}`}>
+            {shelf.terms.map((term) => (
+              <li key={term} className="term">
+                <span>{term}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${term}`}
+                  title={`Remove ${term}`}
+                  onClick={() => {
+                    field.current?.focus();
+                    void run(() => ipc.removeTerm(shelf.id, term));
+                  }}
+                >
+                  <Icon name="close" size={13} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="terms-empty">
+            An empty jar. Add the names and terms you say, like T3 Code.
+          </p>
+        )}
+        <label className="visually-hidden" htmlFor={fieldId}>
+          Add terms to {shelf.name}
+        </label>
+        <input
+          id={fieldId}
+          ref={field}
+          className="field"
+          placeholder="Add a term and press Enter. Paste a list to add several."
+          autoComplete="off"
+          spellCheck={false}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || !draft.trim()) return;
+            e.preventDefault();
+            const text = draft;
+            void add(text).then((ok) => {
+              // Keep anything typed while the change was saving.
+              if (ok) setDraft((now) => (now === text ? "" : now));
+            });
+          }}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData("text");
+            if (!isTermList(text)) return;
+            e.preventDefault();
+            const input = e.currentTarget;
+            const start = input.selectionStart ?? draft.length;
+            const end = input.selectionEnd ?? start;
+            const before = draft;
+            void add(text).then((ok) => {
+              // Not saved: put the list in the field so it can be fixed.
+              if (!ok)
+                setDraft((now) => restorePaste(now, before, start, end, text));
+            });
+          }}
+        />
+        {confirming ? (
+          <div className="confirm" role="alert">
+            <p>
+              Delete {shelf.name} and its {termCount(shelf.terms.length)}?
+            </p>
+            <button
+              type="button"
+              className="button"
+              onClick={() => setConfirming(false)}
+            >
+              Keep it
+            </button>
+            <button
+              type="button"
+              className="button danger"
+              onClick={() => {
+                onClose();
+                void run(() => ipc.deleteShelf(shelf.id));
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        ) : (
+          <footer className="dialog-foot">
+            <button
+              type="button"
+              className="button quiet danger-text"
+              onClick={() => {
+                if (shelf.terms.length) setConfirming(true);
+                else {
+                  onClose();
+                  void run(() => ipc.deleteShelf(shelf.id));
+                }
+              }}
+            >
+              <Icon name="trash" size={16} />
+              Delete shelf
+            </button>
+            <button type="button" className="button primary" onClick={onClose}>
+              Done
+            </button>
+          </footer>
+        )}
+      </div>
+    </dialog>
   );
 }
 

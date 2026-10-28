@@ -1,6 +1,8 @@
 /*
- * Deep well, living pearl.
- * Light is "Nacre": the cool inside of a shell. Dark is "Abyss".
+ * Deep well, living pearl, a sunken atrium around it.
+ * Light is "Shallows": sunlit water over pale sand. Dark is "Abyss".
+ * Light falls from the surface at the top of the window and the water deepens
+ * downward; surfaces are panes of sea glass with a mother-of-pearl rim.
  * The well (the dark panel that holds the pearl) is dark in both, like the
  * recording pill, so the pearl always sits in deep water.
  */
@@ -19,11 +21,33 @@
   --amber: #f6c979;
   --lavender: #c2addb;
 
-  /* Nacre */
-  --bg: #e9edf4;
-  --surface: #f8f9fc;
+  /* Mother-of-pearl, for rims and accents */
+  --nacre: linear-gradient(
+    120deg,
+    #ffc2d1 0%,
+    #bfefff 30%,
+    #d9c9f2 55%,
+    #f6dfb0 80%,
+    #c4f2e6 100%
+  );
+
+  /* Shallows */
+  --bg: #e4eef4;
+  --water: linear-gradient(
+    180deg,
+    #d3eef4 0%,
+    #e1edf4 34%,
+    #dfe6f0 72%,
+    #d6dceb 100%
+  );
+  --ray: rgba(255, 255, 255, 0.55);
+  --surface: #f6fafc;
   --surface-hover: #ffffff;
-  --sunken: #dfe4ee;
+  --sunken: #d9e3ec;
+  --glass: rgba(250, 253, 255, 0.62);
+  --glass-strong: rgba(250, 253, 255, 0.86);
+  --glass-line: rgba(255, 255, 255, 0.7);
+  --rim-alpha: 0.85;
   --ink: #0b2135;
   --ink-2: #47596d;
   --ink-3: #6d7d90;
@@ -65,10 +89,22 @@
 
 :root[data-scheme="dark"] {
   color-scheme: dark;
-  --bg: #051424;
-  --surface: #0a2034;
-  --surface-hover: #0e2740;
-  --sunken: #031020;
+  --bg: #051626;
+  --water: linear-gradient(
+    180deg,
+    #0b2f48 0%,
+    #072036 30%,
+    #041729 66%,
+    #020c17 100%
+  );
+  --ray: rgba(140, 225, 255, 0.07);
+  --surface: #0b2338;
+  --surface-hover: #0f2b44;
+  --sunken: #04121f;
+  --glass: rgba(14, 44, 68, 0.5);
+  --glass-strong: rgba(10, 34, 54, 0.9);
+  --glass-line: rgba(160, 225, 255, 0.07);
+  --rim-alpha: 0.5;
   --ink: #eaf6ff;
   --ink-2: #9db6cb;
   --ink-3: #7590a8;

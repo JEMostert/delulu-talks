@@ -15,10 +15,79 @@ body {
   line-height: 1.45;
   font-optical-sizing: auto;
   color: var(--ink);
-  background: var(--bg);
+  background: var(--water), var(--bg);
   -webkit-font-smoothing: antialiased;
   font-synthesis: none;
   overflow: hidden;
+}
+/* Light from the surface: soft rays fanning down from above the window. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -20% -10% 35%;
+  z-index: 0;
+  pointer-events: none;
+  background: repeating-conic-gradient(
+    from 168deg at 38% -30%,
+    transparent 0deg,
+    var(--ray) 2.2deg,
+    transparent 5deg,
+    transparent 9deg,
+    var(--ray) 10.5deg,
+    transparent 13deg,
+    transparent 21deg
+  );
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
+  filter: blur(6px);
+  animation: rays-drift 38s ease-in-out infinite alternate;
+}
+@keyframes rays-drift {
+  to {
+    transform: translateX(4%) skewX(-3deg);
+  }
+}
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Sea glass: a frosted pane with a thin mother-of-pearl rim. */
+.glass,
+.group,
+.search,
+.tabs,
+.status-chip,
+.vocab-dialog {
+  position: relative;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow:
+    inset 0 1px 0 var(--glass-line),
+    var(--shadow-2);
+}
+.glass::before,
+.group::before,
+.search::before,
+.tabs::before,
+.status-chip::before,
+.vocab-dialog::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--nacre);
+  opacity: var(--rim-alpha);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
 }
 h1,
 h2,

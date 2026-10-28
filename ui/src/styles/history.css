@@ -12,7 +12,11 @@
   align-items: center;
   gap: 18px;
   padding: 12px 0 18px;
-  background: var(--bg);
+  /* Entries scrolling under it blur away, like seen through water. */
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  -webkit-mask-image: linear-gradient(180deg, #000 82%, transparent);
+  mask-image: linear-gradient(180deg, #000 82%, transparent);
 }
 .title-block {
   display: grid;
@@ -29,8 +33,6 @@
   height: 42px;
   padding: 0 16px;
   border-radius: var(--r-pill);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
   color: var(--ink-3);
   transition: box-shadow 160ms;
 }

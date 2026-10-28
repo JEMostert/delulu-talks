@@ -2,7 +2,7 @@
   display: grid;
   align-content: start;
   gap: 28px;
-  width: min(100%, 760px);
+  width: min(100%, 780px);
   margin: 0 auto;
   padding: 22px 28px 48px;
 }
@@ -14,7 +14,7 @@
 }
 .vocab {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 .vocab .section-head {
   margin-bottom: 0;
@@ -29,21 +29,24 @@
 .vocab-note.warn {
   color: var(--amber-ink);
 }
-.empty-vocab {
-  max-width: 54ch;
-  padding-bottom: 6px;
+.vocab-intro {
+  max-width: 58ch;
+  color: var(--ink-2);
+  font-family: var(--font-text);
+  font-size: var(--t-text);
+  line-height: 1.5;
 }
 
 /* A text field in the controls' style */
 .field {
   width: 100%;
   min-width: 0;
-  height: 36px;
-  padding: 0 13px;
+  height: 38px;
+  padding: 0 14px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-control);
   outline: 0;
-  background: var(--surface);
+  background: var(--glass-strong);
   color: var(--ink);
   transition:
     border-color 140ms,
@@ -60,91 +63,407 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* One-click starter shelves */
+/*
+ * The reef: a recessed alcove with stone ledges. Every row of jars stands on
+ * a ledge, drawn as a band at the bottom of each 216px row.
+ */
+.reef {
+  --row: 216px;
+  --ledge: 16px;
+  --stone-top: #f4f8fb;
+  --stone: #c6d4e0;
+  --stone-deep: #a9bccc;
+  --alcove: linear-gradient(
+    180deg,
+    rgba(10, 106, 143, 0.1),
+    rgba(10, 106, 143, 0.03)
+  );
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  grid-auto-rows: var(--row);
+  padding: 0 18px;
+  border-radius: 24px;
+  background:
+    repeating-linear-gradient(
+      180deg,
+      transparent 0 calc(var(--row) - var(--ledge)),
+      var(--stone-top) calc(var(--row) - var(--ledge))
+        calc(var(--row) - var(--ledge) + 2px),
+      var(--stone) calc(var(--row) - var(--ledge) + 2px) calc(var(--row) - 5px),
+      var(--stone-deep) calc(var(--row) - 5px) var(--row)
+    ),
+    var(--alcove);
+  box-shadow:
+    inset 0 18px 30px -18px rgba(11, 33, 53, 0.35),
+    inset 0 0 0 1px var(--line);
+}
+:root[data-scheme="dark"] .reef {
+  --stone-top: #3d6f8c;
+  --stone: #163a54;
+  --stone-deep: #0b2539;
+  --alcove: linear-gradient(
+    180deg,
+    rgba(2, 10, 20, 0.55),
+    rgba(6, 30, 48, 0.35)
+  );
+  box-shadow:
+    inset 0 22px 34px -16px rgba(0, 0, 0, 0.7),
+    inset 0 0 0 1px rgba(117, 228, 255, 0.06);
+}
+.reef-slot {
+  position: relative;
+  display: grid;
+  place-items: end center;
+  padding-bottom: calc(var(--ledge) - 1px);
+}
+/* Light pooling on the ledge under each jar */
+.reef-slot::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--ledge) - 6px);
+  width: 120px;
+  height: 14px;
+  margin-left: -60px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(3, 14, 26, 0.32), transparent);
+  pointer-events: none;
+}
+.reef-slot:has(.jar:not(.off):not(.jar-ghost):not(.jar-new))::after {
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--foam) 55%, transparent),
+    transparent
+  );
+}
+
+/* A glass specimen jar */
+.jar {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  justify-items: center;
+  width: 126px;
+  height: 182px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: center;
+  transition: transform 260ms var(--ease-spring);
+}
+button.jar:hover {
+  transform: translateY(-4px);
+}
+button.jar:active {
+  transform: translateY(-1px) scale(0.98);
+}
+button.jar:focus-visible {
+  outline: 0;
+}
+button.jar:focus-visible .jar-glass {
+  box-shadow:
+    0 0 0 3px var(--focus),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+.jar-lid {
+  width: 74px;
+  height: 14px;
+  margin-bottom: -3px;
+  border-radius: 6px 6px 3px 3px;
+  background: linear-gradient(
+    180deg,
+    #2a5470 0%,
+    var(--shell) 70%,
+    #020a14 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(234, 246, 255, 0.25),
+    0 2px 4px rgba(3, 14, 26, 0.35);
+}
+.jar-glass {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 24px 24px 20px 20px;
+  background:
+    linear-gradient(
+      100deg,
+      transparent 14%,
+      rgba(255, 255, 255, 0.45) 18%,
+      transparent 26%
+    ),
+    radial-gradient(
+      120% 60% at 50% 110%,
+      color-mix(in srgb, var(--foam) 32%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.5),
+      color-mix(in srgb, var(--foam) 12%, rgba(255, 255, 255, 0.25))
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.75),
+    inset 0 -10px 18px -10px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 10px 18px -12px rgba(3, 14, 26, 0.5);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+:root[data-scheme="dark"] .jar-glass {
+  background:
+    linear-gradient(
+      100deg,
+      transparent 14%,
+      rgba(200, 240, 255, 0.16) 18%,
+      transparent 26%
+    ),
+    radial-gradient(
+      120% 60% at 50% 110%,
+      color-mix(in srgb, var(--foam) 26%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(180deg, rgba(160, 225, 255, 0.1), rgba(60, 150, 190, 0.1));
+  box-shadow:
+    inset 0 0 0 1px rgba(160, 225, 255, 0.28),
+    inset 0 -12px 20px -10px rgba(117, 228, 255, 0.28),
+    0 12px 20px -12px rgba(0, 0, 0, 0.8);
+}
+/* The first few words float in the jar as little pearls */
+.jar-words {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 14px 0;
+}
+.jar-word {
+  max-width: calc(100% - 12px);
+  padding: 2px 8px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: radial-gradient(
+    140% 120% at 30% 20%,
+    #ffffff,
+    #eef0f8 45%,
+    #d9d3ee
+  );
+  box-shadow:
+    0 1px 2px rgba(3, 14, 26, 0.25),
+    inset 0 -1px 2px rgba(194, 173, 219, 0.6);
+  color: #18324a;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: transform 320ms var(--ease-spring);
+}
+.jar-word:nth-child(2n) {
+  transform: translateX(5px) rotate(2deg);
+}
+.jar-word:nth-child(2n + 1) {
+  transform: translateX(-5px) rotate(-2deg);
+}
+/* Hover: the words drift up as if the jar were lifted */
+button.jar:hover .jar-word {
+  transform: translateY(-3px);
+}
+button.jar:hover .jar-word:nth-child(2n) {
+  transform: translate(5px, -5px) rotate(1deg);
+}
+/* The paper tag hanging on the jar */
+.jar-tag {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 9px;
+  display: grid;
+  gap: 1px;
+  padding: 5px 6px 6px;
+  border-radius: 8px;
+  background: var(--glass-strong);
+  box-shadow:
+    0 2px 6px -2px rgba(3, 14, 26, 0.35),
+    inset 0 0 0 1px var(--line);
+}
+.jar-name {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-weight: 680;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.jar-meta {
+  color: var(--ink-3);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+.jar.off .jar-glass {
+  filter: grayscale(0.7);
+  opacity: 0.55;
+}
+.jar.off .jar-tag {
+  opacity: 0.75;
+}
+
+/* A jar not on the reef yet: a ghost with a plus */
+.jar-ghost .jar-glass,
+.jar-ghost .jar-lid {
+  opacity: 0.6;
+}
+.jar-ghost .jar-glass {
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+}
+.jar-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: -30px 0 0 -17px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-ink);
+  box-shadow: 0 6px 14px -6px rgba(3, 14, 26, 0.6);
+  opacity: 0;
+  transform: scale(0.7);
+  transition:
+    opacity 180ms,
+    transform 260ms var(--ease-spring);
+}
+.jar-ghost:hover .jar-glass,
+.jar-ghost:focus-visible .jar-glass,
+.jar-ghost:hover .jar-lid {
+  opacity: 1;
+}
+.jar-ghost:hover .jar-badge,
+.jar-ghost:focus-visible .jar-badge {
+  opacity: 1;
+  transform: scale(1);
+}
+.reef-ghost {
+  --row: 206px;
+  opacity: 0.92;
+}
 .starters {
   display: grid;
   gap: 8px;
+  margin-top: 8px;
 }
 .starters-title {
   color: var(--ink-2);
   font-size: var(--t-small);
   font-weight: 600;
 }
-.starters-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 10px;
+
+/* The empty jar that makes a new shelf */
+.jar-new .jar-lid {
+  opacity: 0.45;
 }
-.starter {
-  display: grid;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--r-control);
-  background: transparent;
-  color: var(--ink);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color 140ms,
-    background 140ms;
-}
-.starter:hover {
-  border-color: var(--focus);
-  background: var(--accent-soft);
-}
-.starter:focus-visible {
-  outline: 0;
-  border-color: var(--focus);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-.starter-head {
-  display: flex;
-  align-items: center;
+.jar-new .jar-glass {
+  align-content: center;
   gap: 8px;
+  padding: 10px;
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px dashed var(--line-strong);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
-.starter-name {
-  font-weight: 600;
+.jar-new:focus-within .jar-glass {
+  border-color: var(--focus);
 }
-.starter-count {
-  margin-left: auto;
-  color: var(--ink-3);
+.jar-new .field {
+  height: 34px;
+  padding: 0 10px;
+  font-size: var(--t-small);
+  text-align: center;
+}
+.jar-new .button {
+  height: 32px;
+  padding: 0 10px;
   font-size: var(--t-small);
 }
-.starter-sample {
-  overflow: hidden;
-  color: var(--ink-2);
-  font-size: var(--t-small);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.new-shelf {
-  display: flex;
-  gap: 10px;
+/* The shelf, opened: a glass panel over the dimmed reef */
+.vocab-dialog {
+  /* The glass rule sets position: relative; a modal needs the top layer's fixed. */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+  width: min(580px, calc(100vw - 40px));
+  max-height: min(640px, calc(100vh - 60px));
+  padding: 0;
+  overflow: auto;
+  border: 0;
+  border-radius: 22px;
+  background: var(--glass-strong);
+  color: var(--ink);
 }
-
-/* One shelf: a group with its terms as chips */
-.shelf {
+.vocab-dialog[open] {
+  animation: dialog-in 340ms var(--ease-spring);
+}
+.vocab-dialog::backdrop {
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgba(117, 228, 255, 0.12), transparent),
+    rgba(2, 12, 22, 0.55);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  animation: backdrop-in 260ms ease-out;
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.94);
+  }
+}
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+.dialog-inner {
   display: grid;
-  gap: 12px;
-  padding: 14px 18px 16px;
+  gap: 16px;
+  padding: 18px 20px 20px 24px;
 }
-.shelf-head {
+.dialog-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 36px;
+  gap: 6px;
 }
-.shelf-name {
+.dialog-title {
   flex: 1;
   min-width: 0;
-  font-size: var(--t-text);
-  font-weight: 640;
+  font-family: var(--font-text);
+  font-size: 1.6rem;
+  font-weight: 560;
+  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 .shelf-rename {
   flex: 1;
+}
+.dialog-use {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink-2);
+}
+.dialog-use label {
+  flex: 1;
+  cursor: pointer;
 }
 .shelf-count {
   color: var(--ink-3);
@@ -152,25 +471,53 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.shelf .confirm {
+.terms-empty {
+  color: var(--ink-3);
+  font-family: var(--font-text);
+}
+.dialog-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 4px;
+}
+.button.danger-text {
+  color: var(--coral-ink);
+}
+.vocab-dialog .confirm {
   margin: 0;
 }
+
+/* Terms as pearl chips */
 .terms {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 7px;
+  max-height: 300px;
+  overflow: auto;
+  padding: 2px;
 }
 .term {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   max-width: 100%;
   height: 30px;
-  padding: 0 4px 0 12px;
+  padding: 0 4px 0 9px;
   border-radius: var(--r-pill);
-  background: var(--sunken);
-  box-shadow: inset 0 0 0 1px var(--line);
+  background: var(--glass);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
   font-weight: 540;
+}
+.term::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, #e3dcf2 50%, #9fd9ec);
+  box-shadow: 0 0 0 1px rgba(3, 14, 26, 0.12);
 }
 .term span {
   overflow: hidden;
@@ -196,7 +543,10 @@
   background: color-mix(in srgb, var(--coral) 14%, transparent);
   color: var(--coral-ink);
 }
-.shelf.off .shelf-name,
-.shelf.off .terms {
-  opacity: 0.5;
+
+@media (prefers-reduced-motion: reduce) {
+  button.jar:hover,
+  button.jar:hover .jar-word {
+    transform: none;
+  }
 }

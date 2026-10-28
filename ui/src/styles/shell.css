@@ -44,29 +44,34 @@
     0 0 0 1px rgba(6, 25, 43, 0.12);
 }
 
+/* The view switcher: a glass capsule floating in the light */
 .tabs {
-  position: relative;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 112px;
+  padding: 3px;
+  border-radius: var(--r-pill);
 }
 .tab {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  height: 40px;
+  height: 36px;
   border: 0;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--ink-2);
   font-weight: 560;
-  transition: color 160ms;
+  transition:
+    color 160ms,
+    background-color 160ms;
 }
 .tab:hover {
   color: var(--ink);
 }
 .tab[aria-current="page"] {
+  background: var(--accent-soft);
   color: var(--ink);
   font-weight: 650;
 }
@@ -76,8 +81,8 @@
 /* A small pearl that glides under the active tab */
 .tab-pearl {
   position: absolute;
-  left: 0;
-  bottom: -2px;
+  left: 3px;
+  bottom: -1px;
   width: 112px;
   height: 6px;
   pointer-events: none;
@@ -104,8 +109,6 @@
   height: 30px;
   padding: 0 12px 0 10px;
   border-radius: var(--r-pill);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line);
   color: var(--ink-2);
   font-size: var(--t-small);
   font-weight: 560;
