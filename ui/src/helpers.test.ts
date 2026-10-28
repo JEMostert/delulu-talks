@@ -37,6 +37,9 @@ test("maps language names and settings without changing other values", () => {
     theme: "system",
     language: "auto",
     overlay: true,
+    firstRunDone: true,
+    cleanup: true,
+    cleanupModelOk: true,
   };
   expect(settingsPatch(settings, "theme", "dark")).toEqual({
     ...settings,

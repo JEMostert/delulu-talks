@@ -1,4 +1,10 @@
-import type { Settings, Status, HistoryEntry, ModelDownload } from "./ipc";
+import type {
+  Settings,
+  Status,
+  HistoryEntry,
+  ModelDownload,
+  CleanupStatus,
+} from "./ipc";
 import type {
   Event,
   EventName,
@@ -15,9 +21,23 @@ let settings: Settings = {
   insert: "shift-insert",
   theme: "system",
   overlay: true,
+  firstRunDone: !new URLSearchParams(location.search).has("firstRun"),
+  cleanup: true,
+  cleanupModelOk: true,
 };
 // Dev-only URL switches: ?firstRun, ?empty, ?phase=error|loadingModel|…
 const params = new URLSearchParams(location.search);
+const cleanupParam = params.get("cleanup") as CleanupStatus["state"] | null;
+let cleanupStatus: CleanupStatus = {
+  state: cleanupParam ?? "ready",
+  doneBytes: 2500000000,
+  totalBytes: 5154941280,
+  error: cleanupParam === "error" ? "Could not load cleanup." : null,
+  backend: null,
+};
+if (cleanupParam === "off") settings.cleanup = false;
+if (cleanupParam === "missing") settings.cleanupModelOk = false;
+let cleanupDownload: ReturnType<typeof setInterval> | undefined;
 const startPhase = params.get("phase") as Status["phase"] | null;
 let status: Status = {
   phase: params.has("firstRun") ? "needsSetup" : (startPhase ?? "idle"),
@@ -60,6 +80,10 @@ const sampleEntry = (i: number, createdAt: number): HistoryEntry => {
     id: crypto.randomUUID(),
     createdAt,
     text,
+    raw:
+      i === 0
+        ? "Um, can you move the stand-up to half past ten? I need to finish the release notes first."
+        : undefined,
     language,
     model: settings.model,
     audioMs,
@@ -106,6 +130,39 @@ export async function invoke<T>(
 ): Promise<T> {
   let result: unknown;
   switch (command) {
+    case "get_cleanup_status":
+      result = cleanupStatus;
+      break;
+    case "start_cleanup":
+      settings = { ...settings, cleanupModelOk: true };
+      cleanupStatus = {
+        ...cleanupStatus,
+        state: "downloading",
+        doneBytes: 0,
+        error: null,
+      };
+      emit("cleanup-status", cleanupStatus);
+      clearInterval(cleanupDownload);
+      cleanupDownload = setInterval(() => {
+        cleanupStatus = {
+          ...cleanupStatus,
+          doneBytes: Math.min(
+            cleanupStatus.totalBytes,
+            cleanupStatus.doneBytes + cleanupStatus.totalBytes / 10,
+          ),
+        };
+        if (cleanupStatus.doneBytes >= cleanupStatus.totalBytes) {
+          clearInterval(cleanupDownload);
+          cleanupStatus = { ...cleanupStatus, state: "ready" };
+        }
+        emit("cleanup-status", cleanupStatus);
+      }, 300);
+      break;
+    case "cancel_cleanup_download":
+      clearInterval(cleanupDownload);
+      cleanupStatus = { ...cleanupStatus, state: "missing" };
+      emit("cleanup-status", cleanupStatus);
+      break;
     case "get_status":
       result = status;
       break;
@@ -113,7 +170,17 @@ export async function invoke<T>(
       result = settings;
       break;
     case "set_settings":
-      settings = args!.settings as Settings;
+      {
+        const previous = settings.cleanup;
+        settings = args!.settings as Settings;
+        if (previous !== settings.cleanup) {
+          cleanupStatus = {
+            ...cleanupStatus,
+            state: settings.cleanup ? "missing" : "off",
+          };
+          emit("cleanup-status", cleanupStatus);
+        }
+      }
       result = settings;
       break;
     case "list_microphones":
@@ -203,6 +270,7 @@ export async function invoke<T>(
       result = { kind: "copied", reason: null };
       break;
     case "finish_first_run":
+      settings = { ...settings, firstRunDone: true, cleanupModelOk: true };
       status = { ...status, phase: "idle" };
       emit("status", status);
       break;

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type * as ipc from "../ipc";
 import {
   formatDate,
@@ -29,6 +30,8 @@ export function Transcript({
   query = "",
   timeInGutter,
 }: Props) {
+  const [cleaned, setCleaned] = useState(true);
+  const shown = cleaned ? entry.text : (entry.raw ?? entry.text);
   const when = timeInGutter
     ? formatTime(entry.createdAt)
     : whenLabel(entry.createdAt);
@@ -45,7 +48,7 @@ export function Transcript({
       )}
       <div className="entry-body">
         <p className="entry-text">
-          {highlight(entry.text, query).map((part, i) =>
+          {highlight(shown, query).map((part, i) =>
             part.match ? <mark key={i}>{part.text}</mark> : part.text,
           )}
         </p>
@@ -58,6 +61,16 @@ export function Transcript({
               {when}
             </time>
           )}
+          {entry.raw && (
+            <button
+              type="button"
+              className="button"
+              aria-pressed={cleaned}
+              onClick={() => setCleaned(!cleaned)}
+            >
+              Cleaned up
+            </button>
+          )}
           <span className="entry-lang">
             {languageName(entry.language, languages)}
           </span>
@@ -67,11 +80,7 @@ export function Transcript({
         </div>
       </div>
       <div className="entry-actions">
-        <IconButton
-          icon="copy"
-          label="Copy"
-          onClick={() => onCopy(entry.text)}
-        />
+        <IconButton icon="copy" label="Copy" onClick={() => onCopy(shown)} />
         <IconButton
           icon="insert"
           label="Insert again"
