@@ -7,6 +7,7 @@
     "dev": "tauri dev",
     "dev:web": "vite",
     "build:web": "vite build",
+    "build:helper": "cargo build --release --locked -p delulu-cleanup-helper",
     "typecheck": "tsc --noEmit",
     "test": "bun test ui",
     "format": "prettier --write ui package.json vite.config.ts tsconfig.json",
