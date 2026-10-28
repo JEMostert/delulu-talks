@@ -25,6 +25,7 @@ let settings: Settings = {
   overlay: true,
   firstRunDone: !new URLSearchParams(location.search).has("firstRun"),
   cleanup: true,
+  smartContext: true,
   cleanupModelOk: true,
 };
 // Dev-only URL switches: ?firstRun, ?empty, ?phase=error|loadingModel|…

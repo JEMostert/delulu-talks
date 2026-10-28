@@ -106,6 +106,17 @@ export function DictationSection({ state }: Props) {
         </Select>
       </Row>
       <Row
+        label="Smart context management"
+        htmlFor="smart-context"
+        help="Remembers what you were just talking about, so the next dictation gets names and terms right. Forgotten after 10 quiet minutes, a restart, or Clear topic in the tray."
+      >
+        <Switch
+          id="smart-context"
+          checked={settings.smartContext}
+          onChange={(value) => void update("smartContext", value)}
+        />
+      </Row>
+      <Row
         label="Insert text with"
         htmlFor="insert"
         help="The keys used to paste into the app you’re in."

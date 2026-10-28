@@ -182,11 +182,16 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
             }
         };
         let settings = s.store.settings();
+        let prompt = settings
+            .smart_context
+            .then(|| s.context.whisper_prompt(&s.store.vocabulary()))
+            .flatten();
         let (tx, rx) = tokio::sync::oneshot::channel();
         if s.engine
             .send(EngineJob::Transcribe(
                 clip.samples,
                 settings.language.clone(),
+                prompt,
                 tx,
             ))
             .is_err()
@@ -212,6 +217,9 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
             pill(&s, PillState::Error, Some("Nothing heard"));
         } else {
             let cleaned = cleanup::clean(&app, &transcript.language, transcript.text.clone()).await;
+            if settings.smart_context {
+                context::remember(&app, cleaned.topic.clone(), &cleaned.text);
+            }
             let entry = s.store.add_history(NewEntry {
                 text: cleaned.text,
                 raw: cleaned.raw,

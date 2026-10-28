@@ -52,6 +52,9 @@ pub struct Settings {
     pub overlay: bool,
     /// Clean up transcripts with the local language model.
     pub cleanup: bool,
+    /// Smart context management: carry what recent dictations were about to the next
+    /// one, so Whisper gets names right. Memory only; forgotten on restart.
+    pub smart_context: bool,
     /// The user has accepted the cleanup model download, so it may start on
     /// its own. Internal; not a toggle.
     pub cleanup_model_ok: bool,
@@ -69,6 +72,7 @@ impl Default for Settings {
             theme: Theme::default(),
             overlay: true,
             cleanup: true,
+            smart_context: true,
             cleanup_model_ok: false,
         }
     }

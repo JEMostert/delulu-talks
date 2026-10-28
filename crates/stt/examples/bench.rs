@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .samples::<i16>()
             .map(|s| s.map(|x| x as f32 / 32768.0))
             .collect::<Result<_, _>>()?;
-        let result = engine.transcribe(&samples, &Language::Auto)?;
+        let result = engine.transcribe(&samples, &Language::Auto, None)?;
         let name = std::path::Path::new(&path)
             .file_name()
             .unwrap_or_default()

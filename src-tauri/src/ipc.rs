@@ -86,6 +86,9 @@ pub(crate) fn set_settings(
     if diff.cleanup {
         cleanup::sync(&app);
     }
+    if !settings.smart_context {
+        context::clear(&app);
+    }
     Ok(settings_view(&s, settings))
 }
 #[tauri::command]

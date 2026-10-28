@@ -52,6 +52,8 @@ export type Settings = {
   overlay: boolean;
   firstRunDone: boolean;
   cleanup: boolean;
+  /** Carry what recent dictations were about to the next one. */
+  smartContext: boolean;
   cleanupModelOk: boolean;
 };
 export type InputDevice = { id: string; name: string; isDefault: boolean };

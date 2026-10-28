@@ -46,6 +46,7 @@ test("maps language names and settings without changing other values", () => {
     firstRunDone: true,
     cleanup: true,
     cleanupModelOk: true,
+    smartContext: true,
   };
   expect(settingsPatch(settings, "theme", "dark")).toEqual({
     ...settings,

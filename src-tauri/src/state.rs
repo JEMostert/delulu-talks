@@ -29,12 +29,16 @@ pub(crate) struct Shell {
     pub(crate) pending_toggle: AtomicBool,
     pub(crate) pill: Pill,
     pub(crate) cleanup: cleanup::Cleanup,
+    /// What recent dictations were about; memory only.
+    pub(crate) context: context::Context,
 }
 pub(crate) enum EngineJob {
     Load(String),
+    /// Samples, language setting, Whisper prompt from the context.
     Transcribe(
         Vec<f32>,
         String,
+        Option<String>,
         tokio::sync::oneshot::Sender<Result<delulu_stt::Transcript, String>>,
     ),
 }

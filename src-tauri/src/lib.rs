@@ -13,6 +13,7 @@ use std::{
 use tauri::{Emitter, Manager, State};
 
 mod cleanup;
+mod context;
 mod dictation;
 mod engine;
 mod ipc;
@@ -111,6 +112,7 @@ pub fn run() {
             pending_toggle: AtomicBool::new(std::env::args().any(|a| a == "--toggle")),
             pill: Pill::new(),
             cleanup,
+            context: Default::default(),
         })
         .setup(move |app| {
             let handle = app.handle().clone();

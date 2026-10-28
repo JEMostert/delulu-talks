@@ -150,9 +150,13 @@ pub struct Engine {
     backend: String,
 }
 
-fn params(language: &str) -> whisper_rs::FullParams<'_, '_> {
+fn params<'a>(language: &'a str, prompt: Option<&'a str>) -> whisper_rs::FullParams<'a, 'a> {
     let mut p = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
     p.set_language(Some(language));
+    if let Some(prompt) = prompt {
+        // Read as the text before this clip: it steers spelling and names.
+        p.set_initial_prompt(prompt);
+    }
     p.set_n_threads(std::thread::available_parallelism().map_or(1, |n| n.get().min(8)) as i32);
     p.set_no_context(true);
     p.set_no_timestamps(true);
@@ -169,6 +173,19 @@ fn silent(samples: &[f32]) -> bool {
 }
 fn punctuation_only(text: &str) -> bool {
     !text.chars().any(char::is_alphanumeric)
+}
+/// Whisper sometimes just repeats its prompt on a near-silent clip; that is not speech.
+/// Short replies ("yes", "GG") may well repeat a prompt word, so only longer runs count.
+fn echoes(text: &str, prompt: Option<&str>) -> bool {
+    let plain = |s: &str| {
+        s.to_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let text = plain(text);
+    prompt.is_some_and(|prompt| text.split(' ').count() >= 4 && plain(prompt).contains(&text))
 }
 
 // Match whisper.cpp's selection of the first registered GPU or integrated GPU.
@@ -220,7 +237,7 @@ impl Engine {
             })
             .collect();
         state
-            .full(params("auto"), &warm)
+            .full(params("auto", None), &warm)
             .map_err(|e| SttError::Inference(e.to_string()))?;
         let backend = backend_name();
         let id = models()
@@ -248,10 +265,12 @@ impl Engine {
     pub fn model_id(&self) -> &str {
         &self.id
     }
+    /// `prompt` is context from earlier dictations (names, the last sentence).
     pub fn transcribe(
         &mut self,
         samples: &[f32],
         language: &Language,
+        prompt: Option<&str>,
     ) -> Result<Transcript, SttError> {
         let code = match language {
             Language::Auto => "auto",
@@ -268,7 +287,7 @@ impl Engine {
         }
         let start = Instant::now();
         self.state
-            .full(params(code), samples)
+            .full(params(code, prompt), samples)
             .map_err(|e| SttError::Inference(e.to_string()))?;
         let language = whisper_rs::get_lang_str(self.state.full_lang_id_from_state())
             .unwrap_or(code)
@@ -284,7 +303,7 @@ impl Engine {
             })
             .collect::<Result<Vec<_>, _>>()?
             .join(" ");
-        let text = if no_speech || punctuation_only(&text) {
+        let text = if no_speech || punctuation_only(&text) || echoes(&text, prompt) {
             String::new()
         } else {
             text.trim().to_string()
@@ -301,6 +320,15 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn prompt_echoes_are_not_speech() {
+        let prompt = Some("T3 Code, Tauri. Fix the merge conflict.");
+        assert!(echoes("Fix the merge conflict.", prompt));
+        assert!(echoes("t3 code tauri fix", prompt));
+        assert!(!echoes("T3 code", prompt), "short replies are kept");
+        assert!(!echoes("Open T3 Code and fix it.", prompt));
+        assert!(!echoes("Fix the merge conflict.", None));
+    }
     #[test]
     fn silence_gate() {
         assert!(silent(&vec![0.1; 3999]));
