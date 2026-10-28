@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 300" role="img" aria-labelledby="title desc">
+  <title id="title">Memory use with cleanup on</title>
+  <desc id="desc">About 0.4 GB of RAM: app and Whisper 130 MB, window 100 MB, recording pill 30 MB, cleanup helper 150 MB. About 4.6 GB of graphics memory: Whisper 0.9 GB, Gemma 3.7 GB. With cleanup off: about 0.25 GB of RAM and 0.9 GB of graphics memory.</desc>
+  <defs>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b2f48"/>
+      <stop offset="1" stop-color="#03101d"/>
+    </linearGradient>
+    <linearGradient id="nacre" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffc2d1"/>
+      <stop offset=".3" stop-color="#bfefff"/>
+      <stop offset=".6" stop-color="#d9c9f2"/>
+      <stop offset="1" stop-color="#f6dfb0"/>
+    </linearGradient>
+    <linearGradient id="foam" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9ff0ff"/><stop offset="1" stop-color="#3fb9e0"/></linearGradient>
+    <linearGradient id="lilac" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e2d4ff"/><stop offset="1" stop-color="#a98be6"/></linearGradient>
+    <linearGradient id="rose" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc9d6"/><stop offset="1" stop-color="#e3708a"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe7b8"/><stop offset="1" stop-color="#d9a24b"/></linearGradient>
+  </defs>
+  <rect width="1280" height="300" rx="28" fill="url(#water)"/>
+  <rect x=".75" y=".75" width="1278.5" height="298.5" rx="27.5" fill="none" stroke="url(#nacre)" stroke-opacity=".3" stroke-width="1.5"/>
+  <g font-family="system-ui, -apple-system, 'Segoe UI', Inter, Roboto, sans-serif">
+    <text x="48" y="58" font-size="22" font-weight="700" fill="#eaf6ff">Memory with cleanup on</text>
+    <text x="1232" y="58" text-anchor="end" font-size="15" fill="#6f93ad">Scale: 0 to 5 GB, measured on an RTX 4090</text>
+
+    <!-- scale -->
+    <g stroke="#a9c8de" stroke-opacity=".12">
+      <path d="M300 84 V236"/><path d="M480 84 V236"/><path d="M660 84 V236"/><path d="M840 84 V236"/><path d="M1020 84 V236"/><path d="M1200 84 V236"/>
+    </g>
+    <g font-size="13" fill="#6f93ad" text-anchor="middle">
+      <text x="300" y="254">0</text><text x="480" y="254">1 GB</text><text x="660" y="254">2 GB</text><text x="840" y="254">3 GB</text><text x="1020" y="254">4 GB</text><text x="1200" y="254">5 GB</text>
+    </g>
+
+    <!-- RAM: 1 GB = 180 px -->
+    <text x="48" y="124" font-size="18" font-weight="700" fill="#eaf6ff">RAM</text>
+    <text x="48" y="146" font-size="15" fill="#a9c8de">about 0.4 GB</text>
+    <g>
+      <rect x="300" y="102" width="23" height="36" rx="4" fill="url(#foam)"/>
+      <rect x="324" y="102" width="18" height="36" rx="4" fill="url(#lilac)"/>
+      <rect x="343" y="102" width="6" height="36" rx="3" fill="url(#rose)"/>
+      <rect x="350" y="102" width="27" height="36" rx="4" fill="url(#gold)"/>
+    </g>
+    <text x="392" y="126" font-size="15" fill="#a9c8de">app and Whisper 130 MB, window 100 MB, pill 30 MB, cleanup 150 MB</text>
+
+    <!-- GPU -->
+    <text x="48" y="194" font-size="18" font-weight="700" fill="#eaf6ff">Graphics memory</text>
+    <text x="48" y="216" font-size="15" fill="#a9c8de">about 4.6 GB</text>
+    <rect x="300" y="172" width="156" height="36" rx="5" fill="url(#foam)">
+      <animate attributeName="width" values="0;156" dur="1s" fill="freeze" calcMode="spline" keySplines=".2 1 .3 1"/>
+    </rect>
+    <rect x="458" y="172" width="666" height="36" rx="5" fill="url(#gold)">
+      <animate attributeName="width" values="0;666" begin=".3s" dur="1.2s" fill="freeze" calcMode="spline" keySplines=".2 1 .3 1"/>
+    </rect>
+    <text x="378" y="196" text-anchor="middle" font-size="15" font-weight="600" fill="#03101d">Whisper 0.9</text>
+    <text x="790" y="196" text-anchor="middle" font-size="15" font-weight="600" fill="#03101d">Gemma cleanup 3.7 GB</text>
+
+    <text x="48" y="282" font-size="15" fill="#6f93ad">Cleanup off: about 0.25 GB RAM and 0.9 GB graphics memory.</text>
+    <text x="1232" y="282" text-anchor="end" font-size="15" fill="#6f93ad">Disk: 574 MB Whisper model plus 5.2 GB Gemma model.</text>
+  </g>
+</svg>

@@ -17,7 +17,7 @@ pub(crate) const LEAVE_SECS: f64 = 0.34;
 const LABEL_CHARS: usize = 28;
 
 pub(crate) type Rgb = (f64, f64, f64);
-// Deep Sea palette, as in the legacy pill.
+// Deep Sea palette, shared with the app's tokens.
 pub(crate) const INK: Rgb = (0.918, 0.965, 1.0);
 pub(crate) const CORAL: Rgb = (1.0, 0.435, 0.525);
 pub(crate) const FOAM: Rgb = (0.459, 0.894, 1.0);
@@ -195,8 +195,8 @@ impl Model {
         }
         let k = 1.0 - (1.0 - 0.2_f64).powf(dt * 60.0);
         self.shown_width += (self.target_width - self.shown_width) * k;
-        // Rise quickly with the voice, fall back gently like water. The legacy
-        // rates were per frame at 60 Hz; scale them so 144 Hz looks the same.
+        // Rise quickly with the voice, fall back gently like water. The rates are
+        // per frame at 60 Hz; scale them so 144 Hz looks the same.
         let rate: f64 = if self.level > self.shown_level {
             0.45
         } else {
