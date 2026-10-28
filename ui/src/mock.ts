@@ -80,6 +80,24 @@ function storedShelves(): Shelf[] | undefined {
 let shelves: Shelf[] = params.has("empty")
   ? []
   : (storedShelves() ?? demoShelves());
+// Short stand-ins for the Rust PRESETS; the real lists live in crates/store.
+const presets = [
+  {
+    key: "programming",
+    name: "Programming",
+    terms: ["T3 Code", "Claude Code", "Codex", "TypeScript", "Tauri", "Rust"],
+  },
+  {
+    key: "gaming-discord",
+    name: "Gaming & Discord",
+    terms: ["Discord", "Steam Deck", "Valorant", "League of Legends", "GG"],
+  },
+  {
+    key: "twitch-streaming",
+    name: "Twitch & Streaming",
+    terms: ["Twitch", "OBS", "VOD", "PogChamp", "KEKW", "hype train"],
+  },
+];
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 /** Like delulu_cleanup::vocabulary_terms: at most 100 terms and 1,500 characters. */
 function usedTerms(active: string[]) {
@@ -106,6 +124,7 @@ function vocabulary() {
   return {
     version: 1,
     shelves,
+    presets: presets.filter((p) => !shelves.some((s) => same(s.name, p.name))),
     activeTerms: active.length,
     usedTerms: usedTerms(active),
   };
@@ -230,6 +249,22 @@ export async function invoke<T>(
       ];
       result = vocabulary();
       break;
+    case "add_preset_shelf": {
+      const preset = presets.find((p) => p.key === args?.key);
+      if (!preset) throw "That starter shelf doesn’t exist.";
+      if (shelves.length >= 32) throw "You can have at most 32 shelves.";
+      shelves = [
+        ...shelves,
+        {
+          id: crypto.randomUUID(),
+          name: shelfName(preset.name),
+          enabled: true,
+          terms: [...preset.terms],
+        },
+      ];
+      result = vocabulary();
+      break;
+    }
     case "rename_shelf": {
       const name = shelfName(args?.name, args?.id);
       changeShelf(args?.id, (s) => ({ ...s, name }));

@@ -8,8 +8,8 @@ use std::{
 
 mod vocabulary;
 pub use vocabulary::{
-    split_terms, Shelf, Vocabulary, MAX_SHELF_NAME_CHARS, MAX_SHELF_TERMS, MAX_SHELVES,
-    MAX_TERM_CHARS,
+    split_terms, Preset, Shelf, Vocabulary, MAX_SHELF_NAME_CHARS, MAX_SHELF_TERMS, MAX_SHELVES,
+    MAX_TERM_CHARS, PRESETS,
 };
 
 pub const APP_ID: &str = "com.joran.delulu-talks";
@@ -804,6 +804,29 @@ mod tests {
             Err(StoreError::Invalid(message)) => message,
             other => panic!("expected a rule error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn starter_shelves_add_once_with_all_terms() {
+        let t = TempDir::new();
+        let store = open(&t);
+        assert_eq!(store.vocabulary().available_presets().len(), PRESETS.len());
+        for preset in PRESETS {
+            let (_, v) = store
+                .update_vocabulary(|v| v.add_preset(preset.key).map(|_| ()))
+                .unwrap();
+            let shelf = v.shelves.last().unwrap();
+            assert_eq!(shelf.name, preset.name);
+            assert_eq!(shelf.terms.len(), preset.terms.len(), "{}", preset.name);
+            assert!(shelf.enabled);
+        }
+        assert!(store.vocabulary().available_presets().is_empty());
+        let again = store.update_vocabulary(|v| v.add_preset("programming").map(|_| ()));
+        assert!(again.is_err(), "a shelf with that name already exists");
+        assert!(store
+            .update_vocabulary(|v| v.add_preset("nope").map(|_| ()))
+            .is_err());
+        assert_eq!(open(&t).vocabulary().shelves.len(), PRESETS.len());
     }
 
     #[test]

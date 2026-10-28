@@ -60,6 +60,65 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* One-click starter shelves */
+.starters {
+  display: grid;
+  gap: 8px;
+}
+.starters-title {
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  font-weight: 600;
+}
+.starters-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+.starter {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms,
+    background 140ms;
+}
+.starter:hover {
+  border-color: var(--focus);
+  background: var(--accent-soft);
+}
+.starter:focus-visible {
+  outline: 0;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.starter-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.starter-name {
+  font-weight: 600;
+}
+.starter-count {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+}
+.starter-sample {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .new-shelf {
   display: flex;
   gap: 10px;

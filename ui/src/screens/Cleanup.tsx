@@ -111,6 +111,12 @@ export function Cleanup({ state }: { state: AppState }) {
             setNotice={setNotice}
           />
         ))}
+        {vocabulary && vocabulary.presets.length > 0 && (
+          <StarterShelves
+            presets={vocabulary.presets}
+            onAdd={(key) => void run(() => ipc.addPresetShelf(key))}
+          />
+        )}
         {vocabulary && (
           <NewShelf
             first={shelves.length === 0}
@@ -123,6 +129,40 @@ export function Cleanup({ state }: { state: AppState }) {
           />
         )}
       </section>
+    </div>
+  );
+}
+
+/** Ready-made shelves, one click each; they disappear once added. */
+function StarterShelves({
+  presets,
+  onAdd,
+}: {
+  presets: ipc.Preset[];
+  onAdd: (key: string) => void;
+}) {
+  return (
+    <div className="starters">
+      <p className="starters-title">Starter shelves</p>
+      <div className="starters-list">
+        {presets.map((preset) => (
+          <button
+            key={preset.key}
+            type="button"
+            className="starter"
+            onClick={() => onAdd(preset.key)}
+          >
+            <span className="starter-head">
+              <Icon name="plus" size={16} />
+              <span className="starter-name">{preset.name}</span>
+              <span className="starter-count">{preset.terms.length} terms</span>
+            </span>
+            <span className="starter-sample">
+              {preset.terms.slice(0, 5).join(", ")}…
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

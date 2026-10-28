@@ -27,8 +27,8 @@ use ipc::*;
 use models::*;
 use state::*;
 use vocabulary::{
-    add_shelf, add_terms, delete_shelf, get_vocabulary, remove_term, rename_shelf,
-    set_shelf_enabled,
+    add_preset_shelf, add_shelf, add_terms, delete_shelf, get_vocabulary, remove_term,
+    rename_shelf, set_shelf_enabled,
 };
 
 pub fn run() {
@@ -179,6 +179,7 @@ pub fn run() {
             cancel_cleanup_download,
             get_vocabulary,
             add_shelf,
+            add_preset_shelf,
             rename_shelf,
             delete_shelf,
             set_shelf_enabled,

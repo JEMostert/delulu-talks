@@ -95,9 +95,13 @@ export type Shelf = {
   enabled: boolean;
   terms: string[];
 };
+/** A ready-made shelf not added yet. */
+export type Preset = { key: string; name: string; terms: string[] };
 export type Vocabulary = {
   version: number;
   shelves: Shelf[];
+  /** Starter shelves the user hasn't added yet. */
+  presets: Preset[];
   /** Distinct terms on enabled shelves. */
   activeTerms: number;
   /** How many of those the cleanup prompt uses; it caps count and length. */
@@ -106,6 +110,8 @@ export type Vocabulary = {
 export const getVocabulary = () => invoke<Vocabulary>("get_vocabulary");
 export const addShelf = (name: string) =>
   invoke<Vocabulary>("add_shelf", { name });
+export const addPresetShelf = (key: string) =>
+  invoke<Vocabulary>("add_preset_shelf", { key });
 export const renameShelf = (id: string, name: string) =>
   invoke<Vocabulary>("rename_shelf", { id, name });
 export const deleteShelf = (id: string) =>

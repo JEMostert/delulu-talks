@@ -2,12 +2,21 @@
 use super::*;
 use delulu_store::{StoreError, Vocabulary};
 
+/// A starter shelf the user hasn't added yet.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PresetView {
+    key: &'static str,
+    name: &'static str,
+    terms: &'static [&'static str],
+}
 /// The shelves plus how many of their terms the cleanup prompt will use.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct VocabularyView {
     #[serde(flatten)]
     vocabulary: Vocabulary,
+    presets: Vec<PresetView>,
     /// Distinct terms on enabled shelves.
     active_terms: usize,
     /// How many of those reach the prompt (it caps count and length).
@@ -16,6 +25,15 @@ pub(crate) struct VocabularyView {
 fn view(vocabulary: Vocabulary) -> VocabularyView {
     let active = vocabulary.active_terms();
     VocabularyView {
+        presets: vocabulary
+            .available_presets()
+            .into_iter()
+            .map(|p| PresetView {
+                key: p.key,
+                name: p.name,
+                terms: p.terms,
+            })
+            .collect(),
         active_terms: active.len(),
         used_terms: delulu_cleanup::vocabulary_terms(&active).len(),
         vocabulary,
@@ -37,6 +55,10 @@ pub(crate) fn get_vocabulary(s: State<'_, Shell>) -> VocabularyView {
 #[tauri::command]
 pub(crate) fn add_shelf(s: State<'_, Shell>, name: String) -> Result<VocabularyView, String> {
     change(&s, |v| v.add_shelf(&name).map(|_| ()))
+}
+#[tauri::command]
+pub(crate) fn add_preset_shelf(s: State<'_, Shell>, key: String) -> Result<VocabularyView, String> {
+    change(&s, |v| v.add_preset(&key).map(|_| ()))
 }
 #[tauri::command]
 pub(crate) fn rename_shelf(
@@ -77,4 +99,23 @@ pub(crate) fn remove_term(
     term: String,
 ) -> Result<VocabularyView, String> {
     change(&s, |v| v.remove_term(&id, &term))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_starter_shelves_fit_the_prompt() {
+        let mut vocabulary = Vocabulary::default();
+        for preset in delulu_store::PRESETS {
+            vocabulary.add_preset(preset.key).unwrap();
+        }
+        let v = view(vocabulary);
+        assert!(v.presets.is_empty());
+        assert_eq!(
+            v.used_terms, v.active_terms,
+            "every starter term reaches the prompt"
+        );
+    }
 }

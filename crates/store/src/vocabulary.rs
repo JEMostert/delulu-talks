@@ -36,6 +36,129 @@ pub struct Shelf {
     pub terms: Vec<String>,
 }
 
+/// A ready-made shelf the user can add with one click.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Preset {
+    pub key: &'static str,
+    pub name: &'static str,
+    pub terms: &'static [&'static str],
+}
+
+/// Starter shelves: names and jargon speech recognition tends to mishear. Together they
+/// stay within the cleanup prompt's term and length caps.
+pub const PRESETS: &[Preset] = &[
+    Preset {
+        key: "programming",
+        name: "Programming",
+        terms: &[
+            "T3 Code",
+            "Claude Code",
+            "Codex",
+            "Cursor",
+            "GitHub",
+            "GitLab",
+            "TypeScript",
+            "JavaScript",
+            "Rust",
+            "Cargo",
+            "Tauri",
+            "React",
+            "Vite",
+            "Bun",
+            "npm",
+            "Node.js",
+            "Next.js",
+            "Tailwind",
+            "PostgreSQL",
+            "SQLite",
+            "Docker",
+            "Kubernetes",
+            "Linux",
+            "Wayland",
+            "KDE",
+            "Neovim",
+            "VS Code",
+            "localhost",
+            "JSON",
+            "YAML",
+            "OAuth",
+            "LLM",
+        ],
+    },
+    Preset {
+        key: "gaming-discord",
+        name: "Gaming & Discord",
+        terms: &[
+            "Discord",
+            "Discord Nitro",
+            "Steam",
+            "Steam Deck",
+            "Valorant",
+            "League of Legends",
+            "Minecraft",
+            "Fortnite",
+            "Counter-Strike 2",
+            "CS2",
+            "Apex Legends",
+            "Overwatch",
+            "Elden Ring",
+            "Baldur's Gate 3",
+            "Helldivers 2",
+            "Rocket League",
+            "Roblox",
+            "GTA",
+            "PvP",
+            "PvE",
+            "MMO",
+            "DPS",
+            "NPC",
+            "aggro",
+            "nerf",
+            "GG",
+            "AFK",
+            "noob",
+            "VC",
+            "DMs",
+        ],
+    },
+    Preset {
+        key: "twitch-streaming",
+        name: "Twitch & Streaming",
+        terms: &[
+            "Twitch",
+            "OBS",
+            "Streamlabs",
+            "StreamElements",
+            "VOD",
+            "raid",
+            "gifted subs",
+            "bits",
+            "emote",
+            "Prime Gaming",
+            "Kick",
+            "YouTube",
+            "Pog",
+            "PogChamp",
+            "Kappa",
+            "LUL",
+            "KEKW",
+            "OMEGALUL",
+            "monkaS",
+            "Sadge",
+            "Copium",
+            "Hopium",
+            "hype train",
+            "lurk",
+            "BRB",
+            "collab",
+            "giveaway",
+            "chatters",
+            "mods",
+            "VIP",
+        ],
+    },
+];
+
 fn enabled_default() -> bool {
     true
 }
@@ -117,6 +240,27 @@ impl Vocabulary {
             terms: Vec::new(),
         });
         Ok(&self.shelves[self.shelves.len() - 1])
+    }
+
+    /// Adds the starter shelf `key` with its terms, all or nothing.
+    pub fn add_preset(&mut self, key: &str) -> Result<&Shelf, StoreError> {
+        let preset = PRESETS
+            .iter()
+            .find(|p| p.key == key)
+            .ok_or_else(|| invalid("That starter shelf doesn’t exist."))?;
+        let mut next = self.clone();
+        let id = next.add_shelf(preset.name)?.id.clone();
+        next.add_terms(&id, &preset.terms.join("\n"))?;
+        *self = next;
+        Ok(&self.shelves[self.shelves.len() - 1])
+    }
+
+    /// Starter shelves not on the list yet (matched by name).
+    pub fn available_presets(&self) -> Vec<&'static Preset> {
+        PRESETS
+            .iter()
+            .filter(|p| !self.shelves.iter().any(|shelf| same(&shelf.name, p.name)))
+            .collect()
     }
 
     pub fn rename_shelf(&mut self, id: &str, name: &str) -> Result<(), StoreError> {
