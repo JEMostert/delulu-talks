@@ -4,19 +4,35 @@ use super::*;
 pub(crate) fn get_status(s: State<'_, Shell>) -> Status {
     status_value(&s)
 }
+/// Settings as the UI sees them, with the first-run flag from the app state.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SettingsView {
+    #[serde(flatten)]
+    settings: Settings,
+    first_run_done: bool,
+}
+fn settings_view(s: &Shell, settings: Settings) -> SettingsView {
+    SettingsView {
+        settings,
+        first_run_done: s.store.state().first_run_done,
+    }
+}
 #[tauri::command]
-pub(crate) fn get_settings(s: State<'_, Shell>) -> Settings {
-    s.store.settings()
+pub(crate) fn get_settings(s: State<'_, Shell>) -> SettingsView {
+    settings_view(&s, s.store.settings())
 }
 #[derive(Debug, PartialEq)]
 pub(crate) struct SettingsDiff {
     pub(crate) model: bool,
     pub(crate) autostart: bool,
+    pub(crate) cleanup: bool,
 }
 pub(crate) fn settings_diff(old: &Settings, new: &Settings) -> SettingsDiff {
     SettingsDiff {
         model: old.model != new.model,
         autostart: old.start_at_login != new.start_at_login,
+        cleanup: old.cleanup != new.cleanup,
     }
 }
 pub(crate) fn apply_autostart(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
@@ -41,9 +57,12 @@ pub(crate) fn apply_autostart(app: &tauri::AppHandle, enabled: bool) -> Result<(
 pub(crate) fn set_settings(
     app: tauri::AppHandle,
     s: State<'_, Shell>,
-    settings: Settings,
-) -> Result<Settings, String> {
-    let diff = settings_diff(&s.store.settings(), &settings);
+    mut settings: Settings,
+) -> Result<SettingsView, String> {
+    let old = s.store.settings();
+    // Internal flag: the app owns it, so a stale UI copy can't reset it.
+    settings.cleanup_model_ok = old.cleanup_model_ok;
+    let diff = settings_diff(&old, &settings);
     if diff.model
         && matches!(
             status_value(&s).phase.as_str(),
@@ -64,7 +83,10 @@ pub(crate) fn set_settings(
     if diff.model {
         load_model(&app, settings.model.clone());
     }
-    Ok(settings)
+    if diff.cleanup {
+        cleanup::sync(&app);
+    }
+    Ok(settings_view(&s, settings))
 }
 #[tauri::command]
 pub(crate) fn list_microphones() -> Result<Vec<delulu_audio::InputDevice>, String> {
@@ -220,8 +242,15 @@ pub(crate) fn finish_first_run(app: tauri::AppHandle, s: State<'_, Shell>) -> Re
     let mut state = s.store.state();
     state.first_run_done = true;
     s.store.save_state(&state).map_err(|e| e.to_string())?;
+    // The first-run Model step disclosed the cleanup download.
+    let mut settings = s.store.settings();
+    settings.cleanup_model_ok = true;
+    s.store
+        .save_settings(&settings)
+        .map_err(|e| e.to_string())?;
     if status_value(&s).model.is_some() {
         phase(&app, "idle", None);
     }
+    cleanup::sync(&app);
     Ok(())
 }

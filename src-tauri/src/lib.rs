@@ -12,12 +12,14 @@ use std::{
 };
 use tauri::{Emitter, Manager, State};
 
+mod cleanup;
 mod dictation;
 mod engine;
 mod ipc;
 mod models;
 mod state;
 mod tray;
+use cleanup::{cancel_cleanup_download, get_cleanup_status, start_cleanup};
 use dictation::*;
 use engine::*;
 use ipc::*;
@@ -27,6 +29,7 @@ use state::*;
 pub fn run() {
     let store = Arc::new(Store::open_default().expect("open store"));
     let initial_state = store.state();
+    let initial_settings = store.settings();
     let save_store = store.clone();
     let inserter = Inserter::new(
         initial_state.remote_desktop_token,
@@ -43,6 +46,10 @@ pub fn run() {
     // Unattended end-to-end runs must never open desktop permission dialogs.
     let no_portals = std::env::var("DELULU_NO_PORTALS").as_deref() == Ok("1");
     let data_dir = store.data_dir().to_string_lossy().into_owned();
+    let cleanup = cleanup::Cleanup::new(
+        initial_settings.cleanup,
+        delulu_stt::file_ready(&store.models_dir(), &cleanup::CLEANUP_MODEL),
+    );
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {
             if args.iter().any(|a| a == "--toggle") {
@@ -98,6 +105,7 @@ pub fn run() {
             mic: AtomicBool::new(false),
             pending_toggle: AtomicBool::new(std::env::args().any(|a| a == "--toggle")),
             pill: Pill::new(),
+            cleanup,
         })
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -120,9 +128,11 @@ pub fn run() {
                 });
             }
             if delulu_stt::is_downloaded(&s.store.models_dir(), &settings.model) {
+                // Cleanup syncs once Whisper has loaded.
                 load_model(&handle, settings.model);
             } else {
                 phase(&handle, "needsSetup", None);
+                cleanup::whisper_settled(&handle);
             }
             // `--toggle` on a cold start (GNOME custom shortcut fallback) records without a window.
             if !std::env::args().any(|a| a == "--hidden" || a == "--toggle") {
@@ -158,7 +168,10 @@ pub fn run() {
             clear_history,
             copy_text,
             reinsert,
-            finish_first_run
+            finish_first_run,
+            get_cleanup_status,
+            start_cleanup,
+            cancel_cleanup_download
         ])
         .run(tauri::generate_context!())
         .expect("Tauri failed");
@@ -176,16 +189,21 @@ mod tests {
             settings_diff(&old, &new),
             SettingsDiff {
                 model: false,
-                autostart: false
+                autostart: false,
+                cleanup: false
             }
         );
+        new.cleanup_model_ok = true;
+        assert!(!settings_diff(&old, &new).cleanup);
         new.model = "small".into();
         new.start_at_login = false;
+        new.cleanup = false;
         assert_eq!(
             settings_diff(&old, &new),
             SettingsDiff {
                 model: true,
-                autostart: true
+                autostart: true,
+                cleanup: true
             }
         );
     }
