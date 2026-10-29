@@ -1,0 +1,20 @@
+backend: Vulkan: NVIDIA GeForce RTX 5060 Ti
+m-en-short.wav	en	185 ms	Please move the meeting to Thursday at half past three.
+m-en-code.wav	en	214 ms	Open the GitHub poll request for Delulu Talks, and check the Vulcan backend before merging the changes.
+m-nl-short.wav	de	198 ms	Verplaatsde wir ja der Ring auf Donderdach umhauf wir.
+m-nl-code.wav	nl	249 ms	Open het bestand met de instellingen en controleer of de microfoon werkt. Sla daarna de meisigingen op en start de toepassing opnieuw.
+human-nl-0.wav	nl	210 ms	Volgens Angel 2006 kunnen organisaties beter presteren met een aanpak op basis van het continue model.
+human-nl-1.wav	auto	0 ms	
+human-en.wav	en	204 ms	Ask not what your country can do for you. Ask what you can do for your country.
+silence.wav	auto	0 ms	
+human-nl-1-louder.wav	nl	208 ms	Varkens dragen de ziekte bij zich en dragen het via muggen over op mensen.
+m-en-short.wav	en	184 ms	Please move the meeting to Thursday at half past three.
+m-en-code.wav	en	211 ms	Open the GitHub poll request for Delulu Talks, and check the Vulcan backend before merging the changes.
+m-nl-short.wav	de	202 ms	Verplaatsde wir ja der Ring auf Donderdach umhauf wir.
+m-nl-code.wav	nl	218 ms	Open het bestand met de instellingen en controleer of de microfoon werkt. Sla daarna de meisigingen op en start de toepassing opnieuw.
+human-nl-0.wav	nl	200 ms	Volgens Angel 2006 kunnen organisaties beter presteren met een aanpak op basis van het continue model.
+human-nl-1.wav	auto	0 ms	
+human-en.wav	en	201 ms	Ask not what your country can do for you. Ask what you can do for your country.
+silence.wav	auto	0 ms	
+human-nl-1-louder.wav	nl	207 ms	Varkens dragen de ziekte bij zich en dragen het via muggen over op mensen.
+summary: en 4/4, nl 2/4, median 206.5 ms

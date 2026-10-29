@@ -168,8 +168,10 @@ fn params<'a>(language: &'a str, prompt: Option<&'a str>) -> whisper_rs::FullPar
 }
 
 fn silent(samples: &[f32]) -> bool {
+    // Gate only near-digital silence. Quiet speech can sit below 0.003 RMS;
+    // Whisper's no-speech probability handles recordings without speech.
     samples.len() < 4000
-        || (samples.iter().map(|x| x * x).sum::<f32>() / samples.len() as f32).sqrt() < 0.003
+        || (samples.iter().map(|x| x * x).sum::<f32>() / samples.len() as f32).sqrt() < 0.0001
 }
 fn punctuation_only(text: &str) -> bool {
     !text.chars().any(char::is_alphanumeric)
@@ -332,8 +334,8 @@ mod tests {
     #[test]
     fn silence_gate() {
         assert!(silent(&vec![0.1; 3999]));
-        assert!(silent(&vec![0.002; 4000]));
-        assert!(!silent(&vec![0.004; 4000]));
+        assert!(silent(&vec![0.00001; 4000]));
+        assert!(!silent(&vec![0.002; 4000]));
     }
     #[test]
     fn download_verifies_and_cleans_partial_file() {

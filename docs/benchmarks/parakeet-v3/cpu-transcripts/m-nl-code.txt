@@ -1,0 +1,1 @@
+open het bestand met de instellingen en controleer of de microfoon werkt sla daarna de wijzigingen op en start de toepassing opnieuw

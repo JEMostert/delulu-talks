@@ -1,0 +1,59 @@
+[
+  {
+    "id": "m-en-short",
+    "language": "en",
+    "reference": "Please move the meeting to Thursday at half past three.",
+    "source": "espeak-ng synthetic speech"
+  },
+  {
+    "id": "m-en-code",
+    "language": "en",
+    "reference": "Open the GitHub pull request for Delulu Talks and check the Vulkan backend before merging the changes.",
+    "source": "espeak-ng synthetic speech"
+  },
+  {
+    "id": "m-nl-short",
+    "language": "nl",
+    "reference": "Verplaats de vergadering naar donderdag om half vier.",
+    "source": "espeak-ng synthetic speech"
+  },
+  {
+    "id": "m-nl-code",
+    "language": "nl",
+    "reference": "Open het bestand met de instellingen en controleer of de microfoon werkt. Sla daarna de wijzigingen op en start de toepassing opnieuw.",
+    "source": "espeak-ng synthetic speech"
+  },
+  {
+    "id": "human-nl-0",
+    "language": "nl",
+    "reference": "Volgens Angel (2006) kunnen organisaties beter presteren met een aanpak op basis van het continuümmodel.",
+    "source": "google/fleurs nl_nl test row 0",
+    "dataset_id": 1927
+  },
+  {
+    "id": "human-nl-1",
+    "language": "nl",
+    "reference": "Varkens dragen de ziekte bij zich en dragen het via muggen over op mensen.",
+    "source": "google/fleurs nl_nl test row 1",
+    "dataset_id": 1762
+  },
+  {
+    "id": "human-en",
+    "language": "en",
+    "reference": "Ask not what your country can do for you. Ask what you can do for your country.",
+    "source": "sherpa-onnx parakeet v3 bundled test_wavs/en.wav"
+  },
+  {
+    "id": "silence",
+    "language": null,
+    "reference": "",
+    "source": "3s digital silence"
+  },
+  {
+    "id": "human-nl-1-louder",
+    "language": "nl",
+    "reference": "Varkens dragen de ziekte bij zich en dragen het via muggen over op mensen.",
+    "source": "google/fleurs nl_nl test row 1; amplitude multiplied by 10 (+20dB), same audio",
+    "dataset_id": 1762
+  }
+]

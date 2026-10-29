@@ -1,0 +1,164 @@
+[
+  {
+    "file": "m-en-short.wav",
+    "language": "en",
+    "latency_ms": 189,
+    "text": "Please move the meeting to Thursday at half past three."
+  },
+  {
+    "file": "m-en-code.wav",
+    "language": "en",
+    "latency_ms": 219,
+    "text": "Open the GitHub poll request for Delulu Talks, and check the Vulcan backend before merging the changes."
+  },
+  {
+    "file": "m-nl-short.wav",
+    "language": "de",
+    "latency_ms": 200,
+    "text": "Verplaatsde wir ja der Ring auf Donderdach umhauf wir."
+  },
+  {
+    "file": "m-nl-code.wav",
+    "language": "nl",
+    "latency_ms": 237,
+    "text": "Open het bestand met de instellingen en controleer of de microfoon werkt. Sla daarna de meisigingen op en start de toepassing opnieuw."
+  },
+  {
+    "file": "human-nl-0.wav",
+    "language": "nl",
+    "latency_ms": 256,
+    "text": "Volgens Angel 2006 kunnen organisaties beter presteren met een aanpak op basis van het continue model."
+  },
+  {
+    "file": "human-nl-1.wav",
+    "language": "nl",
+    "latency_ms": 201,
+    "text": "Varkens dragen de ziekte bij zich en dragen het via muggen over op mensen."
+  },
+  {
+    "file": "human-en.wav",
+    "language": "en",
+    "latency_ms": 198,
+    "text": "Ask not what your country can do for you. Ask what you can do for your country."
+  },
+  {
+    "file": "silence.wav",
+    "language": "auto",
+    "latency_ms": 0,
+    "text": ""
+  },
+  {
+    "file": "human-nl-1-louder.wav",
+    "language": "nl",
+    "latency_ms": 205,
+    "text": "Varkens dragen de ziekte bij zich en dragen het via muggen over op mensen."
+  },
+  {
+    "file": "m-en-short.wav",
+    "language": "en",
+    "latency_ms": 188,
+    "text": "Please move the meeting to Thursday at half past three."
+  },
+  {
+    "file": "m-en-code.wav",
+    "language": "en",
+    "latency_ms": 208,
+    "text": "Open the GitHub poll request for Delulu Talks, and check the Vulcan backend before merging the changes."
+  },
+  {
+    "file": "m-nl-short.wav",
+    "language": "de",
+    "latency_ms": 220,
+    "text": "Verplaatsde wir ja der Ring auf Donderdach umhauf wir."
+  },
+  {
+    "file": "m-nl-code.wav",
+    "language": "nl",
+    "latency_ms": 231,
+    "text": "Open het bestand met de instellingen en controleer of de microfoon werkt. Sla daarna de meisigingen op en start de toepassing opnieuw."
+  },
+  {
+    "file": "human-nl-0.wav",
+    "language": "nl",
+    "latency_ms": 199,
+    "text": "Volgens Angel 2006 kunnen organisaties beter presteren met een aanpak op basis van het continue model."
+  },
+  {
+    "file": "human-nl-1.wav",
+    "language": "nl",
+    "latency_ms": 188,
+    "text": "Varkens dragen de ziekte bij zich en dragen het via muggen over op mensen."
+  },
+  {
+    "file": "human-en.wav",
+    "language": "en",
+    "latency_ms": 184,
+    "text": "Ask not what your country can do for you. Ask what you can do for your country."
+  },
+  {
+    "file": "silence.wav",
+    "language": "auto",
+    "latency_ms": 0,
+    "text": ""
+  },
+  {
+    "file": "human-nl-1-louder.wav",
+    "language": "nl",
+    "latency_ms": 192,
+    "text": "Varkens dragen de ziekte bij zich en dragen het via muggen over op mensen."
+  },
+  {
+    "file": "m-en-short.wav",
+    "language": "en",
+    "latency_ms": 175,
+    "text": "Please move the meeting to Thursday at half past three."
+  },
+  {
+    "file": "m-en-code.wav",
+    "language": "en",
+    "latency_ms": 203,
+    "text": "Open the GitHub poll request for Delulu Talks, and check the Vulcan backend before merging the changes."
+  },
+  {
+    "file": "m-nl-short.wav",
+    "language": "de",
+    "latency_ms": 191,
+    "text": "Verplaatsde wir ja der Ring auf Donderdach umhauf wir."
+  },
+  {
+    "file": "m-nl-code.wav",
+    "language": "nl",
+    "latency_ms": 223,
+    "text": "Open het bestand met de instellingen en controleer of de microfoon werkt. Sla daarna de meisigingen op en start de toepassing opnieuw."
+  },
+  {
+    "file": "human-nl-0.wav",
+    "language": "nl",
+    "latency_ms": 220,
+    "text": "Volgens Angel 2006 kunnen organisaties beter presteren met een aanpak op basis van het continue model."
+  },
+  {
+    "file": "human-nl-1.wav",
+    "language": "nl",
+    "latency_ms": 192,
+    "text": "Varkens dragen de ziekte bij zich en dragen het via muggen over op mensen."
+  },
+  {
+    "file": "human-en.wav",
+    "language": "en",
+    "latency_ms": 194,
+    "text": "Ask not what your country can do for you. Ask what you can do for your country."
+  },
+  {
+    "file": "silence.wav",
+    "language": "auto",
+    "latency_ms": 0,
+    "text": ""
+  },
+  {
+    "file": "human-nl-1-louder.wav",
+    "language": "nl",
+    "latency_ms": 207,
+    "text": "Varkens dragen de ziekte bij zich en dragen het via muggen over op mensen."
+  }
+]
