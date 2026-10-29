@@ -1,0 +1,7 @@
+backend: Vulkan: NVIDIA GeForce RTX 5060 Ti
+human-nl-1.wav	auto	0 ms	
+human-nl-1-louder.wav	nl	201 ms	Varkens dragen de ziekte bij zich en dragen het via muggen over op mensen.
+silence.wav	auto	0 ms	
+noise-quiet.wav	auto	0 ms	
+noise-room.wav	auto	0 ms	
+summary: en 0/0, nl 0/0, median 0.0 ms

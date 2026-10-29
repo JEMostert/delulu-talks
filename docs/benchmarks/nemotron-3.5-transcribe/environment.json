@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-29",
+  "gpu": "NVIDIA GeForce RTX 5060 Ti 16311 MiB",
+  "cpu": "AMD Ryzen AI 9 HX 370",
+  "ram": "96 GB nominal",
+  "gpu_memory_occupied_before_test_mib": 11741,
+  "whisper_model": "ggml-large-v3-turbo-q5_0.bin",
+  "whisper_backend": "Vulkan",
+  "whisper_artifact": "target/debug/examples/bench (existing build, source-matched output)",
+  "nemotron_model": "AtomicChat/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF",
+  "nemotron_backend": "CPU, 8 threads, no speculative decoding",
+  "nemo_source_commit": "66d50d91b75a406becd95fbaf39d2c9c13e95d7c",
+  "nemo_release": "nightly published 2026-10-28T20:35:15Z",
+  "model_files": [
+    {
+      "type": "file",
+      "oid": "528751a50a6cae396c8c52a2e182056afb0195f3",
+      "size": 19678656672,
+      "lfs": {
+        "oid": "0c47d4ab6c783e7606ec03714b354fab0b2052027a7ea1991e7e2d3009c345ad",
+        "size": 19678656672,
+        "pointerSize": 136
+      },
+      "xetHash": "3fc692971be151829513dd352c53331148cd748272b55be9660bf6a149ee6361",
+      "path": "NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-AD-IQ4_NL.gguf"
+    },
+    {
+      "type": "file",
+      "oid": "517078f89db2f5a880862f5222ced9a07bd90238",
+      "size": 1670410080,
+      "lfs": {
+        "oid": "4221029c8a565c4a80c507ffa760c716e595acf663f9f4273ce69910050e7ba2",
+        "size": 1670410080,
+        "pointerSize": 135
+      },
+      "xetHash": "e624562ea8f8f8925773eec62d87924e016a051035e87a614e70a1252d9c3347",
+      "path": "NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-Encoder-F16.gguf"
+    }
+  ],
+  "weight_sha256_verified": true,
+  "language_hints": false,
+  "cleanup": false,
+  "repetitions": 2,
+  "nemo_warmup_iterations": 1,
+  "caveat": "Small mixed synthetic/human smoke test; different hardware backends; not a model-only speed or representative accuracy benchmark."
+}

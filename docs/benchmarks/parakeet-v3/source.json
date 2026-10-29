@@ -1,0 +1,19 @@
+{
+  "repository": "nvidia/parakeet-tdt-0.6b-v3",
+  "revision": "541d1f99c6b0c3cd0b11a95167540bb8edefd82b",
+  "file": {
+    "path": "parakeet-tdt-0.6b-v3.q8_0.gguf",
+    "size": 713975456,
+    "oid": "2d8802fefcc24a702bbfd1990529505f2d37fc4c",
+    "lfs": {
+      "oid": "e3880d0aaaaf2c308ea2c35016b2b895c423eb3fda924c1b463d1c19b7f4d32e",
+      "size": 713975456,
+      "pointerSize": 134
+    },
+    "lastCommit": {
+      "id": "541d1f99c6b0c3cd0b11a95167540bb8edefd82b",
+      "title": "add: q8 GGUF for local inference with NeMo-Speech.cpp (#47)",
+      "date": "2026-08-05T21:46:17.000Z"
+    }
+  }
+}

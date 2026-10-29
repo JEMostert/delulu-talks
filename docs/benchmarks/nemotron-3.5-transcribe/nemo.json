@@ -1,0 +1,34 @@
+{
+  "command": "bench asr",
+  "corpus_audio_seconds": 43.81381249999999,
+  "files": 9,
+  "load_ms": 11382.567509,
+  "mode": "offline",
+  "model": "salm",
+  "repetitions": 2,
+  "runs": [
+    {
+      "audio_seconds": 87.627625000000009,
+      "concurrency": 1,
+      "items": 18,
+      "items_per_second": 0.38180863026324496,
+      "latency_ms": {
+        "max": 3938.6276400000002,
+        "mean": 2619.1010081666668,
+        "min": 0.052708999999999999,
+        "p50": 2809.9378399999996,
+        "p90": 3715.2228063000002,
+        "p95": 3936.32567935,
+        "p99": 3938.1672478700002
+      },
+      "rtfx": 1.8587213041372936,
+      "transcript_mismatches": 0,
+      "utterances": 18,
+      "utterances_per_second": 0.38180863026324496,
+      "wall_seconds": 47.144036497000002
+    }
+  ],
+  "task": "asr",
+  "warmup": 1,
+  "warmup_ms": 4401.7434789999998
+}

@@ -1,0 +1,34 @@
+{
+  "command": "bench asr",
+  "corpus_audio_seconds": 43.81381249999999,
+  "files": 9,
+  "load_ms": 204.15282300000001,
+  "mode": "offline",
+  "model": "parakeet-tdt-0.6b-v3.oss-align.q8_0",
+  "repetitions": 3,
+  "runs": [
+    {
+      "audio_seconds": 131.44143750000001,
+      "concurrency": 1,
+      "items": 27,
+      "items_per_second": 25.908490379071132,
+      "latency_ms": {
+        "max": 64.789473999999998,
+        "mean": 38.591680740740742,
+        "min": 21.307112,
+        "p50": 33.700406000000001,
+        "p90": 55.3358092,
+        "p95": 56.459721699999996,
+        "p99": 62.691108639999989
+      },
+      "rtfx": 126.12774884740851,
+      "transcript_mismatches": 0,
+      "utterances": 27,
+      "utterances_per_second": 25.908490379071132,
+      "wall_seconds": 1.042129418
+    }
+  ],
+  "task": "asr",
+  "warmup": 1,
+  "warmup_ms": 315.67720000000003
+}
