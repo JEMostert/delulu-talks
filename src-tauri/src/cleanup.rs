@@ -4,9 +4,8 @@ use super::*;
 use delulu_cleanup::{Cleaner, CleanerKill};
 use std::sync::atomic::AtomicUsize;
 
-pub(crate) static CLEANUP_MODEL: delulu_stt::ModelInfo = delulu_stt::ModelInfo {
-    id: delulu_cleanup::MODEL_ID,
-    label: "Gemma 4 E4B (text cleanup)",
+/// Gemma 4 E4B, the text cleanup model.
+pub(crate) static CLEANUP_MODEL: delulu_stt::ModelFile = delulu_stt::ModelFile {
     file: delulu_cleanup::MODEL_FILE,
     url: delulu_cleanup::MODEL_URL,
     sha256: delulu_cleanup::MODEL_SHA256,

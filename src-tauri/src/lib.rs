@@ -134,9 +134,9 @@ pub fn run() {
                     let _ = prepare_insert(a).await;
                 });
             }
-            if delulu_stt::is_downloaded(&s.store.models_dir(), &settings.model) {
+            if let Some(id) = ready_model(&s.store.models_dir(), &settings.model) {
                 // Cleanup syncs once Whisper has loaded.
-                load_model(&handle, settings.model);
+                load_model(&handle, id);
             } else {
                 phase(&handle, "needsSetup", None);
                 cleanup::whisper_settled(&handle);

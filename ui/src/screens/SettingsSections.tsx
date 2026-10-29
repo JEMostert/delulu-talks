@@ -77,14 +77,15 @@ export function InputSection({ state }: Props) {
 }
 
 export function DictationSection({ state }: Props) {
-  const { settings, update, modelControl, languages } = state;
+  const { settings, update, modelControl, languages, models } = state;
   if (!settings) return null;
+  const parakeet =
+    models.find((m) => m.id === settings.model)?.engine === "parakeet";
   return (
     <div className="group">
       <Row
-        label="Model"
-        htmlFor="model"
-        help="Runs on your graphics card. Nothing leaves this computer."
+        label="Speech engine"
+        help="Both run on this computer; nothing you say leaves it."
         stack
       >
         {modelControl}
@@ -92,7 +93,11 @@ export function DictationSection({ state }: Props) {
       <Row
         label="Language"
         htmlFor="language"
-        help="Automatic follows whatever you speak."
+        help={
+          parakeet
+            ? "Parakeet always hears the language itself. A fixed language tells cleanup what to expect."
+            : "Automatic follows whatever you speak."
+        }
       >
         <Select
           id="language"

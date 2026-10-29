@@ -80,7 +80,9 @@ pub(crate) fn set_settings(
     if !settings.overlay {
         s.pill.hide();
     }
-    if diff.model {
+    // A model that isn't downloaded yet loads when its download finishes; until
+    // then the current one keeps working.
+    if diff.model && delulu_stt::is_downloaded(&s.store.models_dir(), &settings.model) {
         load_model(&app, settings.model.clone());
     }
     if diff.cleanup {

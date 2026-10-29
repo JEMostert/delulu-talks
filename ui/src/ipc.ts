@@ -58,9 +58,11 @@ export type Settings = {
 };
 export type InputDevice = { id: string; name: string; isDefault: boolean };
 export type Language = { code: string; name: string };
+export type Engine = "whisper" | "parakeet";
 export type ModelStatus = {
   id: string;
   label: string;
+  engine: Engine;
   bytes: number;
   downloaded: boolean;
 };

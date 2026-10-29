@@ -237,6 +237,7 @@ export function useAppState() {
     settings,
     microphones,
     languages,
+    models,
     history,
     page,
     setPage,

@@ -1,5 +1,5 @@
 import type * as ipc from "../ipc";
-import { Select } from "./Controls";
+import { Segmented, Select } from "./Controls";
 import { Icon } from "./Icon";
 type Props = {
   settings: ipc.Settings | undefined;
@@ -16,6 +16,21 @@ type Props = {
   cancel: () => Promise<void>;
 };
 const megabytes = (bytes: number) => `${Math.round(bytes / 1000000)} MB`;
+const engines: { value: ipc.Engine; label: string; about: string }[] = [
+  {
+    value: "whisper",
+    label: "Whisper",
+    about:
+      "Most accurate. Runs on your graphics card and follows your language setting and recent context.",
+  },
+  {
+    value: "parakeet",
+    label: "Parakeet",
+    about:
+      "Fastest. Runs on the processor and recognizes 25 European languages on its own.",
+  },
+];
+/** Speech engine, then that engine's model, with its download state. */
 export function ModelControl({
   settings,
   models,
@@ -31,20 +46,41 @@ export function ModelControl({
     progress?.totalBytes && progress.id === settings?.model
       ? Math.round((progress.doneBytes / progress.totalBytes) * 100)
       : 0;
+  const engine = selectedModel?.engine ?? "whisper";
+  const engineModels = models.filter((m) => m.engine === engine);
+  // A downloaded model of the other engine first, so switching back is instant.
+  const switchTo = (next: ipc.Engine) => {
+    const choices = models.filter((m) => m.engine === next);
+    const pick = choices.find((m) => m.downloaded) ?? choices[0];
+    if (pick && pick.id !== settings?.model) void update("model", pick.id);
+  };
   return (
     <div className="model">
-      <Select
-        id="model"
-        value={settings?.model ?? ""}
+      <Segmented
+        name="engine"
+        label="Speech engine"
+        value={engine}
         disabled={downloading}
-        onChange={(value) => void update("model", value)}
-      >
-        {models.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.label}
-          </option>
-        ))}
-      </Select>
+        onChange={switchTo}
+        options={engines}
+      />
+      <p className="model-about">
+        {engines.find((e) => e.value === engine)?.about}
+      </p>
+      {engineModels.length > 1 && (
+        <Select
+          id="model"
+          value={settings?.model ?? ""}
+          disabled={downloading}
+          onChange={(value) => void update("model", value)}
+        >
+          {engineModels.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </Select>
+      )}
       {downloading ? (
         <div className="model-state">
           <div
