@@ -38,7 +38,7 @@
 }
 
 /* A text field in the controls' style */
-.field {
+.text-field {
   width: 100%;
   min-width: 0;
   height: 38px;
@@ -52,13 +52,13 @@
     border-color 140ms,
     box-shadow 140ms;
 }
-.field::placeholder {
+.text-field::placeholder {
   color: var(--ink-3);
 }
-.field:hover {
+.text-field:hover {
   border-color: color-mix(in srgb, var(--ink) 30%, transparent);
 }
-.field:focus {
+.text-field:focus {
   border-color: var(--focus);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
@@ -383,7 +383,7 @@ button.jar:hover .jar-word:nth-child(2n) {
 .jar-new:focus-within .jar-glass {
   border-color: var(--focus);
 }
-.jar-new .field {
+.jar-new .text-field {
   height: 34px;
   padding: 0 10px;
   font-size: var(--t-small);

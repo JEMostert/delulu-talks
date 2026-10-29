@@ -248,7 +248,7 @@ function NewJar({
         </label>
         <input
           id="new-shelf"
-          className="field"
+          className="text-field"
           placeholder={first ? "Programming" : "New shelf"}
           maxLength={40}
           autoComplete="off"
@@ -387,7 +387,7 @@ function ShelfDialog({
         <input
           id={fieldId}
           ref={field}
-          className="field"
+          className="text-field"
           placeholder="Add a term and press Enter. Paste a list to add several."
           autoComplete="off"
           spellCheck={false}
@@ -497,7 +497,7 @@ function RenameField({
   return (
     <input
       ref={input}
-      className="field shelf-rename"
+      className="text-field shelf-rename"
       aria-label="Shelf name"
       maxLength={40}
       autoComplete="off"
