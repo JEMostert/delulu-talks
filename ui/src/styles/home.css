@@ -157,6 +157,17 @@
   padding: 0 11px;
   font-size: var(--t-meta);
 }
+/* On: tinted like a selected tab. Off: the original words, so it steps back. */
+.entry-meta .button[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.entry-meta .button[aria-pressed="false"] {
+  border-style: dashed;
+  background: transparent;
+  color: var(--ink-3);
+}
 .entry-lang {
   color: var(--ink-2);
   font-weight: 560;

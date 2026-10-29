@@ -158,8 +158,9 @@ export const deleteHistory = (id: string) =>
   invoke<void>("delete_history", { id });
 export const clearHistory = () => invoke<void>("clear_history");
 export const copyText = (text: string) => invoke<void>("copy_text", { text });
-export const reinsert = (id: string) =>
-  invoke<InsertResult>("reinsert", { id });
+/** `raw` inserts what was said before cleanup, when the entry has it. */
+export const reinsert = (id: string, raw = false) =>
+  invoke<InsertResult>("reinsert", { id, raw });
 export const finishFirstRun = () => invoke<void>("finish_first_run");
 export const openProjectPage = () =>
   mock

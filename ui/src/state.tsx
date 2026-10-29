@@ -191,13 +191,19 @@ export function useAppState() {
       setNotice(`Could not copy: ${errorText(e)}`);
     }
   }
-  async function insert(entry: ipc.HistoryEntry) {
+  async function insert(entry: ipc.HistoryEntry, raw = false) {
+    // The recovery card shows the text that was meant to go in.
+    const shown =
+      raw && entry.raw != null ? { ...entry, text: entry.raw } : entry;
     try {
-      const result = await ipc.reinsert(entry.id);
-      setRecovery({ entry, insert: result });
+      const result = await ipc.reinsert(entry.id, raw);
+      setRecovery({ entry: shown, insert: result });
       setNotice(insertMessage(result));
     } catch (e) {
-      setRecovery({ entry, insert: { kind: "failed", reason: errorText(e) } });
+      setRecovery({
+        entry: shown,
+        insert: { kind: "failed", reason: errorText(e) },
+      });
       setNotice(`Could not insert: ${errorText(e)}`);
     }
   }

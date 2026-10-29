@@ -17,6 +17,8 @@
         "title": "Delulu Talks",
         "width": 900,
         "height": 640,
+        "minWidth": 640,
+        "minHeight": 520,
         "visible": false
       }
     ]

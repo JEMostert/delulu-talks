@@ -114,7 +114,7 @@ export function ModelStep({ state }: Props) {
       </p>
       <p className="muted">
         Text cleanup (5.2 GB) downloads in the background afterwards. You can
-        turn it off in Settings.
+        turn it off on the Cleanup page.
       </p>
       <div className="field">
         <label htmlFor="model">Model</label>

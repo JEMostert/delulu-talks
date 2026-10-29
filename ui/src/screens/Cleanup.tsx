@@ -165,7 +165,10 @@ export function Cleanup({ state }: { state: AppState }) {
   );
 }
 
-/** A glass jar on the reef: its first words float inside, the name is on its tag. */
+/**
+ * A glass jar on the reef: its first words float inside, the name is on its tag.
+ * Three words still clear a tag with a two-line name.
+ */
 function JarBody({
   name,
   words,
@@ -182,7 +185,7 @@ function JarBody({
       <span className="jar-lid" aria-hidden="true" />
       <span className="jar-glass" aria-hidden="true">
         <span className="jar-words">
-          {words.slice(0, 4).map((word, i) => (
+          {words.slice(0, 3).map((word, i) => (
             <span key={`${word}-${i}`} className="jar-word">
               {word}
             </span>
@@ -326,7 +329,11 @@ function ShelfDialog({
                 name.trim() === shelf.name ||
                 (await run(() => ipc.renameShelf(shelf.id, name))) !== undefined
               }
-              onClose={() => setRenaming(false)}
+              onClose={() => {
+                setRenaming(false);
+                // The field unmounts; keep focus inside the dialog.
+                requestAnimationFrame(() => field.current?.focus());
+              }}
             />
           ) : (
             <h2 id={`dialog-${shelf.id}`} className="dialog-title">
