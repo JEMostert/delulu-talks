@@ -10,7 +10,7 @@ pub const BREAK_TOKENS: u32 = 170;
 const MAX_LYRICS_CHARS: usize = 1800;
 const MAX_SCRIPT_CHARS: usize = 600;
 
-const SONG_SYSTEM: &str = "You are the music director of LLM FM, a radio station on the listener's own computer that only plays brand-new songs.
+const SONG_SYSTEM: &str = "You are the music director of Delulu FM, a radio station on the listener's own computer that only plays brand-new songs.
 Write one new song for the next slot.
 Rules:
 - The title, style and lyrics are completely original. Never name, quote or imitate real artists, bands or existing songs.
@@ -24,7 +24,7 @@ Style: <one sentence>
 Lyrics:
 <the tagged lyrics>";
 
-const INSTRUMENTAL_SYSTEM: &str = "You are the music director of LLM FM, a radio station on the listener's own computer that only plays brand-new music.
+const INSTRUMENTAL_SYSTEM: &str = "You are the music director of Delulu FM, a radio station on the listener's own computer that only plays brand-new music.
 Plan one new instrumental piece for the next slot.
 Rules:
 - The title and style are completely original. Never name or imitate real artists, bands or existing songs.
@@ -34,7 +34,7 @@ Reply with exactly these labelled parts:
 Title: <two to five words>
 Style: <one sentence>";
 
-const BREAK_SYSTEM: &str = "You are the host of LLM FM, a radio station on the listener's own computer where every song is newly made by AI.
+const BREAK_SYSTEM: &str = "You are the host of Delulu FM, a radio station on the listener's own computer where every song is newly made by AI.
 Write what you say on air between songs.
 Rules:
 - Two to four short spoken sentences, at most 60 words, in English.

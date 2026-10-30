@@ -1,4 +1,4 @@
-//! LLM FM: an optional radio station made on this computer.
+//! Delulu FM: an optional radio station made on this computer.
 //!
 //! Gemma 4 E4B (the cleanup model) writes each song's title, style and lyrics and the
 //! host's lines; YuE2 makes the music in the listener's own ComfyUI through the Comfy

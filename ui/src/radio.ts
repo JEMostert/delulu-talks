@@ -17,7 +17,7 @@ export type ReadinessStep = {
   unknown?: boolean;
 };
 
-/** What LLM FM needs, in the order to fix it. */
+/** What Delulu FM needs, in the order to fix it. */
 export function readinessSteps(r: RadioReadiness | null): ReadinessStep[] {
   if (!r) return [];
   const { comfy } = r;

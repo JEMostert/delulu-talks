@@ -6,7 +6,7 @@ const allPages: { page: Page; icon: IconName }[] = [
   { page: "Home", icon: "home" },
   { page: "History", icon: "history" },
   { page: "Cleanup", icon: "cleanup" },
-  { page: "LLM FM", icon: "radio" },
+  { page: "Delulu FM", icon: "radio" },
   { page: "Settings", icon: "settings" },
 ];
 
@@ -36,11 +36,11 @@ export function Header({
 }: {
   page: Page;
   phase: Phase;
-  /** Show the optional LLM FM tab. */
+  /** Show the optional Delulu FM tab. */
   radio: boolean;
   onNavigate: (page: Page) => void;
 }) {
-  const pages = allPages.filter((p) => radio || p.page !== "LLM FM");
+  const pages = allPages.filter((p) => radio || p.page !== "Delulu FM");
   const index = pages.findIndex((p) => p.page === page);
   return (
     <header className="topbar">

@@ -1,5 +1,5 @@
 //! Transcript cleanup with Gemma 4 E4B, run in a separate helper process. The same
-//! helper also writes LLM FM's song briefs and presenter scripts.
+//! helper also writes Delulu FM's song briefs and presenter scripts.
 //!
 //! This crate never links llama.cpp. It renders the prompt, post-processes the reply and
 //! drives the `delulu-cleanup` helper over JSON lines on stdin/stdout.

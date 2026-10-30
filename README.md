@@ -33,9 +33,9 @@ Download the package for your distribution from the [latest release](https://git
 
 You need a Wayland desktop (GNOME or KDE Plasma), a Vulkan graphics driver, and XWayland for the recording pill. Setup takes three steps: pick a microphone, allow the shortcut and typing into other apps, and download a speech model: Whisper (574 MB) or Parakeet (671 MB). The 5.2 GB cleanup model then downloads in the background.
 
-## LLM FM
+## Delulu FM
 
-An optional radio station made on this computer, hidden until you turn on **Settings → LLM FM**. Every song is new: the cleanup model writes its title, style and lyrics, [YuE2](https://huggingface.co/m-a-p/YuE2-3B) composes it in your own ComfyUI, and between songs a host speaks through voice replies with Chatterbox Turbo's bundled voice. The **LLM FM** page shows what is on air with its lyrics, what comes next and what played, and lets you skip, request a song or steer the mood and style.
+An optional radio station made on this computer, hidden until you turn on **Settings → Delulu FM**. Every song is new: the cleanup model writes its title, style and lyrics, [YuE2](https://huggingface.co/m-a-p/YuE2-3B) composes it in your own ComfyUI, and between songs a host speaks through voice replies with Chatterbox Turbo's bundled voice. The **Delulu FM** page shows what is on air with its lyrics, what comes next and what played, and lets you skip, request a song or steer the mood and style.
 
 - **What it needs:** ComfyUI with the native YuE2 nodes and the `yue2_3b_int8_convrot.safetensors` checkpoint, the [Comfy CLI](https://github.com/Comfy-Org/comfy-cli) (`comfy`) on your PATH, and the cleanup model. The host is optional; without the voice replies model the station plays music only. The page lists anything missing, with the Comfy CLI command that installs the checkpoint. Delulu never downloads music models and never starts, stops or unloads ComfyUI.
 - **Dictation comes first:** the radio goes quiet while you hold the hotkey, and no new writing, music or speech starts while you dictate or just after. Work already running in ComfyUI keeps running.

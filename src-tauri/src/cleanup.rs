@@ -391,7 +391,7 @@ impl Cleanup {
 fn want(s: &Shell) -> Want {
     let settings = s.store.settings();
     Want {
-        // LLM FM's writer uses the same helper while the station is on air.
+        // Delulu FM's writer uses the same helper while the station is on air.
         enabled: settings.cleanup || s.radio_writer.load(Ordering::SeqCst),
         first_run_done: s.store.state().first_run_done,
         model_ok: settings.cleanup_model_ok,
@@ -651,7 +651,7 @@ pub(crate) async fn clean(app: &tauri::AppHandle, language: &str, raw: String) -
     choose(raw, CleanResult::Failed, ms)
 }
 
-/// LLM FM's writer: borrow the idle helper for one prompt. Dictation never waits for
+/// Delulu FM's writer: borrow the idle helper for one prompt. Dictation never waits for
 /// it; while the radio holds the helper a dictation keeps its raw text.
 pub(crate) fn generate(
     app: &tauri::AppHandle,

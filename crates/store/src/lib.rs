@@ -58,7 +58,7 @@ pub struct Settings {
     /// The user has accepted the cleanup model download, so it may start on
     /// its own. Internal; not a toggle.
     pub cleanup_model_ok: bool,
-    /// Show the optional LLM FM radio.
+    /// Show the optional Delulu FM radio.
     pub radio: bool,
 }
 

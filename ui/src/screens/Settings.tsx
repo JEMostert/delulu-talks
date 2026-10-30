@@ -35,7 +35,7 @@ const sections: {
   },
   {
     id: "radio",
-    title: "LLM FM",
+    title: "Delulu FM",
     lead: "A radio station of new songs.",
     Body: RadioSection,
   },

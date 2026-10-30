@@ -2,7 +2,7 @@ import { ModelControl } from "./components/ModelControl";
 import { useCallback, useEffect, useState } from "react";
 import * as ipc from "./ipc";
 import { insertMessage, meterLevel, settingsPatch } from "./helpers";
-export type Page = "Home" | "History" | "Cleanup" | "LLM FM" | "Settings";
+export type Page = "Home" | "History" | "Cleanup" | "Delulu FM" | "Settings";
 export const errorText = (error: unknown) => String(error);
 export function useAppState() {
   const [status, setStatus] = useState<ipc.Status>();

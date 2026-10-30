@@ -40,7 +40,7 @@ export function Radio({ state }: { state: AppState }) {
     const keep = (p: Promise<() => void>) =>
       p.then((fn) => (active ? unlisten.push(fn) : fn())).catch(() => {});
     keep(ipc.onRadio((r) => active && apply(r)));
-    keep(ipc.onRadioError((m) => active && setNotice(`LLM FM: ${m}`)));
+    keep(ipc.onRadioError((m) => active && setNotice(`Delulu FM: ${m}`)));
     ipc
       .getRadio()
       .then((r) => active && apply(r))
@@ -271,7 +271,7 @@ export function Radio({ state }: { state: AppState }) {
 function TitleBlock() {
   return (
     <div className="title-block">
-      <h1>LLM FM</h1>
+      <h1>Delulu FM</h1>
       <p className="lead">
         A radio station made on this computer. Every song is new: the cleanup
         model writes it, YuE2 composes it in your ComfyUI, and the host speaks

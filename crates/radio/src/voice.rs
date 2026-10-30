@@ -36,7 +36,7 @@ impl Voice {
         Voice { bin: cli_path() }
     }
 
-    /// A `delulu` older than LLM FM reads unknown flags as words to say, so the
+    /// A `delulu` older than Delulu FM reads unknown flags as words to say, so the
     /// presenter only uses one that lists `--bundled-voice`.
     pub fn supported(&self) -> bool {
         Command::new(&self.bin)
