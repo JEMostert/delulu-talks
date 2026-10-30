@@ -210,6 +210,14 @@ test("LLM FM clock, readiness and status text", async () => {
     "voice",
   ]);
   expect(steps.find((s) => s.id === "voice")?.optional).toBe(true);
+  // With ComfyUI down, nodes and model are unknown, not problems to fix.
+  expect(steps.filter((s) => s.unknown).map((s) => s.id)).toEqual([
+    "nodes",
+    "checkpoint",
+  ]);
+  expect(steps.find((s) => s.id === "checkpoint")?.help).toBe(
+    "Checked once ComfyUI is running.",
+  );
   const radio = {
     making: {
       kind: "song",

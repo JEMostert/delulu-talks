@@ -1010,7 +1010,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-audio"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "handy-cpal",
  "log",
@@ -1021,7 +1021,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-cleanup"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "libc",
  "serde",
@@ -1031,7 +1031,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-cleanup-helper"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "delulu-cleanup",
  "libc",
@@ -1041,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-hotkey"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "ashpd",
  "dirs 6.0.0",
@@ -1055,7 +1055,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-insert"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "arboard",
  "ashpd",
@@ -1069,7 +1069,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-overlay"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "cairo-rs",
  "gtk",
@@ -1079,7 +1079,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-radio"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "claxon",
  "delulu-cleanup",
@@ -1098,7 +1098,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-store"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "dirs 6.0.0",
  "log",
@@ -1110,7 +1110,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-stt"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "hound",
  "log",
@@ -1126,7 +1126,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-talks"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "delulu-audio",
  "delulu-cleanup",
@@ -1150,7 +1150,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-voice-cli"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "anyhow",
  "clap",

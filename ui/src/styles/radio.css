@@ -230,6 +230,9 @@
 .radio-steps li.todo .icon {
   color: var(--amber-ink);
 }
+.radio-steps li.unknown {
+  color: var(--ink-2);
+}
 .radio-steps div {
   display: grid;
   gap: 2px;
