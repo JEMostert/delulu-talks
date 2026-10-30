@@ -21,6 +21,7 @@ mod models;
 mod state;
 mod tray;
 mod vocabulary;
+mod voice;
 use cleanup::{cancel_cleanup_download, get_cleanup_status, start_cleanup};
 use dictation::*;
 use engine::*;
@@ -31,6 +32,7 @@ use vocabulary::{
     add_preset_shelf, add_shelf, add_terms, delete_shelf, get_vocabulary, remove_term,
     rename_shelf, set_shelf_enabled,
 };
+use voice::{get_voice_status, install_voice_model};
 
 pub fn run() {
     let store = Arc::new(Store::open_default().expect("open store"));
@@ -156,6 +158,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            get_voice_status,
+            install_voice_model,
             get_status,
             get_settings,
             set_settings,

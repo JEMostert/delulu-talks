@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import * as ipc from "../ipc";
 import { languageName } from "../helpers";
 import { Keys, Row, Segmented, Select, Switch } from "../components/Controls";
@@ -140,6 +141,99 @@ export function DictationSection({ state }: Props) {
           <option value="ctrl-shift-v">Ctrl+Shift+V</option>
           <option value="off">Off (copy only)</option>
         </Select>
+      </Row>
+    </div>
+  );
+}
+
+export function VoiceSection() {
+  const [status, setStatus] = useState<ipc.VoiceStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  const refresh = async () => {
+    try {
+      setStatus(await ipc.getVoiceStatus());
+      setError(null);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  useEffect(() => {
+    if (!status?.installing) return;
+    const timer = setInterval(() => void refresh(), 2000);
+    return () => clearInterval(timer);
+  }, [status?.installing]);
+
+  const install = async () => {
+    setStarting(true);
+    setError(null);
+    try {
+      await ipc.installVoiceModel();
+      await refresh();
+    } catch (e) {
+      setError(errorText(e));
+      await ipc
+        .getVoiceStatus()
+        .then(setStatus)
+        .catch(() => {});
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const busy = starting || status?.installing;
+  return (
+    <div className="group">
+      <Row
+        label="Spoken replies"
+        help={
+          <>
+            <span>
+              Optional: ask your agent to speak a reply aloud on this computer.
+              Installing the model downloads about 3 GB.
+            </span>
+            {status && !status.ready && !busy && (
+              <span>Model not installed.</span>
+            )}
+            {error && (
+              <span className="row-error" role="alert">
+                {error}
+              </span>
+            )}
+            {busy && (
+              <span>Installing the model. This may take a few minutes.</span>
+            )}
+          </>
+        }
+      >
+        {status?.ready && !busy ? (
+          <span className="model-ready" role="status">
+            Ready
+          </span>
+        ) : error && !status ? (
+          <button
+            type="button"
+            className="button"
+            onClick={() => void refresh()}
+          >
+            Retry
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="button"
+            disabled={!status || busy}
+            onClick={() => void install()}
+          >
+            {busy ? "Installing…" : "Install model"}
+          </button>
+        )}
       </Row>
     </div>
   );

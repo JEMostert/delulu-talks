@@ -66,6 +66,11 @@ export type ModelStatus = {
   bytes: number;
   downloaded: boolean;
 };
+export type VoiceStatus = {
+  ready: boolean;
+  configured: boolean;
+  installing: boolean;
+};
 export type CleanupStatus = {
   state: "off" | "missing" | "downloading" | "loading" | "ready" | "error";
   doneBytes: number;
@@ -129,6 +134,8 @@ export const addTerms = (id: string, text: string) =>
   invoke<Vocabulary>("add_terms", { id, text });
 export const removeTerm = (id: string, term: string) =>
   invoke<Vocabulary>("remove_term", { id, term });
+export const getVoiceStatus = () => invoke<VoiceStatus>("get_voice_status");
+export const installVoiceModel = () => invoke<void>("install_voice_model");
 export const getCleanupStatus = () =>
   invoke<CleanupStatus>("get_cleanup_status");
 export const startCleanup = () => invoke<void>("start_cleanup");
