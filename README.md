@@ -18,6 +18,7 @@ Delulu Talks is push-to-talk dictation for Linux. Hold **Super+Z**, speak Dutch 
 </p>
 
 - **Whisper** (Large v3 Turbo, whisper.cpp on Vulkan) turns your speech into text. From letting go of the key to typed text usually takes well under a second.
+- **Or Parakeet** (NVIDIA Parakeet TDT 0.6B v3 on ONNX Runtime), the faster engine: it runs on the processor, recognizes 25 European languages on its own and needs no graphics memory. Pick it during setup or in **Settings → Dictation**; switching back and forth keeps both downloads.
 - **Cleanup** with Gemma 4 E4B removes filler words and stutters, drops phrases you took back ("Monday, no sorry, Tuesday"), and adds punctuation. It never rephrases, and if anything goes wrong the raw text is typed instead.
 - **Topics:** cleanup names what you are talking about, such as programming, gaming or finance, and uses it to fix words that were clearly misheard: "merch conflict" becomes "merge conflict" and "nerve it" becomes "nerf it".
 - **Vocabularies:** on the **Cleanup** page you keep shelves of names and terms you say often, shown as glass jars on a reef. Put "T3 Code" on a Programming shelf and "ghthree code" comes out as "T3 Code". Starter shelves for Programming, Gaming & Discord, and Twitch & Streaming are one click away.
@@ -30,7 +31,7 @@ Every transcript is saved in **History** before it is typed, with its topic and 
 
 Download the package for your distribution from the [latest release](https://github.com/JEMostert/delulu-talks/releases/latest): `.pkg.tar.zst` for Arch and CachyOS, `.rpm` for Fedora, or `.deb` for Debian and Ubuntu.
 
-You need a Wayland desktop (GNOME or KDE Plasma), a Vulkan graphics driver, and XWayland for the recording pill. Setup takes three steps: pick a microphone, allow the shortcut and typing into other apps, and download the 574 MB speech model. The 5.2 GB cleanup model then downloads in the background.
+You need a Wayland desktop (GNOME or KDE Plasma), a Vulkan graphics driver, and XWayland for the recording pill. Setup takes three steps: pick a microphone, allow the shortcut and typing into other apps, and download a speech model: Whisper (574 MB) or Parakeet (671 MB). The 5.2 GB cleanup model then downloads in the background.
 
 ## Memory and disk
 
@@ -56,4 +57,4 @@ Checks: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D 
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The Parakeet model is [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) (CC BY 4.0), downloaded as the [int8 ONNX export by istupakov](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx).

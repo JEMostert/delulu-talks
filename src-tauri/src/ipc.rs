@@ -80,7 +80,9 @@ pub(crate) fn set_settings(
     if !settings.overlay {
         s.pill.hide();
     }
-    if diff.model {
+    // A model that isn't downloaded yet loads when its download finishes; until
+    // then the current one keeps working.
+    if diff.model && delulu_stt::is_downloaded(&s.store.models_dir(), &settings.model) {
         load_model(&app, settings.model.clone());
     }
     if diff.cleanup {
@@ -214,7 +216,8 @@ pub(crate) fn copy_text(s: State<'_, Shell>, text: String) -> Result<(), String>
     s.inserter.copy(&text).map_err(|e| e.to_string())
 }
 #[tauri::command]
-pub(crate) async fn reinsert(app: tauri::AppHandle, id: String) -> InsertResult {
+/// `raw` inserts what was said before cleanup, when the entry has it.
+pub(crate) async fn reinsert(app: tauri::AppHandle, id: String, raw: Option<bool>) -> InsertResult {
     let s = app.state::<Shell>();
     let entry = s
         .store
@@ -226,9 +229,13 @@ pub(crate) async fn reinsert(app: tauri::AppHandle, id: String) -> InsertResult 
             let _ = w.hide();
         }
         tokio::time::sleep(Duration::from_millis(300)).await;
+        let text = match (raw, &entry.raw) {
+            (Some(true), Some(raw)) => raw,
+            _ => &entry.text,
+        };
         deliver(
             &s.inserter,
-            &entry.text,
+            text,
             s.store.settings().insert,
             false,
             s.no_portals,

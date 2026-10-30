@@ -4,6 +4,8 @@ use super::*;
 pub(crate) struct ModelStatus {
     id: &'static str,
     label: &'static str,
+    /// "whisper" or "parakeet".
+    engine: &'static str,
     bytes: u64,
     downloaded: bool,
 }
@@ -14,6 +16,7 @@ pub(crate) fn list_models(s: State<'_, Shell>) -> Vec<ModelStatus> {
         .map(|m| ModelStatus {
             id: m.id,
             label: m.label,
+            engine: m.engine.as_str(),
             bytes: m.bytes,
             downloaded: delulu_stt::is_downloaded(&s.store.models_dir(), m.id),
         })

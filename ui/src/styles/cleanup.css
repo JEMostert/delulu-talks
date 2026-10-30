@@ -29,6 +29,15 @@
 .vocab-note.warn {
   color: var(--amber-ink);
 }
+/* The cleanup model's state, next to its switch */
+.cleanup-state {
+  flex: 1;
+  min-width: 0;
+}
+.cleanup-state .row-error {
+  color: var(--amber-ink);
+}
+
 .vocab-intro {
   max-width: 58ch;
   color: var(--ink-2);
@@ -314,12 +323,13 @@ button.jar:hover .jar-word:nth-child(2n) {
   opacity: 0.75;
 }
 
-/* A jar not on the reef yet: a ghost with a plus */
+/* A jar not on the reef yet: a ghost with a plus. `.jar.` outranks the dark
+   theme's .jar-glass rule. */
 .jar-ghost .jar-glass,
 .jar-ghost .jar-lid {
   opacity: 0.6;
 }
-.jar-ghost .jar-glass {
+.jar.jar-ghost .jar-glass {
   box-shadow: inset 0 0 0 1.5px var(--line-strong);
 }
 .jar-badge {
@@ -370,7 +380,7 @@ button.jar:hover .jar-word:nth-child(2n) {
 .jar-new .jar-lid {
   opacity: 0.45;
 }
-.jar-new .jar-glass {
+.jar.jar-new .jar-glass {
   align-content: center;
   gap: 8px;
   padding: 10px;

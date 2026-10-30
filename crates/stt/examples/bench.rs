@@ -1,4 +1,4 @@
-use delulu_stt::{model_path, Engine, Language};
+use delulu_stt::{Engine, Language};
 use std::{error::Error, path::PathBuf};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share")
         })
         .join("delulu-talks/models");
-    let mut engine = Engine::load(&model_path(&dir, &id).ok_or("unknown model")?)?;
+    let mut engine = Engine::load(&dir, &id)?;
     println!("backend: {}", engine.backend());
     let mut times = Vec::new();
     let mut en = (0, 0);

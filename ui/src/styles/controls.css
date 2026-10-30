@@ -240,3 +240,7 @@ kbd {
   transform-origin: left center;
   transition: transform 200ms var(--ease-out);
 }
+.segmented[aria-disabled] label {
+  opacity: 0.55;
+  cursor: default;
+}

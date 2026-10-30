@@ -197,3 +197,13 @@
     display: none;
   }
 }
+
+/* Engine choice at the top of the model picker */
+.model .segmented {
+  justify-self: start;
+}
+.model-about {
+  margin-top: -4px;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+}

@@ -14,7 +14,8 @@ type Props = {
   entry: ipc.HistoryEntry;
   languages: ipc.Language[];
   onCopy: (text: string) => void;
-  onInsert: (entry: ipc.HistoryEntry) => void;
+  /** `raw`: insert what was said, as shown when Cleaned up is off. */
+  onInsert: (entry: ipc.HistoryEntry, raw: boolean) => void;
   onDelete?: () => void;
   /** History rows put the time in a gutter and highlight the search. */
   query?: string;
@@ -66,6 +67,11 @@ export function Transcript({
               type="button"
               className="button"
               aria-pressed={cleaned}
+              title={
+                cleaned
+                  ? "Showing the cleaned-up text. Click for what you said."
+                  : "Showing what you said. Click for the cleaned-up text."
+              }
               onClick={() => setCleaned(!cleaned)}
             >
               Cleaned up
@@ -89,7 +95,7 @@ export function Transcript({
         <IconButton
           icon="insert"
           label="Insert again"
-          onClick={() => onInsert(entry)}
+          onClick={() => onInsert(entry, !cleaned && entry.raw != null)}
         />
         {onDelete && (
           <IconButton

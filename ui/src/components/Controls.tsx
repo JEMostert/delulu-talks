@@ -64,15 +64,22 @@ export function Segmented<T extends string>({
   value,
   options,
   onChange,
+  disabled,
 }: {
   name: string;
   label: string;
   value: T;
   options: { value: T; label: string; icon?: IconName }[];
   onChange: (value: T) => void;
+  disabled?: boolean;
 }) {
   return (
-    <div className="segmented" role="radiogroup" aria-label={label}>
+    <div
+      className="segmented"
+      role="radiogroup"
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+    >
       {options.map((option) => (
         <label
           key={option.value}
@@ -82,6 +89,7 @@ export function Segmented<T extends string>({
             type="radio"
             name={name}
             value={option.value}
+            disabled={disabled}
             checked={option.value === value}
             onChange={() => onChange(option.value)}
           />

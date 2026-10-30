@@ -5,6 +5,8 @@ import { Icon } from "../components/Icon";
 import { errorText, type AppState } from "../state";
 
 type Props = { state: AppState };
+/** From package.json, set by Vite. */
+declare const __APP_VERSION__: string;
 
 export function InputSection({ state }: Props) {
   const { settings, status, microphones, update, hotkeyHint, setHotkeyHint } =
@@ -75,14 +77,15 @@ export function InputSection({ state }: Props) {
 }
 
 export function DictationSection({ state }: Props) {
-  const { settings, update, modelControl, languages } = state;
+  const { settings, update, modelControl, languages, models } = state;
   if (!settings) return null;
+  const parakeet =
+    models.find((m) => m.id === settings.model)?.engine === "parakeet";
   return (
     <div className="group">
       <Row
-        label="Model"
-        htmlFor="model"
-        help="Runs on your graphics card. Nothing leaves this computer."
+        label="Speech engine"
+        help="Both run on this computer; nothing you say leaves it."
         stack
       >
         {modelControl}
@@ -90,7 +93,11 @@ export function DictationSection({ state }: Props) {
       <Row
         label="Language"
         htmlFor="language"
-        help="Automatic follows whatever you speak."
+        help={
+          parakeet
+            ? "Parakeet always hears the language itself. A fixed language tells cleanup what to expect."
+            : "Automatic follows whatever you speak."
+        }
       >
         <Select
           id="language"
@@ -180,7 +187,7 @@ export function AboutSection({ state }: Props) {
   return (
     <div className="group">
       <Row label="Version">
-        <span className="value tabular">1.0.0</span>
+        <span className="value tabular">{__APP_VERSION__}</span>
       </Row>
       <Row label="Speech runs on">
         <span className="value">{status.backend ?? "Not loaded yet"}</span>

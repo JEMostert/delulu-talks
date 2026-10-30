@@ -369,14 +369,23 @@ export async function invoke<T>(
         {
           id: "large-v3-turbo-q5_0",
           label: "Large v3 Turbo (recommended)",
+          engine: "whisper",
           bytes: 574041195,
           downloaded: downloaded.has("large-v3-turbo-q5_0"),
         },
         {
           id: "small",
           label: "Small (faster, weaker Dutch)",
+          engine: "whisper",
           bytes: 487601967,
           downloaded: downloaded.has("small"),
+        },
+        {
+          id: "parakeet-tdt-0.6b-v3",
+          label: "Parakeet TDT 0.6B v3",
+          engine: "parakeet",
+          bytes: 670619706,
+          downloaded: downloaded.has("parakeet-tdt-0.6b-v3"),
         },
       ];
       break;

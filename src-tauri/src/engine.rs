@@ -1,13 +1,21 @@
 use super::*;
 
+/// The model to load: the selected one, or else any downloaded one, so dictation
+/// keeps working while a newly picked model is still downloading.
+pub(crate) fn ready_model(dir: &std::path::Path, selected: &str) -> Option<String> {
+    std::iter::once(selected)
+        .chain(delulu_stt::models().iter().map(|m| m.id))
+        .find(|id| delulu_stt::is_downloaded(dir, id))
+        .map(str::to_string)
+}
 pub(crate) fn load_model(app: &tauri::AppHandle, id: String) {
     // Whisper loads first; cleanup frees the GPU and reloads once it has settled.
     cleanup::whisper_loading(app);
-    phase(
-        app,
-        "loadingModel",
-        Some("Preparing GPU (first run only)".into()),
-    );
+    let message = match delulu_stt::model_info(&id).map(|m| m.engine) {
+        Some(delulu_stt::EngineKind::Parakeet) => "Loading Parakeet",
+        _ => "Preparing GPU (first run only)",
+    };
+    phase(app, "loadingModel", Some(message.into()));
     if app
         .state::<Shell>()
         .engine
@@ -24,9 +32,9 @@ pub(crate) fn engine_thread(app: tauri::AppHandle, rx: mpsc::Receiver<EngineJob>
             EngineJob::Load(id) => {
                 cleanup::wait_released(&app, Duration::from_secs(5));
                 let dir = app.state::<Shell>().store.models_dir();
-                let result = delulu_stt::model_path(&dir, &id)
-                    .ok_or_else(|| "Unknown model".to_string())
-                    .and_then(|path| delulu_stt::Engine::load(&path).map_err(|e| e.to_string()));
+                // Drop the old model first so two never sit in memory at once.
+                drop(engine.take());
+                let result = delulu_stt::Engine::load(&dir, &id).map_err(|e| e.to_string());
                 match result {
                     Ok(e) => {
                         let backend = e.backend();
