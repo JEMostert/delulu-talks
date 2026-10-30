@@ -23,6 +23,9 @@ pub(crate) struct Radio {
     voice: Voice,
     /// Play was pressed: start playing as soon as something is ready.
     listening: AtomicBool,
+    /// Held while the playback intent is read or changed and the matching player
+    /// command is sent, so a Pause can never land between them.
+    control: Mutex<()>,
     readiness: Mutex<Option<Readiness>>,
     last_dictation: Mutex<Option<Instant>>,
     stop: Arc<AtomicBool>,
@@ -121,10 +124,15 @@ impl Radio {
             comfy: Comfy::from_env(),
             voice: Voice::new(),
             listening: AtomicBool::new(false),
+            control: Mutex::new(()),
             readiness: Mutex::new(None),
             last_dictation: Mutex::new(None),
             stop: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    fn control(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.control.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn station(&self) -> Result<&Arc<Station>, String> {
@@ -173,6 +181,7 @@ fn on_player(app: &tauri::AppHandle, event: PlayerEvent) {
         PlayerEvent::Ended(id) => {
             let radio = app.state::<Radio>();
             let Ok(station) = radio.station() else { return };
+            let _control = radio.control();
             if station.snapshot().now.as_ref().map(|i| &i.id) == Some(&id) {
                 let next = station.advance();
                 if radio.listening.load(Ordering::SeqCst) {
@@ -322,8 +331,11 @@ fn set_on_air(app: &tauri::AppHandle, on: bool) -> Result<(), String> {
 /// Settings turned LLM FM off: stop playing and making.
 pub(crate) fn disable(app: &tauri::AppHandle) {
     let radio = app.state::<Radio>();
-    radio.listening.store(false, Ordering::SeqCst);
-    radio.player.stop();
+    {
+        let _control = radio.control();
+        radio.listening.store(false, Ordering::SeqCst);
+        radio.player.stop();
+    }
     let _ = set_on_air(app, false);
     emit(app);
 }
@@ -373,17 +385,23 @@ pub(crate) fn radio_play(app: tauri::AppHandle) -> Result<RadioView, String> {
     enabled(&app)?;
     set_on_air(&app, true)?;
     let radio = app.state::<Radio>();
-    radio.listening.store(true, Ordering::SeqCst);
-    let item = radio.station()?.ensure_now();
-    play_item(&app, item, false);
+    {
+        let _control = radio.control();
+        radio.listening.store(true, Ordering::SeqCst);
+        let item = radio.station()?.ensure_now();
+        play_item(&app, item, false);
+    }
     Ok(view(&app))
 }
 
 #[tauri::command]
 pub(crate) fn radio_pause(app: tauri::AppHandle) -> RadioView {
     let radio = app.state::<Radio>();
-    radio.listening.store(false, Ordering::SeqCst);
-    radio.player.pause();
+    {
+        let _control = radio.control();
+        radio.listening.store(false, Ordering::SeqCst);
+        radio.player.pause();
+    }
     view(&app)
 }
 
@@ -391,8 +409,11 @@ pub(crate) fn radio_pause(app: tauri::AppHandle) -> RadioView {
 #[tauri::command]
 pub(crate) fn radio_off(app: tauri::AppHandle) -> Result<RadioView, String> {
     let radio = app.state::<Radio>();
-    radio.listening.store(false, Ordering::SeqCst);
-    radio.player.pause();
+    {
+        let _control = radio.control();
+        radio.listening.store(false, Ordering::SeqCst);
+        radio.player.pause();
+    }
     set_on_air(&app, false)?;
     Ok(view(&app))
 }
@@ -401,6 +422,7 @@ pub(crate) fn radio_off(app: tauri::AppHandle) -> Result<RadioView, String> {
 pub(crate) fn radio_skip(app: tauri::AppHandle) -> Result<RadioView, String> {
     enabled(&app)?;
     let radio = app.state::<Radio>();
+    let _control = radio.control();
     let next = radio.station()?.advance();
     if radio.listening.load(Ordering::SeqCst) {
         play_item(&app, next, true);
@@ -514,13 +536,16 @@ impl Backend for AppBackend {
     fn changed(&self) {
         let radio = self.radio();
         // Something new is ready: start it if Play is waiting, else keep it preloaded.
-        if radio.listening.load(Ordering::SeqCst) && radio.player.position().is_none() {
-            if let Ok(station) = radio.station() {
-                let item = station.ensure_now();
-                play_item(&self.app, item, false);
+        {
+            let _control = radio.control();
+            if radio.listening.load(Ordering::SeqCst) && radio.player.position().is_none() {
+                if let Ok(station) = radio.station() {
+                    let item = station.ensure_now();
+                    play_item(&self.app, item, false);
+                }
+            } else {
+                preload(&self.app);
             }
-        } else {
-            preload(&self.app);
         }
         emit(&self.app);
     }

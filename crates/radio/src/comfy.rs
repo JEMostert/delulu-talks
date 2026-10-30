@@ -241,8 +241,8 @@ impl Comfy {
 
     /// The prompt id of an earlier submit of `workflow` whose outcome was unknown:
     /// the Comfy CLI's record first, then ComfyUI's own queue and history, matched by
-    /// the job's unique output `prefix`. `Ok(None)` only when the server answered and
-    /// holds no such prompt; anything uncertain is an error, so nothing is resubmitted.
+    /// the job's unique output `prefix` across all retained history. `Ok(None)` only when
+    /// the server answered and holds no such prompt; anything uncertain is an error.
     pub fn find_submitted(
         &self,
         workflow: &Path,
@@ -276,9 +276,7 @@ impl Comfy {
             ))
         };
         let queue = self.get("/queue").ok_or_else(|| unavailable("queue"))?;
-        let history = self
-            .get("/history?max_items=200")
-            .ok_or_else(|| unavailable("history"))?;
+        let history = self.get("/history").ok_or_else(|| unavailable("history"))?;
         Ok(find_prompt(&queue, &history, prefix))
     }
 
@@ -291,7 +289,7 @@ impl Comfy {
         let body = response
             .body_mut()
             .with_config()
-            .limit(64 << 20)
+            .limit(256 << 20)
             .read_to_string()
             .ok()?;
         serde_json::from_str(&body).ok()
