@@ -22,10 +22,10 @@ try {
   const status = JSON.parse(execFileSync(cli, ['status'], { env, encoding: 'utf8' }));
   if (!version.startsWith('delulu ') || status.configured !== false || status.ready !== false)
     throw new Error('Packaged CLI did not report a clean optional model state');
-  // LLM FM's host relies on the per-call bundled voice.
+  // Delulu FM's host relies on the per-call bundled voice.
   const help = execFileSync(cli, ['speak', '--help'], { env, encoding: 'utf8' });
   if (!help.includes('--bundled-voice'))
-    throw new Error('Packaged CLI lacks speak --bundled-voice, which LLM FM needs');
+    throw new Error('Packaged CLI lacks speak --bundled-voice, which Delulu FM needs');
   console.log(`Verified packaged ${version}: no model required`);
 } finally {
   await rm(temp, { recursive: true, force: true });

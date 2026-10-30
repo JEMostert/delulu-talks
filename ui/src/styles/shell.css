@@ -64,6 +64,7 @@
   background: transparent;
   color: var(--ink-2);
   font-weight: 560;
+  white-space: nowrap;
   transition:
     color 160ms,
     background-color 160ms;
@@ -71,9 +72,13 @@
 .tab:hover {
   color: var(--ink);
 }
-/* LLM FM adds a fifth tab; keep the bar inside the window. */
+/* Delulu FM adds a fifth tab; keep the bar inside the window. */
 .tabs[data-count="5"] {
   --tab-w: 100px;
+}
+.tabs[data-count="5"] .tab {
+  gap: 5px;
+  padding: 1px 4px;
 }
 .tab[aria-current="page"] {
   background: var(--accent-soft);
@@ -81,6 +86,7 @@
   font-weight: 650;
 }
 .tab .icon {
+  flex-shrink: 0;
   opacity: 0.75;
 }
 /* A small pearl that glides under the active tab */

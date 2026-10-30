@@ -13,9 +13,11 @@ export type ReadinessStep = {
   help: string;
   /** The station runs without it. */
   optional?: boolean;
+  /** Can't be checked yet (ComfyUI is not running), so not shown as a problem. */
+  unknown?: boolean;
 };
 
-/** What LLM FM needs, in the order to fix it. */
+/** What Delulu FM needs, in the order to fix it. */
 export function readinessSteps(r: RadioReadiness | null): ReadinessStep[] {
   if (!r) return [];
   const { comfy } = r;
@@ -36,13 +38,19 @@ export function readinessSteps(r: RadioReadiness | null): ReadinessStep[] {
       id: "nodes",
       label: "YuE2 in ComfyUI",
       ok: comfy.server && comfy.nodes,
-      help: "Update ComfyUI to a version with the native YuE2 nodes, then restart it.",
+      unknown: !comfy.server,
+      help: comfy.server
+        ? "Update ComfyUI to a version with the native YuE2 nodes, then restart it."
+        : "Checked once ComfyUI is running.",
     },
     {
       id: "checkpoint",
       label: "YuE2 model",
       ok: comfy.server && comfy.checkpoint,
-      help: "Install the YuE2 checkpoint into ComfyUI with the Comfy CLI command below.",
+      unknown: !comfy.server,
+      help: comfy.server
+        ? "Install the YuE2 checkpoint into ComfyUI with the Comfy CLI command below."
+        : "Checked once ComfyUI is running.",
     },
     {
       id: "writer",

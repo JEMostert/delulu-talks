@@ -55,7 +55,7 @@ export type Settings = {
   /** Carry what recent dictations were about to the next one. */
   smartContext: boolean;
   cleanupModelOk: boolean;
-  /** Show the optional LLM FM radio. */
+  /** Show the optional Delulu FM radio. */
   radio: boolean;
 };
 export type InputDevice = { id: string; name: string; isDefault: boolean };

@@ -210,7 +210,7 @@ let history: HistoryEntry[] = params.has("empty")
       ),
     );
 
-// LLM FM: ?radio shows it, ?comfy=off|nodes|model leaves a readiness step open.
+// Delulu FM: ?radio shows it, ?comfy=off|nodes|model leaves a readiness step open.
 const comfyParam = params.get("comfy");
 const radioSong = (n: number, title: string, subtitle: string): RadioItem => ({
   id: `song-${n}`,
@@ -459,7 +459,7 @@ export async function invoke<T>(
       result = radio;
       break;
     case "radio_play":
-      if (!settings.radio) throw "Turn on LLM FM in Settings first.";
+      if (!settings.radio) throw "Turn on Delulu FM in Settings first.";
       radioUpdate({ onAir: true, playing: true });
       if (!radio.now) radioAdvance();
       radioProduce();

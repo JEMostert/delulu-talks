@@ -40,7 +40,7 @@ export function Radio({ state }: { state: AppState }) {
     const keep = (p: Promise<() => void>) =>
       p.then((fn) => (active ? unlisten.push(fn) : fn())).catch(() => {});
     keep(ipc.onRadio((r) => active && apply(r)));
-    keep(ipc.onRadioError((m) => active && setNotice(`LLM FM: ${m}`)));
+    keep(ipc.onRadioError((m) => active && setNotice(`Delulu FM: ${m}`)));
     ipc
       .getRadio()
       .then((r) => active && apply(r))
@@ -271,7 +271,7 @@ export function Radio({ state }: { state: AppState }) {
 function TitleBlock() {
   return (
     <div className="title-block">
-      <h1>LLM FM</h1>
+      <h1>Delulu FM</h1>
       <p className="lead">
         A radio station made on this computer. Every song is new: the cleanup
         model writes it, YuE2 composes it in your ComfyUI, and the host speaks
@@ -294,7 +294,10 @@ function Readiness({
   onCheck: () => void;
   onCopy: (text: string) => void;
 }) {
-  const missingCheckpoint = steps.some((s) => s.id === "checkpoint" && !s.ok);
+  // Only offer the download once a running ComfyUI says the model is missing.
+  const missingCheckpoint = steps.some(
+    (s) => s.id === "checkpoint" && !s.ok && !s.unknown,
+  );
   return (
     <section className="group radio-ready" aria-labelledby="radio-ready-title">
       <div className="radio-ready-head">
@@ -310,8 +313,14 @@ function Readiness({
       </div>
       <ul className="radio-steps">
         {steps.map((step) => (
-          <li key={step.id} className={step.ok ? "ok" : "todo"}>
-            <Icon name={step.ok ? "check" : "alert"} size={16} />
+          <li
+            key={step.id}
+            className={step.ok ? "ok" : step.unknown ? "unknown" : "todo"}
+          >
+            <Icon
+              name={step.ok ? "check" : step.unknown ? "history" : "alert"}
+              size={16}
+            />
             <div>
               <span className="step-label">{step.label}</span>
               {!step.ok && <span className="step-help">{step.help}</span>}

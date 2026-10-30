@@ -73,6 +73,7 @@ const NOT_SUBMITTED: &[&str] = &[
     "object_info_unavailable",
     "server_unreachable",
     "connection_refused",
+    "server_not_running",
 ];
 
 impl Default for Comfy {
@@ -305,6 +306,12 @@ impl Comfy {
                     && details.get("server_confirmed_no_record") == Some(&Value::Bool(true)) =>
             {
                 Ok(JobState::Unknown)
+            }
+            Err(CliError::Failed { code, .. }) if code == "server_not_running" => {
+                Err(RadioError::Unavailable(
+                    "ComfyUI is not running. The song in progress continues once it is back."
+                        .into(),
+                ))
             }
             Err(e) => Err(RadioError::Unavailable(format!("ComfyUI: {e}"))),
         }

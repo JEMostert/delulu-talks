@@ -34,8 +34,9 @@ export default function App() {
       </main>
     );
   if (status.phase === "needsSetup") return <FirstRun state={state} />;
-  // Turning LLM FM off in Settings hides its page.
-  const shown: Page = page === "LLM FM" && !settings.radio ? "Settings" : page;
+  // Turning Delulu FM off in Settings hides its page.
+  const shown: Page =
+    page === "Delulu FM" && !settings.radio ? "Settings" : page;
   return (
     <div className="app">
       <Header
@@ -51,7 +52,7 @@ export default function App() {
         {shown === "Home" && <Home state={state} />}
         {shown === "History" && <History state={state} />}
         {shown === "Cleanup" && <Cleanup state={state} />}
-        {shown === "LLM FM" && <Radio state={state} />}
+        {shown === "Delulu FM" && <Radio state={state} />}
         {shown === "Settings" && <Settings state={state} />}
       </main>
       <Toast notice={notice} onDismiss={dismiss} />

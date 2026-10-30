@@ -31,7 +31,7 @@ pub(crate) struct Shell {
     pub(crate) cleanup: cleanup::Cleanup,
     /// What recent dictations were about; memory only.
     pub(crate) context: context::Context,
-    /// LLM FM is on air and needs the cleanup helper as its writer.
+    /// Delulu FM is on air and needs the cleanup helper as its writer.
     pub(crate) radio_writer: AtomicBool,
 }
 pub(crate) enum EngineJob {

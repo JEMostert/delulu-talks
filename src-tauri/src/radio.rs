@@ -1,4 +1,4 @@
-//! LLM FM: the optional radio station. Off until Settings shows it and Play starts it.
+//! Delulu FM: the optional radio station. Off until Settings shows it and Play starts it.
 //! Dictation comes first: playback holds silent while recording, and no new writing,
 //! music or speech step starts while you dictate or just after.
 use super::*;
@@ -112,7 +112,10 @@ impl Radio {
         let player = Player::new(move |event| on_player(&events, event));
         let (station, open_error) = match Station::open(&root) {
             Ok(s) => (Some(Arc::new(s)), None),
-            Err(e) => (None, Some(format!("LLM FM could not open its data: {e}"))),
+            Err(e) => (
+                None,
+                Some(format!("Delulu FM could not open its data: {e}")),
+            ),
         };
         if let Some(s) = &station {
             player.set_volume(s.snapshot().volume);
@@ -328,7 +331,7 @@ fn set_on_air(app: &tauri::AppHandle, on: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Settings turned LLM FM off: stop playing and making.
+/// Settings turned Delulu FM off: stop playing and making.
 pub(crate) fn disable(app: &tauri::AppHandle) {
     let radio = app.state::<Radio>();
     {
@@ -358,7 +361,7 @@ fn enabled(app: &tauri::AppHandle) -> Result<(), String> {
     if app.state::<Shell>().store.settings().radio {
         Ok(())
     } else {
-        Err("Turn on LLM FM in Settings first.".into())
+        Err("Turn on Delulu FM in Settings first.".into())
     }
 }
 

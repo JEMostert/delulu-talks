@@ -245,7 +245,7 @@ export function RadioSection({ state }: Props) {
   return (
     <div className="group">
       <Row
-        label="Show LLM FM"
+        label="Show Delulu FM"
         htmlFor="radio"
         help="An optional radio station made on this computer. It needs your own ComfyUI with YuE2; nothing is downloaded or started until you press Play."
       >

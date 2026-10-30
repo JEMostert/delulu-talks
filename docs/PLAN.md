@@ -14,7 +14,7 @@ never installs or starts those runtimes:
 
 - **Voice replies** (`delulu` CLI): Chatterbox Turbo in an existing Python
   environment; the model downloads only on an explicit Install.
-- **LLM FM** (radio): YuE2 music in the user's own ComfyUI through the Comfy
+- **Delulu FM** (radio): YuE2 music in the user's own ComfyUI through the Comfy
   CLI, words from the cleanup model, the host through voice replies with the
   bundled speaker. Missing pieces are shown as steps to do, never downloaded.
 
@@ -38,7 +38,7 @@ never installs or starts those runtimes:
   vocabularies: shelves of terms shown as jars on a reef, with one-click
   starter shelves. A jar opens a dialog with all its words.
 - **Voice**: step 2, not now.
-- **LLM FM** (optional, hidden until Settings → LLM FM): what is on air with
+- **Delulu FM** (optional, hidden until Settings → Delulu FM): what is on air with
   lyrics or the host's words, play/pause/skip/volume, up next and recently
   played, song requests and a folded Direction panel. Readiness steps appear
   only when something is missing. Off by default; nothing is made or played
@@ -51,7 +51,7 @@ never installs or starts those runtimes:
     context management, insert text with (Shift+Insert / Ctrl+V /
     Ctrl+Shift+V / Off = copy only)
   - Voice replies: optional spoken replies model
-  - LLM FM: show the radio (one switch)
+  - Delulu FM: show the radio (one switch)
   - Models and providers: step 2/3 (API keys, LLMs)
   - Appearance: theme (system / light / dark), show the recording pill
   - About: version, GPU backend in use, data folder, project link

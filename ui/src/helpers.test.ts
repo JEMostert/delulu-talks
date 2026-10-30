@@ -185,7 +185,7 @@ test("a failed paste goes back into the term field", () => {
   expect(restorePaste("  ", "x", 1, 1, "a\nb")).toBe("a, b");
   expect(restorePaste("keep", "keep", 4, 4, " , \n")).toBe("keep");
 });
-test("LLM FM clock, readiness and status text", async () => {
+test("Delulu FM clock, readiness and status text", async () => {
   const { clock, readinessSteps, makingText } = await import("./radio");
   expect(clock(0)).toBe("0:00");
   expect(clock(151.9)).toBe("2:31");
@@ -210,6 +210,14 @@ test("LLM FM clock, readiness and status text", async () => {
     "voice",
   ]);
   expect(steps.find((s) => s.id === "voice")?.optional).toBe(true);
+  // With ComfyUI down, nodes and model are unknown, not problems to fix.
+  expect(steps.filter((s) => s.unknown).map((s) => s.id)).toEqual([
+    "nodes",
+    "checkpoint",
+  ]);
+  expect(steps.find((s) => s.id === "checkpoint")?.help).toBe(
+    "Checked once ComfyUI is running.",
+  );
   const radio = {
     making: {
       kind: "song",
