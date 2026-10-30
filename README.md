@@ -61,7 +61,8 @@ Checks: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D 
 
 ## Spoken agent replies
 
-The optional `delulu` CLI gives agent harnesses on-demand speech output through
+Linux release packages include `delulu` (the Python adapter and agent skill are
+embedded in the binary; no checkout is required). The optional CLI gives agent harnesses on-demand speech output through
 [Chatterbox Turbo](https://huggingface.co/ResembleAI/chatterbox-turbo). It is separate
 from the desktop binary, so it does not start dictation, acquire the microphone,
 or change the app's listening behavior.

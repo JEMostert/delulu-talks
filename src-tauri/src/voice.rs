@@ -23,7 +23,13 @@ pub struct VoiceStatus {
 fn run_cli(action: &str) -> Result<std::process::Output, String> {
     let local = std::env::var_os("HOME")
         .map(|home| std::path::PathBuf::from(home).join(".local/bin/delulu"));
-    let output = match local {
+    // Distribution packages install both commands side by side. Prefer that
+    // matching CLI to a potentially older per-user installation.
+    let sibling = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|dir| dir.join("delulu")))
+        .filter(|path| path.is_file());
+    let output = match sibling.or(local) {
         Some(path) => match Command::new(path).arg(action).output() {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 Command::new("delulu").arg(action).output()
