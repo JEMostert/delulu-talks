@@ -5,6 +5,7 @@ import {
   AppearanceSection,
   DictationSection,
   InputSection,
+  VoiceSection,
 } from "./SettingsSections";
 
 const sections: {
@@ -24,6 +25,12 @@ const sections: {
     title: "Dictation",
     lead: "How speech becomes text.",
     Body: DictationSection,
+  },
+  {
+    id: "voice",
+    title: "Voice replies",
+    lead: "Hear your agent when you ask.",
+    Body: VoiceSection,
   },
   {
     id: "appearance",

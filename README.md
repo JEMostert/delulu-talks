@@ -58,3 +58,79 @@ Checks: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D 
 ## License
 
 [MIT](LICENSE). The Parakeet model is [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) (CC BY 4.0), downloaded as the [int8 ONNX export by istupakov](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx).
+
+## Spoken agent replies
+
+The optional `delulu` CLI gives agent harnesses on-demand speech output through
+[Chatterbox Turbo](https://huggingface.co/ResembleAI/chatterbox-turbo). It is separate
+from the desktop binary, so it does not start dictation, acquire the microphone,
+or change the app's listening behavior.
+
+```sh
+cargo build --release -p delulu-voice-cli
+./target/release/delulu setup   # lightweight: binary/config/skill, no model download
+delulu install-model            # optional, explicit ~3 GB download
+# setup installs ~/.local/bin/delulu; include ~/.local/bin on PATH
+delulu speak 'Done. The fix is ready for review.'
+printf '%s' 'The build passed.' | delulu speak
+```
+
+Setup reuses the existing AI Director Flash Python environment at
+`~/.local/share/ai-director/chatterbox_flash_local/.venv/bin/python`. To choose
+another environment with `torch`, `chatterbox-tts` (Turbo API), `soundfile` and
+`huggingface_hub`, pass `--python /path/to/venv/bin/python`. It never installs or
+upgrades packages in that environment. `uv` prepares a small private setuptools
+compatibility overlay for Perth; no second CUDA stack is installed. Install
+[uv](https://docs.astral.sh/uv/) if missing. Playback requires PipeWire's `pw-play`.
+This CLI currently targets Linux.
+
+Only `delulu install-model` downloads roughly 3 GB of official Turbo weights into
+the standard Hugging Face cache, including the bundled default speaker. Ordinary
+app installation, first launch, opening Settings, and `delulu setup` never download
+model weights. Setup reuses compatible cached weights when present. Without weights,
+`speak` fails with installation guidance; inference cannot download missing assets.
+Flash weights and voice references are never reused. Model installation pins the resolved model revision in
+`~/.local/share/delulu-talks/voice/config.json` (or `$XDG_DATA_HOME` equivalent).
+Repeating setup reuses downloads and that revision. Setup checks dependencies and
+assets without loading a GPU model. Use `--device cpu` for CPU inference; CUDA is
+the default. `--reference /path/to/voice.wav` explicitly chooses a voice clip longer
+than five seconds. Setup preserves an existing device and reference when omitted.
+Use `delulu setup --default-voice` to restore the official default speaker.
+No configured voice from another app is read.
+
+Setup also installs the short `delulu-speak` skill into `$CODEX_HOME/skills`
+(default `~/.codex/skills`) and existing `~/.claude/skills` / `~/.agents/skills`
+directories. It preserves customized skill files and all unrelated preferences.
+The skill activates for requested spoken output or an active voice conversation:
+it asks agents to speak concise replies and completion reports, not entire written
+answers or constant progress updates. Existing `delulu-voice` listening sessions
+keep their response-ID and interruption flow, without duplicate speech.
+
+`delulu status` prints JSON readiness without starting Python. The GUI's Settings
+section shows this readiness and offers an explicit optional Install model action.
+Each `speak` loads Turbo, generates
+locally and exits the Python process before playback, freeing GPU memory. Speak
+works offline after model installation. Concurrent Delulu setup/speech jobs queue under a
+per-user lock; they do not stop other applications or coordinate other apps' GPU
+usage. Leave sufficient GPU memory free, or select CPU. Ctrl-C / SIGTERM cancels
+the active owned subprocess and returns 130 / 143; failures return 1. A job waiting
+for the lock gives up after ten minutes, and an active subprocess after thirty.
+
+For silent verification or a headless harness, save a WAV instead of playing it.
+`--volume 0` exercises real playback with a muted stream without changing system volume:
+
+```sh
+delulu speak --output /tmp/reply.wav 'The change is ready.'
+printf '%s' 'The build passed.' | delulu speak --output /tmp/reply.wav
+delulu speak --volume 0 'Silent playback check.'
+```
+
+Normal `speak` always plays through the current default PipeWire output; it never
+changes system volume. Missing dependencies, incomplete setup, synthesis and
+playback failures are reported on stderr. Text is passed by a private temporary
+file, never interpreted as shell code; temporary audio and text are deleted on
+normal completion and handled cancellation. Hard kills can leave a temporary job
+directory but no resident inference worker. Keep replies short; the input cap is
+16,000 UTF-8 bytes and Turbo is intended for English speech.
+
+Local verification evidence and limitations: [voice verification](docs/voice-verification.md).

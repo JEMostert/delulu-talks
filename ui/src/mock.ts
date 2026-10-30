@@ -40,6 +40,8 @@ let cleanupStatus: CleanupStatus = {
 };
 if (cleanupParam === "off") settings.cleanup = false;
 if (cleanupParam === "missing") settings.cleanupModelOk = false;
+let voiceReady = params.get("voice") === "ready";
+let voiceInstalling = false;
 let cleanupDownload: ReturnType<typeof setInterval> | undefined;
 const demoShelves = (): Shelf[] => [
   {
@@ -301,6 +303,23 @@ export async function invoke<T>(
         terms: s.terms.filter((t) => t !== args?.term),
       }));
       result = vocabulary();
+      break;
+    case "get_voice_status":
+      if (params.get("voice") === "error")
+        throw "Voice replies are unavailable. Install the delulu command in ~/.local/bin or on your PATH, then reopen Settings.";
+      result = {
+        ready: voiceReady,
+        configured: true,
+        installing: voiceInstalling,
+      };
+      break;
+    case "install_voice_model":
+      voiceInstalling = true;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      voiceInstalling = false;
+      if (params.get("voice") === "install-error")
+        throw "Could not download the model. Check your connection and try again.";
+      voiceReady = true;
       break;
     case "get_cleanup_status":
       result = cleanupStatus;
