@@ -18,6 +18,7 @@ mod dictation;
 mod engine;
 mod ipc;
 mod models;
+mod radio;
 mod state;
 mod tray;
 mod vocabulary;
@@ -27,6 +28,10 @@ use dictation::*;
 use engine::*;
 use ipc::*;
 use models::*;
+use radio::{
+    check_radio, get_radio, radio_direction, radio_off, radio_pause, radio_play, radio_request,
+    radio_skip, radio_volume,
+};
 use state::*;
 use vocabulary::{
     add_preset_shelf, add_shelf, add_terms, delete_shelf, get_vocabulary, remove_term,
@@ -115,12 +120,16 @@ pub fn run() {
             pill: Pill::new(),
             cleanup,
             context: Default::default(),
+            radio_writer: AtomicBool::new(false),
         })
         .setup(move |app| {
             let handle = app.handle().clone();
             tray::create(app)?;
             let s = app.state::<Shell>();
             let settings = s.store.settings();
+            let radio = radio::Radio::new(&handle, s.store.data_dir().join("radio"));
+            app.manage(radio);
+            radio::start(&handle);
             apply_autostart(&handle, settings.start_at_login).map_err(std::io::Error::other)?;
             let engine_app = handle.clone();
             std::thread::spawn(move || engine_thread(engine_app, rx));
@@ -190,10 +199,24 @@ pub fn run() {
             delete_shelf,
             set_shelf_enabled,
             add_terms,
-            remove_term
+            remove_term,
+            get_radio,
+            check_radio,
+            radio_play,
+            radio_pause,
+            radio_off,
+            radio_skip,
+            radio_volume,
+            radio_direction,
+            radio_request
         ])
-        .run(tauri::generate_context!())
-        .expect("Tauri failed");
+        .build(tauri::generate_context!())
+        .expect("Tauri failed")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                radio::shutdown(app);
+            }
+        });
 }
 
 #[cfg(test)]
@@ -209,7 +232,8 @@ mod tests {
             SettingsDiff {
                 model: false,
                 autostart: false,
-                cleanup: false
+                cleanup: false,
+                radio: false
             }
         );
         new.cleanup_model_ok = true;
@@ -222,7 +246,8 @@ mod tests {
             SettingsDiff {
                 model: true,
                 autostart: true,
-                cleanup: true
+                cleanup: true,
+                radio: false
             }
         );
     }

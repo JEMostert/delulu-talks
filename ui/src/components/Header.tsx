@@ -2,10 +2,11 @@ import type { Phase } from "../ipc";
 import type { Page } from "../state";
 import { Icon, type IconName } from "./Icon";
 
-const pages: { page: Page; icon: IconName }[] = [
+const allPages: { page: Page; icon: IconName }[] = [
   { page: "Home", icon: "home" },
   { page: "History", icon: "history" },
   { page: "Cleanup", icon: "cleanup" },
+  { page: "LLM FM", icon: "radio" },
   { page: "Settings", icon: "settings" },
 ];
 
@@ -30,17 +31,21 @@ export function Wordmark() {
 export function Header({
   page,
   phase,
+  radio,
   onNavigate,
 }: {
   page: Page;
   phase: Phase;
+  /** Show the optional LLM FM tab. */
+  radio: boolean;
   onNavigate: (page: Page) => void;
 }) {
+  const pages = allPages.filter((p) => radio || p.page !== "LLM FM");
   const index = pages.findIndex((p) => p.page === page);
   return (
     <header className="topbar">
       <Wordmark />
-      <nav className="tabs" aria-label="Main">
+      <nav className="tabs" aria-label="Main" data-count={pages.length}>
         {pages.map(({ page: item, icon }) => (
           <button
             key={item}

@@ -57,6 +57,9 @@ enum Action {
         /// Playback stream volume (0 = silent); never changes system volume.
         #[arg(long, default_value = "1")]
         volume: f32,
+        /// Use the official bundled speaker for this reply, ignoring a configured reference.
+        #[arg(long)]
+        bundled_voice: bool,
     },
     /// Print setup readiness as JSON without loading Python or a model.
     Status,
@@ -372,7 +375,13 @@ fn read_stdin() -> Result<String> {
     }
     String::from_utf8(bytes).context("stdin must contain UTF-8 text")
 }
-fn speak(root: &Path, words: Vec<String>, output: Option<PathBuf>, volume: f32) -> Result<()> {
+fn speak(
+    root: &Path,
+    words: Vec<String>,
+    output: Option<PathBuf>,
+    volume: f32,
+    bundled_voice: bool,
+) -> Result<()> {
     if !volume.is_finite() || !(0.0..=1.0).contains(&volume) {
         bail!("Volume must be between 0 and 1");
     }
@@ -390,7 +399,7 @@ fn speak(root: &Path, words: Vec<String>, output: Option<PathBuf>, volume: f32) 
     if text.len() > 16000 {
         bail!("Reply exceeds 16000 bytes; summarize it before speaking");
     }
-    let config = read_config(root)?;
+    let mut config = read_config(root)?;
     if !ready(&config) {
         bail!("Optional Turbo model is not installed; run delulu install-model or use Install model in Settings");
     }
@@ -399,8 +408,19 @@ fn speak(root: &Path, words: Vec<String>, output: Option<PathBuf>, volume: f32) 
     let input = job.path().join("text.txt");
     let wav = job.path().join("speech.wav");
     fs::write(&input, text)?;
+    let mut config_path = root.join("config.json");
+    if bundled_voice && config.reference.is_some() {
+        // A private copy without the reference; the saved configuration is untouched.
+        let bundled = Config {
+            reference: None,
+            ..config
+        };
+        config_path = job.path().join("config.json");
+        fs::write(&config_path, serde_json::to_vec_pretty(&bundled)?)?;
+        config = bundled;
+    }
     run(
-        python(&config, root, "speak", &root.join("config.json"))
+        python(&config, root, "speak", &config_path)
             .arg(input)
             .arg(&wav),
         "Turbo synthesis",
@@ -439,7 +459,8 @@ fn main() {
             text,
             output,
             volume,
-        } => speak(&root, text, output, volume),
+            bundled_voice,
+        } => speak(&root, text, output, volume, bundled_voice),
         Action::Status => {
             let config = read_config(&root).ok();
             println!(

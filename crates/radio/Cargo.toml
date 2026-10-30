@@ -1,0 +1,19 @@
+[package]
+name = "delulu-radio"
+version.workspace = true
+edition.workspace = true
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+handy-cpal.workspace = true
+rubato.workspace = true
+ureq.workspace = true
+uuid.workspace = true
+libc.workspace = true
+sha2.workspace = true
+hound = "3.5"
+claxon = "0.4"
+[dev-dependencies]
+delulu-cleanup = { path = "../cleanup" }

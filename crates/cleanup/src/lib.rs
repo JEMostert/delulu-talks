@@ -1,4 +1,5 @@
-//! Transcript cleanup with Gemma 4 E4B, run in a separate helper process.
+//! Transcript cleanup with Gemma 4 E4B, run in a separate helper process. The same
+//! helper also writes LLM FM's song briefs and presenter scripts.
 //!
 //! This crate never links llama.cpp. It renders the prompt, post-processes the reply and
 //! drives the `delulu-cleanup` helper over JSON lines on stdin/stdout.
@@ -279,13 +280,33 @@ pub fn helper_path() -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-/// One cleanup request, app → helper.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One request, app → helper: a rendered prompt to continue.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Request {
     pub id: u64,
     pub prompt: String,
     pub max_tokens: u32,
+    /// None = greedy decoding, which cleanup uses. Creative writing samples.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sampling: Option<Sampling>,
+}
+
+/// Seeded temperature and nucleus sampling.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sampling {
+    pub seed: u32,
+    pub temperature: f32,
+    pub top_p: f32,
+}
+
+/// What the helper wrote for a [`Cleaner::generate`] request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Generated {
+    pub text: String,
+    /// `max_tokens` cut the reply off.
+    pub truncated: bool,
 }
 
 /// One line from the helper.
@@ -517,7 +538,40 @@ impl Cleaner {
             id,
             prompt,
             max_tokens: max_tokens(text),
+            sampling: None,
         };
+        let output = self.send(request, deadline)?;
+        let (topic, reply) = split_reply(&output.text);
+        Ok(sanitize(text, &reply, output.truncated).map(|text| Cleaned { text, topic }))
+    }
+
+    /// Continue an already rendered prompt; used for writing beyond cleanup.
+    /// Err = helper failed or timed out; the caller drops the Cleaner, which kills the helper.
+    pub fn generate(
+        &mut self,
+        prompt: String,
+        max_tokens: u32,
+        sampling: Option<Sampling>,
+        timeout: Duration,
+    ) -> Result<Generated, CleanupError> {
+        if self.kill.killed() {
+            return Err(CleanupError::Helper("helper was stopped".into()));
+        }
+        let deadline = Instant::now() + timeout;
+        let id = self.next_id;
+        self.next_id += 1;
+        let request = Request {
+            id,
+            prompt,
+            max_tokens,
+            sampling,
+        };
+        self.send(request, deadline)
+    }
+
+    /// One deadline covers the write and the reply.
+    fn send(&mut self, request: Request, deadline: Instant) -> Result<Generated, CleanupError> {
+        let id = request.id;
         let line =
             serde_json::to_string(&request).map_err(|e| CleanupError::Protocol(e.to_string()))?;
         let sent = self
@@ -531,15 +585,10 @@ impl Cleaner {
             match self.next_event(deadline)? {
                 Reply::Result {
                     id: reply_id,
-                    text: output,
+                    text,
                     truncated,
                     ..
-                } if reply_id == id => {
-                    let (topic, output) = split_reply(&output);
-                    return Ok(
-                        sanitize(text, &output, truncated).map(|text| Cleaned { text, topic })
-                    );
-                }
+                } if reply_id == id => return Ok(Generated { text, truncated }),
                 Reply::Failed {
                     id: reply_id,
                     message,
@@ -1009,10 +1058,25 @@ Topic:";
             id: 7,
             prompt: "p".into(),
             max_tokens: 70,
+            sampling: None,
         };
         let json = serde_json::to_string(&request).unwrap();
         assert_eq!(json, r#"{"id":7,"prompt":"p","maxTokens":70}"#);
         assert_eq!(serde_json::from_str::<Request>(&json).unwrap(), request);
+        let sampled = Request {
+            sampling: Some(Sampling {
+                seed: 3,
+                temperature: 0.5,
+                top_p: 0.75,
+            }),
+            ..request
+        };
+        let json = serde_json::to_string(&sampled).unwrap();
+        assert_eq!(
+            json,
+            r#"{"id":7,"prompt":"p","maxTokens":70,"sampling":{"seed":3,"temperature":0.5,"topP":0.75}}"#
+        );
+        assert_eq!(serde_json::from_str::<Request>(&json).unwrap(), sampled);
 
         let replies = [
             (

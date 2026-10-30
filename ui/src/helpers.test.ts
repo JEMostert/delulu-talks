@@ -47,6 +47,7 @@ test("maps language names and settings without changing other values", () => {
     cleanup: true,
     cleanupModelOk: true,
     smartContext: true,
+    radio: false,
   };
   expect(settingsPatch(settings, "theme", "dark")).toEqual({
     ...settings,
@@ -183,4 +184,42 @@ test("a failed paste goes back into the term field", () => {
   expect(restorePaste("Gem, ", "x", 1, 1, "a\nb")).toBe("Gem, a, b");
   expect(restorePaste("  ", "x", 1, 1, "a\nb")).toBe("a, b");
   expect(restorePaste("keep", "keep", 4, 4, " , \n")).toBe("keep");
+});
+test("LLM FM clock, readiness and status text", async () => {
+  const { clock, readinessSteps, makingText } = await import("./radio");
+  expect(clock(0)).toBe("0:00");
+  expect(clock(151.9)).toBe("2:31");
+  expect(readinessSteps(null)).toEqual([]);
+  const steps = readinessSteps({
+    comfy: {
+      cli: true,
+      server: false,
+      nodes: true,
+      checkpoint: true,
+      url: "u",
+    },
+    writer: true,
+    voice: false,
+    installCommand: "c",
+  });
+  // A server that is down cannot vouch for its nodes or models.
+  expect(steps.filter((s) => !s.ok).map((s) => s.id)).toEqual([
+    "server",
+    "nodes",
+    "checkpoint",
+    "voice",
+  ]);
+  expect(steps.find((s) => s.id === "voice")?.optional).toBe(true);
+  const radio = {
+    making: {
+      kind: "song",
+      step: "music",
+      title: "Copper",
+      request: null,
+      since: 0,
+    },
+  } as unknown as import("./ipc").Radio;
+  expect(makingText(radio, 12_400)).toBe(
+    "Composing “Copper” in ComfyUI · 12 s",
+  );
 });

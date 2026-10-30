@@ -22,6 +22,13 @@ const paths = {
     "M10 4.5 11.4 8.6 15.5 10 11.4 11.4 10 15.5 8.6 11.4 4.5 10 8.6 8.6ZM17 14l.8 2.2L20 17l-2.2.8L17 20l-.8-2.2L14 17l2.2-.8Z",
   plus: "M12 5v14M5 12h14",
   edit: "M5 19h4L19 9l-4-4L5 15v4ZM13 7l4 4",
+  radio:
+    "M4.5 10.5h15v8.5h-15zM7 10.5 16.5 5M8.5 14.75h.01M15.5 13v3.5M13 14.75h5",
+  play: "M8 5.5v13l10.5-6.5Z",
+  pause: "M8.5 5.5v13M15.5 5.5v13",
+  skip: "M6.5 6v12l8.5-6ZM17.5 6v12",
+  volume:
+    "M4.5 9.5h3.5L12.5 6v12L8 14.5H4.5zM16 9.5a3.5 3.5 0 0 1 0 5M18.5 7a7 7 0 0 1 0 10",
 } as const;
 
 export type IconName = keyof typeof paths;

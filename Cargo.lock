@@ -701,6 +701,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
+name = "claxon"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bfbf56724aa9eca8afa4fcfadeb479e722935bb2a0900c2d37e0cc477af0688"
+
+[[package]]
 name = "clipboard-win"
 version = "5.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1004,7 +1010,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-audio"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "handy-cpal",
  "log",
@@ -1015,7 +1021,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-cleanup"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "libc",
  "serde",
@@ -1025,7 +1031,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-cleanup-helper"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "delulu-cleanup",
  "libc",
@@ -1035,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-hotkey"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "ashpd",
  "dirs 6.0.0",
@@ -1049,7 +1055,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-insert"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "arboard",
  "ashpd",
@@ -1063,7 +1069,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-overlay"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "cairo-rs",
  "gtk",
@@ -1072,8 +1078,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "delulu-radio"
+version = "1.4.0"
+dependencies = [
+ "claxon",
+ "delulu-cleanup",
+ "handy-cpal",
+ "hound",
+ "libc",
+ "log",
+ "rubato",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "ureq",
+ "uuid",
+]
+
+[[package]]
 name = "delulu-store"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "dirs 6.0.0",
  "log",
@@ -1085,7 +1110,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-stt"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "hound",
  "log",
@@ -1101,13 +1126,14 @@ dependencies = [
 
 [[package]]
 name = "delulu-talks"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "delulu-audio",
  "delulu-cleanup",
  "delulu-hotkey",
  "delulu-insert",
  "delulu-overlay",
+ "delulu-radio",
  "delulu-store",
  "delulu-stt",
  "log",
@@ -1124,7 +1150,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-voice-cli"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "anyhow",
  "clap",

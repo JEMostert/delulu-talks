@@ -8,6 +8,7 @@ import { FirstRun } from "./screens/FirstRun";
 import { Home } from "./screens/Home";
 import { History } from "./screens/History";
 import { Cleanup } from "./screens/Cleanup";
+import { Radio } from "./screens/Radio";
 import { Settings } from "./screens/Settings";
 import "./styles/index.css";
 
@@ -33,14 +34,25 @@ export default function App() {
       </main>
     );
   if (status.phase === "needsSetup") return <FirstRun state={state} />;
+  // Turning LLM FM off in Settings hides its page.
+  const shown: Page = page === "LLM FM" && !settings.radio ? "Settings" : page;
   return (
     <div className="app">
-      <Header page={page} phase={status.phase} onNavigate={navigate} />
-      <main className={`page page-${page.toLowerCase()}`} key={page}>
-        {page === "Home" && <Home state={state} />}
-        {page === "History" && <History state={state} />}
-        {page === "Cleanup" && <Cleanup state={state} />}
-        {page === "Settings" && <Settings state={state} />}
+      <Header
+        page={shown}
+        phase={status.phase}
+        radio={settings.radio}
+        onNavigate={navigate}
+      />
+      <main
+        className={`page page-${shown.toLowerCase().replace(" ", "-")}`}
+        key={shown}
+      >
+        {shown === "Home" && <Home state={state} />}
+        {shown === "History" && <History state={state} />}
+        {shown === "Cleanup" && <Cleanup state={state} />}
+        {shown === "LLM FM" && <Radio state={state} />}
+        {shown === "Settings" && <Settings state={state} />}
       </main>
       <Toast notice={notice} onDismiss={dismiss} />
     </div>
