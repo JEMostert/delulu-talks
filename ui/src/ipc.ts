@@ -55,6 +55,8 @@ export type Settings = {
   /** Carry what recent dictations were about to the next one. */
   smartContext: boolean;
   cleanupModelOk: boolean;
+  /** Show the optional LLM FM radio. */
+  radio: boolean;
 };
 export type InputDevice = { id: string; name: string; isDefault: boolean };
 export type Language = { code: string; name: string };
@@ -193,3 +195,89 @@ export const onModelDownload = (
   fn: (value: ModelDownload) => void,
 ): Promise<UnlistenFn> =>
   listen<ModelDownload>("model-download", (e) => fn(e.payload));
+
+export type RadioKind = "song" | "break";
+export type RadioItem = {
+  id: string;
+  kind: RadioKind;
+  title: string;
+  subtitle: string;
+  lyrics: string | null;
+  script: string | null;
+  seconds: number;
+  request: string | null;
+  replay: boolean;
+  imported: boolean;
+};
+export type RadioDirection = {
+  mood: string;
+  genres: string[];
+  energy: "low" | "medium" | "high";
+  vocals: "vocal" | "instrumental" | "either";
+  language: string;
+  length: "short" | "medium" | "long";
+  host: "off" | "sometimes" | "often";
+  theme: string;
+};
+export type RadioRequest = {
+  id: string;
+  text: string;
+  createdAt: number;
+  answeredBy?: string;
+};
+export type RadioReadiness = {
+  comfy: {
+    cli: boolean;
+    server: boolean;
+    nodes: boolean;
+    checkpoint: boolean;
+    url: string;
+  };
+  writer: boolean;
+  voice: boolean;
+  installCommand: string;
+};
+export type Radio = {
+  available: boolean;
+  error: string | null;
+  onAir: boolean;
+  playing: boolean;
+  /** Silent while you dictate. */
+  held: boolean;
+  volume: number;
+  now: RadioItem | null;
+  /** Seconds into `now`. */
+  position: number;
+  queue: RadioItem[];
+  history: RadioItem[];
+  making: {
+    kind: RadioKind;
+    step: "writing" | "music" | "voice";
+    title: string | null;
+    request: string | null;
+    since: number;
+  } | null;
+  lastError: string | null;
+  requests: RadioRequest[];
+  direction: RadioDirection;
+  lastSongSeconds: number | null;
+  lastSongAudioSeconds: number | null;
+  readiness: RadioReadiness | null;
+};
+export const getRadio = () => invoke<Radio>("get_radio");
+export const checkRadio = () => invoke<Radio>("check_radio");
+export const radioPlay = () => invoke<Radio>("radio_play");
+export const radioPause = () => invoke<Radio>("radio_pause");
+export const radioOff = () => invoke<Radio>("radio_off");
+export const radioSkip = () => invoke<Radio>("radio_skip");
+export const radioVolume = (volume: number) =>
+  invoke<void>("radio_volume", { volume });
+export const radioDirection = (direction: RadioDirection) =>
+  invoke<Radio>("radio_direction", { direction });
+export const radioRequest = (text: string) =>
+  invoke<Radio>("radio_request", { text });
+export const onRadio = (fn: (value: Radio) => void): Promise<UnlistenFn> =>
+  listen<Radio>("radio", (e) => fn(e.payload));
+export const onRadioError = (
+  fn: (value: string) => void,
+): Promise<UnlistenFn> => listen<string>("radio-error", (e) => fn(e.payload));

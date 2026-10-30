@@ -21,3 +21,4 @@ delulu-hotkey = { path = "../crates/hotkey" }
 delulu-store = { path = "../crates/store" }
 delulu-overlay = { path = "../crates/overlay" }
 delulu-cleanup = { path = "../crates/cleanup" }
+delulu-radio = { path = "../crates/radio" }

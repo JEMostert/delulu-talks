@@ -239,6 +239,26 @@ export function VoiceSection() {
   );
 }
 
+export function RadioSection({ state }: Props) {
+  const { settings, update } = state;
+  if (!settings) return null;
+  return (
+    <div className="group">
+      <Row
+        label="Show LLM FM"
+        htmlFor="radio"
+        help="An optional radio station made on this computer. It needs your own ComfyUI with YuE2; nothing is downloaded or started until you press Play."
+      >
+        <Switch
+          id="radio"
+          checked={settings.radio}
+          onChange={(value) => void update("radio", value)}
+        />
+      </Row>
+    </div>
+  );
+}
+
 export function AppearanceSection({ state }: Props) {
   const { settings, update } = state;
   if (!settings) return null;

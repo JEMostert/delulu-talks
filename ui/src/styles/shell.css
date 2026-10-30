@@ -46,9 +46,10 @@
 
 /* The view switcher: a glass capsule floating in the light */
 .tabs {
+  --tab-w: 112px;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 112px;
+  grid-auto-columns: var(--tab-w);
   padding: 3px;
   border-radius: var(--r-pill);
 }
@@ -70,6 +71,10 @@
 .tab:hover {
   color: var(--ink);
 }
+/* LLM FM adds a fifth tab; keep the bar inside the window. */
+.tabs[data-count="5"] {
+  --tab-w: 100px;
+}
 .tab[aria-current="page"] {
   background: var(--accent-soft);
   color: var(--ink);
@@ -83,7 +88,7 @@
   position: absolute;
   left: 3px;
   bottom: -1px;
-  width: 112px;
+  width: var(--tab-w);
   height: 6px;
   pointer-events: none;
   transition: transform 420ms var(--ease-spring);
@@ -244,7 +249,7 @@
   background: radial-gradient(circle, var(--shell) 30%, transparent 70%);
 }
 
-/* Narrow windows: the four tabs get their own row under the wordmark and status. */
+/* Narrow windows: the tabs get their own row under the wordmark and status. */
 @media (max-width: 800px) {
   .topbar {
     height: auto;
@@ -257,9 +262,15 @@
     grid-row: 2;
     grid-column: 1 / -1;
     justify-self: center;
-    grid-auto-columns: min(112px, 22vw);
+    grid-auto-columns: min(var(--tab-w), 22vw);
+  }
+  .tabs[data-count="5"] {
+    grid-auto-columns: min(var(--tab-w), 18vw);
   }
   .tab-pearl {
-    width: min(112px, 22vw);
+    width: min(var(--tab-w), 22vw);
+  }
+  .tabs[data-count="5"] .tab-pearl {
+    width: min(var(--tab-w), 18vw);
   }
 }

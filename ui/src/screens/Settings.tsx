@@ -5,6 +5,7 @@ import {
   AppearanceSection,
   DictationSection,
   InputSection,
+  RadioSection,
   VoiceSection,
 } from "./SettingsSections";
 
@@ -31,6 +32,12 @@ const sections: {
     title: "Voice replies",
     lead: "Hear your agent when you ask.",
     Body: VoiceSection,
+  },
+  {
+    id: "radio",
+    title: "LLM FM",
+    lead: "A radio station of new songs.",
+    Body: RadioSection,
   },
   {
     id: "appearance",

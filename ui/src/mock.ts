@@ -5,6 +5,8 @@ import type {
   ModelDownload,
   CleanupStatus,
   Shelf,
+  Radio,
+  RadioItem,
 } from "./ipc";
 import { splitTerms } from "./helpers";
 import type {
@@ -27,6 +29,7 @@ let settings: Settings = {
   cleanup: true,
   smartContext: true,
   cleanupModelOk: true,
+  radio: new URLSearchParams(location.search).has("radio"),
 };
 // Dev-only URL switches: ?firstRun, ?empty, ?phase=error|loadingModel|…
 const params = new URLSearchParams(location.search);
@@ -206,6 +209,136 @@ let history: HistoryEntry[] = params.has("empty")
         Date.now() - [4, 38, 190, 1500, 1700, 2900, 4400, 9000][i] * 60000,
       ),
     );
+
+// LLM FM: ?radio shows it, ?comfy=off|nodes|model leaves a readiness step open.
+const comfyParam = params.get("comfy");
+const radioSong = (n: number, title: string, subtitle: string): RadioItem => ({
+  id: `song-${n}`,
+  kind: "song",
+  title,
+  subtitle,
+  lyrics:
+    "[Verse]\nLight on the window\nCoffee and rain\n\n[Chorus]\nCopper morning\nCall my name",
+  script: null,
+  seconds: 150 + n * 7,
+  request: null,
+  replay: false,
+  imported: n > 4,
+});
+let radio: Radio = {
+  available: true,
+  error: null,
+  onAir: false,
+  playing: false,
+  held: false,
+  volume: 0.8,
+  now: null,
+  position: 0,
+  queue: [],
+  history: [
+    radioSong(5, "Orbital Echoes", "Warm · experimental"),
+    radioSong(6, "Ghost in the Wire", "Restless · electronic"),
+  ],
+  making: null,
+  lastError: null,
+  requests: [],
+  direction: {
+    mood: "warm",
+    genres: ["electronic", "chamber pop"],
+    energy: "medium",
+    vocals: "vocal",
+    language: "English",
+    length: "medium",
+    host: "sometimes",
+    theme: "",
+  },
+  lastSongSeconds: null,
+  lastSongAudioSeconds: null,
+  readiness: {
+    comfy: {
+      cli: true,
+      server: comfyParam !== "off",
+      nodes: comfyParam !== "off" && comfyParam !== "nodes",
+      checkpoint: comfyParam === null,
+      url: "http://127.0.0.1:8188",
+    },
+    writer: true,
+    voice: params.get("voice") === "ready",
+    installCommand:
+      "comfy model download --url https://huggingface.co/Comfy-Org/YuE2/resolve/main/checkpoints/yue2_3b_int8_convrot.safetensors --relative-path models/checkpoints --filename yue2_3b_int8_convrot.safetensors",
+  },
+};
+let radioSongs = 0;
+let radioMaking: ReturnType<typeof setTimeout> | undefined;
+const radioReady = () => {
+  const c = radio.readiness!.comfy;
+  return c.cli && c.server && c.nodes && c.checkpoint;
+};
+function radioUpdate(patch: Partial<Radio>) {
+  radio = { ...radio, ...patch };
+  emit("radio", radio);
+}
+/** Pretend production: a song is written, then composed, then ready. */
+function radioProduce() {
+  if (!radio.onAir || radio.making || radio.queue.length >= 2 || !radioReady())
+    return;
+  const n = ++radioSongs;
+  const request = radio.requests.find((r) => !r.answeredBy);
+  radioUpdate({
+    making: {
+      kind: "song",
+      step: "writing",
+      title: null,
+      request: request?.text ?? null,
+      since: Date.now(),
+    },
+  });
+  radioMaking = setTimeout(() => {
+    radioUpdate({
+      making: {
+        kind: "song",
+        step: "music",
+        title: `Song ${n}`,
+        request: request?.text ?? null,
+        since: Date.now(),
+      },
+    });
+    radioMaking = setTimeout(() => {
+      const song = {
+        ...radioSong(n, `Song ${n}`, "Warm · electronic"),
+        request: request?.text ?? null,
+      };
+      radioUpdate({
+        making: null,
+        queue: [...radio.queue, song],
+        requests: radio.requests.map((r) =>
+          r.id === request?.id ? { ...r, answeredBy: song.title } : r,
+        ),
+      });
+      if (radio.playing && !radio.now) radioAdvance();
+      radioProduce();
+    }, 2500);
+  }, 1200);
+}
+function radioAdvance() {
+  const history =
+    radio.now && !radio.now.replay
+      ? [radio.now, ...radio.history]
+      : radio.history;
+  const [next, ...queue] = radio.queue;
+  const replay = history.find(
+    (i) => i.kind === "song" && i.id !== radio.now?.id,
+  );
+  radioUpdate({
+    history,
+    queue,
+    now:
+      next ??
+      (replay ? { ...replay, id: `replay-${Date.now()}`, replay: true } : null),
+    position: 0,
+  });
+  radioProduce();
+}
 let spoken = 0;
 let voice: ReturnType<typeof setInterval> | undefined;
 const downloaded = new Set<string>(
@@ -321,6 +454,52 @@ export async function invoke<T>(
         throw "Could not download the model. Check your connection and try again.";
       voiceReady = true;
       break;
+    case "get_radio":
+    case "check_radio":
+      result = radio;
+      break;
+    case "radio_play":
+      if (!settings.radio) throw "Turn on LLM FM in Settings first.";
+      radioUpdate({ onAir: true, playing: true });
+      if (!radio.now) radioAdvance();
+      radioProduce();
+      result = radio;
+      break;
+    case "radio_pause":
+      radioUpdate({ playing: false });
+      result = radio;
+      break;
+    case "radio_off":
+      clearTimeout(radioMaking);
+      radioUpdate({ onAir: false, playing: false, making: null });
+      result = radio;
+      break;
+    case "radio_skip":
+      radioAdvance();
+      result = radio;
+      break;
+    case "radio_volume":
+      radio = { ...radio, volume: args?.volume as number };
+      break;
+    case "radio_direction":
+      radioUpdate({ direction: args?.direction as Radio["direction"] });
+      result = radio;
+      break;
+    case "radio_request": {
+      const text = String(args?.text ?? "").trim();
+      if (!text) throw "Type what you would like to hear.";
+      if (radio.requests.filter((r) => !r.answeredBy).length >= 3)
+        throw "Three requests are already waiting. Try again after the next song.";
+      radioUpdate({
+        requests: [
+          ...radio.requests,
+          { id: crypto.randomUUID(), text, createdAt: Date.now() },
+        ].slice(-4),
+      });
+      radioProduce();
+      result = radio;
+      break;
+    }
     case "get_cleanup_status":
       result = cleanupStatus;
       break;

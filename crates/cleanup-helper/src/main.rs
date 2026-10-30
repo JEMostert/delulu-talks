@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use delulu_cleanup::{max_tokens, prompt, sanitize, split_reply, Reply, Request};
+use delulu_cleanup::{max_tokens, prompt, sanitize, split_reply, Reply, Request, Sampling};
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -127,7 +127,7 @@ fn main() -> ExitCode {
     };
     for (language, text) in WARM_UPS {
         let warm = prompt(language, text, &[]).expect("warm-up prompt");
-        if let Err(e) = engine.generate(&warm, max_tokens(text)) {
+        if let Err(e) = engine.generate(&warm, max_tokens(text), None) {
             return load_failed(&mut out, &format!("warm-up: {e}"));
         }
     }
@@ -167,7 +167,7 @@ fn main() -> ExitCode {
             }
         };
         let started = Instant::now();
-        let reply = match engine.generate(&request.prompt, request.max_tokens) {
+        let reply = match engine.generate(&request.prompt, request.max_tokens, request.sampling) {
             Ok((text, truncated)) => Reply::Result {
                 id: request.id,
                 text,
@@ -210,7 +210,7 @@ fn once(
         return ExitCode::SUCCESS;
     };
     let started = Instant::now();
-    let (raw, truncated) = match engine.generate(&rendered, max_tokens(text)) {
+    let (raw, truncated) = match engine.generate(&rendered, max_tokens(text), None) {
         Ok(result) => result,
         Err(e) => {
             eprintln!("delulu-cleanup: {e}");
@@ -247,9 +247,14 @@ struct Engine<'m> {
 }
 
 impl Engine<'_> {
-    /// Greedy decode from a fresh KV cache. Returns the text and whether
-    /// `max_tokens` cut it off.
-    fn generate(&mut self, prompt: &str, max_tokens: u32) -> Result<(String, bool), String> {
+    /// Decode from a fresh KV cache: greedy, or seeded sampling when asked. Returns
+    /// the text and whether `max_tokens` cut it off.
+    fn generate(
+        &mut self,
+        prompt: &str,
+        max_tokens: u32,
+        sampling: Option<Sampling>,
+    ) -> Result<(String, bool), String> {
         self.ctx.clear_kv_cache();
         let vocab = self.model.vocab();
         let tokens = vocab.tokenize(prompt.as_bytes(), true, true);
@@ -273,10 +278,16 @@ impl Engine<'_> {
         }
 
         // Penalties then greedy = temperature 0. `sample` accepts only generated tokens.
-        let mut sampler = LlamaSampler::chain_simple([
-            LlamaSampler::penalties(self.model.n_vocab(), 64, 1.1, 0.0, 0.0),
-            LlamaSampler::greedy(),
-        ]);
+        let penalties = LlamaSampler::penalties(self.model.n_vocab(), 64, 1.1, 0.0, 0.0);
+        let mut sampler = match sampling {
+            None => LlamaSampler::chain_simple([penalties, LlamaSampler::greedy()]),
+            Some(s) => LlamaSampler::chain_simple([
+                penalties,
+                LlamaSampler::top_p(s.top_p.clamp(0.05, 1.0), 1),
+                LlamaSampler::temp(s.temperature.clamp(0.0, 2.0)),
+                LlamaSampler::dist(s.seed),
+            ]),
+        };
         let mut bytes = Vec::new();
         for _ in 0..max_tokens {
             let token = sampler.sample(&self.ctx, self.batch.n_tokens() - 1);

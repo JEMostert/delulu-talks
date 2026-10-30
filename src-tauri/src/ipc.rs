@@ -27,12 +27,14 @@ pub(crate) struct SettingsDiff {
     pub(crate) model: bool,
     pub(crate) autostart: bool,
     pub(crate) cleanup: bool,
+    pub(crate) radio: bool,
 }
 pub(crate) fn settings_diff(old: &Settings, new: &Settings) -> SettingsDiff {
     SettingsDiff {
         model: old.model != new.model,
         autostart: old.start_at_login != new.start_at_login,
         cleanup: old.cleanup != new.cleanup,
+        radio: old.radio != new.radio,
     }
 }
 pub(crate) fn apply_autostart(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
@@ -90,6 +92,9 @@ pub(crate) fn set_settings(
     }
     if !settings.smart_context {
         context::clear(&app);
+    }
+    if diff.radio && !settings.radio {
+        radio::disable(&app);
     }
     Ok(settings_view(&s, settings))
 }

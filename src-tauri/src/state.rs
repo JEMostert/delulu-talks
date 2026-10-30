@@ -31,6 +31,8 @@ pub(crate) struct Shell {
     pub(crate) cleanup: cleanup::Cleanup,
     /// What recent dictations were about; memory only.
     pub(crate) context: context::Context,
+    /// LLM FM is on air and needs the cleanup helper as its writer.
+    pub(crate) radio_writer: AtomicBool,
 }
 pub(crate) enum EngineJob {
     Load(String),
@@ -63,6 +65,7 @@ pub(crate) fn update(app: &tauri::AppHandle, f: impl FnOnce(&mut Status)) {
     );
     let _ = app.emit("status", value.clone());
     tray::set_icon(app, &value.phase);
+    radio::on_phase(app, &value.phase);
 }
 pub(crate) fn phase(app: &tauri::AppHandle, value: &str, message: Option<String>) {
     if value == "error" {

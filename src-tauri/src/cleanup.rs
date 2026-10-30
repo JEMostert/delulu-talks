@@ -391,7 +391,8 @@ impl Cleanup {
 fn want(s: &Shell) -> Want {
     let settings = s.store.settings();
     Want {
-        enabled: settings.cleanup,
+        // LLM FM's writer uses the same helper while the station is on air.
+        enabled: settings.cleanup || s.radio_writer.load(Ordering::SeqCst),
         first_run_done: s.store.state().first_run_done,
         model_ok: settings.cleanup_model_ok,
         file_ready: delulu_stt::file_ready(&s.store.models_dir(), &CLEANUP_MODEL),
@@ -648,6 +649,49 @@ pub(crate) async fn clean(app: &tauri::AppHandle, language: &str, raw: String) -
     let action = s.cleanup.update(app, |i| i.clean_failed(generation));
     run(app, action);
     choose(raw, CleanResult::Failed, ms)
+}
+
+/// LLM FM's writer: borrow the idle helper for one prompt. Dictation never waits for
+/// it; while the radio holds the helper a dictation keeps its raw text.
+pub(crate) fn generate(
+    app: &tauri::AppHandle,
+    prompt: String,
+    max_tokens: u32,
+    sampling: delulu_cleanup::Sampling,
+    timeout: Duration,
+) -> Result<String, delulu_radio::RadioError> {
+    use delulu_radio::RadioError;
+    let s = app.state::<Shell>();
+    let taken = s.cleanup.lock().take();
+    let Some((mut helper, generation)) = taken else {
+        let status = s.cleanup.status();
+        return Err(match status.state {
+            // Borrowed by a dictation, or still loading.
+            "ready" | "loading" => RadioError::Busy,
+            _ => RadioError::Unavailable(status.error.unwrap_or_else(|| {
+                "The cleanup model is not ready. Open Cleanup to download it.".into()
+            })),
+        });
+    };
+    match helper
+        .cleaner
+        .generate(prompt, max_tokens, Some(sampling), timeout)
+    {
+        Ok(output) => {
+            let stale = s.cleanup.lock().put_back(generation, helper);
+            drop(stale);
+            if output.truncated {
+                return Err(RadioError::Writer("the writer ran out of room".into()));
+            }
+            Ok(output.text)
+        }
+        Err(e) => {
+            drop(helper);
+            let action = s.cleanup.update(app, |i| i.clean_failed(generation));
+            run(app, action);
+            Err(RadioError::Writer(format!("cleanup model: {e}")))
+        }
+    }
 }
 
 #[tauri::command]
