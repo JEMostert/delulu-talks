@@ -1,7 +1,7 @@
 # Optional spoken replies: local verification
 
 Verified on Linux / PipeWire / NVIDIA CUDA, 2026-10-30. CLI installed at
-`/home/boran/.local/bin/delulu`. No commit or push performed.
+`/home/boran/.local/bin/delulu`. Implementation was subsequently prepared for the authorized v1.3.0 release.
 
 ## CLI journeys
 
@@ -41,9 +41,18 @@ mock IPC backend: optional/not-installed state, explicit Install model action,
 Installing state, Ready state, installation error and retry, and a narrow
 640×800 viewport. Existing CSS, typography, colors and row/button components are
 reused; there are no stylesheet changes. Opening Settings invokes status only.
-The native Tauri commands compile and use the actual CLI interface; the running
-installed desktop app was not replaced/restarted, so the full native GUI-to-CLI
-round trip was not exercised.
+The native debug Tauri app was subsequently exercised in a private Computer Artist
+KWin desktop with actual IPC and the installed CLI: Model not installed →
+Installing → Ready, and Ready persisted after closing and reopening. Settings/Input
+also rendered normally; microphone interaction was deliberately excluded. All
+model installation checks were offline against existing cached weights.
+An initial missing-revision fixture exposed an unnecessary online revision lookup;
+the final installer resolves a cached revision locally before querying the hub.
+
+The private desktop initially failed because its control socket was absent and the
+installed plugin reported a KWin version mismatch. The verification delegate used
+a task-local plugin build in `/tmp` and socket readiness handling to start its
+private desktop; no shared desktop was restarted.
 
 Screenshots from the verification session:
 
@@ -71,3 +80,17 @@ CPU; English Turbo speech. Speech jobs serialize with one another, not unrelated
 GPU applications. Startup loads the model anew each time. No audible listening
 quality assessment was performed, by request. A hard SIGKILL may leave a private
 temporary directory, but the inference child receives a parent-death signal.
+
+Native screenshots:
+
+- Not installed: `/home/boran/.local/state/computer-artist/environments/voice-ipc-check/output/2026-10-30_19-53-58-537902Z-d68fb9/captures/app/fa5c2db5600943838a08d177c156eb02.png`
+- Installing: `/home/boran/.local/state/computer-artist/environments/voice-ipc-check/output/2026-10-30_19-54-03-503513Z-a47779/captures/app/4d583c0c85a649f7b200adf714c73770.png`
+- Ready after reopening: `/home/boran/.local/state/computer-artist/environments/voice-ipc-check/output/2026-10-30_19-54-37-868414Z-3e5b83/captures/app/5bdd2dcd23f84c0dbe0b143ce42c7ca1.png`
+
+Final offline cache journeys passed using an isolated cache containing only the
+nine required files and the actual upstream tree metadata: explicit installation
+with `revision: null` succeeded both with and without `refs/main`; lightweight
+setup reused the same snapshot without `refs/main`. No assets were downloaded.
+Cross-review completed three rounds with GPT-6.1 Sol high: APPROVE. C1 (cache
+probe included unused upstream files) is resolved; no Broken or Medium findings
+remain.

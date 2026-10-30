@@ -20,17 +20,41 @@ def imports():
     return ChatterboxTurboTTS
 
 
+REQUIRED_FILES = [
+    "conds.pt", "ve.safetensors", "t3_turbo_v1.safetensors",
+    "s3gen_meanflow.safetensors", "tokenizer_config.json", "vocab.json",
+    "merges.txt", "added_tokens.json", "special_tokens_map.json",
+]
+
 if mode in ("setup", "install"):
     imports()  # Check dependencies without allocating a model on the GPU.
-    from huggingface_hub import HfApi, snapshot_download
+    from huggingface_hub import HfApi, snapshot_download, constants
+    from huggingface_hub.errors import LocalEntryNotFoundError
     revision = config.get("revision")
-    if mode == "install":
-        revision = revision or HfApi().model_info("ResembleAI/chatterbox-turbo").sha
+    if not revision:
+        try:
+            cached = snapshot_download(
+                repo_id="ResembleAI/chatterbox-turbo", local_files_only=True,
+                allow_patterns=REQUIRED_FILES,
+            )
+            revision = Path(cached).name
+        except LocalEntryNotFoundError:
+            # Downloads pinned to a commit need not create a refs/main entry.
+            # Reuse a complete snapshot from this official repo's cache in that
+            # case, considering only Turbo's required files, never unused assets.
+            snapshots = Path(constants.HF_HUB_CACHE) / "models--ResembleAI--chatterbox-turbo" / "snapshots"
+            candidates = [p for p in snapshots.glob("*")
+                          if len(p.name) == 40 and all(c in "0123456789abcdef" for c in p.name)
+                          and all((p / name).is_file() for name in REQUIRED_FILES)]
+            if candidates:
+                revision = max(candidates, key=lambda p: p.stat().st_mtime).name
+    if mode == "install" and not revision:
+        revision = HfApi().model_info("ResembleAI/chatterbox-turbo").sha
     try:
         model_dir = snapshot_download(
             repo_id="ResembleAI/chatterbox-turbo", revision=revision,
             local_files_only=mode == "setup",
-            allow_patterns=["conds.pt", "ve.safetensors", "t3_turbo_v1.safetensors", "s3gen_meanflow.safetensors", "tokenizer_config.json", "vocab.json", "merges.txt", "added_tokens.json", "special_tokens_map.json"],
+            allow_patterns=REQUIRED_FILES,
         )
     except Exception:
         if mode != "setup":
@@ -40,7 +64,7 @@ if mode in ("setup", "install"):
         config.update(model_dir="", revision=revision)
         Path(config_path).write_text(json.dumps(config, indent=2) + "\n")
         sys.exit(0)
-    for name in ("conds.pt", "ve.safetensors", "t3_turbo_v1.safetensors", "s3gen_meanflow.safetensors", "tokenizer_config.json", "vocab.json", "merges.txt", "added_tokens.json", "special_tokens_map.json"):
+    for name in REQUIRED_FILES:
         if not (Path(model_dir) / name).is_file():
             if mode == "setup":
                 config.update(model_dir="", revision=revision)
