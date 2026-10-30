@@ -239,28 +239,62 @@ impl Comfy {
         }
     }
 
-    /// The prompt id the Comfy CLI recorded for an earlier submit of `workflow`.
-    pub fn find_submitted(&self, workflow: &Path) -> Result<Option<String>, RadioError> {
+    /// The prompt id of an earlier submit of `workflow` whose outcome was unknown:
+    /// the Comfy CLI's record first, then ComfyUI's own queue and history, matched by
+    /// the job's unique output `prefix`. `Ok(None)` only when the server answered and
+    /// holds no such prompt; anything uncertain is an error, so nothing is resubmitted.
+    pub fn find_submitted(
+        &self,
+        workflow: &Path,
+        prefix: &str,
+    ) -> Result<Option<String>, RadioError> {
         let mut args = vec![
             "jobs".into(),
             "ls".into(),
             "--local-only".into(),
             "--limit".into(),
-            "50".into(),
+            "500".into(),
         ];
         args.extend(self.target());
-        let data = self
-            .cli(&args, Duration::from_secs(30))
-            .map_err(|e| RadioError::Music(e.to_string()))?;
         let wanted = workflow.display().to_string();
-        Ok(data
-            .get("jobs")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .find(|j| j.get("workflow_path").and_then(Value::as_str) == Some(wanted.as_str()))
-            .and_then(|j| j.get("prompt_id").and_then(Value::as_str))
-            .map(str::to_string))
+        if let Ok(data) = self.cli(&args, Duration::from_secs(30)) {
+            let recorded = data
+                .get("jobs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .find(|j| j.get("workflow_path").and_then(Value::as_str) == Some(wanted.as_str()))
+                .and_then(|j| j.get("prompt_id").and_then(Value::as_str))
+                .map(str::to_string);
+            if recorded.is_some() {
+                return Ok(recorded);
+            }
+        }
+        let unavailable = |what: &str| {
+            RadioError::Unavailable(format!(
+                "ComfyUI did not answer ({what}); waiting before deciding whether the song was submitted"
+            ))
+        };
+        let queue = self.get("/queue").ok_or_else(|| unavailable("queue"))?;
+        let history = self
+            .get("/history?max_items=200")
+            .ok_or_else(|| unavailable("history"))?;
+        Ok(find_prompt(&queue, &history, prefix))
+    }
+
+    fn get(&self, path: &str) -> Option<Value> {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(10)))
+            .build()
+            .into();
+        let mut response = agent.get(&format!("{}{path}", self.url)).call().ok()?;
+        let body = response
+            .body_mut()
+            .with_config()
+            .limit(64 << 20)
+            .read_to_string()
+            .ok()?;
+        serde_json::from_str(&body).ok()
     }
 
     pub fn status(&self, prompt_id: &str) -> Result<JobState, RadioError> {
@@ -323,6 +357,35 @@ impl Comfy {
         files.sort();
         Ok(files)
     }
+}
+
+/// A queued, running or finished prompt whose graph saves under `prefix`. Queue entries
+/// and history prompts are `[number, prompt_id, graph, …]`.
+fn find_prompt(queue: &Value, history: &Value, prefix: &str) -> Option<String> {
+    let saves_here = |graph: &Value| {
+        graph.as_object().is_some_and(|nodes| {
+            nodes.values().any(|n| {
+                n.pointer("/inputs/filename_prefix").and_then(Value::as_str) == Some(prefix)
+            })
+        })
+    };
+    let entry_id = |entry: &Value| {
+        let graph = entry.get(2)?;
+        saves_here(graph)
+            .then(|| entry.get(1).and_then(Value::as_str).map(str::to_string))
+            .flatten()
+    };
+    ["queue_running", "queue_pending"]
+        .iter()
+        .filter_map(|k| queue.get(*k).and_then(Value::as_array))
+        .flatten()
+        .find_map(entry_id)
+        .or_else(|| {
+            history
+                .as_object()?
+                .values()
+                .find_map(|h| h.get("prompt").and_then(entry_id))
+        })
 }
 
 fn job_state(data: &Value) -> JobState {
@@ -483,6 +546,29 @@ mod tests {
         assert_eq!(job_state(&v("queued")), JobState::Waiting);
         assert_eq!(job_state(&v("unknown")), JobState::Unknown);
         assert!(matches!(job_state(&v("error")), JobState::Failed(_)));
+    }
+
+    #[test]
+    fn finds_an_accepted_prompt_by_its_prefix() {
+        let graph = |p: &str| serde_json::json!({ "1": { "inputs": { "filename_prefix": p } } });
+        let queue = serde_json::json!({
+            "queue_running": [[1, "other", graph("x/song")]],
+            "queue_pending": [[2, "mine", graph("delulu-radio/song-a/song")]],
+        });
+        let empty = serde_json::json!({});
+        assert_eq!(
+            find_prompt(&queue, &empty, "delulu-radio/song-a/song").as_deref(),
+            Some("mine")
+        );
+        let history = serde_json::json!({ "done": { "prompt": [3, "done", graph("delulu-radio/song-b/song")] } });
+        assert_eq!(
+            find_prompt(&empty, &history, "delulu-radio/song-b/song").as_deref(),
+            Some("done")
+        );
+        assert_eq!(
+            find_prompt(&queue, &history, "delulu-radio/song-c/song"),
+            None
+        );
     }
 
     #[test]

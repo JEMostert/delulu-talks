@@ -62,8 +62,8 @@ impl Backend for Real {
     fn submit(&self, w: &Path) -> Result<String, SubmitError> {
         self.comfy.submit(w)
     }
-    fn find_submitted(&self, w: &Path) -> Result<Option<String>, RadioError> {
-        self.comfy.find_submitted(w)
+    fn find_submitted(&self, w: &Path, prefix: &str) -> Result<Option<String>, RadioError> {
+        self.comfy.find_submitted(w, prefix)
     }
     fn status(&self, id: &str) -> Result<JobState, RadioError> {
         self.comfy.status(id)

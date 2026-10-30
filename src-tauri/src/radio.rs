@@ -175,7 +175,12 @@ fn on_player(app: &tauri::AppHandle, event: PlayerEvent) {
             let Ok(station) = radio.station() else { return };
             if station.snapshot().now.as_ref().map(|i| &i.id) == Some(&id) {
                 let next = station.advance();
-                play_item(app, next, false);
+                if radio.listening.load(Ordering::SeqCst) {
+                    play_item(app, next, false);
+                } else {
+                    // Paused just as the track ended: stay paused on the next one.
+                    radio.player.pause();
+                }
             }
         }
         PlayerEvent::Failed(message) => {
@@ -494,8 +499,8 @@ impl Backend for AppBackend {
     fn submit(&self, workflow: &Path) -> Result<String, SubmitError> {
         self.radio().comfy.submit(workflow)
     }
-    fn find_submitted(&self, workflow: &Path) -> Result<Option<String>, RadioError> {
-        self.radio().comfy.find_submitted(workflow)
+    fn find_submitted(&self, workflow: &Path, prefix: &str) -> Result<Option<String>, RadioError> {
+        self.radio().comfy.find_submitted(workflow, prefix)
     }
     fn status(&self, prompt_id: &str) -> Result<JobState, RadioError> {
         self.radio().comfy.status(prompt_id)

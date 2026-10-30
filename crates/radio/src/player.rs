@@ -106,6 +106,13 @@ impl Deck {
     }
 }
 
+/// A command with its track already prepared.
+enum Prepared {
+    Play(Result<Track, String>),
+    Preload(Result<Track, String>),
+    Other(Command),
+}
+
 enum Command {
     Play(String, Arc<Audio>),
     Preload(String, Arc<Audio>),
@@ -210,8 +217,9 @@ fn audio_thread(
     loop {
         match commands.recv_timeout(Duration::from_millis(100)) {
             Ok(command) => {
-                let mut d = lock(&deck);
-                let rate = d.rate;
+                // Resampling a whole track takes a while; never while holding the
+                // lock the output callback needs. Only this thread changes `rate`.
+                let rate = lock(&deck).rate;
                 let prepared = |id: String, audio: Arc<Audio>| -> Result<Track, String> {
                     let mut track = Track::new(id, audio);
                     if rate > 0 {
@@ -219,37 +227,46 @@ fn audio_thread(
                     }
                     Ok(track)
                 };
+                let command = match command {
+                    Command::Play(id, audio) => Prepared::Play(prepared(id, audio)),
+                    Command::Preload(id, audio) => Prepared::Preload(prepared(id, audio)),
+                    other => Prepared::Other(other),
+                };
+                let mut d = lock(&deck);
                 let result = match command {
-                    Command::Play(id, audio) => prepared(id, audio).map(|t| {
+                    Prepared::Play(track) => track.map(|t| {
                         d.current = Some(t);
                         d.next = None;
                         d.playing = true;
                         d.gain = 0.0;
                     }),
-                    Command::Preload(id, audio) => prepared(id, audio).map(|t| d.next = Some(t)),
-                    Command::Resume => {
-                        d.playing = true;
-                        Ok(())
-                    }
-                    Command::Pause => {
-                        d.playing = false;
-                        Ok(())
-                    }
-                    Command::Hold(on) => {
-                        d.hold = on;
-                        Ok(())
-                    }
-                    Command::Volume(v) => {
-                        d.volume = v;
-                        Ok(())
-                    }
-                    Command::Stop => {
-                        d.playing = false;
-                        d.current = None;
-                        d.next = None;
-                        d.gain = 0.0;
-                        Ok(())
-                    }
+                    Prepared::Preload(track) => track.map(|t| d.next = Some(t)),
+                    Prepared::Other(command) => match command {
+                        Command::Play(..) | Command::Preload(..) => Ok(()),
+                        Command::Resume => {
+                            d.playing = true;
+                            Ok(())
+                        }
+                        Command::Pause => {
+                            d.playing = false;
+                            Ok(())
+                        }
+                        Command::Hold(on) => {
+                            d.hold = on;
+                            Ok(())
+                        }
+                        Command::Volume(v) => {
+                            d.volume = v;
+                            Ok(())
+                        }
+                        Command::Stop => {
+                            d.playing = false;
+                            d.current = None;
+                            d.next = None;
+                            d.gain = 0.0;
+                            Ok(())
+                        }
+                    },
                 };
                 drop(d);
                 if let Err(e) = result {
@@ -302,14 +319,24 @@ fn open(
         .ok_or("No audio output device")?;
     let config = device.default_output_config().map_err(|e| e.to_string())?;
     let rate = config.sample_rate();
+    // No stream runs yet, but readers share the lock: prepare outside it.
+    let (mut current, mut next) = {
+        let mut d = lock(&deck);
+        (d.current.take(), d.next.take())
+    };
+    let prepared = [current.as_mut(), next.as_mut()]
+        .into_iter()
+        .flatten()
+        .try_for_each(|track| track.prepare(rate));
     {
         let mut d = lock(&deck);
-        let Deck { current, next, .. } = &mut *d;
-        for track in [current.as_mut(), next.as_mut()].into_iter().flatten() {
-            track.prepare(rate)?;
+        d.current = current;
+        d.next = next;
+        if prepared.is_ok() {
+            d.rate = rate;
         }
-        d.rate = rate;
     }
+    prepared?;
     // The server's default buffer is about two seconds, which would delay pause and
     // the dictation hold by as much; 50 ms keeps them prompt.
     let frames = (rate / 20).max(1);

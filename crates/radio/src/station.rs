@@ -44,7 +44,10 @@ pub trait Backend: Send + Sync {
         prefix: &str,
     ) -> Result<(), RadioError>;
     fn submit(&self, workflow: &Path) -> Result<String, SubmitError>;
-    fn find_submitted(&self, workflow: &Path) -> Result<Option<String>, RadioError>;
+    /// The prompt id of an earlier submit whose outcome was unknown: from the Comfy
+    /// CLI's record, else ComfyUI's queue and history (matched by `prefix`). `Ok(None)`
+    /// only when the server answered and has no such prompt.
+    fn find_submitted(&self, workflow: &Path, prefix: &str) -> Result<Option<String>, RadioError>;
     fn status(&self, prompt_id: &str) -> Result<JobState, RadioError>;
     fn cancel(&self, prompt_id: &str);
     fn download(&self, prompt_id: &str, dir: &Path) -> Result<Vec<PathBuf>, RadioError>;
@@ -378,11 +381,18 @@ impl Station {
     }
 
     fn update_job(&self, f: impl FnOnce(&mut Job)) {
+        if let Err(e) = self.try_update_job(f) {
+            log::error!("radio: {e}");
+        }
+    }
+
+    /// Like `update_job`, but the change must reach disk.
+    fn try_update_job(&self, f: impl FnOnce(&mut Job)) -> Result<(), RadioError> {
         let mut s = self.lock();
         if let Some(job) = s.job.as_mut() {
             f(job);
         }
-        self.persist(&s);
+        self.save(&s)
     }
 
     fn job_dir(&self, job: &Job) -> PathBuf {
@@ -497,15 +507,16 @@ impl Station {
         let dir = self.job_dir(job);
         let workflow = dir.join("workflow.json");
         let draft = job.draft.clone().expect("draft");
+        let prefix = format!("delulu-radio/{}/song", job.id);
         let prompt_id = match (&job.prompt_id, job.submitted) {
             (Some(id), _) => id.clone(),
-            (None, true) => match backend.find_submitted(&workflow)? {
+            (None, true) => match backend.find_submitted(&workflow, &prefix)? {
                 Some(id) => {
                     self.update_job(|j| j.prompt_id = Some(id.clone()));
                     id
                 }
                 None => {
-                    // The Comfy CLI never recorded it: it was not accepted.
+                    // ComfyUI answered and holds no such prompt: it was not accepted.
                     self.update_job(|j| j.submitted = false);
                     return Ok(Next::Continue);
                 }
@@ -516,12 +527,12 @@ impl Station {
                 }
                 std::fs::create_dir_all(&dir).map_err(|e| io(&dir, e))?;
                 let length = self.lock().direction.length.seconds();
-                let prefix = format!("delulu-radio/{}/song", job.id);
                 backend.write_workflow(&workflow, &draft, job.seed, length, &prefix)?;
-                self.update_job(|j| {
+                // Saved before submitting, so a restart never submits it again blindly.
+                self.try_update_job(|j| {
                     j.submitted = true;
                     j.step_started_at = now_ms();
-                });
+                })?;
                 match backend.submit(&workflow) {
                     Ok(id) => {
                         self.update_job(|j| j.prompt_id = Some(id));
@@ -533,7 +544,7 @@ impl Station {
                         return Err(RadioError::Unavailable(message));
                     }
                     Err(SubmitError::Uncertain(message)) => {
-                        // Resolved on the next step through the CLI's job record.
+                        // Resolved on the next step through `find_submitted`.
                         return Err(RadioError::Unavailable(message));
                     }
                 }

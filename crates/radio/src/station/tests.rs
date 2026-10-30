@@ -77,7 +77,7 @@ impl Backend for Fake {
             None => Ok("p1".into()),
         }
     }
-    fn find_submitted(&self, _: &Path) -> Result<Option<String>, RadioError> {
+    fn find_submitted(&self, _: &Path, _: &str) -> Result<Option<String>, RadioError> {
         Ok(self.found.lock().unwrap().clone())
     }
     fn status(&self, _: &str) -> Result<JobState, RadioError> {
