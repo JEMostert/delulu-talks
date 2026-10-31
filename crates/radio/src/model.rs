@@ -143,6 +143,7 @@ pub struct Item {
     pub kind: Kind,
     pub title: String,
     pub subtitle: String,
+    /// Sectioned lyrics; section tags only for instrumentals.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lyrics: Option<String>,
     /// What the presenter says, for captions.
@@ -180,6 +181,8 @@ pub struct Draft {
     /// YuE2 style prompt (songs).
     #[serde(default)]
     pub style: String,
+    /// Sectioned lyrics; for an instrumental only its section tags (the form).
+    /// `writer::conditioning_lyrics` turns this into YuE2's lyrics input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lyrics: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
