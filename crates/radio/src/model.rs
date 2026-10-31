@@ -155,7 +155,7 @@ pub struct Item {
     /// The listener request this song answered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<String>,
-    /// Models, seed, Comfy prompt id, timings, import origin.
+    /// Models, seed, device, timings, import origin.
     #[serde(default)]
     pub provenance: BTreeMap<String, String>,
 }
@@ -189,7 +189,7 @@ pub struct Draft {
 }
 
 /// The one item being made. Persisted after every step so a restart resumes it:
-/// an owned Comfy prompt is collected, never submitted twice.
+/// a written draft is kept and the music is made again from it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Job {
@@ -201,11 +201,6 @@ pub struct Job {
     pub request: Option<Request>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draft: Option<Draft>,
-    /// A `comfy run` was started; its outcome may be unknown.
-    #[serde(default)]
-    pub submitted: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prompt_id: Option<String>,
     pub started_at: i64,
     #[serde(default)]
     pub step_started_at: i64,

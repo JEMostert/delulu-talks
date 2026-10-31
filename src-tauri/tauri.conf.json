@@ -7,7 +7,7 @@
   "build": {
     "beforeDevCommand": "bun run dev:web",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build:web && bun run build:helper && bun run build:voice",
+    "beforeBuildCommand": "bun run build:web && bun run build:helper && bun run build:voice && bun run build:music",
     "frontendDist": "../dist"
   },
   "app": {
@@ -44,6 +44,7 @@
         "files": {
           "/usr/share/applications/com.joran.delulu-talks.desktop": "linux/com.joran.delulu-talks.desktop",
           "/usr/lib/delulu-talks/delulu-cleanup": "../target/release/delulu-cleanup",
+          "/usr/lib/delulu-talks/delulu-music": "../target/release/delulu-music",
           "/usr/bin/delulu": "../target/release/delulu"
         }
       },
@@ -55,6 +56,7 @@
         "files": {
           "/usr/share/applications/com.joran.delulu-talks.desktop": "linux/com.joran.delulu-talks.desktop",
           "/usr/lib/delulu-talks/delulu-cleanup": "../target/release/delulu-cleanup",
+          "/usr/lib/delulu-talks/delulu-music": "../target/release/delulu-music",
           "/usr/bin/delulu": "../target/release/delulu"
         }
       }

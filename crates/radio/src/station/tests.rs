@@ -8,10 +8,9 @@ struct Fake {
     may_start: AtomicBool,
     voice: bool,
     writes: Mutex<Vec<String>>,
-    submits: AtomicUsize,
-    submit: Mutex<Option<SubmitError>>,
-    found: Mutex<Option<String>>,
-    states: Mutex<Vec<JobState>>,
+    composes: AtomicUsize,
+    /// Outcomes for the next compose calls; empty = success.
+    outcomes: Mutex<Vec<RadioError>>,
     seconds: f64,
 }
 
@@ -21,10 +20,8 @@ impl Fake {
             may_start: AtomicBool::new(true),
             voice: false,
             writes: Mutex::new(Vec::new()),
-            submits: AtomicUsize::new(0),
-            submit: Mutex::new(None),
-            found: Mutex::new(None),
-            states: Mutex::new(Vec::new()),
+            composes: AtomicUsize::new(0),
+            outcomes: Mutex::new(Vec::new()),
             seconds: 30.0,
         }
     }
@@ -60,40 +57,20 @@ impl Backend for Fake {
         self.tone(out, 4.0);
         Ok(())
     }
-    fn write_workflow(
+    fn compose(
         &self,
-        path: &Path,
         _: &Draft,
         _: u64,
         _: u32,
-        _: &str,
-    ) -> Result<(), RadioError> {
-        std::fs::write(path, "{}").map_err(|e| RadioError::Io(e.to_string()))
-    }
-    fn submit(&self, _: &Path) -> Result<String, SubmitError> {
-        self.submits.fetch_add(1, Ordering::SeqCst);
-        match self.submit.lock().unwrap().take() {
-            Some(e) => Err(e),
-            None => Ok("p1".into()),
+        out: &Path,
+    ) -> Result<BTreeMap<String, String>, RadioError> {
+        self.composes.fetch_add(1, Ordering::SeqCst);
+        let mut outcomes = self.outcomes.lock().unwrap();
+        if !outcomes.is_empty() {
+            return Err(outcomes.remove(0));
         }
-    }
-    fn find_submitted(&self, _: &Path, _: &str) -> Result<Option<String>, RadioError> {
-        Ok(self.found.lock().unwrap().clone())
-    }
-    fn status(&self, _: &str) -> Result<JobState, RadioError> {
-        let mut states = self.states.lock().unwrap();
-        Ok(if states.is_empty() {
-            JobState::Done
-        } else {
-            states.remove(0)
-        })
-    }
-    fn cancel(&self, _: &str) {}
-    fn download(&self, _: &str, dir: &Path) -> Result<Vec<PathBuf>, RadioError> {
-        std::fs::create_dir_all(dir).unwrap();
-        let path = dir.join("song_000.wav");
-        self.tone(&path, self.seconds);
-        Ok(vec![path])
+        self.tone(out, self.seconds);
+        Ok(BTreeMap::from([("device".to_string(), "fake".to_string())]))
     }
     fn changed(&self) {}
 }
@@ -147,75 +124,55 @@ fn makes_a_song_end_to_end() {
     assert!(song.lyrics.as_deref().unwrap().contains("[Chorus]"));
     assert!((song.seconds - 30.0).abs() < 0.01);
     assert!(station.audio_path(song).is_file());
-    assert_eq!(fake.submits.load(Ordering::SeqCst), 1);
+    assert_eq!(fake.composes.load(Ordering::SeqCst), 1);
     assert_eq!(
-        song.provenance.get("promptId").map(String::as_str),
-        Some("p1")
+        song.provenance.get("device").map(String::as_str),
+        Some("fake")
     );
     // The job folder is gone once the song is ready.
     assert_eq!(std::fs::read_dir(dir.0.join("jobs")).unwrap().count(), 0);
 }
 
 #[test]
-fn restart_collects_the_owned_prompt_without_resubmitting() {
+fn restart_keeps_the_written_draft() {
     let dir = Dir::new();
     let fake = Fake::new();
-    fake.states.lock().unwrap().push(JobState::Waiting);
+    fake.outcomes.lock().unwrap().push(RadioError::Cancelled);
     {
         let station = Station::open(&dir.0).unwrap();
         station.set_on_air(true);
         station.work(&fake); // write
-        station.work(&fake); // submit
-        assert_eq!(station.work(&fake), Next::Wait(Duration::from_secs(3))); // running
-        assert_eq!(
-            station.snapshot().job.unwrap().prompt_id.as_deref(),
-            Some("p1")
-        );
+        assert_eq!(station.work(&fake), Next::Wait(Duration::from_secs(1))); // stopped
     }
     let station = Station::open(&dir.0).unwrap();
     let s = station.snapshot();
     assert!(!s.on_air);
-    assert!(s.job.as_ref().unwrap().submitted);
-    make_one(&station, &fake);
-    assert_eq!(fake.submits.load(Ordering::SeqCst), 1);
-    assert_eq!(station.snapshot().queue.len(), 1);
-}
-
-#[test]
-fn uncertain_submit_is_recovered_from_the_cli_record() {
-    let dir = Dir::new();
-    let station = Station::open(&dir.0).unwrap();
-    let fake = Fake::new();
-    *fake.submit.lock().unwrap() = Some(SubmitError::Uncertain("timeout".into()));
-    *fake.found.lock().unwrap() = Some("p9".into());
+    assert!(s.job.as_ref().unwrap().draft.is_some());
+    assert_eq!(station.work(&fake), Next::Idle);
     station.set_on_air(true);
-    station.work(&fake);
-    assert!(matches!(station.work(&fake), Next::Wait(_)));
-    assert!(station.snapshot().job.unwrap().submitted);
     make_one(&station, &fake);
-    assert_eq!(fake.submits.load(Ordering::SeqCst), 1);
-    let s = station.snapshot();
-    assert_eq!(
-        s.queue[0].provenance.get("promptId").map(String::as_str),
-        Some("p9")
-    );
+    assert_eq!(fake.writes.lock().unwrap().len(), 1);
+    assert_eq!(fake.composes.load(Ordering::SeqCst), 2);
+    assert_eq!(station.snapshot().queue.len(), 1);
+    assert_eq!(station.snapshot().stats.failures, 0);
 }
 
 #[test]
-fn rejected_submit_is_not_counted_and_resubmits() {
+fn missing_model_waits_without_counting_a_failure() {
     let dir = Dir::new();
     let station = Station::open(&dir.0).unwrap();
     let fake = Fake::new();
-    *fake.submit.lock().unwrap() = Some(SubmitError::NotSubmitted("ComfyUI is not running".into()));
+    fake.outcomes
+        .lock()
+        .unwrap()
+        .push(RadioError::Unavailable("Download the music model".into()));
     station.set_on_air(true);
     station.work(&fake);
     assert_eq!(station.work(&fake), Next::Wait(Duration::from_secs(10)));
     let s = station.snapshot();
-    assert_eq!(s.last_error.as_deref(), Some("ComfyUI is not running"));
-    assert!(!s.job.as_ref().unwrap().submitted);
+    assert_eq!(s.last_error.as_deref(), Some("Download the music model"));
     assert_eq!(s.stats.failures, 0);
     make_one(&station, &fake);
-    assert_eq!(fake.submits.load(Ordering::SeqCst), 2);
     assert!(station.snapshot().last_error.is_none());
 }
 
@@ -238,18 +195,18 @@ fn retries_once_then_cools_down() {
     let dir = Dir::new();
     let station = Station::open(&dir.0).unwrap();
     let fake = Fake::new();
-    fake.states.lock().unwrap().extend([
-        JobState::Failed("oom".into()),
-        JobState::Failed("oom".into()),
+    fake.outcomes.lock().unwrap().extend([
+        RadioError::Music("broken".into()),
+        RadioError::Music("broken".into()),
     ]);
     station.set_on_air(true);
-    for _ in 0..3 {
+    for _ in 0..2 {
         station.work(&fake);
     }
     let s = station.snapshot();
     assert_eq!(s.job.as_ref().unwrap().attempt, 1);
     assert!(s.job.as_ref().unwrap().draft.is_none());
-    for _ in 0..3 {
+    for _ in 0..2 {
         station.work(&fake);
     }
     let s = station.snapshot();

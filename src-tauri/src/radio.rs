@@ -3,23 +3,28 @@
 //! music or speech step starts while you dictate or just after.
 use super::*;
 use delulu_radio::{
-    comfy::{self, Comfy, ComfyReadiness, JobState, SubmitError},
     model::{Draft, Request},
+    music::{self, Composer, Song, Stage},
     voice::Voice,
     Backend, Direction, Item, Kind, Player, PlayerEvent, RadioError, Station,
 };
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Quiet time after dictation before the radio may start a GPU step.
 const DICTATION_QUIET: Duration = Duration::from_secs(8);
 /// A brief or script is a few hundred tokens; this only catches a stuck helper.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(120);
+/// Progress of a song in the making is sent to the window at most this often.
+const PROGRESS_EVERY: Duration = Duration::from_secs(1);
 
 pub(crate) struct Radio {
     station: Option<Arc<Station>>,
     open_error: Option<String>,
     player: Player,
-    comfy: Comfy,
+    pub(crate) composer: Composer,
+    /// Where the song being made is; memory only.
+    stage: Mutex<Option<Stage>>,
     voice: Voice,
     /// Play was pressed: start playing as soon as something is ready.
     listening: AtomicBool,
@@ -34,11 +39,23 @@ pub(crate) struct Radio {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Readiness {
-    comfy: ComfyReadiness,
+    music: MusicReadiness,
     /// The cleanup model and helper exist.
     writer: bool,
     voice: bool,
-    install_command: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MusicReadiness {
+    /// The `delulu-music` helper is installed.
+    engine: bool,
+    /// The YuE2 model is downloaded.
+    model: bool,
+    /// The compute device the helper found, e.g. "Vulkan0 (NVIDIA GeForce RTX 5060 Ti)".
+    device: Option<String>,
+    /// False when only the processor is available (far too slow for songs).
+    gpu: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -82,6 +99,9 @@ pub(crate) struct Making {
     title: Option<String>,
     request: Option<String>,
     since: i64,
+    /// Music only: overall 0..1 and the phase (score, composing, shaping, rendering).
+    progress: Option<f32>,
+    phase: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -124,7 +144,8 @@ impl Radio {
             station,
             open_error,
             player,
-            comfy: Comfy::from_env(),
+            composer: Composer::default(),
+            stage: Mutex::new(None),
             voice: Voice::new(),
             listening: AtomicBool::new(false),
             control: Mutex::new(()),
@@ -138,15 +159,14 @@ impl Radio {
         self.control.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn station(&self) -> Result<&Arc<Station>, String> {
+    pub(crate) fn station(&self) -> Result<&Arc<Station>, String> {
         self.station
             .as_ref()
             .ok_or_else(|| self.open_error.clone().unwrap_or_default())
     }
 }
 
-/// Start the production loop. It sleeps until the station goes on air, except to
-/// collect a song already submitted to ComfyUI before a restart.
+/// Start the production loop. It sleeps until the station goes on air.
 pub(crate) fn start(app: &tauri::AppHandle) {
     let radio = app.state::<Radio>();
     let Some(station) = radio.station.clone() else {
@@ -160,12 +180,14 @@ pub(crate) fn start(app: &tauri::AppHandle) {
         .expect("spawn radio");
 }
 
-/// Dictation phase changes: hold playback while recording, remember the time.
+/// Dictation phase changes: hold playback while recording, pause the music engine
+/// while dictation needs the graphics card, remember the time.
 pub(crate) fn on_phase(app: &tauri::AppHandle, phase: &str) {
     let Some(radio) = app.try_state::<Radio>() else {
         return;
     };
     let dictating = matches!(phase, "recording" | "transcribing");
+    radio.composer.pause(dictating || phase == "loadingModel");
     if dictating {
         *radio
             .last_dictation
@@ -277,7 +299,14 @@ fn view(app: &tauri::AppHandle) -> RadioView {
     let s = station.snapshot();
     let position = radio.player.position();
     let now_id = s.now.as_ref().map(|i| i.id.as_str());
+    let stage = radio
+        .stage
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     let making = s.job.as_ref().map(|j| Making {
+        progress: stage.as_ref().map(|s| s.fraction),
+        phase: stage.as_ref().map(|s| s.phase.clone()),
         kind: j.kind,
         step: match (&j.draft, j.kind) {
             (None, _) => "writing",
@@ -302,11 +331,7 @@ fn view(app: &tauri::AppHandle) -> RadioView {
         now: s.now.as_ref().map(ItemView::from),
         queue: s.queue.iter().map(ItemView::from).collect(),
         history: s.history.iter().take(12).map(ItemView::from).collect(),
-        making: if s.on_air || s.job.as_ref().is_some_and(|j| j.submitted) {
-            making
-        } else {
-            None
-        },
+        making: if s.on_air { making } else { None },
         last_error: s.last_error.clone(),
         requests: pending,
         direction: s.direction.clone(),
@@ -340,18 +365,41 @@ pub(crate) fn disable(app: &tauri::AppHandle) {
         radio.player.stop();
     }
     let _ = set_on_air(app, false);
+    radio.composer.stop();
     emit(app);
+}
+
+/// Ask the helper which device it would use.
+fn probe(helper: &Path) -> Option<(String, bool)> {
+    let output = std::process::Command::new(helper)
+        .arg("probe")
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    let line = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(line.lines().last()?).ok()?;
+    Some((
+        value["device"].as_str()?.to_string(),
+        value["gpu"].as_bool().unwrap_or(false),
+    ))
 }
 
 fn check(app: &tauri::AppHandle) -> Readiness {
     let radio = app.state::<Radio>();
     let s = app.state::<Shell>();
+    let helper = music::helper_path();
+    let found = helper.as_deref().and_then(probe);
     let readiness = Readiness {
-        comfy: radio.comfy.readiness(),
+        music: MusicReadiness {
+            engine: helper.is_some(),
+            model: delulu_stt::file_ready(&s.store.models_dir(), &crate::music::MUSIC_MODEL),
+            gpu: found.as_ref().is_some_and(|f| f.1),
+            device: found.map(|f| f.0),
+        },
         writer: delulu_cleanup::helper_path().is_some()
             && delulu_stt::file_ready(&s.store.models_dir(), &cleanup::CLEANUP_MODEL),
         voice: radio.voice.ready(),
-        install_command: comfy::install_command(),
     };
     *radio.readiness.lock().unwrap_or_else(|e| e.into_inner()) = Some(readiness.clone());
     readiness
@@ -408,7 +456,7 @@ pub(crate) fn radio_pause(app: tauri::AppHandle) -> RadioView {
     view(&app)
 }
 
-/// Stop playing and stop making new items. A song already in ComfyUI is still collected.
+/// Stop playing and making. A song in the making stops; its words are kept.
 #[tauri::command]
 pub(crate) fn radio_off(app: tauri::AppHandle) -> Result<RadioView, String> {
     let radio = app.state::<Radio>();
@@ -418,6 +466,7 @@ pub(crate) fn radio_off(app: tauri::AppHandle) -> Result<RadioView, String> {
         radio.player.pause();
     }
     set_on_air(&app, false)?;
+    radio.composer.stop();
     Ok(view(&app))
 }
 
@@ -509,32 +558,42 @@ impl Backend for AppBackend {
             .voice
             .speak(text, out, &move || stop.load(Ordering::SeqCst))
     }
-    fn write_workflow(
+    fn compose(
         &self,
-        path: &Path,
         draft: &Draft,
         seed: u64,
         max_seconds: u32,
-        prefix: &str,
-    ) -> Result<(), RadioError> {
-        self.radio()
-            .comfy
-            .write_workflow(path, draft, seed, max_seconds, prefix)
-    }
-    fn submit(&self, workflow: &Path) -> Result<String, SubmitError> {
-        self.radio().comfy.submit(workflow)
-    }
-    fn find_submitted(&self, workflow: &Path, prefix: &str) -> Result<Option<String>, RadioError> {
-        self.radio().comfy.find_submitted(workflow, prefix)
-    }
-    fn status(&self, prompt_id: &str) -> Result<JobState, RadioError> {
-        self.radio().comfy.status(prompt_id)
-    }
-    fn cancel(&self, prompt_id: &str) {
-        self.radio().comfy.cancel(prompt_id);
-    }
-    fn download(&self, prompt_id: &str, dir: &Path) -> Result<Vec<PathBuf>, RadioError> {
-        self.radio().comfy.download(prompt_id, dir)
+        out: &Path,
+    ) -> Result<BTreeMap<String, String>, RadioError> {
+        let helper = music::helper_path().ok_or_else(|| {
+            RadioError::Unavailable("The music engine (delulu-music) is not installed.".into())
+        })?;
+        let models = self.app.state::<Shell>().store.models_dir();
+        if !delulu_stt::file_ready(&models, &crate::music::MUSIC_MODEL)
+            || crate::music::changing(&self.app)
+        {
+            return Err(RadioError::Unavailable(
+                "Download the music model in Settings → Models to make songs.".into(),
+            ));
+        }
+        let radio = self.radio();
+        let song = Song::new(draft, seed, max_seconds);
+        let mut sent = Instant::now();
+        let result = radio.composer.compose(
+            &helper,
+            &models.join(music::MODEL_FILE),
+            &song,
+            out,
+            &mut |stage| {
+                *radio.stage.lock().unwrap_or_else(|e| e.into_inner()) = Some(stage);
+                if sent.elapsed() >= PROGRESS_EVERY {
+                    sent = Instant::now();
+                    emit(&self.app);
+                }
+            },
+        );
+        *radio.stage.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        result.map(|report| music::provenance(&report))
     }
     fn changed(&self) {
         let radio = self.radio();
@@ -554,10 +613,11 @@ impl Backend for AppBackend {
     }
 }
 
-/// Stop the production loop and any speech child on quit.
+/// Stop the production loop, the music engine and any speech child on quit.
 pub(crate) fn shutdown(app: &tauri::AppHandle) {
     if let Some(radio) = app.try_state::<Radio>() {
         radio.stop.store(true, Ordering::SeqCst);
+        radio.composer.stop();
         if let Ok(station) = radio.station() {
             station.wake();
         }

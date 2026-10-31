@@ -18,6 +18,7 @@ mod dictation;
 mod engine;
 mod ipc;
 mod models;
+mod music;
 mod radio;
 mod state;
 mod tray;
@@ -28,6 +29,7 @@ use dictation::*;
 use engine::*;
 use ipc::*;
 use models::*;
+use music::{cancel_music_download, delete_music_model, download_music_model, get_music_model};
 use radio::{
     check_radio, get_radio, radio_direction, radio_off, radio_pause, radio_play, radio_request,
     radio_skip, radio_volume,
@@ -129,6 +131,7 @@ pub fn run() {
             let settings = s.store.settings();
             let radio = radio::Radio::new(&handle, s.store.data_dir().join("radio"));
             app.manage(radio);
+            app.manage(music::MusicModel::default());
             radio::start(&handle);
             apply_autostart(&handle, settings.start_at_login).map_err(std::io::Error::other)?;
             let engine_app = handle.clone();
@@ -208,7 +211,11 @@ pub fn run() {
             radio_skip,
             radio_volume,
             radio_direction,
-            radio_request
+            radio_request,
+            get_music_model,
+            download_music_model,
+            cancel_music_download,
+            delete_music_model
         ])
         .build(tauri::generate_context!())
         .expect("Tauri failed")

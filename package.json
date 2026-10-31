@@ -12,7 +12,8 @@
     "test": "bun test ui",
     "format": "prettier --write ui package.json vite.config.ts tsconfig.json",
     "format:check": "prettier --check ui package.json vite.config.ts tsconfig.json",
-    "build:voice": "cargo build --release --locked -p delulu-voice-cli"
+    "build:voice": "cargo build --release --locked -p delulu-voice-cli",
+    "build:music": "cargo build --release --locked -p delulu-music"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",

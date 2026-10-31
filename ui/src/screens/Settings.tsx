@@ -5,6 +5,7 @@ import {
   AppearanceSection,
   DictationSection,
   InputSection,
+  ModelsSection,
   RadioSection,
   VoiceSection,
 } from "./SettingsSections";
@@ -38,6 +39,12 @@ const sections: {
     title: "Delulu FM",
     lead: "A radio station of new songs.",
     Body: RadioSection,
+  },
+  {
+    id: "models",
+    title: "Models",
+    lead: "Optional models you download and delete yourself.",
+    Body: ModelsSection,
   },
   {
     id: "appearance",

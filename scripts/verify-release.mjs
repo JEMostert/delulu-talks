@@ -26,7 +26,13 @@ try {
   const help = execFileSync(cli, ['speak', '--help'], { env, encoding: 'utf8' });
   if (!help.includes('--bundled-voice'))
     throw new Error('Packaged CLI lacks speak --bundled-voice, which Delulu FM needs');
-  console.log(`Verified packaged ${version}: no model required`);
+  // Delulu FM's music engine is native and ships in the package: it must start and
+  // find a compute device without ComfyUI, Python or a downloaded model.
+  const engine = join(temp, 'usr/lib/delulu-talks/delulu-music');
+  const probe = JSON.parse(execFileSync(engine, ['probe'], { env, encoding: 'utf8' }).trim().split('\n').pop());
+  if (typeof probe.device !== 'string' || !probe.device)
+    throw new Error('Packaged delulu-music did not report a compute device');
+  console.log(`Verified packaged ${version}: no model required; music engine on ${probe.device}`);
 } finally {
   await rm(temp, { recursive: true, force: true });
 }

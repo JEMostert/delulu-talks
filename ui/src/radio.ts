@@ -13,44 +13,38 @@ export type ReadinessStep = {
   help: string;
   /** The station runs without it. */
   optional?: boolean;
-  /** Can't be checked yet (ComfyUI is not running), so not shown as a problem. */
+  /** Can't be checked yet, so not shown as a problem. */
   unknown?: boolean;
+  /** Fixed in Settings → Models. */
+  models?: boolean;
 };
 
 /** What Delulu FM needs, in the order to fix it. */
 export function readinessSteps(r: RadioReadiness | null): ReadinessStep[] {
   if (!r) return [];
-  const { comfy } = r;
+  const { music } = r;
   return [
     {
-      id: "cli",
-      label: "Comfy CLI",
-      ok: comfy.cli,
-      help: "Install the comfy command (comfy-cli) and make sure it is on your PATH.",
+      id: "engine",
+      label: "Music engine",
+      ok: music.engine,
+      help: "The delulu-music engine is missing from this install. Reinstall Delulu Talks.",
     },
     {
-      id: "server",
-      label: "ComfyUI running",
-      ok: comfy.server,
-      help: `Start your ComfyUI, for example with comfy launch --background. Looking at ${comfy.url}.`,
+      id: "gpu",
+      label: "Graphics card",
+      ok: music.engine && music.gpu,
+      unknown: !music.engine,
+      help: music.engine
+        ? "No graphics card with Vulkan was found. Songs need one; on the processor alone a song would take hours."
+        : "Checked once the music engine is installed.",
     },
     {
-      id: "nodes",
-      label: "YuE2 in ComfyUI",
-      ok: comfy.server && comfy.nodes,
-      unknown: !comfy.server,
-      help: comfy.server
-        ? "Update ComfyUI to a version with the native YuE2 nodes, then restart it."
-        : "Checked once ComfyUI is running.",
-    },
-    {
-      id: "checkpoint",
-      label: "YuE2 model",
-      ok: comfy.server && comfy.checkpoint,
-      unknown: !comfy.server,
-      help: comfy.server
-        ? "Install the YuE2 checkpoint into ComfyUI with the Comfy CLI command below."
-        : "Checked once ComfyUI is running.",
+      id: "model",
+      label: "Music model (YuE2, about 4 GB)",
+      ok: music.model,
+      models: true,
+      help: "Download it in Settings → Models. Nothing downloads until you ask.",
     },
     {
       id: "writer",
@@ -68,6 +62,14 @@ export function readinessSteps(r: RadioReadiness | null): ReadinessStep[] {
   ];
 }
 
+const phases: Record<string, string> = {
+  loading: "loading the model",
+  score: "writing the score",
+  composing: "composing",
+  shaping: "shaping the sound",
+  rendering: "rendering",
+};
+
 /** What production is doing, for the status line. */
 export function makingText(radio: Radio, now: number): string | null {
   const m = radio.making;
@@ -81,8 +83,14 @@ export function makingText(radio: Radio, now: number): string | null {
         : m.request
           ? `Writing a song for your request…`
           : "Writing the next song…";
-    case "music":
-      return `Composing ${title} in ComfyUI · ${since} s`;
+    case "music": {
+      const phase = m.phase ? phases[m.phase] : null;
+      const percent =
+        m.progress != null ? ` · ${Math.round(m.progress * 100)}%` : "";
+      return phase
+        ? `Making ${title}: ${phase}${percent}`
+        : `Making ${title} · ${since} s`;
+    }
     case "voice":
       return `Recording the host · ${since} s`;
   }

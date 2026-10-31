@@ -14,7 +14,7 @@ import { clock, makingText, radioPresets, readinessSteps } from "../radio";
 type View = { radio: ipc.Radio; at: number };
 
 export function Radio({ state }: { state: AppState }) {
-  const { setNotice, copy } = state;
+  const { setNotice } = state;
   const [view, setView] = useState<View>();
   const [now, setNow] = useState(() => Date.now());
   const [checking, setChecking] = useState(false);
@@ -147,10 +147,8 @@ export function Radio({ state }: { state: AppState }) {
       {radio.readiness && !musicReady && (
         <Readiness
           steps={steps}
-          command={radio.readiness.installCommand}
           checking={checking}
           onCheck={() => void check()}
-          onCopy={copy}
         />
       )}
       <section className="well radio-deck" aria-label="Now playing">
@@ -283,21 +281,13 @@ function TitleBlock() {
 
 function Readiness({
   steps,
-  command,
   checking,
   onCheck,
-  onCopy,
 }: {
   steps: ReturnType<typeof readinessSteps>;
-  command: string;
   checking: boolean;
   onCheck: () => void;
-  onCopy: (text: string) => void;
 }) {
-  // Only offer the download once a running ComfyUI says the model is missing.
-  const missingCheckpoint = steps.some(
-    (s) => s.id === "checkpoint" && !s.ok && !s.unknown,
-  );
   return (
     <section className="group radio-ready" aria-labelledby="radio-ready-title">
       <div className="radio-ready-head">
@@ -328,18 +318,6 @@ function Readiness({
           </li>
         ))}
       </ul>
-      {missingCheckpoint && (
-        <div className="radio-command">
-          <code>{command}</code>
-          <button
-            type="button"
-            className="button quiet"
-            onClick={() => onCopy(command)}
-          >
-            <Icon name="copy" size={16} /> Copy
-          </button>
-        </div>
-      )}
     </section>
   );
 }

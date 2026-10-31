@@ -1,18 +1,20 @@
-//! Run the station headless with the real writer, ComfyUI and voice, to measure it.
+//! Run the station headless with the real writer, music engine and voice, to measure it.
 //! `cargo run --release -p delulu-radio --example station -- <data-dir> <items> [host]`
-//! Needs ComfyUI running with YuE2, the Gemma model and `delulu-cleanup`.
+//! Needs the Gemma and YuE2 models in the app's models folder, `delulu-cleanup` and
+//! `delulu-music` (set `DELULU_CLEANUP_HELPER` / `DELULU_MUSIC_HELPER` in a checkout).
 use delulu_cleanup::{Cleaner, Sampling};
-use delulu_radio::comfy::{Comfy, JobState, SubmitError};
 use delulu_radio::model::{Direction, Draft, Host};
+use delulu_radio::music::{self, Composer, Song};
 use delulu_radio::voice::Voice;
 use delulu_radio::{Backend, Next, RadioError, Station};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 struct Real {
     cleaner: Mutex<Cleaner>,
-    comfy: Comfy,
+    composer: Composer,
     voice: Voice,
 }
 
@@ -49,30 +51,23 @@ impl Backend for Real {
         eprintln!("[speak] {} ms", started.elapsed().as_millis());
         r
     }
-    fn write_workflow(
+    fn compose(
         &self,
-        p: &Path,
-        d: &Draft,
+        draft: &Draft,
         seed: u64,
-        s: u32,
-        prefix: &str,
-    ) -> Result<(), RadioError> {
-        self.comfy.write_workflow(p, d, seed, s, prefix)
-    }
-    fn submit(&self, w: &Path) -> Result<String, SubmitError> {
-        self.comfy.submit(w)
-    }
-    fn find_submitted(&self, w: &Path, prefix: &str) -> Result<Option<String>, RadioError> {
-        self.comfy.find_submitted(w, prefix)
-    }
-    fn status(&self, id: &str) -> Result<JobState, RadioError> {
-        self.comfy.status(id)
-    }
-    fn cancel(&self, id: &str) {
-        self.comfy.cancel(id)
-    }
-    fn download(&self, id: &str, dir: &Path) -> Result<Vec<PathBuf>, RadioError> {
-        self.comfy.download(id, dir)
+        max_seconds: u32,
+        out: &Path,
+    ) -> Result<BTreeMap<String, String>, RadioError> {
+        let helper = music::helper_path().expect("delulu-music helper");
+        let model = models().join(music::MODEL_FILE);
+        let song = Song::new(draft, seed, max_seconds);
+        let report = self
+            .composer
+            .compose(&helper, &model, &song, out, &mut |s| {
+                eprintln!("[music] {} {:.0}%", s.phase, s.fraction * 100.0)
+            })?;
+        eprintln!("[music] {report}");
+        Ok(music::provenance(&report))
     }
     fn changed(&self) {}
 }
@@ -94,10 +89,9 @@ fn main() {
     );
     let backend = Real {
         cleaner: Mutex::new(cleaner),
-        comfy: Comfy::from_env(),
+        composer: Composer::default(),
         voice: Voice::new(),
     };
-    eprintln!("[readiness] {:?}", backend.comfy.readiness());
     let station = Station::open(&root).expect("open");
     if host {
         station.set_direction(Direction {
@@ -150,8 +144,11 @@ fn main() {
     );
 }
 
-fn dirs_model() -> PathBuf {
+fn models() -> PathBuf {
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap();
     home.join(".local/share/delulu-talks/models")
-        .join(delulu_cleanup::MODEL_FILE)
+}
+
+fn dirs_model() -> PathBuf {
+    models().join(delulu_cleanup::MODEL_FILE)
 }
