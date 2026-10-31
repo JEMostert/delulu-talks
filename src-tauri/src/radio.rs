@@ -579,11 +579,18 @@ impl Backend for AppBackend {
         let radio = self.radio();
         let song = Song::new(draft, seed, max_seconds);
         let mut sent = Instant::now();
+        // Off air, quitting or the model removed while the helper was starting.
+        let cancelled = || {
+            radio.stop.load(Ordering::SeqCst)
+                || radio.station().map_or(true, |s| !s.on_air())
+                || !delulu_stt::file_ready(&models, &crate::music::MUSIC_MODEL)
+        };
         let result = radio.composer.compose(
             &helper,
             &models.join(music::MODEL_FILE),
             &song,
             out,
+            &cancelled,
             &mut |stage| {
                 *radio.stage.lock().unwrap_or_else(|e| e.into_inner()) = Some(stage);
                 if sent.elapsed() >= PROGRESS_EVERY {

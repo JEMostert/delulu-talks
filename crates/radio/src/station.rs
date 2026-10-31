@@ -215,6 +215,10 @@ impl Station {
         self.notify();
     }
 
+    pub fn on_air(&self) -> bool {
+        self.lock().on_air
+    }
+
     pub fn set_direction(&self, direction: Direction) -> Direction {
         let mut s = self.lock();
         s.direction = direction.sanitized();

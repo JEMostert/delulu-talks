@@ -63,7 +63,7 @@ impl Backend for Real {
         let song = Song::new(draft, seed, max_seconds);
         let report = self
             .composer
-            .compose(&helper, &model, &song, out, &mut |s| {
+            .compose(&helper, &model, &song, out, &|| false, &mut |s| {
                 eprintln!("[music] {} {:.0}%", s.phase, s.fraction * 100.0)
             })?;
         eprintln!("[music] {report}");

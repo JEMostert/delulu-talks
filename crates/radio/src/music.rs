@@ -116,6 +116,8 @@ fn stage(event: &Value, last: f32) -> Stage {
 
 #[derive(Default)]
 struct Running {
+    /// A song is being made, from before the helper starts until it is reaped.
+    active: bool,
     pid: Option<u32>,
     paused: bool,
     stopped: bool,
@@ -141,9 +143,12 @@ impl Composer {
     /// Stop the song being made, if any. It counts as cancelled, not failed.
     pub fn stop(&self) {
         let mut r = self.lock();
-        if let Some(pid) = r.pid {
+        if r.active {
+            // A helper still starting is killed as soon as it is registered.
             r.stopped = true;
-            signal(pid, libc::SIGKILL);
+            if let Some(pid) = r.pid {
+                signal(pid, libc::SIGKILL);
+            }
         }
     }
 
@@ -163,15 +168,32 @@ impl Composer {
     }
 
     /// Make one song into `out` (48 kHz WAV). Returns the helper's report.
+    /// `cancelled` is checked once the helper is registered, so a stop that came
+    /// just before this call still takes effect.
     pub fn compose(
         &self,
         helper: &Path,
         model: &Path,
         song: &Song,
         out: &Path,
+        cancelled: &dyn Fn() -> bool,
         progress: &mut dyn FnMut(Stage),
     ) -> Result<Value, RadioError> {
-        let mut child = Command::new(helper)
+        {
+            let mut r = self.lock();
+            r.active = true;
+            r.stopped = false;
+        }
+        let mut command = Command::new(helper);
+        // The helper dies with the app, even if the app is killed.
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            command.pre_exec(|| {
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                Ok(())
+            });
+        }
+        let spawned = command
             .arg("generate")
             .arg("--model")
             .arg(model)
@@ -180,15 +202,25 @@ impl Composer {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                RadioError::Unavailable(format!("The music engine could not start: {e}"))
-            })?;
+            .spawn();
+        let mut child = match spawned {
+            Ok(child) => child,
+            Err(e) => {
+                self.lock().active = false;
+                return Err(RadioError::Unavailable(format!(
+                    "The music engine could not start: {e}"
+                )));
+            }
+        };
         {
             let mut r = self.lock();
             r.pid = Some(child.id());
-            r.stopped = false;
-            if r.paused {
+            if cancelled() {
+                r.stopped = true;
+            }
+            if r.stopped {
+                signal(child.id(), libc::SIGKILL);
+            } else if r.paused {
                 signal(child.id(), libc::SIGSTOP);
             }
         }
@@ -250,6 +282,7 @@ impl Composer {
         let stopped = {
             let mut r = self.lock();
             r.pid = None;
+            r.active = false;
             std::mem::take(&mut r.stopped)
         };
         let stderr = tail.join().unwrap_or_default();
@@ -346,9 +379,14 @@ mod tests {
         );
         let mut stages = Vec::new();
         let report = Composer::default()
-            .compose(&helper, &dir, &song(), &dir.join("o.wav"), &mut |s| {
-                stages.push(s)
-            })
+            .compose(
+                &helper,
+                &dir,
+                &song(),
+                &dir.join("o.wav"),
+                &|| false,
+                &mut |s| stages.push(s),
+            )
             .unwrap();
         assert_eq!(report["seconds"], 30);
         assert_eq!(stages.len(), 1);
@@ -358,7 +396,14 @@ mod tests {
             r#"printf '%s\n' '{"error":"out of memory for a compute graph"}'; exit 1"#,
         );
         let err = Composer::default()
-            .compose(&failing, &dir, &song(), &dir.join("o.wav"), &mut |_| {})
+            .compose(
+                &failing,
+                &dir,
+                &song(),
+                &dir.join("o.wav"),
+                &|| false,
+                &mut |_| {},
+            )
             .unwrap_err();
         assert!(matches!(err, RadioError::Unavailable(_)), "{err:?}");
         std::fs::remove_dir_all(dir).unwrap();
@@ -381,11 +426,45 @@ mod tests {
         });
         let started = Instant::now();
         let err = composer
-            .compose(&helper, &dir, &song(), &dir.join("o.wav"), &mut |_| {})
+            .compose(
+                &helper,
+                &dir,
+                &song(),
+                &dir.join("o.wav"),
+                &|| false,
+                &mut |_| {},
+            )
             .unwrap_err();
         stopper.join().unwrap();
         assert!(matches!(err, RadioError::Cancelled), "{err:?}");
         assert!(started.elapsed() < Duration::from_secs(10));
+        // Off air before the helper registered: it is stopped at once.
+        let started = Instant::now();
+        let err = composer
+            .compose(
+                &helper,
+                &dir,
+                &song(),
+                &dir.join("o.wav"),
+                &|| true,
+                &mut |_| {},
+            )
+            .unwrap_err();
+        assert!(matches!(err, RadioError::Cancelled), "{err:?}");
+        assert!(started.elapsed() < Duration::from_secs(10));
+        // A stop while nothing was being made does not cancel the next song.
+        composer.stop();
+        let ok = fake_helper(&dir, r#"printf '%s\n' '{"done":{}}'"#);
+        assert!(composer
+            .compose(
+                &ok,
+                &dir,
+                &song(),
+                &dir.join("o.wav"),
+                &|| false,
+                &mut |_| {}
+            )
+            .is_ok());
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
