@@ -247,13 +247,151 @@ export function RadioSection({ state }: Props) {
       <Row
         label="Show Delulu FM"
         htmlFor="radio"
-        help="An optional radio station made on this computer. It needs your own ComfyUI with YuE2; nothing is downloaded or started until you press Play."
+        help="An optional radio station made on this computer. It needs the music model (Settings → Models) and a graphics card; nothing is made or played until you press Play."
       >
         <Switch
           id="radio"
           checked={settings.radio}
           onChange={(value) => void update("radio", value)}
         />
+      </Row>
+    </div>
+  );
+}
+
+const gigabytes = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
+
+/** Optional models you download and delete yourself. */
+export function ModelsSection() {
+  const [model, setModel] = useState<ipc.MusicModel | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    ipc
+      .getMusicModel()
+      .then(setModel)
+      .catch((e) => setError(errorText(e)));
+    const off = ipc.onMusicModel((m) => {
+      setModel(m);
+      setError(null);
+    });
+    return () => void off.then((f) => f());
+  }, []);
+
+  const run = async (action: () => Promise<ipc.MusicModel | void>) => {
+    setError(null);
+    try {
+      const next = await action();
+      if (next) setModel(next);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
+  const percent =
+    model?.state === "downloading" && model.totalBytes
+      ? Math.round((model.doneBytes / model.totalBytes) * 100)
+      : 0;
+  const problem = error ?? model?.error ?? null;
+  return (
+    <div className="group">
+      <Row
+        stack
+        label={`Music model${model ? ` · ${model.label}` : ""}`}
+        help={
+          <>
+            <span>
+              Makes Delulu FM&apos;s songs on your graphics card. About{" "}
+              {gigabytes(model?.totalBytes ?? 3.96e9)} on disk; only needed for
+              Delulu FM. License: {model?.license ?? "CC BY-NC 4.0"}{" "}
+              (non-commercial use).
+            </span>
+            {problem && (
+              <span className="row-error" role="alert">
+                {problem}
+              </span>
+            )}
+          </>
+        }
+      >
+        <div className="model">
+          {!model ? null : model.state === "downloading" ? (
+            <div className="model-state">
+              <div
+                className="bar"
+                role="progressbar"
+                aria-label="Music model download"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={percent}
+              >
+                <span style={{ transform: `scaleX(${percent / 100})` }} />
+              </div>
+              <span className="model-note tabular">
+                {model.doneBytes ? `${percent}%` : "Starting…"}
+              </span>
+              <button
+                type="button"
+                className="button quiet"
+                onClick={() => void run(ipc.cancelMusicDownload)}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : model.state === "ready" ? (
+            <div className="model-state">
+              <span className="model-ready">
+                <Icon name="check" size={16} />
+                On this computer
+              </span>
+              <span className="model-note">{gigabytes(model.totalBytes)}</span>
+              {confirming ? (
+                <>
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => {
+                      setConfirming(false);
+                      void run(ipc.deleteMusicModel);
+                    }}
+                  >
+                    Delete it
+                  </button>
+                  <button
+                    type="button"
+                    className="button quiet"
+                    onClick={() => setConfirming(false)}
+                  >
+                    Keep
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="button quiet"
+                  onClick={() => setConfirming(true)}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="model-state">
+              <span className="model-note">
+                {gigabytes(model.totalBytes)} download, then it works offline
+              </span>
+              <button
+                type="button"
+                className="button primary"
+                onClick={() => void run(ipc.downloadMusicModel)}
+              >
+                <Icon name="download" size={16} />
+                {model.error ? "Try again" : "Download"}
+              </button>
+            </div>
+          )}
+        </div>
       </Row>
     </div>
   );

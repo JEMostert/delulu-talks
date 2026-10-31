@@ -1,11 +1,10 @@
 //! The station: a bounded programme ahead of playback, one item made at a time.
 //!
 //! Production and playback have separate clocks. Every production step is persisted,
-//! so a restart continues the same job: a song already submitted to ComfyUI is
-//! collected, never submitted twice. New items are only made while the station is on
-//! air, and only start while the host says the GPU may be used (not while dictating).
+//! so a restart continues the same job from its last finished step. New items are
+//! only made while the station is on air, and only start while the host says the GPU
+//! may be used (not while dictating).
 use crate::audio::{self, Audio};
-use crate::comfy::{JobState, SubmitError};
 use crate::model::*;
 use crate::writer;
 use crate::RadioError;
@@ -21,13 +20,13 @@ pub const BUFFER_ITEMS: usize = 3;
 pub const BUFFER_SECONDS: f64 = 360.0;
 pub const BUFFER_SONGS: usize = 2;
 const RETRY_COOLDOWN_MS: i64 = 20_000;
-/// A YuE2 job that runs longer than this is given up (it is cancelled, it is ours).
-const MUSIC_DEADLINE_MS: i64 = 20 * 60_000;
 const MIN_SONG_SECONDS: f64 = 20.0;
 const MIN_BREAK_SECONDS: f64 = 2.0;
+/// The fade on a song the model had not finished when it reached its length.
+const FADE_SECONDS: f64 = 4.0;
 
 /// What production needs from the app. Implemented by Delulu with the cleanup
-/// helper, the Comfy CLI and `delulu speak`; by fakes in tests.
+/// helper, the native music helper and `delulu speak`; by fakes in tests.
 pub trait Backend: Send + Sync {
     /// Continue a rendered Gemma prompt. `Err(Busy)` when dictation holds the model.
     fn write(&self, prompt: String, max_tokens: u32, seed: u32) -> Result<String, RadioError>;
@@ -35,22 +34,16 @@ pub trait Backend: Send + Sync {
     fn may_start(&self) -> bool;
     fn voice_ready(&self) -> bool;
     fn speak(&self, text: &str, out: &Path) -> Result<(), RadioError>;
-    fn write_workflow(
+    /// Make the music for `draft` into `out`. `Err(Cancelled)` when stopped (off air
+    /// or quitting), `Err(Unavailable)` when the model or helper is missing. Returns
+    /// what to record about how it was made.
+    fn compose(
         &self,
-        path: &Path,
         draft: &Draft,
         seed: u64,
         max_seconds: u32,
-        prefix: &str,
-    ) -> Result<(), RadioError>;
-    fn submit(&self, workflow: &Path) -> Result<String, SubmitError>;
-    /// The prompt id of an earlier submit whose outcome was unknown: from the Comfy
-    /// CLI's record, else ComfyUI's queue and history (matched by `prefix`). `Ok(None)`
-    /// only when the server answered and has no such prompt.
-    fn find_submitted(&self, workflow: &Path, prefix: &str) -> Result<Option<String>, RadioError>;
-    fn status(&self, prompt_id: &str) -> Result<JobState, RadioError>;
-    fn cancel(&self, prompt_id: &str);
-    fn download(&self, prompt_id: &str, dir: &Path) -> Result<Vec<PathBuf>, RadioError>;
+        out: &Path,
+    ) -> Result<BTreeMap<String, String>, RadioError>;
     /// Something visible changed.
     fn changed(&self);
 }
@@ -76,8 +69,6 @@ pub struct Station {
     root: PathBuf,
     state: Mutex<State>,
     wake: Wake,
-    /// Lost-job polls in a row; memory only.
-    unknown_polls: Mutex<u32>,
 }
 
 fn io(path: &Path, e: std::io::Error) -> RadioError {
@@ -116,7 +107,6 @@ impl Station {
             root: root.to_path_buf(),
             state: Mutex::new(state),
             wake: Wake::default(),
-            unknown_polls: Mutex::new(0),
         };
         {
             let mut s = station.lock();
@@ -223,6 +213,10 @@ impl Station {
         self.persist(&s);
         drop(s);
         self.notify();
+    }
+
+    pub fn on_air(&self) -> bool {
+        self.lock().on_air
     }
 
     pub fn set_direction(&self, direction: Direction) -> Direction {
@@ -372,8 +366,6 @@ impl Station {
             seed: uuid::Uuid::new_v4().as_u64_pair().0,
             request,
             draft: None,
-            submitted: false,
-            prompt_id: None,
             started_at: now_ms(),
             step_started_at: now_ms(),
             writer_ms: 0,
@@ -419,12 +411,10 @@ impl Station {
                 s.job = Some(job);
                 self.persist(&s);
             }
-            let job = s.job.clone().expect("job");
-            // An owned Comfy prompt is collected even off air.
-            if !s.on_air && !job.submitted {
+            if !s.on_air {
                 return Next::Idle;
             }
-            job
+            s.job.clone().expect("job")
         };
         let result = if job.draft.is_none() {
             self.write(backend, &job)
@@ -504,91 +494,28 @@ impl Station {
     }
 
     fn music(&self, backend: &dyn Backend, job: &Job) -> Result<Next, RadioError> {
-        let dir = self.job_dir(job);
-        let workflow = dir.join("workflow.json");
-        let draft = job.draft.clone().expect("draft");
-        let prefix = format!("delulu-radio/{}/song", job.id);
-        let prompt_id = match (&job.prompt_id, job.submitted) {
-            (Some(id), _) => id.clone(),
-            (None, true) => match backend.find_submitted(&workflow, &prefix)? {
-                Some(id) => {
-                    self.update_job(|j| j.prompt_id = Some(id.clone()));
-                    id
-                }
-                None => {
-                    // ComfyUI answered and holds no such prompt: it was not accepted.
-                    self.update_job(|j| j.submitted = false);
-                    return Ok(Next::Continue);
-                }
-            },
-            (None, false) => {
-                if !backend.may_start() {
-                    return Err(RadioError::Busy);
-                }
-                std::fs::create_dir_all(&dir).map_err(|e| io(&dir, e))?;
-                let length = self.lock().direction.length.seconds();
-                backend.write_workflow(&workflow, &draft, job.seed, length, &prefix)?;
-                // Saved before submitting, so a restart never submits it again blindly.
-                self.try_update_job(|j| {
-                    j.submitted = true;
-                    j.step_started_at = now_ms();
-                })?;
-                match backend.submit(&workflow) {
-                    Ok(id) => {
-                        self.update_job(|j| j.prompt_id = Some(id));
-                        backend.changed();
-                        return Ok(Next::Wait(Duration::from_secs(3)));
-                    }
-                    Err(SubmitError::NotSubmitted(message)) => {
-                        self.update_job(|j| j.submitted = false);
-                        return Err(RadioError::Unavailable(message));
-                    }
-                    Err(SubmitError::Uncertain(message)) => {
-                        // Resolved on the next step through `find_submitted`.
-                        return Err(RadioError::Unavailable(message));
-                    }
-                }
-            }
-        };
-        match backend.status(&prompt_id)? {
-            JobState::Waiting => {
-                *self.unknown_polls.lock().unwrap_or_else(|e| e.into_inner()) = 0;
-                if now_ms() - job.step_started_at > MUSIC_DEADLINE_MS {
-                    backend.cancel(&prompt_id);
-                    return Err(RadioError::Music(
-                        "YuE2 took too long and was stopped".into(),
-                    ));
-                }
-                Ok(Next::Wait(Duration::from_secs(3)))
-            }
-            JobState::Failed(message) => Err(RadioError::Music(format!("YuE2: {message}"))),
-            JobState::Unknown => {
-                let mut polls = self.unknown_polls.lock().unwrap_or_else(|e| e.into_inner());
-                *polls += 1;
-                if *polls >= 3 {
-                    *polls = 0;
-                    return Err(RadioError::Music(
-                        "ComfyUI no longer knows this song".into(),
-                    ));
-                }
-                Ok(Next::Wait(Duration::from_secs(3)))
-            }
-            JobState::Done => {
-                let files = backend.download(&prompt_id, &dir.join("download"))?;
-                let file = files
-                    .first()
-                    .ok_or_else(|| RadioError::Music("YuE2 returned no audio".into()))?;
-                let mut audio = audio::decode(file)?;
-                let checks = audio::check(&audio, MIN_SONG_SECONDS)?;
-                audio::normalize(&mut audio);
-                let mut provenance = BTreeMap::new();
-                provenance.insert("music".into(), crate::comfy::CHECKPOINT.into());
-                provenance.insert("promptId".into(), prompt_id.clone());
-                self.finish(job, &draft, audio, checks.seconds, provenance)?;
-                backend.changed();
-                Ok(Next::Continue)
-            }
+        if !backend.may_start() {
+            return Err(RadioError::Busy);
         }
+        let draft = job.draft.clone().expect("draft");
+        let dir = self.job_dir(job);
+        std::fs::create_dir_all(&dir).map_err(|e| io(&dir, e))?;
+        let out = dir.join("song.wav");
+        let _ = std::fs::remove_file(&out);
+        let length = self.lock().direction.length.seconds();
+        self.update_job(|j| j.step_started_at = now_ms());
+        backend.changed();
+        let provenance = backend.compose(&draft, job.seed, length, &out)?;
+        let mut audio = audio::decode(&out)?;
+        let checks = audio::check(&audio, MIN_SONG_SECONDS)?;
+        audio::normalize(&mut audio);
+        // Cut at the length limit rather than ended by the model: end softly.
+        if provenance.get("truncated").is_some_and(|v| v == "true") {
+            audio::fade_out(&mut audio, FADE_SECONDS);
+        }
+        self.finish(job, &draft, audio, checks.seconds, provenance)?;
+        backend.changed();
+        Ok(Next::Continue)
     }
 
     fn speak(&self, backend: &dyn Backend, job: &Job) -> Result<Next, RadioError> {
@@ -679,8 +606,6 @@ impl Station {
                 j.attempt = 1;
                 j.seed = j.seed.wrapping_mul(6364136223846793005).wrapping_add(1);
                 j.draft = None;
-                j.submitted = false;
-                j.prompt_id = None;
                 j.step_started_at = now_ms();
             }
         } else {

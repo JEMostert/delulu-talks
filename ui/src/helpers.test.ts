@@ -191,33 +191,24 @@ test("Delulu FM clock, readiness and status text", async () => {
   expect(clock(151.9)).toBe("2:31");
   expect(readinessSteps(null)).toEqual([]);
   const steps = readinessSteps({
-    comfy: {
-      cli: true,
-      server: false,
-      nodes: true,
-      checkpoint: true,
-      url: "u",
-    },
+    music: { engine: true, model: false, device: "CPU", gpu: false },
     writer: true,
     voice: false,
-    installCommand: "c",
   });
-  // A server that is down cannot vouch for its nodes or models.
   expect(steps.filter((s) => !s.ok).map((s) => s.id)).toEqual([
-    "server",
-    "nodes",
-    "checkpoint",
+    "gpu",
+    "model",
     "voice",
   ]);
   expect(steps.find((s) => s.id === "voice")?.optional).toBe(true);
-  // With ComfyUI down, nodes and model are unknown, not problems to fix.
-  expect(steps.filter((s) => s.unknown).map((s) => s.id)).toEqual([
-    "nodes",
-    "checkpoint",
-  ]);
-  expect(steps.find((s) => s.id === "checkpoint")?.help).toBe(
-    "Checked once ComfyUI is running.",
-  );
+  expect(steps.find((s) => s.id === "model")?.models).toBe(true);
+  // Without the engine the card cannot be checked: unknown, not a problem.
+  const noEngine = readinessSteps({
+    music: { engine: false, model: true, device: null, gpu: false },
+    writer: true,
+    voice: true,
+  });
+  expect(noEngine.filter((s) => s.unknown).map((s) => s.id)).toEqual(["gpu"]);
   const radio = {
     making: {
       kind: "song",
@@ -225,9 +216,33 @@ test("Delulu FM clock, readiness and status text", async () => {
       title: "Copper",
       request: null,
       since: 0,
+      progress: null,
+      phase: null,
     },
   } as unknown as import("./ipc").Radio;
+  expect(makingText(radio, 12_400)).toBe("Making “Copper” · 12 s");
+  radio.making!.phase = "shaping";
+  radio.making!.progress = 0.537;
   expect(makingText(radio, 12_400)).toBe(
-    "Composing “Copper” in ComfyUI · 12 s",
+    "Making “Copper”: shaping the sound · 54%",
   );
+});
+test("Delulu FM lyrics split into sections, older run-on tags too", async () => {
+  const { lyricSections, hasWords } = await import("./radio");
+  expect(
+    lyricSections(
+      "[Intro]\n\n[Verse 1]\nLight on the window\nin a tutu.[Chorus] Copper\nmorning\n\n[Outro]",
+    ),
+  ).toEqual([
+    { tag: "Intro", lines: [] },
+    { tag: "Verse 1", lines: ["Light on the window", "in a tutu."] },
+    { tag: "Chorus", lines: ["Copper", "morning"] },
+    { tag: "Outro", lines: [] },
+  ]);
+  expect(lyricSections("one\ntwo\n\nthree")).toEqual([
+    { tag: null, lines: ["one", "two"] },
+    { tag: null, lines: ["three"] },
+  ]);
+  // An instrumental keeps only its form.
+  expect(hasWords(lyricSections("[Intro]\n\n[Verse]\n\n[Outro]"))).toBe(false);
 });

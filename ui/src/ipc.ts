@@ -226,16 +226,18 @@ export type RadioRequest = {
   answeredBy?: string;
 };
 export type RadioReadiness = {
-  comfy: {
-    cli: boolean;
-    server: boolean;
-    nodes: boolean;
-    checkpoint: boolean;
-    url: string;
+  music: {
+    /** The delulu-music engine is installed. */
+    engine: boolean;
+    /** The YuE2 model is downloaded (Settings → Models). */
+    model: boolean;
+    /** The compute device the engine found. */
+    device: string | null;
+    /** A graphics card; the processor alone is far too slow. */
+    gpu: boolean;
   };
   writer: boolean;
   voice: boolean;
-  installCommand: string;
 };
 export type Radio = {
   available: boolean;
@@ -256,6 +258,9 @@ export type Radio = {
     title: string | null;
     request: string | null;
     since: number;
+    /** Music only: overall 0..1. */
+    progress: number | null;
+    phase: "loading" | "score" | "composing" | "shaping" | "rendering" | null;
   } | null;
   lastError: string | null;
   requests: RadioRequest[];
@@ -276,6 +281,23 @@ export const radioDirection = (direction: RadioDirection) =>
   invoke<Radio>("radio_direction", { direction });
 export const radioRequest = (text: string) =>
   invoke<Radio>("radio_request", { text });
+export type MusicModel = {
+  state: "missing" | "downloading" | "ready";
+  label: string;
+  license: string;
+  doneBytes: number;
+  totalBytes: number;
+  error: string | null;
+};
+export const getMusicModel = () => invoke<MusicModel>("get_music_model");
+export const downloadMusicModel = () =>
+  invoke<MusicModel>("download_music_model");
+export const cancelMusicDownload = () => invoke<void>("cancel_music_download");
+export const deleteMusicModel = () => invoke<MusicModel>("delete_music_model");
+export const onMusicModel = (
+  fn: (value: MusicModel) => void,
+): Promise<UnlistenFn> =>
+  listen<MusicModel>("music-model", (e) => fn(e.payload));
 export const onRadio = (fn: (value: Radio) => void): Promise<UnlistenFn> =>
   listen<Radio>("radio", (e) => fn(e.payload));
 export const onRadioError = (

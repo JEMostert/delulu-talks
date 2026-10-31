@@ -7,6 +7,7 @@ import type {
   Shelf,
   Radio,
   RadioItem,
+  MusicModel,
 } from "./ipc";
 import { splitTerms } from "./helpers";
 import type {
@@ -210,8 +211,30 @@ let history: HistoryEntry[] = params.has("empty")
       ),
     );
 
-// Delulu FM: ?radio shows it, ?comfy=off|nodes|model leaves a readiness step open.
-const comfyParam = params.get("comfy");
+// Delulu FM: ?radio shows it; ?music=missing leaves the model to download and
+// ?music=cpu pretends there is no graphics card.
+const musicParam = params.get("music");
+let musicModel: MusicModel = {
+  state: musicParam === "missing" ? "missing" : "ready",
+  label: "YuE2 3B",
+  license: "CC BY-NC 4.0",
+  doneBytes: 0,
+  totalBytes: 3960938800,
+  error: null,
+};
+let musicTimer: ReturnType<typeof setInterval> | undefined;
+function musicUpdate(patch: Partial<MusicModel>) {
+  musicModel = { ...musicModel, ...patch };
+  emit("music-model", musicModel);
+  radio = {
+    ...radio,
+    readiness: {
+      ...radio.readiness!,
+      music: { ...radio.readiness!.music, model: musicModel.state === "ready" },
+    },
+  };
+  emit("radio", radio);
+}
 const radioSong = (n: number, title: string, subtitle: string): RadioItem => ({
   id: `song-${n}`,
   kind: "song",
@@ -255,24 +278,22 @@ let radio: Radio = {
   lastSongSeconds: null,
   lastSongAudioSeconds: null,
   readiness: {
-    comfy: {
-      cli: true,
-      server: comfyParam !== "off",
-      nodes: comfyParam !== "off" && comfyParam !== "nodes",
-      checkpoint: comfyParam === null,
-      url: "http://127.0.0.1:8188",
+    music: {
+      engine: true,
+      model: musicParam !== "missing",
+      device:
+        musicParam === "cpu" ? "CPU" : "Vulkan0 (NVIDIA GeForce RTX 5060 Ti)",
+      gpu: musicParam !== "cpu",
     },
     writer: true,
     voice: params.get("voice") === "ready",
-    installCommand:
-      "comfy model download --url https://huggingface.co/Comfy-Org/YuE2/resolve/main/checkpoints/yue2_3b_int8_convrot.safetensors --relative-path models/checkpoints --filename yue2_3b_int8_convrot.safetensors",
   },
 };
 let radioSongs = 0;
 let radioMaking: ReturnType<typeof setTimeout> | undefined;
 const radioReady = () => {
-  const c = radio.readiness!.comfy;
-  return c.cli && c.server && c.nodes && c.checkpoint;
+  const m = radio.readiness!.music;
+  return m.engine && m.gpu && m.model;
 };
 function radioUpdate(patch: Partial<Radio>) {
   radio = { ...radio, ...patch };
@@ -291,6 +312,8 @@ function radioProduce() {
       title: null,
       request: request?.text ?? null,
       since: Date.now(),
+      progress: null,
+      phase: null,
     },
   });
   radioMaking = setTimeout(() => {
@@ -301,6 +324,8 @@ function radioProduce() {
         title: `Song ${n}`,
         request: request?.text ?? null,
         since: Date.now(),
+        progress: 0.54,
+        phase: "shaping",
       },
     });
     radioMaking = setTimeout(() => {
@@ -453,6 +478,30 @@ export async function invoke<T>(
       if (params.get("voice") === "install-error")
         throw "Could not download the model. Check your connection and try again.";
       voiceReady = true;
+      break;
+    case "get_music_model":
+      result = musicModel;
+      break;
+    case "download_music_model":
+      if (musicModel.state === "missing") {
+        musicUpdate({ state: "downloading", doneBytes: 0, error: null });
+        musicTimer = setInterval(() => {
+          const done = musicModel.doneBytes + 400_000_000;
+          if (done >= musicModel.totalBytes) {
+            clearInterval(musicTimer);
+            musicUpdate({ state: "ready", doneBytes: 0 });
+          } else musicUpdate({ doneBytes: done });
+        }, 400);
+      }
+      result = musicModel;
+      break;
+    case "cancel_music_download":
+      clearInterval(musicTimer);
+      musicUpdate({ state: "missing", doneBytes: 0 });
+      break;
+    case "delete_music_model":
+      musicUpdate({ state: "missing" });
+      result = musicModel;
       break;
     case "get_radio":
     case "check_radio":

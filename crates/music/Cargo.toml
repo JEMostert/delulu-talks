@@ -1,0 +1,15 @@
+[package]
+name = "delulu-music"
+version.workspace = true
+edition.workspace = true
+[[bin]]
+name = "delulu-music"
+path = "src/main.rs"
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+# ggml from the same llama.cpp build as the cleanup helper, Vulkan on.
+llama-cpp-sys-2 = { version = "=0.1.160", features = ["vulkan"] }
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
+half = "2"
+hound = "3.5"

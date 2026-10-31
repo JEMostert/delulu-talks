@@ -147,6 +147,18 @@ pub fn normalize(audio: &mut Audio) {
     }
 }
 
+/// Fade the last `seconds` out (an equal-power curve), for music cut at its length limit.
+pub fn fade_out(audio: &mut Audio, seconds: f64) {
+    let frames = audio.frames();
+    let fade = ((seconds * audio.rate as f64) as usize).min(frames);
+    for i in 0..fade {
+        let gain = ((fade - i) as f32 / fade as f32 * std::f32::consts::FRAC_PI_2).sin();
+        let f = frames - fade + i;
+        audio.samples[f * 2] *= gain;
+        audio.samples[f * 2 + 1] *= gain;
+    }
+}
+
 /// Write 16-bit stereo PCM atomically.
 pub fn write_wav(path: &Path, audio: &Audio) -> Result<(), RadioError> {
     let spec = hound::WavSpec {
@@ -170,7 +182,8 @@ pub fn write_wav(path: &Path, audio: &Audio) -> Result<(), RadioError> {
     std::fs::rename(&temp, path).map_err(|e| RadioError::Io(format!("{}: {e}", path.display())))
 }
 
-/// Interleaved stereo at `to` Hz.
+/// Interleaved stereo at `to` Hz, with the resampler's delay removed so the result
+/// lines up with the source and has its exact length.
 pub fn resample(audio: &Audio, to: u32) -> Result<Vec<f32>, RadioError> {
     if audio.rate == to {
         return Ok(audio.samples.clone());
@@ -185,26 +198,39 @@ pub fn resample(audio: &Audio, to: u32) -> Result<Vec<f32>, RadioError> {
         .iter()
         .map(|f| (f[0], f[1]))
         .unzip();
-    let mut out = Vec::with_capacity(
-        (audio.samples.len() as f64 * to as f64 / audio.rate as f64) as usize + 4096,
-    );
+    let delay = resampler.output_delay();
+    let wanted = (left.len() as f64 * to as f64 / audio.rate as f64).round() as usize;
+    let mut out = Vec::with_capacity((delay + wanted + 2 * CHUNK) * 2);
     let push = |out: &mut Vec<f32>, block: Vec<Vec<f32>>| {
         for (l, r) in block[0].iter().zip(&block[1]) {
             out.extend([*l, *r]);
         }
     };
+    let error = |e: rubato::ResampleError| bad(format!("resample: {e}"));
     let mut pos = 0;
     while pos + CHUNK <= left.len() {
         let block = resampler
             .process(&[&left[pos..pos + CHUNK], &right[pos..pos + CHUNK]], None)
-            .map_err(|e| bad(format!("resample: {e}")))?;
+            .map_err(error)?;
         push(&mut out, block);
         pos += CHUNK;
     }
-    let block = resampler
-        .process_partial(Some(&[&left[pos..], &right[pos..]]), None)
-        .map_err(|e| bad(format!("resample: {e}")))?;
-    push(&mut out, block);
+    // rubato rejects an empty partial chunk, so a whole-chunk track has no tail call.
+    if pos < left.len() {
+        let block = resampler
+            .process_partial(Some(&[&left[pos..], &right[pos..]]), None)
+            .map_err(error)?;
+        push(&mut out, block);
+    }
+    // Zeros push the delayed end of the track out of the resampler.
+    while out.len() / 2 < delay + wanted {
+        let block = resampler
+            .process_partial::<&[f32]>(None, None)
+            .map_err(error)?;
+        push(&mut out, block);
+    }
+    out.drain(..delay * 2);
+    out.truncate(wanted * 2);
     Ok(out)
 }
 
@@ -247,18 +273,46 @@ mod tests {
     }
 
     #[test]
+    fn fade_out_ends_in_silence() {
+        let mut audio = tone(48000, 2.0, 0.5);
+        let before = audio.samples[1000];
+        fade_out(&mut audio, 1.0);
+        assert_eq!(audio.samples[1000], before);
+        let tail = &audio.samples[audio.samples.len() - 200..];
+        assert!(tail.iter().all(|s| s.abs() < 0.01));
+    }
+
+    #[test]
     fn normalize_sets_peak() {
         let mut audio = tone(48000, 1.0, 0.2);
         normalize(&mut audio);
         assert!((audio.peak() - 0.9).abs() < 1e-3);
     }
 
+    /// rubato's `process_partial` rejects an empty tail ("Insufficient buffer size 0
+    /// for input channel 0, expected 1024"), which every track whose length is a
+    /// multiple of the chunk hit at the end of resampling.
+    #[test]
+    fn resample_handles_whole_chunks_and_short_tracks() {
+        for frames in [1024 * 40, 1024, 1, 1023, 1025, 0] {
+            let audio = Audio {
+                rate: 44100,
+                samples: vec![0.25; frames * 2],
+            };
+            let out = resample(&audio, 48000).unwrap_or_else(|e| panic!("{frames}: {e}"));
+            let expected = (frames as f64 * 48000.0 / 44100.0).round() as usize;
+            assert_eq!(out.len(), expected * 2, "{frames}");
+        }
+    }
+
     #[test]
     fn resample_scales_length() {
         let audio = tone(44100, 1.0, 0.5);
         let out = resample(&audio, 48000).unwrap();
-        let frames = out.len() / 2;
-        assert!((frames as i64 - 48000).abs() < 2048, "{frames}");
+        assert_eq!(out.len() / 2, 48000);
+        // The delay is trimmed: the tone lines up with the source.
+        let peak = |s: &[f32]| s.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(peak(&out[..200]) > 0.2 && peak(&out[out.len() - 200..]) > 0.2);
     }
 
     impl Audio {

@@ -72,6 +72,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: bundles
+      # The packaged music engine links the Vulkan loader; it then falls back to the CPU.
+      - run: sudo apt-get update && sudo apt-get install -y libvulkan1
       - run: node scripts/verify-release.mjs bundles
       - env:
           GH_TOKEN: ${{ github.token }}

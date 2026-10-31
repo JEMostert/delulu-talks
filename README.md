@@ -35,15 +35,16 @@ You need a Wayland desktop (GNOME or KDE Plasma), a Vulkan graphics driver, and 
 
 ## Delulu FM
 
-An optional radio station made on this computer, hidden until you turn on **Settings → Delulu FM**. Every song is new: the cleanup model writes its title, style and lyrics, [YuE2](https://huggingface.co/m-a-p/YuE2-3B) composes it in your own ComfyUI, and between songs a host speaks through voice replies with Chatterbox Turbo's bundled voice. The **Delulu FM** page shows what is on air with its lyrics, what comes next and what played, and lets you skip, request a song or steer the mood and style.
+An optional radio station made on this computer, hidden until you turn on **Settings → Delulu FM**. Every song is new: the cleanup model writes its title, style and lyrics, [YuE2](https://huggingface.co/m-a-p/YuE2-3B) composes it on your graphics card, and between songs a host speaks through voice replies with Chatterbox Turbo's bundled voice. The **Delulu FM** page shows what is on air with its lyrics, what comes next and what played, and lets you skip, request a song or steer the mood and style.
 
-- **What it needs:** ComfyUI with the native YuE2 nodes and the `yue2_3b_int8_convrot.safetensors` checkpoint, the [Comfy CLI](https://github.com/Comfy-Org/comfy-cli) (`comfy`) on your PATH, and the cleanup model. The host is optional; without the voice replies model the station plays music only. The page lists anything missing, with the Comfy CLI command that installs the checkpoint. Delulu never downloads music models and never starts, stops or unloads ComfyUI.
-- **Dictation comes first:** the radio goes quiet while you hold the hotkey, and no new writing, music or speech starts while you dictate or just after. Work already running in ComfyUI keeps running.
+- **What it needs:** a graphics card with a Vulkan driver, the music model and the cleanup model. The music model (YuE2 3B, 4 GB, CC BY-NC 4.0) is an explicit download in **Settings → Models**, where you can also cancel or delete it; nothing downloads on its own and dictation never needs it. The host is optional; without the voice replies model the station plays music only.
+- **Native:** YuE2 runs in `delulu-music`, a helper shipped with the app that runs the model on ggml with Vulkan (no Python, no ComfyUI). It loads one part of the model at a time and exits after each song, so its graphics memory is free between songs. See [the parity and performance notes](docs/benchmarks/yue2-native/README.md).
+- **Dictation comes first:** the radio goes quiet while you hold the hotkey, the music engine pauses while you dictate, and no new writing, music or speech starts while you dictate or just after.
 - **Buffering:** a short programme is made ahead of playback (two songs or six minutes, at most three items). When nothing new is ready it replays a recent song. Playback is native, so it keeps playing with the window closed.
-- **Recovery:** every step is saved. After a restart, a song already submitted to ComfyUI is collected, never submitted twice. A failed song is retried once, then the station pauses briefly.
-- **Storage:** songs, history and settings live in `~/.local/share/delulu-talks/radio`.
+- **Recovery:** every step is saved. A song stopped half-way (off air, quit) keeps its words and is composed again later. A failed song is retried once, then the station pauses briefly.
+- **Storage:** songs, history and settings live in `~/.local/share/delulu-talks/radio`, the music model in `~/.local/share/delulu-talks/models`.
 
-On an RTX 4090 with a warm ComfyUI, writing a song takes about 1.5 s and YuE2 about 30 s for a 2–3 minute song. Generation and playback share the graphics card with dictation; leave room for both or keep the station off.
+On an RTX 5060 Ti (16 GB), a 2:38 song took 2:47 to make, peaking at 3.7 GB of graphics memory and 1.1 GB of RAM. Generation and playback share the graphics card with dictation; leave room for both or keep the station off.
 
 ## Memory and disk
 
@@ -60,7 +61,8 @@ You need Rust, Bun, the GTK and WebKitGTK development libraries, ALSA, Vulkan he
 ```sh
 bun install
 bun run build:helper   # the delulu-cleanup helper (llama.cpp with Vulkan)
-DELULU_CLEANUP_HELPER=$PWD/target/release/delulu-cleanup bun run dev
+bun run build:music    # the delulu-music helper (YuE2 on ggml with Vulkan)
+DELULU_CLEANUP_HELPER=$PWD/target/release/delulu-cleanup DELULU_MUSIC_HELPER=$PWD/target/release/delulu-music bun run dev
 ```
 
 `tauri dev` does not build the cleanup helper and only looks for it next to the debug binary, so point `DELULU_CLEANUP_HELPER` at the release build (or link it into `target/debug/`). The helper is a separate process because whisper.cpp and llama.cpp each bundle their own, incompatible copy of ggml. On Fedora, if clang cannot find its headers, set `BINDGEN_EXTRA_CLANG_ARGS` to the GCC include directory.
@@ -69,7 +71,7 @@ Checks: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D 
 
 ## License
 
-[MIT](LICENSE). The Parakeet model is [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) (CC BY 4.0), downloaded as the [int8 ONNX export by istupakov](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx).
+[MIT](LICENSE). The optional YuE2 music model ([m-a-p/YuE2-3B](https://huggingface.co/m-a-p/YuE2-3B), downloaded in ComfyUI's INT8 packaging from [Comfy-Org/YuE2](https://huggingface.co/Comfy-Org/YuE2)) is CC BY-NC 4.0: non-commercial use only. The Parakeet model is [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) (CC BY 4.0), downloaded as the [int8 ONNX export by istupakov](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx).
 
 ## Spoken agent replies
 
