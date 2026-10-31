@@ -50,14 +50,9 @@ pub struct Song {
 
 impl Song {
     pub fn new(draft: &Draft, seed: u64, max_seconds: u32) -> Song {
-        let lyrics = if draft.instrumental {
-            "[Instrumental]".to_string()
-        } else {
-            draft.lyrics.clone().unwrap_or_default()
-        };
         Song {
             style: draft.style.clone(),
-            lyrics,
+            lyrics: crate::writer::conditioning_lyrics(draft),
             seed,
             max_seconds: max_seconds as f32,
         }

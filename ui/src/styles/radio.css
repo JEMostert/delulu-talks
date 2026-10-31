@@ -255,22 +255,6 @@
   color: var(--ink-2);
   font-size: var(--t-small);
 }
-.radio-command {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 10px 12px;
-  border-radius: var(--r-control);
-  background: var(--sunken);
-}
-.radio-command code {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: var(--t-meta);
-}
-
 .request-form {
   display: flex;
   gap: 10px;
