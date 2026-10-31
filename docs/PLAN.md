@@ -14,9 +14,10 @@ never installs or starts those runtimes:
 
 - **Voice replies** (`delulu` CLI): Chatterbox Turbo in an existing Python
   environment; the model downloads only on an explicit Install.
-- **Delulu FM** (radio): YuE2 music in the user's own ComfyUI through the Comfy
-  CLI, words from the cleanup model, the host through voice replies with the
-  bundled speaker. Missing pieces are shown as steps to do, never downloaded.
+- **Delulu FM** (radio): YuE2 music made natively by the `delulu-music` helper
+  (ggml, Vulkan), words from the cleanup model, the host through voice replies
+  with the bundled speaker. The music model is an explicit download in
+  Settings → Models; missing pieces are shown as steps to do.
 
 ## Build order (each step gated on the previous one being used daily)
 
@@ -52,6 +53,7 @@ never installs or starts those runtimes:
     Ctrl+Shift+V / Off = copy only)
   - Voice replies: optional spoken replies model
   - Delulu FM: show the radio (one switch)
+  - Models: the optional music model (download, cancel, delete)
   - Models and providers: step 2/3 (API keys, LLMs)
   - Appearance: theme (system / light / dark), show the recording pill
   - About: version, GPU backend in use, data folder, project link
