@@ -22,6 +22,8 @@ pub const BUFFER_SONGS: usize = 2;
 const RETRY_COOLDOWN_MS: i64 = 20_000;
 const MIN_SONG_SECONDS: f64 = 20.0;
 const MIN_BREAK_SECONDS: f64 = 2.0;
+/// The fade on a song the model had not finished when it reached its length.
+const FADE_SECONDS: f64 = 4.0;
 
 /// What production needs from the app. Implemented by Delulu with the cleanup
 /// helper, the native music helper and `delulu speak`; by fakes in tests.
@@ -503,6 +505,10 @@ impl Station {
         let mut audio = audio::decode(&out)?;
         let checks = audio::check(&audio, MIN_SONG_SECONDS)?;
         audio::normalize(&mut audio);
+        // Cut at the length limit rather than ended by the model: end softly.
+        if provenance.get("truncated").is_some_and(|v| v == "true") {
+            audio::fade_out(&mut audio, FADE_SECONDS);
+        }
         self.finish(job, &draft, audio, checks.seconds, provenance)?;
         backend.changed();
         Ok(Next::Continue)

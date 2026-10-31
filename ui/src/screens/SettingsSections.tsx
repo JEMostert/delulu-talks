@@ -315,81 +315,83 @@ export function ModelsSection() {
           </>
         }
       >
-        {!model ? null : model.state === "downloading" ? (
-          <div className="model-state">
-            <div
-              className="bar"
-              role="progressbar"
-              aria-label="Music model download"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={percent}
-            >
-              <span style={{ transform: `scaleX(${percent / 100})` }} />
-            </div>
-            <span className="model-note tabular">
-              {model.doneBytes ? `${percent}%` : "Starting…"}
-            </span>
-            <button
-              type="button"
-              className="button quiet"
-              onClick={() => void run(ipc.cancelMusicDownload)}
-            >
-              Cancel
-            </button>
-          </div>
-        ) : model.state === "ready" ? (
-          <div className="model-state">
-            <span className="model-ready">
-              <Icon name="check" size={16} />
-              On this computer
-            </span>
-            <span className="model-note">{gigabytes(model.totalBytes)}</span>
-            {confirming ? (
-              <>
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => {
-                    setConfirming(false);
-                    void run(ipc.deleteMusicModel);
-                  }}
-                >
-                  Delete it
-                </button>
-                <button
-                  type="button"
-                  className="button quiet"
-                  onClick={() => setConfirming(false)}
-                >
-                  Keep
-                </button>
-              </>
-            ) : (
+        <div className="model">
+          {!model ? null : model.state === "downloading" ? (
+            <div className="model-state">
+              <div
+                className="bar"
+                role="progressbar"
+                aria-label="Music model download"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={percent}
+              >
+                <span style={{ transform: `scaleX(${percent / 100})` }} />
+              </div>
+              <span className="model-note tabular">
+                {model.doneBytes ? `${percent}%` : "Starting…"}
+              </span>
               <button
                 type="button"
                 className="button quiet"
-                onClick={() => setConfirming(true)}
+                onClick={() => void run(ipc.cancelMusicDownload)}
               >
-                Delete
+                Cancel
               </button>
-            )}
-          </div>
-        ) : (
-          <div className="model-state">
-            <span className="model-note">
-              {gigabytes(model.totalBytes)} download, then it works offline
-            </span>
-            <button
-              type="button"
-              className="button primary"
-              onClick={() => void run(ipc.downloadMusicModel)}
-            >
-              <Icon name="download" size={16} />
-              {model.error ? "Try again" : "Download"}
-            </button>
-          </div>
-        )}
+            </div>
+          ) : model.state === "ready" ? (
+            <div className="model-state">
+              <span className="model-ready">
+                <Icon name="check" size={16} />
+                On this computer
+              </span>
+              <span className="model-note">{gigabytes(model.totalBytes)}</span>
+              {confirming ? (
+                <>
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => {
+                      setConfirming(false);
+                      void run(ipc.deleteMusicModel);
+                    }}
+                  >
+                    Delete it
+                  </button>
+                  <button
+                    type="button"
+                    className="button quiet"
+                    onClick={() => setConfirming(false)}
+                  >
+                    Keep
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="button quiet"
+                  onClick={() => setConfirming(true)}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="model-state">
+              <span className="model-note">
+                {gigabytes(model.totalBytes)} download, then it works offline
+              </span>
+              <button
+                type="button"
+                className="button primary"
+                onClick={() => void run(ipc.downloadMusicModel)}
+              >
+                <Icon name="download" size={16} />
+                {model.error ? "Try again" : "Download"}
+              </button>
+            </div>
+          )}
+        </div>
       </Row>
     </div>
   );

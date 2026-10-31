@@ -147,6 +147,18 @@ pub fn normalize(audio: &mut Audio) {
     }
 }
 
+/// Fade the last `seconds` out (an equal-power curve), for music cut at its length limit.
+pub fn fade_out(audio: &mut Audio, seconds: f64) {
+    let frames = audio.frames();
+    let fade = ((seconds * audio.rate as f64) as usize).min(frames);
+    for i in 0..fade {
+        let gain = ((fade - i) as f32 / fade as f32 * std::f32::consts::FRAC_PI_2).sin();
+        let f = frames - fade + i;
+        audio.samples[f * 2] *= gain;
+        audio.samples[f * 2 + 1] *= gain;
+    }
+}
+
 /// Write 16-bit stereo PCM atomically.
 pub fn write_wav(path: &Path, audio: &Audio) -> Result<(), RadioError> {
     let spec = hound::WavSpec {
@@ -258,6 +270,16 @@ mod tests {
         assert!(check(&tone(48000, 2.0, 4.0).clamped(), 1.0).is_err());
         let ok = check(&tone(48000, 2.0, 0.5), 1.0).unwrap();
         assert!((ok.seconds - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn fade_out_ends_in_silence() {
+        let mut audio = tone(48000, 2.0, 0.5);
+        let before = audio.samples[1000];
+        fade_out(&mut audio, 1.0);
+        assert_eq!(audio.samples[1000], before);
+        let tail = &audio.samples[audio.samples.len() - 200..];
+        assert!(tail.iter().all(|s| s.abs() < 0.01));
     }
 
     #[test]

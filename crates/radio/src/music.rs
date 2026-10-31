@@ -72,6 +72,9 @@ pub fn provenance(report: &Value) -> BTreeMap<String, String> {
         .map(|k| secs(k))
         .sum::<f64>();
     p.insert("musicSeconds".into(), format!("{total:.1}"));
+    if report["truncated"].as_bool() == Some(true) {
+        p.insert("truncated".into(), "true".into());
+    }
     if let Some(bytes) = report["peakGpuBytes"].as_u64() {
         p.insert("gpuMegabytes".into(), (bytes / 1_000_000).to_string());
     }

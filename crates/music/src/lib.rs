@@ -55,7 +55,11 @@ pub struct Song {
 
 /// What is happening, for progress display. Fractions are 0..1 within the phase.
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase", tag = "phase")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "phase"
+)]
 pub enum Progress {
     Loading { model: &'static str },
     Score { tokens: usize },
@@ -377,6 +381,17 @@ fn axpy(x: &mut [f32], d: &[f32], dt: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn progress_fields_are_camel_case() {
+        let p = Progress::Music {
+            seconds: 1.0,
+            max_seconds: 2.0,
+        };
+        let v = serde_json::to_value(p).unwrap();
+        assert_eq!(v["phase"], "music");
+        assert_eq!(v["maxSeconds"], 2.0);
+    }
 
     #[test]
     fn schedule_matches_sgm_uniform() {
