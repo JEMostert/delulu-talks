@@ -9,7 +9,14 @@ import * as ipc from "../ipc";
 import { Segmented } from "../components/Controls";
 import { Icon } from "../components/Icon";
 import { errorText, type AppState } from "../state";
-import { clock, makingText, radioPresets, readinessSteps } from "../radio";
+import {
+  clock,
+  hasWords,
+  lyricSections,
+  makingText,
+  radioPresets,
+  readinessSteps,
+} from "../radio";
 
 type View = { radio: ipc.Radio; at: number };
 
@@ -270,11 +277,6 @@ function TitleBlock() {
   return (
     <div className="title-block">
       <h1>Delulu FM</h1>
-      <p className="lead">
-        A radio station made on this computer. Every song is new: the cleanup
-        model writes it, YuE2 composes it in your ComfyUI, and the host speaks
-        between songs.
-      </p>
     </div>
   );
 }
@@ -351,14 +353,26 @@ function Volume({ value }: { value: number }) {
 }
 
 function Words({ item }: { item: ipc.RadioItem | null }) {
-  const text = item?.kind === "break" ? item.script : item?.lyrics;
+  const script = item?.kind === "break" ? item.script : null;
+  const sections = item?.lyrics ? lyricSections(item.lyrics) : [];
   return (
     <section className="group radio-words" aria-labelledby="radio-words-title">
       <h2 id="radio-words-title">
         {item?.kind === "break" ? "The host says" : "Lyrics"}
       </h2>
-      {text ? (
-        <p className="words">{text}</p>
+      {script ? (
+        <p className="words">{script}</p>
+      ) : hasWords(sections) ? (
+        <div className="words lyrics">
+          {sections.map((s, i) => (
+            <div className="lyric-section" key={i}>
+              {s.tag && <div className="lyric-tag">{s.tag}</div>}
+              {s.lines.map((line, j) => (
+                <div key={j}>{line}</div>
+              ))}
+            </div>
+          ))}
+        </div>
       ) : (
         <p className="muted">
           {item ? "An instrumental, no words." : "Words appear here."}

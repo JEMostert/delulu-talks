@@ -128,3 +128,38 @@ export const radioPresets: {
     },
   },
 ];
+
+export type LyricSection = { tag: string | null; lines: string[] };
+
+/** Lyrics as sections of single lines. Older items could hold a tag run into a
+ * line ("…tutu.[Chorus]"), so every tag is split onto its own line first. */
+export function lyricSections(text: string): LyricSection[] {
+  const sections: LyricSection[] = [];
+  let open = false;
+  const lines = text
+    .replace(/[ \t]*(\[[^[\]\n]{1,60}\])[ \t]*/g, "\n$1\n")
+    .split("\n");
+  for (const raw of lines) {
+    const line = raw.trim();
+    const tag = /^\[(.+)\]$/.exec(line);
+    const last = sections[sections.length - 1];
+    if (tag) {
+      sections.push({ tag: tag[1].trim(), lines: [] });
+      open = true;
+    } else if (!line) {
+      // A blank line ends an untagged stanza; a tagged section runs to the next tag.
+      if (last?.tag === null) open = false;
+    } else if (open && last) {
+      last.lines.push(line);
+    } else {
+      sections.push({ tag: null, lines: [line] });
+      open = true;
+    }
+  }
+  return sections;
+}
+
+/** Whether there is anything to sing; an instrumental keeps only its form. */
+export function hasWords(sections: LyricSection[]): boolean {
+  return sections.some((s) => s.lines.length > 0);
+}

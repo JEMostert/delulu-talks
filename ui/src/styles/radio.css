@@ -170,6 +170,17 @@
   max-height: 420px;
   overflow: auto;
 }
+.radio-words .lyrics {
+  white-space: normal;
+}
+.lyric-section + .lyric-section {
+  margin-top: 0.9em;
+}
+.lyric-tag {
+  color: var(--ink-3);
+  font-family: var(--font-ui);
+  font-size: var(--t-small);
+}
 .radio-words .muted,
 .radio-list .muted {
   margin-top: 8px;

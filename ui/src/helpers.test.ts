@@ -227,3 +227,22 @@ test("Delulu FM clock, readiness and status text", async () => {
     "Making “Copper”: shaping the sound · 54%",
   );
 });
+test("Delulu FM lyrics split into sections, older run-on tags too", async () => {
+  const { lyricSections, hasWords } = await import("./radio");
+  expect(
+    lyricSections(
+      "[Intro]\n\n[Verse 1]\nLight on the window\nin a tutu.[Chorus] Copper\nmorning\n\n[Outro]",
+    ),
+  ).toEqual([
+    { tag: "Intro", lines: [] },
+    { tag: "Verse 1", lines: ["Light on the window", "in a tutu."] },
+    { tag: "Chorus", lines: ["Copper", "morning"] },
+    { tag: "Outro", lines: [] },
+  ]);
+  expect(lyricSections("one\ntwo\n\nthree")).toEqual([
+    { tag: null, lines: ["one", "two"] },
+    { tag: null, lines: ["three"] },
+  ]);
+  // An instrumental keeps only its form.
+  expect(hasWords(lyricSections("[Intro]\n\n[Verse]\n\n[Outro]"))).toBe(false);
+});
