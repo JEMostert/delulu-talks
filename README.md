@@ -13,7 +13,7 @@
 
 **Hold a key, say it, and it’s typed.** Delulu Talks is push-to-talk dictation for Linux. Hold **Super+Z**, speak Dutch or English, let go, and the words land in the app you were using, cleaned up and spelled right. Speech recognition and cleanup both run on your own graphics card. Nothing you say leaves your computer.
 
-<a href="docs/assets/delulu-talks-reel.mp4?raw=true">Watch the reel</a> (15 s, sound on) ·
+<a href="docs/assets/delulu-talks-reel.mp4?raw=true">The reel with sound</a> (MP4, 15 s, 6 MB) ·
 [Install](#install) ·
 [How it works](#how-it-works) ·
 [Delulu FM](#delulu-fm)
