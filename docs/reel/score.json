@@ -1,0 +1,58 @@
+{
+  "about": "The beat map both reel.js (picture) and soundtrack.py (sound) read, so every cue lands on the same frame and sample. Times are in beats from the start; at 96 BPM a beat is 0.625 s and a bar 2.5 s.",
+  "bpm": 96,
+  "bars": 6,
+  "fps": 60,
+  "chords": [
+    { "beat": 0, "name": "Dmaj9", "notes": [50, 57, 61, 64, 66, 69] },
+    { "beat": 4, "name": "Bm11", "notes": [47, 54, 62, 64, 66, 69] },
+    { "beat": 8, "name": "Gmaj9", "notes": [43, 50, 59, 62, 66, 69] },
+    { "beat": 12, "name": "F#m7", "notes": [42, 49, 57, 61, 64, 68] },
+    { "beat": 16, "name": "Em9", "notes": [40, 47, 55, 59, 62, 66] },
+    { "beat": 18, "name": "A13sus", "notes": [45, 52, 55, 62, 66, 71] },
+    { "beat": 20, "name": "Dmaj9", "notes": [38, 50, 57, 61, 64, 69] }
+  ],
+  "cues": {
+    "keysRise": 2,
+    "keyDown": 4,
+    "keyUp": 8,
+    "popFiller": 9,
+    "liftTakeBack": 10,
+    "fixWord": 11,
+    "setInType": 11.5,
+    "windowRise": 12,
+    "paste": 13,
+    "caption4": 14,
+    "jarsRise": 16,
+    "swap1": 17,
+    "swap2": 18,
+    "swap3": 19,
+    "endCard": 20,
+    "tagline": 21,
+    "localLine": 21.5,
+    "loopOut": 23
+  },
+  "speech": {
+    "about": "What is said while the key is held: one syllable per sixteenth note from keyDown. vowel picks the formant of the hummed voice; pitch is MIDI.",
+    "start": 4,
+    "step": 0.25,
+    "words": [
+      { "word": "so", "syllables": [{ "vowel": "o", "pitch": 69 }] },
+      { "word": "um", "syllables": [{ "vowel": "u", "pitch": 66 }] },
+      { "word": "the", "syllables": [{ "vowel": "e", "pitch": 69 }] },
+      { "word": "merch", "syllables": [{ "vowel": "e", "pitch": 71 }] },
+      { "word": "conflict", "syllables": [{ "vowel": "o", "pitch": 74 }, { "vowel": "i", "pitch": 71 }] },
+      { "word": "is", "syllables": [{ "vowel": "i", "pitch": 69 }] },
+      { "word": "on", "syllables": [{ "vowel": "o", "pitch": 66 }] },
+      { "word": "monday,", "syllables": [{ "vowel": "o", "pitch": 69 }, { "vowel": "e", "pitch": 71 }] },
+      { "word": "no", "syllables": [{ "vowel": "o", "pitch": 74 }] },
+      { "word": "sorry,", "syllables": [{ "vowel": "o", "pitch": 73 }, { "vowel": "i", "pitch": 71 }] },
+      { "word": "tuesday", "syllables": [{ "vowel": "u", "pitch": 69 }, { "vowel": "e", "pitch": 66 }] }
+    ]
+  },
+  "swaps": [
+    { "cue": "swap1", "heard": "ghthree code", "fixed": "T3 Code", "shelf": "Programming", "pitch": 81 },
+    { "cue": "swap2", "heard": "nerve it", "fixed": "nerf it", "shelf": "Gaming & Discord", "pitch": 85 },
+    { "cue": "swap3", "heard": "oh bee ess", "fixed": "OBS", "shelf": "Twitch & Streaming", "pitch": 88 }
+  ]
+}
