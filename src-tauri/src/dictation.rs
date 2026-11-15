@@ -164,7 +164,6 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
     let request = StopRequest {
         started: stopped_at,
         was_held,
-        settings: s.store.settings(),
         log_text: log_text(),
     };
     let app = app.clone();
@@ -204,7 +203,6 @@ pub(crate) struct StopRequest {
     pub(crate) started: Instant,
     /// The hotkey was still down when recording stopped (toggle press).
     pub(crate) was_held: bool,
-    pub(crate) settings: Settings,
     pub(crate) log_text: bool,
 }
 
@@ -226,6 +224,8 @@ pub(crate) type Recorded = Result<Vec<f32>, (&'static str, String)>;
 /// tests use a fake, so the path runs without audio, a GPU or a desktop.
 pub(crate) trait StopPorts {
     async fn stop_recording(&self) -> Recorded;
+    /// Read after the recorder stopped, so a change saved meanwhile applies.
+    fn settings(&self) -> Settings;
     fn whisper_prompt(&self) -> Option<String>;
     async fn transcribe(
         &self,
@@ -247,11 +247,11 @@ pub(crate) trait StopPorts {
 
 pub(crate) async fn run_stop(ports: &impl StopPorts, req: StopRequest) -> StopOutcome {
     let start = req.started;
-    let settings = req.settings;
     let samples = match ports.stop_recording().await {
         Ok(samples) => samples,
         Err((word, message)) => return StopOutcome::Failed { word, message },
     };
+    let settings = ports.settings();
     let prompt = if settings.smart_context {
         ports.whisper_prompt()
     } else {
@@ -377,6 +377,9 @@ impl StopPorts for AppStop {
             Err(e) => Err(("Mic error", e.to_string())),
         }
     }
+    fn settings(&self) -> Settings {
+        self.shell().store.settings()
+    }
     fn whisper_prompt(&self) -> Option<String> {
         let s = self.shell();
         s.context.whisper_prompt(&s.store.vocabulary())
@@ -491,7 +494,6 @@ mod tests {
         StopRequest {
             started: Instant::now(),
             was_held: false,
-            settings: Settings::default(),
             log_text: false,
         }
     }
@@ -499,6 +501,9 @@ mod tests {
     impl StopPorts for Fake {
         async fn stop_recording(&self) -> Recorded {
             self.recording.take().expect("recorder stopped once")
+        }
+        fn settings(&self) -> Settings {
+            Settings::default()
         }
         fn whisper_prompt(&self) -> Option<String> {
             None
