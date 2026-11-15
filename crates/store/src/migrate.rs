@@ -75,20 +75,25 @@ fn backup_path(path: &Path) -> PathBuf {
         .expect("a free backup name")
 }
 
+/// The pre-database history backups and the rejected-lines file, sorted by name so
+/// they are handled in the same order on every filesystem.
 pub(crate) fn history_backups(data_dir: &Path) -> Vec<PathBuf> {
     let prefix = format!("{HISTORY_FILE}.v1.bak");
     let rejected = format!("{HISTORY_FILE}.rejected");
     let Ok(dir) = fs::read_dir(data_dir) else {
         return Vec::new();
     };
-    dir.filter_map(Result::ok)
+    let mut backups: Vec<PathBuf> = dir
+        .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
                 .is_some_and(|n| n.starts_with(&prefix) || n == rejected)
         })
-        .collect()
+        .collect();
+    backups.sort();
+    backups
 }
 
 fn read_optional(path: &Path) -> io::Result<Option<Vec<u8>>> {
@@ -579,8 +584,15 @@ mod tests {
         fs::remove_dir_all(&stuck).unwrap();
         store.delete_history("b2").unwrap();
         assert!(store.history_entry("b2").is_none());
-        let backup = fs::read_to_string(t.data().join("history.jsonl.v1.bak")).unwrap();
-        assert!(!backup.contains("Old line without cleanup fields"));
+        // The failed clear may already have removed backups handled before the
+        // stuck one; whichever are left no longer hold the deleted text.
+        for path in history_backups(&t.data()) {
+            let text = fs::read_to_string(&path).unwrap();
+            assert!(
+                !text.contains("Old line without cleanup fields"),
+                "{path:?}"
+            );
+        }
     }
 
     #[test]
