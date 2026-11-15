@@ -41,7 +41,9 @@ pub trait Backend: Send + Sync {
     /// False while dictation is active: a new GPU step must not start.
     fn may_start(&self) -> bool;
     fn voice_ready(&self) -> bool;
-    fn speak(&self, text: &str, out: &Path) -> Result<(), RadioError>;
+    /// Speak `text` in `lang` ("nl" or "en") into `out`. Returns how the voice is
+    /// credited, which says it is AI-generated.
+    fn speak(&self, text: &str, lang: &str, out: &Path) -> Result<String, RadioError>;
     /// Make the music for `draft` into `out`. `Err(Cancelled)` when stopped (off air
     /// or quitting), `Err(Unavailable)` when the model or helper is missing. Returns
     /// what to record about how it was made.
@@ -643,7 +645,8 @@ impl Station {
                     self.update_job(|j| j.kind = Kind::Song);
                     return Ok(Next::Continue);
                 };
-                let (prompt, tokens) = writer::break_prompt(&last, &direction.mood);
+                let lang = crate::voice::host_language(&direction.language);
+                let (prompt, tokens) = writer::break_prompt(&last, &direction.mood, lang);
                 let reply = backend.write(prompt, tokens, seed32)?;
                 writer::parse_break(&reply, &last)?
             }
@@ -692,12 +695,13 @@ impl Station {
         std::fs::create_dir_all(&dir).map_err(|e| io(&dir, e))?;
         let out = dir.join("speech.wav");
         let _ = std::fs::remove_file(&out);
-        backend.speak(draft.script.as_deref().unwrap_or_default(), &out)?;
+        let lang = crate::voice::host_language(&self.lock().direction.language);
+        let voice = backend.speak(draft.script.as_deref().unwrap_or_default(), lang, &out)?;
         let mut audio = audio::decode(&out)?;
         let checks = audio::check(&audio, MIN_BREAK_SECONDS)?;
         audio::normalize(&mut audio);
         let mut provenance = BTreeMap::new();
-        provenance.insert("voice".into(), "Chatterbox Turbo (bundled speaker)".into());
+        provenance.insert("voice".into(), voice);
         self.finish(job, &draft, audio, checks.seconds, provenance)?;
         backend.changed();
         Ok(Next::Continue)

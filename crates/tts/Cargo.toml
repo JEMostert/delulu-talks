@@ -1,0 +1,26 @@
+[package]
+name = "delulu-tts"
+version.workspace = true
+edition.workspace = true
+description = "Native text to speech: Supertonic 3 on ONNX Runtime, with a Dutch and English text front end."
+
+[features]
+default = []
+# The model itself. Only `delulu-engine` enables this, so ONNX Runtime stays out of
+# the CLI and the app's own code paths.
+onnx = ["dep:ort", "dep:ndarray", "dep:rand"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+regex = "1"
+unicode-normalization = "0.1"
+# Same pin as delulu-stt: Cargo allows one ort-sys per build, linked statically.
+ort = { version = "=2.0.0-rc.12", optional = true }
+ndarray = { version = "0.17", optional = true }
+rand = { version = "0.9", optional = true }
+
+[dev-dependencies]
+hound = "3.5"
+delulu-models = { path = "../models" }

@@ -223,3 +223,19 @@
   color: var(--ink-2);
   font-size: var(--t-small);
 }
+
+/* Voice replies: the model licence's use restrictions, shown before the download. */
+.terms summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+}
+.terms p {
+  margin: 8px 0 0;
+  white-space: pre-line;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  line-height: 1.5;
+  max-height: 220px;
+  overflow: auto;
+}

@@ -552,11 +552,18 @@ impl Backend for AppBackend {
     fn voice_ready(&self) -> bool {
         self.radio().voice.ready()
     }
-    fn speak(&self, text: &str, out: &Path) -> Result<(), RadioError> {
+    fn speak(&self, text: &str, lang: &str, out: &Path) -> Result<String, RadioError> {
         let stop = self.radio().stop.clone();
+        let voice = crate::voice::radio_voice();
         self.radio()
             .voice
-            .speak(text, out, &move || stop.load(Ordering::SeqCst))
+            .speak(text, lang, Some(&voice), out, &move || {
+                stop.load(Ordering::SeqCst)
+            })?;
+        // OpenRAIL-M Attachment A (e): the host is labelled as machine generated.
+        Ok(format!(
+            "Supertonic 3 by Supertone, voice {voice} (AI-generated)"
+        ))
     }
     fn compose(
         &self,

@@ -54,9 +54,9 @@ impl Backend for Fake {
     fn voice_ready(&self) -> bool {
         self.voice
     }
-    fn speak(&self, _: &str, out: &Path) -> Result<(), RadioError> {
+    fn speak(&self, _: &str, lang: &str, out: &Path) -> Result<String, RadioError> {
         self.tone(out, 4.0);
-        Ok(())
+        Ok(format!("test voice ({lang})"))
     }
     fn compose(
         &self,
@@ -259,6 +259,29 @@ fn breaks_follow_songs_when_voice_is_ready() {
     fake.voice = false;
     make_one(&station, &fake);
     assert_eq!(station.snapshot().queue[2].kind, Kind::Song);
+}
+
+#[test]
+fn a_dutch_station_has_its_host_write_and_speak_dutch() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let mut fake = Fake::new();
+    fake.voice = true;
+    station.set_direction(Direction {
+        host: Host::Often,
+        language: "Dutch".into(),
+        ..Direction::default()
+    });
+    station.set_on_air(true);
+    make_one(&station, &fake);
+    make_one(&station, &fake);
+    let writes = fake.writes.lock().unwrap();
+    let break_prompt = writes.iter().find(|w| w.ends_with("Script:")).unwrap();
+    assert!(break_prompt.contains("in Dutch (Nederlands)."));
+    assert!(!break_prompt.contains("in English."));
+    let s = station.snapshot();
+    assert_eq!(s.queue[1].kind, Kind::Break);
+    assert_eq!(s.queue[1].provenance["voice"], "test voice (nl)");
 }
 
 #[test]

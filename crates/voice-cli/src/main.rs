@@ -1,7 +1,13 @@
 //! Linux on-demand speech CLI, independent of the desktop app.
+//!
+//! The default voice is native: Supertonic 3 in `delulu-engine tts`, on the CPU, in
+//! Dutch and English, with no Python. Chatterbox Turbo stays as an explicit opt-in
+//! (`--engine chatterbox`) for an existing Python setup.
+mod chatterbox;
+mod native;
+
 use anyhow::{bail, Context, Result};
-use clap::{Parser, Subcommand};
-use serde::{Deserialize, Serialize};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, IsTerminal, Write},
@@ -12,9 +18,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-const RUNTIME: &str = include_str!("runtime.py");
 const SKILL: &str = include_str!("../../../skills/delulu-speak/SKILL.md");
-static SIGNAL: AtomicI32 = AtomicI32::new(0);
+/// Longest reply `speak` accepts, in bytes.
+const MAX_TEXT_BYTES: usize = 16000;
+pub(crate) static SIGNAL: AtomicI32 = AtomicI32::new(0);
+/// When this process started, for `DELULU_TIMINGS`.
+pub(crate) static STARTED: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 extern "C" fn cancelled(signal: i32) {
     SIGNAL.store(signal, Ordering::Relaxed);
 }
@@ -29,24 +38,38 @@ struct Cli {
     #[command(subcommand)]
     command: Action,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Engine {
+    /// Supertonic 3 on the CPU, Dutch and English, no Python (default).
+    Native,
+    /// Chatterbox Turbo in an existing Python environment (English only).
+    Chatterbox,
+}
+
 #[derive(Subcommand)]
 enum Action {
-    /// Install binary, config and agent skills; reuse cached weights without downloading models.
+    /// Install the binary and the agent skill. Downloads no model and needs no Python.
+    /// The Chatterbox options configure the optional `--engine chatterbox` voice.
     Setup {
-        /// Existing Python with torch and chatterbox.tts_turbo (never modified).
+        /// Chatterbox only: an existing Python with torch and chatterbox.tts_turbo (never modified).
         #[arg(long)]
         python: Option<PathBuf>,
+        /// Chatterbox only.
         #[arg(long, value_parser = ["cuda", "cpu"])]
         device: Option<String>,
-        /// Explicit voice reference (>5 seconds); defaults to bundled speaker on first setup.
+        /// Chatterbox only: a voice reference (>5 seconds).
         #[arg(long)]
         reference: Option<PathBuf>,
-        /// Reset a previously configured reference to the official bundled speaker.
+        /// Chatterbox only: reset a configured reference to the bundled speaker.
         #[arg(long, conflicts_with = "reference")]
         default_voice: bool,
     },
-    /// Explicitly download the optional official Turbo model (~3 GB), or reuse its cache.
-    InstallModel,
+    /// Download the voice model (Supertonic 3, about 400 MB) after showing its licence.
+    InstallModel {
+        #[arg(long, value_enum, default_value = "native")]
+        engine: Engine,
+    },
     /// Speak arguments, or read UTF-8 text from stdin when arguments are omitted (or '-').
     Speak {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -57,39 +80,46 @@ enum Action {
         /// Playback stream volume (0 = silent); never changes system volume.
         #[arg(long, default_value = "1")]
         volume: f32,
-        /// Use the official bundled speaker for this reply, ignoring a configured reference.
+        /// Voice: F1–F5 or M1–M5 (default: the one chosen in Settings, else F1).
+        #[arg(long)]
+        voice: Option<String>,
+        /// Language: auto (per sentence), nl or en.
+        #[arg(long, default_value = "auto")]
+        lang: String,
+        #[arg(long, value_enum, default_value = "native")]
+        engine: Engine,
+        /// Chatterbox only: use its bundled speaker, ignoring a configured reference.
         #[arg(long)]
         bundled_voice: bool,
     },
-    /// Print setup readiness as JSON without loading Python or a model.
+    /// Print readiness as JSON without loading a model.
     Status,
 }
-#[derive(Serialize, Deserialize)]
-struct Config {
-    python: PathBuf,
-    device: String,
-    reference: Option<PathBuf>,
-    #[serde(default)]
-    model_dir: PathBuf,
-    #[serde(default)]
-    revision: Option<String>,
-}
-fn home() -> Result<PathBuf> {
+
+pub(crate) fn home() -> Result<PathBuf> {
     dirs::home_dir().context("Cannot locate home directory")
 }
+
 fn root() -> Result<PathBuf> {
     Ok(dirs::data_local_dir()
         .context("Cannot locate user data directory")?
         .join("delulu-talks/voice"))
 }
-fn check_cancel() -> Result<()> {
-    if SIGNAL.load(Ordering::Relaxed) != 0 {
+
+pub(crate) fn signalled() -> bool {
+    SIGNAL.load(Ordering::Relaxed) != 0
+}
+
+pub(crate) fn check_cancel() -> Result<()> {
+    if signalled() {
         bail!("Speech cancelled");
     }
     Ok(())
 }
-// flock stays held across the whole invocation, including playback; only owned jobs queue.
-fn lock(root: &Path) -> Result<File> {
+
+/// One speech job per user at a time: the flock stays held for the whole invocation,
+/// including playback, and later jobs queue behind it.
+pub(crate) fn lock(root: &Path) -> Result<File> {
     fs::create_dir_all(root)?;
     let file = OpenOptions::new()
         .create(true)
@@ -113,14 +143,15 @@ fn lock(root: &Path) -> Result<File> {
         std::thread::sleep(Duration::from_millis(100));
     }
 }
-fn run(command: &mut Command, label: &str) -> Result<()> {
+
+/// Runs a helper in its own process group, so cancellation kills its descendants too.
+pub(crate) fn run(command: &mut Command, label: &str) -> Result<()> {
     check_cancel()?;
     command
         .stdin(Stdio::null())
         .stdout(Stdio::from(io::stderr()))
         .stderr(Stdio::inherit());
-    // Separate group lets cancellation kill descendants, too. SIGKILL of the
-    // coordinator also kills its immediate child (Linux parent-death signal).
+    // SIGKILL of the coordinator also kills its immediate child (parent-death signal).
     let parent = std::process::id() as i32;
     unsafe {
         command.pre_exec(move || {
@@ -141,7 +172,7 @@ fn run(command: &mut Command, label: &str) -> Result<()> {
     })?;
     let start = Instant::now();
     loop {
-        if SIGNAL.load(Ordering::Relaxed) != 0 || start.elapsed() > Duration::from_secs(1800) {
+        if signalled() || start.elapsed() > Duration::from_secs(1800) {
             unsafe {
                 libc::kill(-(child.id() as i32), libc::SIGKILL);
             }
@@ -158,7 +189,8 @@ fn run(command: &mut Command, label: &str) -> Result<()> {
         std::thread::sleep(Duration::from_millis(100));
     }
 }
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path.parent().context("Path needs a parent directory")?;
     fs::create_dir_all(parent)?;
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;
@@ -166,108 +198,24 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     temp.persist(path).map_err(|e| e.error)?;
     Ok(())
 }
-fn python(config: &Config, root: &Path, mode: &str, path: &Path) -> Command {
-    let mut cmd = Command::new(&config.python);
-    cmd.arg("-c")
-        .arg(RUNTIME)
-        .arg(mode)
-        .arg(root.join("python-deps"))
-        .arg(path)
-        .env("TOKENIZERS_PARALLELISM", "false");
-    cmd
-}
-fn read_config(root: &Path) -> Result<Config> {
-    serde_json::from_slice(
-        &fs::read(root.join("config.json"))
-            .context("Speech is not configured. Run delulu setup first")?,
-    )
-    .context("Invalid speech configuration; rerun delulu setup")
-}
-fn ready(config: &Config) -> bool {
-    config.python.is_file()
-        && [
-            "conds.pt",
-            "t3_turbo_v1.safetensors",
-            "ve.safetensors",
-            "s3gen_meanflow.safetensors",
-            "tokenizer_config.json",
-            "vocab.json",
-            "merges.txt",
-            "added_tokens.json",
-            "special_tokens_map.json",
-        ]
-        .iter()
-        .all(|name| config.model_dir.join(name).is_file())
-}
-fn setup(
-    root: &Path,
-    python_path: Option<PathBuf>,
-    device: Option<String>,
-    reference: Option<PathBuf>,
-    default_voice: bool,
-) -> Result<()> {
-    let _lock = lock(root)?;
-    let old = read_config(root).ok();
-    let python_path = python_path
-        .or_else(|| old.as_ref().map(|c| c.python.clone()))
-        .unwrap_or(
-            home()?.join(".local/share/ai-director/chatterbox_flash_local/.venv/bin/python"),
-        );
-    if !python_path.is_file() {
-        bail!("No compatible Python found at {}. Install chatterbox-tts in an existing torch environment, then run delulu setup --python /path/to/venv/bin/python. No shared Python environment will be modified.", python_path.display());
-    }
-    let device = device
-        .or_else(|| old.as_ref().map(|c| c.device.clone()))
-        .unwrap_or_else(|| "cuda".to_string());
-    let reference = if default_voice {
-        None
+
+pub(crate) fn absolute(path: &Path) -> Result<PathBuf> {
+    Ok(if path.is_absolute() {
+        path.to_owned()
     } else {
-        reference
-            .map(fs::canonicalize)
-            .transpose()
-            .context("Voice reference does not exist")?
-            .or_else(|| old.as_ref().and_then(|c| c.reference.clone()))
-    };
-    // Perth currently imports pkg_resources, removed by setuptools 81+. Install
-    // only this small shim in our private target; never resolve/install CUDA.
-    if !root.join("python-deps/pkg_resources/__init__.py").is_file() {
-        let uv = home()?.join(".local/bin/uv");
-        let uv = if uv.is_file() {
-            uv.into_os_string()
-        } else {
-            "uv".into()
-        };
-        run(
-            Command::new(uv)
-                .args(["pip", "install", "--no-deps", "--target"])
-                .arg(root.join("python-deps"))
-                .arg("setuptools==80.9.0"),
-            "private compatibility dependency installation (requires uv)",
-        )?;
-    }
-    let config = Config {
-        python: python_path_absolute(&python_path)?,
-        device,
-        reference,
-        model_dir: PathBuf::new(),
-        revision: old.and_then(|c| c.revision),
-    };
-    // Preserve venv executable path: resolving its symlink would lose site-packages.
-    let mut staged = tempfile::NamedTempFile::new_in(root)?;
-    staged.write_all(&serde_json::to_vec_pretty(&config)?)?;
-    eprintln!("Checking dependencies and reusing cached Turbo weights only (no model download)...");
-    run(
-        &mut python(&config, root, "setup", staged.path()),
-        "Turbo setup",
-    )?;
-    let config: Config = serde_json::from_slice(&fs::read(staged.path())?)?;
+        std::env::current_dir()?.join(path)
+    })
+}
+
+/// Installs this binary as ~/.local/bin/delulu and the agent skill.
+fn install_cli(root: &Path) -> Result<()> {
+    let _lock = lock(root)?;
     let bin = home()?.join(".local/bin/delulu");
     let current = std::env::current_exe()?;
     if current != bin {
-        let mut temp = tempfile::NamedTempFile::new_in({
-            fs::create_dir_all(bin.parent().unwrap())?;
-            bin.parent().unwrap()
-        })?;
+        let dir = bin.parent().expect("has a parent");
+        fs::create_dir_all(dir)?;
+        let mut temp = tempfile::NamedTempFile::new_in(dir)?;
         io::copy(&mut File::open(current)?, &mut temp)?;
         use std::os::unix::fs::PermissionsExt;
         temp.as_file()
@@ -295,49 +243,27 @@ fn setup(
             && fs::read_to_string(&path)? != SKILL
             && fs::read_to_string(&path)? != previous_skill
         {
-            bail!("Preserving customized skill at {}; reconcile it with skills/delulu-speak/SKILL.md before retrying", path.display());
+            bail!(
+                "Preserving customized skill at {}; reconcile it with skills/delulu-speak/SKILL.md before retrying",
+                path.display()
+            );
         }
         atomic_write(&path, SKILL.as_bytes())?;
         eprintln!("Skill: {}", path.display());
     }
     atomic_write(&root.join("installed-skill.md"), SKILL.as_bytes())?;
-    atomic_write(
-        &root.join("config.json"),
-        &serde_json::to_vec_pretty(&config)?,
-    )?;
-    eprintln!("CLI installed: {} speak 'Done. The change is ready.'\nEnsure ~/.local/bin is on PATH. Install the optional model with delulu install-model if absent. No model stays resident.", bin.display());
-    Ok(())
-}
-fn python_path_absolute(path: &Path) -> Result<PathBuf> {
-    Ok(if path.is_absolute() {
-        path.to_owned()
+    let model = if native::readiness().model {
+        "The voice model is installed."
     } else {
-        std::env::current_dir()?.join(path)
-    })
-}
-fn install_model(root: &Path) -> Result<()> {
-    let _lock = lock(root)?;
-    let config = read_config(root)?;
-    let mut staged = tempfile::NamedTempFile::new_in(root)?;
-    staged.write_all(&serde_json::to_vec_pretty(&config)?)?;
+        "Download the voice model with delulu install-model (about 400 MB)."
+    };
     eprintln!(
-        "Installing optional Chatterbox Turbo model (~3 GB download); cached files are reused..."
+        "CLI installed: {} speak 'Done. The change is ready.'\nEnsure ~/.local/bin is on PATH. {model}",
+        bin.display()
     );
-    run(
-        &mut python(&config, root, "install", staged.path()),
-        "Turbo model installation",
-    )?;
-    let config: Config = serde_json::from_slice(&fs::read(staged.path())?)?;
-    if !ready(&config) {
-        bail!("Turbo model snapshot is incomplete; retry delulu install-model");
-    }
-    atomic_write(
-        &root.join("config.json"),
-        &serde_json::to_vec_pretty(&config)?,
-    )?;
-    eprintln!("Turbo model installed. Ready for delulu speak.");
     Ok(())
 }
+
 fn read_stdin() -> Result<String> {
     let mut bytes = Vec::new();
     loop {
@@ -369,22 +295,14 @@ fn read_stdin() -> Result<String> {
             break;
         }
         bytes.extend_from_slice(&buf[..count as usize]);
-        if bytes.len() > 16000 {
-            bail!("Reply exceeds 16000 bytes; summarize it before speaking");
+        if bytes.len() > MAX_TEXT_BYTES {
+            bail!("Reply exceeds {MAX_TEXT_BYTES} bytes; summarize it before speaking");
         }
     }
     String::from_utf8(bytes).context("stdin must contain UTF-8 text")
 }
-fn speak(
-    root: &Path,
-    words: Vec<String>,
-    output: Option<PathBuf>,
-    volume: f32,
-    bundled_voice: bool,
-) -> Result<()> {
-    if !volume.is_finite() || !(0.0..=1.0).contains(&volume) {
-        bail!("Volume must be between 0 and 1");
-    }
+
+fn text_of(words: Vec<String>) -> Result<String> {
     let text = if words.is_empty() || words == ["-"] {
         if io::stdin().is_terminal() {
             bail!("Provide text: delulu speak 'Done.' or pipe text into delulu speak");
@@ -396,52 +314,85 @@ fn speak(
     if text.trim().is_empty() {
         bail!("No text to speak");
     }
-    if text.len() > 16000 {
-        bail!("Reply exceeds 16000 bytes; summarize it before speaking");
+    if text.len() > MAX_TEXT_BYTES {
+        bail!("Reply exceeds {MAX_TEXT_BYTES} bytes; summarize it before speaking");
     }
-    let mut config = read_config(root)?;
-    if !ready(&config) {
-        bail!("Optional Turbo model is not installed; run delulu install-model or use Install model in Settings");
-    }
-    let _lock = lock(root)?;
-    let job = tempfile::tempdir_in(root)?;
-    let input = job.path().join("text.txt");
-    let wav = job.path().join("speech.wav");
-    fs::write(&input, text)?;
-    let mut config_path = root.join("config.json");
-    if bundled_voice && config.reference.is_some() {
-        // A private copy without the reference; the saved configuration is untouched.
-        let bundled = Config {
-            reference: None,
-            ..config
-        };
-        config_path = job.path().join("config.json");
-        fs::write(&config_path, serde_json::to_vec_pretty(&bundled)?)?;
-        config = bundled;
-    }
-    run(
-        python(&config, root, "speak", &config_path)
-            .arg(input)
-            .arg(&wav),
-        "Turbo synthesis",
-    )?;
-    if let Some(output) = output {
-        // No playback on this explicit path, suitable for silent verification.
-        let bytes = fs::read(&wav)?;
-        atomic_write(&python_path_absolute(&output)?, &bytes)?;
-        println!("{}", output.display());
-    } else {
-        run(
-            Command::new("pw-play")
-                .arg("--volume")
-                .arg(volume.to_string())
-                .arg(&wav),
-            "audio playback (requires PipeWire pw-play)",
-        )?;
-    }
-    Ok(())
+    Ok(text)
 }
+
+fn status(root: &Path) -> serde_json::Value {
+    let native = native::readiness();
+    let settings = native::Settings::load(root);
+    let chatterbox = chatterbox::read_config(root).ok();
+    serde_json::json!({
+        // The default (native) voice can speak now.
+        "ready": native.model && native.engine.is_some(),
+        // Nothing needs configuring for the native voice beyond its engine.
+        "configured": native.engine.is_some(),
+        "engine": "native",
+        "model": native.model,
+        "modelId": native::MODEL.id,
+        "modelBytes": native::MODEL.bytes,
+        "engineBinary": native.engine,
+        "resident": native::resident(),
+        "voice": settings.voice,
+        "radioVoice": settings.radio_voice,
+        "steps": settings.steps,
+        "voices": delulu_models::SUPERTONIC_VOICES,
+        "chatterbox": {
+            "configured": chatterbox.is_some(),
+            "ready": chatterbox.as_ref().is_some_and(chatterbox::ready),
+        },
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn speak(
+    root: &Path,
+    words: Vec<String>,
+    output: Option<PathBuf>,
+    volume: f32,
+    voice: Option<String>,
+    lang: String,
+    engine: Engine,
+    bundled_voice: bool,
+) -> Result<()> {
+    if !volume.is_finite() || !(0.0..=1.0).contains(&volume) {
+        bail!("Volume must be between 0 and 1");
+    }
+    if !["auto", "nl", "en"].contains(&lang.to_lowercase().as_str()) {
+        bail!("Language must be auto, nl or en");
+    }
+    let voice = match voice {
+        Some(v) => Some(native::voice_name(&v).with_context(|| {
+            format!(
+                "Unknown voice {v}; choose one of {}",
+                delulu_models::SUPERTONIC_VOICES.join(", ")
+            )
+        })?),
+        None => None,
+    };
+    let text = text_of(words)?;
+    match engine {
+        Engine::Chatterbox => chatterbox::speak(root, &text, output, volume, bundled_voice),
+        Engine::Native => {
+            let voice = voice.unwrap_or_else(|| native::Settings::load(root).voice);
+            native::speak(
+                root,
+                native::Request {
+                    text: &text,
+                    voice,
+                    lang: lang.to_lowercase(),
+                    output,
+                    volume,
+                },
+            )
+        }
+    }
+}
+
 fn main() {
+    STARTED.get_or_init(Instant::now);
     unsafe {
         libc::signal(libc::SIGINT, cancelled as *const () as usize);
         libc::signal(libc::SIGTERM, cancelled as *const () as usize);
@@ -453,20 +404,39 @@ fn main() {
             device,
             reference,
             default_voice,
-        } => setup(&root, python, device, reference, default_voice),
-        Action::InstallModel => install_model(&root),
+        } => {
+            install_cli(&root)?;
+            if python.is_some() || device.is_some() || reference.is_some() || default_voice {
+                chatterbox::setup(&root, python, device, reference, default_voice)?;
+            }
+            Ok(())
+        }
+        Action::InstallModel {
+            engine: Engine::Native,
+        } => native::install_model(&root),
+        Action::InstallModel {
+            engine: Engine::Chatterbox,
+        } => chatterbox::install_model(&root),
         Action::Speak {
             text,
             output,
             volume,
+            voice,
+            lang,
+            engine,
             bundled_voice,
-        } => speak(&root, text, output, volume, bundled_voice),
+        } => speak(
+            &root,
+            text,
+            output,
+            volume,
+            voice,
+            lang,
+            engine,
+            bundled_voice,
+        ),
         Action::Status => {
-            let config = read_config(&root).ok();
-            println!(
-                "{}",
-                serde_json::json!({"ready": config.as_ref().is_some_and(ready), "configured": config.is_some()})
-            );
+            println!("{}", status(&root));
             Ok(())
         }
     });

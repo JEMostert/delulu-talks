@@ -70,9 +70,9 @@ You need a Wayland desktop (GNOME or KDE Plasma), a Vulkan graphics driver, and 
 
 ## Delulu FM
 
-An optional radio station made on this computer, hidden until you turn on **Settings → Delulu FM**. Every song is new: the cleanup model writes its title, style and lyrics, [YuE2](https://huggingface.co/m-a-p/YuE2-3B) composes it on your graphics card, and between songs a host speaks through voice replies with Chatterbox Turbo's bundled voice. The **Delulu FM** page shows what is on air with its lyrics, what comes next and what played, and lets you skip, request a song or steer the mood and style.
+An optional radio station made on this computer, hidden until you turn on **Settings → Delulu FM**. Every song is new: the cleanup model writes its title, style and lyrics, [YuE2](https://huggingface.co/m-a-p/YuE2-3B) composes it on your graphics card, and between songs an AI host speaks in the station's language through the native voice (Supertonic 3). The **Delulu FM** page shows what is on air with its lyrics, what comes next and what played, and lets you skip, request a song or steer the mood and style.
 
-- **What it needs:** a graphics card with a Vulkan driver, the music model and the cleanup model. The music model (YuE2 3B, 4 GB, CC BY-NC 4.0) is an explicit download in **Settings → Models**, where you can also cancel or delete it; nothing downloads on its own and dictation never needs it. The host is optional; without the voice replies model the station plays music only.
+- **What it needs:** a graphics card with a Vulkan driver, the music model and the cleanup model. The music model (YuE2 3B, 4 GB, CC BY-NC 4.0) is an explicit download in **Settings → Models**, where you can also cancel or delete it; nothing downloads on its own and dictation never needs it. The host is optional; without the voice model (**Settings → Voice replies**) the station plays music only.
 - **Native:** YuE2 runs in `delulu-engine music`, a helper process shipped with the app that runs the model on ggml with Vulkan (no Python, no ComfyUI). It loads one part of the model at a time and exits after each song, so its graphics memory is free between songs. See [the parity and performance notes](docs/benchmarks/yue2-native/README.md).
 - **Dictation comes first:** the radio goes quiet while you hold the hotkey, the music engine pauses while you dictate, and no new writing, music or speech starts while you dictate or just after.
 - **Buffering:** a short programme is made ahead of playback (two songs or six minutes, at most three items). When nothing new is ready it replays a recent song. Playback is native, so it keeps playing with the window closed.
@@ -95,11 +95,11 @@ You need Rust, Bun, the GTK and WebKitGTK development libraries, ALSA, Vulkan he
 
 ```sh
 bun install
-bun run build:engine   # delulu-engine: the cleanup (llama.cpp) and music (YuE2) helpers, Vulkan
+bun run build:engine   # delulu-engine: cleanup (llama.cpp), music (YuE2) and voice (Supertonic) roles
 DELULU_ENGINE=$PWD/target/release/delulu-engine bun run dev
 ```
 
-`tauri dev` does not build the engine and only looks for it next to the debug binary, so point `DELULU_ENGINE` at the release build (or link it into `target/debug/`). The app starts it once per role (`delulu-engine llm`, `delulu-engine music`); `delulu-engine probe` prints its version, roles and graphics devices without loading a model. The helpers are separate processes because whisper.cpp and llama.cpp each bundle their own, incompatible copy of ggml. On Fedora, if clang cannot find its headers, set `BINDGEN_EXTRA_CLANG_ARGS` to the GCC include directory.
+`tauri dev` does not build the engine and only looks for it next to the debug binary, so point `DELULU_ENGINE` at the release build (or link it into `target/debug/`). The app starts it once per role (`delulu-engine llm`, `delulu-engine music`; `delulu speak` starts `delulu-engine tts`); `delulu-engine probe` prints its version, roles and graphics devices without loading a model. The helpers are separate processes because whisper.cpp and llama.cpp each bundle their own, incompatible copy of ggml. On Fedora, if clang cannot find its headers, set `BINDGEN_EXTRA_CLANG_ARGS` to the GCC include directory.
 
 The log goes to the systemd user journal, so it never holds what you said: each dictation logs its timings, lengths, language, topic and model, but not the text. To debug transcription or cleanup, start the app with `DELULU_LOG_TEXT=1`; the dictation line then also carries the transcript and the raw text, and those stay in the journal after you delete the entry from History.
 
@@ -109,81 +109,24 @@ The reel at the top is made in code: a canvas program draws every frame, a Pytho
 
 ## License
 
-[MIT](LICENSE). The optional YuE2 music model ([m-a-p/YuE2-3B](https://huggingface.co/m-a-p/YuE2-3B), downloaded in ComfyUI's INT8 packaging from [Comfy-Org/YuE2](https://huggingface.co/Comfy-Org/YuE2)) is CC BY-NC 4.0: non-commercial use only. The Parakeet model is [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) (CC BY 4.0), downloaded as the [int8 ONNX export by istupakov](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx). The reel uses Bricolage Grotesque and Newsreader, the app’s own typefaces, under the SIL Open Font License 1.1; they are downloaded when the reel is built, not stored here.
+[MIT](LICENSE). The optional YuE2 music model ([m-a-p/YuE2-3B](https://huggingface.co/m-a-p/YuE2-3B), downloaded in ComfyUI's INT8 packaging from [Comfy-Org/YuE2](https://huggingface.co/Comfy-Org/YuE2)) is CC BY-NC 4.0: non-commercial use only. The Parakeet model is [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) (CC BY 4.0), downloaded as the [int8 ONNX export by istupakov](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx). The voices are [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) by Supertone Inc. (BigScience OpenRAIL-M, use restrictions apply), downloaded from Supertone's repository on request; the text preprocessing ported from its sample code is MIT, Copyright (c) 2025 Supertone Inc. The reel uses Bricolage Grotesque and Newsreader, the app’s own typefaces, under the SIL Open Font License 1.1; they are downloaded when the reel is built, not stored here.
 
 ## Spoken agent replies
 
-Linux release packages include `delulu` (the Python adapter and agent skill are
-embedded in the binary; no checkout is required). The optional CLI gives agent harnesses on-demand speech output through
-[Chatterbox Turbo](https://huggingface.co/ResembleAI/chatterbox-turbo). It is separate
-from the desktop binary, so it does not start dictation, acquire the microphone,
-or change the app's listening behavior.
+Linux packages include `delulu`, a small CLI that lets coding agents speak short replies, and gives Delulu FM its host. It does not start dictation or touch the microphone.
 
 ```sh
-cargo build --release -p delulu-voice-cli
-./target/release/delulu setup   # lightweight: binary/config/skill, no model download
-delulu install-model            # optional, explicit ~3 GB download
-# setup installs ~/.local/bin/delulu; include ~/.local/bin on PATH
+delulu setup             # installs ~/.local/bin/delulu and the delulu-speak agent skill
+delulu install-model     # explicit download: Supertonic 3, about 400 MB
 delulu speak 'Done. The fix is ready for review.'
-printf '%s' 'The build passed.' | delulu speak
+printf '%s' 'De build is geslaagd.' | delulu speak
+delulu speak --output /tmp/reply.wav --lang en --voice M2 'Saved, not played.'
 ```
 
-Setup reuses the existing AI Director Flash Python environment at
-`~/.local/share/ai-director/chatterbox_flash_local/.venv/bin/python`. To choose
-another environment with `torch`, `chatterbox-tts` (Turbo API), `soundfile` and
-`huggingface_hub`, pass `--python /path/to/venv/bin/python`. It never installs or
-upgrades packages in that environment. `uv` prepares a small private setuptools
-compatibility overlay for Perth; no second CUDA stack is installed. Install
-[uv](https://docs.astral.sh/uv/) if missing. Playback requires PipeWire's `pw-play`.
-This CLI currently targets Linux.
+- **Voice:** [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) by Supertone Inc. runs on the processor in `delulu-engine tts` (ONNX Runtime, no Python, no graphics memory). It speaks Dutch and English, picking the language per sentence (`--lang auto|nl|en`), with ten preset voices (`--voice F1…F5, M1…M5`; the defaults are set in **Settings → Voice replies**). Numbers, versions, file names and abbreviations are spelled out first, and a few English developer words inside Dutch get a Dutch respelling; add your own in `~/.local/share/delulu-talks/voice/lexicon-nl.tsv` (`word<TAB>respelling`).
+- **Downloads:** only `delulu install-model` or **Install model** in Settings downloads the model, into `~/.local/share/delulu-talks/models/supertonic-3`, after showing its licence. Without it, `speak` fails with installation guidance and exit code 1.
+- **Speed:** sentences stream: the first one plays while the next is made. After a reply the engine stays loaded for five minutes (`keepWarmSeconds` in `voice/settings.json`; 0 means a fresh process per reply), so the next reply skips the 1–2 s start-up.
+- **Behaviour:** `delulu status` prints readiness as JSON. Replies queue under a per-user lock (a waiting reply gives up after ten minutes). Ctrl-C or SIGTERM stops the reply and returns 130 or 143; failures return 1. Input is capped at 16,000 bytes. `--volume` sets the stream volume (0 is silent) and never the system volume. Playback uses PipeWire's `pw-play`.
+- **Chatterbox:** the earlier Chatterbox Turbo voice remains as an opt-in for an existing Python environment: `delulu setup --python /path/to/venv/bin/python`, `delulu install-model --engine chatterbox`, `delulu speak --engine chatterbox …`.
 
-Only `delulu install-model` downloads roughly 3 GB of official Turbo weights into
-the standard Hugging Face cache, including the bundled default speaker. Ordinary
-app installation, first launch, opening Settings, and `delulu setup` never download
-model weights. Setup reuses compatible cached weights when present. Without weights,
-`speak` fails with installation guidance; inference cannot download missing assets.
-Flash weights and voice references are never reused. Model installation pins the resolved model revision in
-`~/.local/share/delulu-talks/voice/config.json` (or `$XDG_DATA_HOME` equivalent).
-Repeating setup reuses downloads and that revision. Setup checks dependencies and
-assets without loading a GPU model. Use `--device cpu` for CPU inference; CUDA is
-the default. `--reference /path/to/voice.wav` explicitly chooses a voice clip longer
-than five seconds. Setup preserves an existing device and reference when omitted.
-Use `delulu setup --default-voice` to restore the official default speaker.
-No configured voice from another app is read.
-
-Setup also installs the short `delulu-speak` skill into `$CODEX_HOME/skills`
-(default `~/.codex/skills`) and existing `~/.claude/skills` / `~/.agents/skills`
-directories. It preserves customized skill files and all unrelated preferences.
-The skill activates for requested spoken output or an active voice conversation:
-it asks agents to speak concise replies and completion reports, not entire written
-answers or constant progress updates. Existing `delulu-voice` listening sessions
-keep their response-ID and interruption flow, without duplicate speech.
-
-`delulu status` prints JSON readiness without starting Python. The GUI's Settings
-section shows this readiness and offers an explicit optional Install model action.
-Each `speak` loads Turbo, generates
-locally and exits the Python process before playback, freeing GPU memory. Speak
-works offline after model installation. Concurrent Delulu setup/speech jobs queue under a
-per-user lock; they do not stop other applications or coordinate other apps' GPU
-usage. Leave sufficient GPU memory free, or select CPU. Ctrl-C / SIGTERM cancels
-the active owned subprocess and returns 130 / 143; failures return 1. A job waiting
-for the lock gives up after ten minutes, and an active subprocess after thirty.
-
-For silent verification or a headless harness, save a WAV instead of playing it.
-`--volume 0` exercises real playback with a muted stream without changing system volume:
-
-```sh
-delulu speak --output /tmp/reply.wav 'The change is ready.'
-printf '%s' 'The build passed.' | delulu speak --output /tmp/reply.wav
-delulu speak --volume 0 'Silent playback check.'
-```
-
-Normal `speak` always plays through the current default PipeWire output; it never
-changes system volume. Missing dependencies, incomplete setup, synthesis and
-playback failures are reported on stderr. Text is passed by a private temporary
-file, never interpreted as shell code; temporary audio and text are deleted on
-normal completion and handled cancellation. Hard kills can leave a temporary job
-directory but no resident inference worker. Keep replies short; the input cap is
-16,000 UTF-8 bytes and Turbo is intended for English speech.
-
-Local verification evidence and limitations: [voice verification](docs/voice-verification.md).
+The voices are AI-generated. The model's [OpenRAIL-M licence](https://huggingface.co/Supertone/supertonic-3/blob/3cadd1ee6394adea1bd021217a0e650ede09a323/LICENSE) binds everything they say to its use restrictions, among them: no impersonation and no deception, and say that audio you share is machine generated.

@@ -268,7 +268,8 @@ pub fn song_prompt(
     }
 }
 
-pub fn break_prompt(last: &Item, next_mood: &str) -> (String, u32) {
+/// The host's lines between songs, in English or (`lang` "nl") Dutch.
+pub fn break_prompt(last: &Item, next_mood: &str, lang: &str) -> (String, u32) {
     let data = serde_json::json!({
         "justPlayed": last.title,
         "itsStyle": last.subtitle,
@@ -276,7 +277,11 @@ pub fn break_prompt(last: &Item, next_mood: &str) -> (String, u32) {
     });
     (
         render(
-            BREAK_SYSTEM,
+            &if lang == "nl" {
+                BREAK_SYSTEM.replace("in English.", "in Dutch (Nederlands).")
+            } else {
+                BREAK_SYSTEM.to_string()
+            },
             &format!("On air now (data): {data}"),
             "Script:",
         ),

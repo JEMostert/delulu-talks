@@ -2,8 +2,8 @@
 //!
 //! Gemma 4 E4B (the cleanup model) writes each song's title, style and lyrics and the
 //! host's lines; YuE2 makes the music natively in the `delulu-engine music` helper (see
-//! `music`); the host speaks through `delulu speak` with Chatterbox Turbo's bundled
-//! voice. This crate holds the station, its storage and the native player; the app
+//! `music`); the host speaks through `delulu speak` with the native voice
+//! (Supertonic 3, in the station's language). This crate holds the station, its storage and the native player; the app
 //! supplies the helpers and decides when the GPU may be used.
 pub mod audio;
 pub mod model;

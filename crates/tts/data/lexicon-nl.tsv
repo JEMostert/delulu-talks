@@ -1,0 +1,14 @@
+# English developer words inside Dutch sentences, respelled so Supertonic's Dutch
+# reading sounds English. One entry per line: word or phrase, a tab, the respelling.
+# Longer phrases win over their words. Matching ignores case and whole words only.
+# Extra entries: the same format in $XDG_DATA_HOME/delulu-talks/voice/lexicon-nl.tsv.
+#
+# Only respellings that Whisper large-v3-turbo heard as the English word where the raw
+# word was missed are kept (D3a test, voice M1, 70 candidates). Most developer words
+# (commit, review, update, check, download, ...) are already heard right without help;
+# merge, build, branch, push and crash are not, and no respelling tried fixed them.
+release notes	rielies noots
+fixes	fikses
+staging	steedzjing
+backend	bek-end
+main	meen

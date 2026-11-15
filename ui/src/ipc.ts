@@ -73,9 +73,21 @@ export type ModelStatus = {
   downloaded: boolean;
 };
 export type VoiceStatus = {
+  /** `delulu speak` can speak now. */
   ready: boolean;
-  configured: boolean;
   installing: boolean;
+  /** The voice model is downloaded. */
+  model: boolean;
+  /** The voice engine (delulu-engine) is installed. */
+  engine: boolean;
+  /** Agents' voice and Delulu FM's host, like "F1" or "M1". */
+  voice: string;
+  radioVoice: string;
+  voices: string[];
+  modelLabel: string;
+  modelBytes: number;
+  /** Shown before the download, as the model's licence requires. */
+  terms: { name: string; url: string; credit: string; text: string };
 };
 export type CleanupStatus = {
   state: "off" | "missing" | "downloading" | "loading" | "ready" | "error";
@@ -142,6 +154,8 @@ export const removeTerm = (id: string, term: string) =>
   invoke<Vocabulary>("remove_term", { id, term });
 export const getVoiceStatus = () => invoke<VoiceStatus>("get_voice_status");
 export const installVoiceModel = () => invoke<void>("install_voice_model");
+export const setVoice = (role: "agent" | "radio", voice: string) =>
+  invoke<void>("set_voice", { role, voice });
 export const getCleanupStatus = () =>
   invoke<CleanupStatus>("get_cleanup_status");
 export const startCleanup = () => invoke<void>("start_cleanup");

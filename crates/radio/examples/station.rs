@@ -45,11 +45,11 @@ impl Backend for Real {
     fn voice_ready(&self) -> bool {
         self.voice.ready()
     }
-    fn speak(&self, text: &str, out: &Path) -> Result<(), RadioError> {
+    fn speak(&self, text: &str, lang: &str, out: &Path) -> Result<String, RadioError> {
         let started = Instant::now();
-        let r = self.voice.speak(text, out, &|| false);
+        let r = self.voice.speak(text, lang, None, out, &|| false);
         eprintln!("[speak] {} ms", started.elapsed().as_millis());
-        r
+        r.map(|()| "Supertonic 3 (AI voice)".into())
     }
     fn compose(
         &self,
