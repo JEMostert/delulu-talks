@@ -5,8 +5,8 @@ use super::*;
 pub(crate) struct Status {
     pub(crate) phase: String,
     pub(crate) message: Option<String>,
-    pub(crate) hotkey: delulu_hotkey::HotkeyStatus,
-    pub(crate) insert: delulu_insert::InsertStatus,
+    pub(crate) hotkey: delulu_desktop::hotkey::HotkeyStatus,
+    pub(crate) insert: delulu_desktop::insert::InsertStatus,
     pub(crate) backend: Option<String>,
     pub(crate) model: Option<String>,
     pub(crate) data_dir: String,

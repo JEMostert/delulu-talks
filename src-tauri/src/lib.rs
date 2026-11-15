@@ -1,5 +1,5 @@
-use delulu_hotkey::{Command, Gesture, Hotkey, KeyEvent};
-use delulu_insert::{InsertOutcome, Inserter, PasteKey};
+use delulu_desktop::hotkey::{Command, Gesture, Hotkey, KeyEvent};
+use delulu_desktop::insert::{InsertOutcome, Inserter, PasteKey};
 use delulu_overlay::{Pill, PillState};
 use delulu_store::{HistoryEntry, InsertMode, NewEntry, Settings, Store};
 use serde::Serialize;
@@ -88,7 +88,7 @@ pub fn run() {
                 phase: "needsSetup".into(),
                 message: None,
                 hotkey: if no_portals {
-                    delulu_hotkey::HotkeyStatus {
+                    delulu_desktop::hotkey::HotkeyStatus {
                         bound: false,
                         trigger: None,
                         error: Some("Portals disabled for unattended tests".into()),
@@ -97,7 +97,7 @@ pub fn run() {
                     Default::default()
                 },
                 insert: if no_portals {
-                    delulu_insert::InsertStatus {
+                    delulu_desktop::insert::InsertStatus {
                         ready: false,
                         error: Some("Portals disabled for unattended tests".into()),
                     }

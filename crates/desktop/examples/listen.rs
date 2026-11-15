@@ -1,4 +1,4 @@
-use delulu_hotkey::{Hotkey, DEFAULT_TRIGGER};
+use delulu_desktop::hotkey::{Hotkey, DEFAULT_TRIGGER};
 
 #[tokio::main]
 async fn main() {

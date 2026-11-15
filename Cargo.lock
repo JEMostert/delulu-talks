@@ -1128,22 +1128,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "delulu-engine"
+name = "delulu-desktop"
 version = "1.5.0"
 dependencies = [
- "delulu-cleanup",
- "delulu-music",
- "hound",
- "libc",
- "llama-cpp-2",
- "serde_json",
-]
-
-[[package]]
-name = "delulu-hotkey"
-version = "1.5.0"
-dependencies = [
+ "arboard",
  "ashpd",
+ "async-trait",
  "delulu-core",
  "dirs 6.0.0",
  "futures-util",
@@ -1155,17 +1145,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "delulu-insert"
+name = "delulu-engine"
 version = "1.5.0"
 dependencies = [
- "arboard",
- "ashpd",
- "async-trait",
- "log",
- "serde",
- "thiserror 2.0.21",
- "tokio",
- "zbus",
+ "delulu-cleanup",
+ "delulu-music",
+ "hound",
+ "libc",
+ "llama-cpp-2",
+ "serde_json",
 ]
 
 [[package]]
@@ -1265,8 +1253,7 @@ version = "1.5.0"
 dependencies = [
  "delulu-audio",
  "delulu-cleanup",
- "delulu-hotkey",
- "delulu-insert",
+ "delulu-desktop",
  "delulu-models",
  "delulu-overlay",
  "delulu-radio",

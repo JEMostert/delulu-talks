@@ -1,4 +1,4 @@
-use delulu_insert::{Inserter, PasteKey};
+use delulu_desktop::insert::{Inserter, PasteKey};
 use std::time::Duration;
 
 #[tokio::main]
