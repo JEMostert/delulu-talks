@@ -1,0 +1,16 @@
+[package]
+name = "delulu-engine"
+version.workspace = true
+edition.workspace = true
+# One worker binary for the GPU roles, so the app ships one copy of ggml and its
+# Vulkan shaders. Each process still runs one role.
+[[bin]]
+name = "delulu-engine"
+path = "src/main.rs"
+[dependencies]
+delulu-cleanup = { path = "../cleanup" }
+delulu-music = { path = "../music" }
+serde_json.workspace = true
+llama-cpp-2.workspace = true
+libc.workspace = true
+hound = "3.5"

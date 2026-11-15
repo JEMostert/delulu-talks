@@ -14,9 +14,9 @@ never installs or starts those runtimes:
 
 - **Voice replies** (`delulu` CLI): Chatterbox Turbo in an existing Python
   environment; the model downloads only on an explicit Install.
-- **Delulu FM** (radio): YuE2 music made natively by the `delulu-music` helper
-  (ggml, Vulkan), words from the cleanup model, the host through voice replies
-  with the bundled speaker. The music model is an explicit download in
+- **Delulu FM** (radio): YuE2 music made natively by the `delulu-engine music`
+  helper (ggml, Vulkan), words from the cleanup model, the host through voice
+  replies with the bundled speaker. The music model is an explicit download in
   Settings → Models; missing pieces are shown as steps to do.
 
 ## Build order (each step gated on the previous one being used daily)

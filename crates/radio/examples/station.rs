@@ -1,7 +1,7 @@
 //! Run the station headless with the real writer, music engine and voice, to measure it.
 //! `cargo run --release -p delulu-radio --example station -- <data-dir> <items> [host]`
-//! Needs the Gemma and YuE2 models in the app's models folder, `delulu-cleanup` and
-//! `delulu-music` (set `DELULU_CLEANUP_HELPER` / `DELULU_MUSIC_HELPER` in a checkout).
+//! Needs the Gemma and YuE2 models in the app's models folder and `delulu-engine`
+//! (set `DELULU_ENGINE` in a checkout).
 use delulu_cleanup::{Cleaner, Sampling};
 use delulu_radio::model::{Direction, Draft, Host};
 use delulu_radio::music::{self, Composer, Song};
@@ -58,7 +58,7 @@ impl Backend for Real {
         max_seconds: u32,
         out: &Path,
     ) -> Result<BTreeMap<String, String>, RadioError> {
-        let helper = music::helper_path().expect("delulu-music helper");
+        let helper = music::helper_path().expect("delulu-engine");
         let model = models().join(music::MODEL_FILE);
         let song = Song::new(draft, seed, max_seconds);
         let report = self
@@ -77,7 +77,7 @@ fn main() {
     let root = PathBuf::from(args.next().expect("data dir"));
     let items: usize = args.next().map_or(1, |s| s.parse().unwrap());
     let host = args.next().is_some();
-    let helper = delulu_cleanup::helper_path().expect("delulu-cleanup helper");
+    let helper = delulu_cleanup::helper_path().expect("delulu-engine");
     let model = dirs_model();
     let started = Instant::now();
     let cleaner =

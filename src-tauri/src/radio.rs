@@ -48,7 +48,7 @@ pub(crate) struct Readiness {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MusicReadiness {
-    /// The `delulu-music` helper is installed.
+    /// The `delulu-engine` binary, which runs the music helper, is installed.
     engine: bool,
     /// The YuE2 model is downloaded.
     model: bool,
@@ -566,7 +566,7 @@ impl Backend for AppBackend {
         out: &Path,
     ) -> Result<BTreeMap<String, String>, RadioError> {
         let helper = music::helper_path().ok_or_else(|| {
-            RadioError::Unavailable("The music engine (delulu-music) is not installed.".into())
+            RadioError::Unavailable("The music engine (delulu-engine) is not installed.".into())
         })?;
         let models = self.app.state::<Shell>().store.models_dir();
         if !delulu_stt::file_ready(&models, &crate::music::MUSIC_MODEL)

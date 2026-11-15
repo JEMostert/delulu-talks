@@ -9,6 +9,9 @@ use std::time::{Duration, Instant};
 use delulu_cleanup::{Cleaner, CleanupError};
 
 const READY: &str = r#"echo '{"type":"ready","backend":"Fake: test","loadMs":1}'"#;
+/// Like the real engine, the scripts refuse to run without the `llm` role.
+const ROLE: &str =
+    r#"[ "$1" = llm ] || { echo '{"type":"error","message":"no llm role"}'; exit 2; }"#;
 
 const SCRIPTS: [(&str, &str); 7] = [
     // Answers every request with its own id.
@@ -64,7 +67,7 @@ fn script(name: &str) -> PathBuf {
                 READY
             };
             let path = dir.join(format!("{name}.sh"));
-            std::fs::write(&path, format!("#!/bin/sh\n{ready}\n{body}\n")).unwrap();
+            std::fs::write(&path, format!("#!/bin/sh\n{ROLE}\n{ready}\n{body}\n")).unwrap();
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         dir
@@ -120,7 +123,7 @@ fn load_error_is_reported_and_reaped() {
 #[test]
 fn missing_helper_is_a_spawn_error() {
     let err = Cleaner::start(
-        Path::new("/nonexistent/delulu-cleanup"),
+        Path::new("/nonexistent/delulu-engine"),
         Path::new("model.gguf"),
         Duration::from_secs(1),
         |_| {},

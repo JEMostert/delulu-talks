@@ -1,8 +1,9 @@
-//! `delulu-cleanup`: runs Gemma 4 E4B through llama.cpp for transcript cleanup.
+//! `delulu-engine llm`: runs Gemma 4 E4B through llama.cpp for transcript cleanup and
+//! the radio writer.
 //!
-//! Serve mode: `delulu-cleanup --model <gguf>` reads one JSON `Request` per stdin line and
-//! writes one JSON `Reply` per stdout line. Smoke mode:
-//! `delulu-cleanup --model <gguf> [--vocab <term>]… --once <nl|en> <text…>`.
+//! Serve mode: `delulu-engine llm --model <gguf>` reads one JSON `Request` per stdin
+//! line and writes one JSON `Reply` per stdout line. Smoke mode:
+//! `delulu-engine llm --model <gguf> [--vocab <term>]… --once <nl|en> <text…>`.
 
 use std::fs::File;
 use std::io::{BufRead, Write};
@@ -36,7 +37,7 @@ const WARM_UPS: [(&str, &str); 2] = [
 ];
 
 const USAGE: &str =
-    "usage: delulu-cleanup --model <gguf> [--vocab <term>]… [--once <nl|en> <text…>]";
+    "usage: delulu-engine llm --model <gguf> [--vocab <term>]… [--once <nl|en> <text…>]";
 
 struct Args {
     model: PathBuf,
@@ -45,8 +46,7 @@ struct Args {
     vocab: Vec<String>,
 }
 
-fn parse_args() -> Result<Args, String> {
-    let mut args = std::env::args().skip(1);
+fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut model = None;
     let mut once = None;
     let mut vocab = Vec::new();
@@ -86,12 +86,12 @@ fn send(out: &mut File, reply: &Reply) {
     let _ = writeln!(out, "{line}").and_then(|()| out.flush());
 }
 
-fn main() -> ExitCode {
+pub fn main(args: impl Iterator<Item = String>) -> ExitCode {
     let mut out = protocol_out();
-    let args = match parse_args() {
+    let args = match parse_args(args) {
         Ok(args) => args,
         Err(message) => {
-            eprintln!("delulu-cleanup: {message}");
+            eprintln!("delulu-engine llm: {message}");
             return ExitCode::from(2);
         }
     };
@@ -153,7 +153,7 @@ fn main() -> ExitCode {
             load_ms,
         },
     );
-    eprintln!("delulu-cleanup: ready ({backend_label}, {load_ms} ms)");
+    eprintln!("delulu-engine llm: ready ({backend_label}, {load_ms} ms)");
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {
@@ -162,7 +162,7 @@ fn main() -> ExitCode {
         let request: Request = match serde_json::from_str(&line) {
             Ok(request) => request,
             Err(e) => {
-                eprintln!("delulu-cleanup: bad request: {e}");
+                eprintln!("delulu-engine llm: bad request: {e}");
                 continue;
             }
         };
@@ -185,7 +185,7 @@ fn main() -> ExitCode {
 }
 
 fn load_failed(out: &mut File, message: &str) -> ExitCode {
-    eprintln!("delulu-cleanup: {message}");
+    eprintln!("delulu-engine llm: {message}");
     send(
         out,
         &Reply::Error {
@@ -205,7 +205,7 @@ fn once(
     vocab: &[String],
 ) -> ExitCode {
     let Some(rendered) = prompt(language, text, vocab) else {
-        eprintln!("delulu-cleanup: kept raw (unsupported language, empty or too long)");
+        eprintln!("delulu-engine llm: kept raw (unsupported language, empty or too long)");
         let _ = writeln!(out, "{text}");
         return ExitCode::SUCCESS;
     };
@@ -213,7 +213,7 @@ fn once(
     let (raw, truncated) = match engine.generate(&rendered, max_tokens(text), None) {
         Ok(result) => result,
         Err(e) => {
-            eprintln!("delulu-cleanup: {e}");
+            eprintln!("delulu-engine llm: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -309,7 +309,7 @@ impl Engine<'_> {
 }
 
 /// Same format as stt: the first GPU llama.cpp registered, else "CPU".
-fn backend_label() -> String {
+pub fn backend_label() -> String {
     list_llama_ggml_backend_devices()
         .into_iter()
         .find(|dev| {

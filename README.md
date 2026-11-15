@@ -65,7 +65,7 @@ You need a Wayland desktop (GNOME or KDE Plasma), a Vulkan graphics driver, and 
 
 - **Whisper** (Large v3 Turbo, whisper.cpp on Vulkan) turns your speech into text. From letting go of the key to typed text usually takes well under a second.
 - **Or Parakeet** (NVIDIA Parakeet TDT 0.6B v3 on ONNX Runtime), the faster engine: it runs on the processor, recognizes 25 European languages on its own and needs no graphics memory. Pick it during setup or in **Settings → Dictation**; switching back and forth keeps both downloads.
-- **Cleanup** runs Gemma 4 E4B in a separate helper, `delulu-cleanup` (llama.cpp with Vulkan), with the topic and your vocabularies.
+- **Cleanup** runs Gemma 4 E4B in a separate helper process, `delulu-engine llm` (llama.cpp with Vulkan), with the topic and your vocabularies.
 - **Typing** pastes the result into the focused app through the desktop’s remote-desktop portal; when that is not allowed, the text is copied and you press Ctrl+V.
 
 ## Delulu FM
@@ -73,7 +73,7 @@ You need a Wayland desktop (GNOME or KDE Plasma), a Vulkan graphics driver, and 
 An optional radio station made on this computer, hidden until you turn on **Settings → Delulu FM**. Every song is new: the cleanup model writes its title, style and lyrics, [YuE2](https://huggingface.co/m-a-p/YuE2-3B) composes it on your graphics card, and between songs a host speaks through voice replies with Chatterbox Turbo's bundled voice. The **Delulu FM** page shows what is on air with its lyrics, what comes next and what played, and lets you skip, request a song or steer the mood and style.
 
 - **What it needs:** a graphics card with a Vulkan driver, the music model and the cleanup model. The music model (YuE2 3B, 4 GB, CC BY-NC 4.0) is an explicit download in **Settings → Models**, where you can also cancel or delete it; nothing downloads on its own and dictation never needs it. The host is optional; without the voice replies model the station plays music only.
-- **Native:** YuE2 runs in `delulu-music`, a helper shipped with the app that runs the model on ggml with Vulkan (no Python, no ComfyUI). It loads one part of the model at a time and exits after each song, so its graphics memory is free between songs. See [the parity and performance notes](docs/benchmarks/yue2-native/README.md).
+- **Native:** YuE2 runs in `delulu-engine music`, a helper process shipped with the app that runs the model on ggml with Vulkan (no Python, no ComfyUI). It loads one part of the model at a time and exits after each song, so its graphics memory is free between songs. See [the parity and performance notes](docs/benchmarks/yue2-native/README.md).
 - **Dictation comes first:** the radio goes quiet while you hold the hotkey, the music engine pauses while you dictate, and no new writing, music or speech starts while you dictate or just after.
 - **Buffering:** a short programme is made ahead of playback (two songs or six minutes, at most three items). When nothing new is ready it replays a recent song. Playback is native, so it keeps playing with the window closed.
 - **Recovery:** every step is saved. A song stopped half-way (off air, quit) keeps its words and is composed again later. A failed song is retried once, then the station pauses briefly.
@@ -87,7 +87,7 @@ On an RTX 5060 Ti (16 GB), a 2:38 song took 2:47 to make, peaking at 3.7 GB of g
   <img src="docs/assets/resources.svg" alt="About 0.4 GB of RAM and 4.6 GB of graphics memory with cleanup on; about 0.25 GB of RAM and 0.9 GB of graphics memory with cleanup off." width="100%">
 </p>
 
-Both models live on the graphics card. Process monitors such as htop show the `delulu-cleanup` helper at about 3 GB, but most of that is the model file mapped from disk: clean page cache the kernel drops when it needs the memory. Turning cleanup off stops the helper and frees its 3.7 GB of graphics memory.
+Both models live on the graphics card. Process monitors such as htop show the cleanup helper (`delulu-engine llm`) at about 3 GB, but most of that is the model file mapped from disk: clean page cache the kernel drops when it needs the memory. Turning cleanup off stops the helper and frees its 3.7 GB of graphics memory.
 
 ## Development
 
@@ -95,12 +95,11 @@ You need Rust, Bun, the GTK and WebKitGTK development libraries, ALSA, Vulkan he
 
 ```sh
 bun install
-bun run build:helper   # the delulu-cleanup helper (llama.cpp with Vulkan)
-bun run build:music    # the delulu-music helper (YuE2 on ggml with Vulkan)
-DELULU_CLEANUP_HELPER=$PWD/target/release/delulu-cleanup DELULU_MUSIC_HELPER=$PWD/target/release/delulu-music bun run dev
+bun run build:engine   # delulu-engine: the cleanup (llama.cpp) and music (YuE2) helpers, Vulkan
+DELULU_ENGINE=$PWD/target/release/delulu-engine bun run dev
 ```
 
-`tauri dev` does not build the cleanup helper and only looks for it next to the debug binary, so point `DELULU_CLEANUP_HELPER` at the release build (or link it into `target/debug/`). The helper is a separate process because whisper.cpp and llama.cpp each bundle their own, incompatible copy of ggml. On Fedora, if clang cannot find its headers, set `BINDGEN_EXTRA_CLANG_ARGS` to the GCC include directory.
+`tauri dev` does not build the engine and only looks for it next to the debug binary, so point `DELULU_ENGINE` at the release build (or link it into `target/debug/`). The app starts it once per role (`delulu-engine llm`, `delulu-engine music`); `delulu-engine probe` prints its version, roles and graphics devices without loading a model. The helpers are separate processes because whisper.cpp and llama.cpp each bundle their own, incompatible copy of ggml. On Fedora, if clang cannot find its headers, set `BINDGEN_EXTRA_CLANG_ARGS` to the GCC include directory.
 
 Checks: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `bun run typecheck`, `bun test ui` and `bun run format:check`. Pushing a `vX.Y.Z` tag builds the packages and publishes the release, with notes from `docs/releases/<tag>.md`.
 

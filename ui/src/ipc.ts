@@ -227,7 +227,7 @@ export type RadioRequest = {
 };
 export type RadioReadiness = {
   music: {
-    /** The delulu-music engine is installed. */
+    /** The delulu-engine binary (music role) is installed. */
     engine: boolean;
     /** The YuE2 model is downloaded (Settings → Models). */
     model: boolean;

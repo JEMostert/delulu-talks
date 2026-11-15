@@ -1,16 +1,16 @@
-//! `delulu-music`: Delulu FM's native music engine, run as a child process so its GPU
-//! memory is released as soon as a song is done (or the app stops it).
+//! `delulu-engine music`: Delulu FM's native music engine, run as a child process so
+//! its GPU memory is released as soon as a song is done (or the app stops it).
 //!
-//! `delulu-music generate --model <safetensors> --out <wav>` reads one JSON `Song`
-//! from stdin and writes JSON lines to stdout: progress events, then a final
+//! `delulu-engine music generate --model <safetensors> --out <wav>` reads one JSON
+//! `Song` from stdin and writes JSON lines to stdout: progress events, then a final
 //! `{"done": report}` or `{"error": message}`.
-//! `delulu-music probe` prints the compute device it would use.
+//! `delulu-engine music probe` starts the compute device it would use and prints it.
 use delulu_music::{generate, Progress, Song, SAMPLE_RATE};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: delulu-music generate --model <safetensors> --out <wav> < song.json\n       delulu-music probe";
+const USAGE: &str = "usage: delulu-engine music generate --model <safetensors> --out <wav> < song.json\n       delulu-engine music probe";
 
 fn emit(value: serde_json::Value) {
     let mut out = std::io::stdout().lock();
@@ -40,8 +40,7 @@ fn write_wav(path: &PathBuf, samples: &[f32]) -> Result<(), String> {
     std::fs::rename(&temp, path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-fn run() -> Result<(), String> {
-    let mut args = std::env::args().skip(1);
+fn run(mut args: impl Iterator<Item = String>) -> Result<(), String> {
     let command = args.next().ok_or(USAGE)?;
     match command.as_str() {
         "probe" => {
@@ -84,8 +83,8 @@ fn run() -> Result<(), String> {
     }
 }
 
-fn main() -> ExitCode {
-    match run() {
+pub fn main(args: impl Iterator<Item = String>) -> ExitCode {
+    match run(args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             emit(serde_json::json!({ "error": e }));
