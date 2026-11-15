@@ -1,0 +1,2 @@
+# Generated from crates/proto; checked by `cargo test -p delulu-proto --test generated`.
+ui/src/generated/

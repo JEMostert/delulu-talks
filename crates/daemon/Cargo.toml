@@ -1,0 +1,25 @@
+[package]
+name = "delulu-daemon"
+version.workspace = true
+edition.workspace = true
+description = "The Delulu Talks daemon and its command line client."
+
+# Named `delulud` for now: `crates/voice-cli` still ships the `delulu` binary
+# (speak/setup/install-model/status). The two merge when speech moves into the
+# daemon (work package D3).
+[[bin]]
+name = "delulud"
+path = "src/main.rs"
+
+[dependencies]
+delulu-core = { path = "../core" }
+delulu-proto = { path = "../proto" }
+serde.workspace = true
+serde_json.workspace = true
+libc.workspace = true
+# Only what the daemon uses; no `full`, so no blocking-pool extras or fs.
+tokio = { version = "1", default-features = false, features = ["rt", "net", "io-util", "sync", "time", "signal", "macros"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", default-features = false, features = ["rt", "net", "io-util", "sync", "time", "macros"] }

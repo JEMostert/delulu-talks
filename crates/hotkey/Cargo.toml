@@ -11,3 +11,4 @@ zbus.workspace = true
 tokio.workspace = true
 futures-util.workspace = true
 dirs.workspace = true
+delulu-core = { path = "../core" }

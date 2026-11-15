@@ -1,0 +1,11 @@
+[package]
+name = "delulu-proto"
+version.workspace = true
+edition.workspace = true
+description = "Wire protocol between the Delulu Talks daemon, its clients and its engine workers."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+# Only derives and a declaration printer; the daemon never calls it at runtime.
+ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
