@@ -248,12 +248,71 @@ fn filter_backup(path: &Path, drop: impl Fn(&HistoryEntry) -> bool) -> Result<()
     }
 }
 
+/// The version 1 files an import has committed but not yet renamed to their backups.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Pending {
+    pub history: bool,
+    pub vocabulary: bool,
+}
+
+impl Pending {
+    pub fn any(self) -> bool {
+        self.history || self.vocabulary
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum ImportFailure {
+    /// Nothing was committed; the files are untouched and the next start tries again.
+    NotCommitted(StoreError),
+    /// The database holds everything, but these files still have their old names.
+    /// Until they are renamed, a removal could come back from them at the next start.
+    Unfinished { pending: Pending, error: StoreError },
+}
+
 /// Imports the version 1 files, if any, then renames them to their backups.
 pub(crate) fn import_v1(
     conn: &mut Connection,
     config_dir: &Path,
     data_dir: &Path,
-) -> Result<Report, StoreError> {
+) -> Result<Report, ImportFailure> {
+    let (report, mut pending) =
+        import(conn, config_dir, data_dir).map_err(ImportFailure::NotCommitted)?;
+    finish(config_dir, data_dir, &mut pending)
+        .map_err(|error| ImportFailure::Unfinished { pending, error })?;
+    Ok(report)
+}
+
+/// Renames the committed files still in `pending` to their backups, clearing each
+/// one that is done.
+pub(crate) fn finish(
+    config_dir: &Path,
+    data_dir: &Path,
+    pending: &mut Pending,
+) -> Result<(), StoreError> {
+    crash_point("committed")?;
+    if pending.history {
+        let path = data_dir.join(HISTORY_FILE);
+        fs::rename(&path, backup_path(&path)).map_err(|e| io_error(&path, e))?;
+        pending.history = false;
+    }
+    crash_point("history-renamed")?;
+    if pending.vocabulary {
+        let path = config_dir.join(VOCABULARY_FILE);
+        fs::rename(&path, backup_path(&path)).map_err(|e| io_error(&path, e))?;
+        pending.vocabulary = false;
+    }
+    crash_point("vocabulary-renamed")?;
+    Ok(())
+}
+
+/// Parses the version 1 files and imports them in one transaction. Returns which
+/// files the commit covers.
+fn import(
+    conn: &mut Connection,
+    config_dir: &Path,
+    data_dir: &Path,
+) -> Result<(Report, Pending), StoreError> {
     let history_path = data_dir.join(HISTORY_FILE);
     let vocabulary_path = config_dir.join(VOCABULARY_FILE);
 
@@ -267,7 +326,7 @@ pub(crate) fn import_v1(
         None
     });
     if history.is_none() && vocabulary_bytes.is_none() {
-        return Ok(Report::default());
+        return Ok((Report::default(), Pending::default()));
     }
 
     let parsed = parse_history(history.as_deref().unwrap_or_default(), &history_path);
@@ -322,6 +381,10 @@ pub(crate) fn import_v1(
             Placed::Present => report.already_present += 1,
         }
     }
+    let pending = Pending {
+        history: history.is_some(),
+        vocabulary: vocabulary.is_some(),
+    };
     if let Some(file) = vocabulary {
         let existing = db::load_vocabulary(&tx)?;
         let (merged, terms_merged) = merge_vocabulary(&existing, file);
@@ -333,18 +396,6 @@ pub(crate) fn import_v1(
     }
     crash_point("before-commit")?;
     tx.commit().map_err(db::sql_error)?;
-    crash_point("committed")?;
-
-    if history.is_some() {
-        let backup = backup_path(&history_path);
-        fs::rename(&history_path, &backup).map_err(|e| io_error(&history_path, e))?;
-    }
-    crash_point("history-renamed")?;
-    if vocabulary_path.exists() {
-        let backup = backup_path(&vocabulary_path);
-        fs::rename(&vocabulary_path, &backup).map_err(|e| io_error(&vocabulary_path, e))?;
-    }
-    crash_point("vocabulary-renamed")?;
 
     let r = &report;
     log::info!(
@@ -356,7 +407,7 @@ pub(crate) fn import_v1(
         r.shelves_added,
         r.terms_merged
     );
-    Ok(report)
+    Ok((report, pending))
 }
 
 #[cfg(test)]
@@ -628,6 +679,39 @@ mod tests {
             // The next start finishes the import.
             assert_migrated(&t);
         }
+    }
+
+    #[test]
+    fn a_removal_waits_for_the_old_files_to_become_backups() {
+        let t = TempDir::new();
+        write_fixture(&t);
+        // The import commits, but history.jsonl keeps its name.
+        FAIL_AT.with(|at| at.set(Some("committed")));
+        let store = Store::open(&t.config(), &t.data()).unwrap();
+        assert_eq!(store.history(None, 100).len(), 4);
+        // While the rename keeps failing, nothing can be removed: the next start
+        // would import it again from history.jsonl.
+        assert!(store.delete_history("b2").is_err());
+        assert!(store.clear_history().is_err());
+        assert!(store
+            .update_vocabulary(|v| {
+                v.shelves.clear();
+                Ok(())
+            })
+            .is_err());
+        assert_eq!(store.history(None, 100).len(), 4);
+        assert!(t.data().join(HISTORY_FILE).exists());
+
+        FAIL_AT.with(|at| at.set(None));
+        store.delete_history("b2").unwrap();
+        drop(store);
+        let store = Store::open(&t.config(), &t.data()).unwrap();
+        assert!(store.history_entry("b2").is_none());
+        assert_eq!(store.history(None, 100).len(), 3);
+        assert_eq!(store.vocabulary().shelves, expected_shelves());
+        assert!(!t.data().join(HISTORY_FILE).exists());
+        assert!(!t.config().join(VOCABULARY_FILE).exists());
+        assert!(!t.data().join("history.jsonl.v1.bak.2").exists());
     }
 
     /// Runs in a child process: opens the store with a crash point armed.

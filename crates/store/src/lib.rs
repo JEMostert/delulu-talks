@@ -182,6 +182,9 @@ struct Data {
     vocabulary: Vocabulary,
     /// The database, or why this session runs without one.
     db: Result<Connection, String>,
+    /// Version 1 files whose import committed but which kept their names. They are
+    /// renamed before anything is removed, or it would come back from them.
+    unfinished: migrate::Pending,
     /// When history was last pruned by its retention setting.
     pruned_at: Option<SystemTime>,
 }
@@ -253,8 +256,18 @@ fn open_database(data_dir: &Path) -> Result<Connection, String> {
         .map(aside)
         .find(|moves| moves.iter().all(|(_, to)| !to.exists()))
         .expect("a free name");
+    // All or nothing, so the database never ends up apart from its log.
+    let mut moved: Vec<(&PathBuf, &PathBuf)> = Vec::new();
     for (from, to) in moves.iter().filter(|(from, _)| from.exists()) {
-        fs::rename(from, to).map_err(|e| format!("cannot move aside {}: {e}", from.display()))?;
+        if let Err(e) = fs::rename(from, to) {
+            for (from, to) in moved.iter().rev() {
+                if let Err(e) = fs::rename(to, from) {
+                    log::error!("could not move {} back: {e}", to.display());
+                }
+            }
+            return Err(format!("cannot move aside {}: {e}", from.display()));
+        }
+        moved.push((from, to));
     }
     db::open(&path).map_err(|e| match e {
         db::OpenError::Damaged(reason) | db::OpenError::Unavailable(reason) => reason,
@@ -291,9 +304,19 @@ impl Store {
         // Neither a database problem nor a failed import keeps the app from
         // starting: dictation still types, it only cannot save to History. Without
         // a database the import does not run, so the version 1 files stay put.
+        let mut unfinished = migrate::Pending::default();
         let db = open_database(data_dir).and_then(|mut conn| {
-            if let Err(e) = migrate::import_v1(&mut conn, config_dir, data_dir) {
-                log::error!("migration: failed, trying again at the next start: {e}");
+            match migrate::import_v1(&mut conn, config_dir, data_dir) {
+                Ok(_) => {}
+                Err(migrate::ImportFailure::NotCommitted(e)) => {
+                    log::error!("migration: failed, trying again at the next start: {e}");
+                }
+                Err(migrate::ImportFailure::Unfinished { pending, error }) => {
+                    log::error!(
+                        "migration: imported, but could not keep the old files as backups: {error}"
+                    );
+                    unfinished = pending;
+                }
             }
             let vocabulary = db::load_vocabulary(&conn).map_err(|e| e.to_string())?;
             Ok((conn, vocabulary))
@@ -313,6 +336,7 @@ impl Store {
                 state,
                 vocabulary,
                 db,
+                unfinished,
                 pruned_at: None,
             }),
         };
@@ -343,6 +367,19 @@ impl Store {
 
     fn lock(&self) -> MutexGuard<'_, Data> {
         self.data.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Renames version 1 files an earlier import left under their names, before
+    /// anything is removed; until that works, removals fail rather than come back.
+    fn finish_import(&self, data: &mut Data) -> Result<(), StoreError> {
+        if !data.unfinished.any() {
+            return Ok(());
+        }
+        migrate::finish(&self.config_dir, &self.data_dir, &mut data.unfinished).map_err(|e| {
+            StoreError::Io(format!(
+                "the old history files could not be kept as backups yet ({e})"
+            ))
+        })
     }
 
     pub fn settings(&self) -> Settings {
@@ -400,6 +437,7 @@ impl Store {
         let mut vocabulary = data.vocabulary.clone();
         let result = change(&mut vocabulary)?;
         if vocabulary != data.vocabulary {
+            self.finish_import(&mut data)?;
             let tx = data.db_mut()?.transaction().map_err(db::sql_error)?;
             db::save_vocabulary(&tx, &vocabulary)?;
             tx.commit().map_err(db::sql_error)?;
@@ -462,7 +500,8 @@ impl Store {
     /// that order, a failure or a kill halfway leaves the entry in History, so
     /// deleting it again finishes the job.
     pub fn delete_history(&self, id: &str) -> Result<(), StoreError> {
-        let data = self.lock();
+        let mut data = self.lock();
+        self.finish_import(&mut data)?;
         let db = data.db()?;
         let Some(entry) = db::entry(db, id)? else {
             return Ok(());
@@ -478,7 +517,8 @@ impl Store {
     /// Removes the pre-database history backups with their text, then every entry;
     /// a failure or a kill halfway leaves History to clear again.
     pub fn clear_history(&self) -> Result<(), StoreError> {
-        let data = self.lock();
+        let mut data = self.lock();
+        self.finish_import(&mut data)?;
         let db = data.db()?;
         for path in migrate::history_backups(&self.data_dir) {
             fs::remove_file(&path).map_err(|e| io_error(&path, e))?;
@@ -498,6 +538,7 @@ impl Store {
         }
         let limit = Duration::from_secs(u64::from(days) * 24 * 60 * 60);
         let before = now_ms().saturating_sub(limit.as_millis() as i64);
+        self.finish_import(&mut data)?;
         let Ok(db) = data.db() else {
             // Nothing to prune without a database; the failure was logged at start.
             return Ok(0);
