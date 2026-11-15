@@ -1,7 +1,7 @@
 //! Write songs with the real Gemma model and print them, to judge the writer prompts
 //! without ComfyUI. `cargo run -p delulu-radio --example songwriter -- [case] [seeds]`
 //!
-//! Uses the cleanup helper when `DELULU_CLEANUP_HELPER` is set (model from
+//! Uses `delulu-engine llm` when `DELULU_ENGINE` is set (model from
 //! `DELULU_CLEANUP_MODEL` or the app's models dir); otherwise a llama-server
 //! serving the same Gemma GGUF at `LLAMA_URL` (default http://127.0.0.1:18431,
 //! e.g. `llama-server -m gemma-4-E4B_q4_0-it.gguf -c 6144 -np 1 -ngl 99 --port 18431`),
@@ -166,7 +166,7 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let only = args.next().filter(|a| a != "all");
     let seeds: u64 = args.next().map_or(1, |s| s.parse().expect("seeds"));
-    let mut writer = match std::env::var_os("DELULU_CLEANUP_HELPER") {
+    let mut writer = match std::env::var_os("DELULU_ENGINE") {
         Some(helper) => {
             let model = std::env::var_os("DELULU_CLEANUP_MODEL")
                 .map(PathBuf::from)

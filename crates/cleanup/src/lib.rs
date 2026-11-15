@@ -2,7 +2,7 @@
 //! helper also writes Delulu FM's song briefs and presenter scripts.
 //!
 //! This crate never links llama.cpp. It renders the prompt, post-processes the reply and
-//! drives the `delulu-cleanup` helper over JSON lines on stdin/stdout.
+//! drives the helper, `delulu-engine llm`, over JSON lines on stdin/stdout.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::process::CommandExt;
@@ -20,7 +20,8 @@ pub const MODEL_FILE: &str = "gemma-4-E4B_q4_0-it.gguf";
 pub const MODEL_URL: &str = "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/4b4a2c1d584be7264f87aac328a1bc739ce81b6c/gemma-4-E4B_q4_0-it.gguf";
 pub const MODEL_SHA256: &str = "676c35070db6dbe52f93e9c864ee0fba4eddea94b9c875d9cb10daff453fbaee";
 pub const MODEL_BYTES: u64 = 5_154_941_280;
-pub const HELPER_NAME: &str = "delulu-cleanup";
+/// The app's GPU worker binary; cleanup runs it with the `llm` role.
+pub const ENGINE_NAME: &str = "delulu-engine";
 /// Longer transcripts are pasted raw.
 pub const MAX_INPUT_CHARS: usize = 4000;
 
@@ -266,14 +267,15 @@ fn unquote(text: &str) -> Option<&str> {
     })
 }
 
-/// Order: $DELULU_CLEANUP_HELPER, then <current_exe dir>/delulu-cleanup,
-/// then /usr/lib/delulu-talks/delulu-cleanup. First one that exists.
+/// The `delulu-engine` binary that runs the helpers. Order: $DELULU_ENGINE, then
+/// <current_exe dir>/delulu-engine, then /usr/lib/delulu-talks/delulu-engine. First
+/// one that exists.
 pub fn helper_path() -> Option<PathBuf> {
-    let from_env = std::env::var_os("DELULU_CLEANUP_HELPER").map(PathBuf::from);
+    let from_env = std::env::var_os("DELULU_ENGINE").map(PathBuf::from);
     let next_to_exe = std::env::current_exe()
         .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join(HELPER_NAME)));
-    let system = Some(Path::new("/usr/lib/delulu-talks").join(HELPER_NAME));
+        .and_then(|exe| exe.parent().map(|dir| dir.join(ENGINE_NAME)));
+    let system = Some(Path::new("/usr/lib/delulu-talks").join(ENGINE_NAME));
     [from_env, next_to_exe, system]
         .into_iter()
         .flatten()
@@ -440,6 +442,7 @@ impl Cleaner {
         let deadline = Instant::now() + timeout;
         let mut command = Command::new(helper);
         command
+            .arg("llm")
             .arg("--model")
             .arg(model)
             .stdin(Stdio::piped())
@@ -1047,9 +1050,9 @@ Topic:";
     #[test]
     fn helper_path_prefers_env() {
         let exe = std::env::current_exe().unwrap();
-        std::env::set_var("DELULU_CLEANUP_HELPER", &exe);
+        std::env::set_var("DELULU_ENGINE", &exe);
         assert_eq!(helper_path(), Some(exe));
-        std::env::remove_var("DELULU_CLEANUP_HELPER");
+        std::env::remove_var("DELULU_ENGINE");
     }
 
     #[test]

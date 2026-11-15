@@ -11,7 +11,7 @@ const LOAD_TIMEOUT: Duration = Duration::from_secs(180);
 /// How long a new helper waits for the previous one to be reaped.
 const RETIRE_TIMEOUT: Duration = Duration::from_secs(30);
 const NO_HELPER: &str =
-    "The cleanup helper (delulu-cleanup) is not installed; dictation uses the raw text.";
+    "The cleanup engine (delulu-engine) is not installed; dictation uses the raw text.";
 const GAVE_UP: &str =
     "Cleanup was too slow or failed; using raw text. Turn it off and on to retry.";
 

@@ -1,4 +1,4 @@
-//! The music step: YuE2 in the native `delulu-music` helper process, and the model
+//! The music step: YuE2 in the native `delulu-engine music` helper process, and the model
 //! file it reads. The helper runs on this computer's graphics card (Vulkan) and
 //! exits after each song, so its memory is free between songs. While you dictate it
 //! is paused; going off air stops it.
@@ -21,17 +21,19 @@ pub const MODEL_SHA256: &str = "96fe199377309001ed8cd26a944baeee8cc31a20ba7c36d1
 pub const MODEL_BYTES: u64 = 3_960_938_800;
 pub const MODEL_LABEL: &str = "YuE2 3B";
 pub const MODEL_LICENSE: &str = "CC BY-NC 4.0";
-const HELPER_NAME: &str = "delulu-music";
 /// A song that takes longer than this (not counting pauses) is given up.
 const DEADLINE: Duration = Duration::from_secs(40 * 60);
 
-/// The helper: `DELULU_MUSIC_HELPER`, next to the app, or the system install.
+const ENGINE_NAME: &str = "delulu-engine";
+
+/// The helper is the `delulu-engine` binary that cleanup also runs, started with the
+/// `music` role: `DELULU_ENGINE`, next to the app, or the system install.
 pub fn helper_path() -> Option<PathBuf> {
-    let from_env = std::env::var_os("DELULU_MUSIC_HELPER").map(PathBuf::from);
+    let from_env = std::env::var_os("DELULU_ENGINE").map(PathBuf::from);
     let next_to_exe = std::env::current_exe()
         .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join(HELPER_NAME)));
-    let system = Some(Path::new("/usr/lib/delulu-talks").join(HELPER_NAME));
+        .and_then(|exe| exe.parent().map(|dir| dir.join(ENGINE_NAME)));
+    let system = Some(Path::new("/usr/lib/delulu-talks").join(ENGINE_NAME));
     [from_env, next_to_exe, system]
         .into_iter()
         .flatten()
@@ -194,6 +196,7 @@ impl Composer {
             });
         }
         let spawned = command
+            .arg("music")
             .arg("generate")
             .arg("--model")
             .arg(model)
@@ -351,11 +354,17 @@ mod tests {
         assert_eq!(end.fraction, 1.0);
     }
 
-    /// A stand-in helper: a shell script speaking the same JSON lines.
+    /// A stand-in helper: a shell script speaking the same JSON lines. Like the real
+    /// engine, it refuses to run without the `music generate` role.
     fn fake_helper(dir: &Path, body: &str) -> PathBuf {
         use std::os::unix::fs::PermissionsExt;
-        let path = dir.join("delulu-music");
-        std::fs::write(&path, format!("#!/bin/sh\ncat > /dev/null\n{body}\n")).unwrap();
+        let path = dir.join("delulu-engine");
+        let role = r#"[ "$1 $2" = "music generate" ] || { printf '%s\n' '{"error":"no music role"}'; exit 2; }"#;
+        std::fs::write(
+            &path,
+            format!("#!/bin/sh\n{role}\ncat > /dev/null\n{body}\n"),
+        )
+        .unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         path
     }

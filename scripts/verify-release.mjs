@@ -26,13 +26,21 @@ try {
   const help = execFileSync(cli, ['speak', '--help'], { env, encoding: 'utf8' });
   if (!help.includes('--bundled-voice'))
     throw new Error('Packaged CLI lacks speak --bundled-voice, which Delulu FM needs');
-  // Delulu FM's music engine is native and ships in the package: it must start and
-  // find a compute device without ComfyUI, Python or a downloaded model.
-  const engine = join(temp, 'usr/lib/delulu-talks/delulu-music');
-  const probe = JSON.parse(execFileSync(engine, ['probe'], { env, encoding: 'utf8' }).trim().split('\n').pop());
+  // The GPU roles (cleanup and Delulu FM's music) ship as one native engine binary:
+  // it must start and list its roles and a compute device without ComfyUI, Python or
+  // a downloaded model. The old per-role helpers, each with its own ggml, are gone.
+  const lib = join(temp, 'usr/lib/delulu-talks');
+  const helpers = await readdir(lib);
+  if (helpers.join() !== 'delulu-engine')
+    throw new Error(`Expected only delulu-engine in /usr/lib/delulu-talks, found ${helpers.join(', ')}`);
+  const probe = JSON.parse(execFileSync(join(lib, 'delulu-engine'), ['probe'], { env, encoding: 'utf8' }));
+  if (!version.endsWith(` ${probe.version}`))
+    throw new Error(`Packaged delulu-engine is ${probe.version}, the CLI is ${version}`);
+  for (const role of ['llm', 'music'])
+    if (!probe.roles?.includes(role)) throw new Error(`Packaged delulu-engine lacks the ${role} role`);
   if (typeof probe.device !== 'string' || !probe.device)
-    throw new Error('Packaged delulu-music did not report a compute device');
-  console.log(`Verified packaged ${version}: no model required; music engine on ${probe.device}`);
+    throw new Error('Packaged delulu-engine did not report a compute device');
+  console.log(`Verified packaged ${version}: no model required; engine on ${probe.device}`);
 } finally {
   await rm(temp, { recursive: true, force: true });
 }

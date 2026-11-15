@@ -28,7 +28,7 @@ export function readinessSteps(r: RadioReadiness | null): ReadinessStep[] {
       id: "engine",
       label: "Music engine",
       ok: music.engine,
-      help: "The delulu-music engine is missing from this install. Reinstall Delulu Talks.",
+      help: "The music engine (delulu-engine) is missing from this install. Reinstall Delulu Talks.",
     },
     {
       id: "gpu",

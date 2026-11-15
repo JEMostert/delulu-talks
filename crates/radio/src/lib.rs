@@ -1,7 +1,7 @@
 //! Delulu FM: an optional radio station made on this computer.
 //!
 //! Gemma 4 E4B (the cleanup model) writes each song's title, style and lyrics and the
-//! host's lines; YuE2 makes the music natively in the `delulu-music` helper (see
+//! host's lines; YuE2 makes the music natively in the `delulu-engine music` helper (see
 //! `music`); the host speaks through `delulu speak` with Chatterbox Turbo's bundled
 //! voice. This crate holds the station, its storage and the native player; the app
 //! supplies the helpers and decides when the GPU may be used.
