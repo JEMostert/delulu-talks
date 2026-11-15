@@ -1,13 +1,7 @@
 use super::*;
+use delulu_dictation::stt::EngineHost;
+pub(crate) use delulu_dictation::stt::{ready_model, EngineJob};
 
-/// The model to load: the selected one, or else any downloaded one, so dictation
-/// keeps working while a newly picked model is still downloading.
-pub(crate) fn ready_model(dir: &std::path::Path, selected: &str) -> Option<String> {
-    std::iter::once(selected)
-        .chain(delulu_stt::models().iter().map(|m| m.id))
-        .find(|id| delulu_stt::is_downloaded(dir, id))
-        .map(str::to_string)
-}
 pub(crate) fn load_model(app: &tauri::AppHandle, id: String) {
     // Whisper loads first; cleanup frees the GPU and reloads once it has settled.
     cleanup::whisper_loading(app);
@@ -26,58 +20,48 @@ pub(crate) fn load_model(app: &tauri::AppHandle, id: String) {
     }
 }
 pub(crate) fn engine_thread(app: tauri::AppHandle, rx: mpsc::Receiver<EngineJob>) {
-    let mut engine: Option<delulu_stt::Engine> = None;
-    for job in rx {
-        match job {
-            EngineJob::Load(id) => {
-                cleanup::wait_released(&app, Duration::from_secs(5));
-                let dir = app.state::<Shell>().store.models_dir();
-                // Drop the old model first so two never sit in memory at once.
-                drop(engine.take());
-                let result = delulu_stt::Engine::load(&dir, &id).map_err(|e| e.to_string());
-                match result {
-                    Ok(e) => {
-                        let backend = e.backend();
-                        engine = Some(e);
-                        update(&app, |s| {
-                            s.backend = Some(backend);
-                            s.model = Some(id);
-                            s.message = None;
-                            s.phase = ready_phase(&app.state::<Shell>()).into();
-                        });
-                        if app
-                            .state::<Shell>()
-                            .pending_toggle
-                            .swap(false, Ordering::SeqCst)
-                        {
-                            event(&app, KeyEvent::Activated);
-                        }
-                        cleanup::whisper_settled(&app);
-                    }
-                    Err(e) => {
-                        engine = None;
-                        update(&app, |s| {
-                            s.model = None;
-                            s.backend = None;
-                        });
-                        if !delulu_stt::is_downloaded(&dir, &id) {
-                            phase(&app, "needsSetup", None);
-                        } else {
-                            phase(&app, "error", Some(e));
-                        }
-                        cleanup::whisper_settled(&app);
-                    }
+    delulu_dictation::stt::engine_thread(AppEngine(app), rx);
+}
+
+/// The engine thread's view of the app.
+struct AppEngine(tauri::AppHandle);
+impl EngineHost for AppEngine {
+    fn models_dir(&self) -> std::path::PathBuf {
+        self.0.state::<Shell>().store.models_dir()
+    }
+    fn before_load(&self) {
+        cleanup::wait_released(&self.0, Duration::from_secs(5));
+    }
+    fn loaded(&self, id: String, result: Result<String, String>) {
+        let app = &self.0;
+        match result {
+            Ok(backend) => {
+                update(app, |s| {
+                    s.backend = Some(backend);
+                    s.model = Some(id);
+                    s.message = None;
+                    s.phase = ready_phase(&app.state::<Shell>()).into();
+                });
+                if app
+                    .state::<Shell>()
+                    .pending_toggle
+                    .swap(false, Ordering::SeqCst)
+                {
+                    event(app, KeyEvent::Activated);
                 }
+                cleanup::whisper_settled(app);
             }
-            EngineJob::Transcribe(samples, language, prompt, reply) => {
-                let result = engine
-                    .as_mut()
-                    .ok_or_else(|| "Model is not loaded".to_string())
-                    .and_then(|e| {
-                        e.transcribe(&samples, &language, prompt.as_deref())
-                            .map_err(|e| e.to_string())
-                    });
-                let _ = reply.send(result);
+            Err(e) => {
+                update(app, |s| {
+                    s.model = None;
+                    s.backend = None;
+                });
+                if !delulu_stt::is_downloaded(&self.models_dir(), &id) {
+                    phase(app, "needsSetup", None);
+                } else {
+                    phase(app, "error", Some(e));
+                }
+                cleanup::whisper_settled(app);
             }
         }
     }

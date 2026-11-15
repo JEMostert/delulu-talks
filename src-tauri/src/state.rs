@@ -34,16 +34,6 @@ pub(crate) struct Shell {
     /// Delulu FM is on air and needs the cleanup helper as its writer.
     pub(crate) radio_writer: AtomicBool,
 }
-pub(crate) enum EngineJob {
-    Load(String),
-    /// Samples, language setting, Whisper prompt from the context.
-    Transcribe(
-        Vec<f32>,
-        delulu_stt::Language,
-        Option<String>,
-        tokio::sync::oneshot::Sender<Result<delulu_stt::Transcript, String>>,
-    ),
-}
 pub(crate) fn status_value(s: &Shell) -> Status {
     s.status.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
