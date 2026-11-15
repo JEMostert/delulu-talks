@@ -7,8 +7,7 @@ thiserror.workspace = true
 log.workspace = true
 whisper-rs.workspace = true
 whisper-rs-sys = "=0.15.0"
-ureq.workspace = true
-sha2.workspace = true
+delulu-models = { path = "../models" }
 # Parakeet on ONNX Runtime, linked statically; no second ggml next to whisper-rs.
 transcribe-rs = { version = "=0.3.12", default-features = false, features = ["onnx"] }
 # transcribe-rs 0.3.12 is written against this release candidate; newer ones break it.

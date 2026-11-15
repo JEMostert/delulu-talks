@@ -1,0 +1,11 @@
+[package]
+name = "delulu-models"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+log.workspace = true
+libc.workspace = true
+ureq.workspace = true
+sha2.workspace = true

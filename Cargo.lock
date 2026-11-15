@@ -1140,6 +1140,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "delulu-models"
+version = "1.5.0"
+dependencies = [
+ "libc",
+ "log",
+ "sha2",
+ "thiserror 2.0.21",
+ "ureq",
+]
+
+[[package]]
 name = "delulu-music"
 version = "1.5.0"
 dependencies = [
@@ -1196,13 +1207,12 @@ dependencies = [
 name = "delulu-stt"
 version = "1.5.0"
 dependencies = [
+ "delulu-models",
  "hound",
  "log",
  "ort",
- "sha2",
  "thiserror 2.0.21",
  "transcribe-rs",
- "ureq",
  "whatlang",
  "whisper-rs",
  "whisper-rs-sys",
@@ -1216,6 +1226,7 @@ dependencies = [
  "delulu-cleanup",
  "delulu-hotkey",
  "delulu-insert",
+ "delulu-models",
  "delulu-overlay",
  "delulu-radio",
  "delulu-store",

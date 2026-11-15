@@ -37,7 +37,8 @@ pub(crate) fn download_model(
     s: State<'_, Shell>,
     id: String,
 ) -> Result<(), String> {
-    let total = delulu_stt::model_info(&id).ok_or("Unknown model")?.bytes;
+    let model = delulu_stt::model_info(&id).ok_or("Unknown model")?;
+    let total = model.bytes;
     if s.downloading.swap(true, Ordering::SeqCst) {
         return Err("Download already in progress".into());
     }
@@ -46,7 +47,6 @@ pub(crate) fn download_model(
     let downloading = s.downloading.clone();
     let dir = s.store.models_dir();
     tauri::async_runtime::spawn_blocking(move || {
-        // The public download API uses true to request cancellation.
         let mut progress = |done, total| {
             let _ = app.emit(
                 "model-download",
@@ -59,7 +59,7 @@ pub(crate) fn download_model(
                 },
             );
         };
-        let result = delulu_stt::download(&dir, &id, &mut progress, &cancel);
+        let result = delulu_models::download(&dir, model, &mut progress, &cancel);
         downloading.store(false, Ordering::SeqCst);
         let (finished, error) = match result {
             Ok(_) => (true, None),

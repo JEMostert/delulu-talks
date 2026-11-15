@@ -5,12 +5,7 @@ use delulu_cleanup::{Cleaner, CleanerKill};
 use std::sync::atomic::AtomicUsize;
 
 /// Gemma 4 E4B, the text cleanup model.
-pub(crate) static CLEANUP_MODEL: delulu_stt::ModelFile = delulu_stt::ModelFile {
-    file: delulu_cleanup::MODEL_FILE,
-    url: delulu_cleanup::MODEL_URL,
-    sha256: delulu_cleanup::MODEL_SHA256,
-    bytes: delulu_cleanup::MODEL_BYTES,
-};
+pub(crate) static CLEANUP_MODEL: delulu_models::ModelFile = delulu_models::GEMMA_4_E4B.files[0];
 /// The first Vulkan run compiles shaders.
 const LOAD_TIMEOUT: Duration = Duration::from_secs(180);
 /// How long a new helper waits for the previous one to be reaped.
@@ -525,7 +520,7 @@ fn spawn_download(app: tauri::AppHandle, mut attempt: Attempt) {
     std::thread::spawn(move || loop {
         let s = app.state::<Shell>();
         let dir = s.store.models_dir();
-        let result = if delulu_stt::file_ready(&dir, &CLEANUP_MODEL) {
+        let result = if delulu_models::GEMMA_4_E4B.installed(&dir) {
             Ok(())
         } else {
             let id = attempt.id;
@@ -540,12 +535,16 @@ fn spawn_download(app: tauri::AppHandle, mut attempt: Attempt) {
                     let _ = app.emit("cleanup-status", status);
                 }
             };
-            delulu_stt::download_file(&dir, &CLEANUP_MODEL, &mut progress, &attempt.cancel)
-                .map(|_| ())
-                .map_err(|e| match e {
-                    delulu_stt::SttError::Cancelled => "Download cancelled".to_string(),
-                    e => format!("Download failed: {e}"),
-                })
+            delulu_models::download(
+                &dir,
+                &delulu_models::GEMMA_4_E4B,
+                &mut progress,
+                &attempt.cancel,
+            )
+            .map_err(|e| match e {
+                delulu_models::Error::Cancelled => "Download cancelled".to_string(),
+                e => format!("Download failed: {e}"),
+            })
         };
         if let Err(e) = &result {
             eprintln!("cleanup download {}: {e}", attempt.id);

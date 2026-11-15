@@ -2,14 +2,9 @@
 //! models folder, cancel, and delete. Nothing downloads on its own, and only this
 //! one app-owned file (and its partial download) is ever removed.
 use super::*;
-use delulu_radio::music;
+use delulu_models::YUE2_3B as MODEL;
 
-pub(crate) static MUSIC_MODEL: delulu_stt::ModelFile = delulu_stt::ModelFile {
-    file: music::MODEL_FILE,
-    url: music::MODEL_URL,
-    sha256: music::MODEL_SHA256,
-    bytes: music::MODEL_BYTES,
-};
+pub(crate) static MUSIC_MODEL: delulu_models::ModelFile = MODEL.files[0];
 /// Download progress reaches the window at most this often.
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 
@@ -33,13 +28,6 @@ pub(crate) struct MusicModelStatus {
     error: Option<String>,
 }
 
-fn path(app: &tauri::AppHandle) -> std::path::PathBuf {
-    app.state::<Shell>()
-        .store
-        .models_dir()
-        .join(MUSIC_MODEL.file)
-}
-
 /// The model is being downloaded or removed: the radio must not read it.
 pub(crate) fn changing(app: &tauri::AppHandle) -> bool {
     app.state::<MusicModel>().downloading.load(Ordering::SeqCst)
@@ -49,8 +37,7 @@ fn status(app: &tauri::AppHandle) -> MusicModelStatus {
     let m = app.state::<MusicModel>();
     let downloading = m.downloading.load(Ordering::SeqCst);
     let error = m.error.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    let ready = !downloading
-        && delulu_stt::file_ready(&app.state::<Shell>().store.models_dir(), &MUSIC_MODEL);
+    let ready = !downloading && MODEL.installed(&app.state::<Shell>().store.models_dir());
     MusicModelStatus {
         state: if downloading {
             "downloading"
@@ -59,14 +46,14 @@ fn status(app: &tauri::AppHandle) -> MusicModelStatus {
         } else {
             "missing"
         },
-        label: music::MODEL_LABEL,
-        license: music::MODEL_LICENSE,
+        label: MODEL.label,
+        license: MODEL.license,
         done_bytes: if downloading {
             m.done_bytes.load(Ordering::SeqCst)
         } else {
             0
         },
-        total_bytes: MUSIC_MODEL.bytes,
+        total_bytes: MODEL.bytes,
         error,
     }
 }
@@ -104,10 +91,10 @@ pub(crate) fn download_music_model(app: tauri::AppHandle) -> Result<MusicModelSt
                 emit_status(&worker);
             }
         };
-        let result = delulu_stt::download_file(&dir, &MUSIC_MODEL, &mut progress, &cancel);
+        let result = delulu_models::download(&dir, &MODEL, &mut progress, &cancel);
         let m = worker.state::<MusicModel>();
         *m.error.lock().unwrap_or_else(|e| e.into_inner()) = match result {
-            Ok(_) | Err(delulu_stt::SttError::Cancelled) => None,
+            Ok(()) | Err(delulu_models::Error::Cancelled) => None,
             Err(e) => Some(e.to_string()),
         };
         m.downloading.store(false, Ordering::SeqCst);
@@ -135,16 +122,22 @@ pub(crate) fn delete_music_model(app: tauri::AppHandle) -> Result<MusicModelStat
         return Err("Cancel the download first.".into());
     }
     app.state::<radio::Radio>().composer.stop();
-    let file = path(&app);
-    let part = file.with_file_name(format!("{}.part", MUSIC_MODEL.file));
-    for p in [&file, &part] {
-        match std::fs::remove_file(p) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(format!("Could not delete {}: {e}", p.display())),
-        }
-    }
+    delulu_models::remove(&app.state::<Shell>().store.models_dir(), &MODEL)
+        .map_err(|e| format!("Could not delete {e}"))?;
     *m.error.lock().unwrap_or_else(|e| e.into_inner()) = None;
     emit_status(&app);
     Ok(status(&app))
+}
+
+#[cfg(test)]
+mod tests {
+    /// The engines open the files by these names; the registry downloads them.
+    #[test]
+    fn registry_names_the_files_the_engines_open() {
+        assert_eq!(super::MUSIC_MODEL.file, delulu_radio::music::MODEL_FILE);
+        assert_eq!(
+            crate::cleanup::CLEANUP_MODEL.file,
+            delulu_cleanup::MODEL_FILE
+        );
+    }
 }
