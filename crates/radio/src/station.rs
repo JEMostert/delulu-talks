@@ -269,11 +269,12 @@ impl Station {
     }
 
     fn save(&self, state: &State) -> Result<(), RadioError> {
-        self.write_state(state, false)
+        self.write_state(state, false).map(|_| ())
     }
 
-    /// `durable`: on disk before this returns, even across a power cut.
-    fn write_state(&self, state: &State, durable: bool) -> Result<(), RadioError> {
+    /// `durable`: on disk before this returns, even across a power cut. Ok(false)
+    /// when the state is saved but that could not be confirmed.
+    fn write_state(&self, state: &State, durable: bool) -> Result<bool, RadioError> {
         let path = self.root.join("station.json");
         let temp = self.root.join("station.json.tmp");
         let bytes = serde_json::to_vec_pretty(state).expect("state json");
@@ -291,9 +292,10 @@ impl Station {
         if durable {
             if let Err(e) = sync_dir(&self.root) {
                 log::warn!("radio: {e}");
+                return Ok(false);
             }
         }
-        Ok(())
+        Ok(true)
     }
 
     fn persist(&self, state: &State) {
@@ -752,9 +754,8 @@ impl Station {
         s.queue.push(item);
         s.job = None;
         s.last_error = None;
-        // Saved before the job folder goes: a kill in between keeps the item.
-        self.persist(&s);
         self.prune(&mut s);
+        self.persist(&s);
         Ok(())
     }
 
@@ -902,25 +903,32 @@ impl Station {
             item.file = name.clone();
             item.loudness = Some(loudness);
         }
-        if let Err(e) = self.write_state(&s, true) {
-            // Memory must keep naming the WAV the saved state names, or pruning
-            // would delete it.
-            for item in items_mut(&mut s).filter(|i| i.file == name) {
-                item.file = file.to_string();
-                item.loudness = None;
+        let durable = match self.write_state(&s, true) {
+            Ok(durable) => durable,
+            Err(e) => {
+                // Memory must keep naming the WAV the saved state names, or pruning
+                // would delete it.
+                for item in items_mut(&mut s).filter(|i| i.file == name) {
+                    item.file = file.to_string();
+                    item.loudness = None;
+                }
+                let _ = std::fs::remove_file(&target);
+                return Err(e);
             }
-            let _ = std::fs::remove_file(&target);
-            return Err(e);
-        }
+        };
         if !checkpoint(Step::Saved) {
             return Err(RadioError::Cancelled);
         }
         drop(s);
-        match std::fs::remove_file(&source) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                log::warn!("radio: {}: {e}", source.display())
+        // Unconfirmed: a power cut could still bring back a state naming the WAV.
+        // Pruning removes it later.
+        if durable {
+            match std::fs::remove_file(&source) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    log::warn!("radio: {}: {e}", source.display())
+                }
+                _ => {}
             }
-            _ => {}
         }
         Ok(Some((before, after)))
     }
