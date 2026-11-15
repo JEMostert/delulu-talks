@@ -373,8 +373,8 @@ impl Store {
         Ok(())
     }
 
-    /// Deletes entries older than the retention setting, and a pre-database backup
-    /// once everything in it is that old. Returns how many entries went.
+    /// Deletes entries older than the retention setting, from the database and from
+    /// the pre-database backups. Returns how many database entries went.
     pub fn prune_history(&self) -> Result<usize, StoreError> {
         let mut data = self.lock();
         data.pruned_at = Some(SystemTime::now());
@@ -388,15 +388,20 @@ impl Store {
         if removed > 0 {
             log::info!("history: removed {removed} entries older than {days} days");
         }
-        // A backup's mtime is its last write, so every entry in it is at least that old.
+        // Backups lose their expired lines too. The rejected file has no readable
+        // times; its mtime is its last write, so all of it is at least that old.
         for path in migrate::history_backups(&self.data_dir) {
-            let old = fs::metadata(&path)
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| SystemTime::now().duration_since(t).ok())
-                .is_some_and(|age| age > limit);
-            if old {
-                remove_file_logged(&path);
+            if path.extension().is_some_and(|e| e == "rejected") {
+                let old = fs::metadata(&path)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| SystemTime::now().duration_since(t).ok())
+                    .is_some_and(|age| age > limit);
+                if old {
+                    remove_file_logged(&path);
+                }
+            } else if let Err(e) = migrate::prune_backup(&path, before) {
+                log::warn!("history: could not prune {}: {e}", path.display());
             }
         }
         Ok(removed)
@@ -1203,22 +1208,34 @@ mod tests {
     }
 
     #[test]
-    fn retention_and_clear_remove_old_history_backups() {
+    fn retention_and_clear_reach_the_history_backups() {
         let t = TempDir::new();
         let store = open(&t);
-        let old = t.data().join("history.jsonl.v1.bak");
-        let recent = t.data().join("history.jsonl.v1.bak.2");
-        let unrelated = t.data().join("vocabulary.json.v1.bak");
-        for path in [&old, &recent, &unrelated] {
-            fs::write(path, "{}\n").unwrap();
-        }
-        let month_ago = SystemTime::now() - Duration::from_secs(40 * 24 * 60 * 60);
+        let line = |text: &str, age_ms: i64| {
+            let mut e = open_entry(text);
+            e.created_at = now_ms() - age_ms;
+            serde_json::to_string(&e).unwrap()
+        };
+        // Written today (a fresh mtime), yet holding old transcripts.
+        let backup = t.data().join("history.jsonl.v1.bak");
+        let content = format!(
+            "{}\nno time here\n{}\n",
+            line("forty days", 40 * DAY_MS),
+            line("ten days", 10 * DAY_MS)
+        );
+        fs::write(&backup, content).unwrap();
+        let all_old = t.data().join("history.jsonl.v1.bak.2");
+        fs::write(&all_old, line("fifty days", 50 * DAY_MS)).unwrap();
+        let rejected = t.data().join("history.jsonl.rejected");
+        fs::write(&rejected, "{\"broken\n").unwrap();
         File::options()
             .write(true)
-            .open(&old)
+            .open(&rejected)
             .unwrap()
-            .set_modified(month_ago)
+            .set_modified(SystemTime::now() - Duration::from_secs(40 * 24 * 60 * 60))
             .unwrap();
+        let unrelated = t.data().join("vocabulary.json.v1.bak");
+        fs::write(&unrelated, "{}").unwrap();
 
         store
             .save_settings(&Settings {
@@ -1226,10 +1243,16 @@ mod tests {
                 ..store.settings()
             })
             .unwrap();
-        assert!(!old.exists() && recent.exists());
+        let kept = fs::read_to_string(&backup).unwrap();
+        assert!(!kept.contains("forty days"), "{kept}");
+        assert!(
+            kept.contains("ten days") && kept.contains("no time here"),
+            "{kept}"
+        );
+        assert!(!all_old.exists() && !rejected.exists());
 
         store.clear_history().unwrap();
-        assert!(!recent.exists());
+        assert!(!backup.exists());
         assert!(unrelated.exists());
     }
 }

@@ -15,8 +15,19 @@
   /* Entries scrolling under it blur away, like seen through water. */
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  -webkit-mask-image: linear-gradient(180deg, #000 82%, transparent);
-  mask-image: linear-gradient(180deg, #000 82%, transparent);
+  /* The fade stays in the bottom padding, so a confirm in the header stays crisp. */
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    #000 calc(100% - 18px),
+    transparent
+  );
+  mask-image: linear-gradient(180deg, #000 calc(100% - 18px), transparent);
+}
+/* Confirms live in the sticky header, so they stay in view however far the list
+   is scrolled. */
+.history-head > .confirm {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
 }
 .title-block {
   display: grid;

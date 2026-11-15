@@ -89,56 +89,56 @@ export function History({ state }: { state: AppState }) {
             </button>
           )}
         </div>
+        {pendingRetention !== null && (
+          <div className="confirm" role="alert">
+            <p>
+              Delete transcripts older than {pendingRetention} days? From now
+              on, older ones are deleted every day.
+            </p>
+            <button
+              type="button"
+              className="button"
+              onClick={() => setPendingRetention(null)}
+            >
+              Keep them
+            </button>
+            <button
+              type="button"
+              className="button danger"
+              onClick={() => void applyRetention(pendingRetention)}
+            >
+              Delete older
+            </button>
+          </div>
+        )}
+        {confirmClear && (
+          <div className="confirm" role="alert">
+            <p>Delete every transcript? This can’t be undone.</p>
+            <button
+              type="button"
+              className="button"
+              onClick={() => setConfirmClear(false)}
+            >
+              Keep them
+            </button>
+            <button
+              type="button"
+              className="button danger"
+              onClick={() =>
+                void ipc
+                  .clearHistory()
+                  .then(() => {
+                    setConfirmClear(false);
+                    return refreshHistory();
+                  })
+                  .catch((e) => setNotice(errorText(e)))
+              }
+            >
+              Delete all
+            </button>
+          </div>
+        )}
       </div>
-      {pendingRetention !== null && (
-        <div className="confirm" role="alert">
-          <p>
-            Delete transcripts older than {pendingRetention} days? From now on,
-            older ones are deleted every day.
-          </p>
-          <button
-            type="button"
-            className="button"
-            onClick={() => setPendingRetention(null)}
-          >
-            Keep them
-          </button>
-          <button
-            type="button"
-            className="button danger"
-            onClick={() => void applyRetention(pendingRetention)}
-          >
-            Delete older
-          </button>
-        </div>
-      )}
-      {confirmClear && (
-        <div className="confirm" role="alert">
-          <p>Delete every transcript? This can’t be undone.</p>
-          <button
-            type="button"
-            className="button"
-            onClick={() => setConfirmClear(false)}
-          >
-            Keep them
-          </button>
-          <button
-            type="button"
-            className="button danger"
-            onClick={() =>
-              void ipc
-                .clearHistory()
-                .then(() => {
-                  setConfirmClear(false);
-                  return refreshHistory();
-                })
-                .catch((e) => setNotice(errorText(e)))
-            }
-          >
-            Delete all
-          </button>
-        </div>
-      )}
       {count === 0 ? (
         <div className="empty empty-history">
           {query ? (

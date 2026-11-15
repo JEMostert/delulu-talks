@@ -8,7 +8,6 @@
 //! The same path imports a file an older app version wrote after a downgrade.
 use rusqlite::Connection;
 use std::{
-    collections::HashMap,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -20,15 +19,17 @@ use crate::{io_error, json_error, write_atomic, StoreError};
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Report {
     pub imported: usize,
-    /// Ids the database already had (a re-run after a kill).
+    /// Entries the database already held exactly: a re-run after a kill, or a line
+    /// repeating an earlier one.
     pub already_present: usize,
-    /// Lines repeating an earlier line exactly.
-    pub duplicates: usize,
-    /// Lines reusing an earlier line's id with different content; kept under a new id.
+    /// Imported entries whose id the database held with other content; kept under a
+    /// derived id (counted in `imported` too).
     pub rekeyed: usize,
     /// Unparseable lines, kept in `history.jsonl.rejected`.
     pub rejected: usize,
     pub shelves_added: usize,
+    /// Terms added to shelves the database already had (same shelf id).
+    pub terms_merged: usize,
 }
 
 /// Simulated kill for the crash tests: the test harness runs the import in a child
@@ -86,64 +87,129 @@ fn read_optional(path: &Path) -> io::Result<Option<Vec<u8>>> {
 }
 
 struct ParsedHistory {
-    entries: Vec<HistoryEntry>,
+    /// Valid entries with their 1-based line numbers, in file order.
+    entries: Vec<(usize, HistoryEntry)>,
     rejected_lines: Vec<u8>,
-    report: Report,
+    rejected: usize,
 }
 
-/// Valid entries in file order. Bad lines are counted and collected; an exact repeat
-/// is dropped; a reused id with other content gets a new id derived from the line
-/// number, so a re-run assigns the same one and stays a no-op.
+/// Timings the database can store exactly; anything larger would not round-trip.
+fn storable(entry: &HistoryEntry) -> bool {
+    let fits = |ms: u64| i64::try_from(ms).is_ok();
+    fits(entry.audio_ms)
+        && fits(entry.stt_ms)
+        && fits(entry.total_ms)
+        && entry.cleanup_ms.is_none_or(fits)
+}
+
+/// Valid entries in file order; bad lines are counted and collected.
 fn parse_history(bytes: &[u8], path: &Path) -> ParsedHistory {
     let mut parsed = ParsedHistory {
         entries: Vec::new(),
         rejected_lines: Vec::new(),
-        report: Report::default(),
+        rejected: 0,
     };
-    let mut seen: HashMap<String, usize> = HashMap::new();
     for (i, line) in bytes.split(|b| *b == b'\n').enumerate() {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
-        let mut entry = match serde_json::from_slice::<HistoryEntry>(line) {
-            Ok(entry) => entry,
-            Err(e) => {
-                log::warn!(
-                    "migration: rejecting history line {} in {}: {}",
-                    i + 1,
-                    path.display(),
-                    json_error(&e)
-                );
-                parsed.report.rejected += 1;
-                parsed.rejected_lines.extend_from_slice(line);
-                parsed.rejected_lines.push(b'\n');
+        let problem = match serde_json::from_slice::<HistoryEntry>(line) {
+            Ok(entry) if storable(&entry) => {
+                parsed.entries.push((i + 1, entry));
                 continue;
             }
+            Ok(_) => "timing out of range".to_string(),
+            Err(e) => json_error(&e),
         };
-        if let Some(&at) = seen.get(&entry.id) {
-            if parsed.entries[at] == entry {
-                parsed.report.duplicates += 1;
-                continue;
-            }
-            entry.id = format!("{}~line{}", entry.id, i + 1);
-            parsed.report.rekeyed += 1;
-        }
-        seen.insert(entry.id.clone(), parsed.entries.len());
-        parsed.entries.push(entry);
+        log::warn!(
+            "migration: rejecting history line {} in {}: {problem}",
+            i + 1,
+            path.display()
+        );
+        parsed.rejected += 1;
+        parsed.rejected_lines.extend_from_slice(line);
+        parsed.rejected_lines.push(b'\n');
     }
     parsed
 }
 
-/// Shelves from the file whose ids the database lacks go after the existing ones.
-/// `normalized` then applies the usual limits and drops a shelf whose name is taken.
-fn merge_vocabulary(existing: &Vocabulary, file: Vocabulary) -> Vocabulary {
+enum Placed {
+    Imported,
+    Rekeyed,
+    Present,
+}
+
+/// Stores `entry` without losing it or anything already stored. Its id holding the
+/// same entry means it is there already; holding another entry, it goes under
+/// `<id>~line<n>`, with `~` added until the id is free or holds this same entry, so
+/// a re-run lands on the same id and stays a no-op.
+fn place(conn: &Connection, mut entry: HistoryEntry, line: usize) -> Result<Placed, StoreError> {
+    let original = entry.id.clone();
+    loop {
+        match db::entry(conn, &entry.id)? {
+            None => {
+                db::insert_entry(conn, &entry)?;
+                return Ok(if entry.id == original {
+                    Placed::Imported
+                } else {
+                    Placed::Rekeyed
+                });
+            }
+            Some(existing) if existing == entry => return Ok(Placed::Present),
+            Some(_) if entry.id == original => entry.id = format!("{original}~line{line}"),
+            Some(_) => entry.id.push('~'),
+        }
+    }
+}
+
+/// Shelves from the file go after the existing ones. A shelf the database already
+/// has (same id) keeps its name and switch and gains the file's terms it lacks.
+/// `normalized` then applies the usual limits and drops a new shelf whose name is
+/// taken. Returns the merged vocabulary and how many terms joined existing shelves.
+fn merge_vocabulary(existing: &Vocabulary, file: Vocabulary) -> (Vocabulary, usize) {
     let mut merged = existing.clone();
-    merged.shelves.extend(
-        file.shelves
-            .into_iter()
-            .filter(|shelf| !existing.shelves.iter().any(|s| s.id == shelf.id)),
-    );
-    merged.normalized()
+    let mut terms_merged = 0;
+    for shelf in file.shelves {
+        match merged.shelves.iter_mut().find(|s| s.id == shelf.id) {
+            Some(known) => {
+                for term in shelf.terms {
+                    let lower = term.to_lowercase();
+                    if !known.terms.iter().any(|t| t.to_lowercase() == lower) {
+                        known.terms.push(term);
+                        terms_merged += 1;
+                    }
+                }
+            }
+            None => merged.shelves.push(shelf),
+        }
+    }
+    (merged.normalized(), terms_merged)
+}
+
+/// Removes the lines of a history backup created before `before_ms`, so retention
+/// covers the backup too; deletes it once nothing is left. Lines without a readable
+/// time are kept.
+pub(crate) fn prune_backup(path: &Path, before_ms: i64) -> Result<(), StoreError> {
+    let bytes = fs::read(path).map_err(|e| io_error(path, e))?;
+    let mut kept = Vec::with_capacity(bytes.len());
+    for line in bytes.split(|b| *b == b'\n') {
+        if line.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+        let expired = serde_json::from_slice::<HistoryEntry>(line)
+            .is_ok_and(|entry| entry.created_at < before_ms);
+        if !expired {
+            kept.extend_from_slice(line);
+            kept.push(b'\n');
+        }
+    }
+    if kept.is_empty() {
+        fs::remove_file(path).map_err(|e| io_error(path, e))
+    } else if kept.len() < bytes.len() {
+        write_atomic(path, &kept)
+    } else {
+        Ok(())
+    }
 }
 
 /// Imports the version 1 files, if any, then renames them to their backups.
@@ -168,9 +234,10 @@ pub(crate) fn import_v1(
         return Ok(Report::default());
     }
 
-    let mut parsed = match &history {
-        Some(bytes) => parse_history(bytes, &history_path),
-        None => parse_history(b"", &history_path),
+    let parsed = parse_history(history.as_deref().unwrap_or_default(), &history_path);
+    let mut report = Report {
+        rejected: parsed.rejected,
+        ..Report::default()
     };
     let vocabulary = match vocabulary_bytes
         .as_deref()
@@ -206,21 +273,25 @@ pub(crate) fn import_v1(
 
     let tx = conn.transaction().map_err(db::sql_error)?;
     let half = parsed.entries.len() / 2;
-    for (i, entry) in parsed.entries.iter().enumerate() {
+    for (i, (line, entry)) in parsed.entries.into_iter().enumerate() {
         if i == half {
             crash_point("mid-import");
         }
-        if db::insert_entry(&tx, entry)? {
-            parsed.report.imported += 1;
-        } else {
-            parsed.report.already_present += 1;
+        match place(&tx, entry, line)? {
+            Placed::Imported => report.imported += 1,
+            Placed::Rekeyed => {
+                report.imported += 1;
+                report.rekeyed += 1;
+            }
+            Placed::Present => report.already_present += 1,
         }
     }
     if let Some(file) = vocabulary {
         let existing = db::load_vocabulary(&tx)?;
-        let merged = merge_vocabulary(&existing, file);
+        let (merged, terms_merged) = merge_vocabulary(&existing, file);
         if merged.shelves != existing.shelves {
-            parsed.report.shelves_added = merged.shelves.len() - existing.shelves.len();
+            report.shelves_added = merged.shelves.len() - existing.shelves.len();
+            report.terms_merged = terms_merged;
             db::save_vocabulary(&tx, &merged)?;
         }
     }
@@ -239,17 +310,17 @@ pub(crate) fn import_v1(
     }
     crash_point("vocabulary-renamed");
 
-    let r = &parsed.report;
+    let r = &report;
     log::info!(
-        "migration: history imported={} already-present={} duplicates={} rekeyed={} rejected={}; shelves added={}",
+        "migration: history imported={} already-present={} rekeyed={} rejected={}; shelves added={} terms merged={}",
         r.imported,
         r.already_present,
-        r.duplicates,
         r.rekeyed,
         r.rejected,
-        r.shelves_added
+        r.shelves_added,
+        r.terms_merged
     );
-    Ok(parsed.report)
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -327,11 +398,11 @@ mod tests {
             report,
             Report {
                 imported: 4,
-                already_present: 0,
-                duplicates: 1,
+                already_present: 1,
                 rekeyed: 1,
                 rejected: 2,
                 shelves_added: 2,
+                terms_merged: 0,
             }
         );
         drop(conn);
@@ -355,7 +426,7 @@ mod tests {
         // The same files again (an un-renamed original) add nothing.
         write_fixture(&t);
         let report = import_v1(&mut conn, &t.config(), &t.data()).unwrap();
-        assert_eq!((report.imported, report.already_present), (0, 4));
+        assert_eq!((report.imported, report.already_present), (0, 5));
         assert_eq!(report.shelves_added, 0);
         drop(conn);
         let store = Store::open(&t.config(), &t.data()).unwrap();
@@ -370,28 +441,63 @@ mod tests {
         let t = TempDir::new();
         write_fixture(&t);
         drop(Store::open(&t.config(), &t.data()).unwrap());
-        // An older version starts empty and writes fresh files.
+        // An older version wrote fresh files: one entry it already had, a new one,
+        // and a known id with other content.
+        let changed = PLAIN.replace(r#""totalMs":150"#, r#""totalMs":999"#);
         fs::write(
             t.data().join(HISTORY_FILE),
-            format!("{TORN_LAST}\n{}\n", PLAIN.replace("b2", "d4")),
+            format!("{TORN_LAST}\n{}\n{changed}\n", PLAIN.replace("b2", "d4")),
         )
         .unwrap();
         fs::write(
             t.config().join(VOCABULARY_FILE),
-            r#"{"shelves":[{"id":"s-new","name":"Games","terms":["Elden Ring"]},{"id":"s-dup","name":"programming","terms":["x"]}]}"#,
+            r#"{"shelves":[
+                {"id":"s-code","name":"Code","enabled":false,"terms":["tauri","Rust"]},
+                {"id":"s-new","name":"Games","terms":["Elden Ring"]}
+            ]}"#,
         )
         .unwrap();
         let store = Store::open(&t.config(), &t.data()).unwrap();
-        let ids: Vec<_> = store.history(None, 100).into_iter().map(|e| e.id).collect();
-        assert_eq!(ids, ["c3", "a1~line7", "d4", "b2", "a1"]);
-        let names: Vec<_> = store
-            .vocabulary()
-            .shelves
-            .into_iter()
-            .map(|s| s.name)
-            .collect();
+        let entries = store.history(None, 100);
+        let ids: Vec<_> = entries.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, ["c3", "a1~line7", "b2~line3", "d4", "b2", "a1"]);
+        assert_eq!((entries[2].total_ms, entries[4].total_ms), (999, 150));
+        let shelves = store.vocabulary().shelves;
+        let names: Vec<_> = shelves.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names, ["Programming", "Eten & drinken", "Games"]);
+        assert_eq!(
+            shelves[0].terms,
+            ["T3 Code", "Claude Code", "Tauri", "Rust"]
+        );
+        assert!(shelves[0].enabled);
         assert!(t.config().join("vocabulary.json.v1.bak.2").exists());
+    }
+
+    #[test]
+    fn a_derived_id_never_overwrites_a_real_one() {
+        let t = TempDir::new();
+        fs::create_dir_all(t.data()).unwrap();
+        let line = |id: &str, text: &str| {
+            format!(
+                r#"{{"id":"{id}","createdAt":1,"text":"{text}","language":"en","model":"m","audioMs":1,"sttMs":1,"totalMs":1}}"#
+            )
+        };
+        let file = format!(
+            "{}\n{}\n{}\n",
+            line("a", "first"),
+            line("a~line3", "literal"),
+            line("a", "third")
+        );
+        fs::write(t.data().join(HISTORY_FILE), &file).unwrap();
+        let mut conn = db::open(&t.data().join(db::DB_FILE)).unwrap();
+        import_v1(&mut conn, &t.config(), &t.data()).unwrap();
+        let text = |id: &str| db::entry(&conn, id).unwrap().map(|e| e.text);
+        assert_eq!(text("a~line3").as_deref(), Some("literal"));
+        assert_eq!(text("a~line3~").as_deref(), Some("third"));
+
+        fs::write(t.data().join(HISTORY_FILE), &file).unwrap();
+        let again = import_v1(&mut conn, &t.config(), &t.data()).unwrap();
+        assert_eq!((again.imported, again.already_present), (0, 3));
     }
 
     /// Runs in a child process: opens the store with a crash point armed.
