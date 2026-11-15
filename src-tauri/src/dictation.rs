@@ -182,6 +182,12 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
                 pill(&s, state, Some(word));
                 let _ = app.emit("transcript", event);
             }
+            StopOutcome::Unsaved { insert, message } => {
+                let (state, word) = insert_word(&insert);
+                pill(&s, state, Some(word));
+                phase(&app, "error", Some(message));
+                return;
+            }
         }
         s.gesture.lock().unwrap_or_else(|e| e.into_inner()).reset();
         phase(&app, ready_phase(&s), None);
@@ -215,6 +221,11 @@ pub(crate) enum StopOutcome {
     },
     NothingHeard,
     Delivered(TranscriptEvent),
+    /// The text was delivered, but History could not save it; the phase becomes "error".
+    Unsaved {
+        insert: InsertResult,
+        message: String,
+    },
 }
 
 /// The recorded samples, or the pill word and message for a recorder failure.
@@ -282,6 +293,7 @@ pub(crate) async fn run_stop(ports: &impl StopPorts, req: StopRequest) -> StopOu
     if settings.smart_context {
         ports.remember(cleaned.topic.clone(), &cleaned.text);
     }
+    let text = cleaned.text.clone();
     let entry = ports.add_history(NewEntry {
         text: cleaned.text,
         raw: cleaned.raw,
@@ -293,18 +305,20 @@ pub(crate) async fn run_stop(ports: &impl StopPorts, req: StopRequest) -> StopOu
         stt_ms: transcript.elapsed_ms,
         total_ms: start.elapsed().as_millis() as u64,
     });
-    let entry = match entry {
-        Ok(entry) => entry,
-        Err(message) => {
-            return StopOutcome::Failed {
-                word: "Not saved",
-                message,
-            }
-        }
-    };
+    // Deliver even when History can't save it: the text must not be lost.
     let released = ports.wait_release().await;
     let delivery_start = Instant::now();
-    let insert = ports.deliver(&entry.text, settings.insert, !released).await;
+    let insert = ports.deliver(&text, settings.insert, !released).await;
+    let entry = match entry {
+        Ok(entry) => entry,
+        Err(e) => {
+            ports.log(format!("dictation not saved to history: {e}"));
+            return StopOutcome::Unsaved {
+                insert,
+                message: format!("Not saved to History: {e}"),
+            };
+        }
+    };
     let total = total_ms(start, req.was_held, ports.last_release(), Instant::now());
     let entry = match ports.set_total_ms(&entry.id, total) {
         Ok(updated) => updated,
@@ -576,6 +590,7 @@ mod tests {
             StopOutcome::Failed { word, message } => {
                 panic!("expected a delivery, got {word}: {message}")
             }
+            StopOutcome::Unsaved { message, .. } => panic!("expected a delivery, got {message}"),
         }
     }
 
@@ -640,12 +655,9 @@ mod tests {
         engine
             .transcript
             .replace(Some(Err("inference: out of memory".into())));
-        let mut store = fake(RAW);
-        store.history_error = Some("store: disk full".into());
         for (app, want_word, want_message) in [
             (recorder, "No microphone", "microphone not found: usb"),
             (engine, "Not transcribed", "inference: out of memory"),
-            (store, "Not saved", "store: disk full"),
         ] {
             match run_stop(&app, request()).await {
                 StopOutcome::Failed { word, message } => {
@@ -656,6 +668,20 @@ mod tests {
             assert!(app.delivered.borrow().is_empty(), "{want_word}");
             assert!(app.history.borrow().is_empty(), "{want_word}");
         }
+    }
+
+    #[tokio::test]
+    async fn history_save_failure_still_types_the_text() {
+        let mut app = fake(RAW);
+        app.history_error = Some("store: disk full".into());
+        match run_stop(&app, request()).await {
+            StopOutcome::Unsaved { insert, message } => {
+                assert!(matches!(insert, InsertResult::Pasted));
+                assert_eq!(message, "Not saved to History: store: disk full");
+            }
+            _ => panic!("expected the text delivered and the save failure reported"),
+        }
+        assert_eq!(*app.delivered.borrow(), [(CLEAN.to_string(), false)]);
     }
 
     #[tokio::test]
