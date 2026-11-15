@@ -16,6 +16,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: bun install --frozen-lockfile
+      - name: Generated TypeScript protocol types are current
+        run: cargo test -p delulu-proto --locked --test generated
       - run: bun run typecheck && bun run format:check && bun test ui && bun run build:web
       - run: cargo test --workspace --locked
       - run: cargo clippy --workspace --locked --all-targets -- -D warnings

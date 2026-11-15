@@ -1123,10 +1123,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "delulu-core"
+version = "1.5.0"
+
+[[package]]
+name = "delulu-daemon"
+version = "1.5.0"
+dependencies = [
+ "delulu-core",
+ "delulu-proto",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "delulu-hotkey"
 version = "1.5.0"
 dependencies = [
  "ashpd",
+ "delulu-core",
  "dirs 6.0.0",
  "futures-util",
  "log",
@@ -1180,6 +1198,15 @@ dependencies = [
  "gtk",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "delulu-proto"
+version = "1.5.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ts-rs",
 ]
 
 [[package]]
@@ -5774,6 +5801,28 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "ts-rs"
+version = "12.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "756050066659291d47a554a9f558125db17428b073c5ffce1daf5dcb0f7231d8"
+dependencies = [
+ "thiserror 2.0.21",
+ "ts-rs-macros",
+]
+
+[[package]]
+name = "ts-rs-macros"
+version = "12.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38d90eea51bc7988ef9e674bf80a85ba6804739e535e9cab48e4bb34a8b652aa"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+ "termcolor",
+]
 
 [[package]]
 name = "typeid"
