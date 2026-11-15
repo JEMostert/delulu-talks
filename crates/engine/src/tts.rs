@@ -206,6 +206,8 @@ impl State {
         }
         let started = Instant::now();
         self.unload();
+        // A failed replacement must not leave the previous model to be reloaded.
+        self.model = None;
         let lexicon = self.lexicon(key.1.as_deref());
         let synth = (self.loader)(Path::new(&model.path), self.threads, lexicon)?;
         self.synth = Some(synth);
@@ -1024,6 +1026,29 @@ mod tests {
             } => assert!(message.contains("X9")),
             other => panic!("unexpected {other:?}"),
         }
+        // A failed replacement load leaves no model: the next job fails rather
+        // than speaking with the model loaded before.
+        c.send(&ToWorker::Load {
+            model: model_ref(Path::new("/models/missing")),
+            opts: Default::default(),
+        });
+        assert!(matches!(
+            c.next().0,
+            FromWorker::Error {
+                id: None,
+                kind: WorkerErrorKind::LoadFailed,
+                ..
+            }
+        ));
+        c.speak(3, "hello", None);
+        assert!(matches!(
+            c.next().0,
+            FromWorker::Error {
+                id: Some(3),
+                kind: WorkerErrorKind::JobFailed,
+                ..
+            }
+        ));
         writeln!(c.output, "{{\"type\":\"nonsense\"}}").unwrap();
         assert!(matches!(
             c.next().0,
