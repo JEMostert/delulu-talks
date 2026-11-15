@@ -892,6 +892,7 @@ mod tests {
             created_at: 0,
             request: None,
             provenance: BTreeMap::new(),
+            loudness: None,
         }
     }
 

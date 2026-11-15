@@ -159,6 +159,19 @@ pub struct Item {
     /// Models, seed, device, timings, import origin.
     #[serde(default)]
     pub provenance: BTreeMap<String, String>,
+    /// Measured from the stored audio; playback evens items out with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loudness: Option<Loudness>,
+}
+
+/// EBU R128 measurement of an item's stored audio.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Loudness {
+    /// Integrated loudness, LUFS.
+    pub lufs: f64,
+    /// Highest true peak of any channel, dBTP.
+    pub true_peak: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

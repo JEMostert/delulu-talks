@@ -15,5 +15,10 @@ libc.workspace = true
 sha2.workspace = true
 hound = "3.5"
 claxon = "0.4"
+# Station audio is stored as Ogg Opus (pure Rust, BSD-3-Clause) with its
+# loudness measured per EBU R128 (pure Rust, MIT).
+opus1 = "0.3"
+ogg = "0.9"
+ebur128 = "0.1"
 [dev-dependencies]
 delulu-cleanup = { path = "../cleanup" }

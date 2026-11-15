@@ -1,4 +1,5 @@
 use super::*;
+use std::cell::Cell;
 use std::sync::atomic::AtomicUsize;
 
 const SONG: &str = " Copper Morning\nStyle: Warm chamber pop with soft synths and brushed drums.\nLyrics:\n[Verse]\nLight on the window\nCoffee and rain\n[Chorus]\nCopper morning\nCall my name";
@@ -123,6 +124,8 @@ fn makes_a_song_end_to_end() {
     assert_eq!(song.title, "Copper Morning");
     assert!(song.lyrics.as_deref().unwrap().contains("[Chorus]"));
     assert!((song.seconds - 30.0).abs() < 0.01);
+    assert!(song.file.ends_with(".opus"));
+    assert!(song.loudness.is_some());
     assert!(station.audio_path(song).is_file());
     assert_eq!(fake.composes.load(Ordering::SeqCst), 1);
     assert_eq!(
@@ -323,4 +326,226 @@ fn corrupt_state_is_kept_and_reset() {
             .starts_with("station.corrupt-")
     });
     assert!(kept);
+}
+
+// ---- WAV to Opus conversion ----
+
+fn stored(id: &str, kind: Kind, file: &str) -> Item {
+    Item {
+        id: id.into(),
+        kind,
+        title: id.into(),
+        subtitle: String::new(),
+        lyrics: None,
+        script: None,
+        seconds: 3.0,
+        file: file.into(),
+        created_at: 0,
+        request: None,
+        provenance: BTreeMap::new(),
+        loudness: None,
+    }
+}
+
+/// A station from before Opus: WAV files at the rates the station has met, a
+/// replay airing (it shares its source's file), two ready items and history.
+/// Returns the state and each file's length in seconds.
+fn wav_station(root: &Path) -> (State, BTreeMap<String, f64>) {
+    std::fs::create_dir_all(root.join("audio")).unwrap();
+    let mut seconds = BTreeMap::new();
+    for (file, rate, length, left, right) in [
+        ("song-a.wav", 48000, 3.4, 0.8, 0.7),
+        ("break-b.wav", 24000, 3.1, 0.5, 0.5),
+        ("song-c.wav", 44100, 2.7, 0.6, 0.3),
+        ("song-d.wav", 8000, 2.2, 0.4, 0.4),
+    ] {
+        let frames = (rate as f64 * length) as usize;
+        let samples = (0..frames)
+            .flat_map(|i| {
+                let v = (i as f32 * 0.07).sin();
+                [v * left, v * right]
+            })
+            .collect();
+        let audio = Audio { rate, samples };
+        seconds.insert(file.to_string(), audio.seconds());
+        audio::write_wav(&root.join("audio").join(file), &audio).unwrap();
+    }
+    let mut replay = stored("replay-1", Kind::Song, "song-a.wav");
+    replay.provenance.insert("replay".into(), "true".into());
+    let state = State {
+        now: Some(replay),
+        queue: vec![
+            stored("break-b", Kind::Break, "break-b.wav"),
+            stored("song-c", Kind::Song, "song-c.wav"),
+        ],
+        history: vec![
+            stored("song-a", Kind::Song, "song-a.wav"),
+            stored("song-d", Kind::Song, "song-d.wav"),
+        ],
+        ..State::default()
+    };
+    let json = serde_json::to_vec_pretty(&state).unwrap();
+    std::fs::write(root.join("station.json"), json).unwrap();
+    (state, seconds)
+}
+
+fn saved(root: &Path) -> State {
+    serde_json::from_slice(&std::fs::read(root.join("station.json")).unwrap()).unwrap()
+}
+
+/// The saved state has every item of `before`, in place, each naming a file
+/// that exists and is that item's WAV or its Opus.
+fn assert_consistent(root: &Path, before: &State) {
+    let after = saved(root);
+    let ids = |s: &State| items(s).map(|i| i.id.clone()).collect::<Vec<_>>();
+    assert_eq!(ids(&after), ids(before));
+    for (old, new) in items(before).zip(items(&after)) {
+        assert!(
+            new.file == old.file || new.file == opus_name(&old.file),
+            "{} -> {}",
+            old.file,
+            new.file
+        );
+        assert!(root.join("audio").join(&new.file).is_file(), "{}", new.file);
+    }
+}
+
+fn names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn conversion_survives_a_kill_at_every_step() {
+    for step in [Step::Writing, Step::Written, Step::Saved] {
+        let dir = Dir::new();
+        let (before, seconds) = wav_station(&dir.0);
+        {
+            let station = Station::open(&dir.0).unwrap();
+            let file = Cell::new(0);
+            // The process dies at `step` while storing the second file.
+            let kill = |at: Step| {
+                if at == Step::Writing {
+                    file.set(file.get() + 1);
+                }
+                !(at == step && file.get() == 2)
+            };
+            let result = station.convert_with(&AtomicBool::new(false), &kill);
+            assert!(matches!(result, Err(RadioError::Cancelled)), "{step:?}");
+        }
+        assert_consistent(&dir.0, &before);
+        let breaks = saved(&dir.0).queue[0].file.clone();
+        let audio = names(&dir.0.join("audio"));
+        match step {
+            Step::Writing => {
+                assert_eq!(names(&dir.0.join("convert")), ["break-b.opus.part"]);
+                assert_eq!(breaks, "break-b.wav");
+            }
+            Step::Written => {
+                assert!(audio.contains(&"break-b.opus".to_string()));
+                assert_eq!(breaks, "break-b.wav");
+            }
+            Step::Saved => {
+                assert!(audio.contains(&"break-b.wav".to_string()));
+                assert_eq!(breaks, "break-b.opus");
+            }
+        }
+
+        // The next start continues where the kill left off.
+        let station = Station::open(&dir.0).unwrap();
+        let done = station.convert(&AtomicBool::new(false));
+        assert_eq!(done.failed, 0, "{step:?}");
+        // Only a file whose Opus name was saved counts as done.
+        let left = if step == Step::Saved { 2 } else { 3 };
+        assert_eq!(done.converted, left, "{step:?}");
+        assert_consistent(&dir.0, &before);
+        let s = saved(&dir.0);
+        assert_eq!(s, station.snapshot());
+        let mut files: Vec<String> = items(&s).map(|i| i.file.clone()).collect();
+        files.sort();
+        files.dedup();
+        assert_eq!(
+            names(&dir.0.join("audio")),
+            files,
+            "{step:?}: no WAV or stray file is left"
+        );
+        assert!(names(&dir.0.join("convert")).is_empty());
+        // The replay still shares its source's file.
+        assert_eq!(s.now.as_ref().unwrap().file, s.history[0].file);
+        for item in items(&s) {
+            assert!(item.file.ends_with(".opus"), "{}", item.file);
+            assert!(item.loudness.is_some_and(|l| l.lufs > -70.0));
+            let wav = item.file.replace(".opus", ".wav");
+            let decoded = audio::decode(&station.audio_path(item)).unwrap();
+            assert!(
+                (decoded.seconds() - seconds[&wav]).abs() < 0.001,
+                "{step:?} {}: {} s, was {} s",
+                item.file,
+                decoded.seconds(),
+                seconds[&wav]
+            );
+        }
+    }
+}
+
+#[test]
+fn mixed_library_plays_in_order() {
+    let dir = Dir::new();
+    wav_station(&dir.0);
+    let station = Station::open(&dir.0).unwrap();
+    station.set_on_air(true);
+    make_one(&station, &Fake::new());
+    let made = station.snapshot().queue[2].clone();
+    assert!(made.file.ends_with(".opus"));
+    let mut aired = Vec::new();
+    let mut next = station.ensure_now();
+    for _ in 0..5 {
+        let item = next.expect("something to air");
+        let audio = station.load_audio(&item).unwrap();
+        assert!(audio.peak() > 0.01 && audio.seconds() > 2.0, "{}", item.id);
+        aired.push(if item.is_replay() {
+            format!("replay of {}", item.file)
+        } else {
+            item.id.clone()
+        });
+        next = station.advance();
+    }
+    assert_eq!(
+        aired,
+        [
+            "replay of song-a.wav".to_string(),
+            "break-b".into(),
+            "song-c".into(),
+            made.id.clone(),
+            // Not the song that just ended.
+            "replay of song-c.wav".into(),
+        ]
+    );
+}
+
+/// The app copies an item, then reads its audio; the conversion may replace the
+/// WAV in between.
+#[test]
+fn a_copy_taken_before_conversion_still_plays_with_its_gain() {
+    let dir = Dir::new();
+    wav_station(&dir.0);
+    let station = Station::open(&dir.0).unwrap();
+    let copy = station.snapshot().queue[1].clone();
+    assert_eq!(copy.file, "song-c.wav");
+    assert_eq!(station.convert(&AtomicBool::new(false)).converted, 4);
+    assert!(!dir.0.join("audio/song-c.wav").exists());
+    let played = station.load_audio(&copy).unwrap();
+    let current = station.snapshot().queue[1].clone();
+    let mut evened = audio::decode(&station.audio_path(&current)).unwrap();
+    assert!(
+        audio::playback_gain(current.loudness) < 1.0,
+        "a loud tone is turned down"
+    );
+    audio::even_out(&mut evened, current.loudness);
+    assert_eq!(played.samples, evened.samples);
 }
