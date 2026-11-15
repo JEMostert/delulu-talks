@@ -249,47 +249,26 @@ fn filter_backup(path: &Path, drop: impl Fn(&HistoryEntry) -> bool) -> Result<()
 }
 
 /// The version 1 files an import has committed but not yet renamed to their backups.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Pending {
-    pub history: bool,
-    pub vocabulary: bool,
+#[derive(Debug, Default, Clone, Copy)]
+struct Pending {
+    history: bool,
+    vocabulary: bool,
 }
 
-impl Pending {
-    pub fn any(self) -> bool {
-        self.history || self.vocabulary
-    }
-}
-
-#[derive(Debug)]
-pub(crate) enum ImportFailure {
-    /// Nothing was committed; the files are untouched and the next start tries again.
-    NotCommitted(StoreError),
-    /// The database holds everything, but these files still have their old names.
-    /// Until they are renamed, a removal could come back from them at the next start.
-    Unfinished { pending: Pending, error: StoreError },
-}
-
-/// Imports the version 1 files, if any, then renames them to their backups.
+/// Imports the version 1 files, if any, then renames them to their backups. A file
+/// that could not be read stays where it is; the caller sees it still there.
 pub(crate) fn import_v1(
     conn: &mut Connection,
     config_dir: &Path,
     data_dir: &Path,
-) -> Result<Report, ImportFailure> {
-    let (report, mut pending) =
-        import(conn, config_dir, data_dir).map_err(ImportFailure::NotCommitted)?;
-    finish(config_dir, data_dir, &mut pending)
-        .map_err(|error| ImportFailure::Unfinished { pending, error })?;
+) -> Result<Report, StoreError> {
+    let (report, mut pending) = import(conn, config_dir, data_dir)?;
+    finish(config_dir, data_dir, &mut pending)?;
     Ok(report)
 }
 
-/// Renames the committed files still in `pending` to their backups, clearing each
-/// one that is done.
-pub(crate) fn finish(
-    config_dir: &Path,
-    data_dir: &Path,
-    pending: &mut Pending,
-) -> Result<(), StoreError> {
+/// Renames the committed files in `pending` to their backups.
+fn finish(config_dir: &Path, data_dir: &Path, pending: &mut Pending) -> Result<(), StoreError> {
     crash_point("committed")?;
     if pending.history {
         let path = data_dir.join(HISTORY_FILE);
@@ -682,26 +661,33 @@ mod tests {
     }
 
     #[test]
-    fn a_removal_waits_for_the_old_files_to_become_backups() {
+    fn a_removal_waits_for_the_old_files_to_be_imported_and_kept_as_backups() {
         let t = TempDir::new();
         write_fixture(&t);
-        // The import commits, but history.jsonl keeps its name.
+        let blocked = |store: &Store| {
+            assert!(store.delete_history("b2").is_err());
+            assert!(store.clear_history().is_err());
+            assert!(store
+                .update_vocabulary(|v| {
+                    v.shelves.clear();
+                    Ok(())
+                })
+                .is_err());
+            assert_eq!(store.history(None, 100).len(), 4);
+            assert!(t.data().join(HISTORY_FILE).exists());
+        };
+        // The import commits, but history.jsonl keeps its name, and renaming keeps
+        // failing: nothing can be removed, or the next start would import it again.
         FAIL_AT.with(|at| at.set(Some("committed")));
         let store = Store::open(&t.config(), &t.data()).unwrap();
-        assert_eq!(store.history(None, 100).len(), 4);
-        // While the rename keeps failing, nothing can be removed: the next start
-        // would import it again from history.jsonl.
-        assert!(store.delete_history("b2").is_err());
-        assert!(store.clear_history().is_err());
-        assert!(store
-            .update_vocabulary(|v| {
-                v.shelves.clear();
-                Ok(())
-            })
-            .is_err());
-        assert_eq!(store.history(None, 100).len(), 4);
-        assert!(t.data().join(HISTORY_FILE).exists());
+        blocked(&store);
+        drop(store);
+        // The next start's import fails before its commit: still guarded.
+        FAIL_AT.with(|at| at.set(Some("before-commit")));
+        let store = Store::open(&t.config(), &t.data()).unwrap();
+        blocked(&store);
 
+        // Once the import can finish, the removal goes through and stays done.
         FAIL_AT.with(|at| at.set(None));
         store.delete_history("b2").unwrap();
         drop(store);

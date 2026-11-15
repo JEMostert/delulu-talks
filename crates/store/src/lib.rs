@@ -182,9 +182,6 @@ struct Data {
     vocabulary: Vocabulary,
     /// The database, or why this session runs without one.
     db: Result<Connection, String>,
-    /// Version 1 files whose import committed but which kept their names. They are
-    /// renamed before anything is removed, or it would come back from them.
-    unfinished: migrate::Pending,
     /// When history was last pruned by its retention setting.
     pruned_at: Option<SystemTime>,
 }
@@ -304,19 +301,9 @@ impl Store {
         // Neither a database problem nor a failed import keeps the app from
         // starting: dictation still types, it only cannot save to History. Without
         // a database the import does not run, so the version 1 files stay put.
-        let mut unfinished = migrate::Pending::default();
         let db = open_database(data_dir).and_then(|mut conn| {
-            match migrate::import_v1(&mut conn, config_dir, data_dir) {
-                Ok(_) => {}
-                Err(migrate::ImportFailure::NotCommitted(e)) => {
-                    log::error!("migration: failed, trying again at the next start: {e}");
-                }
-                Err(migrate::ImportFailure::Unfinished { pending, error }) => {
-                    log::error!(
-                        "migration: imported, but could not keep the old files as backups: {error}"
-                    );
-                    unfinished = pending;
-                }
+            if let Err(e) = migrate::import_v1(&mut conn, config_dir, data_dir) {
+                log::error!("migration: failed, trying again at the next start: {e}");
             }
             let vocabulary = db::load_vocabulary(&conn).map_err(|e| e.to_string())?;
             Ok((conn, vocabulary))
@@ -336,7 +323,6 @@ impl Store {
                 state,
                 vocabulary,
                 db,
-                unfinished,
                 pruned_at: None,
             }),
         };
@@ -369,17 +355,31 @@ impl Store {
         self.data.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Renames version 1 files an earlier import left under their names, before
-    /// anything is removed; until that works, removals fail rather than come back.
+    /// Imports the version 1 files if any are still under their own names, before
+    /// anything is removed: an entry or shelf removed now would otherwise come back
+    /// from them at the next start. Fails while a file stays there.
     fn finish_import(&self, data: &mut Data) -> Result<(), StoreError> {
-        if !data.unfinished.any() {
+        let legacy = [
+            self.data_dir.join(HISTORY_FILE),
+            self.config_dir.join(VOCABULARY_FILE),
+        ];
+        if !legacy.iter().any(|p| p.exists()) {
             return Ok(());
         }
-        migrate::finish(&self.config_dir, &self.data_dir, &mut data.unfinished).map_err(|e| {
-            StoreError::Io(format!(
-                "the old history files could not be kept as backups yet ({e})"
-            ))
-        })
+        let imported = migrate::import_v1(data.db_mut()?, &self.config_dir, &self.data_dir);
+        // The import may have merged shelves from the file.
+        data.vocabulary = db::load_vocabulary(data.db()?)?;
+        let left = legacy.iter().find(|p| p.exists());
+        match (imported, left) {
+            (Err(e), _) => Err(StoreError::Io(format!(
+                "the old history files are not imported yet ({e})"
+            ))),
+            (Ok(_), Some(path)) => Err(StoreError::Io(format!(
+                "{} is not imported yet",
+                path.display()
+            ))),
+            (Ok(_), None) => Ok(()),
+        }
     }
 
     pub fn settings(&self) -> Settings {
@@ -434,10 +434,10 @@ impl Store {
         change: impl FnOnce(&mut Vocabulary) -> Result<R, StoreError>,
     ) -> Result<(R, Vocabulary), StoreError> {
         let mut data = self.lock();
+        self.finish_import(&mut data)?;
         let mut vocabulary = data.vocabulary.clone();
         let result = change(&mut vocabulary)?;
         if vocabulary != data.vocabulary {
-            self.finish_import(&mut data)?;
             let tx = data.db_mut()?.transaction().map_err(db::sql_error)?;
             db::save_vocabulary(&tx, &vocabulary)?;
             tx.commit().map_err(db::sql_error)?;
@@ -538,11 +538,12 @@ impl Store {
         }
         let limit = Duration::from_secs(u64::from(days) * 24 * 60 * 60);
         let before = now_ms().saturating_sub(limit.as_millis() as i64);
-        self.finish_import(&mut data)?;
-        let Ok(db) = data.db() else {
+        if data.db.is_err() {
             // Nothing to prune without a database; the failure was logged at start.
             return Ok(0);
-        };
+        }
+        self.finish_import(&mut data)?;
+        let db = data.db()?;
         let removed = db::prune(db, before)?;
         if removed > 0 {
             log::info!("history: removed {removed} entries older than {days} days");
