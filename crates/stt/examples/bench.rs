@@ -10,6 +10,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share")
         })
         .join("delulu-talks/models");
+    // DELULU_ALLOWED=nl,en limits detection to that set (the default); "all" allows
+    // every language, which is Whisper's own unconstrained choice.
+    let allowed: Vec<String> = match std::env::var("DELULU_ALLOWED").as_deref() {
+        Ok("all") => delulu_stt::languages()
+            .into_iter()
+            .map(|(code, _)| code.to_string())
+            .collect(),
+        Ok(list) => list.split(',').map(str::to_string).collect(),
+        Err(_) => delulu_stt::DEFAULT_ALLOWED_LANGUAGES
+            .map(String::from)
+            .to_vec(),
+    };
+    let language = Language::Auto(allowed);
     let mut engine = Engine::load(&dir, &id)?;
     println!("backend: {}", engine.backend());
     let mut times = Vec::new();
@@ -25,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .samples::<i16>()
             .map(|s| s.map(|x| x as f32 / 32768.0))
             .collect::<Result<_, _>>()?;
-        let result = engine.transcribe(&samples, &Language::Auto, None)?;
+        let result = engine.transcribe(&samples, &language, None)?;
         let name = std::path::Path::new(&path)
             .file_name()
             .unwrap_or_default()

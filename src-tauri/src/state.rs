@@ -39,7 +39,7 @@ pub(crate) enum EngineJob {
     /// Samples, language setting, Whisper prompt from the context.
     Transcribe(
         Vec<f32>,
-        String,
+        delulu_stt::Language,
         Option<String>,
         tokio::sync::oneshot::Sender<Result<delulu_stt::Transcript, String>>,
     ),

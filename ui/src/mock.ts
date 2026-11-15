@@ -23,6 +23,7 @@ let settings: Settings = {
   startAtLogin: false,
   model: "large-v3-turbo-q5_0",
   language: "auto",
+  allowedLanguages: ["nl", "en"],
   insert: "shift-insert",
   theme: "system",
   overlay: true,
@@ -608,7 +609,10 @@ export async function invoke<T>(
     case "list_languages":
       result = [
         { code: "en", name: "english" },
+        { code: "de", name: "german" },
+        { code: "fr", name: "french" },
         { code: "nl", name: "dutch" },
+        { code: "is", name: "icelandic" },
       ];
       break;
     case "list_models":

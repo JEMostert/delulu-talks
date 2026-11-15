@@ -190,7 +190,7 @@ pub(crate) fn stop(app: &tauri::AppHandle, stopped_at: Instant) {
         if s.engine
             .send(EngineJob::Transcribe(
                 clip.samples,
-                settings.language.clone(),
+                delulu_stt::Language::from_setting(&settings.language, &settings.allowed_languages),
                 prompt,
                 tx,
             ))

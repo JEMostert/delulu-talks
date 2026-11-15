@@ -109,6 +109,18 @@
   gap: 12px;
   min-width: 0;
 }
+.lang-set {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lang-set + .select select {
+  min-width: 110px;
+}
 .row-stack {
   flex-direction: column;
   align-items: stretch;
