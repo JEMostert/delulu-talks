@@ -68,7 +68,9 @@ fn run(mut args: impl Iterator<Item = String>) -> Result<(), String> {
             std::io::stdin()
                 .read_to_string(&mut input)
                 .map_err(|e| format!("stdin: {e}"))?;
-            let song: Song = serde_json::from_str(&input).map_err(|e| format!("song: {e}"))?;
+            // Not `{e}`: serde can quote the lyrics it choked on, and this reaches the log.
+            let song: Song = serde_json::from_str(&input)
+                .map_err(|e| format!("song: {:?} error at column {}", e.classify(), e.column()))?;
             let output = generate(
                 &model,
                 &song,
