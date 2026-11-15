@@ -162,7 +162,12 @@ pub fn main(args: impl Iterator<Item = String>) -> ExitCode {
         let request: Request = match serde_json::from_str(&line) {
             Ok(request) => request,
             Err(e) => {
-                eprintln!("delulu-engine llm: bad request: {e}");
+                // Not `{e}`: serde can quote the dictated text it choked on.
+                eprintln!(
+                    "delulu-engine llm: bad request ({:?} error at column {})",
+                    e.classify(),
+                    e.column()
+                );
                 continue;
             }
         };

@@ -357,7 +357,9 @@ impl Vocabulary {
                 .iter()
                 .any(|s| s.id == shelf.id || same(&s.name, &name));
             if name.is_empty() || shelf.id.trim().is_empty() || duplicate {
-                log::warn!("vocabulary: dropping shelf {:?}", shelf.name);
+                log::warn!(
+                    "vocabulary: dropping a shelf with an empty, missing or duplicate name or id"
+                );
                 continue;
             }
             let mut terms: Vec<String> = Vec::new();

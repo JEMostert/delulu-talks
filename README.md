@@ -101,6 +101,8 @@ DELULU_ENGINE=$PWD/target/release/delulu-engine bun run dev
 
 `tauri dev` does not build the engine and only looks for it next to the debug binary, so point `DELULU_ENGINE` at the release build (or link it into `target/debug/`). The app starts it once per role (`delulu-engine llm`, `delulu-engine music`); `delulu-engine probe` prints its version, roles and graphics devices without loading a model. The helpers are separate processes because whisper.cpp and llama.cpp each bundle their own, incompatible copy of ggml. On Fedora, if clang cannot find its headers, set `BINDGEN_EXTRA_CLANG_ARGS` to the GCC include directory.
 
+The log goes to the systemd user journal, so it never holds what you said: each dictation logs its timings, lengths, language, topic and model, but not the text. To debug transcription or cleanup, start the app with `DELULU_LOG_TEXT=1`; the dictation line then also carries the transcript and the raw text, and those stay in the journal after you delete the entry from History.
+
 Checks: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `bun run typecheck`, `bun test ui` and `bun run format:check`. Pushing a `vX.Y.Z` tag builds the packages and publishes the release, with notes from `docs/releases/<tag>.md`.
 
 The reel at the top is made in code: a canvas program draws every frame, a Python synthesizer writes the soundtrack from the same beat map, and `docs/reel/make.sh` rebuilds the MP4 and the WebP. See [docs/reel](docs/reel/README.md).
