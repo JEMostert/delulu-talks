@@ -312,7 +312,6 @@ pub(crate) async fn run_stop(ports: &impl StopPorts, req: StopRequest) -> StopOu
     let entry = match entry {
         Ok(entry) => entry,
         Err(e) => {
-            ports.log(format!("dictation not saved to history: {e}"));
             return StopOutcome::Unsaved {
                 insert,
                 message: format!("Not saved to History: {e}"),
