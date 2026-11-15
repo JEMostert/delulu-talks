@@ -4,7 +4,7 @@
 //! Removal is real: `secure_delete` zeroes freed content, a removal merges the
 //! full-text index so no segment keeps the old tokens, and a `TRUNCATE` checkpoint
 //! empties the write-ahead log, so a deleted transcript is gone from the file bytes.
-use rusqlite::{params, Connection, OptionalExtension, Row, Transaction};
+use rusqlite::{params, Connection, ErrorCode, OptionalExtension, Row, Transaction};
 use std::{fs, path::Path, time::Duration};
 
 use crate::{HistoryEntry, Shelf, StoreError, Vocabulary};
@@ -72,17 +72,36 @@ pub(crate) fn sql_error(e: rusqlite::Error) -> StoreError {
     StoreError::Io(format!("database: {e}"))
 }
 
-/// Opens (or creates) the database and brings its schema up to date.
-pub(crate) fn open(path: &Path) -> Result<Connection, StoreError> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(|e| crate::io_error(dir, e))?;
+/// Why the database could not be opened.
+#[derive(Debug)]
+pub(crate) enum OpenError {
+    /// The file is there but is not a usable database: it can only be moved aside.
+    Damaged(String),
+    /// Anything else, such as no space, no permission or a schema from a newer
+    /// version: the file is left alone.
+    Unavailable(String),
+}
+
+fn open_error(e: rusqlite::Error) -> OpenError {
+    let message = format!("database: {e}");
+    match e.sqlite_error_code() {
+        Some(ErrorCode::NotADatabase | ErrorCode::DatabaseCorrupt) => OpenError::Damaged(message),
+        _ => OpenError::Unavailable(message),
     }
-    let mut conn = Connection::open(path).map_err(sql_error)?;
+}
+
+/// Opens (or creates) the database and brings its schema up to date.
+pub(crate) fn open(path: &Path) -> Result<Connection, OpenError> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)
+            .map_err(|e| OpenError::Unavailable(format!("{}: {e}", dir.display())))?;
+    }
+    let mut conn = Connection::open(path).map_err(open_error)?;
     conn.busy_timeout(Duration::from_secs(5))
-        .map_err(sql_error)?;
+        .map_err(open_error)?;
     let mode: String = conn
         .query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))
-        .map_err(sql_error)?;
+        .map_err(open_error)?;
     if !mode.eq_ignore_ascii_case("wal") {
         log::warn!("database: journal mode is {mode}, not WAL");
     }
@@ -91,25 +110,30 @@ pub(crate) fn open(path: &Path) -> Result<Connection, StoreError> {
     conn.execute_batch(
         "PRAGMA synchronous = FULL; PRAGMA secure_delete = ON; PRAGMA foreign_keys = ON;",
     )
-    .map_err(sql_error)?;
+    .map_err(open_error)?;
+    // Reads the schema, so a damaged one shows now rather than at the first save.
+    conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .map_err(open_error)?;
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(sql_error)?;
+        .map_err(open_error)?;
     if version > SCHEMA_VERSION {
-        return Err(StoreError::Io(format!(
+        return Err(OpenError::Unavailable(format!(
             "{} was made by a newer version of Delulu Talks (schema {version})",
             path.display()
         )));
     }
     if version < 1 {
-        let tx = conn.transaction().map_err(sql_error)?;
-        tx.execute_batch(SCHEMA_V1).map_err(sql_error)?;
+        let tx = conn.transaction().map_err(open_error)?;
+        tx.execute_batch(SCHEMA_V1).map_err(open_error)?;
         tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
-            .map_err(sql_error)?;
-        tx.commit().map_err(sql_error)?;
+            .map_err(open_error)?;
+        tx.commit().map_err(open_error)?;
     }
     // Finishes a scrub that an outside reader kept from emptying the log last time.
-    checkpoint(&conn)?;
+    checkpoint(&conn).map_err(|e| OpenError::Unavailable(e.to_string()))?;
     Ok(conn)
 }
 

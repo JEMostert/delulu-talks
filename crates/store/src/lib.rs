@@ -2,7 +2,7 @@ use rusqlite::Connection;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     fs::{self, File},
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -180,9 +180,85 @@ struct Data {
     settings: Settings,
     state: AppState,
     vocabulary: Vocabulary,
-    db: Connection,
+    /// The database, or why this session runs without one.
+    db: Result<Connection, String>,
     /// When history was last pruned by its retention setting.
     pruned_at: Option<SystemTime>,
+}
+
+impl Data {
+    fn db(&self) -> Result<&Connection, StoreError> {
+        self.db.as_ref().map_err(|reason| unavailable(reason))
+    }
+
+    fn db_mut(&mut self) -> Result<&mut Connection, StoreError> {
+        self.db.as_mut().map_err(|reason| unavailable(reason))
+    }
+}
+
+/// The error every history and vocabulary change returns without a database;
+/// dictation shows it as "Not saved to History: …".
+fn unavailable(reason: &str) -> StoreError {
+    StoreError::Io(format!("history is not available ({reason})"))
+}
+
+/// Whether `path` holds something other than an SQLite database: a non-empty file
+/// without its header. Checked before SQLite opens it, because SQLite removes a
+/// leftover `-wal` and `-shm` when it closes a database it could not read.
+fn not_sqlite(path: &Path) -> bool {
+    let mut header = [0_u8; 16];
+    match File::open(path).and_then(|mut f| f.read_exact(&mut header)) {
+        Ok(()) => &header != b"SQLite format 3\0",
+        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+            fs::metadata(path).is_ok_and(|m| m.len() > 0)
+        }
+        Err(_) => false,
+    }
+}
+
+/// Opens the database in `data_dir`. A file that is not a usable database is moved
+/// aside with its `-wal` and `-shm` (never over an earlier copy) for a fresh one;
+/// any other failure returns its reason and leaves the files alone.
+fn open_database(data_dir: &Path) -> Result<Connection, String> {
+    let path = data_dir.join(db::DB_FILE);
+    let damage = if not_sqlite(&path) {
+        "not an SQLite database".to_string()
+    } else {
+        match db::open(&path) {
+            Ok(conn) => return Ok(conn),
+            Err(db::OpenError::Unavailable(reason)) => return Err(reason),
+            Err(db::OpenError::Damaged(reason)) => reason,
+        }
+    };
+    log::error!(
+        "{} is damaged ({damage}); keeping it aside and starting a new one",
+        path.display()
+    );
+    let files: Vec<PathBuf> = ["", "-wal", "-shm"]
+        .iter()
+        .map(|suffix| data_dir.join(format!("{}{suffix}", db::DB_FILE)))
+        .collect();
+    let aside = |n: u32| {
+        let tag = if n == 1 {
+            ".bad".to_string()
+        } else {
+            format!(".bad.{n}")
+        };
+        files
+            .iter()
+            .map(|f| (f, PathBuf::from(format!("{}{tag}", f.display()))))
+            .collect::<Vec<_>>()
+    };
+    let moves = (1..)
+        .map(aside)
+        .find(|moves| moves.iter().all(|(_, to)| !to.exists()))
+        .expect("a free name");
+    for (from, to) in moves.iter().filter(|(from, _)| from.exists()) {
+        fs::rename(from, to).map_err(|e| format!("cannot move aside {}: {e}", from.display()))?;
+    }
+    db::open(&path).map_err(|e| match e {
+        db::OpenError::Damaged(reason) | db::OpenError::Unavailable(reason) => reason,
+    })
 }
 
 pub struct Store {
@@ -195,7 +271,10 @@ impl Store {
     /// `config_dir` holds `settings.json` and `state.json`; `data_dir` holds the
     /// database (history and vocabulary) and `models/`. Both are app-specific
     /// directories. The first open imports the version 1 `history.jsonl` and
-    /// `vocabulary.json`, keeping them as `*.v1.bak`.
+    /// `vocabulary.json`, keeping them as `*.v1.bak`; a failed import is retried at
+    /// the next open. A damaged database is kept aside as `delulu.db.bad` for a new
+    /// one; a database that cannot be opened at all leaves this session without
+    /// History and vocabulary, and their changes return that error.
     pub fn open(config_dir: &Path, data_dir: &Path) -> Result<Store, StoreError> {
         let settings_path = config_dir.join(SETTINGS_FILE);
         let mut settings = load_or_default::<Settings>(&settings_path, "settings").normalized();
@@ -209,9 +288,23 @@ impl Store {
         }
         settings.version = SETTINGS_VERSION;
         let state = load_or_default(&config_dir.join(STATE_FILE), "state");
-        let mut db = db::open(&data_dir.join(db::DB_FILE))?;
-        migrate::import_v1(&mut db, config_dir, data_dir)?;
-        let vocabulary = db::load_vocabulary(&db)?;
+        // Neither a database problem nor a failed import keeps the app from
+        // starting: dictation still types, it only cannot save to History. Without
+        // a database the import does not run, so the version 1 files stay put.
+        let db = open_database(data_dir).and_then(|mut conn| {
+            if let Err(e) = migrate::import_v1(&mut conn, config_dir, data_dir) {
+                log::error!("migration: failed, trying again at the next start: {e}");
+            }
+            let vocabulary = db::load_vocabulary(&conn).map_err(|e| e.to_string())?;
+            Ok((conn, vocabulary))
+        });
+        let (db, vocabulary) = match db {
+            Ok((conn, vocabulary)) => (Ok(conn), vocabulary),
+            Err(reason) => {
+                log::error!("history: running without a database: {reason}");
+                (Err(reason), Vocabulary::default())
+            }
+        };
         let store = Store {
             config_dir: config_dir.into(),
             data_dir: data_dir.into(),
@@ -307,7 +400,7 @@ impl Store {
         let mut vocabulary = data.vocabulary.clone();
         let result = change(&mut vocabulary)?;
         if vocabulary != data.vocabulary {
-            let tx = data.db.transaction().map_err(db::sql_error)?;
+            let tx = data.db_mut()?.transaction().map_err(db::sql_error)?;
             db::save_vocabulary(&tx, &vocabulary)?;
             tx.commit().map_err(db::sql_error)?;
             data.vocabulary = vocabulary.clone();
@@ -330,21 +423,29 @@ impl Store {
             cleanup_ms: e.cleanup_ms,
             topic: e.topic,
         };
-        db::insert_entry(&self.lock().db, &entry)?;
+        db::insert_entry(self.lock().db()?, &entry)?;
         Ok(entry)
     }
 
     /// Newest first. Every word of `query` must occur in the text (anywhere in a
     /// word), ignoring case, and diacritics for words of three or more characters.
     pub fn history(&self, query: Option<&str>, limit: usize) -> Vec<HistoryEntry> {
-        db::search(&self.lock().db, query, limit).unwrap_or_else(|e| {
+        let data = self.lock();
+        let Ok(db) = data.db() else {
+            return Vec::new();
+        };
+        db::search(db, query, limit).unwrap_or_else(|e| {
             log::warn!("history: {e}");
             Vec::new()
         })
     }
 
     pub fn history_entry(&self, id: &str) -> Option<HistoryEntry> {
-        db::entry(&self.lock().db, id).unwrap_or_else(|e| {
+        let data = self.lock();
+        let Ok(db) = data.db() else {
+            return None;
+        };
+        db::entry(db, id).unwrap_or_else(|e| {
             log::warn!("history: {e}");
             None
         })
@@ -352,7 +453,7 @@ impl Store {
 
     /// Persist the completed delivery timing.
     pub fn set_total_ms(&self, id: &str, total_ms: u64) -> Result<HistoryEntry, StoreError> {
-        db::set_total_ms(&self.lock().db, id, total_ms)?
+        db::set_total_ms(self.lock().db()?, id, total_ms)?
             .ok_or_else(|| StoreError::Io(format!("history entry not found: {id}")))
     }
 
@@ -362,7 +463,8 @@ impl Store {
     /// deleting it again finishes the job.
     pub fn delete_history(&self, id: &str) -> Result<(), StoreError> {
         let data = self.lock();
-        let Some(entry) = db::entry(&data.db, id)? else {
+        let db = data.db()?;
+        let Some(entry) = db::entry(db, id)? else {
             return Ok(());
         };
         for path in migrate::history_backups(&self.data_dir) {
@@ -370,18 +472,19 @@ impl Store {
                 migrate::remove_from_backup(&path, &entry)?;
             }
         }
-        db::delete_entry(&data.db, id)
+        db::delete_entry(db, id)
     }
 
     /// Removes the pre-database history backups with their text, then every entry;
     /// a failure or a kill halfway leaves History to clear again.
     pub fn clear_history(&self) -> Result<(), StoreError> {
         let data = self.lock();
+        let db = data.db()?;
         for path in migrate::history_backups(&self.data_dir) {
             fs::remove_file(&path).map_err(|e| io_error(&path, e))?;
             log::info!("history: removed {}", path.display());
         }
-        db::clear(&data.db)
+        db::clear(db)
     }
 
     /// Deletes entries older than the retention setting, from the database and from
@@ -395,7 +498,11 @@ impl Store {
         }
         let limit = Duration::from_secs(u64::from(days) * 24 * 60 * 60);
         let before = now_ms().saturating_sub(limit.as_millis() as i64);
-        let removed = db::prune(&data.db, before)?;
+        let Ok(db) = data.db() else {
+            // Nothing to prune without a database; the failure was logged at start.
+            return Ok(0);
+        };
+        let removed = db::prune(db, before)?;
         if removed > 0 {
             log::info!("history: removed {removed} entries older than {days} days");
         }
@@ -1152,6 +1259,102 @@ mod tests {
         store.clear_history().unwrap();
         assert!(!holds(&file_bytes(&t), "Keptmarkerwombat"));
         assert!(store.history_entry(&kept.id).is_none());
+    }
+
+    #[test]
+    fn a_damaged_database_is_kept_aside_for_a_new_one() {
+        let t = TempDir::new();
+        fs::create_dir_all(t.data()).unwrap();
+        let junk = vec![0x5a_u8; 8192];
+        for name in [db::DB_FILE, "delulu.db-wal", "delulu.db-shm"] {
+            fs::write(t.data().join(name), &junk).unwrap();
+        }
+        let store = open(&t);
+        store.add_history(entry("after the damage")).unwrap();
+        for name in ["delulu.db.bad", "delulu.db-wal.bad", "delulu.db-shm.bad"] {
+            assert_eq!(fs::read(t.data().join(name)).unwrap(), junk, "{name}");
+        }
+        drop(store);
+        assert_eq!(texts(&open(&t)), ["after the damage"]);
+
+        // Damaged again, past the header so SQLite finds it: the earlier copy is not
+        // overwritten.
+        let header_only = [b"SQLite format 3\0".as_slice(), &[0xff; 4080]].concat();
+        fs::write(t.data().join(db::DB_FILE), &header_only).unwrap();
+        let store = open(&t);
+        store.add_history(entry("after the second")).unwrap();
+        assert_eq!(texts(&store), ["after the second"]);
+        assert_eq!(fs::read(t.data().join("delulu.db.bad")).unwrap(), junk);
+        assert_eq!(
+            fs::read(t.data().join("delulu.db.bad.2")).unwrap(),
+            header_only
+        );
+    }
+
+    #[test]
+    fn without_a_database_the_store_opens_and_leaves_the_old_files() {
+        let history = r#"{"id":"a","createdAt":1,"text":"old words","language":"en","model":"m","audioMs":1,"sttMs":1,"totalMs":1}"#;
+        let vocabulary =
+            r#"{"shelves":[{"id":"s","name":"Code","enabled":true,"terms":["Tauri"]}]}"#;
+        fn a_directory(t: &TempDir) {
+            fs::create_dir_all(t.data().join(db::DB_FILE)).unwrap();
+        }
+        fn a_newer_schema(t: &TempDir) {
+            let conn = Connection::open(t.data().join(db::DB_FILE)).unwrap();
+            conn.execute_batch("CREATE TABLE later (x); PRAGMA user_version = 99;")
+                .unwrap();
+        }
+        let setups = [
+            ("directory", a_directory as fn(&TempDir)),
+            ("newer schema", a_newer_schema),
+        ];
+        for (case, setup) in setups {
+            let t = TempDir::new();
+            fs::create_dir_all(t.config()).unwrap();
+            fs::create_dir_all(t.data()).unwrap();
+            fs::write(t.data().join(HISTORY_FILE), history).unwrap();
+            fs::write(t.config().join(VOCABULARY_FILE), vocabulary).unwrap();
+            setup(&t);
+
+            let store = Store::open(&t.config(), &t.data())
+                .unwrap_or_else(|e| panic!("{case}: open failed: {e}"));
+            let error = store
+                .add_history(entry("new words"))
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("history is not available"),
+                "{case}: {error}"
+            );
+            assert!(store.history(None, 10).is_empty(), "{case}");
+            assert!(store.history_entry("a").is_none(), "{case}");
+            assert_eq!(store.vocabulary(), Vocabulary::default(), "{case}");
+            assert!(store
+                .update_vocabulary(|v| v.add_shelf("Games").map(|_| ()))
+                .is_err());
+            assert!(store.delete_history("a").is_err(), "{case}");
+            assert!(store.clear_history().is_err(), "{case}");
+            assert!(store.set_total_ms("a", 5).is_err(), "{case}");
+            // Settings still save.
+            store.save_settings(&store.settings()).unwrap();
+            drop(store);
+
+            assert_eq!(
+                fs::read_to_string(t.data().join(HISTORY_FILE)).unwrap(),
+                history
+            );
+            assert_eq!(
+                fs::read_to_string(t.config().join(VOCABULARY_FILE)).unwrap(),
+                vocabulary
+            );
+            assert!(!t.data().join("history.jsonl.v1.bak").exists(), "{case}");
+            assert!(
+                !t.config().join("vocabulary.json.v1.bak").exists(),
+                "{case}"
+            );
+            assert!(t.data().join(db::DB_FILE).exists(), "{case}");
+            assert!(!t.data().join("delulu.db.bad").exists(), "{case}");
+        }
     }
 
     const DAY_MS: i64 = 24 * 60 * 60 * 1000;

@@ -32,16 +32,29 @@ pub(crate) struct Report {
     pub terms_merged: usize,
 }
 
-/// Simulated kill for the crash tests: the test harness runs the import in a child
-/// process that exits on the spot at the named step.
 #[cfg(test)]
-fn crash_point(step: &str) {
+thread_local! {
+    /// The step at which the import on this thread fails, for the failure tests.
+    static FAIL_AT: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
+}
+
+/// Simulated kill or failure for the tests: a child process of the test harness
+/// exits on the spot at the step named in `DELULU_TEST_CRASH_AT`, and the step in
+/// `FAIL_AT` returns an error.
+#[cfg(test)]
+fn crash_point(step: &'static str) -> Result<(), StoreError> {
     if std::env::var("DELULU_TEST_CRASH_AT").as_deref() == Ok(step) {
         std::process::exit(86);
     }
+    if FAIL_AT.with(|at| at.get()) == Some(step) {
+        return Err(StoreError::Io(format!("injected failure at {step}")));
+    }
+    Ok(())
 }
 #[cfg(not(test))]
-fn crash_point(_step: &str) {}
+fn crash_point(_step: &'static str) -> Result<(), StoreError> {
+    Ok(())
+}
 
 fn suffixed(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_owned();
@@ -284,7 +297,7 @@ pub(crate) fn import_v1(
         }
         None => None,
     };
-    crash_point("parsed");
+    crash_point("parsed")?;
 
     if !parsed.rejected_lines.is_empty() {
         write_atomic(
@@ -292,13 +305,13 @@ pub(crate) fn import_v1(
             &parsed.rejected_lines,
         )?;
     }
-    crash_point("rejected-written");
+    crash_point("rejected-written")?;
 
     let tx = conn.transaction().map_err(db::sql_error)?;
     let half = parsed.entries.len() / 2;
     for (i, (line, entry)) in parsed.entries.into_iter().enumerate() {
         if i == half {
-            crash_point("mid-import");
+            crash_point("mid-import")?;
         }
         match place(&tx, entry, line)? {
             Placed::Imported => report.imported += 1,
@@ -318,20 +331,20 @@ pub(crate) fn import_v1(
             db::save_vocabulary(&tx, &merged)?;
         }
     }
-    crash_point("before-commit");
+    crash_point("before-commit")?;
     tx.commit().map_err(db::sql_error)?;
-    crash_point("committed");
+    crash_point("committed")?;
 
     if history.is_some() {
         let backup = backup_path(&history_path);
         fs::rename(&history_path, &backup).map_err(|e| io_error(&history_path, e))?;
     }
-    crash_point("history-renamed");
+    crash_point("history-renamed")?;
     if vocabulary_path.exists() {
         let backup = backup_path(&vocabulary_path);
         fs::rename(&vocabulary_path, &backup).map_err(|e| io_error(&vocabulary_path, e))?;
     }
-    crash_point("vocabulary-renamed");
+    crash_point("vocabulary-renamed")?;
 
     let r = &report;
     log::info!(
@@ -567,6 +580,56 @@ mod tests {
         assert_eq!((again.imported, again.already_present), (0, 3));
     }
 
+    /// Every crash point, and whether the import has committed by then.
+    const STEPS: [(&str, bool); 7] = [
+        ("parsed", false),
+        ("rejected-written", false),
+        ("mid-import", false),
+        ("before-commit", false),
+        ("committed", true),
+        ("history-renamed", true),
+        ("vocabulary-renamed", true),
+    ];
+
+    #[test]
+    fn an_import_failing_at_any_step_still_opens_and_finishes_later() {
+        for (step, committed) in STEPS {
+            let t = TempDir::new();
+            write_fixture(&t);
+            FAIL_AT.with(|at| at.set(Some(step)));
+            let store = Store::open(&t.config(), &t.data());
+            FAIL_AT.with(|at| at.set(None));
+            let store = store.unwrap_or_else(|e| panic!("open failed at {step}: {e}"));
+            let expected = if committed { 4 } else { 0 };
+            assert_eq!(store.history(None, 100).len(), expected, "{step}");
+            if !committed {
+                assert_eq!(
+                    fs::read_to_string(t.data().join(HISTORY_FILE)).unwrap(),
+                    history_fixture(),
+                    "{step}"
+                );
+            }
+            // The database works for the rest of the session.
+            let added = store
+                .add_history(crate::NewEntry {
+                    text: "said during the session".into(),
+                    language: "en".into(),
+                    model: "m".into(),
+                    audio_ms: 1,
+                    stt_ms: 1,
+                    total_ms: 1,
+                    raw: None,
+                    cleanup_ms: None,
+                    topic: None,
+                })
+                .unwrap();
+            store.delete_history(&added.id).unwrap();
+            drop(store);
+            // The next start finishes the import.
+            assert_migrated(&t);
+        }
+    }
+
     /// Runs in a child process: opens the store with a crash point armed.
     #[test]
     #[ignore = "run by kill_at_any_step_recovers in a child process"]
@@ -580,16 +643,7 @@ mod tests {
 
     #[test]
     fn kill_at_any_step_recovers() {
-        let steps = [
-            ("parsed", false),
-            ("rejected-written", false),
-            ("mid-import", false),
-            ("before-commit", false),
-            ("committed", true),
-            ("history-renamed", true),
-            ("vocabulary-renamed", true),
-        ];
-        for (step, committed) in steps {
+        for (step, committed) in STEPS {
             let t = TempDir::new();
             write_fixture(&t);
             let status = Command::new(std::env::current_exe().unwrap())
