@@ -134,26 +134,67 @@ export function groupByDay(
   return groups;
 }
 export type Segment = { text: string; match: boolean };
-/** Splits text around case-insensitive matches of the query. */
-export function highlight(text: string, query: string): Segment[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [{ text, match: false }];
-  const segments: Segment[] = [];
-  const haystack = text.toLowerCase();
-  let from = 0;
-  for (
-    let at = haystack.indexOf(needle);
-    at !== -1;
-    at = haystack.indexOf(needle, from)
-  ) {
-    if (at > from) segments.push({ text: text.slice(from, at), match: false });
-    segments.push({ text: text.slice(at, at + needle.length), match: true });
-    from = at + needle.length;
+/**
+ * Lowercased and without diacritics, with the index in `text` that each folded
+ * UTF-16 unit came from (plus one entry for the end).
+ */
+function fold(text: string): { folded: string; from: number[] } {
+  let folded = "";
+  const from: number[] = [];
+  let at = 0;
+  for (const char of text) {
+    const plain = char.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    folded += plain;
+    for (let i = 0; i < plain.length; i++) from.push(at);
+    at += char.length;
   }
-  if (from < text.length)
-    segments.push({ text: text.slice(from), match: false });
+  from.push(text.length);
+  return { folded, from };
+}
+/**
+ * Splits text around matches of each word of the query, ignoring case and
+ * diacritics, the way History search finds them.
+ */
+export function highlight(text: string, query: string): Segment[] {
+  const words = query
+    .split(/\s+/)
+    .map((word) => fold(word).folded)
+    .filter(Boolean);
+  if (!words.length) return [{ text, match: false }];
+  const { folded, from } = fold(text);
+  const ranges: [number, number][] = [];
+  for (const word of words) {
+    for (
+      let at = folded.indexOf(word);
+      at !== -1;
+      at = folded.indexOf(word, at + 1)
+    )
+      ranges.push([from[at], from[at + word.length]]);
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+  const segments: Segment[] = [];
+  let done = 0;
+  for (const [start, end] of ranges) {
+    if (end <= done) continue;
+    const begin = Math.max(start, done);
+    if (begin > done)
+      segments.push({ text: text.slice(done, begin), match: false });
+    const last = segments[segments.length - 1];
+    if (last?.match && begin === done) last.text += text.slice(begin, end);
+    else segments.push({ text: text.slice(begin, end), match: true });
+    done = end;
+  }
+  if (done < text.length)
+    segments.push({ text: text.slice(done), match: false });
   return segments;
 }
+/** History retention choices in days; 0 keeps everything. */
+export const RETENTION_DAYS = [0, 90, 30, 7] as const;
+export const retentionLabel = (days: number) =>
+  days === 0 ? "Forever" : `${days} days`;
+/** Whether moving from one retention to another deletes transcripts now. */
+export const shortensRetention = (from: number, to: number) =>
+  to !== 0 && (from === 0 || to < from);
 export const noticeTone = (notice: string): "error" | "info" =>
   /^(could not|failed)/i.test(notice) || /error/i.test(notice)
     ? "error"

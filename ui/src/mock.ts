@@ -32,6 +32,7 @@ let settings: Settings = {
   smartContext: true,
   cleanupModelOk: true,
   radio: new URLSearchParams(location.search).has("radio"),
+  historyRetentionDays: 0,
 };
 // Dev-only URL switches: ?firstRun, ?empty, ?phase=error|loadingModel|…
 const params = new URLSearchParams(location.search);

@@ -1,11 +1,15 @@
+use rusqlite::Connection;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+mod db;
+mod migrate;
 mod vocabulary;
 pub use vocabulary::{
     split_terms, Preset, Shelf, Vocabulary, MAX_SHELF_NAME_CHARS, MAX_SHELF_TERMS, MAX_SHELVES,
@@ -16,8 +20,18 @@ pub const APP_ID: &str = "com.joran.delulu-talks";
 
 const SETTINGS_FILE: &str = "settings.json";
 const STATE_FILE: &str = "state.json";
+/// Version 1 files, imported into the database once (see `migrate`).
 const HISTORY_FILE: &str = "history.jsonl";
 const VOCABULARY_FILE: &str = "vocabulary.json";
+
+/// The settings.json format. 2 added `historyRetentionDays`.
+pub const SETTINGS_VERSION: u32 = 2;
+
+/// The History page offers these; 0 keeps everything.
+pub const RETENTION_CHOICES: [u32; 4] = [0, 90, 30, 7];
+
+/// How often a running app prunes history by its retention setting.
+const PRUNE_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -62,12 +76,14 @@ pub struct Settings {
     pub cleanup_model_ok: bool,
     /// Show the optional Delulu FM radio.
     pub radio: bool,
+    /// Delete transcripts older than this many days; 0 keeps them forever.
+    pub history_retention_days: u32,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            version: 1,
+            version: SETTINGS_VERSION,
             microphone: None,
             start_at_login: true,
             model: "large-v3-turbo-q5_0".into(),
@@ -80,6 +96,7 @@ impl Default for Settings {
             smart_context: true,
             cleanup_model_ok: false,
             radio: false,
+            history_retention_days: 0,
         }
     }
 }
@@ -152,15 +169,20 @@ fn io_error(path: &Path, e: io::Error) -> StoreError {
     StoreError::Io(format!("{}: {e}", path.display()))
 }
 
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
 struct Data {
     settings: Settings,
     state: AppState,
     vocabulary: Vocabulary,
-    /// Oldest first, the same order as the lines in `history.jsonl`.
-    history: Vec<HistoryEntry>,
-    /// The history file ends without a newline (torn write or hand edit), so
-    /// the next append must start a fresh line or it would glue onto that one.
-    history_needs_newline: bool,
+    db: Connection,
+    /// When history was last pruned by its retention setting.
+    pruned_at: Option<SystemTime>,
 }
 
 pub struct Store {
@@ -170,27 +192,41 @@ pub struct Store {
 }
 
 impl Store {
-    /// `config_dir` holds `settings.json`, `state.json` and `vocabulary.json`; `data_dir` holds
-    /// `history.jsonl` and `models/`. Both are app-specific directories.
+    /// `config_dir` holds `settings.json` and `state.json`; `data_dir` holds the
+    /// database (history and vocabulary) and `models/`. Both are app-specific
+    /// directories. The first open imports the version 1 `history.jsonl` and
+    /// `vocabulary.json`, keeping them as `*.v1.bak`.
     pub fn open(config_dir: &Path, data_dir: &Path) -> Result<Store, StoreError> {
-        let settings =
-            load_or_default::<Settings>(&config_dir.join(SETTINGS_FILE), "settings").normalized();
+        let settings_path = config_dir.join(SETTINGS_FILE);
+        let mut settings = load_or_default::<Settings>(&settings_path, "settings").normalized();
+        if settings.version < SETTINGS_VERSION && settings_path.exists() {
+            settings.version = SETTINGS_VERSION;
+            // In place: unknown keys of version 1 were already dropped by parsing,
+            // and every new key has its default. Failing here only means trying again.
+            if let Err(e) = write_json(&settings_path, &settings) {
+                log::warn!("could not update settings to version {SETTINGS_VERSION}: {e}");
+            }
+        }
+        settings.version = SETTINGS_VERSION;
         let state = load_or_default(&config_dir.join(STATE_FILE), "state");
-        let vocabulary =
-            load_or_default::<Vocabulary>(&config_dir.join(VOCABULARY_FILE), "vocabulary")
-                .normalized();
-        let (history, history_needs_newline) = load_history(&data_dir.join(HISTORY_FILE))?;
-        Ok(Store {
+        let mut db = db::open(&data_dir.join(db::DB_FILE))?;
+        migrate::import_v1(&mut db, config_dir, data_dir)?;
+        let vocabulary = db::load_vocabulary(&db)?;
+        let store = Store {
             config_dir: config_dir.into(),
             data_dir: data_dir.into(),
             data: Mutex::new(Data {
                 settings,
                 state,
                 vocabulary,
-                history,
-                history_needs_newline,
+                db,
+                pruned_at: None,
             }),
-        })
+        };
+        if let Err(e) = store.prune_history() {
+            log::warn!("history: pruning failed: {e}");
+        }
+        Ok(store)
     }
 
     /// Uses `$XDG_CONFIG_HOME/delulu-talks` and `$XDG_DATA_HOME/delulu-talks`.
@@ -220,16 +256,28 @@ impl Store {
         self.lock().settings.clone()
     }
 
-    /// Writes to disk first; the in-memory copy only changes on success.
+    /// Writes to disk first; the in-memory copy only changes on success. A shorter
+    /// history retention prunes right away.
     pub fn save_settings(&self, s: &Settings) -> Result<(), StoreError> {
         if s.allowed_languages.is_empty() {
             return Err(StoreError::Invalid(
                 "Keep at least one language for automatic detection.".into(),
             ));
         }
-        let mut data = self.lock();
-        write_json(&self.config_dir.join(SETTINGS_FILE), s)?;
-        data.settings = s.clone();
+        let s = Settings {
+            version: SETTINGS_VERSION,
+            ..s.clone()
+        };
+        let retention_changed = {
+            let mut data = self.lock();
+            write_json(&self.config_dir.join(SETTINGS_FILE), &s)?;
+            let changed = data.settings.history_retention_days != s.history_retention_days;
+            data.settings = s;
+            changed
+        };
+        if retention_changed {
+            self.prune_history()?;
+        }
         Ok(())
     }
 
@@ -249,8 +297,8 @@ impl Store {
         self.lock().vocabulary.clone()
     }
 
-    /// Apply `change` to a copy, write it to disk, then keep it in memory. A rule
-    /// error or a failed write leaves both untouched.
+    /// Apply `change` to a copy, save it, then keep it in memory. A rule error or a
+    /// failed save leaves both untouched.
     pub fn update_vocabulary<R>(
         &self,
         change: impl FnOnce(&mut Vocabulary) -> Result<R, StoreError>,
@@ -259,21 +307,19 @@ impl Store {
         let mut vocabulary = data.vocabulary.clone();
         let result = change(&mut vocabulary)?;
         if vocabulary != data.vocabulary {
-            write_json(&self.config_dir.join(VOCABULARY_FILE), &vocabulary)?;
+            let tx = data.db.transaction().map_err(db::sql_error)?;
+            db::save_vocabulary(&tx, &vocabulary)?;
+            tx.commit().map_err(db::sql_error)?;
             data.vocabulary = vocabulary.clone();
         }
         Ok((result, vocabulary))
     }
 
-    /// Appends one line to `history.jsonl`. The entry is only kept in memory
-    /// if the append succeeded.
+    /// Saves a new entry; it is only returned once it is on disk.
     pub fn add_history(&self, e: NewEntry) -> Result<HistoryEntry, StoreError> {
         let entry = HistoryEntry {
             id: uuid::Uuid::new_v4().to_string(),
-            created_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as i64,
+            created_at: now_ms(),
             text: e.text,
             language: e.language,
             model: e.model,
@@ -284,89 +330,117 @@ impl Store {
             cleanup_ms: e.cleanup_ms,
             topic: e.topic,
         };
-        let line = serde_json::to_string(&entry)
-            .map_err(|e| StoreError::Io(format!("history entry: {e}")))?;
-        let mut data = self.lock();
-        let path = self.data_dir.join(HISTORY_FILE);
-        match append_line(&path, &line, data.history_needs_newline) {
-            Ok(()) => data.history_needs_newline = false,
-            Err(e) => {
-                // Unknown how much of the line reached the file, so assume a
-                // partial line and start the next append on a new line.
-                data.history_needs_newline = true;
-                return Err(e);
-            }
-        }
-        data.history.push(entry.clone());
+        db::insert_entry(&self.lock().db, &entry)?;
         Ok(entry)
     }
 
-    /// Newest first; case-insensitive substring match on text.
+    /// Newest first. Every word of `query` must occur in the text (anywhere in a
+    /// word), ignoring case, and diacritics for words of three or more characters.
     pub fn history(&self, query: Option<&str>, limit: usize) -> Vec<HistoryEntry> {
-        let q = query.unwrap_or("").to_lowercase();
-        self.lock()
-            .history
-            .iter()
-            .rev()
-            .filter(|e| e.text.to_lowercase().contains(&q))
-            .take(limit)
-            .cloned()
-            .collect()
+        db::search(&self.lock().db, query, limit).unwrap_or_else(|e| {
+            log::warn!("history: {e}");
+            Vec::new()
+        })
     }
 
-    /// Atomically persist the completed delivery timing before updating memory.
+    pub fn history_entry(&self, id: &str) -> Option<HistoryEntry> {
+        db::entry(&self.lock().db, id).unwrap_or_else(|e| {
+            log::warn!("history: {e}");
+            None
+        })
+    }
+
+    /// Persist the completed delivery timing.
     pub fn set_total_ms(&self, id: &str, total_ms: u64) -> Result<HistoryEntry, StoreError> {
-        let mut data = self.lock();
-        let mut history = data.history.clone();
-        let entry = history
-            .iter_mut()
-            .find(|e| e.id == id)
-            .ok_or_else(|| StoreError::Io(format!("history entry not found: {id}")))?;
-        entry.total_ms = total_ms;
-        let updated = entry.clone();
-        let mut out = Vec::new();
-        for entry in &history {
-            serde_json::to_writer(&mut out, entry)
-                .map_err(|e| StoreError::Io(format!("history entry: {e}")))?;
-            out.push(b'\n');
-        }
-        write_atomic(&self.data_dir.join(HISTORY_FILE), &out)?;
-        data.history = history;
-        data.history_needs_newline = false;
-        Ok(updated)
+        db::set_total_ms(&self.lock().db, id, total_ms)?
+            .ok_or_else(|| StoreError::Io(format!("history entry not found: {id}")))
     }
 
+    /// Removes the entry and its text from the database file and search index.
+    /// The pre-database backup (`history.jsonl.v1.bak`) keeps its copy until history
+    /// is cleared or retention covers it.
     pub fn delete_history(&self, id: &str) -> Result<(), StoreError> {
-        let mut data = self.lock();
-        if !data.history.iter().any(|e| e.id == id) {
-            return Ok(());
-        }
-        self.rewrite_history(&mut data, |e| e.id != id)
+        db::delete_entry(&self.lock().db, id)
     }
 
+    /// Removes every entry, and the pre-database history backups with their text.
     pub fn clear_history(&self) -> Result<(), StoreError> {
-        let mut data = self.lock();
-        self.rewrite_history(&mut data, |_| false)
+        let data = self.lock();
+        db::clear(&data.db)?;
+        for path in migrate::history_backups(&self.data_dir) {
+            remove_file_logged(&path);
+        }
+        Ok(())
     }
 
-    /// Writes the kept entries to a temp file and renames it over
-    /// `history.jsonl`, then updates memory to match.
-    fn rewrite_history(
-        &self,
-        data: &mut Data,
-        keep: impl Fn(&HistoryEntry) -> bool,
-    ) -> Result<(), StoreError> {
-        let mut out = Vec::new();
-        for e in data.history.iter().filter(|e| keep(e)) {
-            let line = serde_json::to_string(e)
-                .map_err(|e| StoreError::Io(format!("history entry: {e}")))?;
-            out.extend_from_slice(line.as_bytes());
-            out.push(b'\n');
+    /// Deletes entries older than the retention setting, and a pre-database backup
+    /// once everything in it is that old. Returns how many entries went.
+    pub fn prune_history(&self) -> Result<usize, StoreError> {
+        let mut data = self.lock();
+        data.pruned_at = Some(SystemTime::now());
+        let days = data.settings.history_retention_days;
+        if days == 0 {
+            return Ok(0);
         }
-        write_atomic(&self.data_dir.join(HISTORY_FILE), &out)?;
-        data.history.retain(|e| keep(e));
-        data.history_needs_newline = false;
-        Ok(())
+        let limit = Duration::from_secs(u64::from(days) * 24 * 60 * 60);
+        let before = now_ms().saturating_sub(limit.as_millis() as i64);
+        let removed = db::prune(&data.db, before)?;
+        if removed > 0 {
+            log::info!("history: removed {removed} entries older than {days} days");
+        }
+        // A backup's mtime is its last write, so every entry in it is at least that old.
+        for path in migrate::history_backups(&self.data_dir) {
+            let old = fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| SystemTime::now().duration_since(t).ok())
+                .is_some_and(|age| age > limit);
+            if old {
+                remove_file_logged(&path);
+            }
+        }
+        Ok(removed)
+    }
+
+    /// Prunes history once a day for as long as `store` lives. Checks hourly against
+    /// the wall clock, so a suspended laptop still prunes soon after waking.
+    pub fn start_daily_pruning(store: &Arc<Store>) {
+        let store = Arc::downgrade(store);
+        let spawned = std::thread::Builder::new()
+            .name("history-retention".into())
+            .spawn(move || loop {
+                std::thread::sleep(Duration::from_secs(60 * 60));
+                let Some(store) = store.upgrade() else {
+                    return;
+                };
+                if let Err(e) = store.prune_history_if_due() {
+                    log::warn!("history: pruning failed: {e}");
+                }
+            });
+        if let Err(e) = spawned {
+            log::warn!("history: no daily pruning: {e}");
+        }
+    }
+
+    /// Prunes when the last prune is a day old.
+    fn prune_history_if_due(&self) -> Result<usize, StoreError> {
+        let due = self.lock().pruned_at.is_none_or(|at| {
+            SystemTime::now()
+                .duration_since(at)
+                .map_or(true, |age| age >= PRUNE_EVERY)
+        });
+        if due {
+            self.prune_history()
+        } else {
+            Ok(0)
+        }
+    }
+}
+
+fn remove_file_logged(path: &Path) {
+    match fs::remove_file(path) {
+        Ok(()) => log::info!("history: removed {}", path.display()),
+        Err(e) => log::warn!("history: could not remove {}: {e}", path.display()),
     }
 }
 
@@ -413,54 +487,6 @@ fn quarantine<T: Default>(path: &Path, what: &str, reason: &str) -> T {
     T::default()
 }
 
-/// Bad lines are logged and skipped. Only an I/O failure other than "not
-/// found" is an error, because continuing could later rewrite the file from
-/// an empty list.
-fn load_history(path: &Path) -> Result<(Vec<HistoryEntry>, bool), StoreError> {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((Vec::new(), false)),
-        Err(e) => return Err(io_error(path, e)),
-    };
-    let mut entries = Vec::new();
-    for (i, line) in bytes.split(|b| *b == b'\n').enumerate() {
-        if line.iter().all(u8::is_ascii_whitespace) {
-            continue;
-        }
-        match serde_json::from_slice::<HistoryEntry>(line) {
-            Ok(entry) => entries.push(entry),
-            Err(e) => log::warn!(
-                "skipping bad history line {} in {}: {}",
-                i + 1,
-                path.display(),
-                json_error(&e)
-            ),
-        }
-    }
-    let needs_newline = bytes.last().is_some_and(|b| *b != b'\n');
-    Ok((entries, needs_newline))
-}
-
-fn append_line(path: &Path, line: &str, needs_newline: bool) -> Result<(), StoreError> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(|e| io_error(dir, e))?;
-    }
-    let mut buf = String::with_capacity(line.len() + 2);
-    if needs_newline {
-        buf.push('\n');
-    }
-    buf.push_str(line);
-    buf.push('\n');
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|e| io_error(path, e))?;
-    file.write_all(buf.as_bytes())
-        .and_then(|()| file.sync_data())
-        .map_err(|e| io_error(path, e))
-}
-
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), StoreError> {
     let mut json = serde_json::to_string_pretty(value)
         .map_err(|e| StoreError::Io(format!("{}: {e}", path.display())))?;
@@ -491,24 +517,24 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+pub(crate) mod test_support {
+    use std::{fs, path::PathBuf};
 
     /// Unique temp directory under the system temp dir, removed on drop.
-    struct TempDir(PathBuf);
+    pub(crate) struct TempDir(pub(crate) PathBuf);
 
     impl TempDir {
-        fn new() -> Self {
+        pub(crate) fn new() -> Self {
             let path = std::env::temp_dir().join(format!("delulu-store-{}", uuid::Uuid::new_v4()));
             fs::create_dir_all(&path).unwrap();
             TempDir(path)
         }
 
-        fn config(&self) -> PathBuf {
+        pub(crate) fn config(&self) -> PathBuf {
             self.0.join("config")
         }
 
-        fn data(&self) -> PathBuf {
+        pub(crate) fn data(&self) -> PathBuf {
             self.0.join("data")
         }
     }
@@ -518,6 +544,13 @@ mod tests {
             let _ = fs::remove_dir_all(&self.0);
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::test_support::TempDir;
 
     fn open(t: &TempDir) -> Store {
         Store::open(&t.config(), &t.data()).unwrap()
@@ -545,7 +578,7 @@ mod tests {
 
         // Every field differs from its default, so one that isn't saved shows up.
         let custom = Settings {
-            version: 2,
+            version: SETTINGS_VERSION,
             microphone: Some("alsa_input.usb".into()),
             start_at_login: false,
             model: "small".into(),
@@ -558,6 +591,7 @@ mod tests {
             smart_context: false,
             cleanup_model_ok: true,
             radio: true,
+            history_retention_days: 30,
         };
         store.save_settings(&custom).unwrap();
         drop(store);
@@ -740,27 +774,6 @@ mod tests {
     }
 
     #[test]
-    fn bad_history_line_is_skipped() {
-        let t = TempDir::new();
-        fs::create_dir_all(t.data()).unwrap();
-        let good = |text: &str| {
-            format!(
-                r#"{{"id":"{text}","createdAt":1,"text":"{text}","language":"en","model":"m","audioMs":1,"sttMs":1,"totalMs":1}}"#
-            )
-        };
-        let content = format!("{}\n{{\"id\":\nnot json\n{}\n", good("a"), good("b"));
-        fs::write(t.data().join(HISTORY_FILE), content).unwrap();
-
-        let store = open(&t);
-        let texts: Vec<_> = store
-            .history(None, 10)
-            .into_iter()
-            .map(|e| e.text)
-            .collect();
-        assert_eq!(texts, ["b", "a"]);
-    }
-
-    #[test]
     fn cleanup_fields_round_trip_and_survive_timing_update() {
         let t = TempDir::new();
         let store = open(&t);
@@ -786,50 +799,6 @@ mod tests {
         assert_eq!(entries[1].total_ms, 900);
         assert_eq!(entries[1].raw.as_deref(), Some("eh hello"));
         assert_eq!(entries[1].cleanup_ms, Some(412));
-        let lines = fs::read_to_string(t.data().join(HISTORY_FILE)).unwrap();
-        assert!(lines.contains(r#""cleanupMs":412"#), "{lines}");
-        assert!(!lines.contains(r#""raw":null"#), "{lines}");
-        // The file is oldest first: the cleaned entry is line 1, the plain one line 2.
-        let mut file_lines = lines.lines();
-        assert!(file_lines.next().unwrap().contains(r#""raw":"eh hello""#));
-        assert!(!file_lines.next().unwrap().contains("raw"));
-    }
-
-    #[test]
-    fn old_history_line_without_cleanup_fields_loads() {
-        let t = TempDir::new();
-        fs::create_dir_all(t.data()).unwrap();
-        let old = r#"{"id":"a","createdAt":1,"text":"a","language":"en","model":"m","audioMs":1,"sttMs":1,"totalMs":1}"#;
-        fs::write(t.data().join(HISTORY_FILE), format!("{old}\n")).unwrap();
-
-        let store = open(&t);
-        let entries = store.history(None, 10);
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].raw, None);
-        assert_eq!(entries[0].cleanup_ms, None);
-    }
-
-    #[test]
-    fn append_after_torn_line_starts_a_new_line() {
-        let t = TempDir::new();
-        fs::create_dir_all(t.data()).unwrap();
-        let good = r#"{"id":"a","createdAt":1,"text":"a","language":"en","model":"m","audioMs":1,"sttMs":1,"totalMs":1}"#;
-        fs::write(
-            t.data().join(HISTORY_FILE),
-            format!("{good}\n{{\"id\":\"tor"),
-        )
-        .unwrap();
-
-        let store = open(&t);
-        store.add_history(entry("new")).unwrap();
-        drop(store);
-
-        let texts: Vec<_> = open(&t)
-            .history(None, 10)
-            .into_iter()
-            .map(|e| e.text)
-            .collect();
-        assert_eq!(texts, ["new", "a"]);
     }
 
     fn shelf_id(store: &Store, name: &str) -> String {
@@ -1052,5 +1021,215 @@ mod tests {
         let t = TempDir::new();
         let store = open(&t);
         assert_eq!(store.models_dir(), t.data().join("models"));
+    }
+
+    #[test]
+    fn version_1_settings_file_is_rewritten_as_version_2() {
+        let t = TempDir::new();
+        fs::create_dir_all(t.config()).unwrap();
+        let v1 = r#"{"version":1,"language":"nl","theme":"dark","cleanupModelOk":true}"#;
+        fs::write(t.config().join(SETTINGS_FILE), v1).unwrap();
+
+        drop(open(&t));
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(t.config().join(SETTINGS_FILE)).unwrap()).unwrap();
+        assert_eq!(saved["version"], 2);
+        assert_eq!(saved["historyRetentionDays"], 0);
+        assert_eq!(saved["language"], "nl");
+        assert_eq!(saved["cleanupModelOk"], true);
+    }
+
+    fn search(store: &Store, query: &str) -> Vec<String> {
+        let mut texts: Vec<_> = store
+            .history(Some(query), 100)
+            .into_iter()
+            .map(|e| e.text)
+            .collect();
+        texts.sort();
+        texts
+    }
+
+    #[test]
+    fn search_finds_words_parts_and_diacritics() {
+        let t = TempDir::new();
+        let store = open(&t);
+        let dutch = "Morgen naar de tandarts voor een controle";
+        let accents = "Één café met naïeve ober";
+        let english = "Deploy the Rust build tonight";
+        for text in [dutch, accents, english] {
+            store.add_history(entry(text)).unwrap();
+        }
+        assert_eq!(search(&store, "TANDARTS"), [dutch]);
+        assert_eq!(search(&store, "tand"), [dutch], "prefix");
+        assert_eq!(search(&store, "arts"), [dutch], "inside a compound");
+        assert_eq!(search(&store, "cafe"), [accents], "without the accent");
+        assert_eq!(search(&store, "naïeve"), [accents]);
+        assert_eq!(search(&store, "één"), [dutch, accents], "een and Één");
+        assert_eq!(
+            search(&store, "rust deploy"),
+            [english],
+            "every word, any order"
+        );
+        assert!(search(&store, "rust tandarts").is_empty());
+        assert_eq!(
+            search(&store, "de"),
+            [english, dutch],
+            "short words match too"
+        );
+        assert_eq!(search(&store, "build to"), [english]);
+        assert!(
+            search(&store, "\"rust OR").is_empty(),
+            "operators are literal"
+        );
+        assert_eq!(store.history(Some("  "), 100).len(), 3);
+    }
+
+    fn file_bytes(t: &TempDir) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for name in [
+            db::DB_FILE,
+            "delulu.db-wal",
+            "delulu.db-shm",
+            "delulu.db-journal",
+        ] {
+            if let Ok(b) = fs::read(t.data().join(name)) {
+                bytes.extend(b);
+            }
+        }
+        bytes
+    }
+
+    fn holds(haystack: &[u8], needle: &str) -> bool {
+        haystack
+            .windows(needle.len())
+            .any(|w| w == needle.as_bytes())
+    }
+
+    #[test]
+    fn deleted_text_leaves_the_database_file() {
+        let t = TempDir::new();
+        let store = open(&t);
+        let secret = store
+            .add_history(NewEntry {
+                raw: Some("eh rawsecretquokka".into()),
+                ..entry("Cleanedsecretquokka moved")
+            })
+            .unwrap();
+        for i in 0..20 {
+            store
+                .add_history(entry(&format!("filler note {i}")))
+                .unwrap();
+        }
+        let kept = store.add_history(entry("Keptmarkerwombat")).unwrap();
+        let bytes = file_bytes(&t);
+        assert!(holds(&bytes, "Cleanedsecretquokka") && holds(&bytes, "rawsecretquokka"));
+
+        store.delete_history(&secret.id).unwrap();
+        let bytes = file_bytes(&t);
+        assert!(
+            !holds(&bytes, "secretquokka"),
+            "deleted text is still in the file"
+        );
+        assert!(holds(&bytes, "Keptmarkerwombat"));
+        assert!(store.history(Some("quokka"), 10).is_empty());
+
+        store.clear_history().unwrap();
+        assert!(!holds(&file_bytes(&t), "Keptmarkerwombat"));
+        assert!(store.history_entry(&kept.id).is_none());
+    }
+
+    const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+
+    fn insert_aged(t: &TempDir, text: &str, age_ms: i64) {
+        let conn = db::open(&t.data().join(db::DB_FILE)).unwrap();
+        let mut e = open_entry(text);
+        e.created_at = now_ms() - age_ms;
+        assert!(db::insert_entry(&conn, &e).unwrap());
+    }
+
+    fn open_entry(text: &str) -> HistoryEntry {
+        HistoryEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            created_at: 0,
+            text: text.into(),
+            language: "en".into(),
+            model: "m".into(),
+            audio_ms: 1,
+            stt_ms: 1,
+            total_ms: 1,
+            raw: None,
+            cleanup_ms: None,
+            topic: None,
+        }
+    }
+
+    fn texts(store: &Store) -> Vec<String> {
+        store
+            .history(None, 100)
+            .into_iter()
+            .map(|e| e.text)
+            .collect()
+    }
+
+    #[test]
+    fn retention_prunes_only_older_entries() {
+        let t = TempDir::new();
+        drop(open(&t));
+        insert_aged(&t, "31 days", 31 * DAY_MS);
+        insert_aged(&t, "29 days", 29 * DAY_MS);
+        insert_aged(&t, "8 days", 8 * DAY_MS);
+        insert_aged(&t, "today", 0);
+        let store = open(&t);
+        assert_eq!(texts(&store).len(), 4, "Forever keeps everything");
+
+        let thirty = Settings {
+            history_retention_days: 30,
+            ..store.settings()
+        };
+        store.save_settings(&thirty).unwrap();
+        assert_eq!(texts(&store), ["today", "8 days", "29 days"]);
+        drop(store);
+
+        // Pruning also runs at start.
+        insert_aged(&t, "45 days", 45 * DAY_MS);
+        let store = open(&t);
+        assert_eq!(texts(&store), ["today", "8 days", "29 days"]);
+        let week = Settings {
+            history_retention_days: 7,
+            ..store.settings()
+        };
+        store.save_settings(&week).unwrap();
+        assert_eq!(texts(&store), ["today"]);
+    }
+
+    #[test]
+    fn retention_and_clear_remove_old_history_backups() {
+        let t = TempDir::new();
+        let store = open(&t);
+        let old = t.data().join("history.jsonl.v1.bak");
+        let recent = t.data().join("history.jsonl.v1.bak.2");
+        let unrelated = t.data().join("vocabulary.json.v1.bak");
+        for path in [&old, &recent, &unrelated] {
+            fs::write(path, "{}\n").unwrap();
+        }
+        let month_ago = SystemTime::now() - Duration::from_secs(40 * 24 * 60 * 60);
+        File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(month_ago)
+            .unwrap();
+
+        store
+            .save_settings(&Settings {
+                history_retention_days: 30,
+                ..store.settings()
+            })
+            .unwrap();
+        assert!(!old.exists() && recent.exists());
+
+        store.clear_history().unwrap();
+        assert!(!recent.exists());
+        assert!(unrelated.exists());
     }
 }

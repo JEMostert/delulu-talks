@@ -34,7 +34,11 @@ never installs or starts those runtimes:
 - **Home**: big dictation status and hotkey hint; the last few transcripts
   with Copy and Insert again.
 - **History**: search and delete past transcripts; each shows its language,
-  cleanup topic and timing, with the raw text behind "Cleaned up".
+  cleanup topic and timing, with the raw text behind "Cleaned up". History
+  and vocabulary live in one SQLite database (`delulu.db` in the data folder)
+  with full-text search; a deleted transcript is removed from the file, not
+  just hidden. The header sets how long transcripts are kept (Forever, 90, 30
+  or 7 days; default Forever).
 - **Cleanup**: the Clean up text switch and the model download, plus
   vocabularies: shelves of terms shown as jars on a reef, with one-click
   starter shelves. A jar opens a dialog with all its words.

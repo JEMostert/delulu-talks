@@ -20,6 +20,7 @@ import {
   termCount,
   serialQueue,
   restorePaste,
+  shortensRetention,
 } from "./helpers";
 import type { HistoryEntry, Settings } from "./ipc";
 test("formats timings and dates", () => {
@@ -50,6 +51,7 @@ test("maps language names and settings without changing other values", () => {
     cleanupModelOk: true,
     smartContext: true,
     radio: false,
+    historyRetentionDays: 0,
   };
   expect(settingsPatch(settings, "theme", "dark")).toEqual({
     ...settings,
@@ -122,6 +124,26 @@ test("search highlights every case-insensitive match", () => {
     { text: "koffie", match: true },
   ]);
   expect(highlight("plain", " ")).toEqual([{ text: "plain", match: false }]);
+});
+test("search highlights each word, ignoring accents, like the backend matches", () => {
+  expect(highlight("Één café, deploy Rust", "rust cafe een")).toEqual([
+    { text: "Één", match: true },
+    { text: " ", match: false },
+    { text: "café", match: true },
+    { text: ", deploy ", match: false },
+    { text: "Rust", match: true },
+  ]);
+  // Overlapping words mark one run instead of splitting it.
+  expect(highlight("tandarts", "tand darts")).toEqual([
+    { text: "tandarts", match: true },
+  ]);
+});
+test("only a shorter retention asks before deleting", () => {
+  expect(shortensRetention(0, 30)).toBe(true);
+  expect(shortensRetention(90, 7)).toBe(true);
+  expect(shortensRetention(7, 30)).toBe(false);
+  expect(shortensRetention(30, 0)).toBe(false);
+  expect(shortensRetention(30, 30)).toBe(false);
 });
 test("result words and notice tones", () => {
   expect(resultWord({ kind: "pasted" })).toBe("Inserted");

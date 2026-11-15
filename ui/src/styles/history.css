@@ -21,6 +21,23 @@
 .title-block {
   display: grid;
 }
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.retention {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font-size: var(--t-meta);
+  white-space: nowrap;
+}
+.retention .select select {
+  min-width: 0;
+  color: var(--ink);
+}
 .count {
   color: var(--ink-3);
   font-size: var(--t-meta);
