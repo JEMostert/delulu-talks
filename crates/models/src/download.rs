@@ -9,6 +9,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, thiserror::Error)]
@@ -222,9 +223,6 @@ fn fetch(
     let part_file = part_path(dir, info);
     let meta = meta_path(dir, info);
     let keep = resumable_len(dir, info);
-    if keep == 0 {
-        fs::write(&meta, format!("{}\n", info.sha256))?;
-    }
     let mut part = Part {
         file: OpenOptions::new()
             .read(true)
@@ -236,6 +234,10 @@ fn fetch(
         len: 0,
     };
     part.file.set_len(keep)?;
+    if keep == 0 {
+        // Only after the old bytes are gone, or a kill here would vouch for them.
+        fs::write(&meta, format!("{}\n", info.sha256))?;
+    }
     // The hash has to cover the bytes from an earlier attempt too.
     let mut buf = vec![0u8; 256 * 1024];
     while part.len < keep {
@@ -257,7 +259,7 @@ fn fetch(
     let mut failures = 0u32;
     while part.len < info.bytes {
         let start = part.len;
-        let failure = match attempt(agent, info, &mut part, &mut buf, progress, cancel) {
+        let failure = match attempt(agent, info, &mut part, progress, cancel) {
             Ok(()) => continue,
             Err(Failure::Stop(e)) => {
                 part.file.flush()?;
@@ -297,31 +299,107 @@ fn fetch(
     Ok(())
 }
 
+/// What the network thread of one attempt hands to the download loop.
+enum Net {
+    Head {
+        status: u16,
+        content_range: Option<String>,
+        content_length: Option<u64>,
+    },
+    Data(Vec<u8>),
+    Failed(String),
+}
+
+/// Requests `info.url` from byte `from` on its own thread, so that a Cancel is
+/// noticed within 100 ms even while a connect or a read hangs. When the receiver
+/// goes away, the thread stops at its next chunk or network timeout.
+fn request(agent: &ureq::Agent, url: &'static str, from: u64) -> mpsc::Receiver<Net> {
+    let (tx, rx) = mpsc::sync_channel(4);
+    let agent = agent.clone();
+    std::thread::spawn(move || {
+        // Byte offsets only make sense on the file as stored, never on a gzip stream.
+        let mut request = agent.get(url).header("Accept-Encoding", "identity");
+        if from > 0 {
+            request = request.header("Range", format!("bytes={from}-"));
+        }
+        let response = match request.call() {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = tx.send(Net::Failed(e.to_string()));
+                return;
+            }
+        };
+        let status = response.status().as_u16();
+        let head = Net::Head {
+            status,
+            content_range: response
+                .headers()
+                .get("content-range")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string),
+            content_length: response.body().content_length(),
+        };
+        if tx.send(head).is_err() || !matches!(status, 200 | 206) {
+            return;
+        }
+        let mut body = response.into_body().into_reader();
+        loop {
+            let mut chunk = vec![0u8; 256 * 1024];
+            let msg = match body.read(&mut chunk) {
+                Ok(0) => return,
+                Ok(n) => {
+                    chunk.truncate(n);
+                    Net::Data(chunk)
+                }
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => Net::Failed(e.to_string()),
+            };
+            let failed = matches!(msg, Net::Failed(_));
+            if tx.send(msg).is_err() || failed {
+                return;
+            }
+        }
+    });
+    rx
+}
+
+/// The next message, or `None` once the thread is done; `Cancelled` on Cancel.
+fn next(rx: &mpsc::Receiver<Net>, cancel: &AtomicBool) -> Result<Option<Net>, Failure> {
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Failure::Stop(Error::Cancelled));
+        }
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(msg) => return Ok(Some(msg)),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(None),
+        }
+    }
+}
+
 fn attempt(
     agent: &ureq::Agent,
     info: &ModelFile,
     part: &mut Part,
-    buf: &mut [u8],
     progress: &mut dyn FnMut(u64),
     cancel: &AtomicBool,
 ) -> Result<(), Failure> {
     if cancel.load(Ordering::Relaxed) {
         return Err(Failure::Stop(Error::Cancelled));
     }
-    // Byte offsets only make sense on the file as stored, never on a gzip stream.
-    let mut request = agent.get(info.url).header("Accept-Encoding", "identity");
-    if part.len > 0 {
-        request = request.header("Range", format!("bytes={}-", part.len));
-    }
-    let response = request.call().map_err(|e| Failure::Retry(e.to_string()))?;
-    let status = response.status().as_u16();
+    let rx = request(agent, info.url, part.len);
+    let (status, content_range, content_length) = match next(&rx, cancel)? {
+        Some(Net::Head {
+            status,
+            content_range,
+            content_length,
+        }) => (status, content_range, content_length),
+        Some(Net::Failed(e)) => return Err(Failure::Retry(e)),
+        Some(Net::Data(_)) | None => return Err(Failure::Retry("no response".into())),
+    };
     match status {
         206 if part.len > 0 => {
-            let start = response
-                .headers()
-                .get("content-range")
-                .and_then(|v| v.to_str().ok())
-                .and_then(range_start);
+            let start = content_range.as_deref().and_then(range_start);
             if start != Some(part.len) {
                 part.restart()?;
                 progress(0);
@@ -356,34 +434,29 @@ fn attempt(
         }
     }
     let remaining = info.bytes - part.len;
-    if let Some(len) = response.body().content_length() {
+    if let Some(len) = content_length {
         if len != remaining {
             return Err(Failure::Stop(Error::Network(format!(
                 "server offers {len} bytes, expected {remaining}"
             ))));
         }
     }
-    let mut body = response.into_body().into_reader();
-    loop {
-        if cancel.load(Ordering::Relaxed) {
-            return Err(Failure::Stop(Error::Cancelled));
-        }
-        let n = match body.read(buf) {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(Failure::Retry(e.to_string())),
+    while let Some(msg) = next(&rx, cancel)? {
+        let chunk = match msg {
+            Net::Data(chunk) => chunk,
+            Net::Failed(e) => return Err(Failure::Retry(e)),
+            Net::Head { .. } => continue,
         };
-        if part.len + n as u64 > info.bytes {
+        if part.len + chunk.len() as u64 > info.bytes {
             part.restart()?;
             return Err(Failure::Stop(Error::Network(format!(
                 "server sent more than the expected {} bytes",
                 info.bytes
             ))));
         }
-        part.file.write_all(&buf[..n])?;
-        part.hash.update(&buf[..n]);
-        part.len += n as u64;
+        part.file.write_all(&chunk)?;
+        part.hash.update(&chunk);
+        part.len += chunk.len() as u64;
         progress(part.len);
     }
     if part.len < info.bytes {

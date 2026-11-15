@@ -312,3 +312,42 @@ fn too_little_disk_space_fails_before_any_request() {
     assert!(!part_path(&dir, &info).exists());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn cancel_is_prompt_while_the_server_stalls() {
+    let server = serve(Fault::Stall);
+    let dir = temp_dir("cancel-stall");
+    let info = file(&server.url, sha(&content()));
+    let opts = Options {
+        read_timeout: Duration::from_secs(10),
+        ..opts()
+    };
+    let cancel = Arc::new(AtomicBool::new(false));
+    let remote = cancel.clone();
+    let mut asked = None;
+    let result = download_with(
+        &opts,
+        &dir,
+        std::slice::from_ref(&info),
+        &mut |done, _| {
+            if done == CUT as u64 && asked.is_none() {
+                asked = Some(std::time::Instant::now());
+                // Cancel from the UI thread while the connection hangs.
+                let remote = remote.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(100));
+                    remote.store(true, Ordering::Relaxed);
+                });
+            }
+        },
+        &cancel,
+    );
+    let waited = asked.expect("first bytes arrived").elapsed();
+    assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
+    assert!(waited < Duration::from_secs(2), "cancel took {waited:?}");
+    assert_eq!(
+        std::fs::metadata(part_path(&dir, &info)).unwrap().len(),
+        CUT as u64
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
