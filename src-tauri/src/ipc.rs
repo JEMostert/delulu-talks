@@ -224,11 +224,7 @@ pub(crate) fn copy_text(s: State<'_, Shell>, text: String) -> Result<(), String>
 /// `raw` inserts what was said before cleanup, when the entry has it.
 pub(crate) async fn reinsert(app: tauri::AppHandle, id: String, raw: Option<bool>) -> InsertResult {
     let s = app.state::<Shell>();
-    let entry = s
-        .store
-        .history(None, usize::MAX)
-        .into_iter()
-        .find(|e| e.id == id);
+    let entry = s.store.history_entry(&id);
     if let Some(entry) = entry {
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.hide();

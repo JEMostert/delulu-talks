@@ -43,6 +43,7 @@ use voice::{get_voice_status, install_voice_model};
 
 pub fn run() {
     let store = Arc::new(Store::open_default().expect("open store"));
+    Store::start_daily_pruning(&store);
     let initial_state = store.state();
     let initial_settings = store.settings();
     let save_store = store.clone();

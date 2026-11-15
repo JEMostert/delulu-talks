@@ -59,6 +59,8 @@ export type Settings = {
   cleanupModelOk: boolean;
   /** Show the optional Delulu FM radio. */
   radio: boolean;
+  /** Delete transcripts older than this many days; 0 keeps them forever. */
+  historyRetentionDays: number;
 };
 export type InputDevice = { id: string; name: string; isDefault: boolean };
 export type Language = { code: string; name: string };
