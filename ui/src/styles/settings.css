@@ -118,6 +118,10 @@
   padding: 0;
   list-style: none;
 }
+/* The last language has no remove button; balance its padding. */
+.lang-set .term:not(:has(button)) {
+  padding-right: 11px;
+}
 .lang-set + .select select {
   min-width: 110px;
 }
