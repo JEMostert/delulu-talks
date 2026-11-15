@@ -238,6 +238,8 @@ fn fetch(
         // Only after the old bytes are gone, or a kill here would vouch for them.
         fs::write(&meta, format!("{}\n", info.sha256))?;
     }
+    // Show the kept bytes at once; hashing a large part takes a few seconds.
+    progress(keep);
     // The hash has to cover the bytes from an earlier attempt too.
     let mut buf = vec![0u8; 256 * 1024];
     while part.len < keep {
@@ -254,7 +256,6 @@ fn fetch(
     if keep > 0 {
         log::info!("resuming {} at {} of {} bytes", info.file, keep, info.bytes);
     }
-    progress(part.len);
 
     let mut failures = 0u32;
     while part.len < info.bytes {
