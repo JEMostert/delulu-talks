@@ -10,7 +10,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::os::fd::AsRawFd;
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileTypeExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
@@ -70,7 +70,15 @@ impl Instance {
                 BindError::Io(lock_path, error)
             });
         }
-        if path.exists() {
+        if let Ok(meta) = fs::symlink_metadata(path) {
+            // Never delete something that is not a socket: a wrong --socket path
+            // must not cost the user a file.
+            if !meta.file_type().is_socket() {
+                return Err(io(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "exists and is not a socket; refusing to replace it",
+                )));
+            }
             // Something that answers without holding the lock (an older build, or a
             // daemon started with a different lock layout) still counts as running.
             if UnixStream::connect(path).is_ok() {
@@ -143,6 +151,15 @@ mod tests {
         let _client = UnixStream::connect(&path).unwrap();
         listener.set_nonblocking(false).unwrap();
         listener.accept().unwrap();
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_socket_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("notes.txt");
+        fs::write(&path, "keep me").unwrap();
+        assert!(matches!(Instance::bind(&path), Err(BindError::Io(..))));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "keep me");
     }
 
     #[test]

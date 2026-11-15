@@ -175,25 +175,37 @@ async fn subscribers_get_their_topics_only_and_a_lagging_one_is_told() {
         }))
         .unwrap(),
     });
-    // 100 more without yielding: the connection cannot keep up. Its buffer holds 16,
-    // and the unsubscribed event above took a slot too, so 85 are missed.
+    // 100 more without yielding: the connection cannot keep up and lags.
     for i in 0..100 {
         server.daemon.publish(Event::Level {
             level: i as f32 / 100.0,
         });
     }
-    let first = c.recv().await;
+    // One notice for everything it missed, the buffered rest included, stamped
+    // with the newest seq so far ...
+    let notice = c.recv().await;
     assert_eq!(
-        first["event"],
-        json!({"kind": "lagged", "missed": 85}),
-        "{first}"
+        notice["event"],
+        json!({"kind": "lagged", "missed": 101}),
+        "{notice}"
     );
-    // Then the newest 16 follow, in order.
-    for i in 84..100 {
-        let event = c.recv().await;
-        assert_eq!(event["event"]["kind"], "level");
-        assert_eq!(event["seq"], i + 2, "seq counts every published event");
-    }
+    assert_eq!(notice["seq"], 101);
+    // ... a snapshot taken now is at least as new ...
+    c.send(json!({"id": 2, "method": "state.get"})).await;
+    assert_eq!(c.recv().await["result"]["seq"], 101);
+    // ... and the stream continues with newer events only.
+    server.daemon.publish(Event::Level { level: 0.5 });
+    let next = c.recv().await;
+    assert_eq!(
+        (next["seq"].clone(), next["event"]["kind"].clone()),
+        (json!(102), json!("level"))
+    );
+    // Unsubscribed topics are skipped on a stream that keeps up, too.
+    server.daemon.publish(Event::Insert {
+        state: serde_json::from_value(json!({"ready": true, "error": null})).unwrap(),
+    });
+    server.daemon.publish(Event::Level { level: 0.6 });
+    assert_eq!(c.recv().await["seq"], 104);
 }
 
 #[tokio::test]

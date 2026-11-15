@@ -8,9 +8,10 @@
 //! * `{"id": 1, "error": {"code": "unknown_method", "message": "…"}}`: request 1
 //!   failed. `id` is `null` when the line could not be read as a request at all.
 //! * `{"seq": 7, "event": {"kind": "dictation", …}}`: a state change on a
-//!   subscribed topic. `seq` grows by one per event the daemon publishes, so a
-//!   client can see that it missed some; the daemon also says so with a
-//!   `lagged` event, after which the client re-reads `state.get`.
+//!   subscribed topic. `seq` grows by one per event the daemon publishes and
+//!   only grows on a connection. A connection that reads too slowly gets one
+//!   `lagged` event instead of the events it missed; it then re-reads
+//!   `state.get` and ignores events whose `seq` is at or below the snapshot's.
 //!
 //! The first request on a connection must be `hello`; the daemon answers
 //! anything else with `handshake_required`. Replies come in request order.
@@ -242,8 +243,10 @@ pub enum Event {
     Level {
         level: f32,
     },
-    /// Sent to every subscriber: `missed` events were dropped because this
-    /// connection read too slowly. Re-read `state.get`.
+    /// Sent to a subscriber that read too slowly: `missed` events were dropped
+    /// and the stream continues from the present. Its `seq` is the newest event
+    /// published so far; re-read `state.get` and drop later events whose `seq`
+    /// is at or below the snapshot's.
     Lagged {
         missed: u64,
     },

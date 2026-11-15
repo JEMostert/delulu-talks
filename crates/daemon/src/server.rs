@@ -363,10 +363,20 @@ async fn connection(shared: Arc<Shared>, stream: UnixStream) {
                         published.line
                     }
                     Err(broadcast::error::RecvError::Lagged(missed)) => {
-                        let seq = shared.lock().state.seq;
-                        ServerMessage::Event(EventMessage { seq, event: Event::Lagged { missed } })
-                            .to_line()
-                            .into()
+                        // Skip what is still buffered too and continue from now, so
+                        // `seq` keeps growing on this connection and everything after
+                        // the notice is newer than the snapshot the client re-reads.
+                        let inner = shared.lock();
+                        let buffered = conn.events.as_ref().map_or(0, |rx| rx.len() as u64);
+                        conn.events = Some(shared.events.subscribe());
+                        let seq = inner.state.seq;
+                        drop(inner);
+                        ServerMessage::Event(EventMessage {
+                            seq,
+                            event: Event::Lagged { missed: missed + buffered },
+                        })
+                        .to_line()
+                        .into()
                     }
                     Err(broadcast::error::RecvError::Closed) => return,
                 };

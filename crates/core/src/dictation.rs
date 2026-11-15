@@ -72,10 +72,15 @@ pub enum Input {
     Cleaned { job: JobId, text: String },
     /// The text reached the target (or the clipboard).
     Inserted { job: JobId, delivery: Delivery },
-    /// Whatever works on the current phase failed: the microphone while
-    /// recording, the speech engine while transcribing, the cleanup model while
-    /// cleaning, the inserter while inserting.
-    Failed { job: JobId, error: String },
+    /// The work of phase `during` failed: the microphone while recording, the
+    /// speech engine while transcribing, the cleanup model while cleaning, the
+    /// inserter while inserting. A failure reported for a phase the job has
+    /// already left is stale.
+    Failed {
+        job: JobId,
+        during: Phase,
+        error: String,
+    },
 }
 
 /// How inserted text arrived.
@@ -269,8 +274,8 @@ impl Dictation {
                 };
                 self.finish(Vec::new(), outcome)
             }
-            Input::Failed { job, error } => {
-                if job != self.job || from == Phase::Idle {
+            Input::Failed { job, during, error } => {
+                if !self.current(job, during) || from == Phase::Idle {
                     return Step::Ignored(Ignored::Stale);
                 }
                 match from {
@@ -598,6 +603,7 @@ mod tests {
                 },
                 Input::Failed {
                     job,
+                    during: phase,
                     error: "late".into(),
                 },
             ] {
@@ -618,6 +624,7 @@ mod tests {
             let job = d.job();
             let step = d.handle(Input::Failed {
                 job,
+                during: phase,
                 error: "boom".into(),
             });
             match phase {
@@ -705,11 +712,28 @@ mod tests {
         assert_eq!(
             d.handle(Input::Failed {
                 job: 99,
+                during: Phase::Transcribing,
                 error: "x".into()
             }),
             Step::Ignored(Ignored::Stale)
         );
         assert_eq!(d.phase(), Phase::Transcribing);
+    }
+
+    #[test]
+    fn a_late_failure_of_an_earlier_phase_is_stale() {
+        // The microphone reports an error after transcription already moved on
+        // to cleaning: it must not count as a cleanup failure.
+        let mut d = machine_in(Phase::Cleaning);
+        assert_eq!(
+            d.handle(Input::Failed {
+                job: 1,
+                during: Phase::Recording,
+                error: "mic gone".into()
+            }),
+            Step::Ignored(Ignored::Stale)
+        );
+        assert_eq!(d.phase(), Phase::Cleaning);
     }
 
     #[test]
@@ -829,6 +853,7 @@ mod tests {
                     },
                     7 => Input::Failed {
                         job,
+                        during: Phase::ALL[rng.below(5) as usize],
                         error: "x".into(),
                     },
                     _ => Input::Key(KeyEvent::Activated, now),
