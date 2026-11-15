@@ -621,7 +621,11 @@ impl Cleaner {
             Event::Reply(reply) => Ok(reply),
             Event::Bad(line) => {
                 self.kill.kill();
-                Err(CleanupError::Protocol(format!("unexpected line: {line}")))
+                // The line may hold dictated text; this error ends up in the log.
+                Err(CleanupError::Protocol(format!(
+                    "unexpected line ({} bytes)",
+                    line.len()
+                )))
             }
             Event::Eof => {
                 let status = self.child.try_wait().ok().flatten();

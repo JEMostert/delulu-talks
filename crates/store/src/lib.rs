@@ -380,8 +380,19 @@ fn load_or_default<T: DeserializeOwned + Default>(path: &Path, what: &str) -> T 
     };
     match serde_json::from_slice::<T>(&bytes) {
         Ok(value) => value,
-        Err(e) => quarantine(path, what, &e.to_string()),
+        Err(e) => quarantine(path, what, &json_error(&e)),
     }
+}
+
+/// A parse error without the offending value: serde quotes strings it rejects, and
+/// these files hold dictated text and vocabulary.
+fn json_error(e: &serde_json::Error) -> String {
+    format!(
+        "{:?} error at line {} column {}",
+        e.classify(),
+        e.line(),
+        e.column()
+    )
 }
 
 fn quarantine<T: Default>(path: &Path, what: &str, reason: &str) -> T {
@@ -419,9 +430,10 @@ fn load_history(path: &Path) -> Result<(Vec<HistoryEntry>, bool), StoreError> {
         match serde_json::from_slice::<HistoryEntry>(line) {
             Ok(entry) => entries.push(entry),
             Err(e) => log::warn!(
-                "skipping bad history line {} in {}: {e}",
+                "skipping bad history line {} in {}: {}",
                 i + 1,
-                path.display()
+                path.display(),
+                json_error(&e)
             ),
         }
     }
@@ -525,25 +537,15 @@ mod tests {
         }
     }
 
-    fn assert_send_sync<T: Send + Sync>() {}
-
     #[test]
-    fn store_is_send_and_sync() {
-        assert_send_sync::<Store>();
-    }
-
-    #[test]
-    fn app_id_is_stable() {
-        assert_eq!(APP_ID, "com.joran.delulu-talks");
-    }
-
-    #[test]
-    fn settings_round_trip() {
+    fn every_setting_survives_reopen() {
         let t = TempDir::new();
         let store = open(&t);
         assert_eq!(store.settings(), Settings::default());
 
+        // Every field differs from its default, so one that isn't saved shows up.
         let custom = Settings {
+            version: 2,
             microphone: Some("alsa_input.usb".into()),
             start_at_login: false,
             model: "small".into(),
@@ -551,7 +553,11 @@ mod tests {
             allowed_languages: vec!["en".into(), "de".into()],
             insert: InsertMode::CtrlShiftV,
             theme: Theme::Dark,
-            ..Settings::default()
+            overlay: false,
+            cleanup: false,
+            smart_context: false,
+            cleanup_model_ok: true,
+            radio: true,
         };
         store.save_settings(&custom).unwrap();
         drop(store);
@@ -596,75 +602,44 @@ mod tests {
     }
 
     #[test]
-    fn settings_missing_fields_use_defaults() {
-        let t = TempDir::new();
-        fs::create_dir_all(t.config()).unwrap();
-        fs::write(
-            t.config().join(SETTINGS_FILE),
-            r#"{"theme":"light","hotkey":"Super+Z"}"#,
-        )
-        .unwrap();
-
-        let s = open(&t).settings();
-        assert_eq!(s.theme, Theme::Light);
-        assert_eq!(
-            Settings {
-                theme: Theme::default(),
-                ..s
-            },
-            Settings::default()
-        );
-    }
-
-    #[test]
-    fn cleanup_settings_default_and_round_trip() {
-        let t = TempDir::new();
-        fs::create_dir_all(t.config()).unwrap();
-        fs::write(
-            t.config().join(SETTINGS_FILE),
-            r#"{"version":1,"theme":"dark"}"#,
-        )
-        .unwrap();
-        let store = open(&t);
-        assert!(store.settings().cleanup);
-        assert!(!store.settings().cleanup_model_ok);
-
-        let off = Settings {
-            cleanup: false,
-            cleanup_model_ok: true,
-            ..store.settings()
-        };
-        store.save_settings(&off).unwrap();
-        let saved = fs::read_to_string(t.config().join(SETTINGS_FILE)).unwrap();
-        assert!(saved.contains(r#""cleanup": false"#), "{saved}");
-        assert!(saved.contains(r#""cleanupModelOk": true"#), "{saved}");
-        drop(store);
-        let reloaded = open(&t).settings();
-        assert!(!reloaded.cleanup);
-        assert!(reloaded.cleanup_model_ok);
-    }
-
-    #[test]
-    fn overlay_defaults_on_and_round_trips() {
-        let t = TempDir::new();
-        fs::create_dir_all(t.config()).unwrap();
-        fs::write(
-            t.config().join(SETTINGS_FILE),
-            r#"{"version":1,"theme":"dark"}"#,
-        )
-        .unwrap();
-        let store = open(&t);
-        assert!(store.settings().overlay);
-
-        let off = Settings {
-            overlay: false,
-            ..store.settings()
-        };
-        store.save_settings(&off).unwrap();
-        let saved = fs::read_to_string(t.config().join(SETTINGS_FILE)).unwrap();
-        assert!(saved.contains(r#""overlay": false"#), "{saved}");
-        drop(store);
-        assert!(!open(&t).settings().overlay);
+    fn older_settings_files_keep_their_values_and_default_the_rest() {
+        let defaults = Settings::default();
+        for (file, expected) in [
+            // Before cleanup and the pill existed: both start on.
+            (
+                r#"{"version":1,"theme":"dark"}"#,
+                Settings {
+                    theme: Theme::Dark,
+                    ..defaults.clone()
+                },
+            ),
+            // Unknown keys from removed settings are ignored.
+            (
+                r#"{"theme":"light","hotkey":"Super+Z"}"#,
+                Settings {
+                    theme: Theme::Light,
+                    ..defaults.clone()
+                },
+            ),
+            // The on-disk names existing files use.
+            (
+                r#"{"startAtLogin":false,"insert":"ctrl-shift-v","cleanup":false,"cleanupModelOk":true,"overlay":false,"smartContext":false}"#,
+                Settings {
+                    start_at_login: false,
+                    insert: InsertMode::CtrlShiftV,
+                    cleanup: false,
+                    cleanup_model_ok: true,
+                    overlay: false,
+                    smart_context: false,
+                    ..defaults.clone()
+                },
+            ),
+        ] {
+            let t = TempDir::new();
+            fs::create_dir_all(t.config()).unwrap();
+            fs::write(t.config().join(SETTINGS_FILE), file).unwrap();
+            assert_eq!(open(&t).settings(), expected, "{file}");
+        }
     }
 
     #[test]

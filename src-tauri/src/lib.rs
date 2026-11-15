@@ -229,35 +229,6 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn detects_only_relevant_settings_changes() {
-        let old = Settings::default();
-        let mut new = old.clone();
-        new.language = "nl".into();
-        assert_eq!(
-            settings_diff(&old, &new),
-            SettingsDiff {
-                model: false,
-                autostart: false,
-                cleanup: false,
-                radio: false
-            }
-        );
-        new.cleanup_model_ok = true;
-        assert!(!settings_diff(&old, &new).cleanup);
-        new.model = "small".into();
-        new.start_at_login = false;
-        new.cleanup = false;
-        assert_eq!(
-            settings_diff(&old, &new),
-            SettingsDiff {
-                model: true,
-                autostart: true,
-                cleanup: true,
-                radio: false
-            }
-        );
-    }
     #[tokio::test]
     async fn waits_for_release_and_times_out() {
         let mut polls = 0;

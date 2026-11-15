@@ -201,7 +201,14 @@ impl Station {
         let mut state = match std::fs::read(&path) {
             Ok(bytes) => serde_json::from_slice::<State>(&bytes).unwrap_or_else(|e| {
                 let keep = root.join(format!("station.corrupt-{}.json", now_ms()));
-                log::warn!("radio state unreadable ({e}); kept as {}", keep.display());
+                // Not `{e}`: serde can quote a listener's request it choked on.
+                log::warn!(
+                    "radio state unreadable ({:?} error at line {} column {}); kept as {}",
+                    e.classify(),
+                    e.line(),
+                    e.column(),
+                    keep.display()
+                );
                 let _ = std::fs::rename(&path, &keep);
                 State::default()
             }),
