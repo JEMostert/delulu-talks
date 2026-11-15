@@ -356,11 +356,26 @@ impl Store {
             .ok_or_else(|| StoreError::Io(format!("history entry not found: {id}")))
     }
 
-    /// Removes the entry and its text from the database file and search index.
-    /// The pre-database backup (`history.jsonl.v1.bak`) keeps its copy until history
-    /// is cleared or retention covers it.
+    /// Removes the entry and its text from the database file and search index, and
+    /// its line from the pre-database backups (`history.jsonl.v1.bak`).
     pub fn delete_history(&self, id: &str) -> Result<(), StoreError> {
-        db::delete_entry(&self.lock().db, id)
+        let data = self.lock();
+        let Some(entry) = db::entry(&data.db, id)? else {
+            return Ok(());
+        };
+        db::delete_entry(&data.db, id)?;
+        for path in migrate::history_backups(&self.data_dir) {
+            if path.extension().is_some_and(|e| e == "rejected") {
+                continue;
+            }
+            if let Err(e) = migrate::remove_from_backup(&path, &entry) {
+                log::warn!(
+                    "history: could not remove the entry from {}: {e}",
+                    path.display()
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Removes every entry, and the pre-database history backups with their text.

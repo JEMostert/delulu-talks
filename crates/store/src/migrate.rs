@@ -190,15 +190,38 @@ fn merge_vocabulary(existing: &Vocabulary, file: Vocabulary) -> (Vocabulary, usi
 /// covers the backup too; deletes it once nothing is left. Lines without a readable
 /// time are kept.
 pub(crate) fn prune_backup(path: &Path, before_ms: i64) -> Result<(), StoreError> {
+    filter_backup(path, |entry| entry.created_at < before_ms)
+}
+
+/// Removes the lines of a history backup that `deleted` was imported from, so a
+/// deleted transcript does not live on in the backup. That is a line with the same
+/// content under the same id, or under the id `deleted` was derived from by
+/// `place` (`<id>~line<n>`, `~`…).
+pub(crate) fn remove_from_backup(path: &Path, deleted: &HistoryEntry) -> Result<(), StoreError> {
+    filter_backup(path, |entry| {
+        let derived = deleted
+            .id
+            .strip_prefix(entry.id.as_str())
+            .is_some_and(|rest| rest.starts_with('~'));
+        (entry.id == deleted.id || derived)
+            && HistoryEntry {
+                id: deleted.id.clone(),
+                ..entry.clone()
+            } == *deleted
+    })
+}
+
+/// Rewrites a history backup without the lines `drop` picks; deletes it once nothing
+/// is left. Unparseable lines are kept.
+fn filter_backup(path: &Path, drop: impl Fn(&HistoryEntry) -> bool) -> Result<(), StoreError> {
     let bytes = fs::read(path).map_err(|e| io_error(path, e))?;
     let mut kept = Vec::with_capacity(bytes.len());
     for line in bytes.split(|b| *b == b'\n') {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
-        let expired = serde_json::from_slice::<HistoryEntry>(line)
-            .is_ok_and(|entry| entry.created_at < before_ms);
-        if !expired {
+        let dropped = serde_json::from_slice::<HistoryEntry>(line).is_ok_and(|entry| drop(&entry));
+        if !dropped {
             kept.extend_from_slice(line);
             kept.push(b'\n');
         }
@@ -290,7 +313,7 @@ pub(crate) fn import_v1(
         let existing = db::load_vocabulary(&tx)?;
         let (merged, terms_merged) = merge_vocabulary(&existing, file);
         if merged.shelves != existing.shelves {
-            report.shelves_added = merged.shelves.len() - existing.shelves.len();
+            report.shelves_added = merged.shelves.len().saturating_sub(existing.shelves.len());
             report.terms_merged = terms_merged;
             db::save_vocabulary(&tx, &merged)?;
         }
@@ -471,6 +494,29 @@ mod tests {
         );
         assert!(shelves[0].enabled);
         assert!(t.config().join("vocabulary.json.v1.bak.2").exists());
+    }
+
+    #[test]
+    fn deleting_an_imported_entry_removes_it_from_the_backup() {
+        let t = TempDir::new();
+        write_fixture(&t);
+        let store = Store::open(&t.config(), &t.data()).unwrap();
+        let backup = t.data().join("history.jsonl.v1.bak");
+        // The rekeyed entry goes, but not the other entry under its original id.
+        store.delete_history("a1~line7").unwrap();
+        store.delete_history("b2").unwrap();
+        let kept = fs::read_to_string(&backup).unwrap();
+        assert!(!kept.contains("Same id, other words"), "{kept}");
+        assert!(!kept.contains("Old line without cleanup fields"), "{kept}");
+        assert_eq!(kept.matches("Één café").count(), 2, "{kept}");
+        assert!(kept.contains("Last line, no newline") && kept.contains("not json at all"));
+        // The last entries go with the backup lines that held them.
+        store.delete_history("a1").unwrap();
+        store.delete_history("c3").unwrap();
+        assert_eq!(
+            fs::read_to_string(&backup).unwrap(),
+            "{\"id\":\"broken\nnot json at all\n"
+        );
     }
 
     #[test]
