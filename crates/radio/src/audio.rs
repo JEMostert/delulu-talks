@@ -425,43 +425,39 @@ pub fn playback_gain(loudness: Option<Loudness>) -> f32 {
     }
 }
 
-/// Bring `audio` to the common loudness for playback: the bounded gain, and the
-/// limiter only where that gain would lift the true peak past the ceiling.
+/// Bring `audio` to the common loudness for playback: the bounded gain, and where
+/// the true peak would end up past the ceiling, the limiter. Its result is measured,
+/// so the true peak ends at or under the ceiling whatever the signal.
 pub fn even_out(audio: &mut Audio, loudness: Option<Loudness>) {
+    let Some(l) = loudness.filter(|l| l.lufs > SILENCE_LUFS) else {
+        return;
+    };
     let gain = playback_gain(loudness);
-    if gain == 1.0 {
-        return;
-    }
+    let mut total = 20.0 * (gain as f64).log10();
     scale(audio, gain);
-    let gain_db = 20.0 * (gain as f64).log10();
-    if loudness.map_or(0.0, |l| l.true_peak) + gain_db <= PEAK_CEILING_DB {
+    if l.true_peak + total <= PEAK_CEILING_DB {
         return;
     }
-    limit(audio, linear(LIMIT_DB));
     // Limiting takes some loudness off: make it up, within the bound.
-    let mut total = gain_db;
-    for _ in 0..3 {
-        let Ok(lufs) = integrated(audio) else { break };
-        let extra = (TARGET_LUFS - lufs).min(MAX_BOOST_DB - total);
-        if extra < 0.1 {
+    for pass in 0..4 {
+        limit(audio, linear(LIMIT_DB));
+        let Ok(m) = measure(audio) else { break };
+        if m.true_peak > PEAK_CEILING_DB {
+            // Peaks between samples the limiter did not see.
+            scale(audio, linear(PEAK_CEILING_DB - m.true_peak));
+            break;
+        }
+        let extra = (TARGET_LUFS - m.lufs).min(MAX_BOOST_DB - total);
+        if extra < 0.1 || pass == 3 {
             break;
         }
         scale(audio, linear(extra));
-        limit(audio, linear(LIMIT_DB));
         total += extra;
     }
 }
 
 fn scale(audio: &mut Audio, gain: f32) {
     audio.samples.iter_mut().for_each(|s| *s *= gain);
-}
-
-/// Integrated loudness only: much cheaper than `measure`, which also finds the
-/// true peak.
-fn integrated(audio: &Audio) -> Result<f64, RadioError> {
-    let mut meter = EbuR128::new(2, audio.rate, Mode::I).map_err(meter_error)?;
-    meter.add_frames_f32(&audio.samples).map_err(meter_error)?;
-    meter.loudness_global().map_err(meter_error)
 }
 
 /// Keep every sample at or under `ceiling`: the gain falls in a short ramp that
@@ -777,14 +773,12 @@ mod tests {
         // About -10 and -20 LUFS.
         let loud = sine(rate, 6.0, 997.0, 0.3, 0.3);
         let quiet = sine(rate, 6.0, 997.0, 0.1, 0.1);
-        let ceiling = linear(LIMIT_DB.max(PEAK_CEILING_DB));
         for (name, mut audio) in [("spiky", spiky), ("loud", loud), ("quiet", quiet)] {
             let before = measure(&audio).unwrap();
             even_out(&mut audio, Some(before));
             let after = measure(&audio).unwrap();
-            assert!(audio.peak() <= ceiling, "{name}: peak {}", audio.peak());
             assert!(
-                after.true_peak <= PEAK_CEILING_DB + 0.3,
+                after.true_peak <= PEAK_CEILING_DB + 0.01,
                 "{name}: {after:?}"
             );
             assert!(
@@ -792,6 +786,35 @@ mod tests {
                 "{name}: {before:?} -> {after:?}"
             );
         }
+    }
+
+    /// Samples of a 12 kHz sine at 45° sit 3 dB under its true peak, so a sample
+    /// limiter misses them; and at the target loudness the gain is 1.
+    #[test]
+    fn even_out_holds_peaks_between_samples() {
+        let rate = 48000;
+        let mut audio = Audio {
+            rate,
+            samples: (0..rate as usize * 4)
+                .flat_map(|i| {
+                    let phase =
+                        i as f32 * std::f32::consts::FRAC_PI_2 + std::f32::consts::FRAC_PI_4;
+                    let v = 1.13 * phase.sin();
+                    [v, v]
+                })
+                .collect(),
+        };
+        let measured = measure(&audio).unwrap();
+        assert!(measured.true_peak > 0.5 && audio.peak() < linear(LIMIT_DB));
+        even_out(
+            &mut audio,
+            Some(Loudness {
+                lufs: TARGET_LUFS,
+                ..measured
+            }),
+        );
+        let after = measure(&audio).unwrap();
+        assert!(after.true_peak <= PEAK_CEILING_DB + 0.01, "{after:?}");
     }
 
     impl Audio {

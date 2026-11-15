@@ -287,8 +287,11 @@ impl Station {
             })
             .map_err(|e| io(&temp, e))?;
         std::fs::rename(&temp, &path).map_err(|e| io(&path, e))?;
+        // Saved from here on: an error now must not make the caller undo it.
         if durable {
-            sync_dir(&self.root)?;
+            if let Err(e) = sync_dir(&self.root) {
+                log::warn!("radio: {e}");
+            }
         }
         Ok(())
     }
@@ -749,8 +752,9 @@ impl Station {
         s.queue.push(item);
         s.job = None;
         s.last_error = None;
-        self.prune(&mut s);
+        // Saved before the job folder goes: a kill in between keeps the item.
         self.persist(&s);
+        self.prune(&mut s);
         Ok(())
     }
 
