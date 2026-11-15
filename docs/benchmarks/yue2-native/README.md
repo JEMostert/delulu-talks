@@ -1,6 +1,6 @@
 # YuE2, native: parity and performance
 
-Delulu FM's music engine (`crates/music`, the `delulu-music` helper) runs YuE2 3B in
+Delulu FM's music engine (`crates/music`, run by `delulu-engine music`) runs YuE2 3B in
 Rust on ggml (Vulkan, CPU fallback). It reads ComfyUI's INT8 ConvRot checkpoint
 (`yue2_3b_int8_convrot.safetensors`, Comfy-Org/YuE2 at revision `2f76ca75`) without
 requantizing: each INT8 row becomes Q8_0 blocks with unit scale, the row scale is
@@ -66,7 +66,7 @@ the card.
 ## Reproduce
 
 ```sh
-bun run build:music
+bun run build:engine
 cargo build --release -p delulu-music --example parity
 # ref.py / ref32.py import ComfyUI read-only from ~/comfy/ComfyUI; run them with
 # ComfyUI's Python. Then run parity.rs (lm, dit, sample, vae) on the files they wrote
