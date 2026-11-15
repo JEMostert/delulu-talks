@@ -108,6 +108,8 @@ pub(crate) fn open(path: &Path) -> Result<Connection, StoreError> {
             .map_err(sql_error)?;
         tx.commit().map_err(sql_error)?;
     }
+    // Finishes a scrub that an outside reader kept from emptying the log last time.
+    checkpoint(&conn)?;
     Ok(conn)
 }
 

@@ -520,6 +520,27 @@ mod tests {
     }
 
     #[test]
+    fn a_backup_that_cannot_be_cleaned_keeps_the_entry_to_delete_again() {
+        let t = TempDir::new();
+        write_fixture(&t);
+        let store = Store::open(&t.config(), &t.data()).unwrap();
+        // A backup name that cannot be read or removed as a file.
+        let stuck = t.data().join("history.jsonl.v1.bak.2");
+        fs::create_dir(&stuck).unwrap();
+        fs::write(stuck.join("x"), "").unwrap();
+        assert!(store.delete_history("b2").is_err());
+        assert!(store.clear_history().is_err());
+        assert!(store.history_entry("b2").is_some());
+        assert_eq!(store.history(None, 100).len(), 4);
+
+        fs::remove_dir_all(&stuck).unwrap();
+        store.delete_history("b2").unwrap();
+        assert!(store.history_entry("b2").is_none());
+        let backup = fs::read_to_string(t.data().join("history.jsonl.v1.bak")).unwrap();
+        assert!(!backup.contains("Old line without cleanup fields"));
+    }
+
+    #[test]
     fn a_derived_id_never_overwrites_a_real_one() {
         let t = TempDir::new();
         fs::create_dir_all(t.data()).unwrap();
