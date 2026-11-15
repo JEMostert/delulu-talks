@@ -31,6 +31,11 @@ tauri-plugin-autostart = "2"
 tauri-plugin-opener = "2"
 gtk = "0.18"
 cairo-rs = { version = "0.18", features = ["png"] }
+# The radio tests encode and measure real audio, far too slow unoptimized.
+[profile.dev.package.opus1]
+opt-level = 3
+[profile.dev.package.ebur128]
+opt-level = 3
 [profile.release]
 lto = true
 codegen-units = 1
