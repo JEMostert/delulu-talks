@@ -1145,6 +1145,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "delulu-dictation"
+version = "1.5.0"
+dependencies = [
+ "delulu-cleanup",
+ "delulu-desktop",
+ "delulu-store",
+ "delulu-stt",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "delulu-engine"
 version = "1.5.0"
 dependencies = [
@@ -1254,6 +1266,7 @@ dependencies = [
  "delulu-audio",
  "delulu-cleanup",
  "delulu-desktop",
+ "delulu-dictation",
  "delulu-models",
  "delulu-overlay",
  "delulu-radio",

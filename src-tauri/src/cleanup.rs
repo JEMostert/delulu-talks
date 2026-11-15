@@ -2,6 +2,7 @@
 //! Every miss falls back to the raw Whisper text; dictation never waits for cleanup.
 use super::*;
 use delulu_cleanup::{Cleaner, CleanerKill};
+pub(crate) use delulu_dictation::cleanup::{choose, CleanResult, Cleaned};
 use std::sync::atomic::AtomicUsize;
 
 /// Gemma 4 E4B, the text cleanup model.
@@ -561,47 +562,6 @@ fn spawn_download(app: tauri::AppHandle, mut attempt: Attempt) {
     });
 }
 
-/// What to paste and store for one dictation.
-#[derive(Debug, PartialEq)]
-pub(crate) struct Cleaned {
-    pub(crate) text: String,
-    pub(crate) raw: Option<String>,
-    pub(crate) cleanup_ms: Option<u64>,
-    /// What the model thought the dictation was about.
-    pub(crate) topic: Option<String>,
-}
-#[derive(Debug)]
-pub(crate) enum CleanResult {
-    /// Cleanup is off, not ready, or the language isn't supported.
-    Skipped,
-    /// The helper answered (`None` = keep raw).
-    Done(Option<delulu_cleanup::Cleaned>),
-    /// The helper failed, or its result is stale.
-    Failed,
-}
-pub(crate) fn choose(raw: String, result: CleanResult, ms: u64) -> Cleaned {
-    match result {
-        CleanResult::Done(Some(clean)) if clean.text != raw => Cleaned {
-            text: clean.text,
-            raw: Some(raw),
-            cleanup_ms: Some(ms),
-            topic: clean.topic,
-        },
-        CleanResult::Done(clean) => Cleaned {
-            text: raw,
-            raw: None,
-            cleanup_ms: Some(ms),
-            topic: clean.and_then(|c| c.topic),
-        },
-        CleanResult::Skipped | CleanResult::Failed => Cleaned {
-            text: raw,
-            raw: None,
-            cleanup_ms: None,
-            topic: None,
-        },
-    }
-}
-
 /// Clean one transcript if the helper is ready right now; never waits for it.
 pub(crate) async fn clean(app: &tauri::AppHandle, language: &str, raw: String) -> Cleaned {
     let s = app.state::<Shell>();
@@ -725,52 +685,6 @@ mod tests {
             model_ok: true,
             file_ready,
         }
-    }
-
-    #[test]
-    fn chooses_pasted_text_and_history_fields() {
-        let raw = || "eh hallo".to_string();
-        let done = |text: &str| {
-            CleanResult::Done(Some(delulu_cleanup::Cleaned {
-                text: text.into(),
-                topic: Some("everyday".into()),
-            }))
-        };
-        assert_eq!(
-            choose(raw(), done("Hallo."), 300),
-            Cleaned {
-                text: "Hallo.".into(),
-                raw: Some(raw()),
-                cleanup_ms: Some(300),
-                topic: Some("everyday".into()),
-            }
-        );
-        assert_eq!(
-            choose(raw(), done("eh hallo"), 300),
-            Cleaned {
-                text: raw(),
-                raw: None,
-                cleanup_ms: Some(300),
-                topic: Some("everyday".into()),
-            }
-        );
-        assert_eq!(
-            choose(raw(), CleanResult::Done(None), 300),
-            Cleaned {
-                text: raw(),
-                raw: None,
-                cleanup_ms: Some(300),
-                topic: None,
-            }
-        );
-        let untouched = Cleaned {
-            text: raw(),
-            raw: None,
-            cleanup_ms: None,
-            topic: None,
-        };
-        assert_eq!(choose(raw(), CleanResult::Failed, 300), untouched);
-        assert_eq!(choose(raw(), CleanResult::Skipped, 0), untouched);
     }
 
     #[test]

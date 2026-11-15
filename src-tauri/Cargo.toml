@@ -18,6 +18,7 @@ delulu-audio = { path = "../crates/audio" }
 delulu-stt = { path = "../crates/stt" }
 delulu-models = { path = "../crates/models" }
 delulu-desktop = { path = "../crates/desktop" }
+delulu-dictation = { path = "../crates/dictation" }
 delulu-store = { path = "../crates/store" }
 delulu-overlay = { path = "../crates/overlay" }
 delulu-cleanup = { path = "../crates/cleanup" }

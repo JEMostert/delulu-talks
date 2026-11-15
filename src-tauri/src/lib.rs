@@ -1,5 +1,5 @@
 use delulu_desktop::hotkey::{Command, Gesture, Hotkey, KeyEvent};
-use delulu_desktop::insert::{InsertOutcome, Inserter, PasteKey};
+use delulu_desktop::insert::Inserter;
 use delulu_overlay::{Pill, PillState};
 use delulu_store::{HistoryEntry, InsertMode, NewEntry, Settings, Store};
 use serde::Serialize;
@@ -225,25 +225,4 @@ pub fn run() {
                 radio::shutdown(app);
             }
         });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[tokio::test]
-    async fn waits_for_release_and_times_out() {
-        let mut polls = 0;
-        assert!(
-            wait_release(
-                || {
-                    polls += 1;
-                    polls < 3
-                },
-                Duration::from_millis(100)
-            )
-            .await
-        );
-        assert!(!wait_release(|| true, Duration::from_millis(15)).await);
-        assert!(wait_release(|| false, Duration::ZERO).await);
-    }
 }
