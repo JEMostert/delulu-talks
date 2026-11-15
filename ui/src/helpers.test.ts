@@ -12,6 +12,7 @@ import {
   formatDate,
   languageName,
   settingsPatch,
+  toggleLanguage,
   insertMessage,
   meterLevel,
   splitTerms,
@@ -42,6 +43,7 @@ test("maps language names and settings without changing other values", () => {
     insert: "off",
     theme: "system",
     language: "auto",
+    allowedLanguages: ["nl", "en"],
     overlay: true,
     firstRunDone: true,
     cleanup: true,
@@ -54,6 +56,11 @@ test("maps language names and settings without changing other values", () => {
     theme: "dark",
   });
   expect(settings.theme).toBe("system");
+});
+test("the allowed language set never becomes empty", () => {
+  expect(toggleLanguage(["nl", "en"], "de")).toEqual(["nl", "en", "de"]);
+  expect(toggleLanguage(["nl", "en"], "nl")).toEqual(["en"]);
+  expect(toggleLanguage(["en"], "en")).toEqual(["en"]);
 });
 test("delivery messages preserve recovery information", () => {
   expect(insertMessage({ kind: "copied", reason: null })).toBe(

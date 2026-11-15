@@ -48,8 +48,8 @@ never installs or starts those runtimes:
 - **Settings**, one scrolling list of sections:
   - Input: microphone, the desktop's hotkey trigger with a Change… button
     (GNOME or KDE through the shortcut portal), start at login
-  - Dictation: model, language (Automatic or one fixed language), smart
-    context management, insert text with (Shift+Insert / Ctrl+V /
+  - Dictation: model, language (Automatic within your languages, default
+    Dutch and English, or one fixed language), smart context management, insert text with (Shift+Insert / Ctrl+V /
     Ctrl+Shift+V / Off = copy only)
   - Voice replies: optional spoken replies model
   - Delulu FM: show the radio (one switch)

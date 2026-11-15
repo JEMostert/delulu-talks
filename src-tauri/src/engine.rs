@@ -74,12 +74,8 @@ pub(crate) fn engine_thread(app: tauri::AppHandle, rx: mpsc::Receiver<EngineJob>
                     .as_mut()
                     .ok_or_else(|| "Model is not loaded".to_string())
                     .and_then(|e| {
-                        e.transcribe(
-                            &samples,
-                            &delulu_stt::Language::from_setting(&language),
-                            prompt.as_deref(),
-                        )
-                        .map_err(|e| e.to_string())
+                        e.transcribe(&samples, &language, prompt.as_deref())
+                            .map_err(|e| e.to_string())
                     });
                 let _ = reply.send(result);
             }

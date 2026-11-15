@@ -22,6 +22,14 @@ export const languageName = (code: string, languages: Language[]) => {
     languages.find((language) => language.code === code)?.name ?? code;
   return name.charAt(0).toUpperCase() + name.slice(1);
 };
+/** The allowed set with `code` added or removed. The last language stays, because
+ * automatic detection needs at least one to choose from. */
+export const toggleLanguage = (set: string[], code: string) =>
+  set.includes(code)
+    ? set.length > 1
+      ? set.filter((c) => c !== code)
+      : set
+    : [...set, code];
 export const settingsPatch = <K extends keyof Settings>(
   settings: Settings,
   key: K,

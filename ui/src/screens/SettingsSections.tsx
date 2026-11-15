@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import * as ipc from "../ipc";
-import { languageName } from "../helpers";
+import { languageName, toggleLanguage } from "../helpers";
 import { Keys, Row, Segmented, Select, Switch } from "../components/Controls";
 import { Icon } from "../components/Icon";
 import { errorText, type AppState } from "../state";
@@ -97,7 +97,9 @@ export function DictationSection({ state }: Props) {
         help={
           parakeet
             ? "Parakeet always hears the language itself. A fixed language tells cleanup what to expect."
-            : "Automatic follows whatever you speak."
+            : settings.language === "auto"
+              ? "Automatic picks whichever of your languages you speak."
+              : "Every dictation is heard as this language."
         }
       >
         <Select
@@ -113,6 +115,9 @@ export function DictationSection({ state }: Props) {
           ))}
         </Select>
       </Row>
+      {settings.language === "auto" && !parakeet && (
+        <AllowedLanguagesRow state={state} />
+      )}
       <Row
         label="Smart context management"
         htmlFor="smart-context"
@@ -143,6 +148,51 @@ export function DictationSection({ state }: Props) {
         </Select>
       </Row>
     </div>
+  );
+}
+
+/** The languages Automatic may pick from, so a short or quiet phrase can't come out
+ * as a language the user never speaks. Parakeet can't be limited, so it isn't shown. */
+function AllowedLanguagesRow({ state }: Props) {
+  const { settings, update, languages } = state;
+  if (!settings) return null;
+  const allowed = settings.allowedLanguages;
+  const set = (code: string) =>
+    void update("allowedLanguages", toggleLanguage(allowed, code));
+  return (
+    <Row
+      label="Your languages"
+      htmlFor="add-language"
+      help="Automatic only chooses from these, so a short or quiet phrase can’t come out in a language you never speak."
+    >
+      <ul className="lang-set" aria-label="Your languages">
+        {allowed.map((code) => (
+          <li key={code} className="term">
+            <span>{languageName(code, languages)}</span>
+            {allowed.length > 1 && (
+              <button
+                type="button"
+                aria-label={`Remove ${languageName(code, languages)}`}
+                title={`Remove ${languageName(code, languages)}`}
+                onClick={() => set(code)}
+              >
+                <Icon name="close" size={13} />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <Select id="add-language" value="" onChange={(code) => code && set(code)}>
+        <option value="">Add…</option>
+        {languages
+          .filter((l) => !allowed.includes(l.code))
+          .map((l) => (
+            <option key={l.code} value={l.code}>
+              {languageName(l.code, languages)}
+            </option>
+          ))}
+      </Select>
+    </Row>
   );
 }
 

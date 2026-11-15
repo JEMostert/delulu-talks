@@ -46,6 +46,8 @@ pub struct Settings {
     pub start_at_login: bool,
     pub model: String,
     pub language: String,
+    /// The languages automatic detection may pick from; unused for a fixed language.
+    pub allowed_languages: Vec<String>,
     pub insert: InsertMode,
     pub theme: Theme,
     /// Show the recording pill while dictating.
@@ -70,6 +72,7 @@ impl Default for Settings {
             start_at_login: true,
             model: "large-v3-turbo-q5_0".into(),
             language: "auto".into(),
+            allowed_languages: default_allowed_languages(),
             insert: InsertMode::default(),
             theme: Theme::default(),
             overlay: true,
@@ -78,6 +81,21 @@ impl Default for Settings {
             cleanup_model_ok: false,
             radio: false,
         }
+    }
+}
+
+/// Dutch and English: what the owner speaks, and what cleanup supports.
+fn default_allowed_languages() -> Vec<String> {
+    vec!["nl".into(), "en".into()]
+}
+
+impl Settings {
+    /// An empty allowed set (hand-edited or from an old bug) means the default.
+    fn normalized(mut self) -> Self {
+        if self.allowed_languages.is_empty() {
+            self.allowed_languages = default_allowed_languages();
+        }
+        self
     }
 }
 
@@ -155,7 +173,8 @@ impl Store {
     /// `config_dir` holds `settings.json`, `state.json` and `vocabulary.json`; `data_dir` holds
     /// `history.jsonl` and `models/`. Both are app-specific directories.
     pub fn open(config_dir: &Path, data_dir: &Path) -> Result<Store, StoreError> {
-        let settings = load_or_default(&config_dir.join(SETTINGS_FILE), "settings");
+        let settings =
+            load_or_default::<Settings>(&config_dir.join(SETTINGS_FILE), "settings").normalized();
         let state = load_or_default(&config_dir.join(STATE_FILE), "state");
         let vocabulary =
             load_or_default::<Vocabulary>(&config_dir.join(VOCABULARY_FILE), "vocabulary")
@@ -203,6 +222,11 @@ impl Store {
 
     /// Writes to disk first; the in-memory copy only changes on success.
     pub fn save_settings(&self, s: &Settings) -> Result<(), StoreError> {
+        if s.allowed_languages.is_empty() {
+            return Err(StoreError::Invalid(
+                "Keep at least one language for automatic detection.".into(),
+            ));
+        }
         let mut data = self.lock();
         write_json(&self.config_dir.join(SETTINGS_FILE), s)?;
         data.settings = s.clone();
@@ -524,6 +548,7 @@ mod tests {
             start_at_login: false,
             model: "small".into(),
             language: "nl".into(),
+            allowed_languages: vec!["en".into(), "de".into()],
             insert: InsertMode::CtrlShiftV,
             theme: Theme::Dark,
             ..Settings::default()
@@ -532,6 +557,31 @@ mod tests {
         drop(store);
 
         assert_eq!(open(&t).settings(), custom);
+    }
+
+    #[test]
+    fn allowed_languages_never_empty() {
+        let t = TempDir::new();
+        fs::create_dir_all(t.config()).unwrap();
+        fs::write(
+            t.config().join(SETTINGS_FILE),
+            r#"{"language":"auto","allowedLanguages":[],"theme":"dark"}"#,
+        )
+        .unwrap();
+        let store = open(&t);
+        let s = store.settings();
+        assert_eq!(s.allowed_languages, ["nl", "en"]);
+        assert_eq!(s.theme, Theme::Dark);
+
+        let empty = Settings {
+            allowed_languages: vec![],
+            ..s.clone()
+        };
+        assert!(matches!(
+            store.save_settings(&empty),
+            Err(StoreError::Invalid(_))
+        ));
+        assert_eq!(store.settings(), s);
     }
 
     #[test]

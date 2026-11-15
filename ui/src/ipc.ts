@@ -47,6 +47,8 @@ export type Settings = {
   startAtLogin: boolean;
   model: string;
   language: string;
+  /** The languages Automatic may pick from; never empty. */
+  allowedLanguages: string[];
   insert: "shift-insert" | "ctrl-v" | "ctrl-shift-v" | "off";
   theme: "system" | "light" | "dark";
   overlay: boolean;

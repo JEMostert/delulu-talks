@@ -31,19 +31,59 @@ pub fn languages() -> Vec<(&'static str, &'static str)> {
         })
         .collect()
 }
+/// What automatic detection chooses from when the stored set holds no Whisper language.
+/// The settings store has the same default.
+pub const DEFAULT_ALLOWED_LANGUAGES: [&str; 2] = ["nl", "en"];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Language {
-    Auto,
+    /// Detect the language, choosing only among these codes.
+    Auto(Vec<String>),
     Fixed(String),
 }
 impl Language {
-    pub fn from_setting(s: &str) -> Self {
+    /// `allowed` applies only when `s` is "auto".
+    pub fn from_setting(s: &str, allowed: &[String]) -> Self {
         if s == "auto" {
-            Self::Auto
+            Self::Auto(allowed.to_vec())
         } else {
             Self::Fixed(s.into())
         }
     }
+}
+/// Whisper's ids for `allowed`, or for the default set when none of it is a Whisper language.
+fn allowed_ids(allowed: &[String]) -> Vec<i32> {
+    let ids = |codes: &mut dyn Iterator<Item = &str>| {
+        let mut ids = Vec::new();
+        for code in codes {
+            // whisper_lang_id also takes full names; a NUL byte would panic in whisper-rs.
+            if let Some(id) = (!code.contains('\0'))
+                .then(|| whisper_rs::get_lang_id(code))
+                .flatten()
+            {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+        }
+        ids
+    };
+    let chosen = ids(&mut allowed.iter().map(String::as_str));
+    if chosen.is_empty() {
+        ids(&mut DEFAULT_ALLOWED_LANGUAGES.into_iter())
+    } else {
+        chosen
+    }
+}
+/// The most probable language within `allowed`, given Whisper's probability for each
+/// language id. Whisper's own top choice may lie outside the set (short or quiet clips
+/// drift to Icelandic or Welsh); then the best language inside the set wins.
+fn choose_language(probs: &[f32], allowed: &[String]) -> &'static str {
+    let prob = |id: i32| probs.get(id as usize).copied().unwrap_or(f32::MIN);
+    allowed_ids(allowed)
+        .into_iter()
+        .max_by(|a, b| prob(*a).total_cmp(&prob(*b)))
+        .and_then(whisper_rs::get_lang_str)
+        .unwrap_or(DEFAULT_ALLOWED_LANGUAGES[0])
 }
 #[derive(Debug, Clone)]
 pub struct Transcript {
@@ -65,6 +105,9 @@ enum Inner {
     Parakeet(Box<transcribe_rs::onnx::parakeet::ParakeetModel>),
 }
 
+fn threads() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get().min(8))
+}
 fn params<'a>(language: &'a str, prompt: Option<&'a str>) -> whisper_rs::FullParams<'a, 'a> {
     let mut p = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
     p.set_language(Some(language));
@@ -72,7 +115,7 @@ fn params<'a>(language: &'a str, prompt: Option<&'a str>) -> whisper_rs::FullPar
         // Read as the text before this clip: it steers spelling and names.
         p.set_initial_prompt(prompt);
     }
-    p.set_n_threads(std::thread::available_parallelism().map_or(1, |n| n.get().min(8)) as i32);
+    p.set_n_threads(threads() as i32);
     p.set_no_context(true);
     p.set_no_timestamps(true);
     p.set_print_progress(false);
@@ -259,22 +302,27 @@ impl Engine {
         language: &Language,
         prompt: Option<&str>,
     ) -> Result<Transcript, SttError> {
-        let code = match language {
-            Language::Auto => "auto",
-            Language::Fixed(code) => code.as_str(),
-        };
         let audio_ms = samples.len() as u64 / 16;
         if silent(samples) {
             return Ok(Transcript {
                 text: String::new(),
-                language: code.to_string(),
+                language: match language {
+                    Language::Auto(_) => "auto".to_string(),
+                    Language::Fixed(code) => code.clone(),
+                },
                 audio_ms,
                 elapsed_ms: 0,
             });
         }
         let start = Instant::now();
         let (text, language) = match &mut self.inner {
-            Inner::Whisper { state, .. } => whisper_text(state, samples, code, prompt)?,
+            Inner::Whisper { state, .. } => {
+                let code = match language {
+                    Language::Auto(allowed) => detect_within(state, samples, allowed)?,
+                    Language::Fixed(code) => code.as_str(),
+                };
+                whisper_text(state, samples, code, prompt)?
+            }
             Inner::Parakeet(model) => {
                 let text = model
                     .transcribe_with(samples, &Default::default())
@@ -285,7 +333,8 @@ impl Engine {
                 // A fixed language setting wins over a guess from a short phrase.
                 let language = match language {
                     Language::Fixed(code) => code.clone(),
-                    Language::Auto => guess_language(&text).unwrap_or("auto").to_string(),
+                    // Parakeet cannot be held to the allowed set, so its guess stands.
+                    Language::Auto(_) => guess_language(&text).unwrap_or("auto").to_string(),
                 };
                 (text, language)
             }
@@ -339,6 +388,24 @@ fn load_parakeet(path: &Path) -> Result<(Inner, String), SttError> {
         Inner::Parakeet(Box::new(model)),
         "CPU (ONNX Runtime)".to_string(),
     ))
+}
+
+/// The most probable allowed language, from the same detection pass Whisper's own
+/// "auto" runs; a one-language set needs no detection.
+fn detect_within(
+    state: &mut whisper_rs::WhisperState,
+    samples: &[f32],
+    allowed: &[String],
+) -> Result<&'static str, SttError> {
+    if let [only] = allowed_ids(allowed)[..] {
+        if let Some(code) = whisper_rs::get_lang_str(only) {
+            return Ok(code);
+        }
+    }
+    let inference = |e: whisper_rs::WhisperError| SttError::Inference(e.to_string());
+    state.pcm_to_mel(samples, threads()).map_err(inference)?;
+    let (_, probs) = state.lang_detect(0, threads()).map_err(inference)?;
+    Ok(choose_language(&probs, allowed))
 }
 
 /// Whisper's text and detected language; empty text when it heard no speech or only
@@ -417,6 +484,22 @@ mod tests {
             Some("de")
         );
         assert_eq!(guess_language("42"), None);
+    }
+    #[test]
+    fn chooses_the_most_probable_allowed_language() {
+        let id = |code| whisper_rs::get_lang_id(code).unwrap() as usize;
+        let mut probs = vec![0.001; whisper_rs::get_lang_max_id() as usize + 1];
+        probs[id("is")] = 0.6;
+        probs[id("en")] = 0.1;
+        probs[id("nl")] = 0.25;
+        let set = |codes: &[&str]| codes.iter().map(|c| c.to_string()).collect::<Vec<_>>();
+        assert_eq!(choose_language(&probs, &set(&["nl", "en"])), "nl");
+        assert_eq!(choose_language(&probs, &set(&["en", "de"])), "en");
+        assert_eq!(choose_language(&probs, &set(&["de"])), "de");
+        // Nothing usable stored: the default set, so never Icelandic.
+        assert_eq!(choose_language(&probs, &[]), "nl");
+        assert_eq!(choose_language(&probs, &set(&["xx", "", "a\0b"])), "nl");
+        assert_eq!(allowed_ids(&set(&["xx"])), allowed_ids(&set(&["nl", "en"])));
     }
     #[test]
     fn punctuation_filter() {
