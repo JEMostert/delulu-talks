@@ -311,11 +311,11 @@ export function VoiceSection() {
           help={
             <>
               <span>
-                {status.terms.credit}. Installing the model means you agree to
-                its use restrictions. The voices are AI-generated: say so
-                wherever you share what they say.
+                {status.terms.credit.replace(/\.$/, "")}. Installing the model
+                means you agree to its use restrictions. The voices are
+                AI-generated: say so wherever you share what they say.
               </span>
-              <span className="value path">{status.terms.url}</span>
+              <span className="terms-url">{status.terms.url}</span>
             </>
           }
         >

@@ -268,6 +268,24 @@ fn cancelling_during_synthesis_stops_the_engine_too() {
 }
 
 #[test]
+fn keep_warm_zero_uses_a_fresh_engine_even_while_a_resident_one_listens() {
+    let env = Env::new();
+    env.install_model();
+    // A resident engine that would never answer.
+    let socket = env.path("run/delulu-talks/tts.sock");
+    fs::create_dir_all(socket.parent().unwrap()).unwrap();
+    let _resident = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let wav = env.path("fresh.wav");
+    let mut child = env
+        .command(&["speak", "--output", wav.to_str().unwrap(), "Fresh."])
+        .spawn()
+        .unwrap();
+    let status = wait(&mut child, Duration::from_secs(10)).expect("does not hang on the resident");
+    assert!(status.success());
+    assert!(env.path("engine.pid").exists(), "the one-shot engine ran");
+}
+
+#[test]
 fn chatterbox_is_opt_in_and_explains_itself_when_not_configured() {
     let env = Env::new();
     let out = env.run(&["speak", "--engine", "chatterbox", "Hello."]);

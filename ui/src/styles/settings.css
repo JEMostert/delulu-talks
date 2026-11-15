@@ -239,3 +239,7 @@
   max-height: 220px;
   overflow: auto;
 }
+.terms-url {
+  overflow-wrap: anywhere;
+  user-select: text;
+}

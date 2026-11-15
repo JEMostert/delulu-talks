@@ -171,40 +171,52 @@ struct State {
     synth: Option<Box<dyn Speaker>>,
     /// The model last asked for, so a job after an idle unload can reload it.
     model: Option<ModelRef>,
+    /// What the loaded synthesizer was built from: model folder and lexicon file.
+    loaded: Option<(String, Option<PathBuf>)>,
 }
 
 impl State {
-    fn lexicon(&self, model: &ModelRef) -> Lexicon {
-        let mut lexicon = Lexicon::builtin();
-        let file = model
+    /// The user lexicon for `model`: its `lexicon` extra, else `--lexicon`.
+    fn lexicon_file(&self, model: &ModelRef) -> Option<PathBuf> {
+        model
             .extra
             .get("lexicon")
             .map(PathBuf::from)
-            .or_else(|| self.lexicon_file.clone());
+            .or_else(|| self.lexicon_file.clone())
+    }
+
+    fn lexicon(&self, file: Option<&Path>) -> Lexicon {
+        let mut lexicon = Lexicon::builtin();
         if let Some(file) = file {
-            if let Err(e) = lexicon.extend_from_file(&file) {
+            if let Err(e) = lexicon.extend_from_file(file) {
                 eprintln!("delulu-engine tts: lexicon {}: {e}", file.display());
             }
         }
         lexicon
     }
 
-    /// Loads `model` unless it is already loaded. Returns the load time in ms.
+    /// Loads `model` unless the same folder with the same lexicon is already
+    /// loaded (a resident engine's preload and the client's `load` name the same
+    /// files in different ways). Returns the load time in ms.
     fn load(&mut self, model: &ModelRef) -> Result<u64, String> {
-        if self.synth.is_some() && self.model.as_ref() == Some(model) {
+        let key = (model.path.clone(), self.lexicon_file(model));
+        if self.synth.is_some() && self.loaded.as_ref() == Some(&key) {
+            self.model = Some(model.clone());
             return Ok(0);
         }
         let started = Instant::now();
-        self.synth = None;
-        let lexicon = self.lexicon(model);
+        self.unload();
+        let lexicon = self.lexicon(key.1.as_deref());
         let synth = (self.loader)(Path::new(&model.path), self.threads, lexicon)?;
         self.synth = Some(synth);
+        self.loaded = Some(key);
         self.model = Some(model.clone());
         Ok(started.elapsed().as_millis() as u64)
     }
 
     fn unload(&mut self) {
         self.synth = None;
+        self.loaded = None;
     }
 }
 
@@ -240,6 +252,7 @@ pub fn main(args: impl Iterator<Item = String>) -> ExitCode {
         loader: load_supertonic,
         synth: None,
         model: None,
+        loaded: None,
     };
     if args.once {
         return once(&args, &mut state);
@@ -369,6 +382,8 @@ fn listen(socket: &Path, model_dir: &Path, idle_exit: Duration, state: &mut Stat
             return ExitCode::FAILURE;
         }
     };
+    use std::os::unix::fs::MetadataExt;
+    let ours = std::fs::metadata(socket).map(|m| (m.dev(), m.ino())).ok();
     // Load before accepting: a client that connected meanwhile waits in the backlog.
     if let Err(e) = state.load(&model_ref(model_dir)) {
         eprintln!("delulu-engine tts: {e}");
@@ -405,10 +420,20 @@ fn listen(socket: &Path, model_dir: &Path, idle_exit: Duration, state: &mut Stat
         }
     }
     // Only remove the socket if it is still ours (a newer engine may have replaced it).
-    if UnixStream::connect(socket).is_err() {
+    remove_if_ours(socket, ours);
+    drop(listener);
+    ExitCode::SUCCESS
+}
+
+/// Removes `socket` when it is still the file this engine bound (same device and inode).
+fn remove_if_ours(socket: &Path, ours: Option<(u64, u64)>) {
+    use std::os::unix::fs::MetadataExt;
+    let now = std::fs::symlink_metadata(socket)
+        .map(|m| (m.dev(), m.ino()))
+        .ok();
+    if ours.is_some() && now == ours {
         let _ = std::fs::remove_file(socket);
     }
-    ExitCode::SUCCESS
 }
 
 enum Incoming {
@@ -757,6 +782,70 @@ mod tests {
         Ok(Box::new(Fake))
     }
 
+    fn state(loader: Loader, lexicon_file: Option<PathBuf>) -> State {
+        State {
+            threads: 1,
+            steps: 8,
+            lexicon_file,
+            loader,
+            synth: None,
+            model: None,
+            loaded: None,
+        }
+    }
+
+    static LOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    fn counting_loader(_: &Path, _: usize, _: Lexicon) -> Result<Box<dyn Speaker>, String> {
+        LOADS.fetch_add(1, Ordering::SeqCst);
+        Ok(Box::new(Fake))
+    }
+
+    #[test]
+    fn a_resident_preload_is_reused_by_the_clients_load_and_a_new_lexicon_reloads() {
+        let dir = Path::new("/models/supertonic-3");
+        let lexicon = PathBuf::from("/data/voice/lexicon-nl.tsv");
+        let mut s = state(counting_loader, Some(lexicon.clone()));
+        // The resident engine preloads from --model-dir/--lexicon ...
+        s.load(&model_ref(dir)).unwrap();
+        // ... and `delulu speak` then names the same files in its load message.
+        let mut from_client = model_ref(dir);
+        from_client
+            .extra
+            .insert("lexicon".into(), lexicon.to_string_lossy().into_owned());
+        assert_eq!(s.load(&from_client).unwrap(), 0);
+        assert_eq!(LOADS.load(Ordering::SeqCst), 1);
+        from_client
+            .extra
+            .insert("lexicon".into(), "/other/lexicon-nl.tsv".into());
+        s.load(&from_client).unwrap();
+        assert_eq!(LOADS.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn an_idle_engine_removes_its_own_socket_but_not_a_successors() {
+        let dir = tempfile_dir();
+        let path = dir.join("tts.sock");
+        use std::os::unix::fs::MetadataExt;
+        let id = |p: &Path| std::fs::metadata(p).map(|m| (m.dev(), m.ino())).ok();
+        let first = UnixListener::bind(&path).unwrap();
+        let ours = id(&path);
+        // A newer engine took the path over.
+        std::fs::remove_file(&path).unwrap();
+        let _second = UnixListener::bind(&path).unwrap();
+        remove_if_ours(&path, ours);
+        assert!(path.exists(), "a successor's socket must stay");
+        drop(first);
+        remove_if_ours(&path, id(&path));
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn tempfile_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("delulu-tts-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
     struct Client {
         input: BufReader<UnixStream>,
         output: UnixStream,
@@ -766,14 +855,7 @@ mod tests {
         fn start() -> (Client, std::thread::JoinHandle<()>) {
             let (ours, theirs) = UnixStream::pair().unwrap();
             let worker = std::thread::spawn(move || {
-                let mut state = State {
-                    threads: 1,
-                    steps: 8,
-                    lexicon_file: None,
-                    loader: fake_loader,
-                    synth: None,
-                    model: None,
-                };
+                let mut state = state(fake_loader, None);
                 let input = theirs.try_clone().unwrap();
                 let _ = serve(input, theirs, &mut state, None);
             });

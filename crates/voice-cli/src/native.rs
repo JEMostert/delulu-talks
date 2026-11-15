@@ -365,9 +365,15 @@ impl Connection {
     fn open(engine: &Path, model: &ModelRef, settings: &Settings) -> Result<Connection> {
         let deadline = Instant::now() + JOB_LIMIT;
         let socket = socket_path();
-        let mut stream = socket.as_deref().and_then(|s| UnixStream::connect(s).ok());
+        // keepWarmSeconds 0 means a fresh engine per reply, even while an earlier
+        // resident engine is still running out its idle time.
+        let warm = settings.keep_warm_seconds > 0;
+        let mut stream = socket
+            .as_deref()
+            .filter(|_| warm)
+            .and_then(|s| UnixStream::connect(s).ok());
         let mut mode = "resident";
-        if stream.is_none() && settings.keep_warm_seconds > 0 {
+        if stream.is_none() && warm {
             if let Some(socket) = &socket {
                 stream = spawn_resident(engine, socket, model, settings);
                 mode = "started-resident";
