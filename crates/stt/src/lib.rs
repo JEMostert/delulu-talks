@@ -1,227 +1,25 @@
-use std::{
-    io::{Read, Write},
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
-    time::Instant,
-};
-/// The two speech engines. Whisper runs on the GPU and follows the language
-/// setting and context prompt; Parakeet runs on the CPU and detects the language.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EngineKind {
-    Whisper,
-    Parakeet,
-}
-impl EngineKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Whisper => "whisper",
-            Self::Parakeet => "parakeet",
-        }
-    }
-}
-/// One downloadable file; `file` is relative to the models folder.
-pub struct ModelFile {
-    pub file: &'static str,
-    pub url: &'static str,
-    pub sha256: &'static str,
-    pub bytes: u64,
-}
-pub struct ModelInfo {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub engine: EngineKind,
-    /// What the engine loads, relative to the models folder: a file or a folder.
-    pub path: &'static str,
-    pub files: &'static [ModelFile],
-    /// All files together.
-    pub bytes: u64,
-}
-const fn total(files: &[ModelFile]) -> u64 {
-    let mut sum = 0;
-    let mut i = 0;
-    while i < files.len() {
-        sum += files[i].bytes;
-        i += 1;
-    }
-    sum
-}
+use std::{path::Path, time::Instant};
+
+/// The speech engines are rows of the shared model registry (`delulu-models`), which
+/// also downloads them. Whisper runs on the GPU and follows the language setting and
+/// context prompt; Parakeet runs on the CPU and detects the language.
+pub use delulu_models::{Engine as EngineKind, Model as ModelInfo, ModelFile};
+
 pub const DEFAULT_MODEL: &str = "large-v3-turbo-q5_0";
-static TURBO_FILES: [ModelFile; 1] = [ModelFile {
-    file: "ggml-large-v3-turbo-q5_0.bin",
-    url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin",
-    sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
-    bytes: 574041195,
-}];
-static SMALL_FILES: [ModelFile; 1] = [ModelFile {
-    file: "ggml-small.bin",
-    url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small.bin",
-    sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
-    bytes: 487601967,
-}];
-/// NVIDIA Parakeet TDT 0.6B v3 (CC BY 4.0), int8 ONNX export by istupakov.
-static PARAKEET_FILES: [ModelFile; 4] = [
-    ModelFile {
-        file: "parakeet-tdt-0.6b-v3-int8/encoder-model.int8.onnx",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/encoder-model.int8.onnx",
-        sha256: "6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09",
-        bytes: 652183999,
-    },
-    ModelFile {
-        file: "parakeet-tdt-0.6b-v3-int8/decoder_joint-model.int8.onnx",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/decoder_joint-model.int8.onnx",
-        sha256: "eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70",
-        bytes: 18202004,
-    },
-    ModelFile {
-        file: "parakeet-tdt-0.6b-v3-int8/nemo128.onnx",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/nemo128.onnx",
-        sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
-        bytes: 139764,
-    },
-    ModelFile {
-        file: "parakeet-tdt-0.6b-v3-int8/vocab.txt",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/vocab.txt",
-        sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
-        bytes: 93939,
-    },
-];
-static MODELS: [ModelInfo; 3] = [
-    ModelInfo {
-        id: DEFAULT_MODEL,
-        label: "Large v3 Turbo (recommended)",
-        engine: EngineKind::Whisper,
-        path: "ggml-large-v3-turbo-q5_0.bin",
-        files: &TURBO_FILES,
-        bytes: total(&TURBO_FILES),
-    },
-    ModelInfo {
-        id: "small",
-        label: "Small (faster, weaker Dutch)",
-        engine: EngineKind::Whisper,
-        path: "ggml-small.bin",
-        files: &SMALL_FILES,
-        bytes: total(&SMALL_FILES),
-    },
-    ModelInfo {
-        id: "parakeet-tdt-0.6b-v3",
-        label: "Parakeet TDT 0.6B v3",
-        engine: EngineKind::Parakeet,
-        path: "parakeet-tdt-0.6b-v3-int8",
-        files: &PARAKEET_FILES,
-        bytes: total(&PARAKEET_FILES),
-    },
-];
-pub fn models() -> &'static [ModelInfo] {
-    &MODELS
+
+/// The speech-to-text models, in registry order.
+pub fn models() -> Vec<&'static ModelInfo> {
+    delulu_models::with_role(delulu_models::Role::Stt).collect()
 }
 pub fn model_info(id: &str) -> Option<&'static ModelInfo> {
-    models().iter().find(|m| m.id == id)
+    delulu_models::get(id).filter(|m| m.role == delulu_models::Role::Stt)
 }
 pub fn is_downloaded(dir: &Path, id: &str) -> bool {
-    model_info(id).is_some_and(|m| m.files.iter().all(|f| file_ready(dir, f)))
+    model_info(id).is_some_and(|m| m.installed(dir))
 }
 /// True when the file is in `dir` at its expected size.
 pub fn file_ready(dir: &Path, file: &ModelFile) -> bool {
-    dir.join(file.file)
-        .metadata()
-        .is_ok_and(|v| v.len() == file.bytes)
-}
-/// Downloads every missing file of a model, reporting progress over all of them.
-pub fn download(
-    dir: &Path,
-    id: &str,
-    progress: &mut dyn FnMut(u64, u64),
-    cancel: &AtomicBool,
-) -> Result<(), SttError> {
-    let info = model_info(id).ok_or_else(|| SttError::Model(format!("unknown model: {id}")))?;
-    let mut before = 0;
-    for file in info.files {
-        if !file_ready(dir, file) {
-            download_file(
-                dir,
-                file,
-                &mut |done, _| progress(before + done, info.bytes),
-                cancel,
-            )?;
-        }
-        before += file.bytes;
-    }
-    progress(info.bytes, info.bytes);
-    Ok(())
-}
-/// Downloads one file into `dir`, verifying size and SHA-256 before it appears
-/// under its final name.
-pub fn download_file(
-    dir: &Path,
-    info: &ModelFile,
-    progress: &mut dyn FnMut(u64, u64),
-    cancel: &AtomicBool,
-) -> Result<PathBuf, SttError> {
-    if cancel.load(Ordering::Relaxed) {
-        return Err(SttError::Cancelled);
-    }
-    std::fs::create_dir_all(dir).map_err(download_error)?;
-    let response = ureq::get(info.url).call().map_err(download_error)?;
-    save_download(
-        dir,
-        info,
-        response.into_body().into_reader(),
-        progress,
-        cancel,
-    )
-}
-
-fn download_error(e: impl std::fmt::Display) -> SttError {
-    SttError::Download(e.to_string())
-}
-
-fn save_download(
-    dir: &Path,
-    info: &ModelFile,
-    mut reader: impl Read,
-    progress: &mut dyn FnMut(u64, u64),
-    cancel: &AtomicBool,
-) -> Result<PathBuf, SttError> {
-    use sha2::{Digest, Sha256};
-    let path = dir.join(info.file);
-    let part = dir.join(format!("{}.part", info.file));
-    let result = (|| {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(download_error)?;
-        }
-        let mut file = std::fs::File::create(&part).map_err(download_error)?;
-        let mut hash = Sha256::new();
-        let mut done = 0u64;
-        let mut buf = [0u8; 65536];
-        progress(0, info.bytes);
-        loop {
-            if cancel.load(Ordering::Relaxed) {
-                return Err(SttError::Cancelled);
-            }
-            let n = reader.read(&mut buf).map_err(download_error)?;
-            if n == 0 {
-                break;
-            }
-            file.write_all(&buf[..n]).map_err(download_error)?;
-            hash.update(&buf[..n]);
-            done += n as u64;
-            progress(done, info.bytes);
-        }
-        if cancel.load(Ordering::Relaxed) {
-            return Err(SttError::Cancelled);
-        }
-        if done != info.bytes || format!("{:x}", hash.finalize()) != info.sha256 {
-            return Err(SttError::Checksum);
-        }
-        file.flush().map_err(download_error)?;
-        drop(file);
-        std::fs::rename(&part, &path).map_err(download_error)?;
-        Ok(path)
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(part);
-    }
-    result
+    file.ready(dir)
 }
 pub fn languages() -> Vec<(&'static str, &'static str)> {
     (0..=whisper_rs::get_lang_max_id())
@@ -435,6 +233,12 @@ impl Engine {
         let (inner, backend) = match info.engine {
             EngineKind::Whisper => load_whisper(&path)?,
             EngineKind::Parakeet => load_parakeet(&path)?,
+            other => {
+                return Err(SttError::Model(format!(
+                    "{id} is a {} model, not speech",
+                    other.as_str()
+                )))
+            }
         };
         Ok(Self {
             inner,
@@ -589,77 +393,12 @@ mod tests {
         assert!(!silent(&vec![0.002; 4000]));
     }
     #[test]
-    fn download_verifies_and_cleans_partial_file() {
-        let dir = std::env::temp_dir().join(format!("delulu-stt-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let info = ModelFile {
-            file: "model.bin",
-            url: "",
-            sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-            bytes: 3,
-        };
-        let cancel = AtomicBool::new(false);
-        let mut progress = Vec::new();
-        let path = save_download(
-            &dir,
-            &info,
-            &b"abc"[..],
-            &mut |n, _| progress.push(n),
-            &cancel,
-        )
-        .unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), b"abc");
-        assert_eq!(progress, vec![0, 3]);
-        assert!(matches!(
-            save_download(&dir, &info, &b"bad"[..], &mut |_, _| {}, &cancel),
-            Err(SttError::Checksum)
-        ));
-        assert_eq!(std::fs::read(&path).unwrap(), b"abc");
-        assert!(!dir.join("model.bin.part").exists());
-        cancel.store(true, Ordering::Relaxed);
-        assert!(matches!(
-            save_download(&dir, &info, &b"abc"[..], &mut |_, _| {}, &cancel),
-            Err(SttError::Cancelled)
-        ));
-        assert!(!dir.join("model.bin.part").exists());
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-    #[test]
-    fn file_ready_checks_size_and_static_model_info() {
-        static INFO: ModelFile = ModelFile {
-            file: "static-test.bin",
-            url: "",
-            sha256: "",
-            bytes: 3,
-        };
-        let dir = std::env::temp_dir().join(format!("delulu-stt-ready-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        assert!(!file_ready(&dir, &INFO));
-        std::fs::write(dir.join("static-test.bin"), b"ab").unwrap();
-        assert!(!file_ready(&dir, &INFO));
-        std::fs::write(dir.join("static-test.bin"), b"abc").unwrap();
-        assert!(file_ready(&dir, &INFO));
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-    #[test]
-    fn model_table_is_consistent() {
-        for m in models() {
-            assert_eq!(
-                m.bytes,
-                m.files.iter().map(|f| f.bytes).sum::<u64>(),
-                "{}",
-                m.id
-            );
-            assert!(
-                m.files.iter().all(|f| f.file.starts_with(m.path)),
-                "{}",
-                m.id
-            );
-        }
+    fn default_model_is_a_whisper_model() {
         assert_eq!(
             model_info(DEFAULT_MODEL).unwrap().engine,
             EngineKind::Whisper
         );
+        assert_eq!(models()[0].id, DEFAULT_MODEL);
     }
     #[test]
     fn guesses_parakeet_language() {
@@ -690,12 +429,6 @@ mod tests {
 pub enum SttError {
     #[error("model: {0}")]
     Model(String),
-    #[error("download: {0}")]
-    Download(String),
-    #[error("cancelled")]
-    Cancelled,
-    #[error("checksum mismatch")]
-    Checksum,
     #[error("inference: {0}")]
     Inference(String),
 }

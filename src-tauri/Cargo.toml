@@ -16,6 +16,7 @@ log.workspace = true
 thiserror.workspace = true
 delulu-audio = { path = "../crates/audio" }
 delulu-stt = { path = "../crates/stt" }
+delulu-models = { path = "../crates/models" }
 delulu-insert = { path = "../crates/insert" }
 delulu-hotkey = { path = "../crates/hotkey" }
 delulu-store = { path = "../crates/store" }
