@@ -6,7 +6,7 @@
 //!
 //! * [`stop`]: from the recorded clip to delivered text and a History entry;
 //! * [`context`]: what the last dictation was about, carried to the next one;
-//! * [`cleanup`]: what the cleanup model's answer means for the text.
+//! * [`cleanup`]: the cleanup helper's lifecycle, and what its answer means.
 
 pub mod cleanup;
 pub mod context;

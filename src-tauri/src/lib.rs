@@ -62,9 +62,12 @@ pub fn run() {
     // Unattended end-to-end runs must never open desktop permission dialogs.
     let no_portals = std::env::var("DELULU_NO_PORTALS").as_deref() == Ok("1");
     let data_dir = store.data_dir().to_string_lossy().into_owned();
-    let cleanup = cleanup::Cleanup::new(
+    let app_slot: cleanup::AppSlot = Default::default();
+    let cleanup = cleanup::supervisor(
+        &store,
         initial_settings.cleanup,
         delulu_stt::file_ready(&store.models_dir(), &cleanup::CLEANUP_MODEL),
+        app_slot.clone(),
     );
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {
@@ -127,6 +130,7 @@ pub fn run() {
         })
         .setup(move |app| {
             let handle = app.handle().clone();
+            let _ = app_slot.set(handle.clone());
             tray::create(app)?;
             let s = app.state::<Shell>();
             let settings = s.store.settings();

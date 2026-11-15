@@ -28,7 +28,7 @@ pub(crate) struct Shell {
     /// `--toggle` started the app: start recording once the model is ready.
     pub(crate) pending_toggle: AtomicBool,
     pub(crate) pill: Pill,
-    pub(crate) cleanup: cleanup::Cleanup,
+    pub(crate) cleanup: Arc<cleanup::Supervisor>,
     /// What recent dictations were about; memory only.
     pub(crate) context: context::Context,
     /// Delulu FM is on air and needs the cleanup helper as its writer.

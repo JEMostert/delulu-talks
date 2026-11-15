@@ -7,10 +7,11 @@ description = "The dictation pipeline shared by the Delulu Talks app and daemon:
 [dependencies]
 delulu-cleanup = { path = "../cleanup" }
 delulu-desktop = { path = "../desktop" }
+delulu-models = { path = "../models" }
 delulu-store = { path = "../store" }
 delulu-stt = { path = "../stt" }
 serde.workspace = true
-tokio = { version = "1", default-features = false, features = ["time"] }
+tokio = { version = "1", default-features = false, features = ["rt", "time"] }
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }
