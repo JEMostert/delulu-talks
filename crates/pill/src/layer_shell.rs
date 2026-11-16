@@ -49,7 +49,7 @@ use std::os::fd::AsRawFd;
 use std::time::Instant;
 use tiny_skia::IntRect;
 
-/// The surface's logical size: the canvas at the pill's 1.2 scale.
+/// The surface's logical size: the canvas at the pill's [`SCALE`].
 fn logical_size() -> (i32, i32) {
     (
         (CANVAS_W * SCALE).round() as i32,

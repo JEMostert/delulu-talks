@@ -665,10 +665,11 @@ mod tests {
     fn placement_scales_its_margins() {
         let monitor = (0, 0, 1920, 1080);
         // No panel in the work area: clear an unseen Wayland panel.
-        let (w, h) = (466, 134);
+        let (w, h) = canvas_size(SCALE);
+        let (w, h) = (w as u16, h as u16);
         let (x, y) = place(monitor, monitor, (w, h), 1.0);
-        assert_eq!(x, (1920 - 466) / 2);
-        // The pill's bottom edge (PAD_TOP + HEIGHT down the canvas, at 1.2).
+        assert_eq!(x, (1920 - i32::from(w)) / 2);
+        // The pill's bottom edge (PAD_TOP + HEIGHT down the canvas, at SCALE).
         let pill_bottom =
             |y: i32, s: f64| y + ((PAD_TOP + f64::from(HEIGHT)) * SCALE * s).round() as i32;
         assert_eq!(1080 - pill_bottom(y, 1.0), 80);
@@ -679,10 +680,12 @@ mod tests {
         // At 2x (XWayland at native resolution), both double.
         let monitor2 = (1920, 0, 3840, 2160);
         let area2 = (1920, 0, 3840, 2064);
-        let (x, y) = place(monitor2, area2, (932, 268), 2.0);
-        assert_eq!(x, 1920 + (3840 - 932) / 2);
+        let (w2, h2) = canvas_size(SCALE * 2.0);
+        let (w2, h2) = (w2 as u16, h2 as u16);
+        let (x, y) = place(monitor2, area2, (w2, h2), 2.0);
+        assert_eq!(x, 1920 + (3840 - i32::from(w2)) / 2);
         assert_eq!(2064 - pill_bottom(y, 2.0), 56);
-        let (_, y) = place(monitor2, monitor2, (932, 268), 2.0);
+        let (_, y) = place(monitor2, monitor2, (w2, h2), 2.0);
         assert_eq!(2160 - pill_bottom(y, 2.0), 160);
     }
 }

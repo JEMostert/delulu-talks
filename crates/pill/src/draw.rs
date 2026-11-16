@@ -1210,7 +1210,7 @@ mod tests {
     #[test]
     fn the_measured_region_holds_every_pixel_of_the_frame() {
         let r = Renderer::new();
-        for scale in [1.2, 1.8] {
+        for scale in [crate::SCALE, crate::SCALE * 1.5, crate::SCALE * 2.0] {
             let size = canvas_size(scale);
             for (i, m) in run().iter().enumerate() {
                 let rect = r.bounds(m, scale, size);
@@ -1227,23 +1227,24 @@ mod tests {
     #[test]
     fn blitting_clears_the_previous_frame() {
         let mut r = Renderer::new();
-        let (w, h) = canvas_size(1.2);
+        let scale = crate::SCALE;
+        let (w, h) = canvas_size(scale);
         let stride = w as usize * 4;
         let frames = run();
         let (a, b) = (&frames[3], &frames[frames.len() - 1]);
         // Listening then error: the second pill is narrower and in other places.
         let mut buf = vec![0u8; stride * h as usize];
-        let first = r.render(a, 1.2, (w, h)).map(|f| {
+        let first = r.render(a, scale, (w, h)).map(|f| {
             let rect = f.rect;
             blit_bgra(Some(&f), None, &mut buf, stride);
             rect
         });
         {
-            let f = r.render(b, 1.2, (w, h));
+            let f = r.render(b, scale, (w, h));
             blit_bgra(f.as_ref(), first, &mut buf, stride);
         }
         let mut fresh = vec![0u8; stride * h as usize];
-        let f = r.render(b, 1.2, (w, h));
+        let f = r.render(b, scale, (w, h));
         blit_bgra(f.as_ref(), None, &mut fresh, stride);
         assert!(buf == fresh, "pixels of the earlier frame were left behind");
         // Gone: clearing the last rectangle leaves nothing.

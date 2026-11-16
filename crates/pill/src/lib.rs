@@ -23,8 +23,13 @@ pub use model::{audible_level, Message, PillState};
 /// Exit code when there is nothing to draw on; the client stops trying it.
 pub const UNAVAILABLE: i32 = 3;
 
-/// The pill is drawn at this size relative to its logical layout.
-pub const SCALE: f64 = 1.2;
+/// The pill is drawn at this size relative to its logical layout, in logical
+/// pixels per layout unit (the output scale comes on top). 0.8 is the size
+/// v1.5.0's GTK pill showed on KDE at 150 %: it drew 1.2 physical pixels per
+/// unit there, because XWayland gave it no scale, and that smaller pill is the
+/// one the owner wants back. The bottom margins below do not depend on it, so
+/// resizing keeps the pill's bottom edge where it is.
+pub const SCALE: f64 = 0.8;
 /// The pill's bottom edge sits this far above the bottom of the work area.
 pub const BOTTOM_MARGIN: f64 = 28.0;
 /// XWayland often reports the full screen as work area, hiding Wayland panels
