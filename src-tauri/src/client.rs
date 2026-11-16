@@ -78,19 +78,42 @@ pub(crate) const PROBE_WAIT: Duration = Duration::from_millis(500);
 /// How long a window on its own path waits before it binds the shortcut.
 const BIND_WAIT: Duration = Duration::from_secs(5);
 
-/// Asks the daemon socket who is there, waiting up to `wait` for the answer.
-/// Only a socket nobody listens on counts as no daemon.
+/// Asks the daemon socket who is there, waiting up to `wait` in all. Only a
+/// socket nobody listens on (missing, or refused: a stale file) counts as no
+/// daemon; anything else unclear counts as one that may run dictation.
 pub(crate) fn probe(socket: Option<&std::path::Path>, wait: Duration) -> Probe {
     let Some(socket) = socket else {
         return Probe::Nothing;
     };
-    let Ok(stream) = std::os::unix::net::UnixStream::connect(socket) else {
-        return Probe::Nothing;
+    let socket = socket.to_owned();
+    let (tx, rx) = std::sync::mpsc::channel();
+    // A thread, so even a connect that blocks (a hung daemon's full backlog)
+    // cannot hold up the window past `wait`.
+    let spawned = std::thread::Builder::new()
+        .name("daemon-probe".into())
+        .spawn(move || {
+            let _ = tx.send(ask(&socket, wait));
+        });
+    if spawned.is_err() {
+        return Probe::Silent;
+    }
+    rx.recv_timeout(wait + Duration::from_millis(100))
+        .unwrap_or(Probe::Silent)
+}
+
+fn ask(socket: &std::path::Path, wait: Duration) -> Probe {
+    use std::io::ErrorKind;
+    let stream = match std::os::unix::net::UnixStream::connect(socket) {
+        Ok(stream) => stream,
+        Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) => {
+            return Probe::Nothing;
+        }
+        Err(_) => return Probe::Silent,
     };
-    let ask = || -> std::io::Result<Probe> {
+    let hello = || -> std::io::Result<Probe> {
         stream.set_read_timeout(Some(wait))?;
         stream.set_write_timeout(Some(wait))?;
-        let hello = RequestMessage::new(
+        let request = RequestMessage::new(
             0,
             &HelloParams {
                 protocol: delulu_proto::PROTOCOL_VERSION,
@@ -99,7 +122,7 @@ pub(crate) fn probe(socket: Option<&std::path::Path>, wait: Duration) -> Probe {
             }
             .into_request(),
         );
-        let mut line = serde_json::to_string(&hello).map_err(std::io::Error::other)?;
+        let mut line = serde_json::to_string(&request).map_err(std::io::Error::other)?;
         line.push('\n');
         (&stream).write_all(line.as_bytes())?;
         let mut reply = String::new();
@@ -114,7 +137,7 @@ pub(crate) fn probe(socket: Option<&std::path::Path>, wait: Duration) -> Probe {
             _ => Probe::Silent,
         })
     };
-    ask().unwrap_or(Probe::Silent)
+    hello().unwrap_or(Probe::Silent)
 }
 
 /// Asked by a window on its own path just before it binds the shortcut: a
@@ -1141,6 +1164,10 @@ mod tests {
             Probe::Nothing
         );
         assert_eq!(probe(None, PROBE_WAIT), Probe::Nothing);
+        // A socket file left behind by a crashed daemon: nobody listens.
+        let stale = gone.path().join("stale.sock");
+        drop(std::os::unix::net::UnixListener::bind(&stale).unwrap());
+        assert_eq!(probe(Some(&stale), PROBE_WAIT), Probe::Nothing);
         // A listener that does not answer in time may be a daemon still starting.
         let quiet = gone.path().join("quiet.sock");
         let _listener = std::os::unix::net::UnixListener::bind(&quiet).unwrap();
