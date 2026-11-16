@@ -453,7 +453,7 @@ pub fn finish(plan: &Plan, raw: Raw, peak_gpu_bytes: Option<u64>) -> Result<Outp
     }
     let frames = raw.planar.len() / 2;
     let seconds = frames as f32 / SAMPLE_RATE as f32;
-    if raw.planar.len() % 2 != 0 || seconds < 0.9 * plan.seconds {
+    if !raw.planar.len().is_multiple_of(2) || seconds < 0.9 * plan.seconds {
         return Err(format!(
             "ACE-Step made {seconds:.1} s of audio for a {} s song",
             plan.seconds

@@ -61,42 +61,28 @@ fn a_minimal_request_gets_the_defaults() {
 #[test]
 fn the_lm_follows_free_memory_unless_chosen_or_missing() {
     use Lm::{Large, Small};
-    let both = |_: Lm| true;
-    let only = |want: Lm| move |lm: Lm| lm == want;
-    let cases: [(
-        LmChoice,
-        Option<u64>,
-        &dyn Fn(Lm) -> bool,
-        Result<Lm, MissingLm>,
-    ); 9] = [
-        (LmChoice::Auto, Some(12 * GIB), &both, Ok(Large)),
-        (LmChoice::Auto, Some(8 * GIB), &both, Ok(Large)),
-        (LmChoice::Auto, Some(8 * GIB - 1), &both, Ok(Small)),
-        (LmChoice::Auto, None, &both, Ok(Small)),
+    const BOTH: &[Lm] = &[Small, Large];
+    let cases = [
+        (LmChoice::Auto, Some(12 * GIB), BOTH, Ok(Large)),
+        (LmChoice::Auto, Some(8 * GIB), BOTH, Ok(Large)),
+        (LmChoice::Auto, Some(8 * GIB - 1), BOTH, Ok(Small)),
+        (LmChoice::Auto, None, BOTH, Ok(Small)),
         // Auto takes the installed one rather than failing.
-        (LmChoice::Auto, Some(12 * GIB), &only(Small), Ok(Small)),
-        (LmChoice::Auto, Some(2 * GIB), &only(Large), Ok(Large)),
+        (LmChoice::Auto, Some(12 * GIB), &[Small], Ok(Small)),
+        (LmChoice::Auto, Some(2 * GIB), &[Large], Ok(Large)),
         // A manual choice wins over memory, and is never swapped.
-        (LmChoice::Large, Some(2 * GIB), &both, Ok(Large)),
+        (LmChoice::Large, Some(2 * GIB), BOTH, Ok(Large)),
         (
             LmChoice::Small,
             Some(12 * GIB),
-            &only(Large),
+            &[Large],
             Err(MissingLm(Small)),
         ),
-        (
-            LmChoice::Auto,
-            Some(12 * GIB),
-            &|_| false,
-            Err(MissingLm(Large)),
-        ),
+        (LmChoice::Auto, Some(12 * GIB), &[], Err(MissingLm(Large))),
     ];
     for (choice, free, installed, want) in cases {
-        assert_eq!(
-            choose_lm(choice, free, installed),
-            want,
-            "{choice:?} {free:?}"
-        );
+        let got = choose_lm(choice, free, |lm| installed.contains(&lm));
+        assert_eq!(got, want, "{choice:?} {free:?} {installed:?}");
     }
 }
 
