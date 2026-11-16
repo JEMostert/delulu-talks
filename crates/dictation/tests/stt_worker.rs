@@ -301,8 +301,8 @@ fn a_failed_recovery_is_tried_again() {
     assert!(s.transcribe(1_000, both(), None).is_ok());
 }
 
-/// A session whose worker was killed and could not load the model again: the engine
-/// thread tries again after 300 ms, and that load then takes 1 s.
+/// A session whose worker was killed and could not load the model again, now inside
+/// the engine thread's own retry: the fake worker holds that load until `release`.
 fn failed_recovery_with_a_slow_retry() -> Session {
     let s = session("models", Duration::from_secs(10), false);
     s.load().unwrap();
@@ -311,23 +311,52 @@ fn failed_recovery_with_a_slow_retry() -> Session {
     unsafe { libc::kill(s.worker_pid(), libc::SIGKILL) };
     let (kind, _, result) = s.report();
     assert_eq!((kind, result.is_err()), ("recovered", true));
-    std::fs::write(s.dir.join("slow-loads"), "").unwrap();
+    std::fs::write(s.dir.join("hold-loads"), "").unwrap();
     std::fs::remove_file(s.dir.join("fail-loads")).unwrap();
-    // Into the retry's load.
-    std::thread::sleep(Duration::from_millis(650));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !s.dir.join("loading").exists() {
+        assert!(Instant::now() < deadline, "the retry did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
     s
+}
+
+/// Lets the held load finish, once whatever the test just sent has had time to pass
+/// the job thread and reach the engine thread's queue.
+fn release(s: &std::path::Path) {
+    std::thread::sleep(Duration::from_millis(200));
+    std::fs::write(s.join("release"), "").unwrap();
 }
 
 fn a_dictation_during_a_retry_is_answered_after_it() {
     let s = failed_recovery_with_a_slow_retry();
-    assert!(s.transcribe(1_000, both(), None).is_ok());
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    s.jobs
+        .send(EngineJob::Transcribe(
+            vec![0.25; 1_000],
+            both(),
+            None,
+            reply,
+        ))
+        .unwrap();
+    release(&s.dir);
     let (kind, _, result) = s.report();
     assert_eq!((kind, result.is_ok()), ("recovered", true));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    let answer = runtime
+        .block_on(async { tokio::time::timeout(Duration::from_secs(5), answer).await })
+        .expect("an answer after the retry");
+    assert!(answer.unwrap().is_ok());
 }
 
 fn closing_during_a_retry_ends_the_thread() {
     let s = failed_recovery_with_a_slow_retry();
     let Session { jobs, reports, .. } = s;
+    // The held load never ends: no answer from the worker wakes the thread, so only
+    // its own check of the close can end it.
     drop(jobs);
     // The thread drops its host (and so the reports sender) when it ends.
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -408,8 +437,13 @@ fn fake_worker() {
                 if model.path.contains("crash-on-load") {
                     kill_self();
                 }
-                if dir.join("slow-loads").exists() {
-                    std::thread::sleep(Duration::from_secs(1));
+                if dir.join("hold-loads").exists() {
+                    // Tell the test the load began, and wait until it lets the load end.
+                    std::fs::write(dir.join("loading"), "").unwrap();
+                    let deadline = Instant::now() + Duration::from_secs(10);
+                    while !dir.join("release").exists() && Instant::now() < deadline {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
                 }
                 send(
                     &mut out,
