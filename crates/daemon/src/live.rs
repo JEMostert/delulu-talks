@@ -277,7 +277,7 @@ impl Live {
             if !told {
                 told = true;
                 eprintln!(
-                    "delulud: the Delulu Talks app is running and holds the shortcut; binding it once the app quits"
+                    "delulud: the Delulu Talks app is running; binding the shortcut once it quits or connects as a client"
                 );
                 self.set_hotkey(HotkeyState {
                     bound: false,
@@ -292,7 +292,7 @@ impl Live {
             tokio::time::sleep(APP_CHECK_INTERVAL).await;
         }
         if told {
-            eprintln!("delulud: the app no longer holds the shortcut; binding it");
+            eprintln!("delulud: the app quit or connected as a client; binding the shortcut");
         }
         if !self.daemon.read(|s| s.hotkey.bound) {
             let (tx, mut rx) = mpsc::unbounded_channel();

@@ -97,6 +97,9 @@ export function useAppState() {
               setSettings(config);
               setLanguages(langs);
               setModels(available);
+              // The "not running" notice is out of date, and History is there now.
+              setNotice("");
+              setHistoryVersion((v) => v + 1);
             })
             .catch(() => {});
         }
