@@ -10,13 +10,17 @@ import { Segmented } from "../components/Controls";
 import { Icon } from "../components/Icon";
 import { errorText, type AppState } from "../state";
 import {
+  aceReady,
   clock,
+  engineModels,
   hasWords,
   lyricSections,
   makingText,
+  missingBytes,
   radioPresets,
   readinessSteps,
 } from "../radio";
+import { downloadPercent, gigabytes, useMusicModels } from "../useMusicModels";
 
 type View = { radio: ipc.Radio; at: number };
 
@@ -135,7 +139,7 @@ export function Radio({ state }: { state: AppState }) {
         </p>
       </div>
     );
-  const steps = readinessSteps(radio.readiness);
+  const steps = readinessSteps(radio.readiness, radio.music);
   const musicReady = steps.every((s) => s.ok || s.optional);
   const position = Math.min(
     radio.now?.seconds ?? 0,
@@ -268,6 +272,7 @@ export function Radio({ state }: { state: AppState }) {
         </div>
       </div>
       <Requests radio={radio} onChange={apply} />
+      <EnginePanel radio={radio} onChange={apply} />
       <DirectionPanel radio={radio} onChange={apply} />
     </div>
   );
@@ -667,6 +672,183 @@ function DirectionPanel({
         {error && (
           <p className="row-error" role="alert">
             {error}
+          </p>
+        )}
+      </div>
+    </details>
+  );
+}
+
+const lmLabels: Record<ipc.AceLm, string> = {
+  auto: "automatic",
+  "0.6b": "0.6B",
+  "4b": "4B",
+};
+
+/** Which engine makes the songs, with its install and licence. */
+function EnginePanel({
+  radio,
+  onChange,
+}: {
+  radio: ipc.Radio;
+  onChange: (r: ipc.Radio) => void;
+}) {
+  const { models, error, run } = useMusicModels();
+  const [choosing, setChoosing] = useState(false);
+  const [chooseError, setChooseError] = useState<string>();
+  const { music } = radio;
+  const ace = music.engine === "acestep";
+  const ids = engineModels(music);
+  const rows = models?.models ?? [];
+  const has = (id: string) =>
+    rows.some((m) => m.id === id && m.state === "ready");
+  const ready = ace
+    ? aceReady(
+        {
+          turbo: has("ace-step-1.5-turbo"),
+          lmSmall: has("ace-step-1.5-lm-0.6b"),
+          lmLarge: has("ace-step-1.5-lm-4b"),
+        },
+        music.aceLm,
+      )
+    : has("yue2-3b-int8");
+  const downloading = rows.some((m) => m.state === "downloading");
+  const missing = missingBytes(models, ids);
+  const terms = rows.find((m) => m.id === "ace-step-1.5-turbo")?.terms ?? null;
+  const percent = downloadPercent(models);
+  const choose = async (engine: ipc.MusicEngine, aceLm: ipc.AceLm) => {
+    setChoosing(true);
+    try {
+      onChange(await ipc.radioMusic(engine, aceLm));
+      setChooseError(undefined);
+    } catch (e) {
+      setChooseError(errorText(e));
+    } finally {
+      setChoosing(false);
+    }
+  };
+  const problem = chooseError ?? error;
+  return (
+    <details
+      className="group radio-direction radio-engine"
+      open={models && !ready ? true : undefined}
+    >
+      <summary>
+        <h2>Music engine</h2>
+        <span className="muted">
+          {ace ? `ACE-Step 1.5 · ${lmLabels[music.aceLm]}` : "YuE2"}
+          {models && !ready ? " · not installed" : ""}
+        </span>
+      </summary>
+      <div className="direction-body">
+        <div className="direction-choices">
+          <Choice label="Engine">
+            <Segmented
+              name="engine"
+              label="Music engine"
+              value={music.engine}
+              disabled={choosing}
+              onChange={(v) => void choose(v, music.aceLm)}
+              options={[
+                { value: "yue2", label: "YuE2" },
+                { value: "acestep", label: "ACE-Step" },
+              ]}
+            />
+          </Choice>
+          {ace && (
+            <Choice label="Language model">
+              <Segmented
+                name="ace-lm"
+                label="ACE-Step language model"
+                value={music.aceLm}
+                disabled={choosing}
+                onChange={(v) => void choose(music.engine, v)}
+                options={[
+                  { value: "auto", label: "Automatic" },
+                  { value: "0.6b", label: "0.6B" },
+                  { value: "4b", label: "4B" },
+                ]}
+              />
+            </Choice>
+          )}
+        </div>
+        {ace ? (
+          <p className="muted engine-about">
+            ACE-Step makes a song in under a minute on a mid-range graphics
+            card. Tested on NVIDIA graphics cards only: on an AMD integrated
+            graphics chip it crashed in testing. Automatic takes the 4B language
+            model, which follows the lyrics best, when at least 8 GB of graphics
+            memory is free, and the faster 0.6B otherwise. The first song after
+            installing or updating takes a few minutes longer while the graphics
+            card prepares.
+          </p>
+        ) : (
+          <p className="muted engine-about">
+            YuE2, the default, makes a song in about its own length on a
+            mid-range graphics card. Its licence allows non-commercial use only
+            (CC BY-NC 4.0).
+          </p>
+        )}
+        {ace && terms && (
+          <div className="engine-terms">
+            <p className="muted">
+              {terms.credit}. Licence: {terms.name}.{" "}
+              <span className="terms-url">{terms.url}</span>
+            </p>
+            <details className="terms" open={!ready || undefined}>
+              <summary>Licence and use</summary>
+              <p>{terms.text}</p>
+            </details>
+          </div>
+        )}
+        <div className="model-state">
+          {downloading ? (
+            <>
+              <div
+                className="bar"
+                role="progressbar"
+                aria-label="Music engine download"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={percent}
+              >
+                <span style={{ transform: `scaleX(${percent / 100})` }} />
+              </div>
+              <span className="model-note tabular">
+                {models?.doneBytes ? `${percent}%` : "Starting…"}
+              </span>
+              <button
+                type="button"
+                className="button quiet"
+                onClick={() => void run(ipc.cancelMusicDownload)}
+              >
+                Cancel
+              </button>
+            </>
+          ) : ready ? (
+            <span className="model-ready">
+              <Icon name="check" size={16} />
+              Installed. Applies from the next song.
+            </span>
+          ) : models ? (
+            <>
+              <span className="model-note">
+                {gigabytes(missing)} download, then it works offline
+              </span>
+              <button
+                type="button"
+                className="button primary"
+                onClick={() => void run(() => ipc.downloadMusicModel(ids))}
+              >
+                <Icon name="download" size={16} />
+                {ace ? "Install ACE-Step" : "Download YuE2"}
+              </button>
+            </>
+          ) : null}
+        </div>
+        {problem && (
+          <p className="row-error" role="alert">
+            {problem}
           </p>
         )}
       </div>

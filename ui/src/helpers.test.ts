@@ -220,7 +220,13 @@ test("Delulu FM clock, readiness and status text", async () => {
   expect(clock(151.9)).toBe("2:31");
   expect(readinessSteps(null)).toEqual([]);
   const steps = readinessSteps({
-    music: { engine: true, model: false, device: "CPU", gpu: false },
+    music: {
+      engine: true,
+      model: false,
+      ace: { turbo: false, lmSmall: false, lmLarge: false },
+      device: "CPU",
+      gpu: false,
+    },
     writer: true,
     voice: false,
   });
@@ -233,7 +239,13 @@ test("Delulu FM clock, readiness and status text", async () => {
   expect(steps.find((s) => s.id === "model")?.models).toBe(true);
   // Without the engine the card cannot be checked: unknown, not a problem.
   const noEngine = readinessSteps({
-    music: { engine: false, model: true, device: null, gpu: false },
+    music: {
+      engine: false,
+      model: true,
+      ace: { turbo: false, lmSmall: false, lmLarge: false },
+      device: null,
+      gpu: false,
+    },
     writer: true,
     voice: true,
   });
@@ -254,6 +266,100 @@ test("Delulu FM clock, readiness and status text", async () => {
   radio.making!.progress = 0.537;
   expect(makingText(radio, 12_400)).toBe(
     "Making “Copper”: shaping the sound · 54%",
+  );
+});
+test("Delulu FM readiness and install follow the chosen engine", async () => {
+  const { readinessSteps, engineModels, missingBytes } =
+    await import("./radio");
+  const readiness = (ace: {
+    turbo: boolean;
+    lmSmall: boolean;
+    lmLarge: boolean;
+  }) => ({
+    music: { engine: true, model: true, ace, device: "Vulkan0", gpu: true },
+    writer: true,
+    voice: true,
+  });
+  const model = (
+    ace: { turbo: boolean; lmSmall: boolean; lmLarge: boolean },
+    aceLm: "auto" | "0.6b" | "4b",
+  ) =>
+    readinessSteps(readiness(ace), { engine: "acestep", aceLm }).find(
+      (s) => s.id === "model",
+    )!;
+  const onlySmall = { turbo: true, lmSmall: true, lmLarge: false };
+  // Automatic runs with whichever language model is there; a fixed one needs it.
+  expect(model(onlySmall, "auto").ok).toBe(true);
+  expect(model(onlySmall, "0.6b").ok).toBe(true);
+  expect(model(onlySmall, "4b").ok).toBe(false);
+  expect(model({ turbo: false, lmSmall: true, lmLarge: true }, "auto").ok).toBe(
+    false,
+  );
+  // YuE2 installed does not make ACE-Step ready, nor the other way round.
+  expect(model(onlySmall, "4b").label).toContain("ACE-Step");
+  const yue = readinessSteps(
+    {
+      ...readiness({ turbo: true, lmSmall: true, lmLarge: true }),
+      music: {
+        ...readiness(onlySmall).music,
+        model: false,
+      },
+    },
+    { engine: "yue2", aceLm: "auto" },
+  ).find((s) => s.id === "model")!;
+  expect(yue.ok).toBe(false);
+
+  expect(engineModels({ engine: "yue2", aceLm: "4b" })).toEqual([
+    "yue2-3b-int8",
+  ]);
+  expect(engineModels({ engine: "acestep", aceLm: "auto" })).toEqual([
+    "ace-step-1.5-turbo",
+    "ace-step-1.5-lm-0.6b",
+    "ace-step-1.5-lm-4b",
+  ]);
+  const row = (id: string, bytes: number, ready: boolean) => ({
+    id,
+    engine: "acestep" as const,
+    label: id,
+    license: "MIT",
+    bytes,
+    state: ready ? ("ready" as const) : ("missing" as const),
+    terms: null,
+  });
+  const models = {
+    models: [
+      row("ace-step-1.5-turbo", 3_000, true),
+      row("ace-step-1.5-lm-4b", 4_000, false),
+    ],
+    doneBytes: 0,
+    totalBytes: 0,
+    error: null,
+  };
+  expect(
+    missingBytes(models, engineModels({ engine: "acestep", aceLm: "4b" })),
+  ).toBe(4_000);
+});
+test("Delulu FM says when ACE-Step prepares the graphics card", async () => {
+  const { makingText } = await import("./radio");
+  const radio = {
+    making: {
+      kind: "song",
+      step: "music",
+      title: "Copper",
+      request: null,
+      since: 0,
+      progress: null,
+      phase: "loading",
+      preparing: true,
+    },
+  } as unknown as import("./ipc").Radio;
+  expect(makingText(radio, 125_000)).toBe(
+    "Making “Copper”: preparing the graphics card for ACE-Step, once (a few minutes) · 2:05",
+  );
+  // A later song: a clock while loading, so a slow start never looks stuck.
+  radio.making!.preparing = false;
+  expect(makingText(radio, 41_000)).toBe(
+    "Making “Copper”: loading the model · 41 s",
   );
 });
 test("Delulu FM lyrics split into sections, older run-on tags too", async () => {

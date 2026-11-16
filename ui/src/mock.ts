@@ -8,6 +8,9 @@ import type {
   Radio,
   RadioItem,
   MusicModel,
+  MusicModelRow,
+  MusicEngine,
+  AceLm,
 } from "./ipc";
 import { splitTerms } from "./helpers";
 import type {
@@ -214,17 +217,69 @@ let history: HistoryEntry[] = params.has("empty")
       ),
     );
 
-// Delulu FM: ?radio shows it; ?music=missing leaves the model to download and
-// ?music=cpu pretends there is no graphics card.
+// Delulu FM: ?radio shows it; ?music=missing leaves YuE2 to download and
+// ?music=cpu pretends there is no graphics card. ?engine=acestep starts on
+// ACE-Step; ?ace=ready has its files installed, ?ace=warm also prepared.
 const musicParam = params.get("music");
+const aceParam = params.get("ace");
+const aceTerms = {
+  name: "MIT (text encoder: Apache-2.0)",
+  url: "https://huggingface.co/Serveurperso/ACE-Step-1.5-GGUF/blob/666ac70204440867d8c01ba4b119cc79c95b370a/LICENSE",
+  credit: "ACE-Step 1.5 by ACE Studio and StepFun",
+  text: "ACE-Step 1.5 by ACE Studio and StepFun is released under the MIT licence. Its text encoder, Qwen3-Embedding-0.6B by the Qwen team, is licensed under Apache-2.0.\nSongs you make may be used commercially.",
+};
+const musicRow = (
+  id: string,
+  label: string,
+  license: string,
+  bytes: number,
+  ready: boolean,
+): MusicModelRow => ({
+  id,
+  engine: id.startsWith("yue") ? "yue" : "acestep",
+  label,
+  license,
+  bytes,
+  state: ready ? "ready" : "missing",
+  terms: id.startsWith("yue") ? null : aceTerms,
+});
 let musicModel: MusicModel = {
-  state: musicParam === "missing" ? "missing" : "ready",
-  label: "YuE2 3B",
-  license: "CC BY-NC 4.0",
+  models: [
+    musicRow(
+      "yue2-3b-int8",
+      "YuE2 3B",
+      "CC BY-NC 4.0",
+      3960938800,
+      musicParam !== "missing",
+    ),
+    musicRow(
+      "ace-step-1.5-turbo",
+      "ACE-Step 1.5 turbo",
+      "MIT, Apache-2.0",
+      3671094952,
+      aceParam !== null,
+    ),
+    musicRow(
+      "ace-step-1.5-lm-0.6b",
+      "ACE-Step language model 0.6B",
+      "MIT",
+      709846656,
+      aceParam !== null,
+    ),
+    musicRow(
+      "ace-step-1.5-lm-4b",
+      "ACE-Step language model 4B",
+      "MIT",
+      4457323648,
+      aceParam !== null,
+    ),
+  ],
   doneBytes: 0,
-  totalBytes: 3960938800,
+  totalBytes: 0,
   error: null,
 };
+const musicReady = (id: string) =>
+  musicModel.models.some((m) => m.id === id && m.state === "ready");
 let musicTimer: ReturnType<typeof setInterval> | undefined;
 function musicUpdate(patch: Partial<MusicModel>) {
   musicModel = { ...musicModel, ...patch };
@@ -233,11 +288,21 @@ function musicUpdate(patch: Partial<MusicModel>) {
     ...radio,
     readiness: {
       ...radio.readiness!,
-      music: { ...radio.readiness!.music, model: musicModel.state === "ready" },
+      music: {
+        ...radio.readiness!.music,
+        model: musicReady("yue2-3b-int8"),
+        ace: {
+          turbo: musicReady("ace-step-1.5-turbo"),
+          lmSmall: musicReady("ace-step-1.5-lm-0.6b"),
+          lmLarge: musicReady("ace-step-1.5-lm-4b"),
+        },
+      },
     },
   };
   emit("radio", radio);
 }
+const setRows = (ids: string[], state: MusicModelRow["state"]) =>
+  musicModel.models.map((m) => (ids.includes(m.id) ? { ...m, state } : m));
 const radioSong = (n: number, title: string, subtitle: string): RadioItem => ({
   id: `song-${n}`,
   kind: "song",
@@ -284,6 +349,11 @@ let radio: Radio = {
     music: {
       engine: true,
       model: musicParam !== "missing",
+      ace: {
+        turbo: aceParam !== null,
+        lmSmall: aceParam !== null,
+        lmLarge: aceParam !== null,
+      },
       device:
         musicParam === "cpu" ? "CPU" : "Vulkan0 (NVIDIA GeForce RTX 5060 Ti)",
       gpu: musicParam !== "cpu",
@@ -291,12 +361,21 @@ let radio: Radio = {
     writer: true,
     voice: params.get("voice") === "ready",
   },
+  music: {
+    engine: params.get("engine") === "acestep" ? "acestep" : "yue2",
+    aceLm: "auto",
+    aceWarm: aceParam === "warm" ? "delulu-engine mock" : undefined,
+  },
 };
 let radioSongs = 0;
 let radioMaking: ReturnType<typeof setTimeout> | undefined;
 const radioReady = () => {
   const m = radio.readiness!.music;
-  return m.engine && m.gpu && m.model;
+  const model =
+    radio.music.engine === "acestep"
+      ? m.ace.turbo && (m.ace.lmSmall || m.ace.lmLarge)
+      : m.model;
+  return m.engine && m.gpu && model;
 };
 function radioUpdate(patch: Partial<Radio>) {
   radio = { ...radio, ...patch };
@@ -317,6 +396,7 @@ function radioProduce() {
       since: Date.now(),
       progress: null,
       phase: null,
+      preparing: false,
     },
   });
   radioMaking = setTimeout(() => {
@@ -327,8 +407,10 @@ function radioProduce() {
         title: `Song ${n}`,
         request: request?.text ?? null,
         since: Date.now(),
-        progress: 0.54,
-        phase: "shaping",
+        // ACE-Step's first song waits for the shaders.
+        ...(radio.music.engine === "acestep" && !radio.music.aceWarm
+          ? { progress: null, phase: "loading" as const, preparing: true }
+          : { progress: 0.54, phase: "shaping" as const, preparing: false }),
       },
     });
     radioMaking = setTimeout(() => {
@@ -338,6 +420,10 @@ function radioProduce() {
       };
       radioUpdate({
         making: null,
+        music:
+          radio.music.engine === "acestep"
+            ? { ...radio.music, aceWarm: "delulu-engine mock" }
+            : radio.music,
         queue: [...radio.queue, song],
         requests: radio.requests.map((r) =>
           r.id === request?.id ? { ...r, answeredBy: song.title } : r,
@@ -500,26 +586,60 @@ export async function invoke<T>(
     case "get_music_model":
       result = musicModel;
       break;
-    case "download_music_model":
-      if (musicModel.state === "missing") {
-        musicUpdate({ state: "downloading", doneBytes: 0, error: null });
+    case "download_music_model": {
+      const ids = ((args?.ids as string[]) ?? []).filter(
+        (id) => !musicReady(id),
+      );
+      const busy = musicModel.models.some((m) => m.state === "downloading");
+      if (ids.length && !busy) {
+        const total = musicModel.models
+          .filter((m) => ids.includes(m.id))
+          .reduce((sum, m) => sum + m.bytes, 0);
+        musicUpdate({
+          models: setRows(ids, "downloading"),
+          doneBytes: 0,
+          totalBytes: total,
+          error: null,
+        });
         musicTimer = setInterval(() => {
-          const done = musicModel.doneBytes + 400_000_000;
+          const done = musicModel.doneBytes + 800_000_000;
           if (done >= musicModel.totalBytes) {
             clearInterval(musicTimer);
-            musicUpdate({ state: "ready", doneBytes: 0 });
+            musicUpdate({
+              models: setRows(ids, "ready"),
+              doneBytes: 0,
+              totalBytes: 0,
+            });
           } else musicUpdate({ doneBytes: done });
         }, 400);
       }
       result = musicModel;
       break;
+    }
     case "cancel_music_download":
       clearInterval(musicTimer);
-      musicUpdate({ state: "missing", doneBytes: 0 });
+      musicUpdate({
+        models: musicModel.models.map((m) =>
+          m.state === "downloading" ? { ...m, state: "missing" } : m,
+        ),
+        doneBytes: 0,
+        totalBytes: 0,
+      });
       break;
     case "delete_music_model":
-      musicUpdate({ state: "missing" });
+      musicUpdate({ models: setRows([args?.id as string], "missing") });
       result = musicModel;
+      break;
+    case "radio_music":
+      radioUpdate({
+        music: {
+          ...radio.music,
+          engine: args?.engine as MusicEngine,
+          aceLm: args?.aceLm as AceLm,
+        },
+      });
+      radioProduce();
+      result = radio;
       break;
     case "get_radio":
     case "check_radio":

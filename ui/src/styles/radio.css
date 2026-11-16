@@ -347,3 +347,18 @@
     margin-left: 0;
   }
 }
+
+/* Music engine: its note and licence under the choices. */
+.engine-about {
+  margin: 0;
+  font-size: var(--t-small);
+  line-height: 1.5;
+}
+.engine-terms {
+  display: grid;
+  gap: 6px;
+}
+.engine-terms p {
+  margin: 0;
+  font-size: var(--t-small);
+}

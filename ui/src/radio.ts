@@ -1,4 +1,10 @@
-import type { Radio, RadioDirection, RadioReadiness } from "./ipc";
+import type {
+  MusicModel,
+  Radio,
+  RadioDirection,
+  RadioMusic,
+  RadioReadiness,
+} from "./ipc";
 
 /** m:ss */
 export function clock(seconds: number): string {
@@ -19,33 +25,76 @@ export type ReadinessStep = {
   models?: boolean;
 };
 
+/** ACE-Step's files are all here for this language-model choice; on auto either
+ * language model will do. */
+export function aceReady(
+  ace: RadioReadiness["music"]["ace"],
+  aceLm: RadioMusic["aceLm"],
+): boolean {
+  if (!ace.turbo) return false;
+  if (aceLm === "0.6b") return ace.lmSmall;
+  if (aceLm === "4b") return ace.lmLarge;
+  return ace.lmSmall || ace.lmLarge;
+}
+
+/** The registry models that installing an engine downloads. On auto both of
+ * ACE-Step's language models come, so it can pick by free graphics memory. */
+export function engineModels(music: RadioMusic): string[] {
+  if (music.engine === "yue2") return ["yue2-3b-int8"];
+  const lms = {
+    auto: ["ace-step-1.5-lm-0.6b", "ace-step-1.5-lm-4b"],
+    "0.6b": ["ace-step-1.5-lm-0.6b"],
+    "4b": ["ace-step-1.5-lm-4b"],
+  }[music.aceLm];
+  return ["ace-step-1.5-turbo", ...lms];
+}
+
+/** Bytes still to download for these models. */
+export function missingBytes(models: MusicModel | null, ids: string[]): number {
+  return (models?.models ?? [])
+    .filter((m) => ids.includes(m.id) && m.state !== "ready")
+    .reduce((sum, m) => sum + m.bytes, 0);
+}
+
 /** What Delulu FM needs, in the order to fix it. */
-export function readinessSteps(r: RadioReadiness | null): ReadinessStep[] {
+export function readinessSteps(
+  r: RadioReadiness | null,
+  music: RadioMusic = { engine: "yue2", aceLm: "auto" },
+): ReadinessStep[] {
   if (!r) return [];
-  const { music } = r;
+  const { music: m } = r;
+  const modelStep: ReadinessStep =
+    music.engine === "acestep"
+      ? {
+          id: "model",
+          label: "Music model (ACE-Step 1.5)",
+          ok: aceReady(m.ace, music.aceLm),
+          help: "Install ACE-Step under Music engine below. Nothing downloads until you ask.",
+        }
+      : {
+          id: "model",
+          label: "Music model (YuE2, about 4 GB)",
+          ok: m.model,
+          models: true,
+          help: "Download it in Settings → Models, or under Music engine below. Nothing downloads until you ask.",
+        };
   return [
     {
       id: "engine",
       label: "Music engine",
-      ok: music.engine,
+      ok: m.engine,
       help: "The music engine (delulu-engine) is missing from this install. Reinstall Delulu Talks.",
     },
     {
       id: "gpu",
       label: "Graphics card",
-      ok: music.engine && music.gpu,
-      unknown: !music.engine,
-      help: music.engine
+      ok: m.engine && m.gpu,
+      unknown: !m.engine,
+      help: m.engine
         ? "No graphics card with Vulkan was found. Songs need one; on the processor alone a song would take hours."
         : "Checked once the music engine is installed.",
     },
-    {
-      id: "model",
-      label: "Music model (YuE2, about 4 GB)",
-      ok: music.model,
-      models: true,
-      help: "Download it in Settings → Models. Nothing downloads until you ask.",
-    },
+    modelStep,
     {
       id: "writer",
       label: "Cleanup model (writes the songs)",
@@ -84,9 +133,18 @@ export function makingText(radio: Radio, now: number): string | null {
           ? `Writing a song for your request…`
           : "Writing the next song…";
     case "music": {
-      const phase = m.phase ? phases[m.phase] : null;
       const percent =
-        m.progress != null ? ` · ${Math.round(m.progress * 100)}%` : "";
+        m.progress != null && m.progress > 0
+          ? ` · ${Math.round(m.progress * 100)}%`
+          : "";
+      // The driver compiles ACE-Step's shaders on its first song: minutes with
+      // little progress, so say so and keep a clock running.
+      if (m.preparing)
+        return `Making ${title}: preparing the graphics card for ACE-Step, once (a few minutes)${percent} · ${clock(since)}`;
+      const phase = m.phase ? phases[m.phase] : null;
+      // Before the first progress: a clock, so a slow start does not look stuck.
+      if (m.phase === "loading" && !percent)
+        return `Making ${title}: ${phase} · ${since} s`;
       return phase
         ? `Making ${title}: ${phase}${percent}`
         : `Making ${title} · ${since} s`;
