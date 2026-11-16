@@ -135,11 +135,13 @@ impl Platform for DesktopPlatform {
         let settings = self.store.settings();
         let models_dir = self.store.models_dir();
         let cleanup_report = report.clone();
+        let vocabulary = Arc::clone(&self.store);
         let cleanup = Supervisor::new(
             settings.cleanup,
             delulu_stt::file_ready(&models_dir, &CLEANUP_MODEL),
             models_dir.clone(),
             Box::new(move |status| cleanup_report.cleanup(wire::cleanup_worker(&status))),
+            Box::new(move || vocabulary.vocabulary().active_terms()),
         );
         cleanup.watch();
         report.cleanup(wire::cleanup_worker(&cleanup.status()));

@@ -571,8 +571,14 @@ impl Supervisor {
                     kill.kill();
                 }
             })
-            // So the first dictation only decodes its transcript.
-            .and_then(|mut cleaner| cleaner.warm(&(cleanup.vocabulary)()).map(|()| cleaner));
+            .map(|mut cleaner| {
+                // So the first dictation only decodes its transcript. A failed warm-up
+                // costs only that: a helper it left dead is restarted like any other.
+                if let Err(e) = cleaner.warm(&(cleanup.vocabulary)()) {
+                    eprintln!("cleanup warm-up failed: {e}");
+                }
+                cleaner
+            });
             match result {
                 Ok(cleaner) => {
                     let backend = cleaner.backend().to_string();

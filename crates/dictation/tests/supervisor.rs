@@ -8,13 +8,23 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Writes its pid next to itself, reports ready, then answers every request.
-/// With `die_once`, the first process to get a request exits instead.
-fn helper(dir: &Path, die_once: bool) -> PathBuf {
-    let die = if die_once {
-        r#"if [ ! -e "$here/died" ]; then : > "$here/died"; exit 9; fi"#
-    } else {
-        ""
+/// Which request, if any, makes the first helper process exit instead of answering.
+#[derive(Clone, Copy)]
+enum Die {
+    Never,
+    /// The first clean; warm-ups (requests without output tokens) are answered.
+    OnClean,
+    OnWarmUp,
+}
+
+/// Writes its pid next to itself, reports ready, then answers every request, except
+/// that the first process dies once as `die` says.
+fn helper(dir: &Path, die: Die) -> PathBuf {
+    let exit = r#"if [ ! -e "$here/died" ]; then : > "$here/died"; exit 9; fi"#;
+    let die = match die {
+        Die::Never => String::new(),
+        Die::OnClean => format!(r#"case "$line" in *'"maxTokens":0'*) ;; *) {exit} ;; esac"#),
+        Die::OnWarmUp => format!(r#"case "$line" in *'"maxTokens":0'*) {exit} ;; esac"#),
     };
     let script = format!(
         r#"#!/bin/sh
@@ -42,7 +52,7 @@ const WANT: Want = Want {
     file_ready: true,
 };
 
-fn start(dir: &Path, die_once: bool) -> (Arc<Supervisor>, mpsc::Receiver<CleanupStatus>) {
+fn start(dir: &Path, die: Die) -> (Arc<Supervisor>, mpsc::Receiver<CleanupStatus>) {
     let (tx, rx) = mpsc::channel();
     let supervisor = Supervisor::new(
         true,
@@ -51,8 +61,9 @@ fn start(dir: &Path, die_once: bool) -> (Arc<Supervisor>, mpsc::Receiver<Cleanup
         Box::new(move |status| {
             let _ = tx.send(status);
         }),
+        Box::new(Vec::new),
     );
-    supervisor.set_helper(helper(dir, die_once));
+    supervisor.set_helper(helper(dir, die));
     supervisor.watch();
     supervisor.whisper_settled(WANT);
     (supervisor, rx)
@@ -85,7 +96,7 @@ fn kill(pid: u32) {
 #[test]
 fn a_killed_idle_helper_comes_back_until_it_keeps_dying() {
     let dir = tempfile::tempdir().unwrap();
-    let (supervisor, rx) = start(dir.path(), false);
+    let (supervisor, rx) = start(dir.path(), Die::Never);
     let mut pid = ready(&rx, dir.path(), Duration::from_secs(10));
     // Two kills in a row, each right after the helper became ready.
     for _ in 0..2 {
@@ -109,11 +120,25 @@ fn a_killed_idle_helper_comes_back_until_it_keeps_dying() {
 #[tokio::test]
 async fn a_helper_that_dies_mid_clean_leaves_the_raw_text_and_comes_back() {
     let dir = tempfile::tempdir().unwrap();
-    let (supervisor, rx) = start(dir.path(), true);
+    let (supervisor, rx) = start(dir.path(), Die::OnClean);
     let first = ready(&rx, dir.path(), Duration::from_secs(10));
     let raw = "eh the plan is ready".to_string();
     let cleaned = supervisor.clean(true, "en", raw.clone(), Vec::new).await;
     assert_eq!((cleaned.text, cleaned.raw), (raw, None));
+    let second = ready(&rx, dir.path(), Duration::from_secs(3));
+    assert_ne!(first, second);
+    let cleaned = supervisor
+        .clean(true, "en", "eh the plan is ready".into(), Vec::new)
+        .await;
+    assert_eq!(cleaned.text, "The plan is ready.");
+}
+
+#[tokio::test]
+async fn a_helper_that_dies_in_its_warm_up_comes_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let (supervisor, rx) = start(dir.path(), Die::OnWarmUp);
+    // The warm-up is only a speed-up: its failure must not block cleanup.
+    let first = ready(&rx, dir.path(), Duration::from_secs(10));
     let second = ready(&rx, dir.path(), Duration::from_secs(3));
     assert_ne!(first, second);
     let cleaned = supervisor
