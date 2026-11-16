@@ -445,16 +445,14 @@ fn model_readiness(dir: &Path) -> (bool, AceReadiness) {
 /// A music model was downloaded or deleted: correct the checklist now rather
 /// than at the next check.
 pub(crate) fn models_changed(app: &tauri::AppHandle) {
-    let (model, ace) = model_readiness(&app.state::<Shell>().store.models_dir());
     let radio = app.state::<Radio>();
-    if let Some(r) = radio
-        .readiness
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .as_mut()
     {
-        r.music.model = model;
-        r.music.ace = ace;
+        // Read under the lock, like `check`, so neither stores an older view.
+        let mut readiness = radio.readiness.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(r) = readiness.as_mut() {
+            (r.music.model, r.music.ace) =
+                model_readiness(&app.state::<Shell>().store.models_dir());
+        }
     }
     emit(app);
 }
@@ -464,6 +462,11 @@ fn check(app: &tauri::AppHandle) -> Readiness {
     let s = app.state::<Shell>();
     let helper = music::helper_path();
     let found = helper.as_deref().and_then(probe);
+    // Asks `delulu status`: before the lock, which the window's view also takes.
+    let voice = radio.voice.ready();
+    // The model files are read under the lock, like `models_changed`, so a check
+    // that started before a download or delete finished cannot store older facts.
+    let mut cached = radio.readiness.lock().unwrap_or_else(|e| e.into_inner());
     let (model, ace) = model_readiness(&s.store.models_dir());
     let readiness = Readiness {
         music: MusicReadiness {
@@ -475,9 +478,9 @@ fn check(app: &tauri::AppHandle) -> Readiness {
         },
         writer: delulu_cleanup::helper_path().is_some()
             && delulu_stt::file_ready(&s.store.models_dir(), &cleanup::CLEANUP_MODEL),
-        voice: radio.voice.ready(),
+        voice,
     };
-    *radio.readiness.lock().unwrap_or_else(|e| e.into_inner()) = Some(readiness.clone());
+    *cached = Some(readiness.clone());
     readiness
 }
 
@@ -684,6 +687,7 @@ impl Backend for AppBackend {
             radio.stop.load(Ordering::SeqCst)
                 || radio.station().map_or(true, |s| !s.on_air())
                 || !crate::music::ready(settings, &models)
+                || crate::music::changing(&self.app, settings)
         };
         let result = radio
             .composer

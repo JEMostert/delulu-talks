@@ -22,6 +22,9 @@ const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 pub(crate) struct MusicModel {
     /// The models of the download in progress; empty when none runs.
     downloading: Mutex<Vec<&'static str>>,
+    /// The model being deleted, from before the song using it is stopped until
+    /// its files are gone.
+    removing: Mutex<Option<&'static str>>,
     cancel: Arc<AtomicBool>,
     done_bytes: std::sync::atomic::AtomicU64,
     total_bytes: std::sync::atomic::AtomicU64,
@@ -92,9 +95,15 @@ pub(crate) fn ready(music: &Music, dir: &Path) -> bool {
 
 /// A download is writing one of the models these settings need: the radio must
 /// not read them.
+/// A download or a delete is changing one of the models these settings need: the
+/// radio must not read them.
 pub(crate) fn changing(app: &tauri::AppHandle, music: &Music) -> bool {
-    let downloading = lock(&app.state::<MusicModel>().downloading).clone();
-    needed(music).iter().any(|m| downloading.contains(&m.id))
+    let m = app.state::<MusicModel>();
+    let downloading = lock(&m.downloading).clone();
+    let removing = *lock(&m.removing);
+    needed(music)
+        .iter()
+        .any(|model| downloading.contains(&model.id) || removing == Some(model.id))
 }
 
 fn status(app: &tauri::AppHandle) -> MusicModelStatus {
@@ -248,6 +257,10 @@ pub(crate) fn delete_music_model(
         return Err("Cancel the download first.".into());
     }
     let radio = app.state::<radio::Radio>();
+    // Marked first: a song starting from now on sees it in its start-up check
+    // (`changing`), and one that already passed that check is active, so the stop
+    // below reaches it.
+    *lock(&m.removing) = Some(model.id);
     // The song being made keeps the settings it started with, which may differ
     // from the station's since an engine switch.
     let uses = |music: &Music| needed(music).iter().any(|m| m.id == model.id);
@@ -256,8 +269,9 @@ pub(crate) fn delete_music_model(
     if in_use {
         radio.composer.stop();
     }
-    delulu_models::remove(&app.state::<Shell>().store.models_dir(), model)
-        .map_err(|e| format!("Could not delete {e}"))?;
+    let removed = delulu_models::remove(&app.state::<Shell>().store.models_dir(), model);
+    *lock(&m.removing) = None;
+    removed.map_err(|e| format!("Could not delete {e}"))?;
     *lock(&m.error) = None;
     emit_status(&app);
     radio::models_changed(&app);
