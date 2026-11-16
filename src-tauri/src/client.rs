@@ -51,6 +51,10 @@ pub(crate) enum Probe {
     Dictation,
     /// A daemon that leaves dictation to the app (started without the flag).
     Skeleton,
+    /// Something listens but did not say what it is in time (a daemon still
+    /// starting, or one of another version). It may run dictation, so the
+    /// window must not run its own path next to it.
+    Silent,
     Nothing,
 }
 
@@ -60,7 +64,7 @@ pub(crate) enum Probe {
 /// the daemon instead of falling back to its own path.
 pub(crate) fn decide(flag: bool, probe: Probe) -> Mode {
     match (probe, flag) {
-        (Probe::Dictation, _) | (_, true) => Mode::Client,
+        (Probe::Dictation | Probe::Silent, _) | (_, true) => Mode::Client,
         _ => Mode::App,
     }
 }
@@ -69,15 +73,23 @@ pub(crate) fn socket() -> Option<PathBuf> {
     delulu_daemon::default_socket().ok()
 }
 
-/// Asks the daemon socket, briefly, who is there.
-pub(crate) fn probe(socket: Option<&std::path::Path>) -> Probe {
+/// How long the start-up probe waits for the daemon's hello.
+pub(crate) const PROBE_WAIT: Duration = Duration::from_millis(500);
+/// How long a window on its own path waits before it binds the shortcut.
+const BIND_WAIT: Duration = Duration::from_secs(5);
+
+/// Asks the daemon socket who is there, waiting up to `wait` for the answer.
+/// Only a socket nobody listens on counts as no daemon.
+pub(crate) fn probe(socket: Option<&std::path::Path>, wait: Duration) -> Probe {
     let Some(socket) = socket else {
         return Probe::Nothing;
     };
+    let Ok(stream) = std::os::unix::net::UnixStream::connect(socket) else {
+        return Probe::Nothing;
+    };
     let ask = || -> std::io::Result<Probe> {
-        let stream = std::os::unix::net::UnixStream::connect(socket)?;
-        stream.set_read_timeout(Some(Duration::from_millis(500)))?;
-        stream.set_write_timeout(Some(Duration::from_millis(500)))?;
+        stream.set_read_timeout(Some(wait))?;
+        stream.set_write_timeout(Some(wait))?;
         let hello = RequestMessage::new(
             0,
             &HelloParams {
@@ -95,18 +107,23 @@ pub(crate) fn probe(socket: Option<&std::path::Path>) -> Probe {
         Ok(match serde_json::from_str::<ServerMessage>(&reply) {
             Ok(ServerMessage::Result(r)) => match serde_json::from_value::<HelloResult>(r.result) {
                 Ok(hello) if hello.dictation => Probe::Dictation,
-                _ => Probe::Skeleton,
+                Ok(_) => Probe::Skeleton,
+                Err(_) => Probe::Silent,
             },
-            // A daemon of another protocol version: let the window run alone.
-            _ => Probe::Skeleton,
+            // Refused (another protocol version) or unreadable: it may run dictation.
+            _ => Probe::Silent,
         })
     };
-    ask().unwrap_or(Probe::Nothing)
+    ask().unwrap_or(Probe::Silent)
 }
 
-/// Asked by a window on its own path just before it binds the shortcut.
-pub(crate) fn daemon_runs_dictation(socket: Option<PathBuf>) -> bool {
-    probe(socket.as_deref()) == Probe::Dictation
+/// Asked by a window on its own path just before it binds the shortcut: a
+/// daemon that runs dictation, or one that might, means the window gives way.
+pub(crate) fn daemon_may_run_dictation(socket: Option<PathBuf>) -> bool {
+    matches!(
+        probe(socket.as_deref(), BIND_WAIT),
+        Probe::Dictation | Probe::Silent
+    )
 }
 
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, ApiError>>>>>;
@@ -399,7 +416,8 @@ impl Mirror {
         self.state = Some(snapshot);
         let mut notices = vec![Notice::Status, Notice::Dictation, Notice::History];
         for message in held {
-            notices.extend(self.apply(message));
+            // Through `event`: after a held lag, the rest waits for the next snapshot.
+            notices.extend(self.event(message));
         }
         notices
     }
@@ -1075,9 +1093,11 @@ mod tests {
             (false, Probe::Nothing, Mode::App),
             (false, Probe::Skeleton, Mode::App),
             (false, Probe::Dictation, Mode::Client),
+            (false, Probe::Silent, Mode::Client),
             (true, Probe::Nothing, Mode::Client),
             (true, Probe::Skeleton, Mode::Client),
             (true, Probe::Dictation, Mode::Client),
+            (true, Probe::Silent, Mode::Client),
         ];
         for (flag, probe, mode) in matrix {
             assert_eq!(decide(flag, probe), mode, "flag {flag}, {probe:?}");
@@ -1113,11 +1133,21 @@ mod tests {
         // The demo daemon runs (fake) dictation; a normal one without the flag does not.
         let (_a, dictation) = daemon(DaemonMode::Demo);
         let (_b, skeleton) = daemon(DaemonMode::Normal);
-        assert_eq!(probe(Some(&dictation)), Probe::Dictation);
-        assert_eq!(probe(Some(&skeleton)), Probe::Skeleton);
+        assert_eq!(probe(Some(&dictation), PROBE_WAIT), Probe::Dictation);
+        assert_eq!(probe(Some(&skeleton), PROBE_WAIT), Probe::Skeleton);
         let gone = tempfile::tempdir().unwrap();
-        assert_eq!(probe(Some(&gone.path().join("d.sock"))), Probe::Nothing);
-        assert_eq!(probe(None), Probe::Nothing);
+        assert_eq!(
+            probe(Some(&gone.path().join("d.sock")), PROBE_WAIT),
+            Probe::Nothing
+        );
+        assert_eq!(probe(None, PROBE_WAIT), Probe::Nothing);
+        // A listener that does not answer in time may be a daemon still starting.
+        let quiet = gone.path().join("quiet.sock");
+        let _listener = std::os::unix::net::UnixListener::bind(&quiet).unwrap();
+        assert_eq!(
+            probe(Some(&quiet), Duration::from_millis(100)),
+            Probe::Silent
+        );
     }
 
     #[test]
@@ -1125,12 +1155,13 @@ mod tests {
         // At start nothing answered, so the window took its own path…
         let none = tempfile::tempdir().unwrap();
         let socket = none.path().join("d.sock");
-        assert_eq!(decide(false, probe(Some(&socket))), Mode::App);
+        assert_eq!(decide(false, probe(Some(&socket), PROBE_WAIT)), Mode::App);
         // …then a dictation daemon starts before the window binds the shortcut.
         let (_dir, started) = daemon(DaemonMode::Demo);
-        assert!(daemon_runs_dictation(Some(started)));
+        assert!(daemon_may_run_dictation(Some(started)));
         let (_dir, skeleton) = daemon(DaemonMode::Normal);
-        assert!(!daemon_runs_dictation(Some(skeleton)));
+        assert!(!daemon_may_run_dictation(Some(skeleton)));
+        assert!(!daemon_may_run_dictation(Some(socket)));
     }
 
     fn dictation_event(seq: u64, phase: DictationPhase, job: u64) -> EventMessage {
@@ -1189,6 +1220,29 @@ mod tests {
             (11, DictationPhase::Idle)
         );
         assert_eq!(state.dictation.job, 3);
+    }
+
+    #[test]
+    fn a_second_lag_during_a_refresh_waits_for_the_next_snapshot() {
+        let mut mirror = Mirror::default();
+        mirror.await_snapshot();
+        mirror.install(snapshot(5, DictationPhase::Idle));
+        mirror.event(EventMessage {
+            seq: 10,
+            event: Event::Lagged { missed: 4 },
+        });
+        // While the first refresh is on its way: another lag, then a newer event.
+        mirror.event(EventMessage {
+            seq: 20,
+            event: Event::Lagged { missed: 9 },
+        });
+        mirror.event(dictation_event(21, DictationPhase::Idle, 7));
+        let notices = mirror.install(snapshot(10, DictationPhase::Recording));
+        assert!(notices.contains(&Notice::Refresh), "{notices:?}");
+        // The second snapshot (taken at 20) must not undo the event at 21.
+        mirror.install(snapshot(20, DictationPhase::Inserting));
+        let state = mirror.state.as_ref().unwrap();
+        assert_eq!((state.seq, state.dictation.job), (21, 7));
     }
 
     #[test]

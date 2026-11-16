@@ -47,7 +47,7 @@ pub fn run() {
     // makes this window its client; DELULU_DAEMON=1 waits for that daemon.
     let flag = std::env::var("DELULU_DAEMON").as_deref() == Ok("1");
     let socket = client::socket();
-    match client::decide(flag, client::probe(socket.as_deref())) {
+    match client::decide(flag, client::probe(socket.as_deref(), client::PROBE_WAIT)) {
         client::Mode::App => run_app(),
         client::Mode::Client => run_client(socket),
     }
