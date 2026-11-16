@@ -55,13 +55,19 @@ enum Request {
     AceStep(delulu_music_ace::Song),
 }
 
-/// Not `{e}` for most errors: serde can quote the lyrics it choked on, and this
-/// reaches the log. Missing fields and unknown names are safe and say what to fix.
+/// Not `{e}`: serde can quote the lyrics it choked on, and this reaches the log.
+/// A missing field names only our own field; for an unknown name the value given
+/// is dropped and only the accepted ones are listed.
 fn describe(e: serde_json::Error) -> String {
     let message = e.to_string();
-    if message.starts_with("missing field") || message.starts_with("unknown variant") {
-        let end = message.find(" at line").unwrap_or(message.len());
-        format!("song: {}", &message[..end])
+    let message = &message[..message.find(" at line").unwrap_or(message.len())];
+    if message.starts_with("missing field") {
+        format!("song: {message}")
+    } else if let (true, Some(expected)) = (
+        message.starts_with("unknown variant"),
+        message.find(", expected"),
+    ) {
+        format!("song: unknown value{}", &message[expected..])
     } else {
         format!("song: {:?} error at column {}", e.classify(), e.column())
     }
@@ -208,6 +214,12 @@ mod tests {
                     r#"{{"engine":"acestep","style":"x","lyrics":"{secret}","seed":"{secret}","seconds":60}}"#
                 ),
                 "Data error",
+            ),
+            (
+                format!(
+                    r#"{{"engine":"acestep","style":"x","seed":1,"seconds":60,"lm":"{secret}"}}"#
+                ),
+                "unknown value, expected one of `auto`, `0.6b`, `4b`",
             ),
             (format!(r#"{{"style":"x","lyrics":"{secret}""#), "Eof error"),
         ];
