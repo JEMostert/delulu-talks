@@ -137,10 +137,12 @@ async fn a_helper_that_dies_mid_clean_leaves_the_raw_text_and_comes_back() {
 async fn a_helper_that_dies_in_its_warm_up_comes_back() {
     let dir = tempfile::tempdir().unwrap();
     let (supervisor, rx) = start(dir.path(), Die::OnWarmUp);
-    // The warm-up is only a speed-up: its failure must not block cleanup.
-    let first = ready(&rx, dir.path(), Duration::from_secs(10));
-    let second = ready(&rx, dir.path(), Duration::from_secs(3));
-    assert_ne!(first, second);
+    // The warm-up is only a speed-up: its failure must not block cleanup. The first
+    // helper is dead before its ready status arrives, so the pid file may already
+    // name its replacement; the two ready statuses and the marker tell them apart.
+    ready(&rx, dir.path(), Duration::from_secs(10));
+    ready(&rx, dir.path(), Duration::from_secs(3));
+    assert!(dir.path().join("died").exists());
     let cleaned = supervisor
         .clean(true, "en", "eh the plan is ready".into(), Vec::new)
         .await;
