@@ -22,8 +22,9 @@ fn main() {
 
     // The same value llama-cpp-sys-2 compiled ggml with (.cargo/config.toml).
     println!("cargo:rerun-if-env-changed=GGML_MAX_NAME");
-    let max_name = env::var("GGML_MAX_NAME")
-        .expect("GGML_MAX_NAME is not set: build from the workspace, it comes from .cargo/config.toml");
+    let max_name = env::var("GGML_MAX_NAME").expect(
+        "GGML_MAX_NAME is not set: build from the workspace, it comes from .cargo/config.toml",
+    );
 
     // llama-cpp-sys-2 exports its ggml CMake package dir (<prefix>/lib*/cmake);
     // the headers are installed next to it in <prefix>/include.

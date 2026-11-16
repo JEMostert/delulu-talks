@@ -173,7 +173,8 @@ mod tests {
     #[test]
     fn the_engine_field_picks_the_engine_and_yue2_is_the_default() {
         let yue2 = r#"{"style":"pop","lyrics":"[verse]\nla","seed":1,"maxSeconds":30}"#;
-        let tagged = r#"{"engine":"yue2","style":"pop","lyrics":"[verse]\nla","seed":1,"maxSeconds":30}"#;
+        let tagged =
+            r#"{"engine":"yue2","style":"pop","lyrics":"[verse]\nla","seed":1,"maxSeconds":30}"#;
         for input in [yue2, tagged] {
             assert!(matches!(parse_request(input), Ok(Request::Yue2(s)) if s.max_seconds == 30.0));
         }
@@ -181,17 +182,33 @@ mod tests {
         let Ok(Request::AceStep(song)) = parse_request(ace) else {
             panic!("not acestep")
         };
-        assert_eq!((song.seconds, song.language.as_deref()), (150.0, Some("nl")));
+        assert_eq!(
+            (song.seconds, song.language.as_deref()),
+            (150.0, Some("nl"))
+        );
     }
 
     #[test]
     fn bad_requests_never_echo_the_lyrics() {
         let secret = "my private verse";
         let cases = [
-            (r#"{"engine":"musicgen","style":"x","seed":1,"seconds":60}"#.to_string(), "engine must be"),
+            (
+                r#"{"engine":"musicgen","style":"x","seed":1,"seconds":60}"#.to_string(),
+                "engine must be",
+            ),
             // An ACE song needs `seconds`; YuE2's `maxSeconds` is not enough.
-            (format!(r#"{{"engine":"acestep","style":"x","lyrics":"{secret}","seed":1,"maxSeconds":60}}"#), "missing field `seconds`"),
-            (format!(r#"{{"engine":"acestep","style":"x","lyrics":"{secret}","seed":"{secret}","seconds":60}}"#), "Data error"),
+            (
+                format!(
+                    r#"{{"engine":"acestep","style":"x","lyrics":"{secret}","seed":1,"maxSeconds":60}}"#
+                ),
+                "missing field `seconds`",
+            ),
+            (
+                format!(
+                    r#"{{"engine":"acestep","style":"x","lyrics":"{secret}","seed":"{secret}","seconds":60}}"#
+                ),
+                "Data error",
+            ),
             (format!(r#"{{"style":"x","lyrics":"{secret}""#), "Eof error"),
         ];
         for (input, want) in cases {

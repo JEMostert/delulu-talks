@@ -43,7 +43,12 @@ struct Result_ {
 type Tick = unsafe extern "C" fn(user: *mut c_void, stage: c_int) -> bool;
 
 extern "C" {
-    fn delulu_ace_generate(job: *const Job, tick: Tick, user: *mut c_void, out: *mut Result_) -> c_int;
+    fn delulu_ace_generate(
+        job: *const Job,
+        tick: Tick,
+        user: *mut c_void,
+        out: *mut Result_,
+    ) -> c_int;
     fn delulu_ace_result_free(out: *mut Result_);
     fn delulu_ace_tensor_size_here() -> usize;
     fn delulu_ace_tensor_size_in_ggml() -> usize;

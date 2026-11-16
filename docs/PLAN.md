@@ -19,6 +19,10 @@ Two optional extras, each with an explicit model download:
   helper (ggml, Vulkan), words from the cleanup model, an AI host speaking the
   station's language through the native voice. The music model is an explicit
   download in Settings → Models; missing pieces are shown as steps to do.
+  ACE-Step 1.5 turbo (acestep.cpp in the same engine, MIT weights, 3.5× real
+  time with its 4B LM on a 5060 Ti against YuE2's 0.9×) is built in as a second
+  engine; choosing it on the Delulu FM page follows. YuE2 stays the default until
+  a blind listening test.
 
 ## Build order (each step gated on the previous one being used daily)
 

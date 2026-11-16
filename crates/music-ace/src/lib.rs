@@ -115,8 +115,16 @@ pub fn choose_lm(
     installed: impl Fn(Lm) -> bool,
 ) -> Result<Lm, MissingLm> {
     let wanted = match choice {
-        LmChoice::Small => return installed(Lm::Small).then_some(Lm::Small).ok_or(MissingLm(Lm::Small)),
-        LmChoice::Large => return installed(Lm::Large).then_some(Lm::Large).ok_or(MissingLm(Lm::Large)),
+        LmChoice::Small => {
+            return installed(Lm::Small)
+                .then_some(Lm::Small)
+                .ok_or(MissingLm(Lm::Small))
+        }
+        LmChoice::Large => {
+            return installed(Lm::Large)
+                .then_some(Lm::Large)
+                .ok_or(MissingLm(Lm::Large))
+        }
         LmChoice::Auto if free.is_some_and(|f| f >= LARGE_LM_MIN_FREE) => Lm::Large,
         LmChoice::Auto => Lm::Small,
     };
@@ -359,7 +367,9 @@ pub fn generate(
     progress: &mut dyn FnMut(Progress),
     cancel: &dyn Fn() -> bool,
 ) -> Result<Output, String> {
-    generate_with(&AceStep, plan, progress, cancel, &mut || ffi::free_memory(&plan.device))
+    generate_with(&AceStep, plan, progress, cancel, &mut || {
+        ffi::free_memory(&plan.device)
+    })
 }
 
 /// [`generate`] with any pipeline; `free_memory` samples the device for the peak.
@@ -450,11 +460,7 @@ pub fn finish(plan: &Plan, raw: Raw, peak_gpu_bytes: Option<u64>) -> Result<Outp
         ));
     }
     let (left, right) = raw.planar.split_at(frames);
-    let samples = left
-        .iter()
-        .zip(right)
-        .flat_map(|(&l, &r)| [l, r])
-        .collect();
+    let samples = left.iter().zip(right).flat_map(|(&l, &r)| [l, r]).collect();
     Ok(Output {
         samples,
         report: Report {

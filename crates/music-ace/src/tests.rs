@@ -43,7 +43,11 @@ fn a_minimal_request_gets_the_defaults() {
     assert_eq!((s.bpm, s.language, s.instrumental), (None, None, false));
     assert_eq!(s.lm, LmChoice::Auto);
 
-    for (name, lm) in [("auto", LmChoice::Auto), ("0.6b", LmChoice::Small), ("4b", LmChoice::Large)] {
+    for (name, lm) in [
+        ("auto", LmChoice::Auto),
+        ("0.6b", LmChoice::Small),
+        ("4b", LmChoice::Large),
+    ] {
         let s = song(serde_json::json!({"style": "x", "seed": 1, "seconds": 60, "lm": name}));
         assert_eq!(s.lm, lm);
     }
@@ -59,7 +63,12 @@ fn the_lm_follows_free_memory_unless_chosen_or_missing() {
     use Lm::{Large, Small};
     let both = |_: Lm| true;
     let only = |want: Lm| move |lm: Lm| lm == want;
-    let cases: [(LmChoice, Option<u64>, &dyn Fn(Lm) -> bool, Result<Lm, MissingLm>); 9] = [
+    let cases: [(
+        LmChoice,
+        Option<u64>,
+        &dyn Fn(Lm) -> bool,
+        Result<Lm, MissingLm>,
+    ); 9] = [
         (LmChoice::Auto, Some(12 * GIB), &both, Ok(Large)),
         (LmChoice::Auto, Some(8 * GIB), &both, Ok(Large)),
         (LmChoice::Auto, Some(8 * GIB - 1), &both, Ok(Small)),
@@ -69,11 +78,25 @@ fn the_lm_follows_free_memory_unless_chosen_or_missing() {
         (LmChoice::Auto, Some(2 * GIB), &only(Large), Ok(Large)),
         // A manual choice wins over memory, and is never swapped.
         (LmChoice::Large, Some(2 * GIB), &both, Ok(Large)),
-        (LmChoice::Small, Some(12 * GIB), &only(Large), Err(MissingLm(Small))),
-        (LmChoice::Auto, Some(12 * GIB), &|_| false, Err(MissingLm(Large))),
+        (
+            LmChoice::Small,
+            Some(12 * GIB),
+            &only(Large),
+            Err(MissingLm(Small)),
+        ),
+        (
+            LmChoice::Auto,
+            Some(12 * GIB),
+            &|_| false,
+            Err(MissingLm(Large)),
+        ),
     ];
     for (choice, free, installed, want) in cases {
-        assert_eq!(choose_lm(choice, free, installed), want, "{choice:?} {free:?}");
+        assert_eq!(
+            choose_lm(choice, free, installed),
+            want,
+            "{choice:?} {free:?}"
+        );
     }
 }
 
@@ -98,7 +121,10 @@ fn a_plan_pins_language_sizes_the_cache_and_keeps_vae_tiles_small() {
         "seconds": 240, "bpm": 96, "language": "NL"
     }));
     let p = plan(&dir, &s, gpu(12 * GIB)).unwrap();
-    assert_eq!((p.language.as_str(), p.bpm, p.seed, p.lm), ("nl", 96, 2, Lm::Large));
+    assert_eq!(
+        (p.language.as_str(), p.bpm, p.seed, p.lm),
+        ("nl", 96, 2, Lm::Large)
+    );
     assert_eq!(p.min_codes(), 1200);
     // Prompt (one token per byte at worst) and every code fit, as the spike's 4096 did.
     let need = p.caption.len() + p.lyrics.len() + 1200 + 100;
@@ -111,19 +137,26 @@ fn a_plan_pins_language_sizes_the_cache_and_keeps_vae_tiles_small() {
         "language": "en", "instrumental": true
     }));
     let p = plan(&dir, &instrumental, gpu(12 * GIB)).unwrap();
-    assert_eq!((p.lyrics.as_str(), p.language.as_str()), ("[Instrumental]", "unknown"));
+    assert_eq!(
+        (p.lyrics.as_str(), p.language.as_str()),
+        ("[Instrumental]", "unknown")
+    );
 
     let too_long = song(serde_json::json!({
         "style": "x", "lyrics": "la ".repeat(3000), "seed": 1, "seconds": 600
     }));
-    assert!(plan(&dir, &too_long, gpu(12 * GIB)).unwrap_err().contains("too long"));
+    assert!(plan(&dir, &too_long, gpu(12 * GIB))
+        .unwrap_err()
+        .contains("too long"));
     let too_short = song(serde_json::json!({"style": "x", "seed": 1, "seconds": 5}));
     assert!(plan(&dir, &too_short, gpu(12 * GIB)).is_err());
 }
 
 fn test_plan(seconds: f32) -> Plan {
     let dir = all_files();
-    let s = song(serde_json::json!({"style": "x", "lyrics": "[Verse]\nla", "seed": 1, "seconds": seconds}));
+    let s = song(
+        serde_json::json!({"style": "x", "lyrics": "[Verse]\nla", "seed": 1, "seconds": seconds}),
+    );
     plan(&dir, &s, gpu(12 * GIB)).unwrap()
 }
 
@@ -199,7 +232,12 @@ fn progress_covers_every_stage_and_peak_memory_is_measured() {
     .unwrap();
     let phases: Vec<_> = seen
         .iter()
-        .map(|e| serde_json::to_value(e).unwrap()["phase"].as_str().unwrap().to_string())
+        .map(|e| {
+            serde_json::to_value(e).unwrap()["phase"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
         .collect();
     for phase in ["loading", "music", "shaping", "rendering"] {
         assert!(phases.contains(&phase.to_string()), "{phases:?}");
@@ -231,7 +269,9 @@ fn a_failed_run_reports_why() {
     let p = test_plan(60.0);
     let pipeline = fake(
         10,
-        Err(RunError::Failed("ACE-Step decoding produced no audio".into())),
+        Err(RunError::Failed(
+            "ACE-Step decoding produced no audio".into(),
+        )),
     );
     let e = generate_with(&pipeline, &p, &mut |_| {}, &|| false, &mut || None).err();
     assert_eq!(e.as_deref(), Some("ACE-Step decoding produced no audio"));
