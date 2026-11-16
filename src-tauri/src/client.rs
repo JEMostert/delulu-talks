@@ -140,8 +140,9 @@ fn ask(socket: &std::path::Path, wait: Duration) -> Probe {
     hello().unwrap_or(Probe::Silent)
 }
 
-/// Asked by a window on its own path just before it binds the shortcut: a
-/// daemon that runs dictation, or one that might, means the window gives way.
+/// Asked by a window on its own path as its setup starts, before it binds the
+/// shortcut: a daemon that runs dictation, or one that might, means the window
+/// gives way.
 pub(crate) fn daemon_may_run_dictation(socket: Option<PathBuf>) -> bool {
     matches!(
         probe(socket.as_deref(), BIND_WAIT),

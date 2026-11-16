@@ -235,6 +235,15 @@ fn run_app() {
         })
         .setup(move |app| {
             let handle = app.handle().clone();
+            // A dictation daemon may have started since this window chose its own
+            // path. Asked now: the single-instance name is taken (plugins start
+            // before setup) and nothing heavy has started, so a restart is clean.
+            // The daemon listens before it looks for that name, so one of the two
+            // always sees the other and only one binds the shortcut.
+            if client::daemon_may_run_dictation(client::socket()) {
+                eprintln!("delulu-talks: a dictation daemon is running; restarting as its client");
+                handle.restart();
+            }
             let _ = app_slot.set(handle.clone());
             tray::create(app)?;
             let s = app.state::<Shell>();

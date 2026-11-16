@@ -160,21 +160,6 @@ pub(crate) async fn bind_hotkey(app: &tauri::AppHandle) {
     if guard.is_some() {
         return;
     }
-    // A dictation daemon may have started after this window chose its own path.
-    // Asked now, after this window's single-instance name is taken: the daemon
-    // listens before it looks for that name, so one of the two always sees the
-    // other and only one binds. Anything listening that does not say it leaves
-    // dictation to the app counts. Give way: start again as its client.
-    let socket = client::socket();
-    let taken =
-        tauri::async_runtime::spawn_blocking(move || client::daemon_may_run_dictation(socket))
-            .await
-            .unwrap_or(false);
-    if taken {
-        eprintln!("delulu-talks: a dictation daemon is running; restarting as its client");
-        app.request_restart();
-        return;
-    }
     let callback_app = app.clone();
     let (hotkey, status) = Hotkey::bind(
         delulu_desktop::hotkey::DEFAULT_TRIGGER,
