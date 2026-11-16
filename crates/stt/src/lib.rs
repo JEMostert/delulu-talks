@@ -1,5 +1,6 @@
 use std::{path::Path, time::Instant};
 
+mod closing;
 mod pieces;
 mod prompt;
 mod vad;
@@ -112,7 +113,7 @@ pub struct Engine {
 }
 enum Inner {
     Whisper {
-        _context: whisper_rs::WhisperContext,
+        context: whisper_rs::WhisperContext,
         state: whisper_rs::WhisperState,
         /// None only if the built-in detector failed to load; then every clip is decoded.
         vad: Option<vad::Vad>,
@@ -124,6 +125,22 @@ fn threads() -> usize {
     std::thread::available_parallelism().map_or(1, |n| n.get().min(8))
 }
 fn params<'a>(language: &'a str, prompt: Option<&'a str>) -> whisper_rs::FullParams<'a, 'a> {
+    params_for(language, prompt, Redo::None)
+}
+/// How a decode differs from the normal one.
+#[derive(Clone, Copy)]
+enum Redo<'a> {
+    None,
+    /// With timestamps: whisper.cpp then decodes in segments, a different path.
+    Timestamps,
+    /// With timestamps, and without the given first tokens.
+    AvoidStart(&'a closing::AvoidStart),
+}
+fn params_for<'a>(
+    language: &'a str,
+    prompt: Option<&'a str>,
+    redo: Redo<'a>,
+) -> whisper_rs::FullParams<'a, 'a> {
     let mut p = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
     p.set_language(Some(language));
     if let Some(prompt) = prompt {
@@ -132,7 +149,16 @@ fn params<'a>(language: &'a str, prompt: Option<&'a str>) -> whisper_rs::FullPar
     }
     p.set_n_threads(threads() as i32);
     p.set_no_context(true);
-    p.set_no_timestamps(true);
+    p.set_no_timestamps(matches!(redo, Redo::None));
+    if let Redo::AvoidStart(avoid) = redo {
+        // SAFETY: `avoid` outlives the parameters and so the decode that reads them.
+        unsafe {
+            p.set_filter_logits_callback(Some(closing::avoid_start));
+            p.set_filter_logits_callback_user_data(
+                avoid as *const closing::AvoidStart as *mut std::ffi::c_void,
+            );
+        }
+    }
     p.set_print_progress(false);
     p.set_print_realtime(false);
     p.set_print_special(false);
@@ -364,7 +390,11 @@ impl Engine {
         }
         let start = Instant::now();
         let (text, language) = match &mut self.inner {
-            Inner::Whisper { state, vad, .. } => std::thread::scope(|scope| {
+            Inner::Whisper {
+                context,
+                state,
+                vad,
+            } => std::thread::scope(|scope| {
                 // The detector runs on the CPU while Whisper runs on the GPU, so it adds
                 // no time to a dictation.
                 let speech = vad.as_mut().map(|vad| scope.spawn(|| vad.speech(samples)));
@@ -376,22 +406,43 @@ impl Engine {
                     // A fixed language allows no other.
                     Language::Fixed(code) => (code.as_str(), Vec::new()),
                 };
-                let (text, language) = whisper_pieces(state, samples, code, &allowed, prompt)?;
-                let speech = speech.map(|handle| {
-                    handle.join().unwrap_or_else(|_| {
-                        Err(SttError::Inference("speech detection panicked".into()))
-                    })
+                let (mut pieces, language) =
+                    whisper_pieces(state, samples, code, &allowed, prompt)?;
+                let speech = speech.and_then(|handle| {
+                    handle
+                        .join()
+                        .unwrap_or_else(|_| {
+                            Err(SttError::Inference("speech detection panicked".into()))
+                        })
+                        // Better a typed noise than a lost dictation.
+                        .inspect_err(|e| log::warn!("stt: {e}; keeping the text"))
+                        .ok()
                 });
-                match speech {
+                if speech.as_ref().is_some_and(Vec::is_empty) {
                     // Nobody spoke: whatever Whisper wrote is invented.
-                    Some(Ok(stretches)) if stretches.is_empty() => Ok((String::new(), language)),
-                    // Better a typed noise than a lost dictation.
-                    Some(Err(e)) => {
-                        log::warn!("stt: {e}; keeping the text");
-                        Ok((text, language))
-                    }
-                    _ => Ok((text, language)),
+                    return Ok((String::new(), language));
                 }
+                for piece in &mut pieces {
+                    if closing::only_closing(&piece.text) {
+                        let seconds = |at: usize| at as f32 / 16_000.0;
+                        let speech = speech.as_ref().map(|stretches| {
+                            vad::speech_within(
+                                stretches,
+                                seconds(piece.range.start)..seconds(piece.range.end),
+                            )
+                        });
+                        piece.text = recheck_closing(
+                            context,
+                            state,
+                            &samples[piece.range.clone()],
+                            code,
+                            piece,
+                            speech,
+                        )?;
+                    }
+                }
+                let texts: Vec<String> = pieces.into_iter().map(|p| p.text).collect();
+                Ok((texts.join(" "), language))
             })?,
             Inner::Parakeet(model) => {
                 let text = model
@@ -444,7 +495,7 @@ fn load_whisper(path: &Path) -> Result<(Inner, String), SttError> {
         .ok();
     Ok((
         Inner::Whisper {
-            _context: context,
+            context,
             state,
             vad,
         },
@@ -483,36 +534,94 @@ fn detect_within(
     Ok(choose_language(&probs, allowed))
 }
 
+/// A decoded piece of a clip, and the prompt its text came from.
+struct Piece {
+    range: std::ops::Range<usize>,
+    prompt: Option<String>,
+    text: String,
+}
+
 /// Whisper's text for a clip of any length: in pieces under its 30 s window, cut at
-/// pauses (see `pieces`) and joined in order. Each piece after the first reads the
-/// previous piece's text as its sentence, as whisper.cpp does between its own windows.
+/// pauses (see `pieces`), in order. Each piece after the first reads the previous
+/// piece's text as its sentence, as whisper.cpp does between its own windows.
 fn whisper_pieces(
     state: &mut whisper_rs::WhisperState,
     samples: &[f32],
     code: &str,
     allowed: &[String],
     prompt: Option<&Prompt>,
-) -> Result<(String, String), SttError> {
-    let mut texts: Vec<String> = Vec::new();
+) -> Result<(Vec<Piece>, String), SttError> {
+    let mut decoded: Vec<Piece> = Vec::new();
     let mut language = code.to_string();
     for range in pieces::pieces(samples) {
-        let previous = texts.last().map(|text| Prompt {
+        let previous = decoded.last().map(|piece| Prompt {
             terms: prompt.and_then(|p| p.terms.clone()),
-            sentence: Some(tail(text, 200).to_string()),
+            sentence: Some(tail(&piece.text, 200).to_string()),
         });
-        let (text, lang) = whisper_transcribe(
+        let (text, lang, used) = whisper_transcribe(
             state,
-            &samples[range],
+            &samples[range.clone()],
             code,
             allowed,
             previous.as_ref().or(prompt),
         )?;
         language = lang;
         if !punctuation_only(&text) {
-            texts.push(text);
+            decoded.push(Piece {
+                range,
+                prompt: used,
+                text,
+            });
         }
     }
-    Ok((texts.join(" "), language))
+    Ok((decoded, language))
+}
+
+/// A piece whose whole text is a closing phrase ("Dank u wel."), asked again. A decode
+/// with timestamps takes another path through the model and rarely does this; its text
+/// wins unless it is a closing phrase too. If both agree, the phrase stands, unless
+/// the piece holds clearly more speech than the phrase takes: then Whisper decodes once
+/// more without the phrase's first word to start with. A real thank-you comes out
+/// again (in lowercase) and the phrase stays; a sentence comes out instead of it.
+fn recheck_closing(
+    context: &whisper_rs::WhisperContext,
+    state: &mut whisper_rs::WhisperState,
+    samples: &[f32],
+    code: &str,
+    piece: &Piece,
+    speech_s: Option<f32>,
+) -> Result<String, SttError> {
+    let prompt = piece.prompt.as_deref();
+    let other = |text: &str| !text.is_empty() && !closing::only_closing(text);
+    let (again, _) = whisper_text_with(state, samples, code, prompt, Redo::Timestamps)?;
+    if other(&again) {
+        log::info!("stt: a closing phrase stood in for the clip; the second decode replaced it");
+        return Ok(again);
+    }
+    if speech_s.is_none_or(|s| s <= closing::LONGER_THAN_A_PHRASE_S) {
+        return Ok(piece.text.clone());
+    }
+    let word = closing::first_word(&piece.text).unwrap_or_default();
+    let mut tokens = Vec::new();
+    for start in [format!(" {word}"), word.to_string()] {
+        if let Some(&first) = context
+            .tokenize(&start, 8)
+            .map_err(|e| SttError::Inference(e.to_string()))?
+            .first()
+        {
+            tokens.push(first);
+        }
+    }
+    let avoid = closing::AvoidStart {
+        tokens,
+        timestamp_begin: context.token_beg(),
+    };
+    let (third, _) = whisper_text_with(state, samples, code, prompt, Redo::AvoidStart(&avoid))?;
+    if other(&third) {
+        log::info!("stt: a closing phrase stood in for {speech_s:?} s of speech; replaced");
+        return Ok(third);
+    }
+    Ok(piece.text.clone())
 }
 
 /// The last `max` characters of `text`, from the start of a word.
@@ -536,15 +645,16 @@ fn whisper_transcribe(
     code: &str,
     allowed: &[String],
     prompt: Option<&Prompt>,
-) -> Result<(String, String), SttError> {
+) -> Result<(String, String, Option<String>), SttError> {
     let full = prompt.and_then(|p| p.for_language(code));
     let (text, language) = whisper_text(state, samples, code, full.as_deref())?;
     let terms = prompt.and_then(Prompt::terms_only);
     if full != terms && prompt::flipped(&text, code, allowed) {
         log::info!("stt: text not in {code} with the previous sentence; decoding without it");
-        return whisper_text(state, samples, code, terms.as_deref());
+        let (text, language) = whisper_text(state, samples, code, terms.as_deref())?;
+        return Ok((text, language, terms));
     }
-    Ok((text, language))
+    Ok((text, language, full))
 }
 
 /// Whisper's text and detected language; empty text when it only described a sound or
@@ -555,8 +665,18 @@ fn whisper_text(
     code: &str,
     prompt: Option<&str>,
 ) -> Result<(String, String), SttError> {
+    whisper_text_with(state, samples, code, prompt, Redo::None)
+}
+
+fn whisper_text_with(
+    state: &mut whisper_rs::WhisperState,
+    samples: &[f32],
+    code: &str,
+    prompt: Option<&str>,
+    redo: Redo,
+) -> Result<(String, String), SttError> {
     state
-        .full(params(code, prompt), samples)
+        .full(params_for(code, prompt, redo), samples)
         .map_err(|e| SttError::Inference(e.to_string()))?;
     let language = whisper_rs::get_lang_str(state.full_lang_id_from_state())
         .unwrap_or(code)

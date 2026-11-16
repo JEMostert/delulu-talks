@@ -118,6 +118,14 @@ impl Drop for Vad {
     }
 }
 
+/// Seconds of speech within `within` (seconds), given the stretches found.
+pub(crate) fn speech_within(stretches: &[Range<f32>], within: Range<f32>) -> f32 {
+    stretches
+        .iter()
+        .map(|s| (s.end.min(within.end) - s.start.max(within.start)).max(0.0))
+        .sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +213,13 @@ mod tests {
         let speech = seconds_of_speech(&samples);
         // The detector is cautious with a synthetic voice; any of it is speech.
         assert!(speech > 0.5, "{speech} s of speech");
+    }
+
+    #[test]
+    fn speech_is_counted_within_a_range() {
+        let stretches = [1.0..2.0, 3.0..5.0];
+        assert_eq!(speech_within(&stretches, 0.0..10.0), 3.0);
+        assert_eq!(speech_within(&stretches, 1.5..4.0), 1.5);
+        assert_eq!(speech_within(&stretches, 5.0..9.0), 0.0);
     }
 }
