@@ -408,8 +408,8 @@ mod tests {
         assert!(p.current().is_some(), "rare crashes never add up");
     }
 
-    /// Messages read by the program at `path`, polled until `want` arrive.
-    fn lines(path: &Path, want: usize) -> Vec<Message> {
+    /// Messages read by the program at `path`, polled until the last is `want`.
+    fn lines(path: &Path, want: PillState) -> Vec<Message> {
         let until = Instant::now() + Duration::from_secs(10);
         loop {
             let got: Vec<Message> = std::fs::read_to_string(path)
@@ -417,7 +417,7 @@ mod tests {
                 .lines()
                 .filter_map(|l| serde_json::from_str(l).ok())
                 .collect();
-            if got.len() >= want || Instant::now() > until {
+            if got.last().is_some_and(|m| m.state == want) || Instant::now() > until {
                 return got;
             }
             std::thread::sleep(Duration::from_millis(20));
@@ -449,7 +449,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         tx.send(msg(PillState::Transcribing, None)).unwrap();
-        let got = lines(&out, 2);
+        let got = lines(&out, PillState::Transcribing);
         assert_eq!(got.last().map(|m| m.state), Some(PillState::Transcribing));
         drop(tx);
         thread.join().unwrap();
