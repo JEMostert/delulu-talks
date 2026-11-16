@@ -120,12 +120,12 @@ pub trait StopPorts {
     async fn stop_recording(&self) -> Recorded;
     /// Read after the recorder stopped, so a change saved meanwhile applies.
     fn settings(&self) -> Settings;
-    fn whisper_prompt(&self) -> Option<String>;
+    fn whisper_prompt(&self) -> Option<delulu_stt::Prompt>;
     async fn transcribe(
         &self,
         samples: Vec<f32>,
         language: delulu_stt::Language,
-        prompt: Option<String>,
+        prompt: Option<delulu_stt::Prompt>,
     ) -> Result<delulu_stt::Transcript, String>;
     async fn clean(&self, language: &str, raw: String) -> cleanup::Cleaned;
     fn remember(&self, topic: Option<String>, text: &str);
@@ -166,7 +166,8 @@ pub async fn run_stop(ports: &impl StopPorts, req: StopRequest) -> StopOutcome {
 // recording stopped.
 
 /// The clip to a transcript: the language rules and, with smart context, the
-/// Whisper prompt from the last dictation. An empty text means nothing was heard.
+/// Whisper prompt from the last dictation, which the engine fits to the clip's
+/// language. An empty text means nothing was heard.
 pub async fn transcribe_clip(
     ports: &impl StopPorts,
     settings: &Settings,
@@ -352,14 +353,14 @@ mod tests {
         fn settings(&self) -> Settings {
             Settings::default()
         }
-        fn whisper_prompt(&self) -> Option<String> {
+        fn whisper_prompt(&self) -> Option<delulu_stt::Prompt> {
             None
         }
         async fn transcribe(
             &self,
             _: Vec<f32>,
             _: delulu_stt::Language,
-            _: Option<String>,
+            _: Option<delulu_stt::Prompt>,
         ) -> Result<delulu_stt::Transcript, String> {
             self.transcript.take().expect("transcribed once")
         }

@@ -1,5 +1,8 @@
 use std::{path::Path, time::Instant};
 
+mod prompt;
+pub use prompt::Prompt;
+
 /// The speech engines are rows of the shared model registry (`delulu-models`), which
 /// also downloads them. Whisper runs on the GPU and follows the language setting and
 /// context prompt; Parakeet runs on the CPU and detects the language.
@@ -73,6 +76,14 @@ fn allowed_ids(allowed: &[String]) -> Vec<i32> {
     } else {
         chosen
     }
+}
+/// The codes automatic detection chooses from, as `allowed_ids` reads the setting.
+fn allowed_codes(allowed: &[String]) -> Vec<String> {
+    allowed_ids(allowed)
+        .into_iter()
+        .filter_map(whisper_rs::get_lang_str)
+        .map(str::to_string)
+        .collect()
 }
 /// The most probable language within `allowed`, given Whisper's probability for each
 /// language id. Whisper's own top choice may lie outside the set (short or quiet clips
@@ -295,12 +306,13 @@ impl Engine {
     pub fn model_id(&self) -> &str {
         &self.id
     }
-    /// `prompt` is context from earlier dictations (names, the last sentence).
+    /// `prompt` is context from earlier dictations (names, the last sentence); Parakeet
+    /// takes none.
     pub fn transcribe(
         &mut self,
         samples: &[f32],
         language: &Language,
-        prompt: Option<&str>,
+        prompt: Option<&Prompt>,
     ) -> Result<Transcript, SttError> {
         let audio_ms = samples.len() as u64 / 16;
         if silent(samples) {
@@ -317,11 +329,15 @@ impl Engine {
         let start = Instant::now();
         let (text, language) = match &mut self.inner {
             Inner::Whisper { state, .. } => {
-                let code = match language {
-                    Language::Auto(allowed) => detect_within(state, samples, allowed)?,
-                    Language::Fixed(code) => code.as_str(),
+                let (code, allowed) = match language {
+                    Language::Auto(allowed) => (
+                        detect_within(state, samples, allowed)?,
+                        allowed_codes(allowed),
+                    ),
+                    // A fixed language allows no other.
+                    Language::Fixed(code) => (code.as_str(), Vec::new()),
                 };
-                whisper_text(state, samples, code, prompt)?
+                whisper_transcribe(state, samples, code, &allowed, prompt)?
             }
             Inner::Parakeet(model) => {
                 let text = model
@@ -406,6 +422,27 @@ fn detect_within(
     state.pcm_to_mel(samples, threads()).map_err(inference)?;
     let (_, probs) = state.lang_detect(0, threads()).map_err(inference)?;
     Ok(choose_language(&probs, allowed))
+}
+
+/// Whisper's text in `code`, with the prompt built for that language. If the text still
+/// comes out in the other allowed language, the previous sentence pulled it there (it
+/// was misjudged, or the clip's language was): decode once more without it and keep
+/// that result, whatever its language, so a genuinely mixed sentence is never lost.
+fn whisper_transcribe(
+    state: &mut whisper_rs::WhisperState,
+    samples: &[f32],
+    code: &str,
+    allowed: &[String],
+    prompt: Option<&Prompt>,
+) -> Result<(String, String), SttError> {
+    let full = prompt.and_then(|p| p.for_language(code));
+    let (text, language) = whisper_text(state, samples, code, full.as_deref())?;
+    let terms = prompt.and_then(Prompt::terms_only);
+    if full != terms && prompt::flipped(&text, code, allowed) {
+        log::info!("stt: text not in {code} with the previous sentence; decoding without it");
+        return whisper_text(state, samples, code, terms.as_deref());
+    }
+    Ok((text, language))
 }
 
 /// Whisper's text and detected language; empty text when it heard no speech or only

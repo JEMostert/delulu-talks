@@ -2,9 +2,11 @@
 //!
 //! Cleanup names a topic; the next dictation gives Whisper the matching shelf's terms and
 //! the last sentence as its prompt, so names come out right before cleanup runs. The
-//! context lives in memory only: it is empty after a restart, and it expires after a
-//! quiet spell or when cleared from the tray.
+//! speech engine drops the sentence when it is in another language than the new clip
+//! (see `delulu_stt::Prompt`). The context lives in memory only: it is empty after a
+//! restart, and it expires after a quiet spell or when cleared from the tray.
 use delulu_store::Vocabulary;
+use delulu_stt::Prompt;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -38,7 +40,7 @@ impl Context {
     }
 
     /// The Whisper prompt for the next dictation, or None without a live context.
-    pub fn whisper_prompt(&self, vocabulary: &Vocabulary) -> Option<String> {
+    pub fn whisper_prompt(&self, vocabulary: &Vocabulary) -> Option<Prompt> {
         let inner = self.lock();
         if inner.at.is_none_or(|at| at.elapsed() >= EXPIRE) {
             return None;
@@ -115,13 +117,13 @@ fn topic_matches(topic: &str, shelf: &str) -> bool {
     })
 }
 
-/// Terms of the enabled shelves matching the topic, then the last sentence: plain words,
+/// Terms of the enabled shelves matching the topic, and the last sentence: plain words,
 /// never instructions, which Whisper reads as the text that came before.
 pub fn whisper_prompt(
     topic: Option<&str>,
     sentence: Option<&str>,
     vocabulary: &Vocabulary,
-) -> Option<String> {
+) -> Option<Prompt> {
     let mut terms: Vec<&str> = Vec::new();
     let mut chars = 0;
     if let Some(topic) = topic {
@@ -138,15 +140,13 @@ pub fn whisper_prompt(
             terms.push(term);
         }
     }
-    let sentence = sentence.map(|s| tail(s.trim(), MAX_SENTENCE_CHARS));
-    let mut parts = Vec::new();
-    if !terms.is_empty() {
-        parts.push(format!("{}.", terms.join(", ")));
-    }
-    if let Some(sentence) = sentence.filter(|s| !s.is_empty()) {
-        parts.push(sentence.to_string());
-    }
-    (!parts.is_empty()).then(|| parts.join(" "))
+    let prompt = Prompt {
+        terms: (!terms.is_empty()).then(|| format!("{}.", terms.join(", "))),
+        sentence: sentence
+            .map(|s| tail(s.trim(), MAX_SENTENCE_CHARS).to_string())
+            .filter(|s| !s.is_empty()),
+    };
+    (prompt != Prompt::default()).then_some(prompt)
 }
 
 /// The last `max` characters of `text`, starting at a word.
@@ -197,21 +197,28 @@ mod tests {
         assert!(!topic_matches("everyday", "Gaming & Discord"));
     }
 
+    fn prompt(terms: Option<&str>, sentence: Option<&str>) -> Option<Prompt> {
+        Some(Prompt {
+            terms: terms.map(String::from),
+            sentence: sentence.map(String::from),
+        })
+    }
+
     #[test]
-    fn prompt_is_shelf_terms_then_last_sentence() {
+    fn prompt_is_shelf_terms_and_last_sentence() {
         let v = vocabulary();
         assert_eq!(
-            whisper_prompt(Some("programming"), Some("Fix the merge conflict."), &v).as_deref(),
-            Some("T3 Code, Tauri. Fix the merge conflict.")
+            whisper_prompt(Some("programming"), Some("Fix the merge conflict."), &v),
+            prompt(Some("T3 Code, Tauri."), Some("Fix the merge conflict."))
         );
         // No matching shelf: just the sentence. A disabled shelf never counts.
         assert_eq!(
-            whisper_prompt(Some("streaming"), Some("Going live."), &v).as_deref(),
-            Some("Going live.")
+            whisper_prompt(Some("streaming"), Some("Going live."), &v),
+            prompt(None, Some("Going live."))
         );
         assert_eq!(
-            whisper_prompt(Some("gaming"), None, &v).as_deref(),
-            Some("Valorant, GG.")
+            whisper_prompt(Some("gaming"), None, &v),
+            prompt(Some("Valorant, GG."), None)
         );
         assert_eq!(whisper_prompt(None, None, &v), None);
         assert_eq!(whisper_prompt(Some("finance"), Some("  "), &v), None);
@@ -221,9 +228,10 @@ mod tests {
     fn long_sentences_keep_their_end_from_a_word() {
         let long = format!("{} the end of it", "word ".repeat(60));
         let prompt = whisper_prompt(None, Some(&long), &Vocabulary::default()).unwrap();
-        assert!(prompt.chars().count() <= MAX_SENTENCE_CHARS);
-        assert!(prompt.ends_with("the end of it"));
-        assert!(prompt.starts_with("word"));
+        let sentence = prompt.sentence.unwrap();
+        assert!(sentence.chars().count() <= MAX_SENTENCE_CHARS);
+        assert!(sentence.ends_with("the end of it"));
+        assert!(sentence.starts_with("word"));
     }
 
     #[test]
@@ -233,8 +241,8 @@ mod tests {
         assert_eq!(context.whisper_prompt(&v), None, "empty after a restart");
         let first = context.remember(Some("programming".into()), "Open T3 Code.");
         assert_eq!(
-            context.whisper_prompt(&v).as_deref(),
-            Some("T3 Code, Tauri. Open T3 Code.")
+            context.whisper_prompt(&v),
+            prompt(Some("T3 Code, Tauri."), Some("Open T3 Code."))
         );
         // A dictation without a topic keeps the topic, with the new sentence.
         let second = context.remember(None, "And run the tests.");

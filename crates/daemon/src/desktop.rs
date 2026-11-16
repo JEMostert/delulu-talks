@@ -13,7 +13,7 @@ use delulu_dictation::stt::{engine_thread, ready_model, EngineHost, EngineJob};
 use delulu_overlay::{Pill, PillState};
 use delulu_proto::state::{WorkerState, WorkerStatus};
 use delulu_store::{InsertMode, Store};
-use delulu_stt::{Language, Transcript};
+use delulu_stt::{Language, Prompt, Transcript};
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, OnceLock};
 use std::time::Duration;
@@ -253,7 +253,7 @@ impl Platform for DesktopPlatform {
         &self,
         samples: Vec<f32>,
         language: Language,
-        prompt: Option<String>,
+        prompt: Option<Prompt>,
     ) -> BoxFuture<'_, Result<Transcript, String>> {
         Box::pin(async move {
             let (reply, rx) = tokio::sync::oneshot::channel();

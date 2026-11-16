@@ -31,7 +31,7 @@ use delulu_proto::api::{
 use delulu_proto::state::*;
 use delulu_proto::APP_CLIENT;
 use delulu_store::{InsertMode, NewEntry, Settings, Store};
-use delulu_stt::{Language, Transcript};
+use delulu_stt::{Language, Prompt, Transcript};
 use serde_json::Value;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
@@ -62,7 +62,7 @@ pub trait Platform: Send + Sync + 'static {
         &self,
         samples: Vec<f32>,
         language: Language,
-        prompt: Option<String>,
+        prompt: Option<Prompt>,
     ) -> BoxFuture<'_, Result<Transcript, String>>;
     /// Cleans with the helper if it is ready right now; never waits for it, and
     /// falls back to the raw text on any failure.
@@ -980,7 +980,7 @@ impl StopPorts for JobPorts<'_> {
     fn settings(&self) -> Settings {
         self.live.store.settings()
     }
-    fn whisper_prompt(&self) -> Option<String> {
+    fn whisper_prompt(&self) -> Option<Prompt> {
         self.live
             .context
             .whisper_prompt(&self.live.store.vocabulary())
@@ -989,7 +989,7 @@ impl StopPorts for JobPorts<'_> {
         &self,
         samples: Vec<f32>,
         language: Language,
-        prompt: Option<String>,
+        prompt: Option<Prompt>,
     ) -> Result<Transcript, String> {
         self.live
             .platform
