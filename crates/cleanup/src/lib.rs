@@ -106,16 +106,38 @@ Reply with the topic line and the output line only.";
 /// empty text or text over MAX_INPUT_CHARS. `vocabulary` holds terms the speaker is
 /// likely to say; with none the prompt is the plain minimal-edit one.
 pub fn prompt(language: &str, text: &str, vocabulary: &[String]) -> Option<String> {
-    let (name, examples, vocab_example) = match language {
-        "nl" => ("Dutch", EXAMPLES_NL, EXAMPLE_VOCAB_NL),
-        "en" => ("English", EXAMPLES_EN, EXAMPLE_VOCAB_EN),
-        _ => return None,
-    };
+    prompt_with_prefix(language, text, vocabulary).map(|(prompt, _)| prompt)
+}
+
+/// [`prompt`] plus the byte length of its reusable prefix: the rendered prompt up to
+/// and including `Input:` in the user turn, which is [`prompt_prefix`]. The rest is
+/// the transcript and the turn ends.
+pub fn prompt_with_prefix(
+    language: &str,
+    text: &str,
+    vocabulary: &[String],
+) -> Option<(String, usize)> {
     // The chat template trims both turn contents.
     let text = text.trim();
     if text.is_empty() || text.chars().count() > MAX_INPUT_CHARS {
         return None;
     }
+    let prefix = prompt_prefix(language, vocabulary)?;
+    let len = prefix.len();
+    Some((
+        format!("{prefix} {text}<turn|>\n<|turn>model\n{REPLY_PREFIX}"),
+        len,
+    ))
+}
+
+/// Everything in the prompt before the transcript. It depends only on the language
+/// and the vocabulary, so the helper keeps it evaluated between dictations.
+pub fn prompt_prefix(language: &str, vocabulary: &[String]) -> Option<String> {
+    let (name, examples, vocab_example) = match language {
+        "nl" => ("Dutch", EXAMPLES_NL, EXAMPLE_VOCAB_NL),
+        "en" => ("English", EXAMPLES_EN, EXAMPLE_VOCAB_EN),
+        _ => return None,
+    };
     let terms = vocabulary_terms(vocabulary);
     let intro = SYSTEM_INTRO.replace("{L}", name);
     let system = if terms.is_empty() {
@@ -126,12 +148,16 @@ pub fn prompt(language: &str, text: &str, vocabulary: &[String]) -> Option<Strin
         let rules = RULES_VOCAB.replace("{V}", &list);
         format!("{intro}{rules}{SYSTEM_KEEP}{examples}{vocab_example}{SYSTEM_TAIL}")
     };
-    // The model's turn starts with the topic label, so its reply always begins there.
+    // The model's turn starts with the topic label, so its reply always begins there
+    // (see `prompt_with_prefix`).
     Some(format!(
-        "<|turn>system\n{}<turn|>\n<|turn>user\nInput: {text}<turn|>\n<|turn>model\n{REPLY_PREFIX}",
+        "<|turn>system\n{}<turn|>\n<|turn>user\nInput:",
         system.trim()
     ))
 }
+
+/// The cleanup languages, in the order the helper warms their prompt prefixes.
+pub const LANGUAGES: [&str; 2] = ["en", "nl"];
 
 /// The terms that go into the prompt: trimmed, inner whitespace collapsed, empty and
 /// comma-holding terms skipped, terms with control characters or angle brackets
@@ -203,6 +229,9 @@ pub fn split_topic(output: &str) -> (Option<String>, String) {
     });
     (topic, rest.join("\n"))
 }
+
+/// For each prefix [`Cleaner::warm`] sends; a cold one is about 200 ms on a mid-range GPU.
+const WARM_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Per-request timeout: 2000 ms + 15 ms × input chars, at most 20 s.
 pub fn timeout(text: &str) -> Duration {
@@ -292,6 +321,21 @@ pub struct Request {
     /// None = greedy decoding, which cleanup uses. Creative writing samples.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sampling: Option<Sampling>,
+    /// Cleanup sets this: the start of `prompt` the helper may keep evaluated between
+    /// requests. None = decode the whole prompt (writing, older clients).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<PromptPrefix>,
+}
+
+/// The reusable start of a request's prompt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptPrefix {
+    /// Its length in bytes.
+    pub len: usize,
+    /// One cached prefix per slot (cleanup uses the language): a different prefix in
+    /// the same slot, after a vocabulary change, replaces the old one.
+    pub slot: String,
 }
 
 /// Seeded temperature and nucleus sampling.
@@ -544,7 +588,7 @@ impl Cleaner {
         if self.kill.killed() {
             return Err(CleanupError::Helper("helper was stopped".into()));
         }
-        let Some(prompt) = prompt(language, text, vocabulary) else {
+        let Some((prompt, prefix_len)) = prompt_with_prefix(language, text, vocabulary) else {
             return Ok(None);
         };
         // One deadline for the write and the reply.
@@ -556,10 +600,41 @@ impl Cleaner {
             prompt,
             max_tokens: max_tokens(text),
             sampling: None,
+            prefix: Some(PromptPrefix {
+                len: prefix_len,
+                slot: language.to_string(),
+            }),
         };
         let output = self.send(request, deadline)?;
         let (topic, reply) = split_reply(&output.text);
         Ok(sanitize(text, &reply, output.truncated).map(|text| Cleaned { text, topic }))
+    }
+
+    /// Have the helper evaluate the prompt prefix of every language with this
+    /// vocabulary, so the next clean only decodes its transcript. Each prefix goes as
+    /// a request without output tokens.
+    /// Err = helper failed or timed out; the caller drops the Cleaner, which kills the helper.
+    pub fn warm(&mut self, vocabulary: &[String]) -> Result<(), CleanupError> {
+        for language in LANGUAGES {
+            if self.kill.killed() {
+                return Err(CleanupError::Helper("helper was stopped".into()));
+            }
+            let prompt = prompt_prefix(language, vocabulary).expect("supported language");
+            let id = self.next_id;
+            self.next_id += 1;
+            let request = Request {
+                id,
+                prefix: Some(PromptPrefix {
+                    len: prompt.len(),
+                    slot: language.to_string(),
+                }),
+                prompt,
+                max_tokens: 0,
+                sampling: None,
+            };
+            self.send(request, Instant::now() + WARM_TIMEOUT)?;
+        }
+        Ok(())
     }
 
     /// Continue an already rendered prompt; used for writing beyond cleanup.
@@ -582,6 +657,7 @@ impl Cleaner {
             prompt,
             max_tokens,
             sampling,
+            prefix: None,
         };
         self.send(request, deadline)
     }
@@ -867,6 +943,27 @@ Topic:";
     }
 
     #[test]
+    fn prefix_is_everything_before_the_transcript() {
+        let vocabulary = terms(&["Tauri", "T3 Code"]);
+        for language in LANGUAGES {
+            for vocabulary in [&[][..], &vocabulary[..]] {
+                let prefix = prompt_prefix(language, vocabulary).unwrap();
+                assert!(prefix.ends_with("<|turn>user\nInput:"), "{prefix}");
+                for text in ["hi", "  so um put Tauri in there  "] {
+                    let (full, len) = prompt_with_prefix(language, text, vocabulary).unwrap();
+                    assert_eq!(full, prompt(language, text, vocabulary).unwrap());
+                    assert_eq!(&full[..len], prefix);
+                    assert_eq!(
+                        &full[len..],
+                        format!(" {}<turn|>\n<|turn>model\nTopic:", text.trim())
+                    );
+                }
+            }
+        }
+        assert_eq!(prompt_prefix("de", &[]), None);
+    }
+
+    #[test]
     fn empty_vocabulary_renders_the_plain_prompt() {
         let plain = prompt("en", "so um hello", &[]);
         assert_eq!(
@@ -1080,6 +1177,7 @@ Topic:";
             prompt: "p".into(),
             max_tokens: 70,
             sampling: None,
+            prefix: None,
         };
         let json = serde_json::to_string(&request).unwrap();
         assert_eq!(json, r#"{"id":7,"prompt":"p","maxTokens":70}"#);
@@ -1090,7 +1188,7 @@ Topic:";
                 temperature: 0.5,
                 top_p: 0.75,
             }),
-            ..request
+            ..request.clone()
         };
         let json = serde_json::to_string(&sampled).unwrap();
         assert_eq!(
@@ -1098,6 +1196,19 @@ Topic:";
             r#"{"id":7,"prompt":"p","maxTokens":70,"sampling":{"seed":3,"temperature":0.5,"topP":0.75}}"#
         );
         assert_eq!(serde_json::from_str::<Request>(&json).unwrap(), sampled);
+        let cleanup = Request {
+            prefix: Some(PromptPrefix {
+                len: 5,
+                slot: "en".into(),
+            }),
+            ..request
+        };
+        let json = serde_json::to_string(&cleanup).unwrap();
+        assert_eq!(
+            json,
+            r#"{"id":7,"prompt":"p","maxTokens":70,"prefix":{"len":5,"slot":"en"}}"#
+        );
+        assert_eq!(serde_json::from_str::<Request>(&json).unwrap(), cleanup);
 
         let replies = [
             (

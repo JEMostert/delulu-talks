@@ -12,11 +12,12 @@ pub(crate) use delulu_dictation::cleanup::{
 pub(crate) type AppSlot = Arc<std::sync::OnceLock<tauri::AppHandle>>;
 
 pub(crate) fn supervisor(
-    store: &Store,
+    store: &Arc<Store>,
     enabled: bool,
     file_ready: bool,
     slot: AppSlot,
 ) -> Arc<Supervisor> {
+    let vocabulary = Arc::clone(store);
     Supervisor::new(
         enabled,
         file_ready,
@@ -26,6 +27,7 @@ pub(crate) fn supervisor(
                 let _ = app.emit("cleanup-status", status);
             }
         }),
+        Box::new(move || vocabulary.vocabulary().active_terms()),
     )
 }
 

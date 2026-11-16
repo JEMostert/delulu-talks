@@ -13,21 +13,31 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use delulu_cleanup::{max_tokens, prompt, sanitize, split_reply, Reply, Request, Sampling};
+use delulu_cleanup::{
+    max_tokens, prompt, prompt_with_prefix, sanitize, split_reply, PromptPrefix, Reply, Request,
+    Sampling,
+};
 use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::context::session::{LlamaStateSeqFlags, SeqState};
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::sampling::LlamaSampler;
+use llama_cpp_2::token::LlamaToken;
 use llama_cpp_2::{list_llama_ggml_backend_devices, LlamaBackendDeviceType};
+
+mod prefix;
+use prefix::PrefixCache;
 
 const N_CTX: u32 = 6144;
 const N_BATCH: u32 = 2048;
-/// Vulkan compiles pipelines on first use, per shape. A short prompt (under 256 tokens)
-/// and one that crosses the 256-token KV step cover what later requests need; with
-/// only one, the first real clean on a cold shader cache took over 10 s.
+/// Vulkan compiles pipelines on first use, per shape. Two cleans of different lengths,
+/// each decoding its language's prompt prefix in one batch and then the transcript in
+/// a small one, cover what later requests need. On a cold shader cache they take about
+/// 45 s (RTX 5060 Ti); without them the first real clean paid that. They also leave
+/// both languages' prefixes cached for an empty vocabulary; the app then warms its own.
 const WARM_UPS: [(&str, &str); 2] = [
     ("en", "uh so this is a quick warm up test"),
     (
@@ -124,10 +134,15 @@ pub fn main(args: impl Iterator<Item = String>) -> ExitCode {
         model: &model,
         ctx,
         batch: LlamaBatch::new(N_BATCH as usize, 1),
+        prefixes: PrefixCache::new(),
     };
     for (language, text) in WARM_UPS {
-        let warm = prompt(language, text, &[]).expect("warm-up prompt");
-        if let Err(e) = engine.generate(&warm, max_tokens(text), None) {
+        let (warm, len) = prompt_with_prefix(language, text, &[]).expect("warm-up prompt");
+        let prefix = PromptPrefix {
+            len,
+            slot: language.to_string(),
+        };
+        if let Err(e) = engine.generate(&warm, max_tokens(text), None, Some(&prefix)) {
             return load_failed(&mut out, &format!("warm-up: {e}"));
         }
     }
@@ -172,7 +187,12 @@ pub fn main(args: impl Iterator<Item = String>) -> ExitCode {
             }
         };
         let started = Instant::now();
-        let reply = match engine.generate(&request.prompt, request.max_tokens, request.sampling) {
+        let reply = match engine.generate(
+            &request.prompt,
+            request.max_tokens,
+            request.sampling,
+            request.prefix.as_ref(),
+        ) {
             Ok((text, truncated)) => Reply::Result {
                 id: request.id,
                 text,
@@ -215,7 +235,7 @@ fn once(
         return ExitCode::SUCCESS;
     };
     let started = Instant::now();
-    let (raw, truncated) = match engine.generate(&rendered, max_tokens(text), None) {
+    let (raw, truncated) = match engine.generate(&rendered, max_tokens(text), None, None) {
         Ok(result) => result,
         Err(e) => {
             eprintln!("delulu-engine llm: {e}");
@@ -249,43 +269,53 @@ struct Engine<'m> {
     model: &'m LlamaModel,
     ctx: LlamaContext<'m>,
     batch: LlamaBatch<'static>,
+    /// Cleanup's evaluated prompt prefixes, in host memory.
+    prefixes: PrefixCache<SeqState>,
 }
 
 impl Engine<'_> {
-    /// Decode from a fresh KV cache: greedy, or seeded sampling when asked. Returns
-    /// the text and whether `max_tokens` cut it off.
+    /// Decode from a fresh KV cache, or from a cached `prefix` when the request has one:
+    /// greedy, or seeded sampling when asked. Returns the text and whether `max_tokens`
+    /// cut it off.
     fn generate(
         &mut self,
         prompt: &str,
         max_tokens: u32,
         sampling: Option<Sampling>,
+        prefix: Option<&PromptPrefix>,
     ) -> Result<(String, bool), String> {
-        self.ctx.clear_kv_cache();
         let vocab = self.model.vocab();
         let tokens = vocab.tokenize(prompt.as_bytes(), true, true);
         if tokens.len() + max_tokens as usize > self.ctx.n_ctx() as usize {
             return Err(format!("prompt too long ({} tokens)", tokens.len()));
         }
 
-        let mut pos = 0;
-        for chunk in tokens.chunks(N_BATCH as usize) {
-            self.batch.clear();
-            for &token in chunk {
-                let last = pos as usize == tokens.len() - 1;
-                self.batch
-                    .add(token, pos, &[0], last)
-                    .map_err(|e| e.to_string())?;
-                pos += 1;
-            }
-            self.ctx
-                .decode(&mut self.batch)
-                .map_err(|e| format!("decode: {e}"))?;
+        // Nothing of an earlier request, cleanup or writing, survives into this one.
+        self.ctx.clear_kv_cache();
+        let mut pos = match prefix {
+            Some(prefix) => self.start_from_prefix(prompt, &tokens, prefix, max_tokens)?,
+            None => 0,
+        };
+        let rest = &tokens[pos as usize..];
+        for (i, chunk) in rest.chunks(N_BATCH as usize).enumerate() {
+            let last_chunk = (i + 1) * N_BATCH as usize >= rest.len();
+            self.decode(chunk, pos, last_chunk)?;
+            pos += chunk.len() as i32;
+        }
+        if max_tokens == 0 {
+            return Ok((String::new(), true));
         }
 
-        // Penalties then greedy = temperature 0. `sample` accepts only generated tokens.
         let penalties = LlamaSampler::penalties(self.model.n_vocab(), 64, 1.1, 0.0, 0.0);
         let mut sampler = match sampling {
-            None => LlamaSampler::chain_simple([penalties, LlamaSampler::greedy()]),
+            // Temperature 0. Top-k first spares the penalties a pass over the whole
+            // vocabulary; the result only differs if the penalties pushed all 40 best
+            // tokens below the 41st. `sample` accepts only generated tokens.
+            None => LlamaSampler::chain_simple([
+                LlamaSampler::top_k(40),
+                penalties,
+                LlamaSampler::greedy(),
+            ]),
             Some(s) => LlamaSampler::chain_simple([
                 penalties,
                 LlamaSampler::top_p(s.top_p.clamp(0.05, 1.0), 1),
@@ -300,16 +330,75 @@ impl Engine<'_> {
                 return Ok((String::from_utf8_lossy(&bytes).into_owned(), false));
             }
             vocab.token_to_piece_into(token, &mut bytes, true, None);
-            self.batch.clear();
-            self.batch
-                .add(token, pos, &[0], true)
-                .map_err(|e| e.to_string())?;
+            self.decode(&[token], pos, true)?;
             pos += 1;
-            self.ctx
-                .decode(&mut self.batch)
-                .map_err(|e| format!("decode: {e}"))?;
         }
         Ok((String::from_utf8_lossy(&bytes).into_owned(), true))
+    }
+
+    /// Put the KV state after the request's prefix in place, restored from the cache or
+    /// decoded and cached now, and return how many prompt tokens it holds. 0 = the
+    /// prefix cannot be used: decode the whole prompt.
+    fn start_from_prefix(
+        &mut self,
+        prompt: &str,
+        tokens: &[LlamaToken],
+        prefix: &PromptPrefix,
+        max_tokens: u32,
+    ) -> Result<i32, String> {
+        let Some(text) = prompt.get(..prefix.len) else {
+            return Ok(0);
+        };
+        if let Some((cached, state)) = self.prefixes.get(&prefix.slot, text) {
+            if !prefix::reusable(cached, tokens, max_tokens) {
+                return Ok(0);
+            }
+            let n = cached.len() as i32;
+            if self.ctx.state_seq_set(state, 0).is_ok() {
+                return Ok(n);
+            }
+            eprintln!("delulu-engine llm: could not restore a cached prompt prefix");
+            self.prefixes.remove(&prefix.slot);
+            self.ctx.clear_kv_cache();
+            return Ok(0);
+        }
+
+        let cached = self.model.vocab().tokenize(text.as_bytes(), true, true);
+        if !prefix::reusable(&cached, tokens, max_tokens) {
+            return Ok(0);
+        }
+        for (pos, chunk) in (0..)
+            .step_by(N_BATCH as usize)
+            .zip(cached.chunks(N_BATCH as usize))
+        {
+            self.decode(chunk, pos, false)?;
+        }
+        let n = cached.len() as i32;
+        match self.ctx.state_seq_get(0, LlamaStateSeqFlags::empty()) {
+            Ok(state) => {
+                eprintln!(
+                    "delulu-engine llm: cached a prompt prefix ({n} tokens, {:.1} MiB)",
+                    state.byte_len() as f64 / (1024.0 * 1024.0)
+                );
+                self.prefixes.insert(&prefix.slot, text, cached, state);
+            }
+            Err(e) => eprintln!("delulu-engine llm: could not cache a prompt prefix: {e}"),
+        }
+        Ok(n)
+    }
+
+    /// Decode `tokens` at positions from `pos`, with logits for the last one if asked.
+    fn decode(&mut self, tokens: &[LlamaToken], pos: i32, logits: bool) -> Result<(), String> {
+        self.batch.clear();
+        for (i, &token) in tokens.iter().enumerate() {
+            let last = logits && i == tokens.len() - 1;
+            self.batch
+                .add(token, pos + i as i32, &[0], last)
+                .map_err(|e| e.to_string())?;
+        }
+        self.ctx
+            .decode(&mut self.batch)
+            .map_err(|e| format!("decode: {e}"))
     }
 }
 
