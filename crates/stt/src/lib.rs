@@ -1,5 +1,6 @@
 use std::{path::Path, time::Instant};
 
+mod pieces;
 mod prompt;
 mod vad;
 pub use prompt::Prompt;
@@ -375,7 +376,7 @@ impl Engine {
                     // A fixed language allows no other.
                     Language::Fixed(code) => (code.as_str(), Vec::new()),
                 };
-                let (text, language) = whisper_transcribe(state, samples, code, &allowed, prompt)?;
+                let (text, language) = whisper_pieces(state, samples, code, &allowed, prompt)?;
                 let speech = speech.map(|handle| {
                     handle.join().unwrap_or_else(|_| {
                         Err(SttError::Inference("speech detection panicked".into()))
@@ -480,6 +481,49 @@ fn detect_within(
     state.pcm_to_mel(samples, threads()).map_err(inference)?;
     let (_, probs) = state.lang_detect(0, threads()).map_err(inference)?;
     Ok(choose_language(&probs, allowed))
+}
+
+/// Whisper's text for a clip of any length: in pieces under its 30 s window, cut at
+/// pauses (see `pieces`) and joined in order. Each piece after the first reads the
+/// previous piece's text as its sentence, as whisper.cpp does between its own windows.
+fn whisper_pieces(
+    state: &mut whisper_rs::WhisperState,
+    samples: &[f32],
+    code: &str,
+    allowed: &[String],
+    prompt: Option<&Prompt>,
+) -> Result<(String, String), SttError> {
+    let mut texts: Vec<String> = Vec::new();
+    let mut language = code.to_string();
+    for range in pieces::pieces(samples) {
+        let previous = texts.last().map(|text| Prompt {
+            terms: prompt.and_then(|p| p.terms.clone()),
+            sentence: Some(tail(text, 200).to_string()),
+        });
+        let (text, lang) = whisper_transcribe(
+            state,
+            &samples[range],
+            code,
+            allowed,
+            previous.as_ref().or(prompt),
+        )?;
+        language = lang;
+        if !punctuation_only(&text) {
+            texts.push(text);
+        }
+    }
+    Ok((texts.join(" "), language))
+}
+
+/// The last `max` characters of `text`, from the start of a word.
+fn tail(text: &str, max: usize) -> &str {
+    let count = text.chars().count();
+    if count <= max {
+        return text;
+    }
+    let cut = &text[text.char_indices().nth(count - max).map_or(0, |(i, _)| i)..];
+    cut.find(' ')
+        .map_or(cut, |space| cut[space + 1..].trim_start())
 }
 
 /// Whisper's text in `code`, with the prompt built for that language. If the text still
