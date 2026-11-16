@@ -137,9 +137,22 @@ mod tests {
     fn covers_the_words_the_app_shows() {
         let font = Font::embedded();
         // Every pill word the daemon and app send, plus accents and typography.
-        for word in ["Typed", "Copied", "Nothing heard", "No microphone", "Mic error", "Not typed", "Not transcribed", "Über", "é…€"] {
+        for word in [
+            "Typed",
+            "Copied",
+            "Nothing heard",
+            "No microphone",
+            "Mic error",
+            "Not typed",
+            "Not transcribed",
+            "Über",
+            "é…€",
+        ] {
             for ch in word.chars() {
-                assert!(font.face.glyph_index(ch).is_some(), "{ch:?} missing from the subset");
+                assert!(
+                    font.face.glyph_index(ch).is_some(),
+                    "{ch:?} missing from the subset"
+                );
             }
         }
         let e = font.extents("Typed", 12.5);

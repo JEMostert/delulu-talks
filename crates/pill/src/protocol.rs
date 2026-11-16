@@ -106,12 +106,22 @@ mod tests {
     fn splits_lines_across_reads_and_skips_bad_ones() {
         let mut lines = Lines::default();
         let first = lines.read(&mut chunks(&[r#"{"state":"listening","le"#], false));
-        assert_eq!(first, Batch { messages: vec![], open: true });
+        assert_eq!(
+            first,
+            Batch {
+                messages: vec![],
+                open: true
+            }
+        );
         let rest = lines.read(&mut chunks(
             &["vel\":0.5}\n\n  \nnot json\n{\"state\":\"success\",\"label\":\"Typed\"}\n{\"state\""],
             false,
         ));
-        let states: Vec<_> = rest.messages.iter().map(|m| (m.state, m.level, m.label.clone())).collect();
+        let states: Vec<_> = rest
+            .messages
+            .iter()
+            .map(|m| (m.state, m.level, m.label.clone()))
+            .collect();
         assert_eq!(
             states,
             [
@@ -130,7 +140,10 @@ mod tests {
     #[test]
     fn unknown_fields_from_newer_clients_are_ignored() {
         let mut lines = Lines::default();
-        let read = lines.read(&mut chunks(&["{\"state\":\"error\",\"label\":\"Nope\",\"output\":\"DP-1\"}\n"], true));
+        let read = lines.read(&mut chunks(
+            &["{\"state\":\"error\",\"label\":\"Nope\",\"output\":\"DP-1\"}\n"],
+            true,
+        ));
         assert_eq!(read.messages[0].state, PillState::Error);
     }
 

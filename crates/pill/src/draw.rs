@@ -57,7 +57,13 @@ fn linear(
     s: &[(f64, Color)],
     mode: SpreadMode,
 ) -> Option<Shader<'static>> {
-    LinearGradient::new(pt(x0, y0), pt(x1, y1), stops(s), mode, Transform::identity())
+    LinearGradient::new(
+        pt(x0, y0),
+        pt(x1, y1),
+        stops(s),
+        mode,
+        Transform::identity(),
+    )
 }
 
 /// A two-point conical gradient, cairo's `RadialGradient`.
@@ -390,7 +396,12 @@ pub fn blit_bgra(frame: Option<&Frame>, stale: Option<IntRect>, dst: &mut [u8], 
         let Some(out) = dst.get_mut(at..at + row) else {
             break;
         };
-        for (s, d) in src.as_chunks::<4>().0.iter().zip(out.as_chunks_mut::<4>().0) {
+        for (s, d) in src
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(out.as_chunks_mut::<4>().0)
+        {
             *d = [s[2], s[1], s[0], s[3]];
         }
     }
@@ -574,7 +585,10 @@ fn shell(cr: &mut Canvas, m: &Model, w: f64, h: f64, a: Rgb) {
             let glow = radial(
                 (cx, cy, 0.0),
                 (cx, cy, 22.0),
-                &[(0.0, col(a.0, a.1, a.2, 0.11)), (1.0, col(a.0, a.1, a.2, 0.0))],
+                &[
+                    (0.0, col(a.0, a.1, a.2, 0.11)),
+                    (1.0, col(a.0, a.1, a.2, 0.0)),
+                ],
             );
             cr.fill(&circle(cx, cy, 22.0), glow);
         }
@@ -583,10 +597,16 @@ fn shell(cr: &mut Canvas, m: &Model, w: f64, h: f64, a: Rgb) {
     let top = linear(
         (0.0, y),
         (0.0, y + h / 2.0),
-        &[(0.0, col(1.0, 1.0, 1.0, 0.12)), (1.0, col(1.0, 1.0, 1.0, 0.0))],
+        &[
+            (0.0, col(1.0, 1.0, 1.0, 0.12)),
+            (1.0, col(1.0, 1.0, 1.0, 0.0)),
+        ],
         SpreadMode::Pad,
     );
-    cr.fill(&rounded(x + 1.5, y + 1.5, w - 3.0, h / 2.0, h / 2.0 - 1.0), top);
+    cr.fill(
+        &rounded(x + 1.5, y + 1.5, w - 3.0, h / 2.0, h / 2.0 - 1.0),
+        top,
+    );
     cr.restore();
     // Mother-of-pearl rim whose colours slide around the edge.
     let offset = if m.reduce_motion { 0.0 } else { m.age * 40.0 };
@@ -601,7 +621,11 @@ fn shell(cr: &mut Canvas, m: &Model, w: f64, h: f64, a: Rgb) {
         &rim_stops,
         SpreadMode::Reflect,
     );
-    cr.stroke(&rounded(x + 0.6, y + 0.6, w - 1.2, h - 1.2, h / 2.0), rim, &line(1.2));
+    cr.stroke(
+        &rounded(x + 0.6, y + 0.6, w - 1.2, h - 1.2, h / 2.0),
+        rim,
+        &line(1.2),
+    );
 }
 
 /// A diagonal band of light crossing the glass; `t` runs 0 to 1.
@@ -714,10 +738,38 @@ fn sparkle(cr: &mut Canvas, x: f64, y: f64, s: f64, c: Rgb, alpha: f64) {
     let f = |v: f64| v as f32;
     let mut pb = PathBuilder::new();
     pb.move_to(f(x), f(y - s));
-    pb.cubic_to(f(x + k * 0.3), f(y - k), f(x + k), f(y - k * 0.3), f(x + s), f(y));
-    pb.cubic_to(f(x + k), f(y + k * 0.3), f(x + k * 0.3), f(y + k), f(x), f(y + s));
-    pb.cubic_to(f(x - k * 0.3), f(y + k), f(x - k), f(y + k * 0.3), f(x - s), f(y));
-    pb.cubic_to(f(x - k), f(y - k * 0.3), f(x - k * 0.3), f(y - k), f(x), f(y - s));
+    pb.cubic_to(
+        f(x + k * 0.3),
+        f(y - k),
+        f(x + k),
+        f(y - k * 0.3),
+        f(x + s),
+        f(y),
+    );
+    pb.cubic_to(
+        f(x + k),
+        f(y + k * 0.3),
+        f(x + k * 0.3),
+        f(y + k),
+        f(x),
+        f(y + s),
+    );
+    pb.cubic_to(
+        f(x - k * 0.3),
+        f(y + k),
+        f(x - k),
+        f(y + k * 0.3),
+        f(x - s),
+        f(y),
+    );
+    pb.cubic_to(
+        f(x - k),
+        f(y - k * 0.3),
+        f(x - k * 0.3),
+        f(y - k),
+        f(x),
+        f(y - s),
+    );
     pb.close();
     cr.fill(&pb.finish(), solid(1.0, 1.0, 1.0, alpha));
 }
@@ -788,20 +840,29 @@ fn pearl(cr: &mut Canvas, m: &Model, cx: f64, cy: f64, a: Rgb, level: f64, font:
         let cloud = radial(
             (bx, by, 0.0),
             (bx, by, r * 0.85),
-            &[(0.0, col(c.0, c.1, c.2, 0.42)), (1.0, col(c.0, c.1, c.2, 0.0))],
+            &[
+                (0.0, col(c.0, c.1, c.2, 0.42)),
+                (1.0, col(c.0, c.1, c.2, 0.0)),
+            ],
         );
         cr.fill(&circle(bx, by, r * 0.85), cloud);
     }
     let tint = radial(
         (cx, cy + r * 0.5, 0.5),
         (cx, cy + r * 0.2, r * 1.1),
-        &[(0.0, col(a.0, a.1, a.2, 0.38)), (1.0, col(a.0, a.1, a.2, 0.0))],
+        &[
+            (0.0, col(a.0, a.1, a.2, 0.38)),
+            (1.0, col(a.0, a.1, a.2, 0.0)),
+        ],
     );
     cr.fill(&disc, tint);
     let limb = radial(
         (cx, cy, r * 0.55),
         (cx, cy, r),
-        &[(0.0, col(0.1, 0.15, 0.25, 0.0)), (1.0, col(0.1, 0.15, 0.25, 0.32))],
+        &[
+            (0.0, col(0.1, 0.15, 0.25, 0.0)),
+            (1.0, col(0.1, 0.15, 0.25, 0.32)),
+        ],
     );
     cr.fill(&disc, limb);
     cr.restore();
@@ -925,7 +986,10 @@ fn burst(cr: &mut Canvas, t: f64, px: f64, py: f64, a: Rgb) {
             let body = radial(
                 (x - size * 0.35, y - size * 0.4, 0.1),
                 (x, y, size),
-                &[(0.0, col(1.0, 1.0, 1.0, fade)), (1.0, col(c.0, c.1, c.2, fade))],
+                &[
+                    (0.0, col(1.0, 1.0, 1.0, fade)),
+                    (1.0, col(c.0, c.1, c.2, fade)),
+                ],
             );
             cr.fill(&circle(x, y, size), body);
         }
@@ -991,7 +1055,11 @@ pub fn render_demo(dir: &std::path::Path, fps: f64) -> Result<usize, String> {
             if m.state == PillState::Listening && m.leaving.is_none() {
                 // Speech-like syllables.
                 let s = (clock * 7.0).sin().max(0.0) * (clock * 1.9 + 1.0).sin().abs();
-                m.apply(&msg(PillState::Listening, Some((0.25 + 0.7 * s) as f32), None));
+                m.apply(&msg(
+                    PillState::Listening,
+                    Some((0.25 + 0.7 * s) as f32),
+                    None,
+                ));
             }
             m.step(dt);
             r.render_full(&m, 2.0, &mut pill);
@@ -1068,7 +1136,9 @@ mod tests {
             .enumerate()
             .filter(|(k, _)| {
                 let (x, y) = (*k as i32 % w, *k as i32 / w);
-                !rect.is_some_and(|r| x >= r.left() && x < r.right() && y >= r.top() && y < r.bottom())
+                !rect.is_some_and(|r| {
+                    x >= r.left() && x < r.right() && y >= r.top() && y < r.bottom()
+                })
             })
             .map(|(_, px)| px[3])
             .max()
@@ -1081,11 +1151,46 @@ mod tests {
         let mut m = Model::default();
         let mut frames = Vec::new();
         let script: [(f64, Message); 5] = [
-            (1.5, Message { state: PillState::Listening, level: Some(1.0), label: None }),
-            (0.6, Message { state: PillState::Transcribing, level: None, label: None }),
-            (1.4, Message { state: PillState::Success, level: None, label: Some("Not transcribed".into()) }),
-            (0.4, Message { state: PillState::Hidden, level: None, label: None }),
-            (0.8, Message { state: PillState::Error, level: None, label: Some("Mic error".into()) }),
+            (
+                1.5,
+                Message {
+                    state: PillState::Listening,
+                    level: Some(1.0),
+                    label: None,
+                },
+            ),
+            (
+                0.6,
+                Message {
+                    state: PillState::Transcribing,
+                    level: None,
+                    label: None,
+                },
+            ),
+            (
+                1.4,
+                Message {
+                    state: PillState::Success,
+                    level: None,
+                    label: Some("Not transcribed".into()),
+                },
+            ),
+            (
+                0.4,
+                Message {
+                    state: PillState::Hidden,
+                    level: None,
+                    label: None,
+                },
+            ),
+            (
+                0.8,
+                Message {
+                    state: PillState::Error,
+                    level: None,
+                    label: Some("Mic error".into()),
+                },
+            ),
         ];
         for (secs, msg) in script {
             m.apply(&msg);
@@ -1110,7 +1215,11 @@ mod tests {
             for (i, m) in run().iter().enumerate() {
                 let rect = r.bounds(m, scale, size);
                 let stray = alpha_outside(&unbounded(&r, m, scale), rect);
-                assert_eq!(stray, 0, "frame {i} at {scale} draws outside {rect:?} ({:?})", m.state);
+                assert_eq!(
+                    stray, 0,
+                    "frame {i} at {scale} draws outside {rect:?} ({:?})",
+                    m.state
+                );
             }
         }
     }

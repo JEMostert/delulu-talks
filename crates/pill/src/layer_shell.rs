@@ -24,7 +24,9 @@ use smithay_client_toolkit::{
             Connection, Dispatch, QueueHandle, WEnum,
         },
         protocols::wp::{
-            fractional_scale::v1::client::{wp_fractional_scale_manager_v1, wp_fractional_scale_v1},
+            fractional_scale::v1::client::{
+                wp_fractional_scale_manager_v1, wp_fractional_scale_v1,
+            },
             presentation_time::client::wp_presentation_feedback,
             viewporter::client::{wp_viewport, wp_viewporter},
         },
@@ -117,11 +119,11 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Probe {
 fn globals() -> Option<Vec<(String, u32)>> {
     let conn = Connection::connect_to_env().ok()?;
     let (globals, _queue) = registry_queue_init::<Probe>(&conn).ok()?;
-    Some(globals.contents().with_list(|l| {
-        l.iter()
-            .map(|g| (g.interface.clone(), g.version))
-            .collect()
-    }))
+    Some(
+        globals
+            .contents()
+            .with_list(|l| l.iter().map(|g| (g.interface.clone(), g.version)).collect()),
+    )
 }
 
 /// Whether the compositor offers layer-shell.
@@ -364,10 +366,12 @@ impl Wl {
             .position(|b| b.buffer.slot().canvas(&mut self.pool).is_some())
         {
             Some(i) => i,
-            None => match self
-                .pool
-                .create_buffer(bw as i32, bh as i32, stride, wl_shm::Format::Argb8888)
-            {
+            None => match self.pool.create_buffer(
+                bw as i32,
+                bh as i32,
+                stride,
+                wl_shm::Format::Argb8888,
+            ) {
                 Ok((buffer, _)) => {
                     self.slots.push(Slot {
                         buffer,

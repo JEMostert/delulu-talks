@@ -72,7 +72,10 @@ impl ShmBuf {
             busy: false,
         };
         // Dropping `buf` unmaps it if attaching fails.
-        conn.shm_attach_fd(buf.seg, owned, false).ok()?.check().ok()?;
+        conn.shm_attach_fd(buf.seg, owned, false)
+            .ok()?
+            .check()
+            .ok()?;
         Some(buf)
     }
 
@@ -190,7 +193,13 @@ impl X {
         )?;
         let wtype = atom(&conn, b"_NET_WM_WINDOW_TYPE")?;
         let notification = atom(&conn, b"_NET_WM_WINDOW_TYPE_NOTIFICATION")?;
-        conn.change_property32(PropMode::REPLACE, win, wtype, AtomEnum::ATOM, &[notification])?;
+        conn.change_property32(
+            PropMode::REPLACE,
+            win,
+            wtype,
+            AtomEnum::ATOM,
+            &[notification],
+        )?;
         // WM_HINTS: flags = InputHint, input = False. It never asks for focus.
         conn.change_property32(
             PropMode::REPLACE,
@@ -200,7 +209,16 @@ impl X {
             &[1, 0, 0, 0, 0, 0, 0, 0, 0],
         )?;
         // Click-through: an empty input shape.
-        shape::rectangles(&conn, SO::SET, SK::INPUT, ClipOrdering::UNSORTED, win, 0, 0, &[])?;
+        shape::rectangles(
+            &conn,
+            SO::SET,
+            SK::INPUT,
+            ClipOrdering::UNSORTED,
+            win,
+            0,
+            0,
+            &[],
+        )?;
         let gc = conn.generate_id()?;
         conn.create_gc(gc, win, &CreateGCAux::new().graphics_exposures(0))?;
         let xsettings = atom(&conn, format!("_XSETTINGS_S{screen}").as_bytes()).ok();
@@ -239,7 +257,14 @@ impl X {
 
     fn resources(&self) -> String {
         self.conn
-            .get_property(false, self.root, AtomEnum::RESOURCE_MANAGER, AtomEnum::STRING, 0, 1 << 16)
+            .get_property(
+                false,
+                self.root,
+                AtomEnum::RESOURCE_MANAGER,
+                AtomEnum::STRING,
+                0,
+                1 << 16,
+            )
             .ok()
             .and_then(|c| c.reply().ok())
             .map(|r| String::from_utf8_lossy(&r.value).into_owned())
@@ -260,10 +285,9 @@ impl X {
         let (w, h) = canvas_size(SCALE * scale);
         self.scale = scale;
         (self.w, self.h) = (w as u16, h as u16);
-        let _ = self.conn.configure_window(
-            self.win,
-            &ConfigureWindowAux::new().width(w).height(h),
-        );
+        let _ = self
+            .conn
+            .configure_window(self.win, &ConfigureWindowAux::new().width(w).height(h));
         let len = w as usize * h as usize * 4;
         let old = std::mem::replace(&mut self.image, Image::Local(Vec::new()));
         if let Image::Shm(buf) = old {
@@ -512,9 +536,11 @@ impl X {
         let started = Instant::now();
         let (w, h) = (self.w, self.h);
         let stride = usize::from(w) * 4;
-        let frame = core
-            .renderer
-            .render(&core.model, SCALE * self.scale, (u32::from(w), u32::from(h)));
+        let frame = core.renderer.render(
+            &core.model,
+            SCALE * self.scale,
+            (u32::from(w), u32::from(h)),
+        );
         let rect = frame.as_ref().map(|f| f.rect);
         let damage = match self.shown {
             None => IntRect::from_xywh(0, 0, u32::from(w), u32::from(h)),
@@ -528,7 +554,12 @@ impl X {
         self.content = rect;
         self.shown = Some(rect);
         if let Some(d) = damage {
-            let (x, y, dw, dh) = (d.x() as i16, d.y() as i16, d.width() as u16, d.height() as u16);
+            let (x, y, dw, dh) = (
+                d.x() as i16,
+                d.y() as i16,
+                d.width() as u16,
+                d.height() as u16,
+            );
             match &mut self.image {
                 Image::Shm(s) => {
                     s.busy = true;
@@ -584,8 +615,7 @@ impl X {
         }
         let _ = self.conn.flush();
         let pixels = rect.map_or(0, |r| u64::from(r.width()) * u64::from(r.height()));
-        core.stats
-            .rendered(started.elapsed().as_secs_f64(), pixels);
+        core.stats.rendered(started.elapsed().as_secs_f64(), pixels);
     }
 }
 
@@ -626,7 +656,8 @@ mod tests {
         let (x, y) = place(monitor, monitor, (w, h), 1.0);
         assert_eq!(x, (1920 - 466) / 2);
         // The pill's bottom edge (PAD_TOP + HEIGHT down the canvas, at 1.2).
-        let pill_bottom = |y: i32, s: f64| y + ((PAD_TOP + f64::from(HEIGHT)) * SCALE * s).round() as i32;
+        let pill_bottom =
+            |y: i32, s: f64| y + ((PAD_TOP + f64::from(HEIGHT)) * SCALE * s).round() as i32;
         assert_eq!(1080 - pill_bottom(y, 1.0), 80);
         // A real panel in the work area: the normal margin above it.
         let area = (0, 0, 1920, 1032);

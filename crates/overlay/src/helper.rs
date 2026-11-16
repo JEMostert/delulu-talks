@@ -240,14 +240,25 @@ impl Pill {
         let (fw, fh) = (frame.rect.width() as i32, frame.rect.height() as i32);
         // Premultiplied RGBA to cairo's native-endian ARGB32 (B, G, R, A bytes).
         let mut bgra = vec![0u8; frame.data.len()];
-        for (s, d) in frame.data.as_chunks::<4>().0.iter().zip(bgra.as_chunks_mut::<4>().0) {
+        for (s, d) in frame
+            .data
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(bgra.as_chunks_mut::<4>().0)
+        {
             *d = [s[2], s[1], s[0], s[3]];
         }
-        let image = cairo::ImageSurface::create_for_data(bgra, cairo::Format::ARgb32, fw, fh, fw * 4)?;
+        let image =
+            cairo::ImageSurface::create_for_data(bgra, cairo::Format::ARgb32, fw, fh, fw * 4)?;
         image.set_device_scale(f64::from(factor), f64::from(factor));
         cr.set_operator(cairo::Operator::Over);
         let f = f64::from(factor);
-        cr.set_source_surface(&image, f64::from(frame.rect.x()) / f, f64::from(frame.rect.y()) / f)?;
+        cr.set_source_surface(
+            &image,
+            f64::from(frame.rect.x()) / f,
+            f64::from(frame.rect.y()) / f,
+        )?;
         cr.paint()
     }
 

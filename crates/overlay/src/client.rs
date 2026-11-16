@@ -141,15 +141,22 @@ pub fn native_pill() -> Option<PathBuf> {
     )
 }
 
-fn find_native(env: Option<OsString>, exe_dir: Option<&Path>, helper_dir: &Path) -> Option<PathBuf> {
+fn find_native(
+    env: Option<OsString>,
+    exe_dir: Option<&Path>,
+    helper_dir: &Path,
+) -> Option<PathBuf> {
     if let Some(value) = env.filter(|v| !v.is_empty()) {
         let path = PathBuf::from(value);
         return path.is_file().then_some(path);
     }
-    [exe_dir.map(|d| d.join(NATIVE)), Some(helper_dir.join(NATIVE))]
-        .into_iter()
-        .flatten()
-        .find(|path| path.is_file())
+    [
+        exe_dir.map(|d| d.join(NATIVE)),
+        Some(helper_dir.join(NATIVE)),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|path| path.is_file())
 }
 
 /// A program that can draw the pill.
@@ -187,7 +194,9 @@ impl Programs {
     fn give_up(&mut self, why: &str) {
         if let Some(gone) = self.queue.pop_front() {
             match self.queue.front() {
-                Some(next) => eprintln!("pill: {} {why}; using {} instead", gone.name(), next.name()),
+                Some(next) => {
+                    eprintln!("pill: {} {why}; using {} instead", gone.name(), next.name())
+                }
                 None => eprintln!("pill: {} {why}; recording pill disabled", gone.name()),
             }
         }
@@ -374,11 +383,22 @@ mod tests {
         script(&lib.join(NATIVE), "true");
         assert_eq!(find_native(None, Some(&bin), &lib), Some(lib.join(NATIVE)));
         script(&bin.join(NATIVE), "true");
-        assert_eq!(find_native(None, Some(&bin), &lib), Some(bin.join(NATIVE)), "a dev build wins");
+        assert_eq!(
+            find_native(None, Some(&bin), &lib),
+            Some(bin.join(NATIVE)),
+            "a dev build wins"
+        );
         let custom = dir.join("custom");
         script(&custom, "true");
-        assert_eq!(find_native(Some(custom.clone().into()), Some(&bin), &lib), Some(custom));
-        assert_eq!(find_native(Some("gtk".into()), Some(&bin), &lib), None, "forced off");
+        assert_eq!(
+            find_native(Some(custom.clone().into()), Some(&bin), &lib),
+            Some(custom)
+        );
+        assert_eq!(
+            find_native(Some("gtk".into()), Some(&bin), &lib),
+            None,
+            "forced off"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -389,7 +409,11 @@ mod tests {
         let mut p = programs(Some("/x/delulu-pill".into()), Fallback::OwnBinary);
         assert_eq!(p.current(), Some(&native));
         p.exited(Some(UNAVAILABLE), Duration::from_millis(5));
-        assert_eq!(p.current(), Some(&helper), "no layer-shell or X: the GTK helper");
+        assert_eq!(
+            p.current(),
+            Some(&helper),
+            "no layer-shell or X: the GTK helper"
+        );
         p.exited(Some(UNAVAILABLE), Duration::from_millis(5));
         assert_eq!(p.current(), None, "neither can draw: off for the session");
 
@@ -445,7 +469,8 @@ mod tests {
         // Give the native pill time to exit, as a real one does at once.
         std::thread::sleep(Duration::from_millis(300));
         for i in 0..20 {
-            tx.send(msg(PillState::Listening, Some(i as f32 / 20.0))).unwrap();
+            tx.send(msg(PillState::Listening, Some(i as f32 / 20.0)))
+                .unwrap();
             std::thread::sleep(Duration::from_millis(10));
         }
         tx.send(msg(PillState::Transcribing, None)).unwrap();
@@ -454,7 +479,10 @@ mod tests {
         drop(tx);
         thread.join().unwrap();
         let native_starts = std::fs::read_to_string(&starts).unwrap().lines().count();
-        assert_eq!(native_starts, 1, "an unavailable native pill is not retried");
+        assert_eq!(
+            native_starts, 1,
+            "an unavailable native pill is not retried"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

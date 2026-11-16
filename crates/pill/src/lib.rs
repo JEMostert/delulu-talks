@@ -10,11 +10,11 @@
 //! Without features this crate is only the protocol and the model, which the
 //! daemon uses to drive a pill; `render` adds the drawing.
 
+#[cfg(feature = "render")]
+pub mod draw;
 pub mod model;
 pub mod protocol;
 pub mod select;
-#[cfg(feature = "render")]
-pub mod draw;
 #[cfg(feature = "render")]
 mod text;
 

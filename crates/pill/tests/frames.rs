@@ -51,7 +51,10 @@ fn each_state_matches_its_reference_frame() {
             assert_eq!((reference.width(), reference.height()), (w, h), "{name}");
             let share = changed_share(&frame, &reference);
             if share > 0.002 {
-                failures.push(format!("{name} at {output_scale}x: {:.2} % of pixels changed", share * 100.0));
+                failures.push(format!(
+                    "{name} at {output_scale}x: {:.2} % of pixels changed",
+                    share * 100.0
+                ));
             }
         }
     }

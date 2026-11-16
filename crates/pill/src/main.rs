@@ -25,11 +25,7 @@ use delulu_pill::{PillState, UNAVAILABLE};
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let flag = |name: &str| args.iter().any(|a| a == name);
-    let after = |name: &str| {
-        args.iter()
-            .position(|a| a == name)
-            .map(|i| &args[i + 1..])
-    };
+    let after = |name: &str| args.iter().position(|a| a == name).map(|i| &args[i + 1..]);
     if flag("--help") || flag("-h") {
         println!("{}", USAGE.trim());
         return;
@@ -50,10 +46,18 @@ fn main() {
 
     let requested = after("--backend")
         .and_then(|rest| rest.first().cloned())
-        .or_else(|| std::env::var("DELULU_PILL_BACKEND").ok().filter(|v| !v.is_empty()));
+        .or_else(|| {
+            std::env::var("DELULU_PILL_BACKEND")
+                .ok()
+                .filter(|v| !v.is_empty())
+        });
     let reduce_motion = flag("--reduce-motion")
         || std::env::var("DELULU_PILL_REDUCE_MOTION").is_ok_and(|v| v == "1");
-    let backend = match select::choose(requested.as_deref(), Session::from_env(), layer_shell::available) {
+    let backend = match select::choose(
+        requested.as_deref(),
+        Session::from_env(),
+        layer_shell::available,
+    ) {
         Ok(b) => b,
         Err(why) => {
             eprintln!("pill: {why}; no recording pill");

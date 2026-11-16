@@ -78,7 +78,10 @@ mod tests {
         assert_eq!(choose(None, KDE, || true), Ok(Backend::LayerShell));
         // GNOME offers no layer-shell: XWayland.
         assert_eq!(choose(None, GNOME, || false), Ok(Backend::X11));
-        assert_eq!(choose(Some("auto"), X_ONLY, || unreachable!()), Ok(Backend::X11));
+        assert_eq!(
+            choose(Some("auto"), X_ONLY, || unreachable!()),
+            Ok(Backend::X11)
+        );
         let wayland_only = Session {
             wayland: true,
             x11: false,
@@ -89,7 +92,10 @@ mod tests {
 
     #[test]
     fn overrides_skip_the_probe_but_need_their_display() {
-        assert_eq!(choose(Some("x11"), KDE, || unreachable!()), Ok(Backend::X11));
+        assert_eq!(
+            choose(Some("x11"), KDE, || unreachable!()),
+            Ok(Backend::X11)
+        );
         assert_eq!(
             choose(Some("layer-shell"), KDE, || unreachable!()),
             Ok(Backend::LayerShell)

@@ -7,7 +7,10 @@ use std::path::PathBuf;
 /// resources (GNOME's and KDE's settings daemons set it to 96 × scale). Rounded
 /// to quarters; never below 1.
 pub fn x11_scale(env_override: Option<&str>, gdk_scale: Option<&str>, resources: &str) -> f64 {
-    let parse = |s: Option<&str>| s.and_then(|s| s.trim().parse::<f64>().ok()).filter(|s| *s > 0.0);
+    let parse = |s: Option<&str>| {
+        s.and_then(|s| s.trim().parse::<f64>().ok())
+            .filter(|s| *s > 0.0)
+    };
     let dpi = || {
         resources.lines().find_map(|l| {
             l.strip_prefix("Xft.dpi:")
@@ -96,7 +99,10 @@ mod tests {
     #[test]
     fn x11_scale_follows_the_session() {
         assert_eq!(x11_scale(None, None, ""), 1.0);
-        assert_eq!(x11_scale(None, None, "Xft.antialias:\t1\nXft.dpi:\t144\n"), 1.5);
+        assert_eq!(
+            x11_scale(None, None, "Xft.antialias:\t1\nXft.dpi:\t144\n"),
+            1.5
+        );
         assert_eq!(x11_scale(None, None, "Xft.dpi: 192"), 2.0);
         // KDE writes odd DPIs for 125 %: 120 → 1.25.
         assert_eq!(x11_scale(None, None, "Xft.dpi: 120"), 1.25);
@@ -108,8 +114,20 @@ mod tests {
 
     /// An XSETTINGS blob as gsd-xsettings writes it.
     fn blob(big: bool, records: &[(u8, &str, Vec<u8>)]) -> Vec<u8> {
-        let u16b = |v: u16| if big { v.to_be_bytes() } else { v.to_le_bytes() };
-        let u32b = |v: u32| if big { v.to_be_bytes() } else { v.to_le_bytes() };
+        let u16b = |v: u16| {
+            if big {
+                v.to_be_bytes()
+            } else {
+                v.to_le_bytes()
+            }
+        };
+        let u32b = |v: u32| {
+            if big {
+                v.to_be_bytes()
+            } else {
+                v.to_le_bytes()
+            }
+        };
         let mut out = vec![u8::from(big), 0, 0, 0];
         out.extend(u32b(7));
         out.extend(u32b(records.len() as u32));
@@ -127,7 +145,13 @@ mod tests {
     #[test]
     fn reads_enable_animations_from_xsettings() {
         for big in [false, true] {
-            let u32b = |v: u32| if big { v.to_be_bytes() } else { v.to_le_bytes() };
+            let u32b = |v: u32| {
+                if big {
+                    v.to_be_bytes()
+                } else {
+                    v.to_le_bytes()
+                }
+            };
             let mut theme = u32b(7).to_vec();
             theme.extend(b"Adwaita\0");
             let data = blob(
@@ -142,7 +166,10 @@ mod tests {
             assert_eq!(xsettings_int(&data, "Net/EnableAnimations"), Some(0));
             assert_eq!(xsettings_int(&data, "Gdk/WindowScalingFactor"), Some(2));
             assert_eq!(xsettings_int(&data, "Net/Missing"), None);
-            assert_eq!(xsettings_int(&data[..data.len() - 2], "Net/EnableAnimations"), None);
+            assert_eq!(
+                xsettings_int(&data[..data.len() - 2], "Net/EnableAnimations"),
+                None
+            );
         }
     }
 
@@ -150,7 +177,13 @@ mod tests {
     fn kde_instant_animations_reduce_motion() {
         let text = "[General]\nAnimationDurationFactor=1\n[KDE]\nLookAndFeelPackage=x\nAnimationDurationFactor=0\n";
         assert_eq!(kde_reduces_motion(text), Some(true));
-        assert_eq!(kde_reduces_motion("[KDE]\nAnimationDurationFactor=0.5"), Some(false));
-        assert_eq!(kde_reduces_motion("[General]\nAnimationDurationFactor=0"), None);
+        assert_eq!(
+            kde_reduces_motion("[KDE]\nAnimationDurationFactor=0.5"),
+            Some(false)
+        );
+        assert_eq!(
+            kde_reduces_motion("[General]\nAnimationDurationFactor=0"),
+            None
+        );
     }
 }
