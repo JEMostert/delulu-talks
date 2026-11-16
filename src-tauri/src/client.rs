@@ -1082,16 +1082,14 @@ pub(crate) fn cmd_radio_request(text: String) -> Result<radio::RadioView, String
     let _ = text;
     Err(RADIO_UNAVAILABLE.into())
 }
+#[tauri::command(rename = "radio_music")]
+pub(crate) fn cmd_radio_music(engine: Value, ace_lm: Value) -> Result<radio::RadioView, String> {
+    let _ = (engine, ace_lm);
+    Err(RADIO_UNAVAILABLE.into())
+}
 #[tauri::command(rename = "get_music_model")]
-pub(crate) fn cmd_get_music_model() -> Value {
-    serde_json::json!({
-        "state": "missing",
-        "label": delulu_models::YUE2_3B.label,
-        "license": delulu_models::YUE2_3B.license,
-        "doneBytes": 0,
-        "totalBytes": delulu_models::YUE2_3B.bytes,
-        "error": RADIO_UNAVAILABLE,
-    })
+pub(crate) fn cmd_get_music_model() -> crate::music::MusicModelStatus {
+    crate::music::unavailable(RADIO_UNAVAILABLE)
 }
 #[tauri::command(rename = "download_music_model")]
 pub(crate) fn cmd_download_music_model() -> Result<Value, String> {

@@ -113,6 +113,23 @@ impl MusicModel {
     }
 }
 
+fn row(model: &'static Model, state: &'static str) -> MusicModelRow {
+    MusicModelRow {
+        id: model.id,
+        engine: model.engine.as_str(),
+        label: model.label,
+        license: model.license,
+        bytes: model.bytes,
+        state,
+        terms: model.terms.map(|t| TermsView {
+            name: t.name,
+            url: t.url,
+            credit: t.credit,
+            text: t.text,
+        }),
+    }
+}
+
 fn status(app: &tauri::AppHandle) -> MusicModelStatus {
     let m = app.state::<MusicModel>();
     let downloading = lock(&m.downloading).clone();
@@ -120,25 +137,15 @@ fn status(app: &tauri::AppHandle) -> MusicModelStatus {
     let status = MusicModelStatus {
         models: MODELS
             .iter()
-            .map(|model| MusicModelRow {
-                id: model.id,
-                engine: model.engine.as_str(),
-                label: model.label,
-                license: model.license,
-                bytes: model.bytes,
-                state: if downloading.contains(&model.id) {
+            .map(|model| {
+                let state = if downloading.contains(&model.id) {
                     "downloading"
                 } else if model.installed(&dir) {
                     "ready"
                 } else {
                     "missing"
-                },
-                terms: model.terms.map(|t| TermsView {
-                    name: t.name,
-                    url: t.url,
-                    credit: t.credit,
-                    text: t.text,
-                }),
+                };
+                row(model, state)
             })
             .collect(),
         done_bytes: m.done_bytes.load(Ordering::SeqCst),
@@ -150,6 +157,17 @@ fn status(app: &tauri::AppHandle) -> MusicModelStatus {
         error: lock(&m.error).clone(),
     };
     status
+}
+
+/// Every music model as not on this computer, with `error`: what a window shows
+/// when Delulu FM is not available in it (a daemon's client).
+pub(crate) fn unavailable(error: &str) -> MusicModelStatus {
+    MusicModelStatus {
+        models: MODELS.iter().map(|model| row(model, "missing")).collect(),
+        done_bytes: 0,
+        total_bytes: 0,
+        error: Some(error.into()),
+    }
 }
 
 fn emit_status(app: &tauri::AppHandle) {

@@ -135,6 +135,7 @@ fn run_client(socket: Option<std::path::PathBuf>) {
             client::cmd_radio_volume,
             client::cmd_radio_direction,
             client::cmd_radio_request,
+            client::cmd_radio_music,
             client::cmd_get_music_model,
             client::cmd_download_music_model,
             client::cmd_cancel_music_download,
