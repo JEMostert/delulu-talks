@@ -84,6 +84,14 @@ pub(crate) fn download_model(
             Ok(_) => (true, None),
             Err(e) => (false, Some(e.to_string())),
         };
+        if let Some(error) = &error {
+            let s = app.state::<Shell>();
+            let nothing_ready = ready_model(&dir, &s.store.settings().model).is_none();
+            let phase_now = status_value(&s).phase;
+            if let Some(message) = failed_while_waiting(&phase_now, nothing_ready, &id, error) {
+                phase(&app, "error", Some(message));
+            }
+        }
         let _ = app.emit(
             "model-download",
             Progress {
@@ -107,4 +115,50 @@ pub(crate) fn download_model(
 #[tauri::command]
 pub(crate) fn cancel_download(s: State<'_, Shell>) {
     s.download.store(true, Ordering::SeqCst);
+}
+
+/// The phase message when model `id`'s download failed (or was cancelled) while the
+/// app waited for it with no downloaded model to use, as after Parakeet v3 was
+/// retired: the waiting "loadingModel" phase would otherwise stay, and it blocks
+/// picking another model. None when another downloaded model is there to load.
+pub(crate) fn failed_while_waiting(
+    phase: &str,
+    nothing_ready: bool,
+    id: &str,
+    error: &str,
+) -> Option<String> {
+    (phase == "loadingModel" && nothing_ready).then(|| {
+        let label = delulu_stt::model_info(id).map_or(id, |m| m.label);
+        format!("{label} did not download ({error}). Try again or pick another model in Settings.")
+    })
+}
+
+/// Changing the model would race these phases.
+pub(crate) fn model_change_blocked(phase: &str) -> bool {
+    matches!(phase, "recording" | "transcribing" | "loadingModel")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A failed replacement download must leave a phase that lets the user switch
+    /// models; the waiting phase does not.
+    #[test]
+    fn a_failed_download_while_waiting_unblocks_picking_another_model() {
+        let ultra = "parakeet-ultra-q8_0";
+        let message = failed_while_waiting("loadingModel", true, ultra, "cancelled").unwrap();
+        assert!(message.starts_with("Parakeet Ultra did not download (cancelled)"));
+        assert!(model_change_blocked("loadingModel"));
+        assert!(
+            !model_change_blocked("error"),
+            "the new phase allows a switch"
+        );
+        // Another downloaded model (Whisper) is there, loaded or loading: its phase stays.
+        assert_eq!(failed_while_waiting("idle", false, ultra, "x"), None);
+        assert_eq!(
+            failed_while_waiting("loadingModel", false, ultra, "x"),
+            None
+        );
+    }
 }
