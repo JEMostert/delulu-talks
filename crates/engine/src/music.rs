@@ -56,19 +56,15 @@ enum Request {
 }
 
 /// Not `{e}`: serde can quote the lyrics it choked on, and this reaches the log.
-/// A missing field names only our own field; for an unknown name the value given
-/// is dropped and only the accepted ones are listed.
+/// A missing field's message names only one of our own fields; nothing else of
+/// serde's text is passed on. The only field with fixed choices is ACE's `lm`.
 fn describe(e: serde_json::Error) -> String {
     let message = e.to_string();
-    let message = &message[..message.find(" at line").unwrap_or(message.len())];
     if message.starts_with("missing field") {
-        format!("song: {message}")
-    } else if let (true, Some(expected)) = (
-        message.starts_with("unknown variant"),
-        // From the end: the list of accepted names comes last, the given value before.
-        message.rfind(", expected"),
-    ) {
-        format!("song: unknown value{}", &message[expected..])
+        let end = message.rfind(" at line").unwrap_or(message.len());
+        format!("song: {}", &message[..end])
+    } else if message.starts_with("unknown variant") {
+        "song: lm must be \"auto\", \"0.6b\" or \"4b\"".into()
     } else {
         format!("song: {:?} error at column {}", e.classify(), e.column())
     }
@@ -197,7 +193,7 @@ mod tests {
 
     #[test]
     fn bad_requests_never_echo_the_lyrics() {
-        let secret = "my private verse, expected nothing";
+        let secret = "my private verse, expected nothing at line 1";
         let cases = [
             (
                 r#"{"engine":"musicgen","style":"x","seed":1,"seconds":60}"#.to_string(),
@@ -220,7 +216,7 @@ mod tests {
                 format!(
                     r#"{{"engine":"acestep","style":"x","seed":1,"seconds":60,"lm":"{secret}"}}"#
                 ),
-                "unknown value, expected one of `auto`, `0.6b`, `4b`",
+                r#"lm must be "auto", "0.6b" or "4b""#,
             ),
             (format!(r#"{{"style":"x","lyrics":"{secret}""#), "Eof error"),
         ];
