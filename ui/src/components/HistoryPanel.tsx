@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as ipc from "../ipc";
 import {
   groupByDay,
@@ -17,6 +17,28 @@ const ranges: { value: HistoryRange; label: string }[] = [
   { value: "week", label: "Week" },
   { value: "all", label: "All" },
 ];
+
+const startOfDay = (time: number) => new Date(time).setHours(0, 0, 0, 0);
+
+/** The start of today, moving on at midnight and when the window comes back
+ * (a timer can sleep through midnight while the computer is suspended). */
+function useToday() {
+  const [today, setToday] = useState(() => startOfDay(Date.now()));
+  useEffect(() => {
+    const check = () => setToday(startOfDay(Date.now()));
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const timer = setTimeout(check, tomorrow.getTime() - Date.now() + 500);
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [today]);
+  return today;
+}
 
 /** Every transcript: search, range, day groups, one line each. */
 export function HistoryPanel({ state }: { state: AppState }) {
@@ -39,8 +61,12 @@ export function HistoryPanel({ state }: { state: AppState }) {
   const retention = settings?.historyRetentionDays ?? 0;
   /** A shorter retention waiting for the user to confirm the deletion. */
   const [pendingRetention, setPendingRetention] = useState<number | null>(null);
-  const shown = useMemo(() => inRange(history, range), [history, range]);
-  const groups = useMemo(() => groupByDay(shown), [shown]);
+  const today = useToday();
+  const shown = useMemo(
+    () => inRange(history, range, today),
+    [history, range, today],
+  );
+  const groups = useMemo(() => groupByDay(shown, today), [shown, today]);
   async function applyRetention(days: number) {
     setPendingRetention(null);
     await update("historyRetentionDays", days);
@@ -111,7 +137,10 @@ export function HistoryPanel({ state }: { state: AppState }) {
       </div>
       {pendingRetention !== null && (
         <div className="confirm" role="alert">
-          <p>Delete transcripts older than {pendingRetention} days?</p>
+          <p>
+            Delete transcripts older than {pendingRetention} days? From now on,
+            older ones are deleted every day.
+          </p>
           <button
             type="button"
             className="button small"
