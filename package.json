@@ -8,6 +8,7 @@
     "dev:web": "vite",
     "build:web": "vite build",
     "build:engine": "cargo build --release --locked -p delulu-engine",
+    "build:pill": "cargo build --release --locked -p delulu-pill",
     "typecheck": "tsc --noEmit",
     "test": "bun test ui",
     "format": "prettier --write ui package.json vite.config.ts tsconfig.json",

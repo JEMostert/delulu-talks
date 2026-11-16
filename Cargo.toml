@@ -32,11 +32,16 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-opener = "2"
 gtk = "0.18"
-cairo-rs = { version = "0.18", features = ["png"] }
+cairo-rs = "0.18"
 # The radio tests encode and measure real audio, far too slow unoptimized.
 [profile.dev.package.opus1]
 opt-level = 3
 [profile.dev.package.ebur128]
+opt-level = 3
+# The recording pill draws 60 frames a second; unoptimized it is too slow to judge.
+[profile.dev.package.tiny-skia]
+opt-level = 3
+[profile.dev.package.tiny-skia-path]
 opt-level = 3
 [profile.release]
 lto = true

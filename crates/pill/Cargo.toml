@@ -1,0 +1,27 @@
+[package]
+name = "delulu-pill"
+version.workspace = true
+edition.workspace = true
+description = "The recording pill: a click-through pearl drawn without GTK"
+
+[[bin]]
+name = "delulu-pill"
+path = "src/main.rs"
+required-features = ["backends"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"], optional = true }
+ttf-parser = { version = "0.25", default-features = false, features = ["std"], optional = true }
+libc = { workspace = true, optional = true }
+smithay-client-toolkit = { version = "0.21", default-features = false, optional = true }
+x11rb = { version = "0.13", features = ["shape", "randr", "shm"], optional = true }
+
+[features]
+default = ["backends"]
+# The drawing: tiny-skia and the embedded Inter subset. The GTK `--pill` helper in
+# `delulu-overlay` paints the same frames, so the two pills cannot drift apart.
+render = ["dep:tiny-skia", "dep:ttf-parser"]
+# The `delulu-pill` binary: layer-shell (pure-Rust Wayland) and X11 (pure-Rust xcb).
+backends = ["render", "dep:libc", "dep:smithay-client-toolkit", "dep:x11rb"]

@@ -3,6 +3,7 @@ name = "delulu-overlay"
 version.workspace = true
 edition.workspace = true
 [dependencies]
+delulu-pill = { path = "../pill", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 gtk = { workspace = true, optional = true }
@@ -10,6 +11,7 @@ cairo-rs = { workspace = true, optional = true }
 
 [features]
 default = ["helper"]
-# The `--pill` helper itself (GTK). Without it the crate only drives a helper,
-# so the daemon can show the pill without linking GTK.
-helper = ["dep:gtk", "dep:cairo-rs"]
+# The GTK `--pill` helper, the fallback when the native `delulu-pill` is missing
+# or cannot draw. It paints `delulu-pill`'s frames. Without it the crate only
+# drives a pill, so the daemon can show one without linking GTK.
+helper = ["dep:gtk", "dep:cairo-rs", "delulu-pill/render"]

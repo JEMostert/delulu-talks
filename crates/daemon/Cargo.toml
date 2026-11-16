@@ -18,7 +18,7 @@ delulu-core = { path = "../core" }
 delulu-desktop = { path = "../desktop" }
 delulu-dictation = { path = "../dictation" }
 delulu-models = { path = "../models" }
-# Only the client that drives the app's `--pill` helper; no GTK in the daemon.
+# Only the client that drives the pill (`delulu-pill`, else the app's `--pill`); no GTK.
 delulu-overlay = { path = "../overlay", default-features = false }
 delulu-proto = { path = "../proto" }
 delulu-store = { path = "../store" }

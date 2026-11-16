@@ -48,15 +48,13 @@ impl DesktopPlatform {
                 }
             }),
         );
-        let pill = match pill_program() {
-            Some(program) => Some(Pill::with_program(program)),
-            None => {
-                eprintln!(
-                    "delulud: the Delulu Talks app (delulu-talks) was not found, so there is no recording pill; set DELULU_APP to its path"
-                );
-                None
-            }
-        };
+        // The native pill, with the app's GTK `--pill` helper as its fallback.
+        let pill = pill_program().map(Pill::with_program).or_else(Pill::native);
+        if pill.is_none() {
+            eprintln!(
+                "delulud: neither delulu-pill nor the Delulu Talks app (delulu-talks) was found, so there is no recording pill; set DELULU_PILL or DELULU_APP to one"
+            );
+        }
         Self {
             store,
             recorder: delulu_audio::Recorder::new(),
@@ -134,8 +132,9 @@ fn want(store: &Store) -> Want {
     }
 }
 
-/// The binary whose `--pill` mode draws the recording pill: `$DELULU_APP`, the
-/// app next to this binary, or the installed app.
+/// The binary whose `--pill` mode draws the recording pill when the native
+/// `delulu-pill` cannot: `$DELULU_APP`, the app next to this binary, or the
+/// installed app.
 fn pill_program() -> Option<PathBuf> {
     let from_env = std::env::var_os("DELULU_APP").map(PathBuf::from);
     let next_to_exe = std::env::current_exe()

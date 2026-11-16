@@ -1,30 +1,28 @@
-// Without the helper only the message types and the level curve are used.
-#![cfg_attr(not(feature = "helper"), allow(dead_code))]
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-pub(crate) const BARS: usize = 9;
-pub(crate) const HEIGHT: i32 = 40;
+pub const BARS: usize = 9;
+pub const HEIGHT: i32 = 40;
 /// Transparent room around the pill for glow, ripples, bubbles and bursts.
-pub(crate) const PAD_X: f64 = 44.0;
-pub(crate) const PAD_TOP: f64 = 50.0;
-pub(crate) const PAD_BOTTOM: f64 = 22.0;
+pub const PAD_X: f64 = 44.0;
+pub const PAD_TOP: f64 = 50.0;
+pub const PAD_BOTTOM: f64 = 22.0;
 /// The widest pill; the canvas is sized for it so the window never resizes.
-pub(crate) const MAX_PILL: f64 = 300.0;
-pub(crate) const CANVAS_W: f64 = MAX_PILL + 2.0 * PAD_X;
-pub(crate) const CANVAS_H: f64 = PAD_TOP + HEIGHT as f64 + PAD_BOTTOM;
+pub const MAX_PILL: f64 = 300.0;
+pub const CANVAS_W: f64 = MAX_PILL + 2.0 * PAD_X;
+pub const CANVAS_H: f64 = PAD_TOP + HEIGHT as f64 + PAD_BOTTOM;
 /// How long the pill takes to sink away after it is hidden.
-pub(crate) const LEAVE_SECS: f64 = 0.34;
+pub const LEAVE_SECS: f64 = 0.34;
 /// Words only where they help, and never long ones.
 const LABEL_CHARS: usize = 28;
 
-pub(crate) type Rgb = (f64, f64, f64);
+pub type Rgb = (f64, f64, f64);
 // Deep Sea palette, shared with the app's tokens.
-pub(crate) const INK: Rgb = (0.918, 0.965, 1.0);
-pub(crate) const CORAL: Rgb = (1.0, 0.435, 0.525);
-pub(crate) const FOAM: Rgb = (0.459, 0.894, 1.0);
-pub(crate) const SEAGLASS: Rgb = (0.373, 0.863, 0.749);
-pub(crate) const AMBER: Rgb = (0.965, 0.788, 0.475);
+pub const INK: Rgb = (0.918, 0.965, 1.0);
+pub const CORAL: Rgb = (1.0, 0.435, 0.525);
+pub const FOAM: Rgb = (0.459, 0.894, 1.0);
+pub const SEAGLASS: Rgb = (0.373, 0.863, 0.749);
+pub const AMBER: Rgb = (0.965, 0.788, 0.475);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -58,23 +56,23 @@ pub fn audible_level(rms: f32) -> f32 {
 
 /// What the pill shows, independent of GTK.
 #[derive(Debug, Clone)]
-pub(crate) struct Model {
-    pub(crate) state: PillState,
-    pub(crate) label: String,
-    pub(crate) level: f64,
-    pub(crate) shown_level: f64,
+pub struct Model {
+    pub state: PillState,
+    pub label: String,
+    pub level: f64,
+    pub shown_level: f64,
     /// Seconds since the current state began, advanced only while animating.
-    pub(crate) phase: f64,
-    pub(crate) reduce_motion: bool,
+    pub phase: f64,
+    pub reduce_motion: bool,
     /// On screen, including while sinking away.
-    pub(crate) visible: bool,
+    pub visible: bool,
     /// Seconds since the pill appeared.
-    pub(crate) age: f64,
+    pub age: f64,
     /// Seconds into the exit animation, once hidden.
-    pub(crate) leaving: Option<f64>,
+    pub leaving: Option<f64>,
     /// The pill width the content wants, and the width drawn (eased toward it).
-    pub(crate) target_width: f64,
-    pub(crate) shown_width: f64,
+    pub target_width: f64,
+    pub shown_width: f64,
 }
 
 impl Default for Model {
@@ -96,7 +94,7 @@ impl Default for Model {
 }
 
 impl Model {
-    pub(crate) fn apply(&mut self, m: &Message) {
+    pub fn apply(&mut self, m: &Message) {
         if m.state == PillState::Hidden {
             // Keep the last look so it can sink away; without motion it just goes.
             if self.visible && !self.reduce_motion {
@@ -135,23 +133,23 @@ impl Model {
         }
     }
 
-    pub(crate) fn shows_bars(&self) -> bool {
+    pub fn shows_bars(&self) -> bool {
         matches!(self.state, PillState::Listening | PillState::Transcribing)
     }
 
-    pub(crate) fn animates(&self) -> bool {
+    pub fn animates(&self) -> bool {
         self.visible && !self.reduce_motion
     }
 
     /// Set the width the content needs; a fresh pill starts at it.
-    pub(crate) fn set_target_width(&mut self, width: f64) {
+    pub fn set_target_width(&mut self, width: f64) {
         self.target_width = width.min(MAX_PILL);
         if self.age == 0.0 || self.reduce_motion {
             self.shown_width = self.target_width;
         }
     }
 
-    pub(crate) fn accent(&self) -> Rgb {
+    pub fn accent(&self) -> Rgb {
         match self.state {
             PillState::Listening => CORAL,
             PillState::Success => SEAGLASS,
@@ -161,7 +159,7 @@ impl Model {
     }
 
     /// Width in logical pixels, given the label's advance at 12.5 px bold.
-    pub(crate) fn width(&self, label_advance: f64) -> i32 {
+    pub fn width(&self, label_advance: f64) -> i32 {
         let bars = if self.shows_bars() {
             BARS as i32 * 6 + 10
         } else {
@@ -175,7 +173,7 @@ impl Model {
         (8 + 28 + bars + label + 8).max(52)
     }
 
-    pub(crate) fn auto_hide(&self) -> Option<Duration> {
+    pub fn auto_hide(&self) -> Option<Duration> {
         match self.state {
             PillState::Success => Some(Duration::from_millis(1300)),
             PillState::Error => Some(Duration::from_millis(2600)),
@@ -184,7 +182,7 @@ impl Model {
     }
 
     /// Advance one frame of `dt` seconds.
-    pub(crate) fn step(&mut self, dt: f64) {
+    pub fn step(&mut self, dt: f64) {
         let dt = dt.clamp(0.0, 0.1);
         self.phase += dt;
         self.age += dt;
