@@ -46,6 +46,8 @@ export function ModelControl({
     progress?.totalBytes && progress.id === settings?.model
       ? Math.round((progress.doneBytes / progress.totalBytes) * 100)
       : 0;
+  // A failed download belongs to its model, not to the one picked after it.
+  const error = progress?.id === settings?.model ? progress?.error : null;
   const engine = selectedModel?.engine ?? "whisper";
   const engineModels = models.filter((m) => m.engine === engine);
   // A downloaded model of the other engine first, so switching back is instant.
@@ -127,7 +129,7 @@ export function ModelControl({
             onClick={() => void download()}
           >
             <Icon name="download" size={16} />
-            {progress?.error ? "Try again" : "Download"}
+            {error ? "Try again" : "Download"}
           </button>
         </div>
       )}
@@ -144,10 +146,10 @@ export function ModelControl({
           .
         </p>
       )}
-      {progress?.error && (
+      {error && (
         <p className="inline-error" role="alert">
           <Icon name="alert" size={16} />
-          {progress.error}
+          {error}
         </p>
       )}
     </div>
