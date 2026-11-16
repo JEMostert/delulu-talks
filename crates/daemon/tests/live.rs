@@ -1,6 +1,7 @@
 //! Dictation in the daemon (`live`) against a fake platform and a real store in a
 //! temporary folder: no desktop, GPU or model needed.
 
+use delulu_core::dictation::Input;
 use delulu_core::gesture::KeyEvent;
 use delulu_daemon::live::{BoxFuture, Live, Platform, Reporter};
 use delulu_daemon::server::{Daemon, Options};
@@ -37,6 +38,12 @@ struct Fake {
     app_quit: Notify,
     keys: Mutex<Option<mpsc::UnboundedSender<KeyEvent>>>,
     delivered: Mutex<Vec<String>>,
+    /// The microphone is open.
+    open: AtomicBool,
+    /// Opening and stopping the microphone take this long, to widen races.
+    slow_start: AtomicBool,
+    slow_stop: AtomicBool,
+    starting: Notify,
 }
 
 impl Fake {
@@ -56,6 +63,10 @@ impl Fake {
             app_quit: Notify::new(),
             keys: Mutex::new(None),
             delivered: Mutex::new(Vec::new()),
+            open: AtomicBool::new(false),
+            slow_start: AtomicBool::new(false),
+            slow_stop: AtomicBool::new(false),
+            starting: Notify::new(),
         }
     }
     fn hears(&self, result: Result<&str, &str>) {
@@ -79,12 +90,25 @@ impl Platform for Fake {
         });
     }
     fn start_capture(&self, _: Option<&str>, _: Box<dyn Fn(f32) + Send>) -> Result<(), String> {
+        if self.slow_start.load(Ordering::SeqCst) {
+            self.starting.notify_one();
+            std::thread::sleep(Duration::from_millis(150));
+        }
+        if self.open.swap(true, Ordering::SeqCst) {
+            return Err("audio stream failed: already recording".into());
+        }
         Ok(())
     }
     fn stop_capture(&self) -> Recorded {
+        if self.slow_stop.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(150));
+        }
+        self.open.store(false, Ordering::SeqCst);
         Ok(vec![0.0; 1600])
     }
-    fn discard_capture(&self) {}
+    fn discard_capture(&self) {
+        self.open.store(false, Ordering::SeqCst);
+    }
     fn transcribe(
         &self,
         _: Vec<f32>,
@@ -279,12 +303,8 @@ async fn a_failed_history_save_still_types_and_says_it_was_not_saved() {
         std::fs::create_dir_all(data.join("delulu.db")).unwrap()
     });
     until(&s.daemon, "dictation available", |s| s.dictation.available).await;
-    s.daemon
-        .input(delulu_core::dictation::Input::Toggle)
-        .unwrap();
-    s.daemon
-        .input(delulu_core::dictation::Input::Toggle)
-        .unwrap();
+    s.daemon.input(Input::Toggle).unwrap();
+    s.daemon.input(Input::Toggle).unwrap();
     let state = until(&s.daemon, "the dictation to finish", idle_after(1)).await;
 
     assert_eq!(s.fake.delivered(), [HEARD]);
@@ -305,12 +325,8 @@ async fn a_failed_transcription_returns_to_idle_with_the_error() {
     fake.hears(Err("speech engine: out of memory"));
     let s = start(fake, |_| {});
     until(&s.daemon, "dictation available", |s| s.dictation.available).await;
-    s.daemon
-        .input(delulu_core::dictation::Input::Toggle)
-        .unwrap();
-    s.daemon
-        .input(delulu_core::dictation::Input::Toggle)
-        .unwrap();
+    s.daemon.input(Input::Toggle).unwrap();
+    s.daemon.input(Input::Toggle).unwrap();
     let state = until(&s.daemon, "the dictation to fail", idle_after(1)).await;
 
     assert!(s.fake.delivered().is_empty());
@@ -320,12 +336,8 @@ async fn a_failed_transcription_returns_to_idle_with_the_error() {
             if error == "speech engine: out of memory"
     ));
     // The engine is still there for the next dictation.
-    s.daemon
-        .input(delulu_core::dictation::Input::Toggle)
-        .unwrap();
-    s.daemon
-        .input(delulu_core::dictation::Input::Toggle)
-        .unwrap();
+    s.daemon.input(Input::Toggle).unwrap();
+    s.daemon.input(Input::Toggle).unwrap();
     until(&s.daemon, "the second dictation", idle_after(2)).await;
     assert_eq!(s.fake.delivered(), [HEARD]);
 }
@@ -409,4 +421,93 @@ async fn the_shortcut_is_not_bound_while_the_app_runs_and_is_bound_once_it_quits
     keys.send(KeyEvent::Activated).unwrap();
     until(&s.daemon, "the dictation to finish", idle_after(1)).await;
     assert_eq!(s.fake.delivered(), [HEARD]);
+}
+
+#[tokio::test]
+async fn a_dictation_cancelled_before_delivery_is_neither_typed_nor_kept() {
+    let fake = Fake::new();
+    fake.hold_transcription.store(true, Ordering::SeqCst);
+    let s = start(fake, |_| {});
+    until(&s.daemon, "ready and bound", |s| {
+        s.dictation.available && s.hotkey.bound
+    })
+    .await;
+    s.daemon.input(Input::Toggle).unwrap();
+    s.daemon.input(Input::Toggle).unwrap();
+    s.fake.transcribing.notified().await;
+    // The hotkey goes down and stays down, so delivery waits for its release.
+    let keys = s.fake.keys.lock().unwrap().clone().unwrap();
+    keys.send(KeyEvent::Pressed).unwrap();
+    until(&s.daemon, "the key to be tracked", |_| true).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    s.fake.release.notify_one();
+    until(&s.daemon, "delivery", |s| {
+        s.dictation.phase == DictationPhase::Inserting
+    })
+    .await;
+    s.daemon.input(Input::Cancel).unwrap();
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let state = s.daemon.snapshot();
+    assert!(s.fake.delivered().is_empty(), "typed after cancel");
+    assert!(matches!(
+        state.dictation.last,
+        Some(DictationOutcome::Cancelled {
+            during: DictationPhase::Inserting,
+            ..
+        })
+    ));
+    let mut c = Client::open(&s.socket).await;
+    assert_eq!(
+        c.call("history.list", json!({})).await["result"]["total"],
+        0
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_cancel_racing_a_start_leaves_the_microphone_closed() {
+    let fake = Fake::new();
+    fake.slow_start.store(true, Ordering::SeqCst);
+    let s = start(fake, |_| {});
+    until(&s.daemon, "dictation available", |s| s.dictation.available).await;
+    let daemon = s.daemon.clone();
+    let start = tokio::task::spawn_blocking(move || daemon.input(Input::Toggle));
+    // The machine is recording and the microphone is still opening.
+    s.fake.starting.notified().await;
+    let daemon = s.daemon.clone();
+    let cancel = tokio::task::spawn_blocking(move || daemon.input(Input::Cancel));
+    start.await.unwrap().unwrap();
+    cancel.await.unwrap().unwrap();
+
+    assert_eq!(s.daemon.snapshot().dictation.phase, DictationPhase::Idle);
+    assert!(
+        !s.fake.open.load(Ordering::SeqCst),
+        "microphone left open while idle"
+    );
+}
+
+#[tokio::test]
+async fn a_new_dictation_right_after_a_cancelled_one_records() {
+    let fake = Fake::new();
+    fake.slow_stop.store(true, Ordering::SeqCst);
+    fake.hold_transcription.store(true, Ordering::SeqCst);
+    let s = start(fake, |_| {});
+    until(&s.daemon, "dictation available", |s| s.dictation.available).await;
+    s.daemon.input(Input::Toggle).unwrap();
+    s.daemon.input(Input::Toggle).unwrap();
+    s.daemon.input(Input::Cancel).unwrap();
+    s.daemon.input(Input::Toggle).unwrap();
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let state = s.daemon.snapshot();
+    assert_eq!(
+        (state.dictation.phase, state.dictation.job),
+        (DictationPhase::Recording, 2),
+        "{:?}",
+        state.dictation.last
+    );
+    assert!(
+        s.fake.open.load(Ordering::SeqCst),
+        "the new recording has no microphone"
+    );
 }

@@ -342,6 +342,13 @@ impl Live {
         (job.id == id).then(|| f(&mut job))
     }
 
+    /// The stop path's ports for one job.
+    fn ports(&self, id: JobId) -> JobPorts<'_> {
+        JobPorts { live: self, id }
+    }
+
+    /// Feeds a failure from a task. Effects call this through a spawned task,
+    /// never directly: `Daemon::input` is not re-entrant.
     fn fail(&self, id: JobId, during: Phase, error: String, word: &'static str) {
         self.with_job(id, |j| j.failure_word = Some(word));
         let _ = self.daemon.input(Input::Failed {
@@ -424,7 +431,8 @@ impl Live {
             } else {
                 "Mic error"
             };
-            self.fail(id, Phase::Recording, error, word);
+            let me = self.arc();
+            tokio::spawn(async move { me.fail(id, Phase::Recording, error, word) });
         }
     }
 
@@ -439,14 +447,17 @@ impl Live {
         if pill == Some(true) {
             self.platform.pill(PillState::Transcribing, None);
         }
+        // Here, not in the task: effects run in order, so no later start can
+        // meet this recording still open, and no stale stop can end a newer one.
+        let recorded = self.platform.stop_capture();
         let me = self.arc();
         tokio::spawn(async move {
-            let samples = match me.stop_recording().await {
+            let samples = match recorded {
                 Ok(samples) => samples,
                 Err((word, error)) => return me.fail(id, Phase::Transcribing, error, word),
             };
             let settings = me.store.settings();
-            match stop::transcribe_clip(&*me, &settings, samples).await {
+            match stop::transcribe_clip(&me.ports(id), &settings, samples).await {
                 Ok(transcript) => {
                     let (text, language) = (transcript.text.clone(), transcript.language.clone());
                     me.with_job(id, |j| {
@@ -476,7 +487,7 @@ impl Live {
             let Some((settings, transcript)) = me.gathered(id) else {
                 return;
             };
-            let cleaned = stop::clean_transcript(&*me, &settings, &transcript).await;
+            let cleaned = stop::clean_transcript(&me.ports(id), &settings, &transcript).await;
             let text = cleaned.text.clone();
             me.with_job(id, |j| j.cleaned = Some(cleaned));
             let _ = me.daemon.input(Input::Cleaned { job: id, text });
@@ -503,22 +514,28 @@ impl Live {
             // app's stop path does.
             let cleaned = match cleaned {
                 Some(cleaned) => cleaned,
-                None => stop::clean_transcript(&*me, &settings, &transcript).await,
+                None => stop::clean_transcript(&me.ports(id), &settings, &transcript).await,
             };
             let request = StopRequest {
                 started,
                 was_held,
                 log_text: stop::log_text(),
             };
-            let (insert, entry, history_error) = match stop::deliver_and_save(
-                &*me,
-                settings,
-                &request,
-                &transcript,
-                cleaned,
-            )
-            .await
-            {
+            let ports = me.ports(id);
+            let outcome =
+                stop::deliver_and_save(&ports, settings, &request, &transcript, cleaned).await;
+            if !ports.inserting() {
+                // Cancelled while waiting for the hotkey to come up: nothing was
+                // typed, and the entry saved just before goes too.
+                if let StopOutcome::Delivered(event) = &outcome {
+                    if let Err(e) = me.store.delete_history(&event.entry.id) {
+                        eprintln!("delulud: remove the cancelled dictation from History: {e}");
+                    }
+                }
+                eprintln!("delulud: dictation {id} was cancelled before it was delivered");
+                return;
+            }
+            let (insert, entry, history_error) = match outcome {
                 StopOutcome::Delivered(event) => (event.insert, Some(event.entry), None),
                 StopOutcome::Unsaved { insert, message } => (insert, None, Some(message)),
                 // deliver_and_save ends in one of the two above.
@@ -636,19 +653,40 @@ fn outcome_job(outcome: &Outcome) -> JobId {
     }
 }
 
-/// The stop path's view of the daemon.
-impl StopPorts for Live {
+/// The stop path's view of the daemon, for one job.
+struct JobPorts<'a> {
+    live: &'a Live,
+    id: JobId,
+}
+
+impl JobPorts<'_> {
+    /// The job is still the one being delivered: not cancelled, not replaced.
+    /// Checked before each step that leaves a trace (History, typing).
+    fn inserting(&self) -> bool {
+        self.live
+            .daemon
+            .with_machine(|m| m.job() == self.id && m.phase() == Phase::Inserting)
+    }
+}
+
+const CANCELLED: &str = "the dictation was cancelled";
+
+impl StopPorts for JobPorts<'_> {
+    // The daemon stops the recorder in the Transcribe effect; the stages never
+    // call this. It is here for the trait.
     async fn stop_recording(&self) -> Recorded {
-        let platform = Arc::clone(&self.platform);
+        let platform = Arc::clone(&self.live.platform);
         tokio::task::spawn_blocking(move || platform.stop_capture())
             .await
             .unwrap_or_else(|e| Err(("Mic error", e.to_string())))
     }
     fn settings(&self) -> Settings {
-        self.store.settings()
+        self.live.store.settings()
     }
     fn whisper_prompt(&self) -> Option<String> {
-        self.context.whisper_prompt(&self.store.vocabulary())
+        self.live
+            .context
+            .whisper_prompt(&self.live.store.vocabulary())
     }
     async fn transcribe(
         &self,
@@ -656,22 +694,26 @@ impl StopPorts for Live {
         language: Language,
         prompt: Option<String>,
     ) -> Result<Transcript, String> {
-        self.platform.transcribe(samples, language, prompt).await
+        self.live
+            .platform
+            .transcribe(samples, language, prompt)
+            .await
     }
     async fn clean(&self, language: &str, raw: String) -> Cleaned {
-        let enabled = self.store.settings().cleanup;
+        let enabled = self.live.store.settings().cleanup;
         let vocabulary = if enabled {
-            self.store.vocabulary().active_terms()
+            self.live.store.vocabulary().active_terms()
         } else {
             Vec::new()
         };
-        self.platform
+        self.live
+            .platform
             .clean(enabled, language.to_owned(), raw, vocabulary)
             .await
     }
     fn remember(&self, topic: Option<String>, text: &str) {
-        let generation = self.context.remember(topic, text);
-        let me = self.me.clone();
+        let generation = self.live.context.remember(topic, text);
+        let me = self.live.me.clone();
         tokio::spawn(async move {
             tokio::time::sleep(EXPIRE).await;
             if let Some(me) = me.upgrade() {
@@ -680,23 +722,38 @@ impl StopPorts for Live {
         });
     }
     fn add_history(&self, entry: NewEntry) -> Result<delulu_store::HistoryEntry, String> {
-        self.store.add_history(entry).map_err(|e| e.to_string())
+        if !self.inserting() {
+            return Err(CANCELLED.into());
+        }
+        self.live
+            .store
+            .add_history(entry)
+            .map_err(|e| e.to_string())
     }
     async fn wait_release(&self) -> bool {
         stop::wait_release(
-            || self.daemon.with_machine(|m| m.keys_down()),
+            || self.live.daemon.with_machine(|m| m.keys_down()),
             RELEASE_TIMEOUT,
         )
         .await
     }
     async fn deliver(&self, text: &str, mode: InsertMode, held: bool) -> InsertResult {
-        self.platform.deliver(text.to_owned(), mode, held).await
+        if !self.inserting() {
+            return InsertResult::Failed {
+                reason: CANCELLED.into(),
+            };
+        }
+        self.live
+            .platform
+            .deliver(text.to_owned(), mode, held)
+            .await
     }
     fn last_release(&self) -> Option<Instant> {
-        *lock(&self.last_release)
+        *lock(&self.live.last_release)
     }
     fn set_total_ms(&self, id: &str, total_ms: u64) -> Result<delulu_store::HistoryEntry, String> {
-        self.store
+        self.live
+            .store
             .set_total_ms(id, total_ms)
             .map_err(|e| e.to_string())
     }

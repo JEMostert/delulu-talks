@@ -81,6 +81,10 @@ struct Shared {
     inner: Mutex<Inner>,
     events: broadcast::Sender<Published>,
     effects: OnceLock<Arc<dyn Effects>>,
+    /// Held from a transition until its effects have started, so the effects of
+    /// two inputs never interleave: a cancel cannot discard a recording before
+    /// the start it follows has opened the microphone.
+    order: Mutex<()>,
 }
 
 /// A running daemon's state. Cheap to clone.
@@ -106,6 +110,7 @@ impl Daemon {
                 inner: Mutex::new(Inner { state, machine }),
                 events,
                 effects: OnceLock::new(),
+                order: Mutex::new(()),
             }),
         };
         if demo {
@@ -120,7 +125,8 @@ impl Daemon {
     }
 
     /// Feeds the dictation state machine, publishes the change and starts its
-    /// effects. `Err` says why the input changed nothing.
+    /// effects. `Err` says why the input changed nothing. Effects must not call
+    /// this themselves; they feed results from a task.
     pub fn input(&self, input: Input) -> Result<DictationReply, Ignored> {
         self.shared.input(input)
     }
@@ -339,6 +345,7 @@ impl Shared {
 
     /// Feeds the state machine, publishes the change and starts its effects.
     fn input(self: &Arc<Self>, input: Input) -> Result<DictationReply, Ignored> {
+        let _order = self.order.lock().unwrap_or_else(|e| e.into_inner());
         let mut inner = self.lock();
         let (to, effects, outcome) = match inner.machine.handle(input) {
             Step::Ignored(reason) => return Err(reason),

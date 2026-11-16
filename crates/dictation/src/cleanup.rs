@@ -19,10 +19,12 @@ const LOAD_TIMEOUT: Duration = Duration::from_secs(180);
 /// How long a new helper waits for the previous one to be reaped.
 const RETIRE_TIMEOUT: Duration = Duration::from_secs(30);
 /// How often [`Supervisor::watch`] checks that the idle helper is still alive.
-const WATCH_INTERVAL: Duration = Duration::from_millis(500);
-/// A helper that dies this soon after it became ready counts as a failure, so a
-/// helper that keeps crashing ends in "error" instead of restarting forever.
+const WATCH_INTERVAL: Duration = Duration::from_millis(100);
+/// A helper that dies this soon after it became ready exited "quickly".
 const QUICK_EXIT: Duration = Duration::from_secs(30);
+/// Quick exits in a row before the supervisor stops restarting the helper, so
+/// one that keeps crashing ends in "error" instead of loading forever.
+const MAX_QUICK_EXITS: u32 = 3;
 const NO_HELPER: &str =
     "The cleanup engine (delulu-engine) is not installed; dictation uses the raw text.";
 const GAVE_UP: &str =
@@ -104,6 +106,8 @@ pub(crate) struct Inner {
     /// Whisper has finished loading (or failed); only then may the helper load.
     whisper_settled: bool,
     failures: u32,
+    /// Idle exits in a row, each soon after the helper became ready.
+    quick_exits: u32,
     /// A load error or a second clean failure; only off/on or `start_cleanup` retries.
     blocked: bool,
     /// The automatic download already ran this session.
@@ -140,6 +144,7 @@ impl Inner {
             loading: false,
             whisper_settled: false,
             failures: 0,
+            quick_exits: 0,
             blocked: false,
             auto_tried: false,
             attempt: None,
@@ -179,6 +184,7 @@ impl Inner {
     fn off(&mut self) -> Action {
         self.cancel_download();
         self.failures = 0;
+        self.quick_exits = 0;
         self.blocked = false;
         self.auto_tried = false;
         let retired = self.retire();
@@ -219,6 +225,7 @@ impl Inner {
             return Action::default();
         }
         self.failures = 0;
+        self.quick_exits = 0;
         self.blocked = false;
         if want.file_ready {
             self.begin_load()
@@ -336,15 +343,22 @@ impl Inner {
         }
     }
     /// The idle helper's process exited by itself (crash, out of memory, kill -9):
-    /// start a new one. One that dies quickly again counts as a failed clean.
+    /// start a new one, unless it keeps dying right after it became ready.
     fn helper_exited(&mut self, generation: u64, quick: bool) -> Action {
         if !self.is_current(generation) {
             return Action::default();
         }
-        if quick {
-            return self.clean_failed(generation);
+        self.quick_exits = if quick { self.quick_exits + 1 } else { 0 };
+        if self.quick_exits < MAX_QUICK_EXITS {
+            return self.begin_load();
         }
-        self.begin_load()
+        self.blocked = true;
+        let retired = self.retire();
+        self.set("error", Some(GAVE_UP.into()));
+        Action {
+            retired,
+            ..Default::default()
+        }
     }
     /// A clean failed: restart once, then give up for the session.
     fn clean_failed(&mut self, generation: u64) -> Action {

@@ -77,21 +77,33 @@ fn ready(rx: &mpsc::Receiver<CleanupStatus>, dir: &Path, within: Duration) -> u3
     }
 }
 
+fn kill(pid: u32) {
+    // SAFETY: plain syscall on a helper this test started.
+    assert_eq!(unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) }, 0);
+}
+
 #[test]
-fn a_killed_idle_helper_is_back_within_three_seconds() {
+fn a_killed_idle_helper_comes_back_until_it_keeps_dying() {
     let dir = tempfile::tempdir().unwrap();
     let (supervisor, rx) = start(dir.path(), false);
-    let first = ready(&rx, dir.path(), Duration::from_secs(10));
-    let killed = Instant::now();
-    // SAFETY: plain syscall on the helper this test started.
-    assert_eq!(
-        unsafe { libc::kill(first as libc::pid_t, libc::SIGKILL) },
-        0
-    );
-    let second = ready(&rx, dir.path(), Duration::from_secs(3));
-    assert_ne!(first, second);
-    assert!(killed.elapsed() < Duration::from_secs(3));
+    let mut pid = ready(&rx, dir.path(), Duration::from_secs(10));
+    // Two kills in a row, each right after the helper became ready.
+    for _ in 0..2 {
+        let killed = Instant::now();
+        kill(pid);
+        let next = ready(&rx, dir.path(), Duration::from_secs(3));
+        assert_ne!(pid, next);
+        assert!(killed.elapsed() < Duration::from_secs(3));
+        pid = next;
+    }
     assert_eq!(supervisor.status().state, "ready");
+    // A third quick death in a row: it keeps crashing, so stop restarting it.
+    kill(pid);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while supervisor.status().state != "error" {
+        assert!(Instant::now() < deadline, "{:?}", supervisor.status());
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[tokio::test]
