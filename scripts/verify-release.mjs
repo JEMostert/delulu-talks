@@ -30,9 +30,9 @@ try {
   // it must start and list its roles and a compute device without ComfyUI, Python or
   // a downloaded model. The old per-role helpers, each with its own ggml, are gone.
   const lib = join(temp, 'usr/lib/delulu-talks');
-  const helpers = await readdir(lib);
-  if (helpers.join() !== 'delulu-engine')
-    throw new Error(`Expected only delulu-engine in /usr/lib/delulu-talks, found ${helpers.join(', ')}`);
+  const helpers = (await readdir(lib)).sort();
+  if (helpers.join() !== 'delulu-engine,delulu-pill')
+    throw new Error(`Expected delulu-engine and delulu-pill in /usr/lib/delulu-talks, found ${helpers.join(', ')}`);
   const probe = JSON.parse(execFileSync(join(lib, 'delulu-engine'), ['probe'], { env, encoding: 'utf8' }));
   if (!version.endsWith(` ${probe.version}`))
     throw new Error(`Packaged delulu-engine is ${probe.version}, the CLI is ${version}`);
@@ -40,7 +40,18 @@ try {
     if (!probe.roles?.includes(role)) throw new Error(`Packaged delulu-engine lacks the ${role} role`);
   if (typeof probe.device !== 'string' || !probe.device)
     throw new Error('Packaged delulu-engine did not report a compute device');
-  console.log(`Verified packaged ${version}: no model required; engine on ${probe.device}`);
+  // The recording pill: its own small binary without GTK. It draws a frame
+  // offscreen, so this needs no desktop.
+  const pill = join(lib, 'delulu-pill');
+  const pillVersion = execFileSync(pill, ['--version'], { env, encoding: 'utf8' }).trim();
+  if (!version.endsWith(` ${pillVersion.split(' ').pop()}`))
+    throw new Error(`Packaged delulu-pill is ${pillVersion}, the CLI is ${version}`);
+  const frame = join(temp, 'pill.png');
+  execFileSync(pill, ['--render', 'success', '0', 'Typed', frame], { env, stdio: 'ignore' });
+  if ((await stat(frame)).size < 1000) throw new Error('Packaged delulu-pill drew no frame');
+  const linked = execFileSync('ldd', [pill], { encoding: 'utf8' });
+  if (/gtk|gdk|cairo|webkit/i.test(linked)) throw new Error(`Packaged delulu-pill links GTK:\n${linked}`);
+  console.log(`Verified packaged ${version}: no model required; engine on ${probe.device}; GTK-free pill`);
 } finally {
   await rm(temp, { recursive: true, force: true });
 }

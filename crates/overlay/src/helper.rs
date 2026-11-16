@@ -1,23 +1,18 @@
 //! The `--pill` helper process: a GTK3 override-redirect popup on X11
-//! (XWayland on Wayland desktops), driven by JSON lines on stdin.
+//! (XWayland on Wayland desktops), driven by JSON lines on stdin. The fallback
+//! for the native `delulu-pill`; it paints that crate's frames, so the two look
+//! the same.
 
-use crate::draw;
-use crate::model::{Model, CANVAS_H, CANVAS_W, HEIGHT, PAD_TOP};
 use crate::Message;
+use delulu_pill::draw::Renderer;
+use delulu_pill::model::{Model, CANVAS_H, CANVAS_W, HEIGHT, PAD_TOP};
+use delulu_pill::{BOTTOM_MARGIN, PANEL_CLEARANCE, SCALE, UNAVAILABLE};
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 use std::cell::{Cell, RefCell};
 use std::io::Read;
 use std::os::fd::{AsFd, AsRawFd};
 use std::rc::Rc;
-
-use crate::UNAVAILABLE;
-const BOTTOM_MARGIN: i32 = 28;
-/// XWayland often reports the full screen as work area, hiding Wayland panels
-/// (a KDE panel is ~54 px plus its floating gap); stay clear of them then.
-const PANEL_CLEARANCE: i32 = 80;
-/// The pill is drawn at this size relative to its logical layout.
-const SCALE: f64 = 1.2;
 
 fn scaled(px: f64) -> i32 {
     (px * SCALE).round() as i32
@@ -26,6 +21,7 @@ fn scaled(px: f64) -> i32 {
 struct Pill {
     window: gtk::Window,
     model: RefCell<Model>,
+    renderer: RefCell<Renderer>,
     tick: RefCell<Option<gtk::TickCallbackId>>,
     last_frame: Cell<Option<i64>>,
     hide_timer: RefCell<Option<glib::SourceId>>,
@@ -66,6 +62,7 @@ pub fn run_pill() -> i32 {
             reduce_motion,
             ..Model::default()
         }),
+        renderer: RefCell::new(Renderer::new()),
         tick: RefCell::new(None),
         last_frame: Cell::new(None),
         hide_timer: RefCell::new(None),
@@ -73,9 +70,8 @@ pub fn run_pill() -> i32 {
     });
 
     let p = pill.clone();
-    window.connect_draw(move |_, cr| {
-        cr.scale(SCALE, SCALE);
-        if let Err(e) = draw::draw(cr, &p.model.borrow()) {
+    window.connect_draw(move |w, cr| {
+        if let Err(e) = p.paint(w, cr) {
             eprintln!("pill: draw: {e}");
         }
         glib::Propagation::Stop
@@ -180,7 +176,7 @@ impl Pill {
             let mut model = self.model.borrow_mut();
             model.apply(m);
             if model.visible && model.leaving.is_none() {
-                let width = draw::width(&model);
+                let width = self.renderer.borrow().width(&model);
                 model.set_target_width(f64::from(width));
             }
             (model.visible, model.leaving.is_some(), model.auto_hide())
@@ -210,7 +206,7 @@ impl Pill {
                     Pill::apply(
                         &p,
                         &Message {
-                            state: crate::PillState::Hidden,
+                            state: delulu_pill::PillState::Hidden,
                             level: None,
                             label: None,
                         },
@@ -224,6 +220,35 @@ impl Pill {
     fn hide(self: &Rc<Self>) {
         self.sync_tick();
         self.window.hide();
+    }
+
+    /// Clear the window and paint the frame's pixels, at the window's scale.
+    fn paint(&self, w: &gtk::Window, cr: &cairo::Context) -> Result<(), cairo::Error> {
+        let factor = w.scale_factor().max(1);
+        let size = (
+            (w.allocated_width() * factor).max(1) as u32,
+            (w.allocated_height() * factor).max(1) as u32,
+        );
+        cr.set_operator(cairo::Operator::Source);
+        cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
+        cr.paint()?;
+        let mut renderer = self.renderer.borrow_mut();
+        let model = self.model.borrow();
+        let Some(frame) = renderer.render(&model, SCALE * f64::from(factor), size) else {
+            return Ok(());
+        };
+        let (fw, fh) = (frame.rect.width() as i32, frame.rect.height() as i32);
+        // Premultiplied RGBA to cairo's native-endian ARGB32 (B, G, R, A bytes).
+        let mut bgra = vec![0u8; frame.data.len()];
+        for (s, d) in frame.data.as_chunks::<4>().0.iter().zip(bgra.as_chunks_mut::<4>().0) {
+            *d = [s[2], s[1], s[0], s[3]];
+        }
+        let image = cairo::ImageSurface::create_for_data(bgra, cairo::Format::ARgb32, fw, fh, fw * 4)?;
+        image.set_device_scale(f64::from(factor), f64::from(factor));
+        cr.set_operator(cairo::Operator::Over);
+        let f = f64::from(factor);
+        cr.set_source_surface(&image, f64::from(frame.rect.x()) / f, f64::from(frame.rect.y()) / f)?;
+        cr.paint()
     }
 
     /// Bottom centre of the active monitor's work area, so KDE panels stay clear.
@@ -246,9 +271,9 @@ impl Pill {
         }
         let bottom = area.y() + area.height();
         let margin = if bottom >= geometry.y() + geometry.height() {
-            PANEL_CLEARANCE
+            PANEL_CLEARANCE as i32
         } else {
-            BOTTOM_MARGIN
+            BOTTOM_MARGIN as i32
         };
         // The pill's bottom edge sits `margin` above the bottom; glow room hangs below.
         self.window.move_(

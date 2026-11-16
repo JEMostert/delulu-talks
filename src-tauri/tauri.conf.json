@@ -7,7 +7,7 @@
   "build": {
     "beforeDevCommand": "bun run dev:web",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build:web && bun run build:engine && bun run build:voice",
+    "beforeBuildCommand": "bun run build:web && bun run build:engine && bun run build:pill && bun run build:voice",
     "frontendDist": "../dist"
   },
   "app": {
@@ -44,6 +44,7 @@
         "files": {
           "/usr/share/applications/com.joran.delulu-talks.desktop": "linux/com.joran.delulu-talks.desktop",
           "/usr/lib/delulu-talks/delulu-engine": "../target/release/delulu-engine",
+          "/usr/lib/delulu-talks/delulu-pill": "../target/release/delulu-pill",
           "/usr/bin/delulu": "../target/release/delulu"
         }
       },
@@ -55,6 +56,7 @@
         "files": {
           "/usr/share/applications/com.joran.delulu-talks.desktop": "linux/com.joran.delulu-talks.desktop",
           "/usr/lib/delulu-talks/delulu-engine": "../target/release/delulu-engine",
+          "/usr/lib/delulu-talks/delulu-pill": "../target/release/delulu-pill",
           "/usr/bin/delulu": "../target/release/delulu"
         }
       }

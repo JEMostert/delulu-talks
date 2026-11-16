@@ -74,6 +74,8 @@ Two optional extras, each with an explicit model download:
   screen while you dictate (glows with your voice, breathes while
   transcribing, one word for results). It never takes focus, so the text
   still lands in the app you were using. Not a second home for settings.
+  Drawn by `delulu-pill` (layer-shell on KDE and wlroots, XWayland on GNOME,
+  no GTK); the app's GTK `--pill` helper remains its fallback for now.
 
 No quick-settings panel, no separate Models page.
 A new screen, panel or setting is added only after this page says where it
