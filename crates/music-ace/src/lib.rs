@@ -25,6 +25,14 @@ pub const TEXT_ENCODER: &str = "Qwen3-Embedding-0.6B-Q8_0.gguf";
 pub const DIT: &str = "acestep-v15-turbo-Q8_0.gguf";
 pub const VAE: &str = "vae-BF16.gguf";
 
+/// The vocal languages ACE-Step's LM knows (acestep.cpp's metadata-fsm.h).
+pub const LANGUAGES: [&str; 50] = [
+    "ar", "az", "bg", "bn", "ca", "cs", "da", "de", "el", "en", "es", "fa", "fi", "fr", "he", "hi",
+    "hr", "ht", "hu", "id", "is", "it", "ja", "ko", "la", "lt", "ms", "ne", "nl", "no", "pa", "pl",
+    "pt", "ro", "ru", "sa", "sk", "sr", "sv", "sw", "ta", "te", "th", "tl", "tr", "uk", "ur", "vi",
+    "yue", "zh",
+];
+
 pub const MIN_SECONDS: f32 = 10.0;
 pub const MAX_SECONDS: f32 = 600.0;
 /// Free graphics memory from which the 4B LM is chosen: it peaks at about 5.5 GiB
@@ -211,7 +219,13 @@ pub fn plan(models: &Path, song: &Song, device: Device) -> Result<Plan, String> 
         ("[Instrumental]".to_string(), "unknown".to_string())
     } else {
         let language = song.language.as_deref().unwrap_or("").trim().to_lowercase();
-        (song.lyrics.trim().to_string(), language)
+        // acestep.cpp forces whatever code it is given; one its LM does not know
+        // is left to the LM instead.
+        let known = LANGUAGES.contains(&language.as_str());
+        (
+            song.lyrics.trim().to_string(),
+            if known { language } else { String::new() },
+        )
     };
 
     let dir = models.join(DIR);

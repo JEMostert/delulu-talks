@@ -32,8 +32,8 @@ use ipc::*;
 use models::*;
 use music::{cancel_music_download, delete_music_model, download_music_model, get_music_model};
 use radio::{
-    check_radio, get_radio, radio_direction, radio_off, radio_pause, radio_play, radio_request,
-    radio_skip, radio_volume,
+    check_radio, get_radio, radio_direction, radio_music, radio_off, radio_pause, radio_play,
+    radio_request, radio_skip, radio_volume,
 };
 use state::*;
 use vocabulary::{
@@ -135,6 +135,7 @@ fn run_client(socket: Option<std::path::PathBuf>) {
             client::cmd_radio_volume,
             client::cmd_radio_direction,
             client::cmd_radio_request,
+            client::cmd_radio_music,
             client::cmd_get_music_model,
             client::cmd_download_music_model,
             client::cmd_cancel_music_download,
@@ -331,6 +332,7 @@ fn run_app() {
             radio_skip,
             radio_volume,
             radio_direction,
+            radio_music,
             radio_request,
             get_music_model,
             download_music_model,

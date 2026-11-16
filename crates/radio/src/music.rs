@@ -1,8 +1,9 @@
-//! The music step: YuE2 in the native `delulu-engine music` helper process, and the model
-//! file it reads. The helper runs on this computer's graphics card (Vulkan) and
-//! exits after each song, so its memory is free between songs. While you dictate it
-//! is paused; going off air stops it.
-use crate::model::Draft;
+//! The music step: YuE2 or ACE-Step 1.5 in the native `delulu-engine music` helper
+//! process, and the files they read. The helper runs on this computer's graphics card
+//! (Vulkan) and exits after each song, so its memory is free between songs. While you
+//! dictate it is paused (SIGSTOP), so dictation gets the card at once and no work is
+//! lost; going off air stops it.
+use crate::model::{AceLm, Draft, Music, MusicEngine};
 use crate::RadioError;
 use serde::Serialize;
 use serde_json::Value;
@@ -61,18 +62,111 @@ impl Song {
     }
 }
 
+/// What the helper is given for one ACE-Step song: the same caption and section
+/// tags as YuE2, with the language, tempo and length as fields of their own.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AceSong {
+    engine: &'static str,
+    pub style: String,
+    pub lyrics: String,
+    pub seed: u64,
+    /// ACE-Step makes exactly this length.
+    pub seconds: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bpm: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    pub instrumental: bool,
+    pub lm: &'static str,
+}
+
+impl AceSong {
+    pub fn new(draft: &Draft, seed: u64, seconds: u32, lm: AceLm) -> AceSong {
+        AceSong {
+            engine: "acestep",
+            style: draft.style.clone(),
+            // ACE-Step keeps an instrumental instrumental with this, not with
+            // "no vocals" in the caption.
+            lyrics: if draft.instrumental {
+                "[Instrumental]".into()
+            } else {
+                crate::writer::conditioning_lyrics(draft)
+            },
+            seed,
+            seconds: seconds as f32,
+            bpm: crate::writer::bpm(&draft.style),
+            language: draft.language.clone().filter(|_| !draft.instrumental),
+            instrumental: draft.instrumental,
+            lm: lm.as_str(),
+        }
+    }
+}
+
+/// One song for the helper and the files its engine reads.
+#[derive(Debug, Clone)]
+pub enum Order {
+    /// `model` is YuE2's checkpoint.
+    Yue2 { model: PathBuf, song: Song },
+    /// `models` is the app's models folder (ACE-Step's files are in it).
+    AceStep { models: PathBuf, song: AceSong },
+}
+
+impl Order {
+    /// The song for `draft` with the station's music settings; `models` is the app's
+    /// models folder.
+    pub fn new(draft: &Draft, seed: u64, seconds: u32, music: &Music, models: &Path) -> Order {
+        match music.engine {
+            MusicEngine::Yue2 => Order::Yue2 {
+                model: models.join(MODEL_FILE),
+                song: Song::new(draft, seed, seconds),
+            },
+            MusicEngine::AceStep => Order::AceStep {
+                models: models.to_path_buf(),
+                song: AceSong::new(draft, seed, seconds, music.ace_lm),
+            },
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            Order::Yue2 { .. } => "YuE2",
+            Order::AceStep { .. } => "ACE-Step",
+        }
+    }
+}
+
+/// The graphics driver caches ACE-Step's compiled shaders per engine build, so a
+/// first song with a new build takes minutes longer (about 290 s on a 5060 Ti).
+/// The station remembers the build of its last finished ACE-Step song to say so.
+/// (A driver update also clears the cache; that is not detectable here.)
+pub fn warm_key(engine_version: &str) -> String {
+    format!("delulu-engine {engine_version}")
+}
+
 /// What a song's item records about its music, from the helper's report.
 pub fn provenance(report: &Value) -> BTreeMap<String, String> {
     let mut p = BTreeMap::new();
-    p.insert("music".into(), format!("{MODEL_LABEL} (native)"));
+    let ace = report["engine"].as_str() == Some("acestep");
+    let label = if ace {
+        format!(
+            "ACE-Step 1.5 turbo, LM {} (native)",
+            report["lm"].as_str().unwrap_or("?")
+        )
+    } else {
+        format!("{MODEL_LABEL} (native)")
+    };
+    p.insert("music".into(), label);
     if let Some(device) = report["device"].as_str() {
         p.insert("device".into(), device.into());
     }
     let secs = |k: &str| report[k].as_f64().unwrap_or(0.0) / 1000.0;
-    let total = ["loadMs", "scoreMs", "musicMs", "shapingMs", "renderMs"]
-        .iter()
-        .map(|k| secs(k))
-        .sum::<f64>();
+    let parts: &[&str] = if ace {
+        &["lmMs", "ditMs", "vaeMs"]
+    } else {
+        &["loadMs", "scoreMs", "musicMs", "shapingMs", "renderMs"]
+    };
+    let total = parts.iter().map(|k| secs(k)).sum::<f64>();
     p.insert("musicSeconds".into(), format!("{total:.1}"));
     if report["truncated"].as_bool() == Some(true) {
         p.insert("truncated".into(), "true".into());
@@ -94,20 +188,20 @@ pub struct Stage {
 }
 
 /// Map a helper progress event to an overall fraction. The phases take roughly
-/// these shares of the time on a mid-range card.
-fn stage(event: &Value, last: f32) -> Stage {
+/// these shares of the time on a mid-range card: for YuE2 the score, the music
+/// tokens, the long shaping and a short render; for ACE-Step the language model's
+/// codes, eight DiT steps and the VAE.
+fn stage(event: &Value, last: f32, ace: bool) -> Stage {
     let num = |k: &str| event[k].as_f64().unwrap_or(0.0) as f32;
-    let (phase, fraction) = match event["phase"].as_str().unwrap_or_default() {
-        "score" => ("score", 0.12 * (num("tokens") / 1500.0).min(1.0)),
-        "music" => (
-            "composing",
-            0.12 + 0.40 * num("seconds") / num("maxSeconds").max(1.0),
-        ),
-        "shaping" => ("shaping", 0.52 + 0.43 * num("step") / num("steps").max(1.0)),
-        "rendering" => (
-            "rendering",
-            0.95 + 0.05 * num("tile") / num("tiles").max(1.0),
-        ),
+    let share = |k: &str, of: &str| num(k) / num(of).max(1.0);
+    let (phase, fraction) = match (event["phase"].as_str().unwrap_or_default(), ace) {
+        ("score", _) => ("score", 0.12 * (num("tokens") / 1500.0).min(1.0)),
+        ("music", false) => ("composing", 0.12 + 0.40 * share("seconds", "maxSeconds")),
+        ("music", true) => ("composing", 0.60 * share("seconds", "maxSeconds")),
+        ("shaping", false) => ("shaping", 0.52 + 0.43 * share("step", "steps")),
+        ("shaping", true) => ("shaping", 0.60 + 0.15 * share("step", "steps")),
+        ("rendering", false) => ("rendering", 0.95 + 0.05 * share("tile", "tiles")),
+        ("rendering", true) => ("rendering", 0.75 + 0.25 * share("tile", "tiles")),
         _ => ("loading", last),
     };
     Stage {
@@ -175,8 +269,7 @@ impl Composer {
     pub fn compose(
         &self,
         helper: &Path,
-        model: &Path,
-        song: &Song,
+        order: &Order,
         out: &Path,
         cancelled: &dyn Fn() -> bool,
         progress: &mut dyn FnMut(Stage),
@@ -195,11 +288,17 @@ impl Composer {
                 Ok(())
             });
         }
+        let (flag, files, json) = match order {
+            Order::Yue2 { model, song } => ("--model", model, serde_json::to_vec(song)),
+            Order::AceStep { models, song } => ("--models", models, serde_json::to_vec(song)),
+        };
+        let json = json.expect("song json");
+        let ace = matches!(order, Order::AceStep { .. });
         let spawned = command
             .arg("music")
             .arg("generate")
-            .arg("--model")
-            .arg(model)
+            .arg(flag)
+            .arg(files)
             .arg("--out")
             .arg(out)
             .stdin(Stdio::piped())
@@ -227,7 +326,6 @@ impl Composer {
                 signal(child.id(), libc::SIGSTOP);
             }
         }
-        let json = serde_json::to_vec(song).expect("song json");
         if let Some(mut stdin) = child.stdin.take() {
             let _ = stdin.write_all(&json);
         }
@@ -269,7 +367,7 @@ impl Composer {
                     continue;
                 };
                 if let Some(p) = value.get("progress") {
-                    let s = stage(p, last);
+                    let s = stage(p, last, ace);
                     last = s.fraction;
                     progress(s);
                 } else if let Some(report) = value.get("done") {
@@ -290,9 +388,10 @@ impl Composer {
         };
         let stderr = tail.join().unwrap_or_default();
         if timed_out {
-            return Err(RadioError::Music(
-                "YuE2 took too long and was stopped".into(),
-            ));
+            return Err(RadioError::Music(format!(
+                "{} took too long and was stopped",
+                order.label()
+            )));
         }
         if stopped {
             return Err(RadioError::Cancelled);
@@ -305,7 +404,7 @@ impl Composer {
                 );
                 Ok(report)
             }
-            Some(Err(message)) => Err(classify(message)),
+            Some(Err(message)) => Err(classify(message, order.label())),
             _ => {
                 log::warn!("radio: music engine failed ({status:?}): {stderr}");
                 Err(RadioError::Music(format!(
@@ -317,16 +416,18 @@ impl Composer {
     }
 }
 
-/// Out-of-memory and missing-device errors wait for the card to be free again
-/// instead of counting as a failed song.
-fn classify(message: String) -> RadioError {
+/// Out-of-memory errors wait for the card to be free again, and missing files for
+/// an install, instead of counting as a failed song.
+fn classify(message: String, engine: &str) -> RadioError {
     let lower = message.to_lowercase();
-    if lower.contains("memory") || lower.contains("out of") {
+    if lower.contains("not installed") {
+        RadioError::Unavailable(message)
+    } else if lower.contains("memory") || lower.contains("out of") {
         RadioError::Unavailable(format!(
             "Not enough graphics memory for the music model right now ({message})"
         ))
     } else {
-        RadioError::Music(format!("YuE2: {message}"))
+        RadioError::Music(format!("{engine}: {message}"))
     }
 }
 
@@ -339,19 +440,35 @@ mod tests {
         let s = stage(
             &serde_json::json!({"phase": "music", "seconds": 60.0, "maxSeconds": 120.0}),
             0.0,
+            false,
         );
         assert_eq!(s.phase, "composing");
         assert!((s.fraction - 0.32).abs() < 1e-6);
         let back = stage(
             &serde_json::json!({"phase": "loading", "model": "acoustic"}),
             s.fraction,
+            false,
         );
         assert_eq!(back.fraction, s.fraction);
         let end = stage(
             &serde_json::json!({"phase": "rendering", "tile": 4, "tiles": 4}),
             0.9,
+            false,
         );
         assert_eq!(end.fraction, 1.0);
+        // ACE-Step's language model is most of its time; its DiT is short.
+        let lm = stage(
+            &serde_json::json!({"phase": "music", "seconds": 90.0, "maxSeconds": 180.0}),
+            0.0,
+            true,
+        );
+        assert!((lm.fraction - 0.30).abs() < 1e-6);
+        let dit = stage(
+            &serde_json::json!({"phase": "shaping", "step": 8, "steps": 8}),
+            lm.fraction,
+            true,
+        );
+        assert!((dit.fraction - 0.75).abs() < 1e-6);
     }
 
     /// A stand-in helper: a shell script speaking the same JSON lines. Like the real
@@ -369,13 +486,71 @@ mod tests {
         path
     }
 
-    fn song() -> Song {
-        Song {
-            style: "pop".into(),
-            lyrics: "[Verse]\nla".into(),
-            seed: 1,
-            max_seconds: 30.0,
+    fn song(dir: &Path) -> Order {
+        Order::Yue2 {
+            model: dir.to_path_buf(),
+            song: Song {
+                style: "pop".into(),
+                lyrics: "[Verse]\nla".into(),
+                seed: 1,
+                max_seconds: 30.0,
+            },
         }
+    }
+
+    fn draft(instrumental: bool) -> Draft {
+        Draft {
+            title: "Ochtend".into(),
+            subtitle: String::new(),
+            style: "Dutch, folk, 96 BPM, accordion, warm male voice.".into(),
+            lyrics: Some("[Verse]\nDe trein rijdt door de nacht\n\n[Chorus]\nOchtend".into()),
+            script: None,
+            instrumental,
+            language: Some("nl".into()),
+        }
+    }
+
+    #[test]
+    fn an_ace_song_carries_language_tempo_and_length_as_fields() {
+        let song = AceSong::new(&draft(false), 7, 180, AceLm::Auto);
+        let json = serde_json::to_value(&song).unwrap();
+        assert_eq!(json["engine"], "acestep");
+        assert_eq!(json["seconds"], 180.0);
+        assert_eq!(json["bpm"], 96);
+        assert_eq!(json["language"], "nl");
+        assert_eq!(json["lm"], "auto");
+        assert_eq!(
+            json["lyrics"],
+            "[Verse]\nDe trein rijdt door de nacht\n\n[Chorus]\nOchtend"
+        );
+        let inst = AceSong::new(&draft(true), 7, 90, AceLm::Large);
+        assert_eq!(inst.lyrics, "[Instrumental]");
+        assert_eq!(
+            (inst.language, inst.instrumental, inst.lm),
+            (None, true, "4b")
+        );
+    }
+
+    #[test]
+    fn ace_step_reports_and_errors_are_recorded_for_what_they_are() {
+        let p = provenance(&serde_json::json!({
+            "engine": "acestep", "lm": "4b", "device": "Test GPU",
+            "lmMs": 18000, "ditMs": 3000, "vaeMs": 5500, "peakGpuBytes": 5_400_000_000u64
+        }));
+        assert_eq!(p["music"], "ACE-Step 1.5 turbo, LM 4b (native)");
+        assert_eq!(p["musicSeconds"], "26.5");
+        assert_eq!(p["gpuMegabytes"], "5400");
+        assert!(matches!(
+            classify(
+                "ACE-Step is not installed: vae-BF16.gguf missing".into(),
+                "ACE-Step"
+            ),
+            RadioError::Unavailable(_)
+        ));
+        assert!(matches!(
+            classify("ACE-Step denoising failed".into(), "ACE-Step"),
+            RadioError::Music(m) if m == "ACE-Step: ACE-Step denoising failed"
+        ));
     }
 
     #[test]
@@ -390,8 +565,7 @@ mod tests {
         let report = Composer::default()
             .compose(
                 &helper,
-                &dir,
-                &song(),
+                &song(&dir),
                 &dir.join("o.wav"),
                 &|| false,
                 &mut |s| stages.push(s),
@@ -407,14 +581,44 @@ mod tests {
         let err = Composer::default()
             .compose(
                 &failing,
-                &dir,
-                &song(),
+                &song(&dir),
                 &dir.join("o.wav"),
                 &|| false,
                 &mut |_| {},
             )
             .unwrap_err();
         assert!(matches!(err, RadioError::Unavailable(_)), "{err:?}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// ACE-Step runs through the same helper with its models folder and an
+    /// `"engine": "acestep"` song; its progress maps onto its own shares.
+    #[test]
+    fn an_ace_order_reaches_the_helper_as_an_acestep_song() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("radio-music-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let helper = dir.join("delulu-engine");
+        let script = r#"#!/bin/sh
+[ "$1 $2 $3" = "music generate --models" ] || { printf '%s\n' '{"error":"wrong arguments"}'; exit 2; }
+grep -q '"engine":"acestep"' || { printf '%s\n' '{"error":"not an ACE song"}'; exit 2; }
+printf '%s\n' '{"progress":{"phase":"music","seconds":90.0,"maxSeconds":180.0}}' '{"done":{"engine":"acestep","lm":"0.6b"}}'
+"#;
+        std::fs::write(&helper, script).unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let order = Order::AceStep {
+            models: dir.clone(),
+            song: AceSong::new(&draft(false), 1, 180, AceLm::Small),
+        };
+        let mut stages = Vec::new();
+        let report = Composer::default()
+            .compose(&helper, &order, &dir.join("o.wav"), &|| false, &mut |s| {
+                stages.push(s)
+            })
+            .unwrap();
+        assert_eq!(report["lm"], "0.6b");
+        assert_eq!(stages.len(), 1);
+        assert!((stages[0].fraction - 0.30).abs() < 1e-6);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -437,8 +641,7 @@ mod tests {
         let err = composer
             .compose(
                 &helper,
-                &dir,
-                &song(),
+                &song(&dir),
                 &dir.join("o.wav"),
                 &|| false,
                 &mut |_| {},
@@ -452,8 +655,7 @@ mod tests {
         let err = composer
             .compose(
                 &helper,
-                &dir,
-                &song(),
+                &song(&dir),
                 &dir.join("o.wav"),
                 &|| true,
                 &mut |_| {},
@@ -465,14 +667,7 @@ mod tests {
         composer.stop();
         let ok = fake_helper(&dir, r#"printf '%s\n' '{"done":{}}'"#);
         assert!(composer
-            .compose(
-                &ok,
-                &dir,
-                &song(),
-                &dir.join("o.wav"),
-                &|| false,
-                &mut |_| {}
-            )
+            .compose(&ok, &song(&dir), &dir.join("o.wav"), &|| false, &mut |_| {})
             .is_ok());
         std::fs::remove_dir_all(dir).unwrap();
     }

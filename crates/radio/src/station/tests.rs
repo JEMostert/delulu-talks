@@ -13,6 +13,8 @@ struct Fake {
     /// Outcomes for the next compose calls; empty = success.
     outcomes: Mutex<Vec<RadioError>>,
     seconds: f64,
+    /// The music settings and length each compose call got.
+    music: Mutex<Vec<(Music, u32)>>,
 }
 
 impl Fake {
@@ -24,6 +26,7 @@ impl Fake {
             composes: AtomicUsize::new(0),
             outcomes: Mutex::new(Vec::new()),
             seconds: 30.0,
+            music: Mutex::new(Vec::new()),
         }
     }
     fn tone(&self, path: &Path, seconds: f64) {
@@ -62,10 +65,12 @@ impl Backend for Fake {
         &self,
         _: &Draft,
         _: u64,
-        _: u32,
+        seconds: u32,
+        music: &Music,
         out: &Path,
     ) -> Result<BTreeMap<String, String>, RadioError> {
         self.composes.fetch_add(1, Ordering::SeqCst);
+        self.music.lock().unwrap().push((music.clone(), seconds));
         let mut outcomes = self.outcomes.lock().unwrap();
         if !outcomes.is_empty() {
             return Err(outcomes.remove(0));
@@ -315,6 +320,61 @@ fn buffer_is_bounded() {
     // Two songs and 400 s of audio are enough.
     assert_eq!(station.work(&fake), Next::Idle);
     assert_eq!(station.snapshot().queue.len(), 2);
+}
+
+/// YuE2 stays the engine of a station that never chose; the choice reaches the
+/// next song with ACE-Step's language model and the station's length.
+#[test]
+fn the_engine_choice_reaches_the_next_song() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let fake = Fake::new();
+    station.set_on_air(true);
+    make_one(&station, &fake);
+    station.set_music(MusicEngine::AceStep, AceLm::Large);
+    make_one(&station, &fake);
+    let calls = fake.music.lock().unwrap().clone();
+    assert_eq!(calls[0].0.engine, MusicEngine::Yue2);
+    assert_eq!(
+        (calls[1].0.engine, calls[1].0.ace_lm, calls[1].1),
+        (MusicEngine::AceStep, AceLm::Large, 180)
+    );
+    // The choice survives a restart.
+    drop(station);
+    let reopened = Station::open(&dir.0).unwrap();
+    assert_eq!(reopened.snapshot().music.engine, MusicEngine::AceStep);
+}
+
+/// ACE-Step makes a song in under a minute: the station keeps one song ready next
+/// to the one on air instead of YuE2's two, and makes the next as soon as one airs.
+#[test]
+fn fast_songs_keep_a_short_programme() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let mut fake = Fake::new();
+    fake.seconds = 180.0;
+    station.set_music(MusicEngine::AceStep, AceLm::Auto);
+    station.set_on_air(true);
+    make_one(&station, &fake);
+    assert_eq!(station.work(&fake), Next::Idle);
+    assert_eq!(station.snapshot().queue.len(), 1);
+    // On air now: the next one is made right away.
+    station.ensure_now();
+    make_one(&station, &fake);
+    assert_eq!(station.work(&fake), Next::Idle);
+    let s = station.snapshot();
+    assert_eq!(
+        (s.queue.len(), fake.composes.load(Ordering::SeqCst)),
+        (1, 2)
+    );
+    // Short songs: two ready at most.
+    let mut short = Fake::new();
+    short.seconds = 60.0;
+    station.advance();
+    for _ in 0..3 {
+        make_one(&station, &short);
+    }
+    assert_eq!(station.snapshot().queue.len(), ACE_BUFFER_ITEMS);
 }
 
 #[test]

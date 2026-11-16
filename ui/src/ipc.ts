@@ -249,6 +249,8 @@ export type RadioReadiness = {
     engine: boolean;
     /** The YuE2 model is downloaded (Settings → Models). */
     model: boolean;
+    /** ACE-Step's files: text encoder + turbo DiT + VAE, and its language models. */
+    ace: { turbo: boolean; lmSmall: boolean; lmLarge: boolean };
     /** The compute device the engine found. */
     device: string | null;
     /** A graphics card; the processor alone is far too slow. */
@@ -279,6 +281,9 @@ export type Radio = {
     /** Music only: overall 0..1. */
     progress: number | null;
     phase: "loading" | "score" | "composing" | "shaping" | "rendering" | null;
+    /** ACE-Step's first song with this engine build: the graphics driver
+     * prepares its shaders once, which takes a few minutes. */
+    preparing: boolean;
   } | null;
   lastError: string | null;
   requests: RadioRequest[];
@@ -286,7 +291,17 @@ export type Radio = {
   lastSongSeconds: number | null;
   lastSongAudioSeconds: number | null;
   readiness: RadioReadiness | null;
+  music: RadioMusic;
 };
+export type MusicEngine = "yue2" | "acestep";
+export type AceLm = "auto" | "0.6b" | "4b";
+export type RadioMusic = {
+  engine: MusicEngine;
+  aceLm: AceLm;
+  aceWarm?: string;
+};
+export const radioMusic = (engine: MusicEngine, aceLm: AceLm) =>
+  invoke<Radio>("radio_music", { engine, aceLm });
 export const getRadio = () => invoke<Radio>("get_radio");
 export const checkRadio = () => invoke<Radio>("check_radio");
 export const radioPlay = () => invoke<Radio>("radio_play");
@@ -299,19 +314,35 @@ export const radioDirection = (direction: RadioDirection) =>
   invoke<Radio>("radio_direction", { direction });
 export const radioRequest = (text: string) =>
   invoke<Radio>("radio_request", { text });
-export type MusicModel = {
-  state: "missing" | "downloading" | "ready";
+export type ModelTerms = {
+  name: string;
+  url: string;
+  credit: string;
+  text: string;
+};
+export type MusicModelRow = {
+  id: string;
+  engine: "yue" | "acestep";
   label: string;
   license: string;
+  bytes: number;
+  state: "missing" | "downloading" | "ready";
+  terms: ModelTerms | null;
+};
+/** Every music model, and the download in progress (over all its models). */
+export type MusicModel = {
+  models: MusicModelRow[];
   doneBytes: number;
   totalBytes: number;
   error: string | null;
 };
 export const getMusicModel = () => invoke<MusicModel>("get_music_model");
-export const downloadMusicModel = () =>
-  invoke<MusicModel>("download_music_model");
+/** Download these models one after another; already downloaded ones are skipped. */
+export const downloadMusicModel = (ids: string[]) =>
+  invoke<MusicModel>("download_music_model", { ids });
 export const cancelMusicDownload = () => invoke<void>("cancel_music_download");
-export const deleteMusicModel = () => invoke<MusicModel>("delete_music_model");
+export const deleteMusicModel = (id: string) =>
+  invoke<MusicModel>("delete_music_model", { id });
 export const onMusicModel = (
   fn: (value: MusicModel) => void,
 ): Promise<UnlistenFn> =>

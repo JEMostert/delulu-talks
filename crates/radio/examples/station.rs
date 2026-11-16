@@ -1,10 +1,11 @@
 //! Run the station headless with the real writer, music engine and voice, to measure it.
 //! `cargo run --release -p delulu-radio --example station -- <data-dir> <items> [host]`
 //! Needs the Gemma and YuE2 models in the app's models folder and `delulu-engine`
-//! (set `DELULU_ENGINE` in a checkout).
+//! (set `DELULU_ENGINE` in a checkout). `DELULU_MUSIC_ENGINE=acestep` makes the
+//! music with ACE-Step instead (its files in the same models folder).
 use delulu_cleanup::{Cleaner, Sampling};
-use delulu_radio::model::{Direction, Draft, Host};
-use delulu_radio::music::{self, Composer, Song};
+use delulu_radio::model::{AceLm, Direction, Draft, Host, Music, MusicEngine};
+use delulu_radio::music::{self, Composer, Order};
 use delulu_radio::voice::Voice;
 use delulu_radio::{Backend, Next, RadioError, Station};
 use std::collections::BTreeMap;
@@ -55,15 +56,15 @@ impl Backend for Real {
         &self,
         draft: &Draft,
         seed: u64,
-        max_seconds: u32,
+        seconds: u32,
+        settings: &Music,
         out: &Path,
     ) -> Result<BTreeMap<String, String>, RadioError> {
         let helper = music::helper_path().expect("delulu-engine");
-        let model = models().join(music::MODEL_FILE);
-        let song = Song::new(draft, seed, max_seconds);
+        let order = Order::new(draft, seed, seconds, settings, &models());
         let report = self
             .composer
-            .compose(&helper, &model, &song, out, &|| false, &mut |s| {
+            .compose(&helper, &order, out, &|| false, &mut |s| {
                 eprintln!("[music] {} {:.0}%", s.phase, s.fraction * 100.0)
             })?;
         eprintln!("[music] {report}");
@@ -93,6 +94,9 @@ fn main() {
         voice: Voice::new(),
     };
     let station = Station::open(&root).expect("open");
+    if std::env::var("DELULU_MUSIC_ENGINE").as_deref() == Ok("acestep") {
+        station.set_music(MusicEngine::AceStep, AceLm::Auto);
+    }
     if host {
         station.set_direction(Direction {
             host: Host::Often,

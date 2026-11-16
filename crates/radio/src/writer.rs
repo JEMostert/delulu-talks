@@ -782,6 +782,78 @@ pub fn parse_song(
         lyrics: Some(lyrics),
         script: None,
         instrumental,
+        language: if instrumental {
+            None
+        } else {
+            language_code(&direction.language).map(String::from)
+        },
+    })
+}
+
+/// The station's language (free text, as the listener typed it) as one of the
+/// ISO codes ACE-Step's language model knows. Pinning it keeps a Dutch song Dutch;
+/// a language it does not know is left to the model.
+pub fn language_code(name: &str) -> Option<&'static str> {
+    const NAMES: &[(&str, &[&str])] = &[
+        ("en", &["english", "engels", "englisch", "anglais"]),
+        (
+            "nl",
+            &["dutch", "nederlands", "flemish", "vlaams", "niederländisch"],
+        ),
+        ("de", &["german", "deutsch", "duits", "allemand"]),
+        (
+            "fr",
+            &["french", "français", "francais", "frans", "französisch"],
+        ),
+        (
+            "es",
+            &["spanish", "español", "espanol", "spaans", "castellano"],
+        ),
+        ("it", &["italian", "italiano", "italiaans"]),
+        ("pt", &["portuguese", "português", "portugues", "portugees"]),
+        ("sv", &["swedish", "svenska", "zweeds"]),
+        ("no", &["norwegian", "norsk", "noors"]),
+        ("da", &["danish", "dansk", "deens"]),
+        ("fi", &["finnish", "suomi", "fins"]),
+        ("pl", &["polish", "polski", "pools"]),
+        ("cs", &["czech", "čeština", "tsjechisch"]),
+        ("ru", &["russian", "русский", "russisch"]),
+        ("uk", &["ukrainian", "українська", "oekraïens"]),
+        ("tr", &["turkish", "türkçe", "turks"]),
+        ("el", &["greek", "ελληνικά", "grieks"]),
+        ("ja", &["japanese", "日本語", "japans"]),
+        ("ko", &["korean", "한국어", "koreaans"]),
+        ("zh", &["chinese", "mandarin", "中文", "chinees"]),
+        ("yue", &["cantonese", "粵語", "kantonees"]),
+        ("hi", &["hindi"]),
+        ("ar", &["arabic", "العربية", "arabisch"]),
+        ("id", &["indonesian", "bahasa indonesia", "indonesisch"]),
+    ];
+    let name = name.trim().to_lowercase();
+    NAMES
+        .iter()
+        .find(|(code, names)| name == *code || names.contains(&name.as_str()))
+        .map(|(code, _)| *code)
+}
+
+/// The tempo the writer put in the style ("96 BPM"), when it is a plausible one.
+pub fn bpm(style: &str) -> Option<u32> {
+    let words: Vec<&str> = style
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    let tempo = |number: &str, unit: &str| {
+        let n = number.parse::<u32>().ok()?;
+        (unit.eq_ignore_ascii_case("bpm") && (30..=300).contains(&n)).then_some(n)
+    };
+    words.iter().enumerate().find_map(|(i, w)| {
+        // "96 BPM" or "96BPM".
+        let digits = w.len() - w.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        match digits {
+            0 => None,
+            d if d == w.len() => tempo(w, words.get(i + 1)?),
+            d => tempo(&w[..d], &w[d..]),
+        }
     })
 }
 
@@ -828,6 +900,7 @@ pub fn parse_break(reply: &str, last: &Item) -> Result<Draft, RadioError> {
         lyrics: None,
         script: Some(script),
         instrumental: false,
+        language: None,
     })
 }
 
@@ -973,6 +1046,43 @@ mod tests {
             Some("[Intro]\n\n[Verse]\nLight on the window\nCoffee and rain\n\n[Chorus]\nCopper morning\nCall my name\n\n[Verse]\nKeys on the counter\nCoat on the chair\n\n[Chorus]\nCopper morning\nCall my name\n\n[Outro]")
         );
         assert_eq!(conditioning_lyrics(&draft), draft.lyrics.unwrap());
+        assert_eq!(draft.language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn language_and_tempo_become_fields_for_ace_step() {
+        for (name, code) in [
+            ("Dutch", Some("nl")),
+            (" Nederlands ", Some("nl")),
+            ("English", Some("en")),
+            ("de", Some("de")),
+            ("Klingon", None),
+            ("", None),
+        ] {
+            assert_eq!(language_code(name), code, "{name}");
+        }
+        for (style, tempo) in [
+            ("Dutch, folk, 96 BPM, accordion.", Some(96)),
+            ("house, 124bpm, four on the floor", Some(124)),
+            ("slow, 5 BPM", None),
+            ("Track 2, 3 voices, BPM unknown", None),
+        ] {
+            assert_eq!(bpm(style), tempo, "{style}");
+        }
+        let dutch = Direction {
+            language: "Dutch".into(),
+            ..Direction::default()
+        };
+        let reply = " Ochtend\nStyle: Dutch folk, 96 BPM, accordion, warm male voice.\nLyrics:\n[Verse]\nDe trein rijdt door de nacht\nIk tel de lichten\n[Chorus]\nOchtend, ochtend\nKom maar thuis\n";
+        assert_eq!(
+            parse_song(reply, &dutch, false)
+                .unwrap()
+                .language
+                .as_deref(),
+            Some("nl")
+        );
+        let form = " Drift\nStyle: Slow ambient synth pads, soft piano, 70 BPM.\nForm: Intro, Theme, Outro";
+        assert_eq!(parse_song(form, &dutch, true).unwrap().language, None);
     }
 
     #[test]
@@ -1091,6 +1201,7 @@ mod tests {
             lyrics: Some("[Verse 1]\nOne\nTwo.[Chorus]\nThree\nFour".into()),
             script: None,
             instrumental: false,
+            language: None,
         };
         assert_eq!(
             conditioning_lyrics(&draft),
