@@ -1,11 +1,9 @@
-use std::collections::HashMap;
 use std::sync::{mpsc, Mutex};
 
 use arboard::{Clipboard, LinuxClipboardKind, SetExtLinux};
 use ashpd::desktop::remote_desktop::{DeviceType, KeyState, RemoteDesktop, SelectDevicesOptions};
 use ashpd::desktop::{PersistMode, Session};
 use async_trait::async_trait;
-use zbus::zvariant::Value;
 
 pub use crate::APP_ID;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,15 +94,7 @@ impl Portal for DesktopPortal {
         let connection = zbus::Connection::session()
             .await
             .map_err(|e| e.to_string())?;
-        let _ = connection
-            .call_method(
-                Some("org.freedesktop.portal.Desktop"),
-                "/org/freedesktop/portal/desktop",
-                Some("org.freedesktop.host.portal.Registry"),
-                "Register",
-                &(APP_ID, HashMap::<&str, Value>::new()),
-            )
-            .await;
+        crate::register(&connection).await;
         let proxy = RemoteDesktop::with_connection(connection)
             .await
             .map_err(|e| e.to_string())?;

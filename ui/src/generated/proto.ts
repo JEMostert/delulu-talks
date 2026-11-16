@@ -55,7 +55,11 @@ cleanupError: string | null,
 /**
  * The saved history entry, when history is on.
  */
-historyId: string | null, } | { "kind": "nothingHeard", job: number, at: number, } | { "kind": "cancelled", job: number, at: number, during: DictationPhase, } | { "kind": "failed", job: number, at: number, during: DictationPhase, error: string, 
+historyId: string | null, 
+/**
+ * The text was delivered but could not be saved to History.
+ */
+historyError: string | null, } | { "kind": "nothingHeard", job: number, at: number, } | { "kind": "cancelled", job: number, at: number, during: DictationPhase, } | { "kind": "failed", job: number, at: number, during: DictationPhase, error: string, 
 /**
  * Text that was ready but not inserted, so the UI can offer to copy it.
  */
@@ -78,7 +82,14 @@ export type HotkeyState = { bound: boolean,
 /**
  * The trigger as the desktop describes it, like "Super+Z".
  */
-trigger: string | null, error: string | null, };
+trigger: string | null, error: string | null, 
+/**
+ * Why the shortcut is not bound, for clients to branch on; `error` says it
+ * for people. Null when bound, or for an older daemon.
+ */
+problem: HotkeyProblem | null, };
+
+export type HotkeyProblem = "notSet" | "appRunning" | "firstRunPending" | "unavailable";
 
 export type InsertState = { 
 /**
@@ -309,6 +320,16 @@ export type ToggleParams = Record<symbol, never>;
 
 export type CancelParams = Record<symbol, never>;
 
+export type HistoryListParams = { 
+/**
+ * Words to search for; null or empty = all entries.
+ */
+query: string | null, offset: number, 
+/**
+ * At most this many entries; 0 means the daemon's default page size.
+ */
+limit: number, };
+
 export type DictationReply = { 
 /**
  * The phase after the request.
@@ -360,4 +381,5 @@ export type Methods = {
   "unsubscribe": { params: UnsubscribeParams; result: Subscribed };
   "dictation.toggle": { params: ToggleParams; result: DictationReply };
   "dictation.cancel": { params: CancelParams; result: DictationReply };
+  "history.list": { params: HistoryListParams; result: HistoryPage };
 };

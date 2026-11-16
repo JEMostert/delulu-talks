@@ -12,13 +12,23 @@ name = "delulud"
 path = "src/main.rs"
 
 [dependencies]
+delulu-audio = { path = "../audio" }
 delulu-core = { path = "../core" }
+delulu-desktop = { path = "../desktop" }
+delulu-dictation = { path = "../dictation" }
+delulu-models = { path = "../models" }
+# Only the client that drives the app's `--pill` helper; no GTK in the daemon.
+delulu-overlay = { path = "../overlay", default-features = false }
 delulu-proto = { path = "../proto" }
+delulu-store = { path = "../store" }
+delulu-stt = { path = "../stt" }
 serde.workspace = true
 serde_json.workspace = true
 libc.workspace = true
+log.workspace = true
+zbus.workspace = true
 # Only what the daemon uses; no `full`, so no blocking-pool extras or fs.
-tokio = { version = "1", default-features = false, features = ["rt", "net", "io-util", "sync", "time", "signal", "macros"] }
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "net", "io-util", "sync", "time", "signal", "macros"] }
 
 [dev-dependencies]
 tempfile = "3"

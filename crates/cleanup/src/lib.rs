@@ -519,6 +519,20 @@ impl Cleaner {
         self.kill.clone()
     }
 
+    /// The helper process has exited (crashed or was killed). Does not block.
+    pub fn exited(&mut self) -> bool {
+        // Hold the pid lock while reaping, so no kill can hit a reused pid.
+        let mut pid = lock(&self.kill.0.pid);
+        if pid.is_none() {
+            return true;
+        }
+        if matches!(self.child.try_wait(), Ok(None)) {
+            return false;
+        }
+        *pid = None;
+        true
+    }
+
     /// Ok(Some(clean)) = use it. Ok(None) = paste raw (unsupported language, rejected output).
     /// Err = helper failed or timed out; the caller drops the Cleaner, which kills the helper.
     pub fn clean(

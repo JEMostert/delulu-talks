@@ -5,5 +5,11 @@ edition.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-gtk.workspace = true
-cairo-rs.workspace = true
+gtk = { workspace = true, optional = true }
+cairo-rs = { workspace = true, optional = true }
+
+[features]
+default = ["helper"]
+# The `--pill` helper itself (GTK). Without it the crate only drives a helper,
+# so the daemon can show the pill without linking GTK.
+helper = ["dep:gtk", "dep:cairo-rs"]

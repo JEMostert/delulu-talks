@@ -11,8 +11,7 @@ use std::io::Read;
 use std::os::fd::{AsFd, AsRawFd};
 use std::rc::Rc;
 
-/// Exit code when there is no X display to draw on; the client stops trying.
-pub const UNAVAILABLE: i32 = 3;
+use crate::UNAVAILABLE;
 const BOTTOM_MARGIN: i32 = 28;
 /// XWayland often reports the full screen as work area, hiding Wayland panels
 /// (a KDE panel is ~54 px plus its floating gap); stay clear of them then.

@@ -1,5 +1,4 @@
-use crate::helper::UNAVAILABLE;
-use crate::{audible_level, Message, PillState};
+use crate::{audible_level, Message, PillState, UNAVAILABLE};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -15,6 +14,8 @@ const MAX_FAILURES: u32 = 3;
 pub struct Pill {
     tx: OnceLock<mpsc::Sender<Message>>,
     gate: Mutex<Gate>,
+    /// The binary that runs `--pill`; `None` = this process's own binary.
+    program: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -35,6 +36,15 @@ impl Pill {
         Self {
             tx: OnceLock::new(),
             gate: Mutex::new(Gate::default()),
+            program: None,
+        }
+    }
+
+    /// A pill run by another binary's `--pill` mode (the daemon uses the app's).
+    pub fn with_program(program: PathBuf) -> Self {
+        Self {
+            program: Some(program),
+            ..Self::new()
         }
     }
 
@@ -75,9 +85,10 @@ impl Pill {
     fn send(&self, m: Message) {
         let tx = self.tx.get_or_init(|| {
             let (tx, rx) = mpsc::channel();
+            let program = self.program.clone();
             if let Err(e) = std::thread::Builder::new()
                 .name("pill".into())
-                .spawn(move || writer(rx))
+                .spawn(move || writer(rx, program))
             {
                 eprintln!("pill: writer thread: {e}");
             }
@@ -93,7 +104,7 @@ struct Helper {
     started: Instant,
 }
 
-fn writer(rx: mpsc::Receiver<Message>) {
+fn writer(rx: mpsc::Receiver<Message>, program: Option<PathBuf>) {
     let mut helper: Option<Helper> = None;
     let mut failures = 0;
     let mut disabled = false;
@@ -112,7 +123,7 @@ fn writer(rx: mpsc::Receiver<Message>) {
         // A dead helper gets one fresh replacement per message.
         for _attempt in 0..2 {
             if helper.is_none() {
-                match spawn() {
+                match spawn(program.as_deref()) {
                     Ok(h) => helper = Some(h),
                     Err(e) => {
                         eprintln!("pill: could not start the helper: {e}; recording pill disabled");
@@ -156,8 +167,12 @@ fn exited(mut h: Helper, failures: &mut u32) -> bool {
     false
 }
 
-fn spawn() -> std::io::Result<Helper> {
-    let mut child = Command::new(exe()?)
+fn spawn(program: Option<&std::path::Path>) -> std::io::Result<Helper> {
+    let program = match program {
+        Some(path) => path.to_owned(),
+        None => exe()?,
+    };
+    let mut child = Command::new(program)
         .arg("--pill")
         // Override-redirect windows need X11; on Wayland this means XWayland.
         .env("GDK_BACKEND", "x11")

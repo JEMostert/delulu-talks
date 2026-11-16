@@ -1,3 +1,5 @@
+// Without the helper only the message types and the level curve are used.
+#![cfg_attr(not(feature = "helper"), allow(dead_code))]
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 

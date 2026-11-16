@@ -1,19 +1,26 @@
 //! `delulud`: the Delulu Talks daemon and its command line client.
 
 use delulu_daemon::client::{Client, ClientError};
+use delulu_daemon::desktop::DesktopPlatform;
 use delulu_daemon::instance::{BindError, Instance};
+use delulu_daemon::live::Live;
 use delulu_daemon::server::{Daemon, Options};
 use delulu_proto::api::{ErrorCode, Event, GetStateParams, SubscribeParams, ToggleParams, Topic};
 use delulu_proto::state::DaemonMode;
+use delulu_store::Store;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 const USAGE: &str = "\
 usage: delulud <command> [--socket <path>]
 
 commands:
   daemon [--demo] [--still]   serve the API socket (--demo: canned state and a fake
-                              engine; --still: demo without background changes)
+                              engine; --still: demo without background changes).
+                              With DELULU_DAEMON=1 the daemon owns dictation: the
+                              shortcut, microphone, speech model, cleanup, typing
+                              and History. Quit the Delulu Talks app first.
   state                       print the state snapshot as JSON
   toggle                      start or stop dictation
   events [<topic>…]           print events as they arrive (default: all topics)
@@ -125,6 +132,9 @@ fn daemon(socket: PathBuf, args: &Args) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // The daemon path is opt-in until it becomes the default.
+    let live = !args.demo && std::env::var("DELULU_DAEMON").as_deref() == Ok("1");
+    delulu_daemon::logger::init();
     let opts = Options {
         mode: if args.demo {
             DaemonMode::Demo
@@ -134,10 +144,18 @@ fn daemon(socket: PathBuf, args: &Args) -> ExitCode {
         script: !args.still,
         ..Options::default()
     };
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
+    let runtime = if live {
+        // Engine results, portal signals and clients run side by side.
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+    } else {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+    };
+    let runtime = match runtime {
         Ok(runtime) => runtime,
         Err(e) => {
             eprintln!("delulud: cannot start the runtime: {e}");
@@ -155,9 +173,20 @@ fn daemon(socket: PathBuf, args: &Args) -> ExitCode {
         eprintln!(
             "delulud: listening on {} ({})",
             instance.path().display(),
-            if args.demo { "demo" } else { "normal" }
+            match (args.demo, live) {
+                (true, _) => "demo",
+                (false, true) => "dictation",
+                (false, false) => "normal; dictation stays in the app without DELULU_DAEMON=1",
+            }
         );
         let daemon = Daemon::new(opts);
+        if live {
+            let store = Store::open_default().map_err(|e| std::io::Error::other(e.to_string()))?;
+            let store = Arc::new(store);
+            Store::start_daily_pruning(&store);
+            let platform = Arc::new(DesktopPlatform::new(Arc::clone(&store)));
+            Live::start(daemon.clone(), store, platform);
+        }
         daemon
             .serve(listener, async {
                 tokio::select! {

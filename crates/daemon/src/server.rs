@@ -1,6 +1,10 @@
 //! The socket server: connections, requests, subscriptions and the dictation
 //! state machine.
 //!
+//! The machine's effects are carried out by an [`Effects`] implementation: the
+//! fake engine in demo mode, the real dictation runtime (`crate::live`) with
+//! `DELULU_DAEMON=1`, or none, in which case dictation requests are refused.
+//!
 //! All state lives in memory behind one mutex that is never held across an
 //! `await`. Events go out through a bounded broadcast channel, so publishing
 //! never waits for a subscriber: a connection that reads too slowly misses
@@ -8,14 +12,14 @@
 //! stops accepting writes for `write_timeout` is closed.
 
 use crate::{demo, now_ms};
-use delulu_core::dictation::{self as fsm, Dictation, Ignored, Input, Step};
+use delulu_core::dictation::{self as fsm, Dictation, Ignored, Input, Outcome, Step};
 use delulu_proto::api::*;
 use delulu_proto::framing::{Frame, LineDecoder};
 use delulu_proto::state::*;
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::future::Future;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::unix::OwnedWriteHalf;
@@ -44,6 +48,23 @@ impl Default for Options {
     }
 }
 
+/// Carries out the dictation state machine's effects.
+pub trait Effects: Send + Sync + 'static {
+    /// Starts the work `effect` asks for and returns at once; results come back
+    /// through [`Daemon::input`]. Called without the state lock held.
+    fn run(&self, daemon: &Daemon, effect: fsm::Effect);
+    /// The wire form of a finished dictation, and the History entry it added.
+    /// Called with the state lock held, so it must not call into the daemon.
+    fn record(&self, outcome: Outcome, now: u64) -> (DictationOutcome, Option<HistoryEntry>);
+    /// A History page from the store; `None` serves it from the snapshot.
+    fn history(&self, _params: &HistoryListParams) -> Option<HistoryPage> {
+        None
+    }
+}
+
+/// Entries per History page when a request does not say.
+pub const HISTORY_PAGE: u32 = 50;
+
 #[derive(Clone)]
 struct Published {
     topic: Option<Topic>,
@@ -59,6 +80,11 @@ struct Shared {
     opts: Options,
     inner: Mutex<Inner>,
     events: broadcast::Sender<Published>,
+    effects: OnceLock<Arc<dyn Effects>>,
+    /// Held from a transition until its effects have started, so the effects of
+    /// two inputs never interleave: a cancel cannot discard a recording before
+    /// the start it follows has opened the microphone.
+    order: Mutex<()>,
 }
 
 /// A running daemon's state. Cheap to clone.
@@ -77,13 +103,51 @@ impl Daemon {
             cleanup: state.settings.as_ref().is_none_or(|s| s.cleanup),
         });
         let (events, _) = broadcast::channel(opts.event_capacity.max(1));
-        Self {
+        let demo = opts.mode == DaemonMode::Demo;
+        let daemon = Self {
             shared: Arc::new(Shared {
                 opts,
                 inner: Mutex::new(Inner { state, machine }),
                 events,
+                effects: OnceLock::new(),
+                order: Mutex::new(()),
             }),
+        };
+        if demo {
+            daemon.set_effects(Arc::new(demo::DemoEffects));
         }
+        daemon
+    }
+
+    /// Gives dictation to `effects`. Only the first call counts.
+    pub fn set_effects(&self, effects: Arc<dyn Effects>) {
+        let _ = self.shared.effects.set(effects);
+    }
+
+    /// Feeds the dictation state machine, publishes the change and starts its
+    /// effects. `Err` says why the input changed nothing. Effects must not call
+    /// this themselves; they feed results from a task.
+    pub fn input(&self, input: Input) -> Result<DictationReply, Ignored> {
+        self.shared.input(input)
+    }
+
+    /// Changes the snapshot and publishes the events `f` returns, in order, as
+    /// one step: no snapshot shows the change without its events.
+    pub fn update(&self, f: impl FnOnce(&mut AppState) -> Vec<Event>) {
+        let mut inner = self.shared.lock();
+        for event in f(&mut inner.state) {
+            self.shared.publish(&mut inner, event);
+        }
+    }
+
+    /// Reads the snapshot without cloning it.
+    pub fn read<R>(&self, f: impl FnOnce(&AppState) -> R) -> R {
+        f(&self.shared.lock().state)
+    }
+
+    /// Reads or changes the state machine without feeding it an input.
+    pub fn with_machine<R>(&self, f: impl FnOnce(&mut Dictation) -> R) -> R {
+        f(&mut self.shared.lock().machine)
     }
 
     pub fn snapshot(&self) -> AppState {
@@ -191,17 +255,72 @@ impl Shared {
             }
             Request::Toggle(_) => self.dictation(Input::Toggle),
             Request::Cancel(_) => self.dictation(Input::Cancel),
+            Request::HistoryList(params) => self.history(params),
         }
     }
 
+    fn history(&self, params: HistoryListParams) -> Result<Value, ApiError> {
+        if let Some(page) = self.effects.get().and_then(|e| e.history(&params)) {
+            return to_value(page);
+        }
+        let inner = self.lock();
+        let Some(page) = inner.state.history.as_ref() else {
+            return Err(ApiError::new(
+                ErrorCode::NotAvailable,
+                "this daemon does not serve History",
+            ));
+        };
+        // Demo mode: the snapshot's page is all there is.
+        let query = params.query.as_deref().map(str::to_lowercase);
+        let matching: Vec<&HistoryEntry> = page
+            .entries
+            .iter()
+            .filter(|e| {
+                query
+                    .as_deref()
+                    .is_none_or(|q| q.is_empty() || e.text.to_lowercase().contains(q))
+            })
+            .collect();
+        let limit = if params.limit == 0 {
+            HISTORY_PAGE
+        } else {
+            params.limit
+        };
+        to_value(HistoryPage {
+            query: params.query.clone(),
+            offset: params.offset,
+            total: matching.len() as u32,
+            entries: matching
+                .into_iter()
+                .skip(params.offset as usize)
+                .take(limit as usize)
+                .cloned()
+                .collect(),
+        })
+    }
+
     fn dictation(self: &Arc<Self>, input: Input) -> Result<Value, ApiError> {
-        if self.opts.mode != DaemonMode::Demo {
+        if self.effects.get().is_none() {
             return Err(ApiError::new(
                 ErrorCode::NotAvailable,
                 "dictation does not run in the daemon yet; the Delulu Talks app handles it",
             ));
         }
         let cancel = input == Input::Cancel;
+        if !cancel {
+            let inner = self.lock();
+            let dictation = &inner.state.dictation;
+            // Stopping a recording is always allowed.
+            if !dictation.available && dictation.phase == DictationPhase::Idle {
+                return Err(ApiError::new(
+                    ErrorCode::NotAvailable,
+                    dictation
+                        .unavailable_reason
+                        .clone()
+                        .unwrap_or_else(|| "dictation is not available".into()),
+                ));
+            }
+        }
         match self.input(input) {
             Ok(reply) => to_value(reply),
             Err(Ignored::Busy) => Err(ApiError::new(
@@ -226,6 +345,7 @@ impl Shared {
 
     /// Feeds the state machine, publishes the change and starts its effects.
     fn input(self: &Arc<Self>, input: Input) -> Result<DictationReply, Ignored> {
+        let _order = self.order.lock().unwrap_or_else(|e| e.into_inner());
         let mut inner = self.lock();
         let (to, effects, outcome) = match inner.machine.handle(input) {
             Step::Ignored(reason) => return Err(reason),
@@ -244,7 +364,8 @@ impl Shared {
         dictation.phase_since = now;
         let mut history = None;
         if let Some(outcome) = outcome {
-            let (last, entry) = demo::record(outcome, now);
+            let effects = self.effects.get().expect("outcomes need effects");
+            let (last, entry) = effects.record(outcome, now);
             if let (Some(entry), Some(page)) = (entry, inner.state.history.as_mut()) {
                 page.entries.insert(0, entry);
                 page.entries.truncate(50);
@@ -259,19 +380,27 @@ impl Shared {
             self.publish(&mut inner, Event::History { page });
         }
         drop(inner);
-        for effect in effects {
-            self.fake_engine(effect);
+        if let Some(runner) = self.effects.get() {
+            let daemon = Daemon {
+                shared: Arc::clone(self),
+            };
+            for effect in effects {
+                runner.run(&daemon, effect);
+            }
         }
         Ok(DictationReply {
             phase: phase(to),
             job,
         })
     }
+}
 
+impl demo::DemoEffects {
     /// Demo mode's stand-in for the microphone, engines and inserter.
-    fn fake_engine(self: &Arc<Self>, effect: fsm::Effect) {
+    pub(crate) fn fake_engine(daemon: &Daemon, effect: fsm::Effect) {
+        let shared = &daemon.shared;
         if let fsm::Effect::StartCapture { job } = effect {
-            let shared = Arc::clone(self);
+            let shared = Arc::clone(shared);
             tokio::spawn(async move {
                 let mut tick = tokio::time::interval(Duration::from_millis(33));
                 let mut frame = 0u64;
@@ -290,7 +419,7 @@ impl Shared {
             return;
         }
         if let Some((delay, input)) = demo::engine_result(&effect) {
-            let shared = Arc::clone(self);
+            let shared = Arc::clone(shared);
             tokio::spawn(async move {
                 tokio::time::sleep(delay).await;
                 // Stale results (after a cancel) are ignored by the machine.
@@ -415,15 +544,7 @@ fn to_value(value: impl serde::Serialize) -> Result<Value, ApiError> {
     serde_json::to_value(value).map_err(|e| ApiError::new(ErrorCode::Internal, e.to_string()))
 }
 
-pub fn phase(phase: fsm::Phase) -> DictationPhase {
-    match phase {
-        fsm::Phase::Idle => DictationPhase::Idle,
-        fsm::Phase::Recording => DictationPhase::Recording,
-        fsm::Phase::Transcribing => DictationPhase::Transcribing,
-        fsm::Phase::Cleaning => DictationPhase::Cleaning,
-        fsm::Phase::Inserting => DictationPhase::Inserting,
-    }
-}
+pub use crate::wire::phase;
 
 /// What a normal-mode skeleton daemon knows: itself, and that dictation is elsewhere.
 fn normal_state(now: u64) -> AppState {
@@ -453,6 +574,7 @@ fn normal_state(now: u64) -> AppState {
             bound: false,
             trigger: None,
             error: None,
+            problem: None,
         },
         insert: InsertState {
             ready: false,

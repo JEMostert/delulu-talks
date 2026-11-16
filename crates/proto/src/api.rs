@@ -103,6 +103,8 @@ methods! {
     Toggle = "dictation.toggle" (ToggleParams) -> DictationReply;
     /// Abandon the current dictation. Succeeds when idle too.
     Cancel = "dictation.cancel" (CancelParams) -> DictationReply;
+    /// A page of History, newest first, optionally matching a search.
+    HistoryList = "history.list" (HistoryListParams) -> HistoryPage;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -150,6 +152,16 @@ pub struct ToggleParams {}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct CancelParams {}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HistoryListParams {
+    /// Words to search for; null or empty = all entries.
+    pub query: Option<String>,
+    pub offset: u32,
+    /// At most this many entries; 0 means the daemon's default page size.
+    pub limit: u32,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -345,7 +357,7 @@ pub fn check_protocol(client: u32) -> Result<(), ApiError> {
     }
     let daemon = crate::PROTOCOL_VERSION;
     let advice = if client > daemon {
-        "the daemon is older than this client; restart it after updating (systemctl --user restart delulu)"
+        "the daemon is older than this client; restart it after updating (systemctl --user restart app-com.joran.delulu-talks@daemon)"
     } else {
         "this client is older than the daemon; update or restart it"
     };
@@ -502,7 +514,7 @@ mod tests {
             .into_request(),
             ToggleParams {}.into_request(),
         ];
-        assert_eq!(METHODS.len(), 6);
+        assert_eq!(METHODS.len(), 7);
         for request in requests {
             let line = serde_json::to_string(&RequestMessage::new(9, &request)).unwrap();
             assert_eq!(parse_request(&line), Ok((9, request)));

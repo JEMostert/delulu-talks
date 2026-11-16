@@ -1,0 +1,38 @@
+# Delulu Talks daemon, as a systemd user service. Run it as the instance
+# `daemon`: app-com.joran.delulu-talks@daemon.service.
+#
+# The name matters. xdg-desktop-portal derives an app ID from the unit name
+# `app-<app ID>@<instance>.service`, so the daemon keeps the shortcut binding and
+# the typing permission stored for com.joran.delulu-talks, with no new dialog.
+# The daemon also registers that ID on every portal connection, which covers a
+# hand-started daemon. Keep the instance name alphanumeric; never run it in a
+# scope named app-com.joran.delulu-talks.scope (that parses as com.joran.delulu).
+#
+# Not installed or enabled by any package yet (work package C4). Until then
+# DELULU_DAEMON=1 is what makes the daemon own dictation; quit the Delulu Talks
+# app before starting it, or the daemon waits for the app to quit before it
+# binds the shortcut.
+#
+# Try it by hand:
+#   cp 'packaging/systemd/app-com.joran.delulu-talks@.service' ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user start app-com.joran.delulu-talks@daemon
+#   journalctl --user -u app-com.joran.delulu-talks@daemon -f
+
+[Unit]
+Description=Delulu Talks daemon
+Documentation=https://github.com/JEMostert/delulu-talks
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=exec
+Environment=DELULU_DAEMON=1
+ExecStart=/usr/bin/delulud daemon
+# The daemon removes its socket on SIGTERM; systemd reaps engine workers with it.
+KillMode=control-group
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

@@ -96,6 +96,9 @@ pub enum DictationOutcome {
         cleanup_error: Option<String>,
         /// The saved history entry, when history is on.
         history_id: Option<String>,
+        /// The text was delivered but could not be saved to History.
+        #[serde(default)]
+        history_error: Option<String>,
     },
     NothingHeard {
         job: u64,
@@ -173,6 +176,30 @@ pub struct HotkeyState {
     /// The trigger as the desktop describes it, like "Super+Z".
     pub trigger: Option<String>,
     pub error: Option<String>,
+    /// Why the shortcut is not bound, for clients to branch on; `error` says it
+    /// for people. Null when bound, or for an older daemon.
+    #[serde(default)]
+    pub problem: Option<HotkeyProblem>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum HotkeyProblem {
+    /// The desktop answered without a key, for example after the first shortcut
+    /// dialog was cancelled on KDE. Asking again would not show a dialog; the
+    /// user sets the key in the desktop's shortcut settings.
+    NotSet,
+    /// The Delulu Talks app is running and holds the shortcut itself. The
+    /// daemon binds once the app has quit, so a press never dictates twice.
+    AppRunning,
+    /// First run is not finished, so the daemon opens no permission dialog yet.
+    FirstRunPending,
+    /// The shortcut portal failed or is switched off; `error` says why.
+    Unavailable,
+    /// A value from a newer daemon.
+    #[serde(other)]
+    #[ts(skip)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
