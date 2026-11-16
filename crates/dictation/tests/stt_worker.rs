@@ -322,9 +322,10 @@ fn failed_recovery_with_a_slow_retry() -> Session {
 }
 
 /// Lets the held load finish, once whatever the test just sent has had time to pass
-/// the job thread and reach the engine thread's queue.
+/// the job thread and reach the engine thread's queue. Should that thread stall
+/// longer, the test passes without covering the handoff; it never fails falsely.
 fn release(s: &std::path::Path) {
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(500));
     std::fs::write(s.join("release"), "").unwrap();
 }
 
