@@ -372,7 +372,6 @@ pub fn generate_with(
 ) -> Result<Output, String> {
     let baseline = plan.device.free;
     let mut lowest = baseline;
-    let mut ticks = 0usize;
     let mut stage = None;
     let mut counts = [0usize; 3];
     let tiles = plan.vae_tiles();
@@ -408,11 +407,9 @@ pub fn generate_with(
                 tiles,
             }),
         }
-        ticks += 1;
-        if ticks % 16 == 0 {
-            if let Some(free) = free_memory() {
-                lowest = Some(lowest.map_or(free, |l| l.min(free)));
-            }
+        // Each stage keeps its buffers until it ends, so its peak is there at a tick.
+        if let Some(free) = free_memory() {
+            lowest = Some(lowest.map_or(free, |l| l.min(free)));
         }
         false
     });

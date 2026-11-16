@@ -2,7 +2,8 @@
 //! process runs one role, so each role frees its graphics memory when it exits.
 //!
 //! - `delulu-engine llm …`: transcript cleanup and the radio writer (llama.cpp).
-//! - `delulu-engine music …`: Delulu FM's YuE2 music, one song per process.
+//! - `delulu-engine music …`: Delulu FM's music (YuE2, or ACE-Step 1.5 through the
+//!   vendored acestep.cpp), one song per process.
 //! - `delulu-engine tts …`: Supertonic 3 speech on the CPU (ONNX Runtime), for
 //!   `delulu speak` and Delulu FM's host.
 //! - `delulu-engine probe`: version, roles and compute devices as JSON; loads no model.

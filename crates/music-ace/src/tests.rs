@@ -243,3 +243,22 @@ fn a_failed_run_reports_why() {
 fn acestep_and_the_linked_ggml_agree_on_tensor_layout() {
     assert!(tensor_layout_matches());
 }
+
+#[test]
+fn the_files_loaded_are_the_ones_the_registry_downloads() {
+    let registry = |m: &delulu_models::Model| -> Vec<String> {
+        m.files.iter().map(|f| f.file.to_string()).collect()
+    };
+    let turbo = registry(&delulu_models::ACE_STEP_TURBO);
+    for f in [TEXT_ENCODER, DIT, VAE] {
+        assert!(turbo.contains(&format!("{DIR}/{f}")), "{f}");
+    }
+    assert_eq!(
+        registry(&delulu_models::ACE_STEP_LM_SMALL),
+        [format!("{DIR}/{}", Lm::Small.file())]
+    );
+    assert_eq!(
+        registry(&delulu_models::ACE_STEP_LM_LARGE),
+        [format!("{DIR}/{}", Lm::Large.file())]
+    );
+}
