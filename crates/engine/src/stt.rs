@@ -223,7 +223,7 @@ fn reader<R: Read + Send + 'static>(input: R) -> mpsc::Receiver<Incoming> {
                         continue;
                     };
                     if clip.error.is_none() {
-                        if header.rate != RATE || bytes.len() % 4 != 0 {
+                        if header.rate != RATE || !bytes.len().is_multiple_of(4) {
                             clip.error = Some(format!(
                                 "audio must be 16 kHz mono f32, got {} Hz and {} bytes",
                                 header.rate,
@@ -235,8 +235,10 @@ fn reader<R: Read + Send + 'static>(input: R) -> mpsc::Receiver<Incoming> {
                         } else {
                             clip.samples.extend(
                                 bytes
-                                    .chunks_exact(4)
-                                    .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+                                    .as_chunks::<4>()
+                                    .0
+                                    .iter()
+                                    .map(|b| f32::from_le_bytes(*b)),
                             );
                         }
                     }
