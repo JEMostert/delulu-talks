@@ -104,6 +104,11 @@ pub(crate) fn probe(socket: Option<&std::path::Path>) -> Probe {
     ask().unwrap_or(Probe::Nothing)
 }
 
+/// Asked by a window on its own path just before it binds the shortcut.
+pub(crate) fn daemon_runs_dictation(socket: Option<PathBuf>) -> bool {
+    probe(socket.as_deref()) == Probe::Dictation
+}
+
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, ApiError>>>>>;
 
 struct Line {
@@ -117,7 +122,7 @@ pub(crate) struct Client {
     socket: Option<PathBuf>,
     sender: Mutex<Option<tokio::sync::mpsc::UnboundedSender<Line>>>,
     next_id: std::sync::atomic::AtomicU64,
-    state: Mutex<Option<AppState>>,
+    mirror: Mutex<Mirror>,
     /// The dictation the UI was last told about, so each one is told once.
     told: Mutex<u64>,
     /// `--toggle` started the window: toggle once dictation is available.
@@ -135,7 +140,7 @@ impl Client {
             socket,
             sender: Mutex::new(None),
             next_id: std::sync::atomic::AtomicU64::new(1),
-            state: Mutex::new(None),
+            mirror: Mutex::new(Mirror::default()),
             told: Mutex::new(0),
             pending_toggle: AtomicBool::new(toggle),
             download: Arc::new(AtomicBool::new(false)),
@@ -144,8 +149,12 @@ impl Client {
         }
     }
 
+    fn mirror(&self) -> std::sync::MutexGuard<'_, Mirror> {
+        self.mirror.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     fn snapshot(&self) -> Option<AppState> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.mirror().state.clone()
     }
 
     /// Sends one request and waits for its reply.
@@ -207,7 +216,7 @@ pub(crate) async fn connect_forever(app: tauri::AppHandle) {
         }
         if was_connected {
             was_connected = false;
-            *client(&app).state.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            client(&app).mirror().disconnected();
             publish(&app);
         }
         tokio::time::sleep(RECONNECT_DELAY).await;
@@ -216,6 +225,8 @@ pub(crate) async fn connect_forever(app: tauri::AppHandle) {
 
 /// One connection: hello, subscribe, snapshot, then events until it closes.
 async fn serve(app: &tauri::AppHandle, stream: tokio::net::UnixStream) {
+    // Events that come before the snapshot is in place wait for it.
+    client(app).mirror().await_snapshot();
     let (reader, mut writer) = stream.into_split();
     let pending: Pending = Arc::default();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Line>();
@@ -280,18 +291,14 @@ async fn serve(app: &tauri::AppHandle, stream: tokio::net::UnixStream) {
             ],
         })
         .await?;
-        let state = c.call(GetStateParams {}).await?;
-        *c.state.lock().unwrap_or_else(|e| e.into_inner()) = Some(state);
-        Ok::<_, String>(())
+        c.call(GetStateParams {}).await
     };
     match ready.await {
-        Ok(()) => {
+        Ok(state) => {
             // Outcomes from before this window connected are not news.
-            if let Some(state) = c.snapshot() {
-                *c.told.lock().unwrap_or_else(|e| e.into_inner()) = state.dictation.job;
-            }
-            publish(app);
-            let _ = app.emit("cleanup-status", cleanup_status(c.snapshot().as_ref()));
+            *c.told.lock().unwrap_or_else(|e| e.into_inner()) = state.dictation.job;
+            let notices = c.mirror().install(state);
+            notify(app, notices);
             let _ = reader_task.await;
         }
         Err(e) => {
@@ -309,50 +316,134 @@ async fn serve(app: &tauri::AppHandle, stream: tokio::net::UnixStream) {
 }
 
 fn on_event(app: &tauri::AppHandle, message: EventMessage) {
-    let c = client(app);
-    let mut refresh = false;
-    {
-        let mut state = c.state.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(state) = state.as_mut() else {
-            return;
+    let notices = client(app).mirror().event(message);
+    notify(app, notices);
+}
+
+/// Tells the window (and the tray) what changed.
+fn notify(app: &tauri::AppHandle, notices: Vec<Notice>) {
+    for notice in notices {
+        match notice {
+            Notice::Level(level) => {
+                let _ = app.emit("mic-level", rms(level));
+            }
+            Notice::Status => publish(app),
+            Notice::Dictation => {
+                publish(app);
+                let _ = app.emit(
+                    "cleanup-status",
+                    cleanup_status(client(app).snapshot().as_ref()),
+                );
+                tell_outcome(app);
+                toggle_if_pending(app);
+            }
+            Notice::History => tell_outcome(app),
+            Notice::Refresh => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    match client(&app).call(GetStateParams {}).await {
+                        Ok(state) => {
+                            let notices = client(&app).mirror().install(state);
+                            notify(&app, notices);
+                        }
+                        // The connection is gone; the next one starts afresh.
+                        Err(e) => eprintln!("delulu-talks: refresh after a lag: {e}"),
+                    }
+                });
+            }
+        }
+    }
+}
+
+/// What changed in the [`Mirror`], for the window.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Notice {
+    Status,
+    Dictation,
+    History,
+    Level(f32),
+    /// Events were missed: fetch a new snapshot.
+    Refresh,
+}
+
+/// The window's copy of the daemon's state. Events that arrive while a snapshot
+/// is on its way (at connect, or after missing events) are held, then replayed
+/// onto the snapshot; only those newer than it count.
+#[derive(Default)]
+pub(crate) struct Mirror {
+    state: Option<AppState>,
+    /// `Some` while a snapshot is awaited.
+    held: Option<Vec<EventMessage>>,
+}
+
+impl Mirror {
+    pub(crate) fn await_snapshot(&mut self) {
+        self.held.get_or_insert_with(Vec::new);
+    }
+
+    pub(crate) fn disconnected(&mut self) {
+        *self = Mirror::default();
+    }
+
+    pub(crate) fn event(&mut self, message: EventMessage) -> Vec<Notice> {
+        if let Some(held) = self.held.as_mut() {
+            held.push(message);
+            return Vec::new();
+        }
+        self.apply(message)
+    }
+
+    /// Puts the snapshot in place and replays the held events newer than it.
+    pub(crate) fn install(&mut self, snapshot: AppState) -> Vec<Notice> {
+        let held = self.held.take().unwrap_or_default();
+        self.state = Some(snapshot);
+        let mut notices = vec![Notice::Status, Notice::Dictation, Notice::History];
+        for message in held {
+            notices.extend(self.apply(message));
+        }
+        notices
+    }
+
+    fn apply(&mut self, message: EventMessage) -> Vec<Notice> {
+        let Some(state) = self.state.as_mut() else {
+            return Vec::new();
         };
-        if message.seq <= state.seq && !matches!(message.event, Event::Lagged { .. }) {
-            return;
+        if let Event::Lagged { .. } = message.event {
+            self.held = Some(Vec::new());
+            return vec![Notice::Refresh];
+        }
+        if message.seq <= state.seq {
+            return Vec::new();
         }
         state.seq = message.seq;
-        match message.event.clone() {
-            Event::Dictation { state: d } => state.dictation = d,
-            Event::Hotkey { state: h } => state.hotkey = h,
-            Event::Insert { state: i } => state.insert = i,
-            Event::Settings { settings } => state.settings = Some(settings),
-            Event::History { page } => state.history = Some(page),
-            Event::Vocabulary { vocabulary } => state.vocabulary = Some(vocabulary),
-            Event::Lagged { .. } => refresh = true,
-            _ => {}
-        }
-    }
-    match message.event {
-        Event::Level { level } => {
-            let _ = app.emit("mic-level", rms(level));
-        }
-        Event::Dictation { .. } => {
-            publish(app);
-            let _ = app.emit("cleanup-status", cleanup_status(c.snapshot().as_ref()));
-            tell_outcome(app);
-            toggle_if_pending(app);
-        }
-        Event::History { .. } => tell_outcome(app),
-        Event::Hotkey { .. } | Event::Insert { .. } | Event::Settings { .. } => publish(app),
-        _ => {}
-    }
-    if refresh {
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Ok(state) = client(&app).call(GetStateParams {}).await {
-                *client(&app).state.lock().unwrap_or_else(|e| e.into_inner()) = Some(state);
-                publish(&app);
+        match message.event {
+            Event::Dictation { state: d } => {
+                state.dictation = d;
+                vec![Notice::Dictation]
             }
-        });
+            Event::Hotkey { state: h } => {
+                state.hotkey = h;
+                vec![Notice::Status]
+            }
+            Event::Insert { state: i } => {
+                state.insert = i;
+                vec![Notice::Status]
+            }
+            Event::Settings { settings } => {
+                state.settings = Some(settings);
+                vec![Notice::Status]
+            }
+            Event::History { page } => {
+                state.history = Some(page);
+                vec![Notice::History]
+            }
+            Event::Vocabulary { vocabulary } => {
+                state.vocabulary = Some(vocabulary);
+                Vec::new()
+            }
+            Event::Level { level } => vec![Notice::Level(level)],
+            _ => Vec::new(),
+        }
     }
 }
 
@@ -1027,6 +1118,77 @@ mod tests {
         let gone = tempfile::tempdir().unwrap();
         assert_eq!(probe(Some(&gone.path().join("d.sock"))), Probe::Nothing);
         assert_eq!(probe(None), Probe::Nothing);
+    }
+
+    #[test]
+    fn a_window_that_chose_its_own_path_gives_way_to_a_daemon_started_since() {
+        // At start nothing answered, so the window took its own path…
+        let none = tempfile::tempdir().unwrap();
+        let socket = none.path().join("d.sock");
+        assert_eq!(decide(false, probe(Some(&socket))), Mode::App);
+        // …then a dictation daemon starts before the window binds the shortcut.
+        let (_dir, started) = daemon(DaemonMode::Demo);
+        assert!(daemon_runs_dictation(Some(started)));
+        let (_dir, skeleton) = daemon(DaemonMode::Normal);
+        assert!(!daemon_runs_dictation(Some(skeleton)));
+    }
+
+    fn dictation_event(seq: u64, phase: DictationPhase, job: u64) -> EventMessage {
+        let mut state = delulu_daemon::demo::state(delulu_daemon::now_ms()).dictation;
+        state.phase = phase;
+        state.job = job;
+        EventMessage {
+            seq,
+            event: Event::Dictation { state },
+        }
+    }
+
+    fn snapshot(seq: u64, phase: DictationPhase) -> AppState {
+        let mut state = delulu_daemon::demo::state(delulu_daemon::now_ms());
+        state.seq = seq;
+        state.dictation.phase = phase;
+        state
+    }
+
+    #[test]
+    fn an_event_that_beats_the_first_snapshot_is_kept() {
+        let mut mirror = Mirror::default();
+        mirror.await_snapshot();
+        // The daemon took the snapshot at seq 5; recording began at seq 6, and
+        // that event arrived before the snapshot's reply was handled.
+        assert!(mirror
+            .event(dictation_event(6, DictationPhase::Recording, 1))
+            .is_empty());
+        assert!(mirror
+            .event(dictation_event(4, DictationPhase::Transcribing, 0))
+            .is_empty());
+        mirror.install(snapshot(5, DictationPhase::Idle));
+        let state = mirror.state.as_ref().unwrap();
+        assert_eq!(
+            (state.seq, state.dictation.phase),
+            (6, DictationPhase::Recording)
+        );
+    }
+
+    #[test]
+    fn a_refresh_after_a_lag_keeps_newer_events() {
+        let mut mirror = Mirror::default();
+        mirror.await_snapshot();
+        mirror.install(snapshot(5, DictationPhase::Idle));
+        let lagged = EventMessage {
+            seq: 10,
+            event: Event::Lagged { missed: 4 },
+        };
+        assert_eq!(mirror.event(lagged), [Notice::Refresh]);
+        // Dictation finished at seq 11, before the refresh (taken at 10) came back.
+        mirror.event(dictation_event(11, DictationPhase::Idle, 3));
+        mirror.install(snapshot(10, DictationPhase::Inserting));
+        let state = mirror.state.as_ref().unwrap();
+        assert_eq!(
+            (state.seq, state.dictation.phase),
+            (11, DictationPhase::Idle)
+        );
+        assert_eq!(state.dictation.job, 3);
     }
 
     #[test]
