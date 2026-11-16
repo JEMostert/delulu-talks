@@ -1,0 +1,13 @@
+[env]
+# delulu-engine links one ggml, built by llama-cpp-sys-2, for llama.cpp, the YuE2
+# code and acestep.cpp (crates/music-ace). acestep.cpp's DiT tensor names need a
+# GGML_MAX_NAME above ggml's default 64, which changes `struct ggml_tensor`, so
+# the ggml must be compiled with the same value. This is the one place it is set.
+#
+# llama-cpp-sys-2 passes GGML_* and CMAKE_* variables to CMake (and reruns its
+# build when a GGML_* variable changes); CMake includes ggml.cmake right after
+# `project(llama.cpp)`, which turns the value into a compile definition.
+# whisper-rs-sys (crates/stt, another binary) receives both variables too, but
+# its CMake project is `whisper.cpp` and uses neither, so its build is unchanged.
+GGML_MAX_NAME = "128"
+"CMAKE_PROJECT_llama.cpp_INCLUDE" = { value = "crates/music-ace/ggml.cmake", relative = true }

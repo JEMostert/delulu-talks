@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 delulu-cleanup = { path = "../cleanup" }
 delulu-music = { path = "../music" }
+delulu-music-ace = { path = "../music-ace" }
 delulu-proto = { path = "../proto" }
 delulu-tts = { path = "../tts", features = ["onnx"] }
 serde_json.workspace = true

@@ -1174,6 +1174,7 @@ version = "1.5.0"
 dependencies = [
  "delulu-cleanup",
  "delulu-music",
+ "delulu-music-ace",
  "delulu-proto",
  "delulu-tts",
  "hound",
@@ -1202,6 +1203,17 @@ dependencies = [
  "serde",
  "serde_json",
  "tokenizers",
+]
+
+[[package]]
+name = "delulu-music-ace"
+version = "1.5.0"
+dependencies = [
+ "cc",
+ "delulu-models",
+ "llama-cpp-sys-2",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

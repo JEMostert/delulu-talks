@@ -30,6 +30,7 @@ pub enum Engine {
     Parakeet,
     Llama,
     Yue,
+    AceStep,
     Supertonic,
 }
 impl Engine {
@@ -39,6 +40,7 @@ impl Engine {
             Self::Parakeet => "parakeet",
             Self::Llama => "llama",
             Self::Yue => "yue",
+            Self::AceStep => "acestep",
             Self::Supertonic => "supertonic",
         }
     }
@@ -233,6 +235,116 @@ pub static YUE2_3B: Model = Model {
     terms: None,
 };
 
+macro_rules! ace_step {
+    ($file:literal) => {
+        concat!(
+            "https://huggingface.co/Serveurperso/ACE-Step-1.5-GGUF/resolve/666ac70204440867d8c01ba4b119cc79c95b370a/",
+            $file
+        )
+    };
+}
+macro_rules! ace_step_file {
+    ($file:literal, $sha:literal, $bytes:literal) => {
+        ModelFile {
+            file: concat!("ace-step-1.5/", $file),
+            url: ace_step!($file),
+            sha256: $sha,
+            bytes: $bytes,
+        }
+    };
+}
+
+/// MIT, with an Apache-2.0 text encoder. Nothing requires showing it before the
+/// download, but the app credits the authors and names both licences there.
+pub static ACE_STEP_TERMS: Terms = Terms {
+    name: "MIT (text encoder: Apache-2.0)",
+    url: "https://huggingface.co/Serveurperso/ACE-Step-1.5-GGUF/blob/666ac70204440867d8c01ba4b119cc79c95b370a/LICENSE",
+    credit: "ACE-Step 1.5 by ACE Studio and StepFun",
+    text: "ACE-Step 1.5 by ACE Studio and StepFun is released under the MIT licence \
+(https://huggingface.co/ACE-Step/Ace-Step1.5). These files are GGUF conversions by Serveurperso, \
+also MIT; the licence file is downloaded with them. Its text encoder, Qwen3-Embedding-0.6B by the \
+Qwen team, is licensed under Apache-2.0 (https://huggingface.co/Qwen/Qwen3-Embedding-0.6B).
+Songs you make may be used commercially. The ACE-Step authors ask that you check songs for \
+originality, say that they are AI-generated, and get permission before adapting protected material.",
+};
+
+static ACE_STEP_TURBO_FILES: [ModelFile; 4] = [
+    ace_step_file!(
+        "LICENSE",
+        "05a6bce42a62636d2cfb24139cc008b6b899754e244175814bb5dd2f4a485357",
+        1_064
+    ),
+    ace_step_file!(
+        "Qwen3-Embedding-0.6B-Q8_0.gguf",
+        "972f23255e46adfe744a0eb9a0039f3c63988f65753b0968d776e8b27168c321",
+        784_144_960
+    ),
+    ace_step_file!(
+        "acestep-v15-turbo-Q8_0.gguf",
+        "288f708a61cfc241013a98a62f98ba331f83fe34d0d3559acdd9b0f6a2f7cd6b",
+        2_549_528_000
+    ),
+    ace_step_file!(
+        "vae-BF16.gguf",
+        "0599862ac5d15cd308e1d2e368373aea6c02e25ebd1737ad4a4562a0901b0ef8",
+        337_420_928
+    ),
+];
+
+/// ACE-Step 1.5 turbo for `delulu-engine music` (crates/music-ace): text encoder,
+/// turbo DiT and VAE. Every song also needs one of the two language models below.
+pub static ACE_STEP_TURBO: Model = Model {
+    id: "ace-step-1.5-turbo",
+    role: Role::Music,
+    engine: Engine::AceStep,
+    label: "ACE-Step 1.5 turbo",
+    license: "MIT, Apache-2.0",
+    path: "ace-step-1.5",
+    files: &ACE_STEP_TURBO_FILES,
+    bytes: total(&ACE_STEP_TURBO_FILES),
+    terms: Some(&ACE_STEP_TERMS),
+};
+
+static ACE_STEP_LM_SMALL_FILES: [ModelFile; 1] = [ace_step_file!(
+    "acestep-5Hz-lm-0.6B-Q8_0.gguf",
+    "bdaf9e292d4470f31c19cafeaca1b74936a114667e3a85e5d33b65247e9908ec",
+    709_846_656
+)];
+
+/// ACE-Step's 0.6B language model: fastest and 1.6 GiB, but it follows lyrics less
+/// reliably. Chosen below 8 GiB of free graphics memory.
+pub static ACE_STEP_LM_SMALL: Model = Model {
+    id: "ace-step-1.5-lm-0.6b",
+    role: Role::Music,
+    engine: Engine::AceStep,
+    label: "ACE-Step language model 0.6B",
+    license: "MIT",
+    path: "ace-step-1.5/acestep-5Hz-lm-0.6B-Q8_0.gguf",
+    files: &ACE_STEP_LM_SMALL_FILES,
+    bytes: total(&ACE_STEP_LM_SMALL_FILES),
+    terms: Some(&ACE_STEP_TERMS),
+};
+
+static ACE_STEP_LM_LARGE_FILES: [ModelFile; 1] = [ace_step_file!(
+    "acestep-5Hz-lm-4B-Q8_0.gguf",
+    "972f91147a167f0c041f1b158d67985a82c0f6a852e68cdf70e46030cf08b1bc",
+    4_457_323_648
+)];
+
+/// ACE-Step's 4B language model: follows the lyrics as well as YuE2. Chosen with at
+/// least 8 GiB of free graphics memory.
+pub static ACE_STEP_LM_LARGE: Model = Model {
+    id: "ace-step-1.5-lm-4b",
+    role: Role::Music,
+    engine: Engine::AceStep,
+    label: "ACE-Step language model 4B",
+    license: "MIT",
+    path: "ace-step-1.5/acestep-5Hz-lm-4B-Q8_0.gguf",
+    files: &ACE_STEP_LM_LARGE_FILES,
+    bytes: total(&ACE_STEP_LM_LARGE_FILES),
+    terms: Some(&ACE_STEP_TERMS),
+};
+
 macro_rules! supertonic {
     ($file:literal) => {
         concat!(
@@ -394,12 +506,15 @@ pub static SUPERTONIC_3: Model = Model {
 };
 
 /// The registry. The first model of a role is its default.
-pub static MODELS: [&Model; 6] = [
+pub static MODELS: [&Model; 9] = [
     &WHISPER_TURBO,
     &WHISPER_SMALL,
     &PARAKEET,
     &GEMMA_4_E4B,
     &YUE2_3B,
+    &ACE_STEP_TURBO,
+    &ACE_STEP_LM_SMALL,
+    &ACE_STEP_LM_LARGE,
     &SUPERTONIC_3,
 ];
 
