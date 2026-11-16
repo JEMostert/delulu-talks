@@ -65,7 +65,8 @@ fn describe(e: serde_json::Error) -> String {
         format!("song: {message}")
     } else if let (true, Some(expected)) = (
         message.starts_with("unknown variant"),
-        message.find(", expected"),
+        // From the end: the list of accepted names comes last, the given value before.
+        message.rfind(", expected"),
     ) {
         format!("song: unknown value{}", &message[expected..])
     } else {
@@ -196,7 +197,7 @@ mod tests {
 
     #[test]
     fn bad_requests_never_echo_the_lyrics() {
-        let secret = "my private verse";
+        let secret = "my private verse, expected nothing";
         let cases = [
             (
                 r#"{"engine":"musicgen","style":"x","seed":1,"seconds":60}"#.to_string(),
@@ -226,7 +227,10 @@ mod tests {
         for (input, want) in cases {
             let e = parse_request(&input).unwrap_err();
             assert!(e.contains(want), "{e}");
-            assert!(!e.contains(secret), "{e}");
+            // Not even a fragment: the value contains serde's own ", expected".
+            for word in ["private", "verse", "nothing"] {
+                assert!(!e.contains(word), "{e}");
+            }
         }
     }
 }
