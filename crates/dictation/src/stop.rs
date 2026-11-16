@@ -140,25 +140,12 @@ pub trait StopPorts {
 }
 
 pub async fn run_stop(ports: &impl StopPorts, req: StopRequest) -> StopOutcome {
-    let start = req.started;
     let samples = match ports.stop_recording().await {
         Ok(samples) => samples,
         Err((word, message)) => return StopOutcome::Failed { word, message },
     };
     let settings = ports.settings();
-    let prompt = if settings.smart_context {
-        ports.whisper_prompt()
-    } else {
-        None
-    };
-    let transcript = match ports
-        .transcribe(
-            samples,
-            delulu_stt::Language::from_setting(&settings.language, &settings.allowed_languages),
-            prompt,
-        )
-        .await
-    {
+    let transcript = match transcribe_clip(ports, &settings, samples).await {
         Ok(t) => t,
         Err(message) => {
             return StopOutcome::Failed {
@@ -170,12 +157,61 @@ pub async fn run_stop(ports: &impl StopPorts, req: StopRequest) -> StopOutcome {
     if transcript.text.is_empty() {
         return StopOutcome::NothingHeard;
     }
+    let cleaned = clean_transcript(ports, &settings, &transcript).await;
+    deliver_and_save(ports, settings, &req, &transcript, cleaned).await
+}
+
+// The three stages of `run_stop`. The daemon runs them one at a time, as the
+// dictation state machine asks for each, with the settings read once after the
+// recording stopped.
+
+/// The clip to a transcript: the language rules and, with smart context, the
+/// Whisper prompt from the last dictation. An empty text means nothing was heard.
+pub async fn transcribe_clip(
+    ports: &impl StopPorts,
+    settings: &Settings,
+    samples: Vec<f32>,
+) -> Result<delulu_stt::Transcript, String> {
+    let prompt = if settings.smart_context {
+        ports.whisper_prompt()
+    } else {
+        None
+    };
+    ports
+        .transcribe(
+            samples,
+            delulu_stt::Language::from_setting(&settings.language, &settings.allowed_languages),
+            prompt,
+        )
+        .await
+}
+
+/// Cleanup (which falls back to the raw text by itself), then, with smart
+/// context, remember what this dictation was about for the next one.
+pub async fn clean_transcript(
+    ports: &impl StopPorts,
+    settings: &Settings,
+    transcript: &delulu_stt::Transcript,
+) -> cleanup::Cleaned {
     let cleaned = ports
         .clean(&transcript.language, transcript.text.clone())
         .await;
     if settings.smart_context {
         ports.remember(cleaned.topic.clone(), &cleaned.text);
     }
+    cleaned
+}
+
+/// Save to History, wait for the hotkey to come up, deliver the text, record the
+/// delivery timing and log the dictation line (with text only when opted in).
+pub async fn deliver_and_save(
+    ports: &impl StopPorts,
+    settings: Settings,
+    req: &StopRequest,
+    transcript: &delulu_stt::Transcript,
+    cleaned: cleanup::Cleaned,
+) -> StopOutcome {
+    let start = req.started;
     let text = cleaned.text.clone();
     let entry = ports.add_history(NewEntry {
         text: cleaned.text,

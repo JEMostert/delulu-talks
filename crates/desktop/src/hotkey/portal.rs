@@ -4,9 +4,8 @@ use ashpd::desktop::{
     Session,
 };
 use futures_util::StreamExt;
-use std::{collections::HashMap, future::Future, path::Path, pin::Pin};
+use std::{future::Future, path::Path, pin::Pin};
 use tokio::{sync::mpsc, task::JoinHandle};
-use zbus::zvariant::Value;
 
 type FutureResult<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
 pub(crate) enum PortalEvent {
@@ -82,20 +81,7 @@ impl Portal for AshpdPortal {
             let connection = zbus::Connection::session()
                 .await
                 .map_err(|e| e.to_string())?;
-            if !ashpd::is_sandboxed() {
-                let result = connection
-                    .call_method(
-                        Some("org.freedesktop.portal.Desktop"),
-                        "/org/freedesktop/portal/desktop",
-                        Some("org.freedesktop.host.portal.Registry"),
-                        "Register",
-                        &(APP_ID, HashMap::<&str, Value>::new()),
-                    )
-                    .await;
-                if let Err(error) = result {
-                    log::debug!("Host registration failed: {error}");
-                }
-            }
+            crate::register(&connection).await;
             let proxy = GlobalShortcuts::with_connection(connection)
                 .await
                 .map_err(|e| e.to_string())?;

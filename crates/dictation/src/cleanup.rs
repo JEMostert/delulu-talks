@@ -18,6 +18,11 @@ pub static CLEANUP_MODEL: delulu_models::ModelFile = delulu_models::GEMMA_4_E4B.
 const LOAD_TIMEOUT: Duration = Duration::from_secs(180);
 /// How long a new helper waits for the previous one to be reaped.
 const RETIRE_TIMEOUT: Duration = Duration::from_secs(30);
+/// How often [`Supervisor::watch`] checks that the idle helper is still alive.
+const WATCH_INTERVAL: Duration = Duration::from_millis(500);
+/// A helper that dies this soon after it became ready counts as a failure, so a
+/// helper that keeps crashing ends in "error" instead of restarting forever.
+const QUICK_EXIT: Duration = Duration::from_secs(30);
 const NO_HELPER: &str =
     "The cleanup engine (delulu-engine) is not installed; dictation uses the raw text.";
 const GAVE_UP: &str =
@@ -37,6 +42,7 @@ pub struct CleanupStatus {
 /// so it is declared after `cleaner` and dropped last.
 pub(crate) struct Helper {
     cleaner: Cleaner,
+    ready_at: Instant,
     _live: Live,
 }
 struct Live(Arc<AtomicUsize>);
@@ -329,6 +335,17 @@ impl Inner {
             Some(helper)
         }
     }
+    /// The idle helper's process exited by itself (crash, out of memory, kill -9):
+    /// start a new one. One that dies quickly again counts as a failed clean.
+    fn helper_exited(&mut self, generation: u64, quick: bool) -> Action {
+        if !self.is_current(generation) {
+            return Action::default();
+        }
+        if quick {
+            return self.clean_failed(generation);
+        }
+        self.begin_load()
+    }
     /// A clean failed: restart once, then give up for the session.
     fn clean_failed(&mut self, generation: u64) -> Action {
         if !self.is_current(generation) {
@@ -379,6 +396,8 @@ pub struct Supervisor {
     inner: Mutex<Inner>,
     live: Arc<AtomicUsize>,
     models_dir: PathBuf,
+    /// A helper binary to use instead of [`delulu_cleanup::helper_path`] (tests).
+    helper: std::sync::OnceLock<PathBuf>,
     /// Called with every status change, from whichever thread made it.
     publish: Box<dyn Fn(CleanupStatus) + Send + Sync>,
 }
@@ -393,8 +412,44 @@ impl Supervisor {
             inner: Mutex::new(Inner::new(enabled, file_ready)),
             live: Arc::new(AtomicUsize::new(0)),
             models_dir,
+            helper: std::sync::OnceLock::new(),
             publish,
         })
+    }
+    /// Run this helper binary instead of the installed `delulu-engine`.
+    pub fn set_helper(&self, path: PathBuf) {
+        let _ = self.helper.set(path);
+    }
+
+    /// Restart the helper when its process exits while idle, so a crashed or
+    /// killed cleanup engine comes back without waiting for the next dictation
+    /// to fail. A helper that dies while lent out is handled by that clean.
+    /// The watch thread ends when the supervisor is dropped.
+    pub fn watch(self: &Arc<Self>) {
+        let weak = Arc::downgrade(self);
+        let spawned = std::thread::Builder::new()
+            .name("cleanup-watch".into())
+            .spawn(move || loop {
+                std::thread::sleep(WATCH_INTERVAL);
+                let Some(this) = weak.upgrade() else { return };
+                let exited = {
+                    let mut inner = this.lock();
+                    let generation = inner.generation;
+                    inner.helper.as_mut().and_then(|h| {
+                        h.cleaner
+                            .exited()
+                            .then(|| (generation, h.ready_at.elapsed() < QUICK_EXIT))
+                    })
+                };
+                if let Some((generation, quick)) = exited {
+                    eprintln!("cleanup: the helper exited; starting a new one");
+                    let action = this.update(|i| i.helper_exited(generation, quick));
+                    this.run(action);
+                }
+            });
+        if let Err(e) = spawned {
+            eprintln!("cleanup: watch thread: {e}");
+        }
     }
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
@@ -481,7 +536,8 @@ impl Supervisor {
                     Some(false) => std::thread::sleep(Duration::from_millis(20)),
                 }
             };
-            let Some(helper) = delulu_cleanup::helper_path() else {
+            let helper = cleanup.helper.get().cloned();
+            let Some(helper) = helper.or_else(delulu_cleanup::helper_path) else {
                 eprintln!("cleanup: helper not found");
                 cleanup.update(|i| i.load_done(generation, Err(NO_HELPER.into())));
                 return;
@@ -506,6 +562,7 @@ impl Supervisor {
                     );
                     let helper = Helper {
                         cleaner,
+                        ready_at: Instant::now(),
                         _live: live,
                     };
                     let stale = cleanup.update(|i| {

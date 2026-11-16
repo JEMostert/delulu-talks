@@ -40,6 +40,18 @@ fn sample(job: u64) -> (&'static str, &'static str, &'static str) {
     SAMPLES[(job.saturating_sub(1) % SAMPLES.len() as u64) as usize]
 }
 
+/// Demo mode's effects: a fake engine with canned results.
+pub struct DemoEffects;
+
+impl crate::server::Effects for DemoEffects {
+    fn run(&self, daemon: &crate::server::Daemon, effect: Effect) {
+        DemoEffects::fake_engine(daemon, effect);
+    }
+    fn record(&self, outcome: Outcome, now: u64) -> (DictationOutcome, Option<HistoryEntry>) {
+        record(outcome, now)
+    }
+}
+
 /// The fake engine's answer to an effect, and how long it "takes".
 pub fn engine_result(effect: &Effect) -> Option<(Duration, Input)> {
     match effect {
@@ -119,6 +131,7 @@ pub fn record(outcome: Outcome, now: u64) -> (DictationOutcome, Option<HistoryEn
                 },
                 cleanup_error,
                 history_id: Some(entry.id.clone()),
+                history_error: None,
             };
             (last, Some(entry))
         }
@@ -337,6 +350,7 @@ pub fn state(now: u64) -> AppState {
             bound: true,
             trigger: Some("Super+Z".into()),
             error: None,
+            problem: None,
         },
         insert: InsertState {
             ready: true,
