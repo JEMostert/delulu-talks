@@ -489,6 +489,8 @@ impl Cleaner {
             .arg("llm")
             .arg("--model")
             .arg(model)
+            // A ggml crash would otherwise attach gdb and hang instead of exiting.
+            .env("GGML_NO_BACKTRACE", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());

@@ -168,6 +168,17 @@ impl EngineHost for Host {
             // Nothing is loaded now; the next refresh tries again.
             *self.speech_model.lock().unwrap_or_else(|e| e.into_inner()) = None;
         }
+        self.report_stt(id, result);
+        self.cleanup.whisper_settled(want(&self.store));
+    }
+    fn recovered(&self, id: String, result: Result<String, String>) {
+        // The model stays the one loaded: the engine thread tries it again by itself.
+        self.report_stt(id, result);
+    }
+}
+
+impl Host {
+    fn report_stt(&self, id: String, result: Result<String, String>) {
         self.report.stt(match result {
             Ok(backend) => WorkerStatus {
                 state: WorkerState::Ready,
@@ -184,7 +195,6 @@ impl EngineHost for Host {
                 progress: None,
             },
         });
-        self.cleanup.whisper_settled(want(&self.store));
     }
 }
 

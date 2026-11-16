@@ -120,6 +120,9 @@ pub enum FromWorker {
         load_ms: u64,
         /// Memory the loaded model takes on the device.
         vram_bytes: Option<u64>,
+        /// Where this model runs, like "Vulkan: NVIDIA GeForce RTX 5060 Ti" or "CPU".
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device: Option<String>,
     },
     Unloaded,
     Progress {
@@ -215,15 +218,19 @@ pub struct LoadOptions {
     rename_all_fields = "camelCase"
 )]
 pub enum JobPayload {
-    /// stt: transcribe audio sent as `audio` frames for this job (ended by
-    /// `last: true`), or a file.
+    /// stt: transcribe 16 kHz mono audio sent as `audio` frames for this job (ended
+    /// by `last: true`), or a file.
     Transcribe {
         audio: AudioSource,
-        /// Languages detection may pick from; empty = any.
+        /// The clip's language when the user fixed it; absent = detect it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        language: Option<String>,
+        /// Languages detection may pick from; empty = the engine's default set.
         #[serde(default)]
         languages: Vec<String>,
-        /// Biasing text (names, recent topics).
-        prompt: Option<String>,
+        /// Context from earlier dictations, for engines that take a prompt.
+        #[serde(default)]
+        prompt: Option<SttPrompt>,
         /// Send partial transcripts as chunks.
         #[serde(default)]
         stream: bool,
@@ -267,6 +274,19 @@ pub enum JobPayload {
         voice: Option<String>,
         language: Option<String>,
     },
+}
+
+/// The two parts of a speech prompt, kept apart because the engine decides per clip
+/// language whether the sentence goes in (see `delulu_stt::Prompt`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SttPrompt {
+    /// Vocabulary terms, already joined ("T3 Code, Tauri.").
+    #[serde(default)]
+    pub terms: Option<String>,
+    /// The end of the previous dictation's text.
+    #[serde(default)]
+    pub sentence: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

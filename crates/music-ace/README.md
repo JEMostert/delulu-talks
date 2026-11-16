@@ -37,9 +37,9 @@ turns it into a compile definition for the whole llama.cpp project, and `build.r
 compiles acestep.cpp with the same value. The test
 `acestep_and_the_linked_ggml_agree_on_tensor_layout` fails on a mismatch, for
 example a build directory from before this setting: `cargo clean -p
-llama-cpp-sys-2` fixes it. whisper.cpp in `crates/stt` is another binary; its
-CMake project ignores both variables, and its object files were checked to be
-identical with and without them.
+llama-cpp-sys-2` fixes it. whisper.cpp (the `stt` role) links the same ggml and is
+compiled with the same value (`vendor/whisper-rs-sys/shared-ggml.cmake`); its test
+`whisper_and_the_linked_ggml_agree_on_tensor_layout` checks that the same way.
 
 ## Vendored acestep.cpp
 

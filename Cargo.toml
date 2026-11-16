@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/*", "src-tauri"]
+exclude = ["vendor"]
 resolver = "2"
 [workspace.package]
 version = "1.6.0"
@@ -12,6 +13,7 @@ log = "0.4"
 tokio = { version = "1", features = ["full"] }
 handy-cpal = { version = "=0.18.2", features = ["pulseaudio"] }
 rubato = "0.16"
+# delulu-engine only (the `stt` role).
 whisper-rs = { version = "=0.16.0", features = ["vulkan"] }
 # The cleanup helper only. No openmp (no libgomp at runtime) and no `common`.
 llama-cpp-2 = { version = "=0.1.160", default-features = false, features = ["vulkan"] }
@@ -43,6 +45,11 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.tiny-skia-path]
 opt-level = 3
+# whisper.cpp against delulu-engine's one ggml: the crates.io whisper-rs-sys builds
+# its own bundled ggml (see vendor/whisper-rs-sys/README.md).
+[patch.crates-io]
+whisper-rs-sys = { path = "vendor/whisper-rs-sys" }
+
 [profile.release]
 lto = true
 codegen-units = 1

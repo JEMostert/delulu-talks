@@ -8,12 +8,21 @@ description = "The dictation pipeline shared by the Delulu Talks app and daemon:
 delulu-cleanup = { path = "../cleanup" }
 delulu-desktop = { path = "../desktop" }
 delulu-models = { path = "../models" }
+delulu-proto = { path = "../proto" }
 delulu-store = { path = "../store" }
 delulu-stt = { path = "../stt" }
+libc.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 tokio = { version = "1", default-features = false, features = ["rt", "sync", "time"] }
 
 [dev-dependencies]
-libc.workspace = true
+hound = "3"
 tempfile = "3"
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }
+
+# The speech worker client against a fake worker: this test's own binary, started
+# again as `<test> stt`, so it has its own main and no test harness on stdout.
+[[test]]
+name = "stt_worker"
+harness = false
