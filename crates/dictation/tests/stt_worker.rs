@@ -30,7 +30,7 @@ fn main() {
         fake_worker();
         return;
     }
-    let tests: [(&str, fn()); 6] = [
+    let tests: [(&str, fn()); 7] = [
         (
             "a_clip_reaches_the_worker_whole_with_its_language_and_prompt",
             a_clip_reaches_the_worker_whole_with_its_language_and_prompt,
@@ -47,6 +47,10 @@ fn main() {
         (
             "a_dictation_nobody_waits_for_is_cancelled",
             a_dictation_nobody_waits_for_is_cancelled,
+        ),
+        (
+            "a_failed_recovery_is_tried_again",
+            a_failed_recovery_is_tried_again,
         ),
         ("load_failures_are_reported", load_failures_are_reported),
     ];
@@ -97,6 +101,9 @@ impl EngineHost for Host {
     }
     fn job_timeout(&self, _: Duration) -> Duration {
         self.timeout
+    }
+    fn recovery_retry(&self) -> Duration {
+        Duration::from_millis(300)
     }
 }
 
@@ -264,6 +271,28 @@ fn a_dictation_nobody_waits_for_is_cancelled() {
     assert!(started.elapsed() < Duration::from_secs(3));
 }
 
+fn a_failed_recovery_is_tried_again() {
+    let s = session("models", Duration::from_secs(10), false);
+    s.load().unwrap();
+    // The new worker cannot load the model for a while (the GPU is full, say).
+    std::fs::write(s.dir.join("fail-loads"), "").unwrap();
+    // SAFETY: plain syscall on the fake worker this test started.
+    unsafe { libc::kill(s.worker_pid(), libc::SIGKILL) };
+    let (kind, _, result) = s.report();
+    assert_eq!(
+        (kind, result),
+        ("recovered", Err("not a model file".into()))
+    );
+    std::fs::remove_file(s.dir.join("fail-loads")).unwrap();
+    // Nobody asks: the engine thread tries again by itself.
+    let (kind, id, result) = s.report();
+    assert_eq!(
+        (kind, id.as_str(), result.as_deref()),
+        ("recovered", MODEL, Ok("Fake GPU"))
+    );
+    assert!(s.transcribe(1_000, both(), None).is_ok());
+}
+
 fn load_failures_are_reported() {
     let s = session("broken", Duration::from_secs(10), false);
     let error = s.load().unwrap_err();
@@ -334,7 +363,7 @@ fn fake_worker() {
                 }
                 send(
                     &mut out,
-                    &if model.path.contains("broken") {
+                    &if model.path.contains("broken") || dir.join("fail-loads").exists() {
                         FromWorker::Error {
                             id: None,
                             kind: WorkerErrorKind::LoadFailed,

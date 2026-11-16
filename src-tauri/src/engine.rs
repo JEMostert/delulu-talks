@@ -73,7 +73,12 @@ impl EngineHost for AppEngine {
                 s.backend = Some(backend);
                 s.model = Some(id);
             }),
-            Err(e) => self.loaded(id, Err(e)),
+            // The model stays chosen, so the error phase still lets a dictation start,
+            // and that dictation tries the engine again.
+            Err(e) => {
+                update(&self.0, |s| s.model = Some(id));
+                phase(&self.0, "error", Some(e));
+            }
         }
     }
 }

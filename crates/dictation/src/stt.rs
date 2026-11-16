@@ -40,7 +40,8 @@ pub trait EngineHost: Send + 'static {
     fn loaded(&self, id: String, result: Result<String, String>);
     /// The worker stopped by itself and a new one loaded model `id` again: the compute
     /// backend, or why it could not. Called after the dictation in flight, if any, got
-    /// its error.
+    /// its error. After an error the model stays chosen: the engine thread tries again
+    /// after `recovery_retry`, or sooner when a dictation comes in.
     fn recovered(&self, id: String, result: Result<String, String>) {
         self.loaded(id, result);
     }
@@ -52,6 +53,10 @@ pub trait EngineHost: Send + 'static {
     /// on a machine without a usable GPU, Whisper runs slower than real time.
     fn job_timeout(&self, audio: Duration) -> Duration {
         Duration::from_secs(120) + audio * 3
+    }
+    /// How long after a failed recovery the engine thread tries again by itself.
+    fn recovery_retry(&self) -> Duration {
+        Duration::from_secs(30)
     }
 }
 
@@ -70,8 +75,8 @@ const HUNG: &str = "The speech engine stopped responding; it is restarting";
 /// The first load after an engine upgrade compiles the GPU shaders.
 const LOAD_TIMEOUT: Duration = Duration::from_secs(180);
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
-/// A worker that dies this often within `CRASH_WINDOW` is not started again until the
-/// next load or dictation asks for it.
+/// A worker that dies this often within `CRASH_WINDOW` is not started again until
+/// `recovery_retry` has passed or a dictation asks for it.
 const MAX_CRASHES: usize = 5;
 const CRASH_WINDOW: Duration = Duration::from_secs(60);
 /// Samples per `audio` frame (1 MiB).
@@ -106,6 +111,7 @@ pub fn engine_thread(host: impl EngineHost, rx: Receiver<EngineJob>) {
         next_job: 1,
         next_gen: 1,
         crashes: VecDeque::new(),
+        retry_at: None,
         closed: false,
     };
     client.run();
@@ -313,6 +319,8 @@ struct Client<H> {
     next_gen: u64,
     /// When the worker died by itself lately.
     crashes: VecDeque<Instant>,
+    /// When to try a failed recovery again.
+    retry_at: Option<Instant>,
     closed: bool,
 }
 
@@ -322,10 +330,10 @@ impl<H: EngineHost> Client<H> {
             let job = match self.backlog.pop_front() {
                 Some(job) => job,
                 None if self.closed => break,
-                None => match self.events.recv() {
-                    Ok(Event::Job(job)) => job,
-                    Ok(Event::Closed) | Err(_) => break,
-                    Ok(Event::Worker { gen, message }) => {
+                None => match self.next_event() {
+                    Some(Event::Job(job)) => job,
+                    Some(Event::Closed) | None => break,
+                    Some(Event::Worker { gen, message }) => {
                         self.idle_event(gen, message);
                         continue;
                     }
@@ -333,6 +341,7 @@ impl<H: EngineHost> Client<H> {
             };
             match job {
                 EngineJob::Load(id) => {
+                    self.retry_at = None;
                     self.host.before_load();
                     let result = self.load(&id);
                     if result.is_err() {
@@ -349,13 +358,33 @@ impl<H: EngineHost> Client<H> {
         self.shut_down();
     }
 
+    /// The next event while idle; a failed recovery due meanwhile is tried again first.
+    fn next_event(&mut self) -> Option<Event> {
+        loop {
+            let Some(at) = self.retry_at else {
+                return self.events.recv().ok();
+            };
+            match self
+                .events
+                .recv_timeout(at.saturating_duration_since(Instant::now()))
+            {
+                Ok(event) => return Some(event),
+                Err(RecvTimeoutError::Timeout) => {
+                    self.crashes.clear();
+                    let _ = self.recover();
+                }
+                Err(RecvTimeoutError::Disconnected) => return None,
+            }
+        }
+    }
+
     fn idle_event(&mut self, gen: u64, message: WorkerMessage) {
         let current = self.worker.as_ref().is_some_and(|w| w.gen == gen);
         if current && matches!(message, WorkerMessage::Exited) {
             eprintln!("stt: the speech engine stopped; starting a new one");
             self.worker = None;
             self.crashed();
-            self.recover();
+            let _ = self.recover();
         }
     }
 
@@ -373,25 +402,26 @@ impl<H: EngineHost> Client<H> {
         self.crashes.len() < MAX_CRASHES
     }
 
-    /// Loads the model dictation used again in a new worker, after a crash.
-    fn recover(&mut self) {
+    /// Loads the model dictation used again in a new worker, after a crash, and reports
+    /// it. A failure is tried again after `recovery_retry` (or by the next dictation).
+    fn recover(&mut self) -> Result<(), String> {
         let Some(id) = self.model.clone() else {
-            return;
+            return Err("Model is not loaded".into());
         };
-        if self.crashes.len() >= MAX_CRASHES {
-            self.host.recovered(
-                id,
-                Err(
-                    "The speech engine keeps stopping; it starts again with the next dictation"
-                        .into(),
-                ),
-            );
-            return;
+        let result = if self.crashes.len() >= MAX_CRASHES {
+            Err("The speech engine keeps stopping; it will be started again shortly".into())
+        } else {
+            self.load(&id)
+        };
+        let outcome = result.as_ref().map(|_| ()).map_err(String::clone);
+        if self.closed {
+            return outcome;
         }
-        let result = self.load(&id);
-        if result.is_ok() || !self.closed {
-            self.host.recovered(id, result);
-        }
+        self.retry_at = result
+            .is_err()
+            .then(|| Instant::now() + self.host.recovery_retry());
+        self.host.recovered(id, result);
+        outcome
     }
 
     /// Loads `id` (a speech model of the registry), starting a worker if none runs.
@@ -526,17 +556,12 @@ impl<H: EngineHost> Client<H> {
                 .as_ref()
                 .is_some_and(|w| w.loaded.is_some() && w.loaded == client.model)
         };
-        // After a crash that used up the restarts, this dictation starts the engine.
-        if !ready(self) {
-            if let Some(id) = self.model.clone() {
-                self.crashes.clear();
-                let result = self.load(&id);
-                let failed = result.is_err();
-                self.host.recovered(id, result);
-                if failed {
-                    let _ = reply.send(Err("Model is not loaded".into()));
-                    return;
-                }
+        // After a recovery that failed, this dictation tries the engine again.
+        if !ready(self) && self.model.is_some() {
+            self.crashes.clear();
+            if let Err(e) = self.recover() {
+                let _ = reply.send(Err(e));
+                return;
             }
         }
         if !ready(self) {
@@ -603,14 +628,14 @@ impl<H: EngineHost> Client<H> {
                 self.worker = None;
                 let _ = reply.send(Err(STOPPED.into()));
                 self.crashed();
-                self.recover();
+                let _ = self.recover();
             }
             Wait::TimedOut => {
                 eprintln!("stt: the speech engine stopped responding; starting a new one");
                 self.worker = None;
                 let _ = reply.send(Err(HUNG.into()));
                 self.crashed();
-                self.recover();
+                let _ = self.recover();
             }
             Wait::Closed => {
                 let _ = reply.send(Err("the speech engine was stopped".into()));
