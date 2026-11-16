@@ -423,25 +423,25 @@ impl Engine {
                     return Ok((String::new(), language));
                 }
                 for piece in &mut pieces {
+                    let seconds = |at: usize| at as f32 / 16_000.0;
+                    let speech = speech.as_ref().map(|stretches| {
+                        vad::speech_within(
+                            stretches,
+                            seconds(piece.range.start)..seconds(piece.range.end),
+                        )
+                    });
+                    let clip = &samples[piece.range.clone()];
                     if closing::only_closing(&piece.text) {
-                        let seconds = |at: usize| at as f32 / 16_000.0;
-                        let speech = speech.as_ref().map(|stretches| {
-                            vad::speech_within(
-                                stretches,
-                                seconds(piece.range.start)..seconds(piece.range.end),
-                            )
-                        });
-                        piece.text = recheck_closing(
-                            context,
-                            state,
-                            &samples[piece.range.clone()],
-                            code,
-                            piece,
-                            speech,
-                        )?;
+                        piece.text = recheck_closing(context, state, clip, code, piece, speech)?;
+                    } else if speech.is_some_and(|s| too_short(&piece.text, s)) {
+                        piece.text = recheck_short(state, clip, code, piece)?;
                     }
                 }
-                let texts: Vec<String> = pieces.into_iter().map(|p| p.text).collect();
+                let texts: Vec<String> = pieces
+                    .into_iter()
+                    .map(|p| p.text)
+                    .filter(|t| !punctuation_only(t))
+                    .collect();
                 Ok((texts.join(" "), language))
             })?,
             Inner::Parakeet(model) => {
@@ -554,10 +554,13 @@ fn whisper_pieces(
     let mut decoded: Vec<Piece> = Vec::new();
     let mut language = code.to_string();
     for range in pieces::pieces(samples) {
-        let previous = decoded.last().map(|piece| Prompt {
-            terms: prompt.and_then(|p| p.terms.clone()),
-            sentence: Some(tail(&piece.text, 200).to_string()),
-        });
+        let previous = decoded
+            .iter()
+            .rfind(|p| !p.text.is_empty())
+            .map(|piece| Prompt {
+                terms: prompt.and_then(|p| p.terms.clone()),
+                sentence: Some(tail(&piece.text, 200).to_string()),
+            });
         let (text, lang, used) = whisper_transcribe(
             state,
             &samples[range.clone()],
@@ -566,15 +569,52 @@ fn whisper_pieces(
             previous.as_ref().or(prompt),
         )?;
         language = lang;
-        if !punctuation_only(&text) {
-            decoded.push(Piece {
-                range,
-                prompt: used,
-                text,
-            });
-        }
+        decoded.push(Piece {
+            range,
+            prompt: used,
+            text: if punctuation_only(&text) {
+                String::new()
+            } else {
+                text
+            },
+        });
     }
     Ok((decoded, language))
+}
+
+fn word_count(text: &str) -> usize {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .count()
+}
+
+/// Far too little text for the speech heard: people say two to three words a second,
+/// and a piece with seconds of speech and almost no words lost them ("K u wel." for
+/// 20 s of a speech). Real dictation stays well above half a word per second.
+fn too_short(text: &str, speech_s: f32) -> bool {
+    speech_s >= 4.0 && (word_count(text) as f32) < speech_s * 0.5
+}
+
+/// A piece that is far too short for its speech, decoded again with timestamps (see
+/// `recheck_closing`). The second text wins only if it has at least twice the words.
+fn recheck_short(
+    state: &mut whisper_rs::WhisperState,
+    samples: &[f32],
+    code: &str,
+    piece: &Piece,
+) -> Result<String, SttError> {
+    let (again, _) = whisper_text_with(
+        state,
+        samples,
+        code,
+        piece.prompt.as_deref(),
+        Redo::Timestamps,
+    )?;
+    if word_count(&again) >= 2 * word_count(&piece.text).max(1) && !closing::only_closing(&again) {
+        log::info!("stt: the text was far too short for its speech; the second decode replaced it");
+        return Ok(again);
+    }
+    Ok(piece.text.clone())
 }
 
 /// A piece whose whole text is a closing phrase ("Dank u wel."), asked again. A decode
@@ -788,6 +828,18 @@ mod tests {
         ] {
             assert!(!sound_only(speech), "{speech}");
         }
+    }
+    #[test]
+    fn text_far_too_short_for_its_speech() {
+        assert!(too_short("K u wel.", 20.0));
+        assert!(too_short("", 5.0));
+        assert!(
+            !too_short("Ja, doe maar.", 1.5),
+            "short clips are never judged"
+        );
+        // A slow speaker with long words: 2 words in 4 s is still enough.
+        assert!(!too_short("Uitstekend, bedankt.", 4.0));
+        assert!(!too_short(&"woord ".repeat(12), 20.0));
     }
     #[test]
     fn punctuation_filter() {
