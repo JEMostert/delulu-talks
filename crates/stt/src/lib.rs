@@ -1,7 +1,7 @@
 //! Speech to text as the app and the daemon see it: the models, the language setting,
 //! the Whisper prompt and the transcript. The engines themselves (Whisper through
-//! whisper.cpp, Parakeet through ONNX Runtime) run in `delulu-engine stt`, a process
-//! of its own (crates/engine), so this crate links neither ggml nor ONNX Runtime.
+//! whisper.cpp, Parakeet Ultra through transcribe.cpp) run in `delulu-engine stt`, a process
+//! of its own (crates/engine), so this crate links no ggml.
 use std::path::Path;
 
 mod prompt;
@@ -9,7 +9,8 @@ pub use prompt::{flipped, Prompt};
 
 /// The speech engines are rows of the shared model registry (`delulu-models`), which
 /// also downloads them. Whisper runs on the GPU and follows the language setting and
-/// context prompt; Parakeet runs on the CPU and detects the language.
+/// context prompt; Parakeet Ultra runs on the GPU or the CPU and hears the language
+/// itself.
 pub use delulu_models::{Engine as EngineKind, Model as ModelInfo, ModelFile};
 
 pub const DEFAULT_MODEL: &str = "large-v3-turbo-q5_0";

@@ -7,8 +7,8 @@
 //! model is freed first); `job{transcribe}` followed by the clip as `audio` frames
 //! (16 kHz mono, ended by `last: true`) → `done{transcript}`; `cancel{id}` stops a
 //! job at its next decoding step; `unload` frees the model; `shutdown` → `bye`.
-//! Whisper (whisper.cpp on the engine's one ggml) and Parakeet v3 (ONNX Runtime) are
-//! the engines; see `engine`.
+//! Whisper (whisper.cpp) and Parakeet Ultra (transcribe.cpp), both on the engine's one
+//! ggml, are the engines; see `engine`.
 use delulu_proto::worker::{
     AudioSource, Capability, FromWorker, JobPayload, JobResult, ModelRef, Role, SttPrompt,
     ToWorker, WorkerErrorKind, WORKER_PROTOCOL_VERSION,

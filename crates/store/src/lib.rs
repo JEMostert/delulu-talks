@@ -297,6 +297,21 @@ impl Store {
             }
         }
         settings.version = SETTINGS_VERSION;
+        if let Some(retired) = delulu_models::retired(&settings.model) {
+            // The app can no longer run it: its replacement takes the setting, and
+            // the window downloads it and tells the user (see the app's models).
+            log::info!(
+                "settings: {} is retired; switching to {}",
+                retired.id,
+                retired.replaced_by.id
+            );
+            settings.model = retired.replaced_by.id.to_string();
+            if settings_path.exists() {
+                if let Err(e) = write_json(&settings_path, &settings) {
+                    log::warn!("could not save the new speech model: {e}");
+                }
+            }
+        }
         let state = load_or_default(&config_dir.join(STATE_FILE), "state");
         // Neither a database problem nor a failed import keeps the app from
         // starting: dictation still types, it only cannot save to History. Without
@@ -1186,6 +1201,25 @@ mod tests {
         let t = TempDir::new();
         let store = open(&t);
         assert_eq!(store.models_dir(), t.data().join("models"));
+    }
+
+    #[test]
+    fn a_retired_speech_model_setting_moves_to_its_replacement() {
+        let t = TempDir::new();
+        fs::create_dir_all(t.config()).unwrap();
+        let v2 = r#"{"version":2,"model":"parakeet-tdt-0.6b-v3","language":"nl"}"#;
+        fs::write(t.config().join(SETTINGS_FILE), v2).unwrap();
+
+        let store = open(&t);
+        assert_eq!(store.settings().model, "parakeet-ultra-q8_0");
+        assert_eq!(store.settings().language, "nl");
+        drop(store);
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(t.config().join(SETTINGS_FILE)).unwrap()).unwrap();
+        assert_eq!(
+            saved["model"], "parakeet-ultra-q8_0",
+            "saved for the daemon and the app"
+        );
     }
 
     #[test]
