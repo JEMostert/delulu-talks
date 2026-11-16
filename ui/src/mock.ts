@@ -760,6 +760,10 @@ export async function invoke<T>(
           engine: "whisper",
           bytes: 574041195,
           downloaded: downloaded.has("large-v3-turbo-q5_0"),
+          license: "MIT",
+          credit: null,
+          licenseUrl: null,
+          replaces: null,
         },
         {
           id: "small",
@@ -767,13 +771,23 @@ export async function invoke<T>(
           engine: "whisper",
           bytes: 487601967,
           downloaded: downloaded.has("small"),
+          license: "MIT",
+          credit: null,
+          licenseUrl: null,
+          replaces: null,
         },
         {
-          id: "parakeet-tdt-0.6b-v3",
-          label: "Parakeet TDT 0.6B v3",
+          id: "parakeet-ultra-q8_0",
+          label: "Parakeet Ultra",
           engine: "parakeet",
-          bytes: 670619706,
-          downloaded: downloaded.has("parakeet-tdt-0.6b-v3"),
+          bytes: 740382222,
+          downloaded: downloaded.has("parakeet-ultra-q8_0"),
+          license: "CC BY 4.0",
+          credit:
+            "Parakeet Ultra by Moondream, post-trained from NVIDIA Parakeet TDT 0.6B v3",
+          licenseUrl:
+            "https://huggingface.co/handy-computer/parakeet-ultra-gguf/blob/a1539be1b849ea7463b88343e5277b373d0c4ea9/LICENSE",
+          replaces: null,
         },
       ];
       break;

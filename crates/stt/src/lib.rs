@@ -25,6 +25,28 @@ pub fn model_info(id: &str) -> Option<&'static ModelInfo> {
 pub fn is_downloaded(dir: &Path, id: &str) -> bool {
     model_info(id).is_some_and(|m| m.installed(dir))
 }
+/// The retired model that `id` replaces, while its files are still in `dir`: a user
+/// who had it selected now has `id` (see `delulu_store`) and must download it.
+pub fn replaces_on_disk(dir: &Path, id: &str) -> Option<&'static delulu_models::Retired> {
+    delulu_models::RETIRED
+        .iter()
+        .find(|r| r.replaced_by.id == id && dir.join(r.path).exists())
+}
+/// Removes what the retired models that `id` replaces left in `dir`, once `id` is in.
+pub fn remove_replaced(dir: &Path, id: &str) {
+    while let Some(retired) = replaces_on_disk(dir, id) {
+        let path = dir.join(retired.path);
+        let removed = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if let Err(e) = removed {
+            eprintln!("models: could not remove {}: {e}", path.display());
+            return;
+        }
+    }
+}
 /// True when the file is in `dir` at its expected size.
 pub fn file_ready(dir: &Path, file: &ModelFile) -> bool {
     file.ready(dir)
@@ -256,6 +278,23 @@ mod tests {
             EngineKind::Whisper
         );
         assert_eq!(models()[0].id, DEFAULT_MODEL);
+    }
+    #[test]
+    fn a_replaced_model_is_found_on_disk_and_removed_once_its_replacement_is_in() {
+        let dir = std::env::temp_dir().join(format!("delulu-stt-retired-{}", std::process::id()));
+        let old = dir.join("parakeet-tdt-0.6b-v3-int8");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("encoder-model.int8.onnx"), b"x").unwrap();
+        let ultra = delulu_models::PARAKEET_ULTRA.id;
+        assert_eq!(
+            replaces_on_disk(&dir, ultra).map(|r| r.label),
+            Some("Parakeet TDT 0.6B v3")
+        );
+        assert!(replaces_on_disk(&dir, DEFAULT_MODEL).is_none());
+        remove_replaced(&dir, ultra);
+        assert!(!old.exists());
+        assert!(replaces_on_disk(&dir, ultra).is_none());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
     #[test]
     fn guesses_parakeet_language() {

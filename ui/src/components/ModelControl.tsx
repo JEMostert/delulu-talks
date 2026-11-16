@@ -27,7 +27,7 @@ const engines: { value: ipc.Engine; label: string; about: string }[] = [
     value: "parakeet",
     label: "Parakeet",
     about:
-      "Fastest. Runs on the processor and recognizes 25 European languages on its own.",
+      "Fastest. Parakeet Ultra runs on your graphics card or the processor and hears 25 European languages on its own, but takes no vocabulary.",
   },
 ];
 /** Speech engine, then that engine's model, with its download state. */
@@ -130,6 +130,19 @@ export function ModelControl({
             {progress?.error ? "Try again" : "Download"}
           </button>
         </div>
+      )}
+      {selectedModel?.credit && (
+        <p className="model-note">
+          {selectedModel.credit}. Licence:{" "}
+          {selectedModel.licenseUrl ? (
+            <a href={selectedModel.licenseUrl} target="_blank" rel="noreferrer">
+              {selectedModel.license}
+            </a>
+          ) : (
+            selectedModel.license
+          )}
+          .
+        </p>
       )}
       {progress?.error && (
         <p className="inline-error" role="alert">

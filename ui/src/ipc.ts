@@ -71,6 +71,13 @@ export type ModelStatus = {
   engine: Engine;
   bytes: number;
   downloaded: boolean;
+  /** Short licence name. */
+  license: string;
+  /** Who made the model, shown with its licence at download; null when not needed. */
+  credit: string | null;
+  licenseUrl: string | null;
+  /** A retired model this one replaces, while its files are still here. */
+  replaces: string | null;
 };
 export type VoiceStatus = {
   /** `delulu speak` can speak now. */

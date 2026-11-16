@@ -43,3 +43,35 @@ transcript comparison (for example `cargo run --release -p delulu-dictation
 --example bench`) on clean speech before and after. If whisper.cpp no longer
 compiles against the new ggml, move whisper-rs-sys to the release whose whisper.cpp
 synced ggml in the same week as the llama.cpp pin, and re-apply the patch.
+
+## transcribe.cpp v0.4.2: Parakeet Ultra on the same ggml
+
+`vendor/transcribe.cpp` holds the files of
+[transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) (MIT,
+handy-computer) at `275cd50` (v0.4.2) that its library needs: `CMakeLists.txt`,
+`cmake/`, `include/`, `src/` (with miniz and Silero VAD, MIT), `LICENSE` and
+`THIRD-PARTY-LICENSES.md`. Its own ggml, tests, examples and bindings are left out.
+`crates/transcribe` builds it and wraps the few calls `delulu-engine stt` makes.
+
+transcribe.cpp pins ggml-org/ggml `d7cb574` (0.26.0) plus four downstream patches.
+Apart from those patches, that ggml is the one llama-cpp-sys-2 0.1.160 builds, so
+the library is built against the engine's ggml like whisper.cpp. `transcribe.cpp.patch`:
+
+- `TRANSCRIBE_USE_SYSTEM_GGML` makes CMake use an installed ggml (`find_package`)
+  instead of the vendored copy;
+- with `TRANSCRIBE_SHARED_GGML`, `src/transcribe.cpp` does not install its backend
+  registry filter, which needs ggml patch 0002. Every compiled-in backend then
+  registers, which is what its default (all backends) does anyway. Patches 0001
+  (CPU threadpool oversubscription), 0003 (Metal) and 0004 (an x86 check for
+  loadable CPU backends) are performance or platform fixes the engine does without.
+
+`crates/transcribe/shared-ggml.cmake` compiles it with the engine's `GGML_MAX_NAME`
+and adds the same `struct ggml_tensor` probe as for whisper.cpp; the test
+`transcribe_and_the_linked_ggml_agree_on_tensor_layout` and every model load check
+it. On spike E1's 860 clips, Parakeet Ultra built this way gave the same text as
+transcribe.cpp's official binary with its own ggml, clip for clip.
+
+```sh
+vendor/transcribe.cpp.sh verify   # upstream + patch == vendor/transcribe.cpp
+vendor/transcribe.cpp.sh diff     # rewrite the patch after editing the vendored tree
+```

@@ -766,19 +766,11 @@ pub(crate) async fn cmd_set_settings(
 }
 
 #[tauri::command(rename = "list_models")]
-pub(crate) fn cmd_list_models() -> Vec<Value> {
+pub(crate) fn cmd_list_models() -> Vec<crate::models::ModelStatus> {
     let dir = models_dir();
     delulu_stt::models()
         .iter()
-        .map(|m| {
-            serde_json::json!({
-                "id": m.id,
-                "label": m.label,
-                "engine": m.engine.as_str(),
-                "bytes": m.bytes,
-                "downloaded": delulu_stt::is_downloaded(&dir, m.id),
-            })
-        })
+        .map(|m| crate::models::model_status(&dir, m))
         .collect()
 }
 
@@ -804,7 +796,12 @@ pub(crate) fn cmd_download_model(app: tauri::AppHandle, id: String) -> Result<()
         let mut report = |done, total| {
             let _ = app.emit("model-download", progress(done, total, false, None));
         };
-        let result = delulu_models::download(&models_dir(), model, &mut report, &cancel);
+        let dir = models_dir();
+        let result = delulu_models::download(&dir, model, &mut report, &cancel);
+        if result.is_ok() {
+            // The retired model this one replaces can no longer run.
+            delulu_stt::remove_replaced(&dir, &id);
+        }
         downloading.store(false, Ordering::SeqCst);
         let (finished, error) = match result {
             Ok(_) => (true, None),

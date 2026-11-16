@@ -1,6 +1,7 @@
 use super::*;
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ModelStatus {
     id: &'static str,
     label: &'static str,
@@ -8,18 +9,36 @@ pub(crate) struct ModelStatus {
     engine: &'static str,
     bytes: u64,
     downloaded: bool,
+    license: &'static str,
+    /// Who made it and where its licence is, for the credit shown at download.
+    credit: Option<&'static str>,
+    license_url: Option<&'static str>,
+    /// The retired model this one replaces, while its files are still here: the
+    /// window then says so and downloads this one.
+    replaces: Option<&'static str>,
+}
+pub(crate) fn model_status(
+    dir: &std::path::Path,
+    m: &'static delulu_stt::ModelInfo,
+) -> ModelStatus {
+    ModelStatus {
+        id: m.id,
+        label: m.label,
+        engine: m.engine.as_str(),
+        bytes: m.bytes,
+        downloaded: delulu_stt::is_downloaded(dir, m.id),
+        license: m.license,
+        credit: m.terms.map(|t| t.credit),
+        license_url: m.terms.map(|t| t.url),
+        replaces: delulu_stt::replaces_on_disk(dir, m.id).map(|r| r.label),
+    }
 }
 #[tauri::command]
 pub(crate) fn list_models(s: State<'_, Shell>) -> Vec<ModelStatus> {
+    let dir = s.store.models_dir();
     delulu_stt::models()
         .iter()
-        .map(|m| ModelStatus {
-            id: m.id,
-            label: m.label,
-            engine: m.engine.as_str(),
-            bytes: m.bytes,
-            downloaded: delulu_stt::is_downloaded(&s.store.models_dir(), m.id),
-        })
+        .map(|m| model_status(&dir, m))
         .collect()
 }
 #[derive(Clone, Serialize)]
@@ -75,6 +94,10 @@ pub(crate) fn download_model(
                 error,
             },
         );
+        if finished {
+            // The retired model this one replaces can no longer run.
+            delulu_stt::remove_replaced(&dir, &id);
+        }
         if finished && app.state::<Shell>().store.settings().model == id {
             load_model(&app, id);
         }
