@@ -3,8 +3,8 @@
 //! music or speech step starts while you dictate or just after.
 use super::*;
 use delulu_radio::{
-    model::{Draft, Request},
-    music::{self, Composer, Song, Stage},
+    model::{AceLm, Draft, Music, MusicEngine, Request},
+    music::{self, Composer, Order, Stage},
     voice::Voice,
     Backend, Direction, Item, Kind, Player, PlayerEvent, RadioError, Station,
 };
@@ -52,10 +52,21 @@ pub(crate) struct MusicReadiness {
     engine: bool,
     /// The YuE2 model is downloaded.
     model: bool,
+    /// Which of ACE-Step's files are downloaded.
+    ace: AceReadiness,
     /// The compute device the helper found, e.g. "Vulkan0 (NVIDIA GeForce RTX 5060 Ti)".
     device: Option<String>,
     /// False when only the processor is available (far too slow for songs).
     gpu: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AceReadiness {
+    /// Text encoder, turbo DiT and VAE.
+    turbo: bool,
+    lm_small: bool,
+    lm_large: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -102,6 +113,9 @@ pub(crate) struct Making {
     /// Music only: overall 0..1 and the phase (score, composing, shaping, rendering).
     progress: Option<f32>,
     phase: Option<String>,
+    /// ACE-Step's first song with this engine build: the graphics driver prepares
+    /// its shaders first, which takes a few minutes once.
+    preparing: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -124,6 +138,7 @@ pub(crate) struct RadioView {
     last_song_seconds: Option<f64>,
     last_song_audio_seconds: Option<f64>,
     readiness: Option<Readiness>,
+    music: Music,
 }
 
 impl Radio {
@@ -288,6 +303,7 @@ pub(crate) fn unavailable(error: Option<String>, readiness: Option<Readiness>) -
         last_song_seconds: None,
         last_song_audio_seconds: None,
         readiness,
+        music: Music::default(),
     }
 }
 
@@ -321,6 +337,10 @@ fn view(app: &tauri::AppHandle) -> RadioView {
         title: j.draft.as_ref().map(|d| d.title.clone()),
         request: j.request.as_ref().map(|r| r.text.clone()),
         since: j.step_started_at,
+        preparing: j.kind == Kind::Song
+            && j.draft.is_some()
+            && s.music.engine == MusicEngine::AceStep
+            && s.music.ace_warm.as_deref() != Some(warm_key().as_str()),
     });
     let pending: Vec<Request> = s.requests.iter().rev().take(4).rev().cloned().collect();
     RadioView {
@@ -343,7 +363,13 @@ fn view(app: &tauri::AppHandle) -> RadioView {
         last_song_seconds: s.stats.last_song_seconds,
         last_song_audio_seconds: s.stats.last_song_audio_seconds,
         readiness,
+        music: s.music.clone(),
     }
+}
+
+/// The engine ships with the app, so the app's version names its build.
+fn warm_key() -> String {
+    music::warm_key(env!("CARGO_PKG_VERSION"))
 }
 
 fn emit(app: &tauri::AppHandle) {
@@ -399,6 +425,11 @@ fn check(app: &tauri::AppHandle) -> Readiness {
         music: MusicReadiness {
             engine: helper.is_some(),
             model: delulu_stt::file_ready(&s.store.models_dir(), &crate::music::MUSIC_MODEL),
+            ace: AceReadiness {
+                turbo: delulu_models::ACE_STEP_TURBO.installed(&s.store.models_dir()),
+                lm_small: delulu_models::ACE_STEP_LM_SMALL.installed(&s.store.models_dir()),
+                lm_large: delulu_models::ACE_STEP_LM_LARGE.installed(&s.store.models_dir()),
+            },
             gpu: found.as_ref().is_some_and(|f| f.1),
             device: found.map(|f| f.0),
         },
@@ -511,6 +542,17 @@ pub(crate) fn radio_direction(
     Ok(view(&app))
 }
 
+/// Choose the music engine and ACE-Step's language model, from the next song on.
+#[tauri::command]
+pub(crate) fn radio_music(
+    app: tauri::AppHandle,
+    engine: MusicEngine,
+    ace_lm: AceLm,
+) -> Result<RadioView, String> {
+    app.state::<Radio>().station()?.set_music(engine, ace_lm);
+    Ok(view(&app))
+}
+
 #[tauri::command]
 pub(crate) fn radio_request(app: tauri::AppHandle, text: String) -> Result<RadioView, String> {
     enabled(&app)?;
@@ -574,45 +616,51 @@ impl Backend for AppBackend {
         &self,
         draft: &Draft,
         seed: u64,
-        max_seconds: u32,
+        seconds: u32,
+        settings: &Music,
         out: &Path,
     ) -> Result<BTreeMap<String, String>, RadioError> {
         let helper = music::helper_path().ok_or_else(|| {
             RadioError::Unavailable("The music engine (delulu-engine) is not installed.".into())
         })?;
         let models = self.app.state::<Shell>().store.models_dir();
-        if !delulu_stt::file_ready(&models, &crate::music::MUSIC_MODEL)
-            || crate::music::changing(&self.app)
-        {
-            return Err(RadioError::Unavailable(
-                "Download the music model in Settings → Models to make songs.".into(),
-            ));
+        if !crate::music::ready(settings, &models) || crate::music::changing(&self.app, settings) {
+            return Err(RadioError::Unavailable(match settings.engine {
+                MusicEngine::Yue2 => {
+                    "Download the music model in Settings → Models to make songs.".into()
+                }
+                MusicEngine::AceStep => {
+                    "Install ACE-Step under Music engine on the Delulu FM page to make songs."
+                        .into()
+                }
+            }));
         }
         let radio = self.radio();
-        let song = Song::new(draft, seed, max_seconds);
+        let order = Order::new(draft, seed, seconds, settings, &models);
         let mut sent = Instant::now();
         // Off air, quitting or the model removed while the helper was starting.
         let cancelled = || {
             radio.stop.load(Ordering::SeqCst)
                 || radio.station().map_or(true, |s| !s.on_air())
-                || !delulu_stt::file_ready(&models, &crate::music::MUSIC_MODEL)
+                || !crate::music::ready(settings, &models)
         };
-        let result = radio.composer.compose(
-            &helper,
-            &models.join(music::MODEL_FILE),
-            &song,
-            out,
-            &cancelled,
-            &mut |stage| {
+        let result = radio
+            .composer
+            .compose(&helper, &order, out, &cancelled, &mut |stage| {
                 *radio.stage.lock().unwrap_or_else(|e| e.into_inner()) = Some(stage);
                 if sent.elapsed() >= PROGRESS_EVERY {
                     sent = Instant::now();
                     emit(&self.app);
                 }
-            },
-        );
+            });
         *radio.stage.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        result.map(|report| music::provenance(&report))
+        let report = result?;
+        if settings.engine == MusicEngine::AceStep {
+            if let Ok(station) = radio.station() {
+                station.set_ace_warm(warm_key());
+            }
+        }
+        Ok(music::provenance(&report))
     }
     fn changed(&self) {
         let radio = self.radio();

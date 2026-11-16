@@ -37,7 +37,7 @@ pub enum Length {
 }
 
 impl Length {
-    /// YuE2's maximum duration; a song may end sooner.
+    /// YuE2's maximum duration (a song may end sooner); ACE-Step's exact length.
     pub fn seconds(self) -> u32 {
         match self {
             Length::Short => 90,
@@ -67,6 +67,53 @@ impl Host {
             Host::Often => Some(1),
         }
     }
+}
+
+/// Which engine makes the music. YuE2 stays the default until the owner's
+/// listening test; ACE-Step 1.5 is several times faster.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum MusicEngine {
+    #[default]
+    #[serde(rename = "yue2")]
+    Yue2,
+    #[serde(rename = "acestep")]
+    AceStep,
+}
+
+/// ACE-Step's language model: by free graphics memory, or fixed by the listener.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum AceLm {
+    #[default]
+    #[serde(rename = "auto")]
+    Auto,
+    #[serde(rename = "0.6b")]
+    Small,
+    #[serde(rename = "4b")]
+    Large,
+}
+
+impl AceLm {
+    /// The value `delulu-engine music` takes.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AceLm::Auto => "auto",
+            AceLm::Small => "0.6b",
+            AceLm::Large => "4b",
+        }
+    }
+}
+
+/// How the station makes its music. Applies from the next song made.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Music {
+    pub engine: MusicEngine,
+    pub ace_lm: AceLm,
+    /// The engine build and device ACE-Step last finished a song with
+    /// (`music::warm_key`). Until then the graphics driver still has to prepare
+    /// ACE-Step's shaders, which makes the first song take minutes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ace_warm: Option<String>,
 }
 
 /// The listener's steering. Applies to songs not yet written.
@@ -202,6 +249,10 @@ pub struct Draft {
     pub script: Option<String>,
     #[serde(default)]
     pub instrumental: bool,
+    /// The sung language as an ISO code (`nl`, `en`), when the station's language
+    /// is one ACE-Step knows. None for instrumentals and older drafts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
 }
 
 /// The one item being made. Persisted after every step so a restart resumes it:
@@ -255,6 +306,7 @@ pub struct State {
     pub songs_since_break: u32,
     pub stats: Stats,
     pub volume: f32,
+    pub music: Music,
 }
 
 impl Default for State {
@@ -273,6 +325,7 @@ impl Default for State {
             songs_since_break: 0,
             stats: Stats::default(),
             volume: 0.8,
+            music: Music::default(),
         }
     }
 }
@@ -321,5 +374,7 @@ mod tests {
         assert!(s.on_air);
         assert_eq!(s.version, SCHEMA);
         assert_eq!(s.direction, Direction::default());
+        // A station from before the engine choice keeps YuE2.
+        assert_eq!(s.music.engine, MusicEngine::Yue2);
     }
 }

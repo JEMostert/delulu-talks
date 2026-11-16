@@ -19,11 +19,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-/// Ready programme: at most this many items…
+/// Ready programme with YuE2, which makes a song in about its own length: at most
+/// this many items…
 pub const BUFFER_ITEMS: usize = 3;
 /// …and at least two songs or this much audio.
 pub const BUFFER_SECONDS: f64 = 360.0;
 pub const BUFFER_SONGS: usize = 2;
+/// With ACE-Step a song takes under a minute, so one ready song next to the one on
+/// air covers it, dictation pauses included. A shorter programme lets a new
+/// direction or request reach the air a song sooner.
+pub const ACE_BUFFER_ITEMS: usize = 2;
+pub const ACE_BUFFER_SECONDS: f64 = 150.0;
+pub const ACE_BUFFER_SONGS: usize = 1;
 const RETRY_COOLDOWN_MS: i64 = 20_000;
 const MIN_SONG_SECONDS: f64 = 20.0;
 const MIN_BREAK_SECONDS: f64 = 2.0;
@@ -47,11 +54,14 @@ pub trait Backend: Send + Sync {
     /// Make the music for `draft` into `out`. `Err(Cancelled)` when stopped (off air
     /// or quitting), `Err(Unavailable)` when the model or helper is missing. Returns
     /// what to record about how it was made.
+    /// `seconds` is YuE2's maximum and ACE-Step's exact length; `music` says which
+    /// engine and settings to use.
     fn compose(
         &self,
         draft: &Draft,
         seed: u64,
-        max_seconds: u32,
+        seconds: u32,
+        music: &Music,
         out: &Path,
     ) -> Result<BTreeMap<String, String>, RadioError>;
     /// Something visible changed.
@@ -398,6 +408,30 @@ impl Station {
         d
     }
 
+    /// Choose the music engine and ACE-Step's language model. Applies from the next
+    /// song the station makes; one already being made finishes as it started.
+    pub fn set_music(&self, engine: MusicEngine, ace_lm: AceLm) -> Music {
+        let mut s = self.lock();
+        s.music.engine = engine;
+        s.music.ace_lm = ace_lm;
+        let music = s.music.clone();
+        self.persist(&s);
+        drop(s);
+        // A smaller or larger programme may now be wanted.
+        self.notify();
+        music
+    }
+
+    /// ACE-Step finished a song with this engine build on this device (see
+    /// `music::warm_key`): later songs no longer wait for shader preparation.
+    pub fn set_ace_warm(&self, key: String) {
+        let mut s = self.lock();
+        if s.music.ace_warm.as_deref() != Some(key.as_str()) {
+            s.music.ace_warm = Some(key);
+            self.persist(&s);
+        }
+    }
+
     pub fn set_volume(&self, volume: f32) {
         let mut s = self.lock();
         s.volume = volume.clamp(0.0, 1.0);
@@ -491,7 +525,11 @@ impl Station {
     fn needs_more(s: &State) -> bool {
         let songs = s.queue.iter().filter(|i| i.kind == Kind::Song).count();
         let seconds: f64 = s.queue.iter().map(|i| i.seconds).sum();
-        s.queue.len() < BUFFER_ITEMS && (songs < BUFFER_SONGS || seconds < BUFFER_SECONDS)
+        let (items, min_songs, min_seconds) = match s.music.engine {
+            MusicEngine::Yue2 => (BUFFER_ITEMS, BUFFER_SONGS, BUFFER_SECONDS),
+            MusicEngine::AceStep => (ACE_BUFFER_ITEMS, ACE_BUFFER_SONGS, ACE_BUFFER_SECONDS),
+        };
+        s.queue.len() < items && (songs < min_songs || seconds < min_seconds)
     }
 
     /// The last finished song a break can talk about.
@@ -670,10 +708,13 @@ impl Station {
         std::fs::create_dir_all(&dir).map_err(|e| io(&dir, e))?;
         let out = dir.join("song.wav");
         let _ = std::fs::remove_file(&out);
-        let length = self.lock().direction.length.seconds();
+        let (length, music) = {
+            let s = self.lock();
+            (s.direction.length.seconds(), s.music.clone())
+        };
         self.update_job(|j| j.step_started_at = now_ms());
         backend.changed();
-        let provenance = backend.compose(&draft, job.seed, length, &out)?;
+        let provenance = backend.compose(&draft, job.seed, length, &music, &out)?;
         let mut audio = audio::decode(&out)?;
         let checks = audio::check(&audio, MIN_SONG_SECONDS)?;
         audio::normalize(&mut audio);

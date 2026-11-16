@@ -128,6 +128,12 @@ fn a_plan_pins_language_sizes_the_cache_and_keeps_vae_tiles_small() {
         ("[Instrumental]", "unknown")
     );
 
+    // A code the LM does not know would be forced on it; it decides instead.
+    let klingon = song(serde_json::json!({
+        "style": "x", "lyrics": "[Verse]\nla", "seed": 1, "seconds": 60, "language": "tlh"
+    }));
+    assert_eq!(plan(&dir, &klingon, gpu(12 * GIB)).unwrap().language, "");
+
     let too_long = song(serde_json::json!({
         "style": "x", "lyrics": "la ".repeat(3000), "seed": 1, "seconds": 600
     }));
