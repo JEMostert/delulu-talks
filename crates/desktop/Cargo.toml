@@ -1,7 +1,8 @@
 [package]
-name = "delulu-insert"
+name = "delulu-desktop"
 version.workspace = true
 edition.workspace = true
+description = "Desktop integration through the XDG portals: the global shortcut and typing into other windows."
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
@@ -10,4 +11,7 @@ arboard.workspace = true
 ashpd.workspace = true
 zbus.workspace = true
 tokio.workspace = true
+futures-util.workspace = true
+dirs.workspace = true
 async-trait = "0.1"
+delulu-core = { path = "../core" }

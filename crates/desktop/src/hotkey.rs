@@ -1,4 +1,4 @@
-pub const APP_ID: &str = "com.joran.delulu-talks";
+pub use crate::APP_ID;
 pub const SHORTCUT_ID: &str = "dictate";
 pub const DEFAULT_TRIGGER: &str = "Super+Z";
 /// The hold/tap rules live in `delulu-core` so the daemon shares them.
@@ -182,8 +182,8 @@ mod tests {
 
 #[cfg(test)]
 mod portal_tests {
+    use super::portal::{Portal, PortalEvent, PortalSession};
     use super::*;
-    use crate::portal::{Portal, PortalEvent, PortalSession};
     use std::{future::Future, pin::Pin, sync::Mutex};
 
     struct Mock {
@@ -265,7 +265,7 @@ mod portal_tests {
     #[test]
     fn desktop_entry_is_hidden_and_respects_existing_files() {
         let base = std::env::temp_dir().join(format!(
-            "delulu-hotkey-{}-{}",
+            "delulu-desktop-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

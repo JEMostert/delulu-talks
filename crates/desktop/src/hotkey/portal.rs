@@ -1,4 +1,4 @@
-use crate::{APP_ID, SHORTCUT_ID};
+use super::{APP_ID, SHORTCUT_ID};
 use ashpd::desktop::{
     global_shortcuts::{GlobalShortcuts, NewShortcut, Shortcut},
     Session,

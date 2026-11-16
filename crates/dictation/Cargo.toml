@@ -1,0 +1,17 @@
+[package]
+name = "delulu-dictation"
+version.workspace = true
+edition.workspace = true
+description = "The dictation pipeline shared by the Delulu Talks app and daemon: stop path, context, cleanup supervisor and speech engine thread."
+
+[dependencies]
+delulu-cleanup = { path = "../cleanup" }
+delulu-desktop = { path = "../desktop" }
+delulu-models = { path = "../models" }
+delulu-store = { path = "../store" }
+delulu-stt = { path = "../stt" }
+serde.workspace = true
+tokio = { version = "1", default-features = false, features = ["rt", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }

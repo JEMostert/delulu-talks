@@ -162,7 +162,7 @@ pub(crate) async fn bind_hotkey(app: &tauri::AppHandle) {
     }
     let callback_app = app.clone();
     let (hotkey, status) = Hotkey::bind(
-        delulu_hotkey::DEFAULT_TRIGGER,
+        delulu_desktop::hotkey::DEFAULT_TRIGGER,
         shell.events.clone(),
         Box::new(move |status| update(&callback_app, |s| s.hotkey = status)),
     )
@@ -171,7 +171,7 @@ pub(crate) async fn bind_hotkey(app: &tauri::AppHandle) {
     update(app, |s| s.hotkey = status);
 }
 #[tauri::command]
-pub(crate) async fn prepare_insert(app: tauri::AppHandle) -> delulu_insert::InsertStatus {
+pub(crate) async fn prepare_insert(app: tauri::AppHandle) -> delulu_desktop::insert::InsertStatus {
     let shell = app.state::<Shell>();
     if shell.no_portals {
         return status_value(&shell).insert;

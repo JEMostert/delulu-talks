@@ -7,7 +7,7 @@ use ashpd::desktop::{PersistMode, Session};
 use async_trait::async_trait;
 use zbus::zvariant::Value;
 
-pub const APP_ID: &str = "com.joran.delulu-talks";
+pub use crate::APP_ID;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PasteKey {
     ShiftInsert,

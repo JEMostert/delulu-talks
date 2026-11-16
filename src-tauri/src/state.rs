@@ -5,8 +5,8 @@ use super::*;
 pub(crate) struct Status {
     pub(crate) phase: String,
     pub(crate) message: Option<String>,
-    pub(crate) hotkey: delulu_hotkey::HotkeyStatus,
-    pub(crate) insert: delulu_insert::InsertStatus,
+    pub(crate) hotkey: delulu_desktop::hotkey::HotkeyStatus,
+    pub(crate) insert: delulu_desktop::insert::InsertStatus,
     pub(crate) backend: Option<String>,
     pub(crate) model: Option<String>,
     pub(crate) data_dir: String,
@@ -28,21 +28,11 @@ pub(crate) struct Shell {
     /// `--toggle` started the app: start recording once the model is ready.
     pub(crate) pending_toggle: AtomicBool,
     pub(crate) pill: Pill,
-    pub(crate) cleanup: cleanup::Cleanup,
+    pub(crate) cleanup: Arc<cleanup::Supervisor>,
     /// What recent dictations were about; memory only.
     pub(crate) context: context::Context,
     /// Delulu FM is on air and needs the cleanup helper as its writer.
     pub(crate) radio_writer: AtomicBool,
-}
-pub(crate) enum EngineJob {
-    Load(String),
-    /// Samples, language setting, Whisper prompt from the context.
-    Transcribe(
-        Vec<f32>,
-        delulu_stt::Language,
-        Option<String>,
-        tokio::sync::oneshot::Sender<Result<delulu_stt::Transcript, String>>,
-    ),
 }
 pub(crate) fn status_value(s: &Shell) -> Status {
     s.status.lock().unwrap_or_else(|e| e.into_inner()).clone()

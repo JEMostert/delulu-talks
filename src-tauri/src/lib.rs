@@ -1,5 +1,5 @@
-use delulu_hotkey::{Command, Gesture, Hotkey, KeyEvent};
-use delulu_insert::{InsertOutcome, Inserter, PasteKey};
+use delulu_desktop::hotkey::{Command, Gesture, Hotkey, KeyEvent};
+use delulu_desktop::insert::Inserter;
 use delulu_overlay::{Pill, PillState};
 use delulu_store::{HistoryEntry, InsertMode, NewEntry, Settings, Store};
 use serde::Serialize;
@@ -62,9 +62,12 @@ pub fn run() {
     // Unattended end-to-end runs must never open desktop permission dialogs.
     let no_portals = std::env::var("DELULU_NO_PORTALS").as_deref() == Ok("1");
     let data_dir = store.data_dir().to_string_lossy().into_owned();
-    let cleanup = cleanup::Cleanup::new(
+    let app_slot: cleanup::AppSlot = Default::default();
+    let cleanup = cleanup::supervisor(
+        &store,
         initial_settings.cleanup,
         delulu_stt::file_ready(&store.models_dir(), &cleanup::CLEANUP_MODEL),
+        app_slot.clone(),
     );
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {
@@ -88,7 +91,7 @@ pub fn run() {
                 phase: "needsSetup".into(),
                 message: None,
                 hotkey: if no_portals {
-                    delulu_hotkey::HotkeyStatus {
+                    delulu_desktop::hotkey::HotkeyStatus {
                         bound: false,
                         trigger: None,
                         error: Some("Portals disabled for unattended tests".into()),
@@ -97,7 +100,7 @@ pub fn run() {
                     Default::default()
                 },
                 insert: if no_portals {
-                    delulu_insert::InsertStatus {
+                    delulu_desktop::insert::InsertStatus {
                         ready: false,
                         error: Some("Portals disabled for unattended tests".into()),
                     }
@@ -127,6 +130,7 @@ pub fn run() {
         })
         .setup(move |app| {
             let handle = app.handle().clone();
+            let _ = app_slot.set(handle.clone());
             tray::create(app)?;
             let s = app.state::<Shell>();
             let settings = s.store.settings();
@@ -225,25 +229,4 @@ pub fn run() {
                 radio::shutdown(app);
             }
         });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[tokio::test]
-    async fn waits_for_release_and_times_out() {
-        let mut polls = 0;
-        assert!(
-            wait_release(
-                || {
-                    polls += 1;
-                    polls < 3
-                },
-                Duration::from_millis(100)
-            )
-            .await
-        );
-        assert!(!wait_release(|| true, Duration::from_millis(15)).await);
-        assert!(wait_release(|| false, Duration::ZERO).await);
-    }
 }
