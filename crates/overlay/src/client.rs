@@ -349,10 +349,10 @@ fn deliver(m: &Message, running: &mut Option<Running>, programs: &mut Programs) 
         return;
     };
     line.push(b'\n');
-    // A dead pill gets one replacement per message; a program that cannot
-    // start at all hands over to the next one at once.
-    let mut restarts = 0;
-    while restarts < 2 {
+    // Until a pill takes it: a dead one is replaced, and each program's
+    // failure limit hands over to the next, so this ends with a running pill
+    // or none left to try.
+    loop {
         if running.is_none() {
             let Some(program) = programs.current() else {
                 return;
@@ -371,7 +371,6 @@ fn deliver(m: &Message, running: &mut Option<Running>, programs: &mut Programs) 
         }
         let (code, ran) = running.take().expect("running").reap();
         programs.exited(code, ran);
-        restarts += 1;
     }
 }
 
@@ -504,27 +503,26 @@ mod tests {
         }
     }
 
-    #[test]
-    fn an_unavailable_native_pill_hands_its_state_to_the_helper() {
-        let dir = temp_dir("fallback");
+    /// A writer whose native pill runs `native_exit` (a shell command) and
+    /// whose helper records what it reads. Sends `first`, then Transcribing,
+    /// waiting for the helper to show each; returns the native pill's starts.
+    fn hand_over(name: &str, native_exit: &str, first: Message) -> usize {
+        let dir = temp_dir(name);
         let (native, helper) = (dir.join("delulu-pill"), dir.join("delulu-talks"));
         let (starts, out) = (dir.join("native-starts"), dir.join("helper-lines"));
-        script(&native, &format!("echo >> {}; exit 3", starts.display()));
+        script(
+            &native,
+            &format!("echo >> {}; {native_exit}", starts.display()),
+        );
         script(&helper, &format!("cat >> {}", out.display()));
         let (tx, rx) = mpsc::channel();
         let thread = std::thread::spawn({
             let native = native.clone();
             move || writer(rx, programs(Some(native), Fallback::Program(helper)))
         });
-        // One message and nothing after it: the native pill takes it and exits
-        // "unavailable"; the helper must still show it.
-        let error = Message {
-            state: PillState::Error,
-            level: None,
-            label: Some("No microphone".into()),
-        };
-        tx.send(error.clone()).unwrap();
-        assert_eq!(lines(&out, PillState::Error).last(), Some(&error));
+        // One message and nothing after it: the helper must still show it.
+        tx.send(first.clone()).unwrap();
+        assert_eq!(lines(&out, first.state).last(), Some(&first), "{name}");
         // Later messages go straight to the helper.
         tx.send(Message {
             state: PillState::Transcribing,
@@ -537,10 +535,29 @@ mod tests {
         drop(tx);
         thread.join().unwrap();
         let native_starts = std::fs::read_to_string(&starts).unwrap().lines().count();
-        assert_eq!(
-            native_starts, 1,
-            "an unavailable native pill is not retried"
-        );
         let _ = std::fs::remove_dir_all(&dir);
+        native_starts
+    }
+
+    #[test]
+    fn an_unavailable_native_pill_hands_its_state_to_the_helper() {
+        let error = Message {
+            state: PillState::Error,
+            level: None,
+            label: Some("No microphone".into()),
+        };
+        let starts = hand_over("unavailable", "exit 3", error);
+        assert_eq!(starts, 1, "an unavailable native pill is not retried");
+    }
+
+    #[test]
+    fn a_crashing_native_pill_hands_over_after_its_failure_limit() {
+        let listening = Message {
+            state: PillState::Listening,
+            level: None,
+            label: None,
+        };
+        let starts = hand_over("crashing", "exit 101", listening);
+        assert_eq!(starts, MAX_FAILURES as usize, "restarted, then given up");
     }
 }

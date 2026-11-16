@@ -388,9 +388,12 @@ impl X {
                     self.shown = None;
                     self.draw(core);
                 }
-                Event::ShmCompletion(_) => {
-                    if let Image::Shm(s) = &mut self.image {
-                        s.busy = false;
+                Event::ShmCompletion(e) => {
+                    // Only the current image's: a segment replaced by a rescale
+                    // may still report its last frame.
+                    match &mut self.image {
+                        Image::Shm(s) if s.seg == e.shmseg => s.busy = false,
+                        _ => continue,
                     }
                     if std::mem::take(&mut self.redraw) {
                         self.draw(core);
