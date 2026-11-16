@@ -1292,10 +1292,12 @@ version = "1.5.0"
 dependencies = [
  "delulu-audio",
  "delulu-cleanup",
+ "delulu-daemon",
  "delulu-desktop",
  "delulu-dictation",
  "delulu-models",
  "delulu-overlay",
+ "delulu-proto",
  "delulu-radio",
  "delulu-store",
  "delulu-stt",
@@ -1308,6 +1310,7 @@ dependencies = [
  "tauri-plugin-autostart",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
 ]

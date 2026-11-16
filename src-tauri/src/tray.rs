@@ -65,7 +65,10 @@ pub fn create(app: &mut tauri::App) -> tauri::Result<()> {
                     let _ = w.set_focus();
                 }
             }
-            "clear-topic" => crate::context::clear(app),
+            // The topic lives where dictation runs; a client window has none.
+            "clear-topic" if app.try_state::<crate::state::Shell>().is_some() => {
+                crate::context::clear(app)
+            }
             "quit" => app.exit(0),
             _ => {}
         });
