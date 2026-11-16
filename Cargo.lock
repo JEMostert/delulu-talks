@@ -1118,13 +1118,22 @@ version = "1.5.0"
 name = "delulu-daemon"
 version = "1.5.0"
 dependencies = [
+ "delulu-audio",
  "delulu-core",
+ "delulu-desktop",
+ "delulu-dictation",
+ "delulu-models",
+ "delulu-overlay",
  "delulu-proto",
+ "delulu-store",
+ "delulu-stt",
  "libc",
+ "log",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "zbus",
 ]
 
 [[package]]

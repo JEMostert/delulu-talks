@@ -134,6 +134,11 @@ impl Daemon {
         }
     }
 
+    /// Reads the snapshot without cloning it.
+    pub fn read<R>(&self, f: impl FnOnce(&AppState) -> R) -> R {
+        f(&self.shared.lock().state)
+    }
+
     /// Reads or changes the state machine without feeding it an input.
     pub fn with_machine<R>(&self, f: impl FnOnce(&mut Dictation) -> R) -> R {
         f(&mut self.shared.lock().machine)
@@ -532,15 +537,7 @@ fn to_value(value: impl serde::Serialize) -> Result<Value, ApiError> {
     serde_json::to_value(value).map_err(|e| ApiError::new(ErrorCode::Internal, e.to_string()))
 }
 
-pub fn phase(phase: fsm::Phase) -> DictationPhase {
-    match phase {
-        fsm::Phase::Idle => DictationPhase::Idle,
-        fsm::Phase::Recording => DictationPhase::Recording,
-        fsm::Phase::Transcribing => DictationPhase::Transcribing,
-        fsm::Phase::Cleaning => DictationPhase::Cleaning,
-        fsm::Phase::Inserting => DictationPhase::Inserting,
-    }
-}
+pub use crate::wire::phase;
 
 /// What a normal-mode skeleton daemon knows: itself, and that dictation is elsewhere.
 fn normal_state(now: u64) -> AppState {

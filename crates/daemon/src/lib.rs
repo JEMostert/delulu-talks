@@ -1,14 +1,20 @@
 //! The Delulu Talks daemon (`delulud daemon`) and its command line client.
 //!
-//! This is the skeleton of the new architecture: it serves the protocol from
-//! `delulu-proto` on a Unix socket and runs the dictation state machine from
-//! `delulu-core`. Real dictation still lives in the desktop app; in `--demo` mode
-//! a fake engine drives the machine so the UI can run against the real protocol.
+//! It serves the protocol from `delulu-proto` on a Unix socket and runs the
+//! dictation state machine from `delulu-core`. With `DELULU_DAEMON=1` it owns
+//! dictation end to end ([`live`] over [`desktop`]): shortcut, microphone,
+//! speech recognition, cleanup, typing and History. Without the flag dictation
+//! still lives in the desktop app; in `--demo` mode a fake engine drives the
+//! machine so the UI can run against the real protocol.
 
 pub mod client;
 pub mod demo;
+pub mod desktop;
 pub mod instance;
+pub mod live;
+pub mod logger;
 pub mod server;
+pub mod wire;
 
 use std::path::PathBuf;
 
