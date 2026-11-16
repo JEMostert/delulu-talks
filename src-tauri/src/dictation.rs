@@ -152,7 +152,7 @@ impl StopPorts for AppStop {
     fn settings(&self) -> Settings {
         self.shell().store.settings()
     }
-    fn whisper_prompt(&self) -> Option<String> {
+    fn whisper_prompt(&self) -> Option<delulu_stt::Prompt> {
         let s = self.shell();
         s.context.whisper_prompt(&s.store.vocabulary())
     }
@@ -160,7 +160,7 @@ impl StopPorts for AppStop {
         &self,
         samples: Vec<f32>,
         language: delulu_stt::Language,
-        prompt: Option<String>,
+        prompt: Option<delulu_stt::Prompt>,
     ) -> Result<delulu_stt::Transcript, String> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.shell()

@@ -1,6 +1,6 @@
 //! The speech engine thread: one Whisper (or Parakeet) model, loaded and used on a
 //! dedicated thread because loading and inference block for seconds.
-use delulu_stt::{Engine, Language, Transcript};
+use delulu_stt::{Engine, Language, Prompt, Transcript};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
@@ -10,7 +10,7 @@ pub enum EngineJob {
     Transcribe(
         Vec<f32>,
         Language,
-        Option<String>,
+        Option<Prompt>,
         tokio::sync::oneshot::Sender<Result<Transcript, String>>,
     ),
 }
@@ -60,7 +60,7 @@ pub fn engine_thread(host: impl EngineHost, rx: mpsc::Receiver<EngineJob>) {
                     .as_mut()
                     .ok_or_else(|| "Model is not loaded".to_string())
                     .and_then(|e| {
-                        e.transcribe(&samples, &language, prompt.as_deref())
+                        e.transcribe(&samples, &language, prompt.as_ref())
                             .map_err(|e| e.to_string())
                     });
                 let _ = reply.send(result);

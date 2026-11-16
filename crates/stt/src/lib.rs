@@ -1,5 +1,11 @@
 use std::{path::Path, time::Instant};
 
+mod closing;
+mod pieces;
+mod prompt;
+mod vad;
+pub use prompt::Prompt;
+
 /// The speech engines are rows of the shared model registry (`delulu-models`), which
 /// also downloads them. Whisper runs on the GPU and follows the language setting and
 /// context prompt; Parakeet runs on the CPU and detects the language.
@@ -74,6 +80,14 @@ fn allowed_ids(allowed: &[String]) -> Vec<i32> {
         chosen
     }
 }
+/// The codes automatic detection chooses from, as `allowed_ids` reads the setting.
+fn allowed_codes(allowed: &[String]) -> Vec<String> {
+    allowed_ids(allowed)
+        .into_iter()
+        .filter_map(whisper_rs::get_lang_str)
+        .map(str::to_string)
+        .collect()
+}
 /// The most probable language within `allowed`, given Whisper's probability for each
 /// language id. Whisper's own top choice may lie outside the set (short or quiet clips
 /// drift to Icelandic or Welsh); then the best language inside the set wins.
@@ -99,8 +113,10 @@ pub struct Engine {
 }
 enum Inner {
     Whisper {
-        _context: whisper_rs::WhisperContext,
+        context: whisper_rs::WhisperContext,
         state: whisper_rs::WhisperState,
+        /// None only if the built-in detector failed to load; then every clip is decoded.
+        vad: Option<vad::Vad>,
     },
     Parakeet(Box<transcribe_rs::onnx::parakeet::ParakeetModel>),
 }
@@ -109,6 +125,22 @@ fn threads() -> usize {
     std::thread::available_parallelism().map_or(1, |n| n.get().min(8))
 }
 fn params<'a>(language: &'a str, prompt: Option<&'a str>) -> whisper_rs::FullParams<'a, 'a> {
+    params_for(language, prompt, Redo::None)
+}
+/// How a decode differs from the normal one.
+#[derive(Clone, Copy)]
+enum Redo<'a> {
+    None,
+    /// With timestamps: whisper.cpp then decodes in segments, a different path.
+    Timestamps,
+    /// With timestamps, and without the given first tokens.
+    AvoidStart(&'a closing::AvoidStart),
+}
+fn params_for<'a>(
+    language: &'a str,
+    prompt: Option<&'a str>,
+    redo: Redo<'a>,
+) -> whisper_rs::FullParams<'a, 'a> {
     let mut p = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
     p.set_language(Some(language));
     if let Some(prompt) = prompt {
@@ -117,7 +149,16 @@ fn params<'a>(language: &'a str, prompt: Option<&'a str>) -> whisper_rs::FullPar
     }
     p.set_n_threads(threads() as i32);
     p.set_no_context(true);
-    p.set_no_timestamps(true);
+    p.set_no_timestamps(matches!(redo, Redo::None));
+    if let Redo::AvoidStart(avoid) = redo {
+        // SAFETY: `avoid` outlives the parameters and so the decode that reads them.
+        unsafe {
+            p.set_filter_logits_callback(Some(closing::avoid_start));
+            p.set_filter_logits_callback_user_data(
+                avoid as *const closing::AvoidStart as *mut std::ffi::c_void,
+            );
+        }
+    }
     p.set_print_progress(false);
     p.set_print_realtime(false);
     p.set_print_special(false);
@@ -126,13 +167,45 @@ fn params<'a>(language: &'a str, prompt: Option<&'a str>) -> whisper_rs::FullPar
 }
 
 fn silent(samples: &[f32]) -> bool {
-    // Gate only near-digital silence. Quiet speech can sit below 0.003 RMS;
-    // Whisper's no-speech probability handles recordings without speech.
+    // Gate only near-digital silence. Quiet speech can sit below 0.003 RMS; for
+    // Whisper, the speech detector handles recordings without speech.
     samples.len() < 4000
         || (samples.iter().map(|x| x * x).sum::<f32>() / samples.len() as f32).sqrt() < 0.0001
 }
 fn punctuation_only(text: &str) -> bool {
     !text.chars().any(char::is_alphanumeric)
+}
+/// Text that only describes a sound ("*Sigh*", "[Music]", "♪") or only
+/// names sighs and gasps ("Sigh. Sigh.", "Shhh!", "Pfff.") is what Whisper writes for a
+/// noise, not what someone said. Interjections ("Oh.", "Hmm.") and laughter stay:
+/// people say them, and the speech detector already drops recordings without speech.
+/// Parentheses are Whisper's style for spoken asides too ("(I agree.)"), so they stay.
+fn sound_only(text: &str) -> bool {
+    const SOUNDS: &[&str] = &["sh", "pf", "sigh", "sighs", "gasp", "gasps"];
+    let mut words = String::new();
+    let mut closer = None;
+    for c in text.chars() {
+        match closer {
+            // An unclosed description runs to the end.
+            Some(end) if c == end => closer = None,
+            Some(_) => {}
+            None => match c {
+                '*' => closer = Some('*'),
+                '[' => closer = Some(']'),
+                '♪' => words.push(' '),
+                c => words.extend(c.to_lowercase()),
+            },
+        }
+    }
+    words
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .all(|word| {
+            // "Shhhh" is "sh", "hmmm" is "hm".
+            let mut squeezed: Vec<char> = word.chars().collect();
+            squeezed.dedup();
+            SOUNDS.contains(&squeezed.into_iter().collect::<String>().as_str())
+        })
 }
 /// Whisper sometimes just repeats its prompt on a near-silent clip; that is not speech.
 /// Short replies ("yes", "GG") may well repeat a prompt word, so only longer runs count.
@@ -295,12 +368,13 @@ impl Engine {
     pub fn model_id(&self) -> &str {
         &self.id
     }
-    /// `prompt` is context from earlier dictations (names, the last sentence).
+    /// `prompt` is context from earlier dictations (names, the last sentence); Parakeet
+    /// takes none.
     pub fn transcribe(
         &mut self,
         samples: &[f32],
         language: &Language,
-        prompt: Option<&str>,
+        prompt: Option<&Prompt>,
     ) -> Result<Transcript, SttError> {
         let audio_ms = samples.len() as u64 / 16;
         if silent(samples) {
@@ -316,13 +390,60 @@ impl Engine {
         }
         let start = Instant::now();
         let (text, language) = match &mut self.inner {
-            Inner::Whisper { state, .. } => {
-                let code = match language {
-                    Language::Auto(allowed) => detect_within(state, samples, allowed)?,
-                    Language::Fixed(code) => code.as_str(),
+            Inner::Whisper {
+                context,
+                state,
+                vad,
+            } => std::thread::scope(|scope| {
+                // The detector runs on the CPU while Whisper runs on the GPU, so it adds
+                // no time to a dictation.
+                let speech = vad.as_mut().map(|vad| scope.spawn(|| vad.speech(samples)));
+                let (code, allowed) = match language {
+                    Language::Auto(allowed) => (
+                        detect_within(state, samples, allowed)?,
+                        allowed_codes(allowed),
+                    ),
+                    // A fixed language allows no other.
+                    Language::Fixed(code) => (code.as_str(), Vec::new()),
                 };
-                whisper_text(state, samples, code, prompt)?
-            }
+                let (mut pieces, language) =
+                    whisper_pieces(state, samples, code, &allowed, prompt)?;
+                let speech = speech.and_then(|handle| {
+                    handle
+                        .join()
+                        .unwrap_or_else(|_| {
+                            Err(SttError::Inference("speech detection panicked".into()))
+                        })
+                        // Better a typed noise than a lost dictation.
+                        .inspect_err(|e| log::warn!("stt: {e}; keeping the text"))
+                        .ok()
+                });
+                if speech.as_ref().is_some_and(Vec::is_empty) {
+                    // Nobody spoke: whatever Whisper wrote is invented.
+                    return Ok((String::new(), language));
+                }
+                for piece in &mut pieces {
+                    let seconds = |at: usize| at as f32 / 16_000.0;
+                    let speech = speech.as_ref().map(|stretches| {
+                        vad::speech_within(
+                            stretches,
+                            seconds(piece.range.start)..seconds(piece.range.end),
+                        )
+                    });
+                    let clip = &samples[piece.range.clone()];
+                    if closing::only_closing(&piece.text) {
+                        piece.text = recheck_closing(context, state, clip, code, piece, speech)?;
+                    } else if speech.is_some_and(|s| too_short(&piece.text, s)) {
+                        piece.text = recheck_short(state, clip, code, piece)?;
+                    }
+                }
+                let texts: Vec<String> = pieces
+                    .into_iter()
+                    .map(|p| p.text)
+                    .filter(|t| !punctuation_only(t))
+                    .collect();
+                Ok((texts.join(" "), language))
+            })?,
             Inner::Parakeet(model) => {
                 let text = model
                     .transcribe_with(samples, &Default::default())
@@ -368,10 +489,15 @@ fn load_whisper(path: &Path) -> Result<(Inner, String), SttError> {
     state
         .full(params("auto", None), &warmup_noise())
         .map_err(|e| SttError::Inference(e.to_string()))?;
+    let vad = vad::Vad::load()
+        .and_then(|mut vad| vad.speech(&warmup_noise()).map(|_| vad))
+        .inspect_err(|e| log::warn!("stt: {e}; every recording will be decoded"))
+        .ok();
     Ok((
         Inner::Whisper {
-            _context: context,
+            context,
             state,
+            vad,
         },
         backend_name(),
     ))
@@ -408,7 +534,170 @@ fn detect_within(
     Ok(choose_language(&probs, allowed))
 }
 
-/// Whisper's text and detected language; empty text when it heard no speech or only
+/// A decoded piece of a clip, and the prompt its text came from.
+struct Piece {
+    range: std::ops::Range<usize>,
+    prompt: Option<String>,
+    text: String,
+}
+
+/// Whisper's text for a clip of any length: in pieces under its 30 s window, cut at
+/// pauses (see `pieces`), in order. Each piece after the first reads the previous
+/// piece's text as its sentence, as whisper.cpp does between its own windows.
+fn whisper_pieces(
+    state: &mut whisper_rs::WhisperState,
+    samples: &[f32],
+    code: &str,
+    allowed: &[String],
+    prompt: Option<&Prompt>,
+) -> Result<(Vec<Piece>, String), SttError> {
+    let mut decoded: Vec<Piece> = Vec::new();
+    let mut language = code.to_string();
+    for range in pieces::pieces(samples) {
+        let previous = decoded
+            .iter()
+            .rfind(|p| !p.text.is_empty())
+            .map(|piece| Prompt {
+                terms: prompt.and_then(|p| p.terms.clone()),
+                sentence: Some(tail(&piece.text, 200).to_string()),
+            });
+        let (text, lang, used) = whisper_transcribe(
+            state,
+            &samples[range.clone()],
+            code,
+            allowed,
+            previous.as_ref().or(prompt),
+        )?;
+        language = lang;
+        decoded.push(Piece {
+            range,
+            prompt: used,
+            text: if punctuation_only(&text) {
+                String::new()
+            } else {
+                text
+            },
+        });
+    }
+    Ok((decoded, language))
+}
+
+fn word_count(text: &str) -> usize {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .count()
+}
+
+/// Far too little text for the speech heard: people say two to three words a second,
+/// and a piece with seconds of speech and almost no words lost them ("K u wel." for
+/// 20 s of a speech). Real dictation stays well above half a word per second.
+fn too_short(text: &str, speech_s: f32) -> bool {
+    speech_s >= 4.0 && (word_count(text) as f32) < speech_s * 0.5
+}
+
+/// A piece that is far too short for its speech, decoded again with timestamps (see
+/// `recheck_closing`). The second text wins only if it has at least twice the words.
+fn recheck_short(
+    state: &mut whisper_rs::WhisperState,
+    samples: &[f32],
+    code: &str,
+    piece: &Piece,
+) -> Result<String, SttError> {
+    let (again, _) = whisper_text_with(
+        state,
+        samples,
+        code,
+        piece.prompt.as_deref(),
+        Redo::Timestamps,
+    )?;
+    if word_count(&again) >= 2 * word_count(&piece.text).max(1) && !closing::only_closing(&again) {
+        log::info!("stt: the text was far too short for its speech; the second decode replaced it");
+        return Ok(again);
+    }
+    Ok(piece.text.clone())
+}
+
+/// A piece whose whole text is a closing phrase ("Dank u wel."), asked again. A decode
+/// with timestamps takes another path through the model and rarely does this; its text
+/// wins unless it is a closing phrase too. If both agree, the phrase stands, unless
+/// the piece holds clearly more speech than the phrase takes: then Whisper decodes once
+/// more without the phrase's first word to start with. A real thank-you comes out
+/// again (in lowercase) and the phrase stays; a sentence comes out instead of it.
+fn recheck_closing(
+    context: &whisper_rs::WhisperContext,
+    state: &mut whisper_rs::WhisperState,
+    samples: &[f32],
+    code: &str,
+    piece: &Piece,
+    speech_s: Option<f32>,
+) -> Result<String, SttError> {
+    let prompt = piece.prompt.as_deref();
+    let other = |text: &str| !text.is_empty() && !closing::only_closing(text);
+    let (again, _) = whisper_text_with(state, samples, code, prompt, Redo::Timestamps)?;
+    if other(&again) {
+        log::info!("stt: a closing phrase stood in for the clip; the second decode replaced it");
+        return Ok(again);
+    }
+    if speech_s.is_none_or(|s| s <= closing::LONGER_THAN_A_PHRASE_S) {
+        return Ok(piece.text.clone());
+    }
+    let word = closing::first_word(&piece.text).unwrap_or_default();
+    let mut tokens = Vec::new();
+    for start in [format!(" {word}"), word.to_string()] {
+        if let Some(&first) = context
+            .tokenize(&start, 8)
+            .map_err(|e| SttError::Inference(e.to_string()))?
+            .first()
+        {
+            tokens.push(first);
+        }
+    }
+    let avoid = closing::AvoidStart {
+        tokens,
+        timestamp_begin: context.token_beg(),
+    };
+    let (third, _) = whisper_text_with(state, samples, code, prompt, Redo::AvoidStart(&avoid))?;
+    if other(&third) {
+        log::info!("stt: a closing phrase stood in for {speech_s:?} s of speech; replaced");
+        return Ok(third);
+    }
+    Ok(piece.text.clone())
+}
+
+/// The last `max` characters of `text`, from the start of a word.
+fn tail(text: &str, max: usize) -> &str {
+    let count = text.chars().count();
+    if count <= max {
+        return text;
+    }
+    let cut = &text[text.char_indices().nth(count - max).map_or(0, |(i, _)| i)..];
+    cut.find(' ')
+        .map_or(cut, |space| cut[space + 1..].trim_start())
+}
+
+/// Whisper's text in `code`, with the prompt built for that language. If the text still
+/// comes out in the other allowed language, the previous sentence pulled it there (it
+/// was misjudged, or the clip's language was): decode once more without it and keep
+/// that result, whatever its language, so a genuinely mixed sentence is never lost.
+fn whisper_transcribe(
+    state: &mut whisper_rs::WhisperState,
+    samples: &[f32],
+    code: &str,
+    allowed: &[String],
+    prompt: Option<&Prompt>,
+) -> Result<(String, String, Option<String>), SttError> {
+    let full = prompt.and_then(|p| p.for_language(code));
+    let (text, language) = whisper_text(state, samples, code, full.as_deref())?;
+    let terms = prompt.and_then(Prompt::terms_only);
+    if full != terms && prompt::flipped(&text, code, allowed) {
+        log::info!("stt: text not in {code} with the previous sentence; decoding without it");
+        let (text, language) = whisper_text(state, samples, code, terms.as_deref())?;
+        return Ok((text, language, terms));
+    }
+    Ok((text, language, full))
+}
+
+/// Whisper's text and detected language; empty text when it only described a sound or
 /// repeated its prompt.
 fn whisper_text(
     state: &mut whisper_rs::WhisperState,
@@ -416,16 +705,26 @@ fn whisper_text(
     code: &str,
     prompt: Option<&str>,
 ) -> Result<(String, String), SttError> {
+    whisper_text_with(state, samples, code, prompt, Redo::None)
+}
+
+fn whisper_text_with(
+    state: &mut whisper_rs::WhisperState,
+    samples: &[f32],
+    code: &str,
+    prompt: Option<&str>,
+    redo: Redo,
+) -> Result<(String, String), SttError> {
     state
-        .full(params(code, prompt), samples)
+        .full(params_for(code, prompt, redo), samples)
         .map_err(|e| SttError::Inference(e.to_string()))?;
     let language = whisper_rs::get_lang_str(state.full_lang_id_from_state())
         .unwrap_or(code)
         .to_string();
-    let segments: Vec<_> = state.as_iter().collect();
-    let no_speech = segments.len() == 1 && segments[0].no_speech_probability() > 0.8;
-    let text = segments
-        .iter()
+    // No no-speech check here: whisper.cpp reads that probability after the task tokens,
+    // where large-v3-turbo never predicts it (it stays near 0 on pure noise).
+    let text = state
+        .as_iter()
         .map(|s| {
             s.to_str_lossy()
                 .map(|s| s.trim().to_owned())
@@ -433,7 +732,7 @@ fn whisper_text(
         })
         .collect::<Result<Vec<_>, _>>()?
         .join(" ");
-    let text = if no_speech || echoes(&text, prompt) {
+    let text = if sound_only(&text) || echoes(&text, prompt) {
         String::new()
     } else {
         text.trim().to_string()
@@ -500,6 +799,47 @@ mod tests {
         assert_eq!(choose_language(&probs, &[]), "nl");
         assert_eq!(choose_language(&probs, &set(&["xx", "", "a\0b"])), "nl");
         assert_eq!(allowed_ids(&set(&["xx"])), allowed_ids(&set(&["nl", "en"])));
+    }
+    #[test]
+    fn sound_descriptions_are_not_speech() {
+        for noise in [
+            "*Sigh*",
+            "*sad sigh*",
+            "[Music]",
+            "♪",
+            "*click click click click cli",
+            "*clap* *clap* *clap*",
+            "Sigh. Sigh. Sigh.",
+            "Shhhh!",
+            "Pfff.",
+        ] {
+            assert!(sound_only(noise), "{noise}");
+        }
+        for speech in [
+            "Okay.",
+            "Oh.",
+            "Hmm.",
+            "Ah! Ah! Ah!",
+            "Haha, nice.",
+            "Oh, that works.",
+            "*Sigh* Fine, merge it.",
+            "Ship it (after the tests).",
+            "(I agree.)",
+        ] {
+            assert!(!sound_only(speech), "{speech}");
+        }
+    }
+    #[test]
+    fn text_far_too_short_for_its_speech() {
+        assert!(too_short("K u wel.", 20.0));
+        assert!(too_short("", 5.0));
+        assert!(
+            !too_short("Ja, doe maar.", 1.5),
+            "short clips are never judged"
+        );
+        // A slow speaker with long words: 2 words in 4 s is still enough.
+        assert!(!too_short("Uitstekend, bedankt.", 4.0));
+        assert!(!too_short(&"woord ".repeat(12), 20.0));
     }
     #[test]
     fn punctuation_filter() {

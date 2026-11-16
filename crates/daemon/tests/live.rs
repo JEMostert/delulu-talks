@@ -12,7 +12,7 @@ use delulu_dictation::stop::{InsertResult, Recorded};
 use delulu_overlay::PillState;
 use delulu_proto::state::*;
 use delulu_store::{InsertMode, Store};
-use delulu_stt::{Language, Transcript};
+use delulu_stt::{Language, Prompt, Transcript};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::path::Path;
@@ -122,7 +122,7 @@ impl Platform for Fake {
         &self,
         _: Vec<f32>,
         _: Language,
-        _: Option<String>,
+        _: Option<Prompt>,
     ) -> BoxFuture<'_, Result<Transcript, String>> {
         Box::pin(async move {
             self.transcribing.notify_one();
