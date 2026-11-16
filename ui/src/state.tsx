@@ -233,6 +233,24 @@ export function useAppState() {
     }
   }
   const selectedModel = models.find((m) => m.id === settings?.model);
+  // A model this version no longer runs was selected: settings now name its
+  // replacement. Say so once and download it, so dictation works again.
+  const replacing = useRef(false);
+  useEffect(() => {
+    if (
+      !settings?.firstRunDone ||
+      !selectedModel?.replaces ||
+      selectedModel.downloaded ||
+      downloading ||
+      replacing.current
+    )
+      return;
+    replacing.current = true;
+    setNotice(
+      `${selectedModel.replaces} was replaced by ${selectedModel.label}. Downloading it now (${Math.round(selectedModel.bytes / 1000000)} MB).`,
+    );
+    void download();
+  }, [settings?.firstRunDone, selectedModel, downloading]);
   const modelReady =
     selectedModel?.downloaded ||
     (progress != null &&

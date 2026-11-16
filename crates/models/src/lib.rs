@@ -116,10 +116,10 @@ macro_rules! whisper_cpp {
         )
     };
 }
-macro_rules! parakeet_onnx {
+macro_rules! parakeet_ultra {
     ($file:literal) => {
         concat!(
-            "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/",
+            "https://huggingface.co/handy-computer/parakeet-ultra-gguf/resolve/a1539be1b849ea7463b88343e5277b373d0c4ea9/",
             $file
         )
     };
@@ -159,45 +159,78 @@ pub static WHISPER_SMALL: Model = Model {
     terms: None,
 };
 
-static PARAKEET_FILES: [ModelFile; 4] = [
+/// CC BY 4.0 asks for credit and a note of changes; the GGUF repository ships the
+/// licence and that note (NOTICE), and both are downloaded with the model.
+pub static PARAKEET_ULTRA_TERMS: Terms = Terms {
+    name: "CC BY 4.0",
+    url: "https://huggingface.co/handy-computer/parakeet-ultra-gguf/blob/a1539be1b849ea7463b88343e5277b373d0c4ea9/LICENSE",
+    credit: "Parakeet Ultra by Moondream, post-trained from NVIDIA Parakeet TDT 0.6B v3",
+    text: "Parakeet Ultra by Moondream (https://huggingface.co/moondream/parakeet-ultra) is \
+post-trained from NVIDIA's Parakeet TDT 0.6B v3 and released under the Creative Commons \
+Attribution 4.0 International licence. These files are the GGUF conversion by handy-computer \
+for transcribe.cpp: the weights were repackaged and stored at 8-bit precision, not retrained. \
+The licence and the notice of these changes are downloaded with the model.",
+};
+
+static PARAKEET_ULTRA_FILES: [ModelFile; 3] = [
     ModelFile {
-        file: "parakeet-tdt-0.6b-v3-int8/encoder-model.int8.onnx",
-        url: parakeet_onnx!("encoder-model.int8.onnx"),
-        sha256: "6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09",
-        bytes: 652_183_999,
+        file: "parakeet-ultra/LICENSE",
+        url: parakeet_ultra!("LICENSE"),
+        sha256: "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+        bytes: 18_657,
     },
     ModelFile {
-        file: "parakeet-tdt-0.6b-v3-int8/decoder_joint-model.int8.onnx",
-        url: parakeet_onnx!("decoder_joint-model.int8.onnx"),
-        sha256: "eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70",
-        bytes: 18_202_004,
+        file: "parakeet-ultra/NOTICE",
+        url: parakeet_ultra!("NOTICE"),
+        sha256: "8999f96f7a130b258418abd74c119b470efd906d25027759cddaea074831f1e1",
+        bytes: 397,
     },
     ModelFile {
-        file: "parakeet-tdt-0.6b-v3-int8/nemo128.onnx",
-        url: parakeet_onnx!("nemo128.onnx"),
-        sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
-        bytes: 139_764,
-    },
-    ModelFile {
-        file: "parakeet-tdt-0.6b-v3-int8/vocab.txt",
-        url: parakeet_onnx!("vocab.txt"),
-        sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
-        bytes: 93_939,
+        file: "parakeet-ultra/parakeet-ultra-Q8_0.gguf",
+        url: parakeet_ultra!("parakeet-ultra-Q8_0.gguf"),
+        sha256: "007a59761e9258779f189df396b50d12b83bb5b79e66df4b955c230d2f2a0a59",
+        bytes: 740_363_168,
     },
 ];
 
-/// NVIDIA Parakeet TDT 0.6B v3, int8 ONNX export by istupakov.
-pub static PARAKEET: Model = Model {
-    id: "parakeet-tdt-0.6b-v3",
+/// Parakeet Ultra, Moondream's post-trained Parakeet TDT 0.6B v3, run by transcribe.cpp
+/// in `delulu-engine stt`: Vulkan when there is a graphics card, else the processor.
+pub static PARAKEET_ULTRA: Model = Model {
+    id: "parakeet-ultra-q8_0",
     role: Role::Stt,
     engine: Engine::Parakeet,
-    label: "Parakeet TDT 0.6B v3",
+    label: "Parakeet Ultra",
     license: "CC BY 4.0",
-    path: "parakeet-tdt-0.6b-v3-int8",
-    files: &PARAKEET_FILES,
-    bytes: total(&PARAKEET_FILES),
-    terms: None,
+    // The engine loads the folder's .gguf file; LICENSE and NOTICE sit next to it.
+    path: "parakeet-ultra",
+    files: &PARAKEET_ULTRA_FILES,
+    bytes: total(&PARAKEET_ULTRA_FILES),
+    terms: Some(&PARAKEET_ULTRA_TERMS),
 };
+
+/// A model the app no longer runs, and what takes its place.
+#[derive(Debug)]
+pub struct Retired {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// Its folder or file in the models folder, left from earlier versions.
+    pub path: &'static str,
+    pub replaced_by: &'static Model,
+}
+
+/// Parakeet TDT 0.6B v3 ran on ONNX Runtime inside the app until version 1.6;
+/// Parakeet Ultra replaces it (more accurate, same languages, same licence).
+pub static RETIRED: [Retired; 1] = [Retired {
+    id: "parakeet-tdt-0.6b-v3",
+    label: "Parakeet TDT 0.6B v3",
+    path: "parakeet-tdt-0.6b-v3-int8",
+    replaced_by: &PARAKEET_ULTRA,
+}];
+
+/// The retired model `id`, if it is one.
+pub fn retired(id: &str) -> Option<&'static Retired> {
+    RETIRED.iter().find(|r| r.id == id)
+}
 
 /// Gemma 4 E4B, the text cleanup model.
 pub static GEMMA_4_E4B: Model = Model {
@@ -509,7 +542,7 @@ pub static SUPERTONIC_3: Model = Model {
 pub static MODELS: [&Model; 9] = [
     &WHISPER_TURBO,
     &WHISPER_SMALL,
-    &PARAKEET,
+    &PARAKEET_ULTRA,
     &GEMMA_4_E4B,
     &YUE2_3B,
     &ACE_STEP_TURBO,
@@ -538,6 +571,21 @@ mod tests {
         }
         assert_eq!(supertonic_voice(" m3 ").as_deref(), Some("M3"));
         assert_eq!(supertonic_voice("X1"), None);
+    }
+
+    #[test]
+    fn a_retired_model_is_replaced_by_a_registered_one() {
+        for r in &RETIRED {
+            assert!(get(r.id).is_none(), "{} is still offered", r.id);
+            assert_eq!(
+                get(r.replaced_by.id).map(|m| m.role),
+                Some(r.replaced_by.role)
+            );
+        }
+        assert_eq!(
+            retired("parakeet-tdt-0.6b-v3").map(|r| r.replaced_by.id),
+            Some("parakeet-ultra-q8_0")
+        );
     }
 
     #[test]

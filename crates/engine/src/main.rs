@@ -7,7 +7,8 @@
 //! - `delulu-engine tts …`: Supertonic 3 speech on the CPU (ONNX Runtime), for
 //!   `delulu speak` and Delulu FM's host.
 //! - `delulu-engine stt`: dictation's speech to text (Whisper through whisper.cpp,
-//!   or Parakeet), resident while dictation is on; speaks the worker protocol.
+//!   or Parakeet Ultra through transcribe.cpp), resident while dictation is on; speaks
+//!   the worker protocol.
 //! - `delulu-engine probe`: version, roles and compute devices as JSON; loads no model.
 use std::process::ExitCode;
 

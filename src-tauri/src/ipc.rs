@@ -65,12 +65,7 @@ pub(crate) fn set_settings(
     // Internal flag: the app owns it, so a stale UI copy can't reset it.
     settings.cleanup_model_ok = old.cleanup_model_ok;
     let diff = settings_diff(&old, &settings);
-    if diff.model
-        && matches!(
-            status_value(&s).phase.as_str(),
-            "recording" | "transcribing" | "loadingModel"
-        )
-    {
+    if diff.model && model_change_blocked(&status_value(&s).phase) {
         return Err("Wait for dictation or model loading to finish".into());
     }
     s.store

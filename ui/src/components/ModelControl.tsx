@@ -27,7 +27,7 @@ const engines: { value: ipc.Engine; label: string; about: string }[] = [
     value: "parakeet",
     label: "Parakeet",
     about:
-      "Fastest. Runs on the processor and recognizes 25 European languages on its own.",
+      "Fastest. Parakeet Ultra runs on your graphics card or the processor and hears 25 European languages on its own, but takes no vocabulary.",
   },
 ];
 /** Speech engine, then that engine's model, with its download state. */
@@ -46,6 +46,8 @@ export function ModelControl({
     progress?.totalBytes && progress.id === settings?.model
       ? Math.round((progress.doneBytes / progress.totalBytes) * 100)
       : 0;
+  // A failed download belongs to its model, not to the one picked after it.
+  const error = progress?.id === settings?.model ? progress?.error : null;
   const engine = selectedModel?.engine ?? "whisper";
   const engineModels = models.filter((m) => m.engine === engine);
   // A downloaded model of the other engine first, so switching back is instant.
@@ -127,14 +129,27 @@ export function ModelControl({
             onClick={() => void download()}
           >
             <Icon name="download" size={16} />
-            {progress?.error ? "Try again" : "Download"}
+            {error ? "Try again" : "Download"}
           </button>
         </div>
       )}
-      {progress?.error && (
+      {selectedModel?.credit && (
+        <p className="model-note">
+          {selectedModel.credit}. Licence:{" "}
+          {selectedModel.licenseUrl ? (
+            <a href={selectedModel.licenseUrl} target="_blank" rel="noreferrer">
+              {selectedModel.license}
+            </a>
+          ) : (
+            selectedModel.license
+          )}
+          .
+        </p>
+      )}
+      {error && (
         <p className="inline-error" role="alert">
           <Icon name="alert" size={16} />
-          {progress.error}
+          {error}
         </p>
       )}
     </div>

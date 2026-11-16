@@ -1,0 +1,15 @@
+[package]
+name = "delulu-transcribe"
+version.workspace = true
+edition.workspace = true
+description = "Parakeet Ultra speech to text through the vendored transcribe.cpp, built against delulu-engine's one ggml."
+links = "delulu_transcribe"
+
+[dependencies]
+# The one ggml in delulu-engine. Its build exports DEP_LLAMA_GGML_CMAKE_DIR for this
+# build script, and transcribe.cpp's library lands before the ggml archives.
+llama-cpp-sys-2 = { version = "=0.1.160", default-features = false }
+
+[build-dependencies]
+cmake = "0.1"
+cc = "1"

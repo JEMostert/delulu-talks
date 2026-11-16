@@ -1,0 +1,44 @@
+diff -ruN a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt	2026-11-11 11:20:32.000000000 +0100
++++ b/CMakeLists.txt	2026-11-16 18:27:56.548864708 +0100
+@@ -448,7 +448,16 @@
+ endif()
+ 
+ # ggml's CMake declares its own warning flags; let it.
+-add_subdirectory(ggml)
++# Delulu: TRANSCRIBE_USE_SYSTEM_GGML builds against an installed ggml (the one
++# llama.cpp builds for delulu-engine) instead of the vendored copy, which is not
++# shipped in this tree.
++option(TRANSCRIBE_USE_SYSTEM_GGML "Use an installed ggml (find_package)" OFF)
++if(TRANSCRIBE_USE_SYSTEM_GGML)
++    find_package(ggml REQUIRED)
++    add_library(ggml ALIAS ggml::ggml)
++else()
++    add_subdirectory(ggml)
++endif()
+ 
+ # -----------------------------------------------------------------------------
+ # Subdirs
+diff -ruN a/src/transcribe.cpp b/src/transcribe.cpp
+--- a/src/transcribe.cpp	2026-11-11 11:20:32.000000000 +0100
++++ b/src/transcribe.cpp	2026-11-16 18:27:56.549350940 +0100
+@@ -718,6 +718,11 @@
+     return (host_mask & env_backend_mask()) | TRANSCRIBE_BACKEND_MASK_CPU;
+ }
+ 
++#ifdef TRANSCRIBE_SHARED_GGML
++// Delulu: built against the host's ggml (llama.cpp's), which does not carry the
++// registry-filter patch (patches/ggml/0002). Every compiled-in backend registers,
++// as with the default mask; transcribe_init_backends_ex() cannot narrow them.
++#else
+ // Called from inside ggml's registry: must not touch the registry or throw.
+ static bool backend_reg_filter(const char * name) noexcept {
+     const uint32_t host    = static_cast<uint32_t>(s_backend_mask_state.fetch_or(k_backend_mask_fixed));
+@@ -737,6 +742,7 @@
+     ggml_backend_set_reg_filter(&backend_reg_filter);
+     return true;
+ }();
++#endif
+ 
+ static transcribe_status set_host_backend_mask(uint32_t mask) {
+     uint64_t state = s_backend_mask_state.load();

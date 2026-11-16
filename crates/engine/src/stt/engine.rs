@@ -1,6 +1,7 @@
 //! The speech engines of `delulu-engine stt`: Whisper large-v3-turbo through whisper.cpp
-//! (on the engine's one ggml) and Parakeet v3 through ONNX Runtime. One model at a time;
-//! the role (`super`) drives it from the worker protocol.
+//! and Parakeet Ultra through transcribe.cpp (`delulu-transcribe`), both on the
+//! engine's one ggml. One model at a time; the role (`super`) drives it from the
+//! worker protocol.
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
@@ -65,7 +66,7 @@ enum Inner {
         /// None only if the built-in detector failed to load; then every clip is decoded.
         vad: Option<vad::Vad>,
     },
-    Parakeet(Box<transcribe_rs::onnx::parakeet::ParakeetModel>),
+    Parakeet(delulu_transcribe::Ultra),
 }
 
 fn threads() -> usize {
@@ -346,9 +347,8 @@ impl Engine {
             })?,
             Inner::Parakeet(model) => {
                 let text = model
-                    .transcribe_with(samples, &Default::default())
+                    .transcribe(samples, cancelled)
                     .map_err(|e| SttError::Inference(e.to_string()))?
-                    .text
                     .trim()
                     .to_string();
                 // A fixed language setting wins over a guess from a short phrase.
@@ -403,17 +403,35 @@ fn load_whisper(path: &Path) -> Result<(Inner, String), SttError> {
     ))
 }
 
+/// Parakeet Ultra from its folder's `.gguf` (or a `.gguf` path), warmed up: on the
+/// graphics card when there is one, else, or when the card fails to load or run it,
+/// on the processor.
 fn load_parakeet(path: &Path) -> Result<(Inner, String), SttError> {
-    use transcribe_rs::onnx::{parakeet::ParakeetModel, Quantization};
-    let mut model = ParakeetModel::load(path, &Quantization::Int8)
-        .map_err(|e| SttError::Model(e.to_string()))?;
-    model
-        .transcribe_with(&warmup_noise(), &Default::default())
-        .map_err(|e| SttError::Inference(e.to_string()))?;
-    Ok((
-        Inner::Parakeet(Box::new(model)),
-        "CPU (ONNX Runtime)".to_string(),
-    ))
+    let file = if path.is_dir() {
+        std::fs::read_dir(path)
+            .map_err(|e| SttError::Model(format!("{}: {e}", path.display())))?
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .find(|p| p.extension().is_some_and(|x| x == "gguf"))
+            .ok_or_else(|| SttError::Model(format!("no .gguf in {}", path.display())))?
+    } else {
+        path.to_path_buf()
+    };
+    let gpu = backend_name();
+    let warm = |gpu: bool| {
+        let mut model = delulu_transcribe::Ultra::load(&file, gpu, threads())?;
+        model.transcribe(&warmup_noise(), || false)?;
+        Ok::<_, delulu_transcribe::Error>(model)
+    };
+    if gpu != "CPU" {
+        match warm(true) {
+            Ok(model) => return Ok((Inner::Parakeet(model), gpu)),
+            Err(e) => {
+                log::warn!("stt: Parakeet on the graphics card failed ({e}); using the processor")
+            }
+        }
+    }
+    let model = warm(false).map_err(|e| SttError::Model(e.to_string()))?;
+    Ok((Inner::Parakeet(model), "CPU".to_string()))
 }
 
 /// The most probable allowed language, from the same detection pass Whisper's own

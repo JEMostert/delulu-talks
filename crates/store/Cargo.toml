@@ -3,6 +3,8 @@ name = "delulu-store"
 version.workspace = true
 edition.workspace = true
 [dependencies]
+# The model registry: settings naming a retired model move to its replacement.
+delulu-models = { path = "../models" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

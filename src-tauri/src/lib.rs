@@ -268,9 +268,22 @@ fn run_app() {
                     let _ = prepare_insert(a).await;
                 });
             }
-            if let Some(id) = ready_model(&s.store.models_dir(), &settings.model) {
+            let models_dir = s.store.models_dir();
+            if let Some(id) = ready_model(&models_dir, &settings.model) {
                 // Cleanup syncs once Whisper has loaded.
                 load_model(&handle, id);
+            } else if let Some(retired) = delulu_stt::replaces_on_disk(&models_dir, &settings.model)
+                .filter(|_| initial_state.first_run_done)
+            {
+                // A model this version no longer runs was the only one: the window
+                // downloads its replacement (see ui/src/state.tsx) instead of setup.
+                let message = format!(
+                    "Downloading {}, which replaces {}",
+                    delulu_stt::model_info(&settings.model).map_or("the new model", |m| m.label),
+                    retired.label
+                );
+                phase(&handle, "loadingModel", Some(message));
+                cleanup::whisper_settled(&handle);
             } else {
                 phase(&handle, "needsSetup", None);
                 cleanup::whisper_settled(&handle);
