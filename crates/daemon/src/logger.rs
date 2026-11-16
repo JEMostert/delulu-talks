@@ -6,7 +6,9 @@ struct Stderr;
 
 impl log::Log for Stderr {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= log::Level::Info
+        // Only the project's own crates: libraries such as the PulseAudio client
+        // log routine disconnects as errors.
+        metadata.level() <= log::Level::Info && metadata.target().starts_with("delulu_")
     }
     fn log(&self, record: &log::Record) {
         if self.enabled(record.metadata()) {
