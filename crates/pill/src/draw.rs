@@ -219,34 +219,6 @@ impl<'p, 'a> Canvas<'p, 'a> {
     }
 }
 
-impl Canvas<'_, '_> {
-    /// Cairo's `paint`: the source everywhere inside the clip.
-    fn paint(&mut self, shader: Option<Shader<'static>>) {
-        let Some(mut shader) = shader else { return };
-        let Some(clip) = self.clip_rect else { return };
-        match self.pix.as_deref_mut() {
-            Some(pix) => {
-                let full = IntRect::from_xywh(0, 0, pix.width(), pix.height()).map(|r| r.to_rect());
-                let Some(rect) = full
-                    .and_then(|f| clip.intersect(&f))
-                    .and_then(|r| r.round_out())
-                    .map(|r| r.to_rect())
-                else {
-                    return;
-                };
-                shader.transform(self.ts);
-                pix.fill_rect(rect, &paint(shader), Transform::identity(), self.clip.as_ref());
-            }
-            None => {
-                self.bounds = Some(match self.bounds {
-                    Some(b) => b.join(&clip).unwrap_or(b),
-                    None => clip,
-                });
-            }
-        }
-    }
-}
-
 fn paint(shader: Shader<'static>) -> Paint<'static> {
     Paint {
         shader,
@@ -549,6 +521,9 @@ fn bubbles(cr: &mut Canvas, m: &Model, w: f64, h: f64, level: f64) {
         let y = -h / 2.0 + 6.0 - ease_out(t) * (PAD_TOP - 4.0);
         let r = (0.8 + 1.7 * hash(i * 5.7)) * (0.65 + 0.9 * level);
         let alpha = (t * PI).sin().powf(0.7) * (0.35 + 0.5 * level);
+        if alpha < 0.004 {
+            continue;
+        }
         let c = circle(x, y, r);
         cr.fill(&c, solid(FOAM.0, FOAM.1, FOAM.2, alpha * 0.18));
         cr.stroke(&c, solid(0.85, 0.97, 1.0, alpha * 0.75), &line(0.6));
@@ -589,7 +564,8 @@ fn shell(cr: &mut Canvas, m: &Model, w: f64, h: f64, a: Rgb) {
     cr.fill(&outline, body);
     cr.save();
     cr.clip(&outline);
-    // Caustics: soft light patches wandering across the water.
+    // Caustics: soft light patches wandering across the water. Each glow is
+    // transparent past its radius, so only its disc is filled.
     if !m.reduce_motion {
         for i in 0..3 {
             let i = f64::from(i);
@@ -600,7 +576,7 @@ fn shell(cr: &mut Canvas, m: &Model, w: f64, h: f64, a: Rgb) {
                 (cx, cy, 22.0),
                 &[(0.0, col(a.0, a.1, a.2, 0.11)), (1.0, col(a.0, a.1, a.2, 0.0))],
             );
-            cr.paint(glow);
+            cr.fill(&circle(cx, cy, 22.0), glow);
         }
     }
     // The top sheen's corners reach past the outline's rounder ones: clipped.
@@ -644,10 +620,7 @@ fn sweep(cr: &mut Canvas, w: f64, h: f64, t: f64) {
         ],
         SpreadMode::Pad,
     );
-    cr.save();
-    cr.clip(&rounded(-w / 2.0, -h / 2.0, w, h, h / 2.0));
-    cr.paint(band);
-    cr.restore();
+    cr.fill(&rounded(-w / 2.0, -h / 2.0, w, h, h / 2.0), band);
 }
 
 /// The voice meter as a string of pearls on a silk thread.
@@ -817,20 +790,20 @@ fn pearl(cr: &mut Canvas, m: &Model, cx: f64, cy: f64, a: Rgb, level: f64, font:
             (bx, by, r * 0.85),
             &[(0.0, col(c.0, c.1, c.2, 0.42)), (1.0, col(c.0, c.1, c.2, 0.0))],
         );
-        cr.paint(cloud);
+        cr.fill(&circle(bx, by, r * 0.85), cloud);
     }
     let tint = radial(
         (cx, cy + r * 0.5, 0.5),
         (cx, cy + r * 0.2, r * 1.1),
         &[(0.0, col(a.0, a.1, a.2, 0.38)), (1.0, col(a.0, a.1, a.2, 0.0))],
     );
-    cr.paint(tint);
+    cr.fill(&disc, tint);
     let limb = radial(
         (cx, cy, r * 0.55),
         (cx, cy, r),
         &[(0.0, col(0.1, 0.15, 0.25, 0.0)), (1.0, col(0.1, 0.15, 0.25, 0.32))],
     );
-    cr.paint(limb);
+    cr.fill(&disc, limb);
     cr.restore();
 
     // Highlights.
