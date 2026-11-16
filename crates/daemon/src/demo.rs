@@ -303,20 +303,28 @@ pub fn state(now: u64) -> AppState {
             total_ms: 480 + i as u64 * 41,
         })
         .collect::<Vec<_>>();
-    let song =
-        |id: &str, title: &str, subtitle: &str, seconds: f64, lyrics: Option<&str>| RadioItem {
-            id: id.into(),
-            kind: RadioKind::Song,
-            title: title.into(),
-            subtitle: subtitle.into(),
-            lyrics: lyrics.map(Into::into),
-            script: None,
-            seconds,
-            request: None,
-            favourite: false,
-            replay: false,
-            imported: false,
-        };
+    let song = |id: &str, title: &str, genre: &str, seconds: f64, lyrics: Option<&str>| RadioItem {
+        id: id.into(),
+        kind: RadioKind::Song,
+        title: title.into(),
+        subtitle: format!("Warm · {genre}"),
+        lyrics: lyrics.map(Into::into),
+        script: None,
+        seconds,
+        request: None,
+        genre: Some(genre.into()),
+        mood: Some("Warm".into()),
+        surprise: false,
+        feedback: None,
+        saved: false,
+        replay: false,
+        imported: false,
+    };
+    let choice = |name: &str, on: bool| RadioChoice {
+        name: name.into(),
+        on,
+        custom: false,
+    };
     AppState {
         seq: 0,
         daemon: DaemonInfo {
@@ -457,16 +465,16 @@ pub fn state(now: u64) -> AppState {
             now: Some(song(
                 "r1",
                 "Socket at Midnight",
-                "lo-fi soul · requested by you",
+                "Soul",
                 148.0,
                 Some("[verse]\nThe daemon hums beneath the floor\nA socket waiting by the door\n[chorus]\nHold the key and say it twice\nDelulu makes the words come nice"),
             )),
             position: 41.0,
             queue: vec![
-                song("r2", "Pearl Diver", "dream pop", 132.0, None),
-                song("r3", "Reef Static", "ambient · instrumental", 175.0, None),
+                song("r2", "Pearl Diver", "Lo-fi", 132.0, None),
+                song("r3", "Reef Static", "House", 175.0, None),
             ],
-            history: vec![song("r0", "Jar of Words", "indie folk", 121.0, None)],
+            history: vec![song("r0", "Jar of Words", "Jazz", 121.0, None)],
             making: Some(RadioMaking {
                 kind: RadioKind::Song,
                 step: RadioStep::Music,
@@ -482,16 +490,30 @@ pub fn state(now: u64) -> AppState {
                 created_at: now - HOUR,
                 answered_by: Some("r1".into()),
             }],
-            direction: RadioDirection {
-                mood: "warm".into(),
-                genres: vec!["soul".into(), "jazz".into()],
-                energy: "medium".into(),
-                vocals: "either".into(),
-                language: "en".into(),
-                length: "medium".into(),
+            mix: RadioMix {
+                genres: vec![
+                    choice("Soul", true),
+                    choice("Jazz", true),
+                    choice("Lo-fi", true),
+                    choice("Ambient", false),
+                    choice("House", true),
+                ],
+                moods: vec![choice("Warm", true), choice("Calm", false)],
+                surprise: 15,
+                vocals: "any".into(),
+                energy: "any".into(),
+                language: "English".into(),
+                length: "any".into(),
                 host: "sometimes".into(),
                 theme: "late-night coding".into(),
             },
+            stations: vec![RadioStation {
+                id: "groove".into(),
+                name: "Groove".into(),
+                builtin: true,
+                active: false,
+            }],
+            saved: Vec::new(),
             readiness: Some(RadioReadiness {
                 music_engine: true,
                 music_model: true,

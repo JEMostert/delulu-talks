@@ -165,17 +165,17 @@ pub fn song_tokens(length: Length) -> u32 {
     }
 }
 
-/// Whether this song is instrumental: fixed by the direction, or chosen by seed.
+/// Whether this song is instrumental: fixed by the draw, or chosen by seed.
 pub fn instrumental(direction: &Direction, seed: u64) -> bool {
     match direction.vocals {
         Vocals::Vocal => false,
         Vocals::Instrumental => true,
-        Vocals::Either => seed.is_multiple_of(3),
+        Vocals::Any => seed.is_multiple_of(3),
     }
 }
 
 fn direction_lines(direction: &Direction, instrumental: bool) -> String {
-    let data = serde_json::json!({
+    let mut data = serde_json::json!({
         "mood": direction.mood,
         "genres": direction.genres,
         "energy": energy_word(direction.energy),
@@ -184,6 +184,15 @@ fn direction_lines(direction: &Direction, instrumental: bool) -> String {
         "length": length_words(direction.length),
         "theme": direction.theme,
     });
+    // A request song leaves its genre and mood to the request.
+    if let Some(map) = data.as_object_mut() {
+        if direction.mood.is_empty() {
+            map.remove("mood");
+        }
+        if direction.genres.is_empty() {
+            map.remove("genres");
+        }
+    }
     let mut text = format!("Listener direction (data): {data}");
     if instrumental {
         text.push_str(&format!(
@@ -705,9 +714,11 @@ fn subtitle(direction: &Direction) -> String {
     if let Some(first) = mood.get_mut(0..1) {
         first.make_ascii_uppercase();
     }
-    match direction.genres.first() {
-        Some(genre) => format!("{mood} · {genre}"),
-        None => mood,
+    match (mood.is_empty(), direction.genres.first()) {
+        (false, Some(genre)) => format!("{mood} · {genre}"),
+        (true, Some(genre)) => genre.clone(),
+        (false, None) => mood,
+        (true, None) => "On request".into(),
     }
 }
 
@@ -971,6 +982,10 @@ mod tests {
             request: None,
             provenance: BTreeMap::new(),
             loudness: None,
+            genre: None,
+            mood: None,
+            surprise: false,
+            feedback: None,
         }
     }
 
@@ -1235,7 +1250,7 @@ mod tests {
     #[test]
     fn either_vocals_mixes_by_seed() {
         let d = Direction {
-            vocals: Vocals::Either,
+            vocals: Vocals::Any,
             ..Direction::default()
         };
         assert!(instrumental(&d, 3));

@@ -4,9 +4,10 @@
 //! (set `DELULU_ENGINE` in a checkout). `DELULU_MUSIC_ENGINE=acestep` makes the
 //! music with ACE-Step instead (its files in the same models folder).
 use delulu_cleanup::{Cleaner, Sampling};
-use delulu_radio::model::{AceLm, Direction, Draft, Host, Music, MusicEngine};
+use delulu_radio::model::{AceLm, Draft, Host, Music, MusicEngine};
 use delulu_radio::music::{self, Composer, Order};
 use delulu_radio::voice::Voice;
+use delulu_radio::Mix;
 use delulu_radio::{Backend, Next, RadioError, Station};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -98,9 +99,9 @@ fn main() {
         station.set_music(MusicEngine::AceStep, AceLm::Auto);
     }
     if host {
-        station.set_direction(Direction {
+        station.set_mix(Mix {
             host: Host::Often,
-            ..station.snapshot().direction
+            ..station.snapshot().mix
         });
     }
     station.set_on_air(true);

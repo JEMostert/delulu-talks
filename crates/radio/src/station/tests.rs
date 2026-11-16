@@ -15,6 +15,8 @@ struct Fake {
     seconds: f64,
     /// The music settings and length each compose call got.
     music: Mutex<Vec<(Music, u32)>>,
+    /// The drafts the music was made from.
+    drafts: Mutex<Vec<Draft>>,
 }
 
 impl Fake {
@@ -27,6 +29,7 @@ impl Fake {
             outcomes: Mutex::new(Vec::new()),
             seconds: 30.0,
             music: Mutex::new(Vec::new()),
+            drafts: Mutex::new(Vec::new()),
         }
     }
     fn tone(&self, path: &Path, seconds: f64) {
@@ -63,7 +66,7 @@ impl Backend for Fake {
     }
     fn compose(
         &self,
-        _: &Draft,
+        draft: &Draft,
         _: u64,
         seconds: u32,
         music: &Music,
@@ -71,6 +74,7 @@ impl Backend for Fake {
     ) -> Result<BTreeMap<String, String>, RadioError> {
         self.composes.fetch_add(1, Ordering::SeqCst);
         self.music.lock().unwrap().push((music.clone(), seconds));
+        self.drafts.lock().unwrap().push(draft.clone());
         let mut outcomes = self.outcomes.lock().unwrap();
         if !outcomes.is_empty() {
             return Err(outcomes.remove(0));
@@ -245,9 +249,9 @@ fn breaks_follow_songs_when_voice_is_ready() {
     let station = Station::open(&dir.0).unwrap();
     let mut fake = Fake::new();
     fake.voice = true;
-    station.set_direction(Direction {
+    station.set_mix(Mix {
         host: Host::Often,
-        ..Direction::default()
+        ..Mix::default()
     });
     station.set_on_air(true);
     make_one(&station, &fake);
@@ -272,10 +276,10 @@ fn a_dutch_station_has_its_host_write_and_speak_dutch() {
     let station = Station::open(&dir.0).unwrap();
     let mut fake = Fake::new();
     fake.voice = true;
-    station.set_direction(Direction {
+    station.set_mix(Mix {
         host: Host::Often,
         language: "Dutch".into(),
-        ..Direction::default()
+        ..Mix::default()
     });
     station.set_on_air(true);
     make_one(&station, &fake);
@@ -329,6 +333,10 @@ fn the_engine_choice_reaches_the_next_song() {
     let dir = Dir::new();
     let station = Station::open(&dir.0).unwrap();
     let fake = Fake::new();
+    station.set_mix(Mix {
+        length: Some(Length::Medium),
+        ..Mix::default()
+    });
     station.set_on_air(true);
     make_one(&station, &fake);
     station.set_music(MusicEngine::AceStep, AceLm::Large);
@@ -427,6 +435,10 @@ fn stored(id: &str, kind: Kind, file: &str) -> Item {
         request: None,
         provenance: BTreeMap::new(),
         loudness: None,
+        genre: None,
+        mood: None,
+        surprise: false,
+        feedback: None,
     }
 }
 
@@ -631,4 +643,281 @@ fn a_copy_taken_before_conversion_still_plays_with_its_gain() {
     );
     audio::even_out(&mut evened, current.loudness);
     assert_eq!(played.samples, evened.samples);
+}
+
+// ---- the mix ----
+
+fn mix_of(genres: &[&str]) -> Mix {
+    let mut mix = Mix {
+        surprise: 0,
+        ..Mix::default()
+    };
+    for g in mix.genres.iter_mut() {
+        g.on = genres.contains(&g.name.as_str());
+    }
+    mix
+}
+
+/// Move everything ready into history, as listening would.
+fn listen_all(station: &Station) {
+    while !station.snapshot().queue.is_empty() {
+        station.advance();
+    }
+}
+
+#[test]
+fn each_song_gets_a_drawn_genre_that_reaches_the_writer_and_the_engine() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let fake = Fake::new();
+    let pool = ["Soul", "Jazz", "Folk", "Techno"];
+    station.set_mix(mix_of(&pool));
+    station.set_on_air(true);
+    for _ in 0..6 {
+        make_one(&station, &fake);
+        listen_all(&station);
+    }
+    let s = station.snapshot();
+    let songs: Vec<&Item> = s.now.iter().chain(&s.history).collect();
+    assert_eq!(songs.len(), 6);
+    let genres: HashSet<&str> = songs.iter().map(|i| i.genre.as_deref().unwrap()).collect();
+    assert!(genres.len() >= 3, "{genres:?}");
+    assert!(genres.iter().all(|g| pool.contains(g)));
+    // Newest first in history, so the prompts and drafts run the other way.
+    let writes = fake.writes.lock().unwrap();
+    let drafts = fake.drafts.lock().unwrap();
+    for (i, item) in songs.iter().rev().enumerate() {
+        let genre = item.genre.as_deref().unwrap();
+        let mood = item.mood.as_deref().unwrap();
+        assert!(
+            writes[i].contains(&format!("\"genres\":[\"{genre}\"]")),
+            "{}",
+            writes[i]
+        );
+        assert!(writes[i].contains(&format!("\"mood\":\"{mood}\"")));
+        assert!(drafts[i].style.contains(genre), "{}", drafts[i].style);
+        assert!(item.subtitle.contains(genre));
+    }
+}
+
+#[test]
+fn a_mix_change_redraws_only_the_song_not_written_yet() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let mut fake = Fake::new();
+    fake.seconds = 20.0;
+    station.set_mix(mix_of(&["Soul"]));
+    station.set_on_air(true);
+    make_one(&station, &fake);
+    // The next job is planned but not written.
+    fake.may_start.store(false, Ordering::SeqCst);
+    station.work(&fake);
+    assert_eq!(
+        station
+            .snapshot()
+            .job
+            .unwrap()
+            .draw
+            .unwrap()
+            .genre
+            .as_deref(),
+        Some("Soul")
+    );
+    station.set_mix(mix_of(&["Metal"]));
+    let s = station.snapshot();
+    assert_eq!(s.job.unwrap().draw.unwrap().genre.as_deref(), Some("Metal"));
+    assert_eq!(s.queue[0].genre.as_deref(), Some("Soul"));
+}
+
+#[test]
+fn a_request_song_leaves_its_style_to_the_request() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let fake = Fake::new();
+    station.request("a sea shanty about the dunes").unwrap();
+    station.set_on_air(true);
+    make_one(&station, &fake);
+    let song = &station.snapshot().queue[0];
+    assert_eq!((song.genre.as_deref(), song.mood.as_deref()), (None, None));
+    assert!(song.request.is_some());
+    let prompt = &fake.writes.lock().unwrap()[0];
+    assert!(!prompt.contains("\"genres\"") && !prompt.contains("\"mood\""));
+}
+
+#[test]
+fn an_old_station_file_loads_and_sounds_as_before() {
+    let dir = Dir::new();
+    std::fs::create_dir_all(&dir.0).unwrap();
+    std::fs::write(
+        dir.0.join("station.json"),
+        r#"{"version":1,"onAir":true,"direction":{"mood":"tender","genres":["acoustic ballad","folk"],"energy":"low","vocals":"either","language":"Dutch","length":"short","host":"off","theme":"the sea"},"requests":[],"volume":0.5,
+            "job":{"id":"song-old","kind":"song","attempt":0,"seed":11,"startedAt":1}}"#,
+    )
+    .unwrap();
+    let station = Station::open(&dir.0).unwrap();
+    let s = station.snapshot();
+    assert_eq!(s.mix.enabled_genres(), ["Folk", "acoustic ballad"]);
+    assert_eq!(s.mix.enabled_moods(), ["tender"]);
+    assert_eq!(
+        (s.mix.surprise, s.mix.energy, s.mix.length, s.mix.host),
+        (0, Some(Energy::Low), Some(Length::Short), Host::Off)
+    );
+    assert_eq!(
+        (s.mix.language.as_str(), s.mix.theme.as_str(), s.volume),
+        ("Dutch", "the sea", 0.5)
+    );
+    // Saved in the new form only.
+    let saved = std::fs::read_to_string(dir.0.join("station.json")).unwrap();
+    assert!(saved.contains("\"mix\"") && !saved.contains("\"direction\""));
+    assert!(saved.contains(&format!("\"version\": {SCHEMA}")));
+    // The job from before the mix is drawn from the migrated mix and finishes.
+    let fake = Fake::new();
+    station.set_on_air(true);
+    make_one(&station, &fake);
+    let song = &station.snapshot().queue[0];
+    assert!(["Folk", "acoustic ballad"].contains(&song.genre.as_deref().unwrap()));
+    assert_eq!(song.mood.as_deref(), Some("tender"));
+    assert_eq!(fake.music.lock().unwrap()[0].1, Length::Short.seconds());
+}
+
+#[test]
+fn likes_and_dislikes_move_the_genre_weight_once() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let fake = Fake::new();
+    station.set_mix(mix_of(&["Soul"]));
+    station.set_on_air(true);
+    make_one(&station, &fake);
+    let id = station.snapshot().queue[0].id.clone();
+    station.feedback(&id, Some(Feedback::Like)).unwrap();
+    station.feedback(&id, Some(Feedback::Like)).unwrap();
+    assert_eq!(
+        mix::weight(&station.snapshot().weights, "Soul"),
+        mix::WEIGHT_STEP
+    );
+    station.feedback(&id, Some(Feedback::Dislike)).unwrap();
+    let s = station.snapshot();
+    assert!((mix::weight(&s.weights, "soul") - 1.0 / mix::WEIGHT_STEP).abs() < 1e-4);
+    assert_eq!(s.queue[0].feedback, Some(Feedback::Dislike));
+    // Taking it back and resetting both return to neutral.
+    station.feedback(&id, None).unwrap();
+    assert!(station.snapshot().weights.is_empty());
+    station.feedback(&id, Some(Feedback::Like)).unwrap();
+    station.reset_feedback(None);
+    let s = station.snapshot();
+    assert!(s.weights.is_empty() && s.queue[0].feedback.is_none());
+    assert!(station.feedback("gone", Some(Feedback::Like)).is_err());
+    // Persisted.
+    station.feedback(&id, Some(Feedback::Like)).unwrap();
+    drop(station);
+    let reopened = Station::open(&dir.0).unwrap();
+    assert_eq!(
+        mix::weight(&reopened.snapshot().weights, "Soul"),
+        mix::WEIGHT_STEP
+    );
+}
+
+#[test]
+fn a_genre_lock_holds_for_its_songs_then_lets_go() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let mut fake = Fake::new();
+    fake.seconds = 20.0;
+    station.set_mix(mix_of(&["Jazz"]));
+    station.set_on_air(true);
+    // Nothing airs yet: nothing to lock.
+    assert!(station.lock_genre(Some(2)).is_err());
+    make_one(&station, &fake);
+    station.advance();
+    station.set_mix(mix_of(&["Soul", "Folk", "Techno"]));
+    let lock = station.lock_genre(Some(2)).unwrap();
+    assert_eq!((lock.genre.as_str(), lock.left), ("Jazz", Some(2)));
+    make_one(&station, &fake);
+    assert_eq!(station.snapshot().lock.unwrap().left, Some(1));
+    make_one(&station, &fake);
+    assert!(station.snapshot().lock.is_none());
+    listen_all(&station);
+    make_one(&station, &fake);
+    let s = station.snapshot();
+    let genres: Vec<&str> = s
+        .queue
+        .iter()
+        .chain(s.now.iter())
+        .chain(&s.history)
+        .filter_map(|i| i.genre.as_deref())
+        .collect();
+    assert_eq!(
+        genres.iter().filter(|g| **g == "Jazz").count(),
+        3,
+        "{genres:?}"
+    );
+    assert_ne!(s.queue[0].genre.as_deref(), Some("Jazz"));
+}
+
+#[test]
+fn saved_songs_outlive_clean_up_and_play_again() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let fake = Fake::new();
+    station.set_on_air(true);
+    make_one(&station, &fake);
+    let song = station.snapshot().queue[0].clone();
+    station.save_song(&song.id).unwrap();
+    station.save_song(&song.id).unwrap();
+    assert_eq!(station.snapshot().saved.len(), 1);
+    // Retention drops it from the programme; the saved copy keeps the audio.
+    {
+        let mut s = station.lock();
+        s.queue.clear();
+        station.prune(&mut s);
+        station.save(&s).unwrap();
+    }
+    assert!(station.audio_path(&song).is_file());
+    drop(station);
+    let station = Station::open(&dir.0).unwrap();
+    assert_eq!(station.snapshot().saved[0].id, song.id);
+    let aired = station.air_saved(&song.id).unwrap();
+    assert!(aired.is_replay() && aired.file == song.file);
+    assert_eq!(station.snapshot().now.unwrap().id, aired.id);
+    // Unsaving through the airing replay lets the audio go once it is done.
+    station.unsave_song(&aired.id);
+    assert!(station.snapshot().saved.is_empty());
+    station.advance();
+    assert!(!station.audio_path(&song).is_file());
+}
+
+#[test]
+fn stations_save_rename_delete_and_tune_the_mix() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let all = station.stations();
+    assert!(all.iter().any(|s| s.id == "groove" && s.builtin));
+    let groove = station.activate_station("groove").unwrap();
+    assert_eq!(groove.enabled_genres(), ["Soul", "Jazz", "House", "Funk"]);
+    assert_eq!(
+        Station::active_station(&station.stations(), &station.snapshot().mix).as_deref(),
+        Some("groove")
+    );
+    assert!(station.save_station("groove").is_err());
+    assert!(station.rename_station("groove", "Mine").is_err());
+    assert!(station.delete_station("drift").is_err());
+    station.set_mix(mix_of(&["Metal", "Punk rock"]));
+    let mine = station.save_station(" Loud ").unwrap();
+    assert_eq!(mine.name, "Loud");
+    station.activate_station("drift").unwrap();
+    station.activate_station(&mine.id).unwrap();
+    assert_eq!(
+        station.snapshot().mix.enabled_genres(),
+        ["Punk rock", "Metal"]
+    );
+    assert!(station.rename_station(&mine.id, "Drift").is_err());
+    station.rename_station(&mine.id, "Louder").unwrap();
+    // Saving under an existing name of the listener's updates that station.
+    station.set_mix(mix_of(&["Metal"]));
+    station.save_station("louder").unwrap();
+    let s = station.snapshot();
+    assert_eq!(s.stations.len(), 1);
+    assert_eq!(s.stations[0].preset.genres, ["Metal"]);
+    station.delete_station(&mine.id).unwrap();
+    assert!(station.snapshot().stations.is_empty());
 }

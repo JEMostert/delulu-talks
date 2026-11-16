@@ -237,7 +237,11 @@ volume: number, now: RadioItem | null,
 /**
  * Seconds into `now`.
  */
-position: number, queue: Array<RadioItem>, history: Array<RadioItem>, making: RadioMaking | null, requests: Array<RadioRequest>, direction: RadioDirection, readiness: RadioReadiness | null, };
+position: number, queue: Array<RadioItem>, history: Array<RadioItem>, making: RadioMaking | null, requests: Array<RadioRequest>, mix: RadioMix, stations: Array<RadioStation>, 
+/**
+ * Songs kept out of clean-up, newest first.
+ */
+saved: Array<RadioItem>, readiness: RadioReadiness | null, };
 
 export type RadioKind = "song" | "break";
 
@@ -245,7 +249,23 @@ export type RadioItem = { id: string, kind: RadioKind, title: string, subtitle: 
 /**
  * The listener request this answers.
  */
-request: string | null, favourite: boolean, replay: boolean, imported: boolean, };
+request: string | null, 
+/**
+ * The genre and mood it was drawn with; None for requests and breaks.
+ */
+genre: string | null, mood: string | null, 
+/**
+ * The genre came from outside the listener's pool.
+ */
+surprise: boolean, 
+/**
+ * "like" | "dislike"
+ */
+feedback: string | null, 
+/**
+ * Kept out of clean-up.
+ */
+saved: boolean, replay: boolean, imported: boolean, };
 
 export type RadioMaking = { kind: RadioKind, step: RadioStep, title: string | null, request: string | null, since: number, 
 /**
@@ -261,23 +281,48 @@ export type RadioStep = "writing" | "music" | "voice";
 
 export type RadioRequest = { id: string, text: string, createdAt: number, answeredBy: string | null, };
 
-export type RadioDirection = { mood: string, genres: Array<string>, 
 /**
- * "low" | "medium" | "high"
+ * One genre or mood of the mix.
+ */
+export type RadioChoice = { name: string, on: boolean, 
+/**
+ * Added by the listener, not from the catalogue.
+ */
+custom: boolean, };
+
+/**
+ * What the listener steers; each song draws one genre and mood from it.
+ */
+export type RadioMix = { genres: Array<RadioChoice>, moods: Array<RadioChoice>, 
+/**
+ * Percent chance (0–100) that a song comes from a genre that is off.
+ */
+surprise: number, 
+/**
+ * "any" | "vocal" | "instrumental"
+ */
+vocals: string, 
+/**
+ * "any" | "low" | "medium" | "high"
  */
 energy: string, 
 /**
- * "vocal" | "instrumental" | "either"
- */
-vocals: string, language: string, 
-/**
- * "short" | "medium" | "long"
+ * "any" | "short" | "medium" | "long"
  */
 length: string, 
 /**
  * "off" | "sometimes" | "often"
  */
-host: string, theme: string, };
+host: string, language: string, theme: string, };
+
+/**
+ * A named mix.
+ */
+export type RadioStation = { id: string, name: string, builtin: boolean, 
+/**
+ * The mix sounds like this station now.
+ */
+active: boolean, };
 
 export type RadioReadiness = { musicEngine: boolean, musicModel: boolean, gpu: boolean, writer: boolean, voice: boolean, device: string | null, };
 

@@ -1069,9 +1069,70 @@ pub(crate) fn cmd_radio_volume(volume: f32) -> Result<(), String> {
     let _ = volume;
     Err(RADIO_UNAVAILABLE.into())
 }
-#[tauri::command(rename = "radio_direction")]
-pub(crate) fn cmd_radio_direction(direction: Value) -> Result<radio::RadioView, String> {
-    let _ = direction;
+#[tauri::command(rename = "radio_mix")]
+pub(crate) fn cmd_radio_mix(mix: Value) -> Result<radio::RadioView, String> {
+    let _ = mix;
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_shuffle")]
+pub(crate) fn cmd_radio_shuffle() -> Result<radio::RadioView, String> {
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_station_save")]
+pub(crate) fn cmd_radio_station_save(name: String) -> Result<radio::RadioView, String> {
+    let _ = name;
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_station_rename")]
+pub(crate) fn cmd_radio_station_rename(
+    id: String,
+    name: String,
+) -> Result<radio::RadioView, String> {
+    let _ = (id, name);
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_station_delete")]
+pub(crate) fn cmd_radio_station_delete(id: String) -> Result<radio::RadioView, String> {
+    let _ = id;
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_station_activate")]
+pub(crate) fn cmd_radio_station_activate(id: String) -> Result<radio::RadioView, String> {
+    let _ = id;
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_feedback")]
+pub(crate) fn cmd_radio_feedback(id: String, feedback: Value) -> Result<radio::RadioView, String> {
+    let _ = (id, feedback);
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_reset_feedback")]
+pub(crate) fn cmd_radio_reset_feedback(genre: Option<String>) -> Result<radio::RadioView, String> {
+    let _ = genre;
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_lock")]
+pub(crate) fn cmd_radio_lock(songs: Option<u32>) -> Result<radio::RadioView, String> {
+    let _ = songs;
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_unlock")]
+pub(crate) fn cmd_radio_unlock() -> Result<radio::RadioView, String> {
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_save")]
+pub(crate) fn cmd_radio_save(id: String) -> Result<radio::RadioView, String> {
+    let _ = id;
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_unsave")]
+pub(crate) fn cmd_radio_unsave(id: String) -> Result<radio::RadioView, String> {
+    let _ = id;
+    Err(RADIO_UNAVAILABLE.into())
+}
+#[tauri::command(rename = "radio_play_saved")]
+pub(crate) fn cmd_radio_play_saved(id: String) -> Result<radio::RadioView, String> {
+    let _ = id;
     Err(RADIO_UNAVAILABLE.into())
 }
 #[tauri::command(rename = "radio_request")]

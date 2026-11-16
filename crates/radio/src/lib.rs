@@ -6,6 +6,7 @@
 //! (Supertonic 3, in the station's language). This crate holds the station, its storage and the native player; the app
 //! supplies the helpers and decides when the GPU may be used.
 pub mod audio;
+pub mod mix;
 pub mod model;
 pub mod music;
 pub mod player;
@@ -13,7 +14,8 @@ pub mod station;
 pub mod voice;
 pub mod writer;
 
-pub use model::{Direction, Item, Kind, State};
+pub use mix::Mix;
+pub use model::{Direction, Feedback, Item, Kind, State};
 pub use player::{Player, PlayerEvent, Position};
 pub use station::{Backend, Next, Station};
 
