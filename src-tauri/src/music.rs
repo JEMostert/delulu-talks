@@ -140,6 +140,17 @@ fn emit_status(app: &tauri::AppHandle) {
     let _ = app.emit("music-model", status(app));
 }
 
+/// Mark `models` as downloading unless a download already runs or nothing is
+/// missing. The lock is released on return, so the caller may read the status.
+fn claim(downloading: &Mutex<Vec<&'static str>>, models: &[&'static Model]) -> bool {
+    let mut downloading = lock(downloading);
+    if !downloading.is_empty() || models.is_empty() {
+        return false;
+    }
+    *downloading = models.iter().map(|m| m.id).collect();
+    true
+}
+
 fn model(id: &str) -> Result<&'static Model, String> {
     MODELS
         .iter()
@@ -170,12 +181,8 @@ pub(crate) fn download_music_model(
         .filter(|m| !m.installed(&dir))
         .collect();
     let m = app.state::<MusicModel>();
-    {
-        let mut downloading = lock(&m.downloading);
-        if !downloading.is_empty() || models.is_empty() {
-            return Ok(status(&app));
-        }
-        *downloading = models.iter().map(|m| m.id).collect();
+    if !claim(&m.downloading, &models) {
+        return Ok(status(&app));
     }
     m.cancel.store(false, Ordering::SeqCst);
     m.done_bytes.store(0, Ordering::SeqCst);
@@ -212,6 +219,7 @@ pub(crate) fn download_music_model(
         };
         lock(&m.downloading).clear();
         emit_status(&worker);
+        radio::models_changed(&worker);
         // A station waiting for the model can start now.
         if let Ok(station) = worker.state::<radio::Radio>().station() {
             station.wake();
@@ -240,9 +248,11 @@ pub(crate) fn delete_music_model(
         return Err("Cancel the download first.".into());
     }
     let radio = app.state::<radio::Radio>();
-    let in_use = radio.station().map_or(true, |s| {
-        needed(&s.snapshot().music).iter().any(|m| m.id == model.id)
-    });
+    // The song being made keeps the settings it started with, which may differ
+    // from the station's since an engine switch.
+    let uses = |music: &Music| needed(music).iter().any(|m| m.id == model.id);
+    let in_use = radio.composing().as_ref().is_some_and(uses)
+        || radio.station().map_or(true, |s| uses(&s.snapshot().music));
     if in_use {
         radio.composer.stop();
     }
@@ -250,6 +260,7 @@ pub(crate) fn delete_music_model(
         .map_err(|e| format!("Could not delete {e}"))?;
     *lock(&m.error) = None;
     emit_status(&app);
+    radio::models_changed(&app);
     Ok(status(&app))
 }
 
@@ -265,6 +276,19 @@ mod tests {
             crate::cleanup::CLEANUP_MODEL.file,
             delulu_cleanup::MODEL_FILE
         );
+    }
+
+    /// A second download while one runs, or one with nothing missing, is refused
+    /// without keeping the lock (the command then reads the status under it).
+    #[test]
+    fn a_refused_download_leaves_the_state_unlocked() {
+        let downloading = Mutex::new(Vec::new());
+        assert!(!claim(&downloading, &[]));
+        assert!(downloading.try_lock().is_ok());
+        assert!(claim(&downloading, &[&ACE_STEP_TURBO]));
+        assert!(!claim(&downloading, &[&YUE2_3B]));
+        assert!(downloading.try_lock().is_ok());
+        assert_eq!(*lock(&downloading), [ACE_STEP_TURBO.id]);
     }
 
     /// ACE-Step on auto runs with either language model; a fixed choice needs it.

@@ -25,6 +25,8 @@ pub(crate) struct Radio {
     pub(crate) composer: Composer,
     /// Where the song being made is; memory only.
     stage: Mutex<Option<Stage>>,
+    /// The music settings the song being made started with; memory only.
+    composing: Mutex<Option<Music>>,
     voice: Voice,
     /// Play was pressed: start playing as soon as something is ready.
     listening: AtomicBool,
@@ -161,6 +163,7 @@ impl Radio {
             player,
             composer: Composer::default(),
             stage: Mutex::new(None),
+            composing: Mutex::new(None),
             voice: Voice::new(),
             listening: AtomicBool::new(false),
             control: Mutex::new(()),
@@ -172,6 +175,14 @@ impl Radio {
 
     fn control(&self) -> std::sync::MutexGuard<'_, ()> {
         self.control.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The music settings of the song being made, if one is.
+    pub(crate) fn composing(&self) -> Option<Music> {
+        self.composing
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub(crate) fn station(&self) -> Result<&Arc<Station>, String> {
@@ -325,6 +336,7 @@ fn view(app: &tauri::AppHandle) -> RadioView {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
+    let composing = radio.composing();
     let making = s.job.as_ref().map(|j| Making {
         progress: stage.as_ref().map(|s| s.fraction),
         phase: stage.as_ref().map(|s| s.phase.clone()),
@@ -337,9 +349,11 @@ fn view(app: &tauri::AppHandle) -> RadioView {
         title: j.draft.as_ref().map(|d| d.title.clone()),
         request: j.request.as_ref().map(|r| r.text.clone()),
         since: j.step_started_at,
+        // From the song being made: the station's engine may have changed since.
         preparing: j.kind == Kind::Song
-            && j.draft.is_some()
-            && s.music.engine == MusicEngine::AceStep
+            && composing
+                .as_ref()
+                .is_some_and(|m| m.engine == MusicEngine::AceStep)
             && s.music.ace_warm.as_deref() != Some(warm_key().as_str()),
     });
     let pending: Vec<Request> = s.requests.iter().rev().take(4).rev().cloned().collect();
@@ -416,20 +430,46 @@ fn probe(helper: &Path) -> Option<(String, bool)> {
     ))
 }
 
+/// Which music models are installed, for the readiness checklist.
+fn model_readiness(dir: &Path) -> (bool, AceReadiness) {
+    (
+        delulu_stt::file_ready(dir, &crate::music::MUSIC_MODEL),
+        AceReadiness {
+            turbo: delulu_models::ACE_STEP_TURBO.installed(dir),
+            lm_small: delulu_models::ACE_STEP_LM_SMALL.installed(dir),
+            lm_large: delulu_models::ACE_STEP_LM_LARGE.installed(dir),
+        },
+    )
+}
+
+/// A music model was downloaded or deleted: correct the checklist now rather
+/// than at the next check.
+pub(crate) fn models_changed(app: &tauri::AppHandle) {
+    let (model, ace) = model_readiness(&app.state::<Shell>().store.models_dir());
+    let radio = app.state::<Radio>();
+    if let Some(r) = radio
+        .readiness
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_mut()
+    {
+        r.music.model = model;
+        r.music.ace = ace;
+    }
+    emit(app);
+}
+
 fn check(app: &tauri::AppHandle) -> Readiness {
     let radio = app.state::<Radio>();
     let s = app.state::<Shell>();
     let helper = music::helper_path();
     let found = helper.as_deref().and_then(probe);
+    let (model, ace) = model_readiness(&s.store.models_dir());
     let readiness = Readiness {
         music: MusicReadiness {
             engine: helper.is_some(),
-            model: delulu_stt::file_ready(&s.store.models_dir(), &crate::music::MUSIC_MODEL),
-            ace: AceReadiness {
-                turbo: delulu_models::ACE_STEP_TURBO.installed(&s.store.models_dir()),
-                lm_small: delulu_models::ACE_STEP_LM_SMALL.installed(&s.store.models_dir()),
-                lm_large: delulu_models::ACE_STEP_LM_LARGE.installed(&s.store.models_dir()),
-            },
+            model,
+            ace,
             gpu: found.as_ref().is_some_and(|f| f.1),
             device: found.map(|f| f.0),
         },
@@ -636,6 +676,7 @@ impl Backend for AppBackend {
             }));
         }
         let radio = self.radio();
+        *radio.composing.lock().unwrap_or_else(|e| e.into_inner()) = Some(settings.clone());
         let order = Order::new(draft, seed, seconds, settings, &models);
         let mut sent = Instant::now();
         // Off air, quitting or the model removed while the helper was starting.
@@ -654,6 +695,7 @@ impl Backend for AppBackend {
                 }
             });
         *radio.stage.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *radio.composing.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let report = result?;
         if settings.engine == MusicEngine::AceStep {
             if let Ok(station) = radio.station() {
