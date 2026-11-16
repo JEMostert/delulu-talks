@@ -39,7 +39,7 @@ use vocabulary::{
     add_preset_shelf, add_shelf, add_terms, delete_shelf, get_vocabulary, remove_term,
     rename_shelf, set_shelf_enabled,
 };
-use voice::{get_voice_status, install_voice_model};
+use voice::{get_voice_status, install_voice_model, set_voice};
 
 pub fn run() {
     let store = Arc::new(Store::open_default().expect("open store"));
@@ -177,6 +177,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_voice_status,
             install_voice_model,
+            set_voice,
             get_status,
             get_settings,
             set_settings,

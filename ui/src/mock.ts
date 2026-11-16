@@ -48,6 +48,7 @@ if (cleanupParam === "off") settings.cleanup = false;
 if (cleanupParam === "missing") settings.cleanupModelOk = false;
 let voiceReady = params.get("voice") === "ready";
 let voiceInstalling = false;
+const voiceChoice = { voice: "F1", radioVoice: "M1" };
 let cleanupDownload: ReturnType<typeof setInterval> | undefined;
 const demoShelves = (): Shelf[] => [
   {
@@ -469,9 +470,24 @@ export async function invoke<T>(
         throw "Voice replies are unavailable. Install the delulu command in ~/.local/bin or on your PATH, then reopen Settings.";
       result = {
         ready: voiceReady,
-        configured: true,
         installing: voiceInstalling,
+        model: voiceReady,
+        engine: true,
+        ...voiceChoice,
+        voices: ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"],
+        modelLabel: "Supertonic 3",
+        modelBytes: 401291751,
+        terms: {
+          name: "BigScience OpenRAIL-M",
+          url: "https://huggingface.co/Supertone/supertonic-3/blob/3cadd1ee6394adea1bd021217a0e650ede09a323/LICENSE",
+          credit: "Supertonic 3 by Supertone Inc.",
+          text: "Supertonic 3 by Supertone Inc. is licensed under the BigScience OpenRAIL-M licence. By downloading and using it you agree to its use restrictions (Attachment A). You agree not to use the model:\n(a) in any way that violates any applicable law or regulation;\n…\nThe voices are machine generated; say so wherever you share their audio.",
+        },
       };
+      break;
+    case "set_voice":
+      if (args?.role === "radio") voiceChoice.radioVoice = String(args?.voice);
+      else voiceChoice.voice = String(args?.voice);
       break;
     case "install_voice_model":
       voiceInstalling = true;

@@ -1,22 +1,26 @@
-//! `delulu-engine`: the app's GPU worker. The first argument picks the role, and one
+//! `delulu-engine`: the app's model worker. The first argument picks the role, and one
 //! process runs one role, so each role frees its graphics memory when it exits.
 //!
 //! - `delulu-engine llm …`: transcript cleanup and the radio writer (llama.cpp).
 //! - `delulu-engine music …`: Delulu FM's YuE2 music, one song per process.
+//! - `delulu-engine tts …`: Supertonic 3 speech on the CPU (ONNX Runtime), for
+//!   `delulu speak` and Delulu FM's host.
 //! - `delulu-engine probe`: version, roles and compute devices as JSON; loads no model.
 use std::process::ExitCode;
 
 mod llm;
 mod music;
+mod tts;
 
-const ROLES: [&str; 2] = ["llm", "music"];
-const USAGE: &str = "usage: delulu-engine <llm|music|probe> …";
+const ROLES: [&str; 3] = ["llm", "music", "tts"];
+const USAGE: &str = "usage: delulu-engine <llm|music|tts|probe> …";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("llm") => llm::main(args),
         Some("music") => music::main(args),
+        Some("tts") => tts::main(args),
         Some("probe") => probe(),
         Some("--version") => {
             println!("delulu-engine {}", env!("CARGO_PKG_VERSION"));

@@ -1163,6 +1163,8 @@ version = "1.5.0"
 dependencies = [
  "delulu-cleanup",
  "delulu-music",
+ "delulu-proto",
+ "delulu-tts",
  "hound",
  "libc",
  "llama-cpp-2",
@@ -1273,6 +1275,7 @@ dependencies = [
  "delulu-radio",
  "delulu-store",
  "delulu-stt",
+ "dirs 6.0.0",
  "log",
  "serde",
  "serde_json",
@@ -1286,11 +1289,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "delulu-tts"
+version = "1.5.0"
+dependencies = [
+ "delulu-models",
+ "hound",
+ "ndarray",
+ "ort",
+ "rand",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "delulu-voice-cli"
 version = "1.5.0"
 dependencies = [
  "anyhow",
  "clap",
+ "delulu-models",
+ "delulu-proto",
  "dirs 6.0.0",
  "libc",
  "serde",
@@ -5923,6 +5944,15 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-normalization-alignments"

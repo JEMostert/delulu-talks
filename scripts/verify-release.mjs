@@ -11,7 +11,7 @@ for (const suffix of ['_amd64.deb', '.x86_64.rpm', '.pkg.tar.zst']) {
 }
 
 // Exercise the shipped CLI from an extracted package, without Python, audio,
-// model downloads, or a checkout. Its runtime adapter and skill are embedded.
+// model downloads, or a checkout. Its skill (and the opt-in Chatterbox adapter) are embedded.
 const deb = paths.find(p => p.endsWith('_amd64.deb'));
 const temp = await mkdtemp(join(tmpdir(), 'delulu-release-'));
 try {
@@ -20,13 +20,13 @@ try {
   const env = { ...process.env, XDG_DATA_HOME: join(temp, 'empty-data') };
   const version = execFileSync(cli, ['--version'], { env, encoding: 'utf8' }).trim();
   const status = JSON.parse(execFileSync(cli, ['status'], { env, encoding: 'utf8' }));
-  if (!version.startsWith('delulu ') || status.configured !== false || status.ready !== false)
+  if (!version.startsWith('delulu ') || status.model !== false || status.ready !== false)
     throw new Error('Packaged CLI did not report a clean optional model state');
-  // Delulu FM's host relies on the per-call bundled voice.
+  // Delulu FM's host speaks the station's language with a chosen voice.
   const help = execFileSync(cli, ['speak', '--help'], { env, encoding: 'utf8' });
-  if (!help.includes('--bundled-voice'))
-    throw new Error('Packaged CLI lacks speak --bundled-voice, which Delulu FM needs');
-  // The GPU roles (cleanup and Delulu FM's music) ship as one native engine binary:
+  if (!help.includes('--lang') || !help.includes('--voice'))
+    throw new Error('Packaged CLI lacks speak --lang/--voice, which Delulu FM needs');
+  // The model roles (cleanup, Delulu FM's music, the voice) ship as one native engine binary:
   // it must start and list its roles and a compute device without ComfyUI, Python or
   // a downloaded model. The old per-role helpers, each with its own ggml, are gone.
   const lib = join(temp, 'usr/lib/delulu-talks');
@@ -36,7 +36,7 @@ try {
   const probe = JSON.parse(execFileSync(join(lib, 'delulu-engine'), ['probe'], { env, encoding: 'utf8' }));
   if (!version.endsWith(` ${probe.version}`))
     throw new Error(`Packaged delulu-engine is ${probe.version}, the CLI is ${version}`);
-  for (const role of ['llm', 'music'])
+  for (const role of ['llm', 'music', 'tts'])
     if (!probe.roles?.includes(role)) throw new Error(`Packaged delulu-engine lacks the ${role} role`);
   if (typeof probe.device !== 'string' || !probe.device)
     throw new Error('Packaged delulu-engine did not report a compute device');

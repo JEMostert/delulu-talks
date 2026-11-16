@@ -1,6 +1,6 @@
-//! The presenter speaks through Delulu's own `delulu speak` (Chatterbox Turbo), always
-//! with the bundled speaker. Each call loads the model, writes a WAV and exits, so no
-//! speech model stays in graphics memory between breaks.
+//! The presenter speaks through Delulu's own `delulu speak` with the native voice
+//! (Supertonic 3 on the CPU, Dutch or English, no Python). Each break is written to
+//! a WAV; a resident voice engine, when one runs, answers without a cold start.
 use crate::RadioError;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -31,56 +31,74 @@ pub fn cli_path() -> PathBuf {
     sibling.or(local).unwrap_or_else(|| PathBuf::from("delulu"))
 }
 
+/// The host speaks the station's language: Dutch for a Dutch station, else English.
+pub fn host_language(station_language: &str) -> &'static str {
+    let l = station_language.trim().to_lowercase();
+    if ["dutch", "nederlands", "nl", "vlaams", "flemish"].contains(&l.as_str()) {
+        "nl"
+    } else {
+        "en"
+    }
+}
+
 impl Voice {
     pub fn new() -> Voice {
         Voice { bin: cli_path() }
     }
 
-    /// A `delulu` older than Delulu FM reads unknown flags as words to say, so the
-    /// presenter only uses one that lists `--bundled-voice`.
+    /// A `delulu` older than the native voice reads unknown flags as words to say,
+    /// so the presenter only uses one that lists `--lang`.
     pub fn supported(&self) -> bool {
         Command::new(&self.bin)
             .args(["speak", "--help"])
             .stderr(Stdio::null())
             .output()
             .is_ok_and(|o| {
-                o.status.success() && String::from_utf8_lossy(&o.stdout).contains("--bundled-voice")
+                o.status.success() && String::from_utf8_lossy(&o.stdout).contains("--lang")
             })
     }
 
-    /// Supported, configured and the Turbo model installed. Starts no Python.
+    /// Supported and the native voice ready (model and engine installed). Loads no model.
     pub fn ready(&self) -> bool {
-        self.supported() && self.installed()
+        self.supported()
+            && self
+                .status()
+                .is_some_and(|v| v["ready"].as_bool() == Some(true))
     }
 
-    fn installed(&self) -> bool {
+    /// `delulu status` as JSON.
+    pub fn status(&self) -> Option<serde_json::Value> {
         Command::new(&self.bin)
             .arg("status")
             .stderr(Stdio::null())
             .output()
             .ok()
             .filter(|o| o.status.success())
-            .and_then(|o| serde_json::from_slice::<serde_json::Value>(&o.stdout).ok())
-            .and_then(|v| v.get("ready").and_then(|r| r.as_bool()))
-            .unwrap_or(false)
+            .and_then(|o| serde_json::from_slice(&o.stdout).ok())
     }
 
-    /// Write `text` as speech to `out` (WAV), silently.
+    /// Write `text` as speech to `out` (WAV), silently, in `lang` ("nl" or "en") with
+    /// `voice` (None = the CLI's configured radio voice is the caller's job).
     pub fn speak(
         &self,
         text: &str,
+        lang: &str,
+        voice: Option<&str>,
         out: &Path,
         cancel: &dyn Fn() -> bool,
     ) -> Result<(), RadioError> {
         if !self.supported() {
             return Err(RadioError::Unavailable(
-                "Voice replies need the delulu command from this version of Delulu Talks".into(),
+                "The host needs the delulu command from this version of Delulu Talks".into(),
             ));
         }
-        let mut child = Command::new(&self.bin)
-            .args(["speak", "--output"])
-            .arg(out)
-            .args(["--bundled-voice", "-"])
+        let mut command = Command::new(&self.bin);
+        command.args(["speak", "--lang", lang, "--output"]).arg(out);
+        if let Some(voice) = voice {
+            command.args(["--voice", voice]);
+        }
+        let mut child = command
+            .arg("-")
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -108,7 +126,7 @@ impl Voice {
                 break status;
             }
             if cancel() || started.elapsed() > TIMEOUT {
-                // SIGTERM lets the CLI stop its Python child and clean up.
+                // SIGTERM lets the CLI cancel the engine's job and clean up.
                 unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGTERM) };
                 let _ = child.wait();
                 return Err(RadioError::Cancelled);
@@ -132,5 +150,18 @@ impl Voice {
 impl Default for Voice {
     fn default() -> Self {
         Voice::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_host_speaks_dutch_only_for_a_dutch_station() {
+        assert_eq!(host_language("Dutch"), "nl");
+        assert_eq!(host_language(" nederlands "), "nl");
+        assert_eq!(host_language("English"), "en");
+        assert_eq!(host_language("Japanese"), "en");
     }
 }

@@ -196,6 +196,12 @@ function AllowedLanguagesRow({ state }: Props) {
   );
 }
 
+/** "F1" → "Female 1", "M3" → "Male 3". */
+export function voiceLabel(voice: string) {
+  const kind = voice.startsWith("F") ? "Female" : "Male";
+  return `${kind} ${voice.slice(1)}`;
+}
+
 export function VoiceSection() {
   const [status, setStatus] = useState<ipc.VoiceStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -237,7 +243,14 @@ export function VoiceSection() {
     }
   };
 
+  const choose = (role: "agent" | "radio", voice: string) =>
+    void ipc
+      .setVoice(role, voice)
+      .then(refresh)
+      .catch((e) => setError(errorText(e)));
+
   const busy = starting || status?.installing;
+  const size = status ? `${Math.round(status.modelBytes / 1e6)} MB` : "400 MB";
   return (
     <div className="group">
       <Row
@@ -245,11 +258,17 @@ export function VoiceSection() {
         help={
           <>
             <span>
-              Optional: ask your agent to speak a reply aloud on this computer.
-              Installing the model downloads about 3 GB.
+              Optional: agents can speak short replies aloud on this computer,
+              in Dutch or English, and Delulu FM gets a host. The voice runs on
+              your processor; the model is about {size}.
             </span>
-            {status && !status.ready && !busy && (
+            {status && !status.model && !busy && (
               <span>Model not installed.</span>
+            )}
+            {status && status.model && !status.engine && (
+              <span className="row-error">
+                The voice engine is missing. Reinstall Delulu Talks.
+              </span>
             )}
             {error && (
               <span className="row-error" role="alert">
@@ -257,7 +276,7 @@ export function VoiceSection() {
               </span>
             )}
             {busy && (
-              <span>Installing the model. This may take a few minutes.</span>
+              <span>Downloading the voice model. This takes a minute.</span>
             )}
           </>
         }
@@ -278,13 +297,78 @@ export function VoiceSection() {
           <button
             type="button"
             className="button"
-            disabled={!status || busy}
+            disabled={!status || busy || status.model}
             onClick={() => void install()}
           >
             {busy ? "Installing…" : "Install model"}
           </button>
         )}
       </Row>
+      {status && !status.model && (
+        <Row
+          stack
+          label={`Licence · ${status.terms.name}`}
+          help={
+            <>
+              <span>
+                {status.terms.credit.replace(/\.$/, "")}. Installing the model
+                means you agree to its use restrictions. The voices are
+                AI-generated: say so wherever you share what they say.
+              </span>
+              <span className="terms-url">{status.terms.url}</span>
+            </>
+          }
+        >
+          <details className="terms">
+            <summary>Use restrictions</summary>
+            <p>{status.terms.text}</p>
+          </details>
+        </Row>
+      )}
+      {status?.model && (
+        <>
+          <Row
+            label="Agent voice"
+            htmlFor="agent-voice"
+            help="Used by delulu speak. An AI-generated voice."
+          >
+            <Select
+              id="agent-voice"
+              value={status.voice}
+              onChange={(v) => choose("agent", v)}
+            >
+              {status.voices.map((v) => (
+                <option key={v} value={v}>
+                  {voiceLabel(v)}
+                </option>
+              ))}
+            </Select>
+          </Row>
+          <Row
+            label="Radio host voice"
+            htmlFor="radio-voice"
+            help="Delulu FM's AI host, in the station's language."
+          >
+            <Select
+              id="radio-voice"
+              value={status.radioVoice}
+              onChange={(v) => choose("radio", v)}
+            >
+              {status.voices.map((v) => (
+                <option key={v} value={v}>
+                  {voiceLabel(v)}
+                </option>
+              ))}
+            </Select>
+          </Row>
+          <Row
+            label="Voice model"
+            help={`${status.terms.credit}, ${status.terms.name}. Its use restrictions apply to everything the voices say.`}
+          >
+            <span className="value">{status.modelLabel}</span>
+          </Row>
+        </>
+      )}
     </div>
   );
 }
@@ -493,6 +577,14 @@ export function AboutSection({ state }: Props) {
       </Row>
       <Row label="Speech runs on">
         <span className="value">{status.backend ?? "Not loaded yet"}</span>
+      </Row>
+      <Row
+        label="Voices"
+        help="Spoken replies and Delulu FM's host use AI-generated voices."
+      >
+        <span className="value">
+          Supertonic 3 by Supertone Inc. (OpenRAIL-M)
+        </span>
       </Row>
       <Row label="Data folder" help="Transcripts, settings and models.">
         <span className="value path">{status.dataDir}</span>

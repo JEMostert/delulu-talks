@@ -9,15 +9,16 @@ Everything runs on this machine: whisper.cpp (large-v3-turbo) on the GPU via
 Vulkan, CPU fallback, and Gemma 4 E4B for cleanup in a separate helper process
 (llama.cpp, Vulkan). The app itself has no Python and no runtime installer.
 
-Two optional extras lean on what the user already has installed, and the app
-never installs or starts those runtimes:
+Two optional extras, each with an explicit model download:
 
-- **Voice replies** (`delulu` CLI): Chatterbox Turbo in an existing Python
-  environment; the model downloads only on an explicit Install.
+- **Voice replies** (`delulu` CLI): Supertonic 3 on the CPU in
+  `delulu-engine tts` (ONNX Runtime, no Python), Dutch and English; the model
+  (about 400 MB, OpenRAIL-M) downloads only on an explicit Install. Chatterbox
+  Turbo in an existing Python environment stays as an opt-in.
 - **Delulu FM** (radio): YuE2 music made natively by the `delulu-engine music`
-  helper (ggml, Vulkan), words from the cleanup model, the host through voice
-  replies with the bundled speaker. The music model is an explicit download in
-  Settings → Models; missing pieces are shown as steps to do.
+  helper (ggml, Vulkan), words from the cleanup model, an AI host speaking the
+  station's language through the native voice. The music model is an explicit
+  download in Settings → Models; missing pieces are shown as steps to do.
 
 ## Build order (each step gated on the previous one being used daily)
 
@@ -55,12 +56,14 @@ never installs or starts those runtimes:
   - Dictation: model, language (Automatic within your languages, default
     Dutch and English, or one fixed language), smart context management, insert text with (Shift+Insert / Ctrl+V /
     Ctrl+Shift+V / Off = copy only)
-  - Voice replies: optional spoken replies model
+  - Voice replies: the voice model (Install shows its licence), the agents'
+    voice and the radio host's voice
   - Delulu FM: show the radio (one switch)
   - Models: the optional music model (download, cancel, delete)
   - Models and providers: step 2/3 (API keys, LLMs)
   - Appearance: theme (system / light / dark), show the recording pill
-  - About: version, GPU backend in use, data folder, project link
+  - About: version, GPU backend in use, voice model credit, data folder,
+    project link
 
 - **Tray menu**: Open, the current topic with Clear topic, Quit.
 - **Recording pill**: a small click-through pearl at the bottom of the
@@ -83,5 +86,5 @@ belongs.
 ## Out of scope for v1
 
 Audio-file transcription, more than 2–3 rewrite presets, a general voice assistant, TTS
-voice cloning (the radio host uses the bundled speaker only), Windows, macOS,
+voice cloning (the voices are the model's preset voices only), Windows, macOS,
 API/editor plugins, AppImage, auto-update.

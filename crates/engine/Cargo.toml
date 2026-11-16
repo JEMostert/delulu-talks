@@ -2,14 +2,16 @@
 name = "delulu-engine"
 version.workspace = true
 edition.workspace = true
-# One worker binary for the GPU roles, so the app ships one copy of ggml and its
-# Vulkan shaders. Each process still runs one role.
+# One worker binary for the app's model roles, so the app ships one copy of ggml and
+# its Vulkan shaders, and ONNX Runtime only here. Each process still runs one role.
 [[bin]]
 name = "delulu-engine"
 path = "src/main.rs"
 [dependencies]
 delulu-cleanup = { path = "../cleanup" }
 delulu-music = { path = "../music" }
+delulu-proto = { path = "../proto" }
+delulu-tts = { path = "../tts", features = ["onnx"] }
 serde_json.workspace = true
 llama-cpp-2.workspace = true
 libc.workspace = true

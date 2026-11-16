@@ -247,6 +247,9 @@ pub enum JobPayload {
         text: String,
         voice: Option<String>,
         language: Option<String>,
+        /// Denoising steps; absent = the engine's default.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        steps: Option<u32>,
     },
     /// music: compose a song into `output`.
     Compose {
