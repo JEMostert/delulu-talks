@@ -117,6 +117,9 @@ struct X {
     content: Option<IntRect>,
     /// What the window shows; None after an expose or resize (redraw all).
     shown: Option<Option<IntRect>>,
+    /// A draw was skipped while the server read the last frame; do it when
+    /// the server is done.
+    redraw: bool,
     mapped: bool,
     next_frame: Option<Instant>,
     period: Duration,
@@ -238,6 +241,7 @@ impl X {
             image: Image::Local(Vec::new()),
             content: None,
             shown: None,
+            redraw: false,
             mapped: false,
             next_frame: None,
             period: hz.map_or(FRAME, |hz| Duration::from_secs_f64(1.0 / hz)),
@@ -388,6 +392,9 @@ impl X {
                     if let Image::Shm(s) = &mut self.image {
                         s.busy = false;
                     }
+                    if std::mem::take(&mut self.redraw) {
+                        self.draw(core);
+                    }
                 }
                 Event::Error(e) => eprintln!("pill: x11 error: {e:?}"),
                 _ => {}
@@ -530,9 +537,12 @@ impl X {
             return;
         }
         if matches!(&self.image, Image::Shm(s) if s.busy) {
-            // The server has not finished reading the last frame; skip this one.
+            // The server has not finished reading the last frame: draw this one
+            // when it has (an animation tick may come first and do it).
+            self.redraw = true;
             return;
         }
+        self.redraw = false;
         let started = Instant::now();
         let (w, h) = (self.w, self.h);
         let stride = usize::from(w) * 4;

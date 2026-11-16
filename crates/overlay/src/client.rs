@@ -16,6 +16,10 @@ const FAILURE_WINDOW: Duration = Duration::from_secs(60);
 const NATIVE: &str = "delulu-pill";
 /// Where the packages install helper binaries.
 const HELPER_DIR: &str = "/usr/lib/delulu-talks";
+/// How often a writer with no news checks that the pill still runs.
+const WATCH: Duration = Duration::from_millis(250);
+/// A result word younger than this is shown again by a replacement pill.
+const REPLAY_RESULT: Duration = Duration::from_secs(1);
 
 /// Drives the recording pill process. Every call returns at once: a writer
 /// thread owns the process, so the audio thread never blocks on a pipe.
@@ -280,42 +284,94 @@ impl Running {
 
 fn writer(rx: mpsc::Receiver<Message>, mut programs: Programs) {
     let mut running: Option<Running> = None;
-    while let Ok(mut m) = rx.recv() {
-        // Each message is the whole state, so only the newest one matters.
-        while let Ok(next) = rx.try_recv() {
-            m = next;
-        }
-        if m.state == PillState::Hidden && running.is_none() {
-            continue;
-        }
-        let Ok(mut line) = serde_json::to_vec(&m) else {
-            continue;
+    // The last state the pill was given, and when.
+    let mut last: Option<(Message, Instant)> = None;
+    loop {
+        let received = if running.is_some() {
+            match rx.recv_timeout(WATCH) {
+                Ok(m) => Some(m),
+                Err(mpsc::RecvTimeoutError::Timeout) => None,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        } else {
+            match rx.recv() {
+                Ok(m) => Some(m),
+                Err(_) => break,
+            }
         };
-        line.push(b'\n');
-        // A dead pill gets one replacement per message; a program that cannot
-        // start at all hands over to the next one at once.
-        let mut restarts = 0;
-        while restarts < 2 {
-            if running.is_none() {
-                let Some(program) = programs.current() else {
-                    break;
+        let (m, at) = match received {
+            Some(mut m) => {
+                // Each message is the whole state, so only the newest one matters.
+                while let Ok(next) = rx.try_recv() {
+                    m = next;
+                }
+                (m, Instant::now())
+            }
+            None => {
+                // No news: check the pill did not exit after the last message
+                // (unavailable, or a crash), and give its state to the next one.
+                let Some(r) = running.as_mut() else {
+                    continue;
                 };
-                match program.spawn() {
-                    Ok(r) => running = Some(r),
-                    Err(e) => {
-                        programs.give_up(&format!("could not start ({e})"));
-                        continue;
-                    }
+                if matches!(r.child.try_wait(), Ok(None)) {
+                    continue;
+                }
+                let (code, ran) = running.take().expect("running").reap();
+                programs.exited(code, ran);
+                match last.take().filter(|(m, at)| still_current(m, *at)) {
+                    Some(replay) => replay,
+                    None => continue,
                 }
             }
-            let r = running.as_mut().expect("running");
-            if matches!(r.child.try_wait(), Ok(None)) && r.stdin.write_all(&line).is_ok() {
-                break;
-            }
-            let (code, ran) = running.take().expect("running").reap();
-            programs.exited(code, ran);
-            restarts += 1;
+        };
+        if m.state == PillState::Hidden && running.is_none() {
+            last = None;
+            continue;
         }
+        deliver(&m, &mut running, &mut programs);
+        last = Some((m, at));
+    }
+}
+
+/// Whether a replacement pill should still show `m`, sent at `at`: what is
+/// going on now, or a result word that has not had its moment yet.
+fn still_current(m: &Message, at: Instant) -> bool {
+    match m.state {
+        PillState::Listening | PillState::Transcribing => true,
+        PillState::Success | PillState::Error => at.elapsed() < REPLAY_RESULT,
+        PillState::Hidden => false,
+    }
+}
+
+/// Write one message, starting a pill first if none runs.
+fn deliver(m: &Message, running: &mut Option<Running>, programs: &mut Programs) {
+    let Ok(mut line) = serde_json::to_vec(m) else {
+        return;
+    };
+    line.push(b'\n');
+    // A dead pill gets one replacement per message; a program that cannot
+    // start at all hands over to the next one at once.
+    let mut restarts = 0;
+    while restarts < 2 {
+        if running.is_none() {
+            let Some(program) = programs.current() else {
+                return;
+            };
+            match program.spawn() {
+                Ok(r) => *running = Some(r),
+                Err(e) => {
+                    programs.give_up(&format!("could not start ({e})"));
+                    continue;
+                }
+            }
+        }
+        let r = running.as_mut().expect("running");
+        if matches!(r.child.try_wait(), Ok(None)) && r.stdin.write_all(&line).is_ok() {
+            return;
+        }
+        let (code, ran) = running.take().expect("running").reap();
+        programs.exited(code, ran);
+        restarts += 1;
     }
 }
 
@@ -449,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_the_helper_when_the_native_pill_is_unavailable() {
+    fn an_unavailable_native_pill_hands_its_state_to_the_helper() {
         let dir = temp_dir("fallback");
         let (native, helper) = (dir.join("delulu-pill"), dir.join("delulu-talks"));
         let (starts, out) = (dir.join("native-starts"), dir.join("helper-lines"));
@@ -460,20 +516,22 @@ mod tests {
             let native = native.clone();
             move || writer(rx, programs(Some(native), Fallback::Program(helper)))
         });
-        let msg = |state, level| Message {
-            state,
-            level,
-            label: None,
+        // One message and nothing after it: the native pill takes it and exits
+        // "unavailable"; the helper must still show it.
+        let error = Message {
+            state: PillState::Error,
+            level: None,
+            label: Some("No microphone".into()),
         };
-        tx.send(msg(PillState::Listening, None)).unwrap();
-        // Give the native pill time to exit, as a real one does at once.
-        std::thread::sleep(Duration::from_millis(300));
-        for i in 0..20 {
-            tx.send(msg(PillState::Listening, Some(i as f32 / 20.0)))
-                .unwrap();
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        tx.send(msg(PillState::Transcribing, None)).unwrap();
+        tx.send(error.clone()).unwrap();
+        assert_eq!(lines(&out, PillState::Error).last(), Some(&error));
+        // Later messages go straight to the helper.
+        tx.send(Message {
+            state: PillState::Transcribing,
+            level: None,
+            label: None,
+        })
+        .unwrap();
         let got = lines(&out, PillState::Transcribing);
         assert_eq!(got.last().map(|m| m.state), Some(PillState::Transcribing));
         drop(tx);
