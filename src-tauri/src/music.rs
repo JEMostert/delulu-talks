@@ -98,12 +98,19 @@ pub(crate) fn ready(music: &Music, dir: &Path) -> bool {
 /// A download or a delete is changing one of the models these settings need: the
 /// radio must not read them.
 pub(crate) fn changing(app: &tauri::AppHandle, music: &Music) -> bool {
-    let m = app.state::<MusicModel>();
-    let downloading = lock(&m.downloading).clone();
-    let removing = *lock(&m.removing);
-    needed(music)
-        .iter()
-        .any(|model| downloading.contains(&model.id) || removing == Some(model.id))
+    app.state::<MusicModel>().changing(music)
+}
+
+impl MusicModel {
+    /// See [`changing`]. The song's start-up check (`cancelled` in the radio's
+    /// compose) relies on a delete counting from before it stops the song.
+    fn changing(&self, music: &Music) -> bool {
+        let downloading = lock(&self.downloading).clone();
+        let removing = *lock(&self.removing);
+        needed(music)
+            .iter()
+            .any(|model| downloading.contains(&model.id) || removing == Some(model.id))
+    }
 }
 
 fn status(app: &tauri::AppHandle) -> MusicModelStatus {
@@ -303,6 +310,28 @@ mod tests {
         assert!(!claim(&downloading, &[&YUE2_3B]));
         assert!(downloading.try_lock().is_ok());
         assert_eq!(*lock(&downloading), [ACE_STEP_TURBO.id]);
+    }
+
+    /// A delete in progress keeps every song that may load the model from starting
+    /// (and stops one starting), but not songs of the other engine.
+    #[test]
+    fn a_model_being_deleted_holds_back_the_songs_that_need_it() {
+        let m = MusicModel::default();
+        let ace = |ace_lm| Music {
+            engine: MusicEngine::AceStep,
+            ace_lm,
+            ace_warm: None,
+        };
+        *lock(&m.removing) = Some(ACE_STEP_LM_LARGE.id);
+        assert!(m.changing(&ace(AceLm::Auto)));
+        assert!(m.changing(&ace(AceLm::Large)));
+        assert!(!m.changing(&ace(AceLm::Small)));
+        assert!(!m.changing(&Music::default()));
+        *lock(&m.removing) = None;
+        assert!(!m.changing(&ace(AceLm::Large)));
+        // A download counts the same way.
+        lock(&m.downloading).push(YUE2_3B.id);
+        assert!(m.changing(&Music::default()));
     }
 
     /// ACE-Step on auto runs with either language model; a fixed choice needs it.
