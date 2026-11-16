@@ -55,9 +55,6 @@ body::before {
 /* Sea glass: a frosted pane with a thin mother-of-pearl rim. */
 .glass,
 .group,
-.search,
-.tabs,
-.status-chip,
 .vocab-dialog {
   position: relative;
   background: var(--glass);
@@ -69,9 +66,6 @@ body::before {
 }
 .glass::before,
 .group::before,
-.search::before,
-.tabs::before,
-.status-chip::before,
 .vocab-dialog::before {
   content: "";
   position: absolute;
@@ -134,6 +128,9 @@ button:disabled {
 }
 .muted {
   color: var(--ink-2);
+}
+.title-block {
+  display: grid;
 }
 .tabular {
   font-variant-numeric: tabular-nums;

@@ -110,11 +110,11 @@ export function ModelStep({ state }: Props) {
       <h1>One download</h1>
       <p className="lead">
         Speech recognition runs on this computer, so it needs a model. Pick an
-        engine; you can switch in Settings later.
+        engine; you can switch on the Dictate page later.
       </p>
       <p className="muted">
         Text cleanup (5.2 GB) downloads in the background afterwards. You can
-        turn it off on the Cleanup page.
+        turn it off on the Dictate page.
       </p>
       <div className="field">
         <span className="field-label">Speech engine</span>

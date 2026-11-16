@@ -21,7 +21,7 @@ export type ReadinessStep = {
   optional?: boolean;
   /** Can't be checked yet, so not shown as a problem. */
   unknown?: boolean;
-  /** Fixed in Settings → Models. */
+  /** Fixed on the Models page. */
   models?: boolean;
 };
 
@@ -76,7 +76,7 @@ export function readinessSteps(
           label: "Music model (YuE2, about 4 GB)",
           ok: m.model,
           models: true,
-          help: "Download it in Settings → Models, or under Music engine below. Nothing downloads until you ask.",
+          help: "Download it in Models, or under Music engine below. Nothing downloads until you ask.",
         };
   return [
     {
@@ -99,14 +99,14 @@ export function readinessSteps(
       id: "writer",
       label: "Cleanup model (writes the songs)",
       ok: r.writer,
-      help: "Download the cleanup model on the Cleanup page.",
+      help: "Download the cleanup model at Clean up text, on Dictate.",
     },
     {
       id: "voice",
       label: "Host voice",
       ok: r.voice,
       optional: true,
-      help: "Optional. Install the voice model in Settings → Voice replies; until then the station plays music only.",
+      help: "Optional. Install the voice model on the Voice page; until then the station plays music only.",
     },
   ];
 }

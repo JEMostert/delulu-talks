@@ -244,3 +244,164 @@ kbd {
   opacity: 0.55;
   cursor: default;
 }
+.button.small {
+  height: 28px;
+  padding: 0 11px;
+  gap: 5px;
+  font-size: var(--t-small);
+}
+.icon-button:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.icon-button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.keys-small kbd {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: var(--t-meta);
+}
+
+/* A small rounded label: a language, a licence, a state */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--t-meta);
+  font-weight: 620;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.tag.plain {
+  background: var(--line);
+  color: var(--ink-2);
+}
+.tag.ok {
+  background: color-mix(in srgb, var(--seaglass-ink) 14%, transparent);
+  color: var(--seaglass-ink);
+}
+.tag.warn {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+a.tag:hover {
+  color: var(--ink);
+}
+
+/* One compact setting per line: label left, control right */
+.line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 4px 8px 4px 14px;
+}
+.line + .line,
+.line-error + .line {
+  border-top: 1px solid var(--line);
+}
+.line-label {
+  flex: 1 0 auto;
+  margin-right: auto;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  white-space: nowrap;
+}
+.line-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+.line-note {
+  color: var(--ink-3);
+  font-size: var(--t-meta);
+  white-space: nowrap;
+}
+.line-value {
+  overflow: hidden;
+  font-size: var(--t-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.line-alert {
+  display: inline-grid;
+  color: var(--amber-ink);
+}
+.line-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 0;
+  padding: 0 14px 8px;
+  color: var(--amber-ink);
+  font-size: var(--t-meta);
+}
+.line-error span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.line-error .icon {
+  flex: none;
+}
+.line .select select {
+  min-width: 0;
+  max-width: 170px;
+  height: 30px;
+  padding: 0 28px 0 10px;
+  border-radius: 8px;
+  background: var(--sunken);
+  font-size: var(--t-small);
+}
+.line .select::after {
+  right: 11px;
+  width: 6px;
+  height: 6px;
+}
+.line .switch {
+  width: 36px;
+  height: 22px;
+}
+.line .switch::after {
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+}
+.line .switch:checked::after {
+  transform: translateX(14px);
+}
+.line .icon-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+/* Compact segmented controls in lines and bars */
+.line .segmented,
+.history-bar .segmented {
+  padding: 2px;
+  border-radius: 8px;
+}
+.line .segmented label,
+.history-bar .segmented label {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font-size: var(--t-small);
+}
+.bar.mini-bar {
+  width: 70px;
+  height: 5px;
+}

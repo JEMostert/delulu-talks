@@ -54,8 +54,17 @@
   scroll-behavior: smooth;
 }
 .settings-section {
-  max-width: 680px;
   scroll-margin-top: 22px;
+}
+/* Voice and Models: one section under its page heading, no index. */
+.settings-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.settings-single .settings-scroll {
+  padding: 18px 24px 40px;
+}
+.settings-single h1 {
+  margin-bottom: 16px;
 }
 .settings-section + .settings-section {
   margin-top: 34px;
@@ -108,22 +117,6 @@
   justify-content: flex-end;
   gap: 12px;
   min-width: 0;
-}
-.lang-set {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 7px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-/* The last language has no remove button; balance its padding. */
-.lang-set .term:not(:has(button)) {
-  padding-right: 11px;
-}
-.lang-set + .select select {
-  min-width: 110px;
 }
 .row-stack {
   flex-direction: column;

@@ -1,66 +1,51 @@
+/* History on Dictate: a bar, then one scrolling list of day groups. */
 .history {
-  width: min(100%, 860px);
-  margin: 0 auto;
-  padding: 10px 28px 48px;
-}
-.history-head {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 18px;
-  padding: 12px 0 18px;
-  /* Entries scrolling under it blur away, like seen through water. */
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  /* The fade stays in the bottom padding, so a confirm in the header stays crisp. */
-  -webkit-mask-image: linear-gradient(
-    180deg,
-    #000 calc(100% - 18px),
-    transparent
-  );
-  mask-image: linear-gradient(180deg, #000 calc(100% - 18px), transparent);
-}
-/* Confirms live in the sticky header, so they stay in view however far the list
-   is scrolled. */
-.history-head > .confirm {
-  grid-column: 1 / -1;
-  margin-bottom: 0;
-}
-.title-block {
-  display: grid;
-}
-.history-actions {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  overflow: hidden;
 }
-.retention {
+.history-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--ink-3);
-  font-size: var(--t-meta);
-  white-space: nowrap;
+  padding: 10px 10px 10px 12px;
+  border-bottom: 1px solid var(--line);
 }
-.retention .select select {
+.history-count {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+}
+.history-bar .select select {
   min-width: 0;
-  color: var(--ink);
+  height: 30px;
+  padding: 0 28px 0 10px;
+  border-radius: 8px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--t-small);
 }
-.count {
-  color: var(--ink-3);
-  font-size: var(--t-meta);
-  font-variant-numeric: tabular-nums;
+.history-bar .select select:hover {
+  background: var(--accent-soft);
+}
+.history-bar .select::after {
+  right: 11px;
+  width: 6px;
+  height: 6px;
 }
 .search {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
-  gap: 10px;
-  height: 42px;
-  padding: 0 16px;
-  border-radius: var(--r-pill);
+  gap: 7px;
+  max-width: 340px;
+  min-width: 120px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--sunken);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
   color: var(--ink-3);
   transition: box-shadow 160ms;
 }
@@ -77,6 +62,7 @@
   outline: 0;
   background: transparent;
   color: var(--ink);
+  font-size: var(--t-small);
 }
 .search input::placeholder {
   color: var(--ink-3);
@@ -85,9 +71,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 16px;
-  padding: 12px 12px 12px 18px;
+  padding: 8px 10px 8px 14px;
   border-radius: var(--r-group);
   background: color-mix(in srgb, var(--coral) 10%, var(--surface));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--coral) 35%, transparent);
@@ -97,37 +83,174 @@
   min-width: 200px;
   font-weight: 560;
 }
-.day + .day {
-  margin-top: 26px;
+.history > .confirm {
+  margin: 8px 10px 0;
 }
+.history-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.history > .confirm + .history-list {
+  margin-top: 8px;
+}
+
+/* Day groups: the label sticks while its day scrolls by */
 .day-label {
-  padding: 0 0 8px 88px;
-  font-size: var(--t-small);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-3);
+  font-size: var(--t-meta);
   font-weight: 650;
-  letter-spacing: 0;
-  color: var(--ink-2);
+  letter-spacing: 0.07em;
+  line-height: 1.4;
+  text-transform: uppercase;
 }
-.entry-gutter {
-  grid-template-columns: 72px minmax(0, 1fr) auto;
-  column-gap: 16px;
+
+/* One dictation per line */
+.entry {
+  position: relative;
+  border-bottom: 1px solid var(--line);
+  /* Off-screen rows skip layout and paint, so thousands stay fast. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 35px;
+}
+.entry:hover,
+.entry:focus-within {
+  background: var(--accent-soft);
+}
+.entry-main {
+  display: grid;
+  grid-template-columns: 4.6em minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: default;
+}
+.entry-main:focus-visible {
+  outline-offset: -2px;
+  border-radius: 4px;
 }
 .entry-time {
-  padding-top: 4px;
   color: var(--ink-3);
-  font-size: var(--t-small);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
+  font-size: var(--t-meta);
   white-space: nowrap;
 }
-.history .entry-actions {
-  opacity: 0.55;
-  transition: opacity 140ms;
+.entry-text {
+  overflow: hidden;
+  font-family: var(--font-text);
+  font-size: var(--t-text);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.history .entry:hover .entry-actions,
-.history .entry:focus-within .entry-actions {
+.entry-text mark {
+  border-radius: 3px;
+  background: var(--mark);
+  color: inherit;
+}
+.entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font-size: var(--t-meta);
+  white-space: nowrap;
+}
+.entry-topic {
+  color: var(--ink-3);
+}
+.entry.open .entry-main {
+  align-items: start;
+  padding-top: 8px;
+  padding-bottom: 4px;
+}
+.entry.open .entry-text {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.entry.open .entry-time,
+.entry.open .entry-meta {
+  padding-top: 3px;
+}
+/* Copy, insert again and delete float over the meta on hover or focus. */
+.entry-actions {
+  display: flex;
+  border-radius: 8px;
+}
+.entry > .entry-actions {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line-strong);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms;
+}
+.entry:hover > .entry-actions,
+.entry:focus-within > .entry-actions {
   opacity: 1;
+  pointer-events: auto;
 }
-.empty-history {
-  padding-top: 28px;
-  border-top: 0;
+.entry-actions .icon-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.entry-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 6px calc(4.6em + 24px);
+}
+.entry-more .entry-actions {
+  margin-left: auto;
+}
+.entry-toggle {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-3);
+  font-size: var(--t-meta);
+  font-weight: 560;
+}
+/* On: tinted like a selected tab. Off: the original words, so it steps back. */
+.entry-toggle[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.entry-toggle[aria-pressed="false"] {
+  border-style: dashed;
+}
+
+.empty {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  padding: 22px 18px;
+  color: var(--ink-2);
+}
+.empty-title {
+  font-family: var(--font-text);
+  font-size: 1.35rem;
+  font-weight: 450;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }

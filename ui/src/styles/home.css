@@ -1,36 +1,50 @@
-.home {
+/* Dictate: the pearl and its settings on the left, history fills the rest. */
+.page-dictate {
+  overflow: hidden;
+}
+.dictate {
   display: grid;
-  grid-template-columns: minmax(330px, 1fr) minmax(0, 1.08fr);
-  gap: clamp(20px, 3vw, 40px);
+  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 12px;
   height: 100%;
-  padding: 2px 20px 20px;
+  padding: 14px 16px 16px;
+}
+.dictate-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.dictate-settings {
+  flex: 1 1 auto;
+  overflow: auto;
 }
 
-/* Hero: the pearl in its well */
+/* Hero: the pearl in its well, compact */
 .hero {
+  flex: none;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  padding: 18px 30px 30px;
+  justify-items: center;
+  gap: 2px;
+  padding: 6px 14px 16px;
+  border-radius: var(--r-group);
+  text-align: center;
 }
 .hero-stage {
   position: relative;
-  min-height: 0;
-  margin: 0 -30px;
+  width: 100%;
+  height: 150px;
 }
 .hero-stage .pearl {
   position: absolute;
   inset: 0;
 }
-.hero-copy {
-  position: relative;
-  display: grid;
-  gap: 12px;
-}
 .hero-title {
-  font-size: var(--t-hero);
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1;
+  font-size: 1.65rem;
+  font-weight: 720;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
   transition: color 300ms;
 }
 .phase-recording .hero-title {
@@ -51,21 +65,22 @@
 }
 .hero-hint {
   display: grid;
-  justify-items: start;
-  gap: 6px;
-  align-content: start;
-  min-height: 84px;
+  justify-items: center;
+  gap: 8px;
+  min-height: 26px;
   color: rgba(234, 246, 255, 0.68);
-  font-size: var(--t-body);
+  font-size: var(--t-small);
 }
 .hero-hold {
   display: inline-flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  color: var(--pearl-ink);
-  font-size: 1.05rem;
-  font-weight: 560;
+  gap: 6px;
+}
+.hero-message {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 .well kbd {
   background: rgba(234, 246, 255, 0.08);
@@ -73,6 +88,13 @@
   box-shadow:
     inset 0 0 0 1px rgba(234, 246, 255, 0.2),
     inset 0 -2px 0 rgba(234, 246, 255, 0.16);
+}
+.well .keys kbd {
+  min-width: 24px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: var(--t-meta);
 }
 .keys-large kbd {
   min-width: 36px;
@@ -82,13 +104,13 @@
   font-size: var(--t-body);
 }
 .hero-action {
-  margin-top: 4px;
-  height: 34px;
-  padding: 0 14px;
+  height: 28px;
+  padding: 0 12px;
   border: 1px solid rgba(234, 246, 255, 0.28);
   border-radius: var(--r-pill);
   background: rgba(234, 246, 255, 0.06);
   color: var(--pearl-ink);
+  font-size: var(--t-small);
   font-weight: 560;
 }
 .hero-action:hover {
@@ -98,108 +120,12 @@
   outline-color: var(--foam);
 }
 
-/* Recent transcripts */
-.recent {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: auto;
-  padding: 14px 4px 0 0;
-}
-.recent-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding-bottom: 8px;
-}
-.entries {
-  display: grid;
-}
-.entry {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 12px;
-  padding: 14px 0 15px;
-  border-top: 1px solid var(--line);
-}
-.entry-text {
-  font-family: var(--font-text);
-  font-size: var(--t-text);
-  line-height: 1.5;
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-.home .entry-text {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-}
-.entry-text mark {
-  border-radius: 3px;
-  background: var(--mark);
-  color: inherit;
-}
-.entry-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 14px;
-  margin-top: 6px;
-  color: var(--ink-3);
-  font-size: var(--t-meta);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-/* The "Cleaned up" toggle sits in the line of small text, so it is small too */
-.entry-meta .button {
-  height: 26px;
-  padding: 0 11px;
-  font-size: var(--t-meta);
-}
-/* On: tinted like a selected tab. Off: the original words, so it steps back. */
-.entry-meta .button[aria-pressed="true"] {
-  border-color: transparent;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.entry-meta .button[aria-pressed="false"] {
-  border-style: dashed;
-  background: transparent;
-  color: var(--ink-3);
-}
-.entry-lang {
-  color: var(--ink-2);
-  font-weight: 560;
-}
-/* The topic as a small pearl-tagged chip */
-.entry-topic {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--ink-2);
-  font-weight: 560;
-}
-.entry-topic::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fff, #e3dcf2 50%, #9fd9ec);
-  box-shadow: 0 0 0 1px rgba(3, 14, 26, 0.15);
-}
-.entry-actions {
-  display: flex;
-  align-self: start;
-  margin-top: -3px;
-}
-
+/* A dictation that could not be inserted: its text, to copy by hand */
 .recovery {
+  flex: none;
   display: grid;
-  justify-items: start;
-  gap: 10px;
-  margin-bottom: 14px;
-  padding: 16px 18px;
+  gap: 4px;
+  padding: 6px 6px 10px 12px;
   border-radius: var(--r-group);
   background: var(--amber-soft);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 35%, transparent);
@@ -207,38 +133,59 @@
 .recovery-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   color: var(--amber-ink);
-  font-weight: 600;
+  font-size: var(--t-small);
+  font-weight: 620;
+}
+.recovery-head > span {
+  margin-right: auto;
+}
+.recovery-head .icon-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
 }
 .recovery-text {
+  display: -webkit-box;
+  overflow: hidden;
+  padding-right: 6px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   font-family: var(--font-text);
   font-size: var(--t-text);
+  line-height: 1.35;
+  user-select: text;
 }
 
-.empty {
-  display: grid;
-  justify-items: start;
-  gap: 8px;
-  max-width: 42ch;
-  padding: 18px 0;
-  border-top: 1px solid var(--line);
-  color: var(--ink-2);
-  line-height: 1.6;
+/* Your languages: short codes, each removable */
+.line .lang-set {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 4px;
 }
-.empty-title {
-  font-family: var(--font-text);
-  font-size: 1.5rem;
-  font-weight: 450;
-  letter-spacing: -0.01em;
+.lang-set .tag button {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-right: -3px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-3);
+}
+.lang-set .tag button:hover {
+  background: var(--line-strong);
   color: var(--ink);
 }
-
-@media (max-width: 760px) {
-  .home {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(340px, 58%) auto;
-    height: auto;
-    min-height: 100%;
-  }
+.line .lang-set + .select select {
+  width: 44px;
+  min-width: 0;
+  padding-right: 22px;
+}
+.line .lang-set + .select::after {
+  right: 10px;
 }
