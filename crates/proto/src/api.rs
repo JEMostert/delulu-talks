@@ -357,7 +357,7 @@ pub fn check_protocol(client: u32) -> Result<(), ApiError> {
     }
     let daemon = crate::PROTOCOL_VERSION;
     let advice = if client > daemon {
-        "the daemon is older than this client; restart it after updating (systemctl --user restart delulu)"
+        "the daemon is older than this client; restart it after updating (systemctl --user restart app-com.joran.delulu-talks@daemon)"
     } else {
         "this client is older than the daemon; update or restart it"
     };

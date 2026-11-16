@@ -1162,7 +1162,9 @@ dependencies = [
  "delulu-models",
  "delulu-store",
  "delulu-stt",
+ "libc",
  "serde",
+ "tempfile",
  "tokio",
 ]
 
