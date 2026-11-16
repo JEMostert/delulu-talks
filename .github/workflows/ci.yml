@@ -15,6 +15,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Caches from before GGML_MAX_NAME (.cargo/config.toml) hold a ggml built
+          # without it, and llama-cpp-sys-2 would not rebuild for it. Builds from
+          # this key on track the variable and rebuild when it changes.
+          key: ggml-max-name
       - run: bun install --frozen-lockfile
       - name: Generated TypeScript protocol types are current
         run: cargo test -p delulu-proto --locked --test generated

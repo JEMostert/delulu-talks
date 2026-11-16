@@ -1,0 +1,4 @@
+[package]
+name = "delulu-music-ace"
+version.workspace = true
+edition.workspace = true

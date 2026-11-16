@@ -1205,6 +1205,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "delulu-music-ace"
+version = "1.5.0"
+
+[[package]]
 name = "delulu-overlay"
 version = "1.5.0"
 dependencies = [
