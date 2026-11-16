@@ -30,7 +30,7 @@ fn main() {
         fake_worker();
         return;
     }
-    let tests: [(&str, fn()); 7] = [
+    let tests: [(&str, fn()); 9] = [
         (
             "a_clip_reaches_the_worker_whole_with_its_language_and_prompt",
             a_clip_reaches_the_worker_whole_with_its_language_and_prompt,
@@ -51,6 +51,14 @@ fn main() {
         (
             "a_failed_recovery_is_tried_again",
             a_failed_recovery_is_tried_again,
+        ),
+        (
+            "a_dictation_during_a_retry_is_answered_after_it",
+            a_dictation_during_a_retry_is_answered_after_it,
+        ),
+        (
+            "closing_during_a_retry_ends_the_thread",
+            closing_during_a_retry_ends_the_thread,
         ),
         ("load_failures_are_reported", load_failures_are_reported),
     ];
@@ -293,6 +301,45 @@ fn a_failed_recovery_is_tried_again() {
     assert!(s.transcribe(1_000, both(), None).is_ok());
 }
 
+/// A session whose worker was killed and could not load the model again: the engine
+/// thread tries again after 300 ms, and that load then takes 1 s.
+fn failed_recovery_with_a_slow_retry() -> Session {
+    let s = session("models", Duration::from_secs(10), false);
+    s.load().unwrap();
+    std::fs::write(s.dir.join("fail-loads"), "").unwrap();
+    // SAFETY: plain syscall on the fake worker this test started.
+    unsafe { libc::kill(s.worker_pid(), libc::SIGKILL) };
+    let (kind, _, result) = s.report();
+    assert_eq!((kind, result.is_err()), ("recovered", true));
+    std::fs::write(s.dir.join("slow-loads"), "").unwrap();
+    std::fs::remove_file(s.dir.join("fail-loads")).unwrap();
+    // Into the retry's load.
+    std::thread::sleep(Duration::from_millis(650));
+    s
+}
+
+fn a_dictation_during_a_retry_is_answered_after_it() {
+    let s = failed_recovery_with_a_slow_retry();
+    assert!(s.transcribe(1_000, both(), None).is_ok());
+    let (kind, _, result) = s.report();
+    assert_eq!((kind, result.is_ok()), ("recovered", true));
+}
+
+fn closing_during_a_retry_ends_the_thread() {
+    let s = failed_recovery_with_a_slow_retry();
+    let Session { jobs, reports, .. } = s;
+    drop(jobs);
+    // The thread drops its host (and so the reports sender) when it ends.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match reports.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(_) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => panic!("the engine thread kept running"),
+        }
+    }
+}
+
 fn load_failures_are_reported() {
     let s = session("broken", Duration::from_secs(10), false);
     let error = s.load().unwrap_err();
@@ -360,6 +407,9 @@ fn fake_worker() {
                 writeln!(pids, "{}", std::process::id()).unwrap();
                 if model.path.contains("crash-on-load") {
                     kill_self();
+                }
+                if dir.join("slow-loads").exists() {
+                    std::thread::sleep(Duration::from_secs(1));
                 }
                 send(
                     &mut out,

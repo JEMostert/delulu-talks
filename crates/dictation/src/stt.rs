@@ -286,6 +286,15 @@ fn read_worker(stdout: impl Read, gen: u64, events: Sender<Event>) {
     });
 }
 
+/// What the idle thread wakes up for.
+enum Idle {
+    Event(Event),
+    /// A failed recovery is due to be tried again.
+    Retry,
+    /// Every event sender is gone.
+    Gone,
+}
+
 /// How a wait for the worker ended.
 enum Wait<T> {
     Got(T),
@@ -331,10 +340,17 @@ impl<H: EngineHost> Client<H> {
                 Some(job) => job,
                 None if self.closed => break,
                 None => match self.next_event() {
-                    Some(Event::Job(job)) => job,
-                    Some(Event::Closed) | None => break,
-                    Some(Event::Worker { gen, message }) => {
+                    Idle::Event(Event::Job(job)) => job,
+                    Idle::Event(Event::Closed) | Idle::Gone => break,
+                    Idle::Event(Event::Worker { gen, message }) => {
                         self.idle_event(gen, message);
+                        continue;
+                    }
+                    // Back to the top: jobs or a close may have come in meanwhile.
+                    Idle::Retry => {
+                        self.retry_at = None;
+                        self.crashes.clear();
+                        let _ = self.recover();
                         continue;
                     }
                 },
@@ -358,23 +374,18 @@ impl<H: EngineHost> Client<H> {
         self.shut_down();
     }
 
-    /// The next event while idle; a failed recovery due meanwhile is tried again first.
-    fn next_event(&mut self) -> Option<Event> {
-        loop {
-            let Some(at) = self.retry_at else {
-                return self.events.recv().ok();
-            };
-            match self
-                .events
-                .recv_timeout(at.saturating_duration_since(Instant::now()))
-            {
-                Ok(event) => return Some(event),
-                Err(RecvTimeoutError::Timeout) => {
-                    self.crashes.clear();
-                    let _ = self.recover();
-                }
-                Err(RecvTimeoutError::Disconnected) => return None,
-            }
+    /// The next event while idle, or the moment to try a failed recovery again.
+    fn next_event(&mut self) -> Idle {
+        let Some(at) = self.retry_at else {
+            return self.events.recv().map_or(Idle::Gone, Idle::Event);
+        };
+        match self
+            .events
+            .recv_timeout(at.saturating_duration_since(Instant::now()))
+        {
+            Ok(event) => Idle::Event(event),
+            Err(RecvTimeoutError::Timeout) => Idle::Retry,
+            Err(RecvTimeoutError::Disconnected) => Idle::Gone,
         }
     }
 
