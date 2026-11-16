@@ -414,6 +414,8 @@ pub struct Supervisor {
     helper: std::sync::OnceLock<PathBuf>,
     /// Called with every status change, from whichever thread made it.
     publish: Box<dyn Fn(CleanupStatus) + Send + Sync>,
+    /// The active vocabulary terms; a new helper evaluates their prompt prefixes.
+    vocabulary: Box<dyn Fn() -> Vec<String> + Send + Sync>,
 }
 impl Supervisor {
     pub fn new(
@@ -421,6 +423,7 @@ impl Supervisor {
         file_ready: bool,
         models_dir: PathBuf,
         publish: Box<dyn Fn(CleanupStatus) + Send + Sync>,
+        vocabulary: Box<dyn Fn() -> Vec<String> + Send + Sync>,
     ) -> Arc<Self> {
         Arc::new(Supervisor {
             inner: Mutex::new(Inner::new(enabled, file_ready)),
@@ -428,6 +431,7 @@ impl Supervisor {
             models_dir,
             helper: std::sync::OnceLock::new(),
             publish,
+            vocabulary,
         })
     }
     /// Run this helper binary instead of the installed `delulu-engine`.
@@ -566,6 +570,14 @@ impl Supervisor {
                     drop(inner);
                     kill.kill();
                 }
+            })
+            .map(|mut cleaner| {
+                // So the first dictation only decodes its transcript. A failed warm-up
+                // costs only that: a helper it left dead is restarted like any other.
+                if let Err(e) = cleaner.warm(&(cleanup.vocabulary)()) {
+                    eprintln!("cleanup warm-up failed: {e}");
+                }
+                cleaner
             });
             match result {
                 Ok(cleaner) => {
