@@ -1,5 +1,26 @@
-use delulu_stt::{Engine, Language};
-use std::{error::Error, path::PathBuf};
+//! Transcribes WAV files the way dictation does: through `delulu-engine stt`.
+//! `cargo run --release -p delulu-dictation --example bench -- <model> <wav…>`
+//! with `DELULU_ENGINE` pointing at a release `delulu-engine`; models come from
+//! `$XDG_DATA_HOME/delulu-talks/models`. The times are from the end of the audio to
+//! the text, including the trip to the worker.
+use delulu_dictation::stt::{engine_thread, EngineHost, EngineJob};
+use delulu_stt::Language;
+use std::sync::mpsc;
+use std::{error::Error, path::PathBuf, time::Instant};
+
+struct Host {
+    dir: PathBuf,
+    loaded: mpsc::Sender<Result<String, String>>,
+}
+impl EngineHost for Host {
+    fn models_dir(&self) -> PathBuf {
+        self.dir.clone()
+    }
+    fn before_load(&self) {}
+    fn loaded(&self, _: String, result: Result<String, String>) {
+        let _ = self.loaded.send(result);
+    }
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
@@ -23,8 +44,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             .to_vec(),
     };
     let language = Language::Auto(allowed);
-    let mut engine = Engine::load(&dir, &id)?;
-    println!("backend: {}", engine.backend());
+    let (loaded, load_result) = mpsc::channel();
+    let (jobs, rx) = mpsc::channel();
+    std::thread::spawn(move || engine_thread(Host { dir, loaded }, rx));
+    jobs.send(EngineJob::Load(id))?;
+    println!("backend: {}", load_result.recv()??);
+    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
     let mut times = Vec::new();
     let mut en = (0, 0);
     let mut nl = (0, 0);
@@ -38,7 +63,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             .samples::<i16>()
             .map(|s| s.map(|x| x as f32 / 32768.0))
             .collect::<Result<_, _>>()?;
-        let result = engine.transcribe(&samples, &language, None)?;
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        let started = Instant::now();
+        jobs.send(EngineJob::Transcribe(
+            samples,
+            language.clone(),
+            None,
+            reply,
+        ))?;
+        let result = runtime.block_on(answer)??;
+        let ms = started.elapsed().as_millis() as u64;
         let name = std::path::Path::new(&path)
             .file_name()
             .unwrap_or_default()
@@ -47,13 +81,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             if name.starts_with(prefix) {
                 counts.1 += 1;
                 counts.0 += usize::from(result.language == code);
-                times.push(result.elapsed_ms);
+                times.push(ms);
             }
         }
-        println!(
-            "{name}\t{}\t{} ms\t{}",
-            result.language, result.elapsed_ms, result.text
-        );
+        println!("{name}\t{}\t{ms} ms\t{}", result.language, result.text);
     }
     times.sort_unstable();
     let median = if times.is_empty() {

@@ -80,7 +80,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
 }
 
 /// Keep stdout for the protocol only: anything a C library prints goes to stderr.
-fn protocol_out() -> File {
+pub(crate) fn protocol_out() -> File {
     // SAFETY: plain fd syscalls on fds this process owns; the dup'd fd is owned by File.
     unsafe {
         let fd = libc::dup(libc::STDOUT_FILENO);

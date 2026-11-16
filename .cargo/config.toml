@@ -7,7 +7,7 @@
 # llama-cpp-sys-2 passes GGML_* and CMAKE_* variables to CMake (and reruns its
 # build when a GGML_* variable changes); CMake includes ggml.cmake right after
 # `project(llama.cpp)`, which turns the value into a compile definition.
-# whisper-rs-sys (crates/stt, another binary) receives both variables too, but
-# its CMake project is `whisper.cpp` and uses neither, so its build is unchanged.
+# whisper.cpp (whisper-rs-sys, patched in vendor/) links the same ggml; its build
+# script reads GGML_MAX_NAME and compiles whisper.cpp with it (shared-ggml.cmake).
 GGML_MAX_NAME = "128"
 "CMAKE_PROJECT_llama.cpp_INCLUDE" = { value = "crates/music-ace/ggml.cmake", relative = true }

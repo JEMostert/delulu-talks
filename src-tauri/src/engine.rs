@@ -65,4 +65,15 @@ impl EngineHost for AppEngine {
             }
         }
     }
+    fn recovered(&self, id: String, result: Result<String, String>) {
+        match result {
+            // Ready again; the phase stays as the dictation left it, so its error
+            // (the engine stopped) remains visible.
+            Ok(backend) => update(&self.0, |s| {
+                s.backend = Some(backend);
+                s.model = Some(id);
+            }),
+            Err(e) => self.loaded(id, Err(e)),
+        }
+    }
 }

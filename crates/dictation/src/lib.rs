@@ -7,7 +7,7 @@
 //! * [`stop`]: from the recorded clip to delivered text and a History entry;
 //! * [`context`]: what the last dictation was about, carried to the next one;
 //! * [`cleanup`]: the cleanup helper's lifecycle, and what its answer means;
-//! * [`stt`]: the speech engine thread.
+//! * [`stt`]: the speech engine worker (`delulu-engine stt`) and its thread.
 
 pub mod cleanup;
 pub mod context;

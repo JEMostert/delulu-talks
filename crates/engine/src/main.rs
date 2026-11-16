@@ -6,21 +6,25 @@
 //!   vendored acestep.cpp), one song per process.
 //! - `delulu-engine tts …`: Supertonic 3 speech on the CPU (ONNX Runtime), for
 //!   `delulu speak` and Delulu FM's host.
+//! - `delulu-engine stt`: dictation's speech to text (Whisper through whisper.cpp,
+//!   or Parakeet), resident while dictation is on; speaks the worker protocol.
 //! - `delulu-engine probe`: version, roles and compute devices as JSON; loads no model.
 use std::process::ExitCode;
 
 mod llm;
 mod music;
+mod stt;
 mod tts;
 
-const ROLES: [&str; 3] = ["llm", "music", "tts"];
-const USAGE: &str = "usage: delulu-engine <llm|music|tts|probe> …";
+const ROLES: [&str; 4] = ["llm", "music", "stt", "tts"];
+const USAGE: &str = "usage: delulu-engine <llm|music|stt|tts|probe> …";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("llm") => llm::main(args),
         Some("music") => music::main(args),
+        Some("stt") => stt::main(args),
         Some("tts") => tts::main(args),
         Some("probe") => probe(),
         Some("--version") => {

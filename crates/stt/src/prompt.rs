@@ -59,7 +59,7 @@ fn join(terms: Option<&str>, sentence: Option<&str>) -> Option<String> {
 /// have been in (`allowed`; empty means any). Then the previous sentence probably pulled
 /// the text into its own language. A mixed sentence counts by its common words, so
 /// Dutch with English names stays Dutch; text too short to tell is never a flip.
-pub(crate) fn flipped(text: &str, chosen: &str, allowed: &[String]) -> bool {
+pub fn flipped(text: &str, chosen: &str, allowed: &[String]) -> bool {
     guess_language(text).is_some_and(|heard| {
         heard != chosen && (allowed.is_empty() || allowed.iter().any(|a| a == heard))
     })

@@ -12,8 +12,19 @@ delulu-cleanup = { path = "../cleanup" }
 delulu-music = { path = "../music" }
 delulu-music-ace = { path = "../music-ace" }
 delulu-proto = { path = "../proto" }
+delulu-stt = { path = "../stt" }
 delulu-tts = { path = "../tts", features = ["onnx"] }
 serde_json.workspace = true
 llama-cpp-2.workspace = true
 libc.workspace = true
+log.workspace = true
+thiserror.workspace = true
 hound = "3.5"
+# Whisper for the `stt` role. whisper-rs-sys is patched (vendor/whisper-rs-sys) to build
+# whisper.cpp against llama-cpp-sys-2's ggml, the one ggml in this binary.
+whisper-rs.workspace = true
+whisper-rs-sys = "=0.15.0"
+# Parakeet v3 for the `stt` role, on ONNX Runtime (linked statically, as for `tts`).
+transcribe-rs = { version = "=0.3.12", default-features = false, features = ["onnx"] }
+# transcribe-rs 0.3.12 is written against this release candidate; newer ones break it.
+ort = { version = "=2.0.0-rc.12", default-features = false }

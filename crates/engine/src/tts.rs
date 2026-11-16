@@ -614,6 +614,7 @@ fn serve<R: Read + Send + 'static, W: Write>(
                         model_id: model.id.clone(),
                         load_ms,
                         vram_bytes: None,
+                        device: Some("CPU".into()),
                     },
                     Err(message) => FromWorker::Error {
                         id: None,

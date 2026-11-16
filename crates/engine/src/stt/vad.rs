@@ -8,14 +8,14 @@
 //! 885 KB, built into the binary, and runs on the CPU in about 2 ms per second of audio,
 //! alongside Whisper on the GPU. Unlike a level or spectrum gate it tells whispering
 //! from breathing, and short words from clicks.
-use crate::SttError;
+use super::SttError;
 use std::ffi::{c_char, c_void, CStr};
 use std::io::Write;
 use std::ops::Range;
 use std::ptr::NonNull;
 use whisper_rs_sys as sys;
 
-static MODEL: &[u8] = include_bytes!("../assets/ggml-silero-v6.2.0.bin");
+static MODEL: &[u8] = include_bytes!("../../assets/ggml-silero-v6.2.0.bin");
 
 pub(crate) struct Vad {
     ctx: NonNull<sys::whisper_vad_context>,

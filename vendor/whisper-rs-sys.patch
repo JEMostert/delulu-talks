@@ -1,0 +1,265 @@
+diff -ruN a/build.rs b/build.rs
+--- a/build.rs	2006-07-24 03:21:28.000000000 +0200
++++ b/build.rs	2026-11-16 16:30:55.470922486 +0100
+@@ -101,10 +101,37 @@
+     }
+ 
+     println!("cargo:rerun-if-changed=wrapper.h");
++    println!("cargo:rerun-if-changed=shared-ggml.cmake");
++    println!("cargo:rerun-if-changed=layout.c");
+ 
+     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
+     let whisper_root = out.join("whisper.cpp");
+ 
++    // Delulu: the one ggml in delulu-engine comes from llama-cpp-sys-2, which exports
++    // its CMake package dir (<prefix>/lib*/cmake) for exactly this; the headers are
++    // installed in <prefix>/include. whisper.cpp's bundled ggml is not vendored.
++    let ggml_cmake_dir = PathBuf::from(
++        env::var("DEP_LLAMA_GGML_CMAKE_DIR")
++            .expect("llama-cpp-sys-2 did not export DEP_LLAMA_GGML_CMAKE_DIR"),
++    );
++    let ggml_prefix = ggml_cmake_dir
++        .ancestors()
++        .nth(2)
++        .expect("ggml prefix")
++        .to_path_buf();
++    let ggml_include = ggml_prefix.join("include");
++    assert!(
++        ggml_include.join("ggml.h").is_file(),
++        "no ggml.h in {}",
++        ggml_include.display()
++    );
++    // The value llama-cpp-sys-2 compiled ggml with (.cargo/config.toml): it changes
++    // `struct ggml_tensor`, so whisper.cpp and these bindings must use it too.
++    println!("cargo:rerun-if-env-changed=GGML_MAX_NAME");
++    let max_name = env::var("GGML_MAX_NAME").expect(
++        "GGML_MAX_NAME is not set: build from the workspace, it comes from .cargo/config.toml",
++    );
++
+     if !whisper_root.exists() {
+         std::fs::create_dir_all(&whisper_root).unwrap();
+         fs_extra::dir::copy("./whisper.cpp", &out, &Default::default()).unwrap_or_else(|e| {
+@@ -116,10 +143,9 @@
+         });
+     }
+ 
+-    if env::var("WHISPER_DONT_GENERATE_BINDINGS").is_ok() {
+-        let _: u64 = std::fs::copy("src/bindings.rs", out.join("bindings.rs"))
+-            .expect("Failed to copy bindings.rs");
+-    } else {
++    // Delulu: always generated, against the linked ggml's headers. The bundled
++    // bindings described whisper.cpp's own, older ggml and are removed.
++    {
+         // https://github.com/rust-lang/rust-bindgen/issues/2691
+         // https://github.com/rust-lang/rust-bindgen/issues/3264
+         // https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs/-/issues/779
+@@ -141,36 +167,26 @@
+ 
+         #[cfg(feature = "metal")]
+         {
+-            bindings = bindings.header("whisper.cpp/ggml/include/ggml-metal.h");
++            bindings = bindings.header(ggml_include.join("ggml-metal.h").to_str().unwrap());
+         }
+         #[cfg(feature = "vulkan")]
+         {
+             bindings = bindings
+-                .header("whisper.cpp/ggml/include/ggml-vulkan.h")
++                .header(ggml_include.join("ggml-vulkan.h").to_str().unwrap())
+                 .clang_arg("-DGGML_USE_VULKAN=1");
+         }
+ 
+         let bindings = bindings
+             .clang_arg("-I./whisper.cpp/")
+             .clang_arg("-I./whisper.cpp/include")
+-            .clang_arg("-I./whisper.cpp/ggml/include")
++            .clang_arg(format!("-I{}", ggml_include.display()))
++            .clang_arg(format!("-DGGML_MAX_NAME={max_name}"))
+             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+-            .generate();
+-
+-        match bindings {
+-            Ok(b) => {
+-                let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+-                b.write_to_file(out_path.join("bindings.rs"))
+-                    .expect("Couldn't write bindings!");
+-            }
+-            Err(e) => {
+-                println!("cargo:warning=Unable to generate bindings: {}", e);
+-                println!("cargo:warning=Using bundled bindings.rs, which may be out of date");
+-                // copy src/bindings.rs to OUT_DIR
+-                std::fs::copy("src/bindings.rs", out.join("bindings.rs"))
+-                    .expect("Unable to copy bindings.rs");
+-            }
+-        }
++            .generate()
++            .unwrap_or_else(|e| panic!("Unable to generate bindings: {}", e));
++        bindings
++            .write_to_file(out.join("bindings.rs"))
++            .expect("Couldn't write bindings!");
+     };
+ 
+     // stop if we're on docs.rs
+@@ -290,6 +306,21 @@
+         config.define("GGML_OPENMP", "OFF");
+     }
+ 
++    // Delulu: whisper.cpp uses the installed ggml from llama-cpp-sys-2's build, and
++    // shared-ggml.cmake (included right after `project(whisper.cpp)`) compiles it with
++    // the same GGML_MAX_NAME, plus the layout probe delulu-engine checks.
++    config.define("WHISPER_USE_SYSTEM_GGML", "ON");
++    let mut prefix = vec![ggml_prefix.display().to_string()];
++    if let Ok(extra) = env::var("CMAKE_PREFIX_PATH") {
++        prefix.push(extra.replace(':', ";"));
++    }
++    config.define("CMAKE_PREFIX_PATH", prefix.join(";"));
++    config.define("GGML_MAX_NAME", &max_name);
++    config.define(
++        "CMAKE_PROJECT_whisper.cpp_INCLUDE",
++        PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("shared-ggml.cmake"),
++    );
++
+     if cfg!(feature = "intel-sycl") {
+         config.define("BUILD_SHARED_LIBS", "ON");
+         config.define("GGML_SYCL", "ON");
+@@ -309,10 +340,18 @@
+         println!("cargo:rustc-link-lib=ggml-base");
+         println!("cargo:rustc-link-lib=ggml-cpu");
+     } else {
++        // Delulu: llama-cpp-sys-2 links the static ggml archives itself. Only a shared
++        // ggml (its `dynamic-link` mode) must be named again, after libwhisper.a.
+         println!("cargo:rustc-link-lib=static=whisper");
+-        println!("cargo:rustc-link-lib=static=ggml");
+-        println!("cargo:rustc-link-lib=static=ggml-base");
+-        println!("cargo:rustc-link-lib=static=ggml-cpu");
++        let lib_dir = ggml_prefix.join("lib");
++        if lib_dir.join("libggml.so").exists() && !lib_dir.join("libggml.a").exists() {
++            println!("cargo:rustc-link-search=native={}", lib_dir.display());
++            for lib in ["ggml", "ggml-base", "ggml-cpu", "ggml-vulkan"] {
++                if lib_dir.join(format!("lib{lib}.so")).exists() {
++                    println!("cargo:rustc-link-lib=dylib={lib}");
++                }
++            }
++        }
+     }
+     if cfg!(target_os = "macos") || cfg!(feature = "openblas") {
+         println!("cargo:rustc-link-lib=static=ggml-blas");
+@@ -320,8 +359,6 @@
+     if cfg!(feature = "vulkan") {
+         if cfg!(feature = "intel-sycl") {
+             println!("cargo:rustc-link-lib=ggml-vulkan");
+-        } else {
+-            println!("cargo:rustc-link-lib=static=ggml-vulkan");
+         }
+     }
+ 
+diff -ruN a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml	2006-07-24 03:21:28.000000000 +0200
++++ b/Cargo.toml	2026-11-16 16:30:27.208804054 +0100
+@@ -1,13 +1,5 @@
+-# THIS FILE IS AUTOMATICALLY GENERATED BY CARGO
+-#
+-# When uploading crates to the registry Cargo will automatically
+-# "normalize" Cargo.toml files for maximal compatibility
+-# with all versions of Cargo and also rewrite `path` dependencies
+-# to registry (e.g., crates.io) dependencies.
+-#
+-# If you are reading this file be aware that the original Cargo.toml
+-# will likely look very different (and much more reasonable).
+-# See Cargo.toml.orig for the original contents.
++# whisper-rs-sys 0.15.0 from crates.io (normalized manifest), patched to build
++# whisper.cpp against delulu-engine's one ggml. See README.md.
+ 
+ [package]
+ edition = "2021"
+@@ -16,22 +8,6 @@
+ version = "0.15.0"
+ build = "build.rs"
+ links = "whisper"
+-include = [
+-    "whisper.cpp/bindings/javascript/package-tmpl.json",
+-    "whisper.cpp/bindings/CMakeLists.txt",
+-    "whisper.cpp/CMakeLists.txt",
+-    "whisper.cpp/cmake",
+-    "whisper.cpp/src/**",
+-    "whisper.cpp/include/whisper.h",
+-    "whisper.cpp/ggml/cmake",
+-    "whisper.cpp/ggml/CMakeLists.txt",
+-    "whisper.cpp/ggml/src/**",
+-    "whisper.cpp/ggml/include/*.h",
+-    "whisper.cpp/LICENSE",
+-    "src/*.rs",
+-    "build.rs",
+-    "wrapper.h",
+-]
+ autolib = false
+ autobins = false
+ autoexamples = false
+@@ -72,3 +48,10 @@
+ 
+ [build-dependencies.semver]
+ version = "1.0"
++
++# The one ggml in delulu-engine, built by llama-cpp-sys-2: its build exports
++# DEP_LLAMA_GGML_CMAKE_DIR for this build script, and libwhisper.a lands before
++# the ggml archives on the link line.
++[dependencies.llama-cpp-sys-2]
++version = "=0.1.160"
++default-features = false
+diff -ruN a/layout.c b/layout.c
+--- a/layout.c	1970-01-01 01:00:00.000000000 +0100
++++ b/layout.c	2026-11-16 16:30:55.480782397 +0100
+@@ -0,0 +1,10 @@
++// `struct ggml_tensor` as whisper.cpp's objects see it: shared-ggml.cmake adds this
++// file to the whisper library, so it is compiled with whisper.cpp's own flags.
++// delulu-engine compares the size with the linked ggml's before loading a model.
++#include <stddef.h>
++
++#include "ggml.h"
++
++size_t delulu_whisper_tensor_size(void) {
++    return sizeof(struct ggml_tensor);
++}
+diff -ruN a/shared-ggml.cmake b/shared-ggml.cmake
+--- a/shared-ggml.cmake	1970-01-01 01:00:00.000000000 +0100
++++ b/shared-ggml.cmake	2026-11-16 16:44:59.824906116 +0100
+@@ -0,0 +1,18 @@
++# Included by CMake right after `project(whisper.cpp)` (build.rs sets
++# CMAKE_PROJECT_whisper.cpp_INCLUDE). whisper.cpp links delulu-engine's one ggml,
++# built by llama-cpp-sys-2 with GGML_MAX_NAME from .cargo/config.toml. That value
++# changes `struct ggml_tensor`, so whisper.cpp must be compiled with it too
++# (crates/music-ace/ggml.cmake does the same for llama.cpp's own build).
++# whisper.cpp calls project() twice; this runs once.
++include_guard(GLOBAL)
++if(NOT GGML_MAX_NAME)
++    message(FATAL_ERROR "GGML_MAX_NAME is not set; it comes from .cargo/config.toml")
++endif()
++add_compile_definitions(GGML_MAX_NAME=${GGML_MAX_NAME})
++# `struct ggml_tensor` as whisper.cpp's own objects see it, compiled into libwhisper
++# with their flags once the target exists; delulu-engine compares it with the
++# linked ggml before it loads a model.
++# A deferred call expands its arguments when it runs, so the path is kept first.
++set(DELULU_WHISPER_LAYOUT "${CMAKE_CURRENT_LIST_DIR}/layout.c")
++cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}"
++    CALL target_sources whisper PRIVATE "${DELULU_WHISPER_LAYOUT}")
+diff -ruN a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs	2006-07-24 03:21:28.000000000 +0200
++++ b/src/lib.rs	2026-11-16 16:45:50.537162866 +0100
+@@ -1,5 +1,8 @@
+ #![allow(non_upper_case_globals)]
+ #![allow(non_camel_case_types)]
+ #![allow(non_snake_case)]
++// Delulu: as a path dependency its lints are not capped like a crates.io crate's;
++// the generated bindings trip these.
++#![allow(unnecessary_transmutes, clippy::all)]
+ 
+ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+diff -ruN a/wrapper.h b/wrapper.h
+--- a/wrapper.h	2006-07-24 03:21:28.000000000 +0200
++++ b/wrapper.h	2026-11-16 16:30:27.208902218 +0100
+@@ -1,5 +1,5 @@
+ #include <include/whisper.h>
+-#include <ggml/include/ggml.h>
++#include <ggml.h>
+ 
+ #ifdef GGML_USE_VULKAN
+ #include "ggml-vulkan.h"
