@@ -49,6 +49,8 @@ fn main() {
         // Upstream's Release flags; also in debug builds, where -O0 would make
         // the CPU parts of a song crawl.
         .opt_level(3)
+        // No debug info: 26 MB of objects instead of 178 MB in every build cache.
+        .debug(false)
         .define("NDEBUG", None)
         .define("GGML_MAX_NAME", max_name.as_str())
         .include(vendor.join("src"))
@@ -66,6 +68,7 @@ fn main() {
     let mut json = cc::Build::new();
     json.file(vendor.join("vendor/yyjson/yyjson.c"))
         .opt_level(3)
+        .debug(false)
         .warnings(false)
         .flag_if_supported("-w")
         .compile("delulu_yyjson");
