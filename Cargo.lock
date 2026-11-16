@@ -1207,6 +1207,12 @@ dependencies = [
 [[package]]
 name = "delulu-music-ace"
 version = "1.5.0"
+dependencies = [
+ "cc",
+ "llama-cpp-sys-2",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "delulu-overlay"

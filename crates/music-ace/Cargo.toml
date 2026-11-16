@@ -2,3 +2,16 @@
 name = "delulu-music-ace"
 version.workspace = true
 edition.workspace = true
+# ACE-Step 1.5 songs through acestep.cpp (vendor/, MIT), built from source into
+# delulu-engine against the engine's one ggml: `delulu-engine music` runs it.
+
+[dependencies]
+serde.workspace = true
+# The ggml acestep.cpp links against: the one llama.cpp builds for the engine.
+llama-cpp-sys-2 = { version = "=0.1.160", features = ["vulkan"] }
+
+[build-dependencies]
+cc = { version = "1.10", features = ["parallel"] }
+
+[dev-dependencies]
+serde_json.workspace = true
