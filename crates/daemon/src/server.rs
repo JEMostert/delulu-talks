@@ -60,6 +60,20 @@ pub trait Effects: Send + Sync + 'static {
     fn history(&self, _params: &HistoryListParams) -> Option<HistoryPage> {
         None
     }
+    /// Serves a method beyond dictation (settings, vocabulary, permissions, …).
+    /// `None`: this daemon does not serve it. The connection awaits the reply
+    /// before it reads its next request, so replies stay in request order.
+    fn call(&self, _request: Request) -> Option<BoxFuture<'static, Result<Value, ApiError>>> {
+        None
+    }
+}
+
+pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// A request's reply, now or after some work.
+enum Reply {
+    Now(Result<Value, ApiError>),
+    Later(BoxFuture<'static, Result<Value, ApiError>>),
 }
 
 /// Entries per History page when a request does not say.
@@ -81,6 +95,8 @@ struct Shared {
     inner: Mutex<Inner>,
     events: broadcast::Sender<Published>,
     effects: OnceLock<Arc<dyn Effects>>,
+    /// Connections per `hello` client name.
+    clients: Mutex<std::collections::HashMap<String, usize>>,
     /// Held from a transition until its effects have started, so the effects of
     /// two inputs never interleave: a cancel cannot discard a recording before
     /// the start it follows has opened the microphone.
@@ -110,6 +126,7 @@ impl Daemon {
                 inner: Mutex::new(Inner { state, machine }),
                 events,
                 effects: OnceLock::new(),
+                clients: Mutex::new(Default::default()),
                 order: Mutex::new(()),
             }),
         };
@@ -138,6 +155,16 @@ impl Daemon {
         for event in f(&mut inner.state) {
             self.shared.publish(&mut inner, event);
         }
+    }
+
+    /// A connection that said `hello` as `client` is open.
+    pub fn has_client(&self, client: &str) -> bool {
+        self.shared
+            .clients
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(client)
+            .is_some_and(|n| *n > 0)
     }
 
     /// Reads the snapshot without cloning it.
@@ -211,7 +238,33 @@ impl Shared {
         });
     }
 
-    fn handle(self: &Arc<Self>, conn: &mut Conn, request: Request) -> Result<Value, ApiError> {
+    fn handle(self: &Arc<Self>, conn: &mut Conn, request: Request) -> Reply {
+        if conn.hello
+            && !matches!(
+                request,
+                Request::Hello(_)
+                    | Request::GetState(_)
+                    | Request::Subscribe(_)
+                    | Request::Unsubscribe(_)
+                    | Request::Toggle(_)
+                    | Request::Cancel(_)
+                    | Request::HistoryList(_)
+            )
+        {
+            return Reply::Later(match self.effects.get().and_then(|e| e.call(request)) {
+                Some(reply) => reply,
+                None => Box::pin(async {
+                    Err(ApiError::new(
+                        ErrorCode::NotAvailable,
+                        "this daemon does not serve that method; start it with DELULU_DAEMON=1",
+                    ))
+                }),
+            });
+        }
+        Reply::Now(self.handle_now(conn, request))
+    }
+
+    fn handle_now(self: &Arc<Self>, conn: &mut Conn, request: Request) -> Result<Value, ApiError> {
         if !conn.hello && !matches!(request, Request::Hello(_)) {
             return Err(ApiError::new(
                 ErrorCode::HandshakeRequired,
@@ -221,12 +274,22 @@ impl Shared {
         match request {
             Request::Hello(params) => {
                 check_protocol(params.protocol)?;
+                if !conn.hello {
+                    *self
+                        .clients
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .entry(params.client.clone())
+                        .or_default() += 1;
+                    conn.client = Some(params.client.clone());
+                }
                 conn.hello = true;
                 to_value(HelloResult {
                     protocol: delulu_proto::PROTOCOL_VERSION,
                     daemon_version: env!("CARGO_PKG_VERSION").into(),
                     mode: self.opts.mode,
                     methods: METHODS.iter().map(|m| (*m).to_owned()).collect(),
+                    dictation: self.effects.get().is_some(),
                 })
             }
             Request::GetState(_) => to_value(&self.lock().state),
@@ -256,6 +319,10 @@ impl Shared {
             Request::Toggle(_) => self.dictation(Input::Toggle),
             Request::Cancel(_) => self.dictation(Input::Cancel),
             Request::HistoryList(params) => self.history(params),
+            other => Err(ApiError::new(
+                ErrorCode::Internal,
+                format!("{} is not served here", other.method()),
+            )),
         }
     }
 
@@ -444,9 +511,27 @@ async fn run_script(shared: Arc<Shared>) {
 }
 
 struct Conn {
+    shared: Arc<Shared>,
     hello: bool,
+    /// The `hello` client name, counted in `Shared::clients` while open.
+    client: Option<String>,
     topics: BTreeSet<Topic>,
     events: Option<broadcast::Receiver<Published>>,
+}
+
+impl Drop for Conn {
+    fn drop(&mut self) {
+        if let Some(client) = &self.client {
+            let mut clients = self
+                .shared
+                .clients
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if let Some(n) = clients.get_mut(client) {
+                *n = n.saturating_sub(1);
+            }
+        }
+    }
 }
 
 async fn connection(shared: Arc<Shared>, stream: UnixStream) {
@@ -455,7 +540,9 @@ async fn connection(shared: Arc<Shared>, stream: UnixStream) {
     let mut decoder = LineDecoder::default();
     let mut buf = vec![0u8; 16 * 1024];
     let mut conn = Conn {
+        shared: Arc::clone(&shared),
         hello: false,
+        client: None,
         topics: BTreeSet::new(),
         events: None,
     };
@@ -469,7 +556,10 @@ async fn connection(shared: Arc<Shared>, stream: UnixStream) {
                 for frame in decoder.push(&buf[..n]) {
                     let reply = match frame {
                         Frame::Line(line) => match parse_request(&line) {
-                            Ok((id, request)) => ServerMessage::reply(id, shared.handle(&mut conn, request)),
+                            Ok((id, request)) => ServerMessage::reply(id, match shared.handle(&mut conn, request) {
+                                Reply::Now(result) => result,
+                                Reply::Later(work) => work.await,
+                            }),
                             Err((id, error)) => ServerMessage::Error(ErrorMessage { id, error }),
                         },
                         Frame::TooLong => error_line(ErrorCode::LineTooLong, format!(
@@ -586,5 +676,6 @@ fn normal_state(now: u64) -> AppState {
         models: None,
         radio: None,
         voice: None,
+        setup: None,
     }
 }

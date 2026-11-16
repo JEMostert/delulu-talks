@@ -25,6 +25,11 @@ pub mod worker;
 /// The client API version. A client and daemon must agree on it in `hello`.
 pub const PROTOCOL_VERSION: u32 = 1;
 
+/// The `client` name the Delulu Talks window says in `hello`. While a window is
+/// connected under this name it is a client and holds no shortcut, so the daemon
+/// may bind the shortcut although the app's single-instance name is taken.
+pub const APP_CLIENT: &str = "app";
+
 /// Directory under `$XDG_RUNTIME_DIR` that holds the daemon socket.
 pub const RUNTIME_SUBDIR: &str = "delulu-talks";
 /// File name of the daemon socket.

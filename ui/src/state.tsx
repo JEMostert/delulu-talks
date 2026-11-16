@@ -1,5 +1,5 @@
 import { ModelControl } from "./components/ModelControl";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as ipc from "./ipc";
 import { insertMessage, meterLevel, settingsPatch } from "./helpers";
 export type Page = "Home" | "History" | "Cleanup" | "Delulu FM" | "Settings";
@@ -24,6 +24,8 @@ export function useAppState() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [hotkeyHint, setHotkeyHint] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
+  const hasSettings = useRef(false);
+  hasSettings.current = settings != null;
   // Listing microphones can fail while PipeWire restarts; it must never block startup.
   const refreshMicrophones = useCallback(
     () =>
@@ -79,7 +81,30 @@ export function useAppState() {
       .getCleanupStatus()
       .then(setCleanupStatus)
       .catch((e) => setNotice(errorText(e)));
-    subscribe(ipc.onStatus(setStatus));
+    subscribe(
+      ipc.onStatus((value) => {
+        setStatus(value);
+        // A window that started before the daemon has no settings yet: fetch
+        // them once the daemon answers.
+        if (!hasSettings.current && value.phase !== "error") {
+          void Promise.all([
+            ipc.getSettings(),
+            ipc.listLanguages(),
+            ipc.listModels(),
+          ])
+            .then(([config, langs, available]) => {
+              if (!active) return;
+              setSettings(config);
+              setLanguages(langs);
+              setModels(available);
+              // The "not running" notice is out of date, and History is there now.
+              setNotice("");
+              setHistoryVersion((v) => v + 1);
+            })
+            .catch(() => {});
+        }
+      }),
+    );
     subscribe(ipc.onMicLevel((rms) => setLevel(meterLevel(rms))));
     subscribe(
       ipc.onTranscript((value) => {

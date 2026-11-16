@@ -35,7 +35,8 @@ struct Fake {
     bind: Mutex<HotkeyStatus>,
     binds: AtomicUsize,
     app_running: AtomicBool,
-    app_quit: Notify,
+    /// What each clean was asked: cleanup on, and the vocabulary terms.
+    cleaned_with: Mutex<Vec<(bool, Vec<String>)>>,
     keys: Mutex<Option<mpsc::UnboundedSender<KeyEvent>>>,
     delivered: Mutex<Vec<String>>,
     /// The microphone is open.
@@ -64,7 +65,7 @@ impl Fake {
             }),
             binds: AtomicUsize::new(0),
             app_running: AtomicBool::new(false),
-            app_quit: Notify::new(),
+            cleaned_with: Mutex::new(Vec::new()),
             keys: Mutex::new(None),
             delivered: Mutex::new(Vec::new()),
             open: AtomicBool::new(false),
@@ -94,6 +95,7 @@ impl Platform for Fake {
             model: Some("fake".into()),
             device: Some("Fake".into()),
             error: None,
+            progress: None,
         });
     }
     fn start_capture(&self, _: Option<&str>, _: Box<dyn Fn(f32) + Send>) -> Result<(), String> {
@@ -137,7 +139,17 @@ impl Platform for Fake {
                 })
         })
     }
-    fn clean(&self, _: bool, _: String, raw: String, _: Vec<String>) -> BoxFuture<'_, Cleaned> {
+    fn clean(
+        &self,
+        enabled: bool,
+        _: String,
+        raw: String,
+        vocabulary: Vec<String>,
+    ) -> BoxFuture<'_, Cleaned> {
+        self.cleaned_with
+            .lock()
+            .unwrap()
+            .push((enabled, vocabulary));
         Box::pin(async move { choose(raw, CleanResult::Skipped, 0) })
     }
     fn deliver(&self, text: String, _: InsertMode, _: bool) -> BoxFuture<'_, InsertResult> {
@@ -153,9 +165,6 @@ impl Platform for Fake {
     fn app_running(&self) -> BoxFuture<'_, bool> {
         Box::pin(async { self.app_running.load(Ordering::SeqCst) })
     }
-    fn app_gone(&self) -> BoxFuture<'_, ()> {
-        Box::pin(self.app_quit.notified())
-    }
     fn bind_hotkey(
         &self,
         events: mpsc::UnboundedSender<KeyEvent>,
@@ -166,6 +175,13 @@ impl Platform for Fake {
         let status = self.bind.lock().unwrap().clone();
         Box::pin(async move { status })
     }
+    fn configure_hotkey(&self) -> BoxFuture<'_, Option<Result<(), String>>> {
+        Box::pin(async { Some(Ok(())) })
+    }
+    fn settings_changed(&self, _: &delulu_store::Settings, _: &delulu_store::Settings) {}
+    fn refresh_models(&self) {}
+    fn start_cleanup(&self) {}
+    fn cancel_cleanup(&self) {}
     fn prepare_insert(&self) -> BoxFuture<'_, InsertStatus> {
         Box::pin(async {
             InsertStatus {
@@ -243,6 +259,9 @@ struct Client {
 
 impl Client {
     async fn open(path: &Path) -> Self {
+        Self::open_as(path, "test").await
+    }
+    async fn open_as(path: &Path, name: &str) -> Self {
         let (reader, writer) = UnixStream::connect(path).await.unwrap().into_split();
         let mut client = Self {
             reader: BufReader::new(reader),
@@ -250,7 +269,7 @@ impl Client {
             next: 0,
         };
         client
-            .call("hello", json!({"protocol": 1, "client": "test"}))
+            .call("hello", json!({"protocol": 1, "client": name}))
             .await;
         client
     }
@@ -418,7 +437,6 @@ async fn the_shortcut_is_not_bound_while_the_app_runs_and_is_bound_once_it_quits
     );
 
     s.fake.app_running.store(false, Ordering::SeqCst);
-    s.fake.app_quit.notify_one();
     let state = until(&s.daemon, "the shortcut to be bound", |s| s.hotkey.bound).await;
     assert_eq!(state.hotkey.trigger.as_deref(), Some("Meta+Z"));
     assert_eq!(s.fake.binds.load(Ordering::SeqCst), 1);
@@ -543,4 +561,57 @@ async fn a_cancel_during_typing_keeps_the_typed_text_in_history() {
     let mut c = Client::open(&s.socket).await;
     let listed = c.call("history.list", json!({})).await;
     assert_eq!(listed["result"]["entries"][0]["text"], HEARD, "{listed}");
+}
+
+#[tokio::test]
+async fn a_window_connected_as_a_client_does_not_keep_the_shortcut_from_the_daemon() {
+    let fake = Fake::new();
+    // The app's single-instance name is taken, but by a window that is a client.
+    fake.app_running.store(true, Ordering::SeqCst);
+    let s = start(fake, |_| {});
+    until(&s.daemon, "the app-running state", |s| {
+        s.hotkey.problem == Some(HotkeyProblem::AppRunning)
+    })
+    .await;
+    let mut window = Client::open_as(&s.socket, delulu_proto::APP_CLIENT).await;
+    until(&s.daemon, "the shortcut to be bound", |s| s.hotkey.bound).await;
+    assert_eq!(s.fake.binds.load(Ordering::SeqCst), 1);
+    let state = window.call("state.get", json!({})).await;
+    assert_eq!(state["result"]["hotkey"]["bound"], true);
+}
+
+#[tokio::test]
+async fn settings_and_vocabulary_changed_in_the_window_apply_to_the_next_dictation() {
+    let s = start(Fake::new(), |_| {});
+    until(&s.daemon, "dictation available", |s| s.dictation.available).await;
+    let mut c = Client::open(&s.socket).await;
+    let shelf = c
+        .call(
+            "vocabulary.change",
+            json!({"op": "addShelf", "name": "Work"}),
+        )
+        .await;
+    let id = shelf["result"]["shelves"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let terms = c
+        .call(
+            "vocabulary.change",
+            json!({"op": "addTerms", "id": id, "text": "Tauri, T3 Code"}),
+        )
+        .await;
+    assert_eq!(terms["result"]["activeTerms"], 2, "{terms}");
+    let mut settings = s.daemon.snapshot().settings.unwrap();
+    settings.cleanup = true;
+    let saved = c.call("settings.set", json!({"settings": settings})).await;
+    assert_eq!(saved["result"]["cleanup"], true, "{saved}");
+
+    c.call("dictation.toggle", json!({})).await;
+    c.call("dictation.toggle", json!({})).await;
+    until(&s.daemon, "the dictation to finish", idle_after(1)).await;
+    let asked = s.fake.cleaned_with.lock().unwrap().clone();
+    assert_eq!(asked.len(), 1);
+    assert!(asked[0].0, "cleanup was still off");
+    assert_eq!(asked[0].1, ["Tauri", "T3 Code"]);
 }

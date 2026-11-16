@@ -20,7 +20,12 @@ delulu-stt = { path = "../crates/stt" }
 delulu-models = { path = "../crates/models" }
 delulu-desktop = { path = "../crates/desktop" }
 delulu-dictation = { path = "../crates/dictation" }
+delulu-daemon = { path = "../crates/daemon" }
+delulu-proto = { path = "../crates/proto" }
 delulu-store = { path = "../crates/store" }
 delulu-overlay = { path = "../crates/overlay" }
 delulu-cleanup = { path = "../crates/cleanup" }
 delulu-radio = { path = "../crates/radio" }
+
+[dev-dependencies]
+tempfile = "3"

@@ -268,6 +268,29 @@ fn preload(app: &tauri::AppHandle) {
     }
 }
 
+/// The station cannot run; `error` says why.
+pub(crate) fn unavailable(error: Option<String>, readiness: Option<Readiness>) -> RadioView {
+    RadioView {
+        available: false,
+        error,
+        on_air: false,
+        playing: false,
+        held: false,
+        volume: 0.8,
+        now: None,
+        position: 0.0,
+        queue: Vec::new(),
+        history: Vec::new(),
+        making: None,
+        last_error: None,
+        requests: Vec::new(),
+        direction: Direction::default(),
+        last_song_seconds: None,
+        last_song_audio_seconds: None,
+        readiness,
+    }
+}
+
 fn view(app: &tauri::AppHandle) -> RadioView {
     let radio = app.state::<Radio>();
     let readiness = radio
@@ -276,25 +299,7 @@ fn view(app: &tauri::AppHandle) -> RadioView {
         .unwrap_or_else(|e| e.into_inner())
         .clone();
     let Ok(station) = radio.station() else {
-        return RadioView {
-            available: false,
-            error: radio.open_error.clone(),
-            on_air: false,
-            playing: false,
-            held: false,
-            volume: 0.8,
-            now: None,
-            position: 0.0,
-            queue: Vec::new(),
-            history: Vec::new(),
-            making: None,
-            last_error: None,
-            requests: Vec::new(),
-            direction: Direction::default(),
-            last_song_seconds: None,
-            last_song_audio_seconds: None,
-            readiness,
-        };
+        return unavailable(radio.open_error.clone(), readiness);
     };
     let s = station.snapshot();
     let position = radio.player.position();

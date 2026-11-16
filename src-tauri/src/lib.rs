@@ -13,6 +13,7 @@ use std::{
 use tauri::{Emitter, Manager, State};
 
 mod cleanup;
+mod client;
 mod context;
 mod dictation;
 mod engine;
@@ -42,6 +43,110 @@ use vocabulary::{
 use voice::{get_voice_status, install_voice_model, set_voice};
 
 pub fn run() {
+    // One dictation path, whatever the start order: a daemon that runs dictation
+    // makes this window its client; DELULU_DAEMON=1 waits for that daemon.
+    let flag = std::env::var("DELULU_DAEMON").as_deref() == Ok("1");
+    let socket = client::socket();
+    match client::decide(flag, client::probe(socket.as_deref(), client::PROBE_WAIT)) {
+        client::Mode::App => run_app(),
+        client::Mode::Client => run_client(socket),
+    }
+}
+
+/// The window as the dictation daemon's client: no store, microphone, portals,
+/// speech model, cleanup helper, pill or radio of its own.
+fn run_client(socket: Option<std::path::PathBuf>) {
+    eprintln!("delulu-talks: dictation runs in the daemon; this window is its client");
+    let toggle = std::env::args().any(|a| a == "--toggle");
+    tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if args.iter().any(|a| a == "--toggle") {
+                client::toggle(app);
+            } else if !args.iter().any(|a| a == "--hidden") {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--hidden"]),
+        ))
+        .plugin(tauri_plugin_opener::init())
+        .manage(client::Client::new(socket, toggle))
+        .setup(move |app| {
+            tray::create(app)?;
+            tauri::async_runtime::spawn(client::connect_forever(app.handle().clone()));
+            if !std::env::args().any(|a| a == "--hidden" || a == "--toggle") {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                }
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_voice_status,
+            install_voice_model,
+            set_voice,
+            list_microphones,
+            list_languages,
+            client::cmd_get_status,
+            client::cmd_get_settings,
+            client::cmd_set_settings,
+            client::cmd_list_models,
+            client::cmd_download_model,
+            client::cmd_cancel_download,
+            client::cmd_start_mic_test,
+            client::cmd_stop_mic_test,
+            client::cmd_start_dictation,
+            client::cmd_stop_dictation,
+            client::cmd_prepare_insert,
+            client::cmd_change_hotkey,
+            client::cmd_get_history,
+            client::cmd_delete_history,
+            client::cmd_clear_history,
+            client::cmd_copy_text,
+            client::cmd_reinsert,
+            client::cmd_finish_first_run,
+            client::cmd_get_cleanup_status,
+            client::cmd_start_cleanup,
+            client::cmd_cancel_cleanup_download,
+            client::cmd_get_vocabulary,
+            client::cmd_add_shelf,
+            client::cmd_add_preset_shelf,
+            client::cmd_rename_shelf,
+            client::cmd_delete_shelf,
+            client::cmd_set_shelf_enabled,
+            client::cmd_add_terms,
+            client::cmd_remove_term,
+            client::cmd_get_radio,
+            client::cmd_check_radio,
+            client::cmd_radio_play,
+            client::cmd_radio_pause,
+            client::cmd_radio_off,
+            client::cmd_radio_skip,
+            client::cmd_radio_volume,
+            client::cmd_radio_direction,
+            client::cmd_radio_request,
+            client::cmd_get_music_model,
+            client::cmd_download_music_model,
+            client::cmd_cancel_music_download,
+            client::cmd_delete_music_model
+        ])
+        .build(tauri::generate_context!())
+        .expect("Tauri failed")
+        .run(|_, _| {});
+}
+
+/// The window runs dictation itself, as it did before the daemon.
+fn run_app() {
     let store = Arc::new(Store::open_default().expect("open store"));
     Store::start_daily_pruning(&store);
     let initial_state = store.state();
@@ -130,6 +235,15 @@ pub fn run() {
         })
         .setup(move |app| {
             let handle = app.handle().clone();
+            // A dictation daemon may have started since this window chose its own
+            // path. Asked now: the single-instance name is taken (plugins start
+            // before setup) and nothing heavy has started, so a restart is clean.
+            // The daemon listens before it looks for that name, so one of the two
+            // always sees the other and only one binds the shortcut.
+            if client::daemon_may_run_dictation(client::socket()) {
+                eprintln!("delulu-talks: a dictation daemon is running; restarting as its client");
+                handle.restart();
+            }
             let _ = app_slot.set(handle.clone());
             tray::create(app)?;
             let s = app.state::<Shell>();

@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 delulu-audio = { path = "../audio" }
+delulu-cleanup = { path = "../cleanup" }
 delulu-core = { path = "../core" }
 delulu-desktop = { path = "../desktop" }
 delulu-dictation = { path = "../dictation" }
