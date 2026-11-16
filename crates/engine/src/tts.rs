@@ -362,19 +362,18 @@ fn listen(socket: &Path, model_dir: &Path, idle_exit: Duration, state: &mut Stat
             .mode(0o700)
             .create(dir);
     }
-    if socket.exists() {
-        match UnixStream::connect(socket) {
-            Ok(_) => {
-                eprintln!(
-                    "delulu-engine tts: another engine already listens on {}",
-                    socket.display()
-                );
-                return ExitCode::SUCCESS;
-            }
-            // A socket left by an engine that died: take its place.
-            Err(_) => {
-                let _ = std::fs::remove_file(socket);
-            }
+    match claim_socket_path(socket) {
+        Ok(SocketPath::Free) => {}
+        Ok(SocketPath::Taken) => {
+            eprintln!(
+                "delulu-engine tts: another engine already listens on {}",
+                socket.display()
+            );
+            return ExitCode::SUCCESS;
+        }
+        Err(message) => {
+            eprintln!("delulu-engine tts: {message}");
+            return ExitCode::FAILURE;
         }
     }
     let listener = match UnixListener::bind(socket) {
@@ -425,6 +424,34 @@ fn listen(socket: &Path, model_dir: &Path, idle_exit: Duration, state: &mut Stat
     remove_if_ours(socket, ours);
     drop(listener);
     ExitCode::SUCCESS
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SocketPath {
+    /// Nothing there (a dead engine's socket was removed): bind it.
+    Free,
+    /// A live engine answers there.
+    Taken,
+}
+
+/// Makes `socket` bindable. Only a socket nobody answers on is removed; any other
+/// file at that path is left alone and reported.
+fn claim_socket_path(socket: &Path) -> Result<SocketPath, String> {
+    use std::os::unix::fs::FileTypeExt;
+    match std::fs::symlink_metadata(socket) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(SocketPath::Free),
+        Err(e) => Err(format!("{}: {e}", socket.display())),
+        Ok(m) if !m.file_type().is_socket() => Err(format!(
+            "{} exists and is not a socket; not touching it",
+            socket.display()
+        )),
+        Ok(_) => match UnixStream::connect(socket) {
+            Ok(_) => Ok(SocketPath::Taken),
+            Err(_) => std::fs::remove_file(socket)
+                .map(|()| SocketPath::Free)
+                .map_err(|e| format!("{}: {e}", socket.display())),
+        },
+    }
 }
 
 /// Removes `socket` when it is still the file this engine bound (same device and inode).
@@ -825,8 +852,7 @@ mod tests {
 
     #[test]
     fn an_idle_engine_removes_its_own_socket_but_not_a_successors() {
-        let dir = tempfile_dir();
-        let path = dir.join("tts.sock");
+        let path = tempfile_dir().join("tts.sock");
         use std::os::unix::fs::MetadataExt;
         let id = |p: &Path| std::fs::metadata(p).map(|m| (m.dev(), m.ino())).ok();
         let first = UnixListener::bind(&path).unwrap();
@@ -839,6 +865,29 @@ mod tests {
         drop(first);
         remove_if_ours(&path, id(&path));
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn only_a_dead_socket_is_removed_from_the_listen_path() {
+        let dir = tempfile_dir().join("claim");
+        std::fs::create_dir_all(&dir).unwrap();
+        // An ordinary file is never deleted.
+        let file = dir.join("notes.txt");
+        std::fs::write(&file, "keep me").unwrap();
+        let err = claim_socket_path(&file).unwrap_err();
+        assert!(err.contains("not a socket"), "{err}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "keep me");
+        // A live engine's socket is left to it.
+        let live = dir.join("live.sock");
+        let _listener = UnixListener::bind(&live).unwrap();
+        assert_eq!(claim_socket_path(&live), Ok(SocketPath::Taken));
+        assert!(live.exists());
+        // A dead engine's socket is taken over.
+        let dead = dir.join("dead.sock");
+        drop(UnixListener::bind(&dead).unwrap());
+        assert_eq!(claim_socket_path(&dead), Ok(SocketPath::Free));
+        assert!(!dead.exists());
+        assert_eq!(claim_socket_path(&dead), Ok(SocketPath::Free));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
