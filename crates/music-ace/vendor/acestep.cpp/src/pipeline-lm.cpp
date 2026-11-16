@@ -378,6 +378,7 @@ static std::vector<std::string> run_phase2_batch(Qwen3LM *                      
         std::vector<int> audio_codes;
         int              last_token;
         bool             done;
+        int              min_codes;  // delulu: no end token before duration * 5 codes
     };
 
     std::vector<BatchSeq> seqs(N);
@@ -385,7 +386,8 @@ static std::vector<std::string> run_phase2_batch(Qwen3LM *                      
     // Sample first token from per-element prefill logits (N different seeds)
     for (int i = 0; i < N; i++) {
         seqs[i].rng.seed(seeds[i]);
-        seqs[i].done = false;
+        seqs[i].done      = false;
+        seqs[i].min_codes = (int) (aces[i].duration * 5);
 
         std::vector<float> lg(prefill_logits_vec[i]);  // copy
         if (use_cfg) {
@@ -401,7 +403,14 @@ static std::vector<std::string> run_phase2_batch(Qwen3LM *                      
             }
         }
 
+        std::vector<float> lg_keep(lg);  // delulu: sampling rewrites the logits
         int tok            = sample_top_k_p(lg.data(), V, temperature, top_p, top_k, seqs[i].rng);
+        if (tok == TOKEN_IM_END && seqs[i].min_codes > 0) {
+            // delulu: too early to end; draw again without the end token
+            lg                  = lg_keep;
+            lg[TOKEN_IM_END]    = -1e9f;
+            tok                 = sample_top_k_p(lg.data(), V, temperature, top_p, top_k, seqs[i].rng);
+        }
         seqs[i].last_token = tok;
 
         if (tok == TOKEN_IM_END) {
@@ -441,6 +450,7 @@ static std::vector<std::string> run_phase2_batch(Qwen3LM *                      
     // Tiny array for CPU sampling (EOS token + Audio Codes) to prevent sorting 150,000 text logits
     int                compact_V = AUDIO_CODE_COUNT + 1;
     std::vector<float> compact_logits(compact_V);
+    std::vector<float> compact_keep(compact_V);  // delulu: sampling rewrites the logits
 
     int n_active = N;
     for (int i = 0; i < N; i++) {
@@ -518,8 +528,16 @@ static std::vector<std::string> run_phase2_batch(Qwen3LM *                      
             }
 
             // CPU samples instantly because it only has to sort ~2049 items instead of 150,000+
+            compact_keep = compact_logits;
             int compact_tok =
                 sample_top_k_p(compact_logits.data(), compact_V, temperature, top_p, top_k, seqs[orig_i].rng);
+            if (compact_tok == 0 && (int) seqs[orig_i].audio_codes.size() < seqs[orig_i].min_codes) {
+                // delulu: too early to end; draw again without the end token
+                compact_logits    = compact_keep;
+                compact_logits[0] = -1e9f;
+                compact_tok =
+                    sample_top_k_p(compact_logits.data(), compact_V, temperature, top_p, top_k, seqs[orig_i].rng);
+            }
 
             // Map the sampled index back to global vocabulary ID
             int tok = (compact_tok == 0) ? TOKEN_IM_END : (AUDIO_CODE_BASE + compact_tok - 1);
