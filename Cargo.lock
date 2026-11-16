@@ -1119,6 +1119,7 @@ name = "delulu-daemon"
 version = "1.5.0"
 dependencies = [
  "delulu-audio",
+ "delulu-cleanup",
  "delulu-core",
  "delulu-desktop",
  "delulu-dictation",

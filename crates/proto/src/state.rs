@@ -27,6 +27,18 @@ pub struct AppState {
     pub models: Option<ModelsState>,
     pub radio: Option<RadioState>,
     pub voice: Option<VoiceState>,
+    /// First-run and consent flags from `state.json` and the settings; null
+    /// when this daemon does not own them.
+    #[serde(default)]
+    pub setup: Option<Setup>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Setup {
+    pub first_run_done: bool,
+    /// The user agreed to download the cleanup model, so it may start by itself.
+    pub cleanup_model_ok: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -144,6 +156,16 @@ pub struct WorkerStatus {
     /// The compute device, like "Vulkan: NVIDIA GeForce RTX 4090".
     pub device: Option<String>,
     pub error: Option<String>,
+    /// While the worker's model downloads.
+    #[serde(default)]
+    pub progress: Option<Progress>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    pub done_bytes: u64,
+    pub total_bytes: u64,
 }
 
 impl WorkerStatus {
@@ -153,6 +175,7 @@ impl WorkerStatus {
             model: None,
             device: None,
             error: None,
+            progress: None,
         }
     }
 }

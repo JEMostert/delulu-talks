@@ -124,31 +124,82 @@ pub fn settings(s: &delulu_store::Settings) -> Settings {
     }
 }
 
+/// Applies the protocol's settings to the store's, keeping what the protocol
+/// does not carry (the version, the cleanup download consent).
+pub fn apply_settings(from: &Settings, to: &mut delulu_store::Settings) {
+    use delulu_store::{InsertMode as StoreInsert, Theme as StoreTheme};
+    to.microphone = from.microphone.clone();
+    to.start_at_login = from.start_at_login;
+    to.model = from.models.stt.clone();
+    to.language = from.language.clone();
+    if !from.languages.is_empty() {
+        to.allowed_languages = from.languages.clone();
+    }
+    to.insert = match from.insert {
+        InsertMode::ShiftInsert => StoreInsert::ShiftInsert,
+        InsertMode::CtrlV => StoreInsert::CtrlV,
+        InsertMode::CtrlShiftV => StoreInsert::CtrlShiftV,
+        InsertMode::Off => StoreInsert::Off,
+    };
+    to.theme = match from.theme {
+        Theme::System => StoreTheme::System,
+        Theme::Light => StoreTheme::Light,
+        Theme::Dark => StoreTheme::Dark,
+    };
+    to.overlay = from.pill;
+    to.cleanup = from.cleanup;
+    to.smart_context = from.smart_context;
+    to.radio = from.show_radio;
+    to.history_retention_days = from.history_days.unwrap_or(0);
+}
+
+/// The shelves, the starter shelves not added yet, and how many terms reach
+/// the cleanup prompt (it caps their count and length).
+pub fn vocabulary(v: &delulu_store::Vocabulary) -> Vocabulary {
+    let active = v.active_terms();
+    Vocabulary {
+        shelves: v
+            .shelves
+            .iter()
+            .map(|shelf| Shelf {
+                id: shelf.id.clone(),
+                name: shelf.name.clone(),
+                enabled: shelf.enabled,
+                terms: shelf.terms.clone(),
+            })
+            .collect(),
+        presets: v
+            .available_presets()
+            .into_iter()
+            .map(|p| Preset {
+                key: p.key.into(),
+                name: p.name.into(),
+                terms: p.terms.iter().map(|t| t.to_string()).collect(),
+            })
+            .collect(),
+        active_terms: active.len() as u32,
+        used_terms: delulu_cleanup::vocabulary_terms(&active).len() as u32,
+        suggested: Vec::new(),
+    }
+}
+
 pub fn cleanup_worker(status: &CleanupStatus) -> WorkerStatus {
     let state = match status.state {
+        // "missing" with cleanup on: the window offers the download.
         "off" | "missing" => WorkerState::Off,
         "downloading" | "loading" => WorkerState::Loading,
         "ready" => WorkerState::Ready,
         _ => WorkerState::Error,
     };
-    let error = match status.state {
-        "missing" => Some(
-            status
-                .error
-                .clone()
-                .unwrap_or_else(|| "The cleanup model is not downloaded".into()),
-        ),
-        "downloading" => Some(format!(
-            "Downloading the cleanup model ({}%)",
-            delulu_dictation::cleanup::percent(status.done_bytes, status.total_bytes)
-        )),
-        _ => status.error.clone(),
-    };
     WorkerStatus {
         state,
         model: Some(delulu_models::GEMMA_4_E4B.id.into()),
         device: status.backend.clone(),
-        error,
+        error: status.error.clone(),
+        progress: (status.state == "downloading").then_some(Progress {
+            done_bytes: status.done_bytes,
+            total_bytes: status.total_bytes,
+        }),
     }
 }
 
@@ -190,6 +241,34 @@ pub fn insert(status: InsertStatus) -> InsertState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_survive_the_trip_through_the_protocol() {
+        let mut original = delulu_store::Settings {
+            microphone: Some("usb".into()),
+            model: "small".into(),
+            language: "nl".into(),
+            allowed_languages: vec!["nl".into()],
+            insert: delulu_store::InsertMode::CtrlShiftV,
+            theme: delulu_store::Theme::Dark,
+            overlay: false,
+            cleanup: false,
+            smart_context: false,
+            cleanup_model_ok: true,
+            radio: true,
+            history_retention_days: 30,
+            start_at_login: false,
+            ..Default::default()
+        };
+        let mut back = delulu_store::Settings::default();
+        apply_settings(&settings(&original), &mut back);
+        // The protocol does not carry the consent flag; the daemon keeps its own.
+        back.cleanup_model_ok = original.cleanup_model_ok;
+        assert_eq!(back, original);
+        original.history_retention_days = 0;
+        apply_settings(&settings(&original), &mut back);
+        assert_eq!(back.history_retention_days, 0, "0 keeps History forever");
+    }
 
     #[test]
     fn an_empty_trigger_is_a_shortcut_without_a_key() {

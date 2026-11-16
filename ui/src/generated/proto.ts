@@ -12,7 +12,12 @@ seq: number, daemon: DaemonInfo, dictation: DictationState, hotkey: HotkeyState,
 /**
  * The newest history entries (the Home screen's "last 5" and History's first page).
  */
-history: HistoryPage | null, vocabulary: Vocabulary | null, models: ModelsState | null, radio: RadioState | null, voice: VoiceState | null, };
+history: HistoryPage | null, vocabulary: Vocabulary | null, models: ModelsState | null, radio: RadioState | null, voice: VoiceState | null, 
+/**
+ * First-run and consent flags from `state.json` and the settings; null
+ * when this daemon does not own them.
+ */
+setup: Setup | null, };
 
 export type DaemonInfo = { 
 /**
@@ -74,7 +79,11 @@ export type WorkerStatus = { state: WorkerState, model: string | null,
 /**
  * The compute device, like "Vulkan: NVIDIA GeForce RTX 4090".
  */
-device: string | null, error: string | null, };
+device: string | null, error: string | null, 
+/**
+ * While the worker's model downloads.
+ */
+progress: Progress | null, };
 
 export type WorkerState = "off" | "starting" | "loading" | "ready" | "busy" | "paused" | "error";
 
@@ -90,6 +99,14 @@ trigger: string | null, error: string | null,
 problem: HotkeyProblem | null, };
 
 export type HotkeyProblem = "notSet" | "appRunning" | "firstRunPending" | "unavailable";
+
+export type Setup = { firstRunDone: boolean, 
+/**
+ * The user agreed to download the cleanup model, so it may start by itself.
+ */
+cleanupModelOk: boolean, };
+
+export type Progress = { doneBytes: number, totalBytes: number, };
 
 export type InsertState = { 
 /**
@@ -302,7 +319,12 @@ export type HelloResult = { protocol: number, daemonVersion: string, mode: Daemo
 /**
  * The methods this daemon serves.
  */
-methods: Array<string>, };
+methods: Array<string>, 
+/**
+ * This daemon runs dictation (shortcut, microphone, typing, History), so a
+ * window must be its client instead of running dictation itself.
+ */
+dictation: boolean, };
 
 export type GetStateParams = Record<symbol, never>;
 
@@ -329,6 +351,46 @@ query: string | null, offset: number,
  * At most this many entries; 0 means the daemon's default page size.
  */
 limit: number, };
+
+/**
+ * The reply of a method that only reports success.
+ */
+export type Acknowledged = Record<symbol, never>;
+
+export type HistoryDeleteParams = { id: string, };
+
+export type HistoryClearParams = Record<symbol, never>;
+
+export type HistoryReinsertParams = { id: string, 
+/**
+ * Type what was said before cleanup, when the entry has it.
+ */
+raw: boolean, };
+
+export type SettingsSetParams = { settings: Settings, };
+
+export type SetupFinishParams = Record<symbol, never>;
+
+export type VocabularyGetParams = Record<symbol, never>;
+
+/**
+ * One change to the vocabulary shelves.
+ */
+export type VocabularyChangeParams = { "op": "addShelf", name: string, } | { "op": "addPreset", key: string, } | { "op": "renameShelf", id: string, name: string, } | { "op": "deleteShelf", id: string, } | { "op": "setEnabled", id: string, enabled: boolean, } | { "op": "addTerms", id: string, text: string, } | { "op": "removeTerm", id: string, term: string, };
+
+export type CleanupStartParams = Record<symbol, never>;
+
+export type CleanupCancelParams = Record<symbol, never>;
+
+export type MicTestParams = { on: boolean, };
+
+export type PermissionsRequestParams = Record<symbol, never>;
+
+export type Permissions = { hotkey: HotkeyState, insert: InsertState, };
+
+export type HotkeyConfigureParams = Record<symbol, never>;
+
+export type ModelsRefreshParams = Record<symbol, never>;
 
 export type DictationReply = { 
 /**
@@ -382,4 +444,17 @@ export type Methods = {
   "dictation.toggle": { params: ToggleParams; result: DictationReply };
   "dictation.cancel": { params: CancelParams; result: DictationReply };
   "history.list": { params: HistoryListParams; result: HistoryPage };
+  "history.delete": { params: HistoryDeleteParams; result: Acknowledged };
+  "history.clear": { params: HistoryClearParams; result: Acknowledged };
+  "history.reinsert": { params: HistoryReinsertParams; result: Delivery };
+  "settings.set": { params: SettingsSetParams; result: Settings };
+  "setup.finish": { params: SetupFinishParams; result: Setup };
+  "vocabulary.get": { params: VocabularyGetParams; result: Vocabulary };
+  "vocabulary.change": { params: VocabularyChangeParams; result: Vocabulary };
+  "cleanup.start": { params: CleanupStartParams; result: Acknowledged };
+  "cleanup.cancel": { params: CleanupCancelParams; result: Acknowledged };
+  "mic.test": { params: MicTestParams; result: Acknowledged };
+  "permissions.request": { params: PermissionsRequestParams; result: Permissions };
+  "hotkey.configure": { params: HotkeyConfigureParams; result: Acknowledged };
+  "models.refresh": { params: ModelsRefreshParams; result: Acknowledged };
 };

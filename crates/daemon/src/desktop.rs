@@ -30,6 +30,9 @@ pub struct DesktopPlatform {
     no_portals: bool,
     engine: OnceLock<mpsc::Sender<EngineJob>>,
     cleanup: OnceLock<Arc<Supervisor>>,
+    report: OnceLock<Reporter>,
+    /// The speech model loaded or loading, so a refresh only reloads on change.
+    speech_model: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl DesktopPlatform {
@@ -63,6 +66,55 @@ impl DesktopPlatform {
             no_portals: std::env::var("DELULU_NO_PORTALS").as_deref() == Ok("1"),
             engine: OnceLock::new(),
             cleanup: OnceLock::new(),
+            report: OnceLock::new(),
+            speech_model: Arc::default(),
+        }
+    }
+
+    /// Loads the selected speech model, or any downloaded one, unless it is the
+    /// one already loaded or loading.
+    fn load_speech(&self) {
+        let (Some(report), Some(engine), Some(cleanup)) =
+            (self.report.get(), self.engine.get(), self.cleanup.get())
+        else {
+            return;
+        };
+        let settings = self.store.settings();
+        match ready_model(&self.store.models_dir(), &settings.model) {
+            Some(id) => {
+                {
+                    let mut current = self.speech_model.lock().unwrap_or_else(|e| e.into_inner());
+                    if current.as_deref() == Some(id.as_str()) {
+                        return;
+                    }
+                    *current = Some(id.clone());
+                }
+                // Whisper loads first; cleanup frees the GPU and starts once it has settled.
+                cleanup.whisper_loading();
+                report.stt(WorkerStatus {
+                    state: WorkerState::Loading,
+                    model: Some(id.clone()),
+                    device: None,
+                    error: None,
+                    progress: None,
+                });
+                let _ = engine.send(EngineJob::Load(id));
+            }
+            None => {
+                let loaded = self
+                    .speech_model
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .is_some();
+                if !loaded {
+                    report.stt(error_status(
+                        Some(settings.model),
+                        "No speech model is downloaded; download one in the Delulu Talks window"
+                            .into(),
+                    ));
+                    cleanup.whisper_settled(want(&self.store));
+                }
+            }
         }
     }
 
@@ -101,6 +153,7 @@ struct Host {
     store: Arc<Store>,
     cleanup: Arc<Supervisor>,
     report: Reporter,
+    speech_model: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl EngineHost for Host {
@@ -112,18 +165,24 @@ impl EngineHost for Host {
         self.cleanup.wait_released(Duration::from_secs(5));
     }
     fn loaded(&self, id: String, result: Result<String, String>) {
+        if result.is_err() {
+            // Nothing is loaded now; the next refresh tries again.
+            *self.speech_model.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        }
         self.report.stt(match result {
             Ok(backend) => WorkerStatus {
                 state: WorkerState::Ready,
                 model: Some(id),
                 device: Some(backend),
                 error: None,
+                progress: None,
             },
             Err(error) => WorkerStatus {
                 state: WorkerState::Error,
                 model: Some(id),
                 device: None,
                 error: Some(error),
+                progress: None,
             },
         });
         self.cleanup.whisper_settled(want(&self.store));
@@ -149,10 +208,12 @@ impl Platform for DesktopPlatform {
 
         let (tx, rx) = mpsc::channel();
         let _ = self.engine.set(tx.clone());
+        let _ = self.report.set(report.clone());
         let host = Host {
             store: Arc::clone(&self.store),
             cleanup: Arc::clone(&cleanup),
             report: report.clone(),
+            speech_model: Arc::clone(&self.speech_model),
         };
         if let Err(e) = std::thread::Builder::new()
             .name("stt".into())
@@ -164,26 +225,7 @@ impl Platform for DesktopPlatform {
             ));
             return;
         }
-        match ready_model(&models_dir, &settings.model) {
-            Some(id) => {
-                // Whisper loads first; cleanup frees the GPU and starts once it has settled.
-                cleanup.whisper_loading();
-                report.stt(WorkerStatus {
-                    state: WorkerState::Loading,
-                    model: Some(id.clone()),
-                    device: None,
-                    error: None,
-                });
-                let _ = tx.send(EngineJob::Load(id));
-            }
-            None => {
-                report.stt(error_status(
-                    Some(settings.model),
-                    "No speech model is downloaded; download one in the Delulu Talks window".into(),
-                ));
-                cleanup.whisper_settled(want(&self.store));
-            }
-        }
+        self.load_speech();
     }
 
     fn start_capture(
@@ -258,14 +300,6 @@ impl Platform for DesktopPlatform {
         Box::pin(app_running())
     }
 
-    fn app_gone(&self) -> BoxFuture<'_, ()> {
-        Box::pin(async {
-            while app_running().await {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        })
-    }
-
     fn bind_hotkey(
         &self,
         events: tokio::sync::mpsc::UnboundedSender<KeyEvent>,
@@ -298,6 +332,52 @@ impl Platform for DesktopPlatform {
         })
     }
 
+    fn configure_hotkey(&self) -> BoxFuture<'_, Option<Result<(), String>>> {
+        Box::pin(async move {
+            let mut slot = self.hotkey.lock().await;
+            if let Some(hotkey) = slot.as_ref().filter(|h| h.status().bound) {
+                return Some(hotkey.configure().await);
+            }
+            if let Some(hotkey) = slot.take() {
+                hotkey.close().await;
+            }
+            None
+        })
+    }
+
+    fn settings_changed(&self, old: &delulu_store::Settings, new: &delulu_store::Settings) {
+        if old.model != new.model {
+            self.load_speech();
+        }
+        if old.cleanup != new.cleanup || old.cleanup_model_ok != new.cleanup_model_ok {
+            if let Some(cleanup) = self.cleanup() {
+                cleanup.sync(want(&self.store));
+            }
+        }
+        if !new.overlay {
+            self.pill(PillState::Hidden, None);
+        }
+    }
+
+    fn refresh_models(&self) {
+        self.load_speech();
+        if let Some(cleanup) = self.cleanup() {
+            cleanup.sync(want(&self.store));
+        }
+    }
+
+    fn start_cleanup(&self) {
+        if let Some(cleanup) = self.cleanup() {
+            cleanup.start(want(&self.store));
+        }
+    }
+
+    fn cancel_cleanup(&self) {
+        if let Some(cleanup) = self.cleanup() {
+            cleanup.cancel_download();
+        }
+    }
+
     fn pill(&self, state: PillState, label: Option<&str>) {
         if let Some(pill) = &self.pill {
             pill.show(state, label);
@@ -317,6 +397,7 @@ fn error_status(model: Option<String>, error: String) -> WorkerStatus {
         model,
         device: None,
         error: Some(error),
+        progress: None,
     }
 }
 

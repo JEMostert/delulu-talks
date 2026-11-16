@@ -338,12 +338,14 @@ pub fn state(now: u64) -> AppState {
                 model: Some("large-v3-turbo-q5_0".into()),
                 device: Some("Vulkan: NVIDIA GeForce RTX 4090".into()),
                 error: None,
+                progress: None,
             },
             cleanup: WorkerStatus {
                 state: WorkerState::Ready,
                 model: Some("gemma-4-e4b-it-qat-q4_0".into()),
                 device: Some("Vulkan: NVIDIA GeForce RTX 4090".into()),
                 error: None,
+                progress: None,
             },
         },
         hotkey: HotkeyState {
@@ -506,6 +508,7 @@ pub fn state(now: u64) -> AppState {
                 model: Some("supertonic-3".into()),
                 device: None,
                 error: None,
+                progress: None,
             },
             conversation: Conversation {
                 phase: ConversationPhase::Closed,
@@ -525,6 +528,10 @@ pub fn state(now: u64) -> AppState {
             muted_agents: Vec::new(),
             reports_enabled: true,
             reports_interrupt_radio: true,
+        }),
+        setup: Some(Setup {
+            first_run_done: true,
+            cleanup_model_ok: true,
         }),
     }
 }

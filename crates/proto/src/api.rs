@@ -105,7 +105,117 @@ methods! {
     Cancel = "dictation.cancel" (CancelParams) -> DictationReply;
     /// A page of History, newest first, optionally matching a search.
     HistoryList = "history.list" (HistoryListParams) -> HistoryPage;
+    HistoryDelete = "history.delete" (HistoryDeleteParams) -> Acknowledged;
+    HistoryClear = "history.clear" (HistoryClearParams) -> Acknowledged;
+    /// Types an entry again (or its text before cleanup) into the focused window.
+    HistoryReinsert = "history.reinsert" (HistoryReinsertParams) -> Delivery;
+    /// Saves the settings; changes take effect at once.
+    SettingsSet = "settings.set" (SettingsSetParams) -> Settings;
+    /// First run is done: bind the shortcut, allow typing, start cleanup.
+    SetupFinish = "setup.finish" (SetupFinishParams) -> Setup;
+    VocabularyGet = "vocabulary.get" (VocabularyGetParams) -> Vocabulary;
+    VocabularyChange = "vocabulary.change" (VocabularyChangeParams) -> Vocabulary;
+    /// Load the cleanup model, downloading it first if needed (the user agreed).
+    CleanupStart = "cleanup.start" (CleanupStartParams) -> Acknowledged;
+    CleanupCancel = "cleanup.cancel" (CleanupCancelParams) -> Acknowledged;
+    /// Opens or closes the microphone for the level meter, outside dictation.
+    MicTest = "mic.test" (MicTestParams) -> Acknowledged;
+    /// Asks the desktop for the shortcut and the typing permission now.
+    PermissionsRequest = "permissions.request" (PermissionsRequestParams) -> Permissions;
+    /// Opens the desktop's shortcut settings, or binds again if nothing is bound.
+    HotkeyConfigure = "hotkey.configure" (HotkeyConfigureParams) -> Acknowledged;
+    /// Model files changed on disk (a download finished): load what is now there.
+    ModelsRefresh = "models.refresh" (ModelsRefreshParams) -> Acknowledged;
 }
+
+/// The reply of a method that only reports success.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Acknowledged {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct HistoryDeleteParams {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct HistoryClearParams {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct HistoryReinsertParams {
+    pub id: String,
+    /// Type what was said before cleanup, when the entry has it.
+    #[serde(default)]
+    pub raw: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct SettingsSetParams {
+    pub settings: Settings,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SetupFinishParams {}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct VocabularyGetParams {}
+
+/// One change to the vocabulary shelves.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum VocabularyChangeParams {
+    AddShelf {
+        name: String,
+    },
+    AddPreset {
+        key: String,
+    },
+    RenameShelf {
+        id: String,
+        name: String,
+    },
+    DeleteShelf {
+        id: String,
+    },
+    SetEnabled {
+        id: String,
+        enabled: bool,
+    },
+    /// `text` may hold several terms separated by commas or newlines.
+    AddTerms {
+        id: String,
+        text: String,
+    },
+    RemoveTerm {
+        id: String,
+        term: String,
+    },
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct CleanupStartParams {}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct CleanupCancelParams {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct MicTestParams {
+    pub on: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct PermissionsRequestParams {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Permissions {
+    pub hotkey: HotkeyState,
+    pub insert: InsertState,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct HotkeyConfigureParams {}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ModelsRefreshParams {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -125,6 +235,10 @@ pub struct HelloResult {
     pub mode: DaemonMode,
     /// The methods this daemon serves.
     pub methods: Vec<String>,
+    /// This daemon runs dictation (shortcut, microphone, typing, History), so a
+    /// window must be its client instead of running dictation itself.
+    #[serde(default)]
+    pub dictation: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -514,7 +628,7 @@ mod tests {
             .into_request(),
             ToggleParams {}.into_request(),
         ];
-        assert_eq!(METHODS.len(), 7);
+        assert_eq!(METHODS.len(), 20);
         for request in requests {
             let line = serde_json::to_string(&RequestMessage::new(9, &request)).unwrap();
             assert_eq!(parse_request(&line), Ok((9, request)));
