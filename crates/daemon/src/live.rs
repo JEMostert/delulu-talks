@@ -344,7 +344,11 @@ impl Live {
 
     /// The stop path's ports for one job.
     fn ports(&self, id: JobId) -> JobPorts<'_> {
-        JobPorts { live: self, id }
+        JobPorts {
+            live: self,
+            id,
+            delivering: std::sync::atomic::AtomicBool::new(false),
+        }
     }
 
     /// Feeds a failure from a task. Effects call this through a spawned task,
@@ -525,14 +529,20 @@ impl Live {
             let outcome =
                 stop::deliver_and_save(&ports, settings, &request, &transcript, cleaned).await;
             if !ports.inserting() {
-                // Cancelled while waiting for the hotkey to come up: nothing was
-                // typed, and the entry saved just before goes too.
-                if let StopOutcome::Delivered(event) = &outcome {
-                    if let Err(e) = me.store.delete_history(&event.entry.id) {
-                        eprintln!("delulud: remove the cancelled dictation from History: {e}");
+                if ports.delivering.load(std::sync::atomic::Ordering::SeqCst) {
+                    // Too late to stop: the text was being typed when the cancel
+                    // came, so it stays in History.
+                    eprintln!("delulud: dictation {id} was cancelled while it was being delivered; it is kept in History");
+                } else {
+                    // Cancelled while waiting for the hotkey to come up: nothing
+                    // was typed, and the entry saved just before goes too.
+                    if let StopOutcome::Delivered(event) = &outcome {
+                        if let Err(e) = me.store.delete_history(&event.entry.id) {
+                            eprintln!("delulud: remove the cancelled dictation from History: {e}");
+                        }
                     }
+                    eprintln!("delulud: dictation {id} was cancelled before it was delivered");
                 }
-                eprintln!("delulud: dictation {id} was cancelled before it was delivered");
                 return;
             }
             let (insert, entry, history_error) = match outcome {
@@ -657,6 +667,9 @@ fn outcome_job(outcome: &Outcome) -> JobId {
 struct JobPorts<'a> {
     live: &'a Live,
     id: JobId,
+    /// Delivery got past the cancel check. Typing cannot be taken back, so from
+    /// then on a cancel no longer undoes the History entry.
+    delivering: std::sync::atomic::AtomicBool,
 }
 
 impl JobPorts<'_> {
@@ -743,6 +756,8 @@ impl StopPorts for JobPorts<'_> {
                 reason: CANCELLED.into(),
             };
         }
+        self.delivering
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         self.live
             .platform
             .deliver(text.to_owned(), mode, held)

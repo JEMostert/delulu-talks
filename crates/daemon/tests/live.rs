@@ -44,6 +44,10 @@ struct Fake {
     slow_start: AtomicBool,
     slow_stop: AtomicBool,
     starting: Notify,
+    /// While set, delivery waits for `release_delivery` after it has begun.
+    hold_delivery: AtomicBool,
+    delivering: Notify,
+    release_delivery: Notify,
 }
 
 impl Fake {
@@ -67,6 +71,9 @@ impl Fake {
             slow_start: AtomicBool::new(false),
             slow_stop: AtomicBool::new(false),
             starting: Notify::new(),
+            hold_delivery: AtomicBool::new(false),
+            delivering: Notify::new(),
+            release_delivery: Notify::new(),
         }
     }
     fn hears(&self, result: Result<&str, &str>) {
@@ -134,8 +141,14 @@ impl Platform for Fake {
         Box::pin(async move { choose(raw, CleanResult::Skipped, 0) })
     }
     fn deliver(&self, text: String, _: InsertMode, _: bool) -> BoxFuture<'_, InsertResult> {
-        self.delivered.lock().unwrap().push(text);
-        Box::pin(async { InsertResult::Pasted })
+        Box::pin(async move {
+            if self.hold_delivery.load(Ordering::SeqCst) {
+                self.delivering.notify_one();
+                self.release_delivery.notified().await;
+            }
+            self.delivered.lock().unwrap().push(text);
+            InsertResult::Pasted
+        })
     }
     fn app_running(&self) -> BoxFuture<'_, bool> {
         Box::pin(async { self.app_running.load(Ordering::SeqCst) })
@@ -510,4 +523,24 @@ async fn a_new_dictation_right_after_a_cancelled_one_records() {
         s.fake.open.load(Ordering::SeqCst),
         "the new recording has no microphone"
     );
+}
+
+#[tokio::test]
+async fn a_cancel_during_typing_keeps_the_typed_text_in_history() {
+    let fake = Fake::new();
+    fake.hold_delivery.store(true, Ordering::SeqCst);
+    let s = start(fake, |_| {});
+    until(&s.daemon, "dictation available", |s| s.dictation.available).await;
+    s.daemon.input(Input::Toggle).unwrap();
+    s.daemon.input(Input::Toggle).unwrap();
+    // Typing has begun (the portal is slow) when the cancel comes.
+    s.fake.delivering.notified().await;
+    s.daemon.input(Input::Cancel).unwrap();
+    s.fake.release_delivery.notify_one();
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(s.fake.delivered(), [HEARD]);
+    let mut c = Client::open(&s.socket).await;
+    let listed = c.call("history.list", json!({})).await;
+    assert_eq!(listed["result"]["entries"][0]["text"], HEARD, "{listed}");
 }
