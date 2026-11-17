@@ -12,7 +12,7 @@ export type ModelProps = {
     key: K,
     value: ipc.Settings[K],
   ) => Promise<void>;
-  download: () => Promise<void>;
+  download: (id?: string) => Promise<void>;
   cancel: () => Promise<void>;
 };
 const megabytes = (bytes: number) => `${Math.round(bytes / 1000000)} MB`;

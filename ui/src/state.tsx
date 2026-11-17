@@ -192,17 +192,25 @@ export function useAppState() {
       setNotice(errorText(e));
     }
   }
-  async function download() {
-    if (!settings) return;
-    setProgress(undefined);
+  /** Download speech model `id`, by default the selected one. */
+  async function download(id = settings?.model) {
+    if (!id) return;
+    // Starts at 0, so the download belongs to its model from the first moment.
+    setProgress({
+      id,
+      doneBytes: 0,
+      totalBytes: 0,
+      finished: false,
+      error: null,
+    });
     setDownloading(true);
     try {
-      await ipc.downloadModel(settings.model);
+      await ipc.downloadModel(id);
     } catch (e) {
       setDownloading(false);
       setNotice(errorText(e));
       setProgress({
-        id: settings.model,
+        id,
         doneBytes: 0,
         totalBytes: 0,
         finished: false,

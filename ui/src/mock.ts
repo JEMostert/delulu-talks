@@ -698,8 +698,13 @@ function radioAdvance() {
 }
 let spoken = 0;
 let voice: ReturnType<typeof setInterval> | undefined;
+// ?speech=all has every speech model downloaded (the Models page).
 const downloaded = new Set<string>(
-  params.has("firstRun") ? [] : [settings.model],
+  params.has("firstRun")
+    ? []
+    : params.get("speech") === "all"
+      ? [settings.model, "small", "parakeet-ultra-q8_0"]
+      : [settings.model],
 );
 let mic: ReturnType<typeof setInterval> | undefined;
 let download: ReturnType<typeof setInterval> | undefined;

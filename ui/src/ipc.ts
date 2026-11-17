@@ -1,6 +1,6 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 // The mock is only reachable in Vite development outside a Tauri window.
 const mock =
   import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)
@@ -208,6 +208,14 @@ export const openProjectPage = () =>
         ),
       ).then(() => {})
     : openUrl("https://github.com/JEMostert/delulu-talks");
+/** Open a folder in the file manager. */
+export const openFolder = (path: string) =>
+  mock ? Promise.resolve() : openPath(path);
+/** Open a model's licence page in the browser. */
+export const openLicence = (url: string) =>
+  mock
+    ? Promise.resolve(window.open(url, "_blank", "noopener")).then(() => {})
+    : openUrl(url);
 export const onStatus = (fn: (value: Status) => void): Promise<UnlistenFn> =>
   listen<Status>("status", (e) => fn(e.payload));
 export const onMicLevel = (fn: (value: number) => void): Promise<UnlistenFn> =>

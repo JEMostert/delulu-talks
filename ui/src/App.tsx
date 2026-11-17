@@ -9,7 +9,8 @@ import { FirstRun } from "./screens/FirstRun";
 import { Dictate } from "./screens/Dictate";
 import { Cleanup } from "./screens/Cleanup";
 import { Radio } from "./screens/Radio";
-import { ModelsPage, Settings, VoicePage } from "./screens/Settings";
+import { Settings, VoicePage } from "./screens/Settings";
+import { Models } from "./screens/Models";
 import "./styles/index.css";
 
 export default function App() {
@@ -52,7 +53,7 @@ export default function App() {
         {shown === "Vocabulary" && <Cleanup state={state} />}
         {shown === "Delulu FM" && <Radio state={state} />}
         {shown === "Voice" && <VoicePage state={state} />}
-        {shown === "Models" && <ModelsPage state={state} />}
+        {shown === "Models" && <Models state={state} />}
         {shown === "Settings" && <Settings state={state} />}
       </main>
       <Toast notice={notice} onDismiss={dismiss} />
