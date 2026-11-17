@@ -14,6 +14,7 @@
   font-size: 1.3rem;
 }
 .models-card {
+  position: relative;
   overflow: auto;
 }
 .models-table {

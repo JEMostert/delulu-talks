@@ -90,6 +90,7 @@
   scrollbar-color: var(--line-strong) transparent;
 }
 .history-list {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
