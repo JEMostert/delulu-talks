@@ -1331,6 +1331,7 @@ dependencies = [
  "delulu-store",
  "delulu-stt",
  "dirs 6.0.0",
+ "glob",
  "log",
  "serde",
  "serde_json",
