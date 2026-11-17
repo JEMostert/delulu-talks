@@ -35,7 +35,36 @@ const paths = {
   disk: "M5 6.5c0-1.4 3.1-2.5 7-2.5s7 1.1 7 2.5v11c0 1.4-3.1 2.5-7 2.5s-7-1.1-7-2.5zM5 6.5C5 7.9 8.1 9 12 9s7-1.1 7-2.5M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5",
   chip: "M7 7h10v10H7zM10 10h4v4h-4zM10 4v3m4-3v3m-4 10v3m4-3v3M4 10h3m-3 4h3m10-4h3m-3 4h3",
   folder: "M4 7.5V18h16V9.5h-8L10 7H4Z",
+  like: "M7.5 10.5v9h-3v-9zM7.5 10.5 11 4.2a2 2 0 0 1 3.4 1.9l-1 3.4h4.8a2 2 0 0 1 2 2.4l-1.1 5.9a2 2 0 0 1-2 1.7H7.5",
+  dislike:
+    "M7.5 13.5v-9h-3v9zM7.5 13.5l3.5 6.3a2 2 0 0 0 3.4-1.9l-1-3.4h4.8a2 2 0 0 0 2-2.4l-1.1-5.9a2 2 0 0 0-2-1.7H7.5",
+  lock: "M6.5 11h11v8.5h-11zM8.5 11V8a3.5 3.5 0 0 1 7 0v3",
+  heart:
+    "M12 19.5s-7.5-4.5-7.5-9.6A4.1 4.1 0 0 1 12 7.6a4.1 4.1 0 0 1 7.5 2.3c0 5.1-7.5 9.6-7.5 9.6Z",
+  send: "M4.5 11.2 19.5 4.5 12.8 19.5l-1.9-6.4ZM10.9 13.1l8.6-8.6",
+  power: "M12 4v7.5M7.3 7.2a7 7 0 1 0 9.4 0",
+  dice: "M5 5h14v14H5z",
+  star: "m12 4.5 2.3 4.7 5.2.8-3.8 3.6.9 5.2-4.6-2.5-4.6 2.5.9-5.2-3.8-3.6 5.2-.8Z",
+  info: "M12 20.5a8.5 8.5 0 1 0 0-17 8.5 8.5 0 0 0 0 17ZM12 11v5.5M12 7.8v.4",
+  checks: "m3.5 12.5 4 4L15 9m-3.5 7.5 1 1L20 10",
+  more: "",
 } as const;
+
+/** Filled dots for icons a stroke cannot draw small enough. */
+const dots: Partial<Record<keyof typeof paths, [number, number][]>> = {
+  dice: [
+    [9, 9],
+    [15, 9],
+    [12, 12],
+    [9, 15],
+    [15, 15],
+  ],
+  more: [
+    [6, 12],
+    [12, 12],
+    [18, 12],
+  ],
+};
 
 export type IconName = keyof typeof paths;
 
@@ -54,7 +83,17 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
       aria-hidden="true"
       focusable="false"
     >
-      <path d={paths[name]} />
+      {paths[name] && <path d={paths[name]} />}
+      {dots[name]?.map(([cx, cy]) => (
+        <circle
+          key={`${cx}-${cy}`}
+          cx={cx}
+          cy={cy}
+          r={name === "more" ? 1.6 : 1.3}
+          fill="currentColor"
+          stroke="none"
+        />
+      ))}
       {name === "settings" && (
         <>
           <circle cx="15" cy="7" r="2" />

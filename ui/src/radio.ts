@@ -17,6 +17,8 @@ export type ReadinessStep = {
   unknown?: boolean;
   /** Fixed on the Models page. */
   models?: boolean;
+  /** Fixed on the Voice page. */
+  voice?: boolean;
 };
 
 /** ACE-Step's files are all here for this language-model choice; on auto either
@@ -63,14 +65,15 @@ export function readinessSteps(
           id: "model",
           label: "Music model (ACE-Step 1.5)",
           ok: aceReady(m.ace, music.aceLm),
-          help: "Install ACE-Step under Music engine below. Nothing downloads until you ask.",
+          models: true,
+          help: "Install ACE-Step on the Models page. Nothing downloads until you ask.",
         }
       : {
           id: "model",
           label: "Music model (YuE2, about 4 GB)",
           ok: m.model,
           models: true,
-          help: "Download it in Models, or under Music engine below. Nothing downloads until you ask.",
+          help: "Download YuE2 on the Models page. Nothing downloads until you ask.",
         };
   return [
     {
@@ -91,7 +94,7 @@ export function readinessSteps(
     modelStep,
     {
       id: "writer",
-      label: "Cleanup model (writes the songs)",
+      label: "Song writer (cleanup model)",
       ok: r.writer,
       help: "Download the cleanup model at Clean up text, on Dictate.",
     },
@@ -101,6 +104,7 @@ export function readinessSteps(
       ok: r.voice,
       optional: true,
       help: "Optional. Install the voice model on the Voice page; until then the station plays music only.",
+      voice: true,
     },
   ];
 }
@@ -181,4 +185,73 @@ export function lyricSections(text: string): LyricSection[] {
 /** Whether there is anything to sing; an instrumental keeps only its form. */
 export function hasWords(sections: LyricSection[]): boolean {
   return sections.some((s) => s.lines.length > 0);
+}
+
+/** What production is doing, in a few words for the deck; `makingText` has
+ * the whole sentence for its tooltip. */
+export function makingShort(radio: Radio, now: number): string | null {
+  const m = radio.making;
+  if (!m) return null;
+  const since = Math.max(0, Math.round((now - m.since) / 1000));
+  if (m.kind === "break")
+    return m.step === "voice"
+      ? `Recording the host · ${since} s`
+      : "Writing the host’s lines";
+  if (m.step === "writing")
+    return m.request ? "Writing your request" : "Writing the next song";
+  if (m.preparing) return `Preparing the graphics card · ${clock(since)}`;
+  if (m.progress != null && m.progress > 0)
+    return `Making the next song · ${Math.round(m.progress * 100)}%`;
+  return `Making the next song · ${clock(since)}`;
+}
+
+/** The mockup's palette for the catalogue genres; a listener's own genre gets
+ * a colour from its name, so it keeps it. */
+const genreColors: Record<string, string> = {
+  soul: "#ffb3c1",
+  jazz: "#f6c979",
+  "lo-fi": "#c2addb",
+  ambient: "#75e4ff",
+  house: "#5fdcbf",
+  synthwave: "#ff6f86",
+  "indie rock": "#f6dfb0",
+  "punk rock": "#ff8a9e",
+  folk: "#c4f2e6",
+  funk: "#ffc2d1",
+  "hip-hop": "#d9c9f2",
+  classical: "#bfefff",
+  reggae: "#9be08f",
+  "drum & bass": "#8fb7ff",
+  "dutch pop": "#ffcf8a",
+  metal: "#b8c4d0",
+  country: "#e8c39a",
+  techno: "#7fe0e0",
+};
+const spare = [
+  "#ffb3c1",
+  "#75e4ff",
+  "#5fdcbf",
+  "#f6c979",
+  "#c2addb",
+  "#9be08f",
+  "#8fb7ff",
+  "#ffcf8a",
+];
+
+export function genreColor(name: string): string {
+  const key = name.toLowerCase();
+  if (genreColors[key]) return genreColors[key];
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return spare[h % spare.length];
+}
+
+/** A genre's draw weight from likes and dislikes, 1 when it has none. */
+export function genreWeight(radio: Radio, genre: string): number {
+  return radio.weights[genre.toLowerCase()] ?? 1;
+}
+
+/** "F1" → "Female 1", "M3" → "Male 3". */
+export function voiceName(voice: string): string {
+  return `${voice.startsWith("F") ? "Female" : "Male"} ${voice.slice(1)}`;
 }

@@ -617,7 +617,12 @@ function radioSetFeedback(id: string, feedback: RadioFeedback | null) {
 }
 /** Pretend production: a song is written, then composed, then ready. */
 function radioProduce() {
-  if (!radio.onAir || radio.making || radio.queue.length >= 2 || !radioReady())
+  if (
+    !radio.onAir ||
+    radio.making ||
+    radio.queue.length >= (params.has("onair") ? 6 : 2) ||
+    !radioReady()
+  )
     return;
   const n = ++radioSongs;
   const request = radio.requests.find((r) => !r.answeredBy);
@@ -676,6 +681,82 @@ function radioProduce() {
       radioProduce();
     }, 2500);
   }, 1200);
+}
+/** A full programme for ?onair: songs drawn from the mix, a host break, a
+ * surprise, an answered and a waiting request, two saved songs. */
+function radioSeed() {
+  const song = (
+    n: number,
+    title: string,
+    genre: string | null,
+    mood: string | null,
+    seconds: number,
+    extra: Partial<RadioItem> = {},
+  ): RadioItem => ({
+    ...radioSong(n, title, genre, mood),
+    imported: false,
+    seconds,
+    ...extra,
+  });
+  radioSongs = 30;
+  radio = {
+    ...radio,
+    now: song(20, "Harbour Lights", "Soul", "Warm", 180, {
+      lyrics:
+        "[Verse 1]\nThe ferry hums across the bay\nSalt on the rail, the gulls at play\nYou pull your collar to the wind\nAnd count the lamps as they begin\n\n[Chorus]\nHarbour lights, hold me steady\nHarbour lights, I'm almost home\nEvery wave says I'm ready\nEvery lamp says not alone\n\n[Verse 2]\nThe café pulls its shutters down\nA radio plays across the town\nWe lean against the painted wall\nAnd let the evening take it all\n\n[Bridge]\nSlow, slow, the tide comes round",
+      feedback: "like",
+    }),
+    position: 68,
+    queue: [
+      song(21, "Lantern Street", "Lo-fi", "Calm", 192),
+      song(22, "Static Bloom", "House", "Upbeat", 174),
+      {
+        ...song(23, "", null, null, 8),
+        kind: "break",
+        title: "Host break",
+        lyrics: null,
+        script:
+          "That was Harbour Lights. Next up, something for the late tram home.",
+      },
+      song(24, "Velvet Engine", "Reggae", "Dreamlike", 192, {
+        surprise: true,
+      }),
+      song(25, "First Snow", null, null, 160, {
+        request: "a song about the first snow, slow and warm",
+      }),
+    ],
+    history: [
+      song(19, "Salt Wind Howls Loud", "Punk rock", "Driving", 180, {
+        surprise: true,
+      }),
+      song(18, "Petal Wind Rush", "Indie rock", "Upbeat", 168, {
+        feedback: "dislike",
+      }),
+      song(17, "Cold Shock Rising Tide", "Synthwave", "Dark", 180),
+      song(16, "Grey Veil Speed", "Drum & bass", "Driving", 170),
+    ],
+    saved: [
+      song(15, "Copper Sun", "Funk", "Warm", 174, { saved: true }),
+      song(14, "Neefjesdorp Digital Lore", "Punk rock", "Playful", 180, {
+        saved: true,
+      }),
+    ],
+    requests: [
+      {
+        id: "req-1",
+        text: "a song about the first snow, slow and warm",
+        createdAt: Date.now() - 600_000,
+        answeredBy: "First Snow",
+      },
+      {
+        id: "req-2",
+        text: "Dutch pop about the bike shed",
+        createdAt: Date.now() - 60_000,
+      },
+    ],
+    weights: { soul: 1.5, "indie rock": 1 / 1.5 },
+  };
+  radio.now = { ...radio.now!, saved: false };
 }
 function radioAdvance() {
   const history =
@@ -1329,7 +1410,11 @@ const simulate = {
     });
   },
 };
-if (params.has("onair") && settings.radio) void invoke("radio_play");
+// ?radio&onair: a station mid-programme, with a song being made.
+if (params.has("onair") && settings.radio) {
+  radioSeed();
+  void invoke("radio_play");
+}
 Object.assign(window, { __delulu: simulate });
 window.addEventListener("keydown", (e) => {
   if (e.key === "F8" && !e.repeat) void simulate.start();
