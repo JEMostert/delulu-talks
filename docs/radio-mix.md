@@ -38,6 +38,8 @@ Every command answers with the full `Radio` view and also emits it as the `radio
 
 These are unchanged: `get_radio`, `check_radio`, `radio_play`, `radio_pause`, `radio_off`, `radio_skip`, `radio_volume`, `radio_music`, `radio_request`. The events are unchanged too: `radio` (the view) and `radio-error`.
 
+Mix edits, shuffle and station activation return an error if the new mix cannot be saved, keeping the previous mix and pending song draw. The page keeps an unsent edit and offers Retry after a failed write.
+
 ## Types (`ui/src/ipc.ts`)
 
 - `RadioMix`: `{ genres: RadioChoice[]; moods: RadioChoice[]; surprise: number /* 0–100 */; vocals: "any"|"vocal"|"instrumental"; energy: "any"|"low"|"medium"|"high"; lengthMinSeconds: number; lengthMaxSeconds: number; host: "off"|"sometimes"|"often"; language: string; theme: string }`. Out-of-range or reversed bounds are clamped to `lengthLimits` and put in order.

@@ -685,19 +685,13 @@ fn with_station(
 /// songs not written yet.
 #[tauri::command]
 pub(crate) fn radio_mix(app: tauri::AppHandle, mix: Mix) -> Result<RadioView, String> {
-    with_station(&app, |s| {
-        s.set_mix(mix);
-        Ok(())
-    })
+    with_station(&app, |s| s.set_mix(mix).map(|_| ()))
 }
 
 /// Roll a random mix on the station, so the window and any other client agree.
 #[tauri::command]
 pub(crate) fn radio_shuffle(app: tauri::AppHandle) -> Result<RadioView, String> {
-    with_station(&app, |s| {
-        s.shuffle();
-        Ok(())
-    })
+    with_station(&app, |s| s.shuffle().map(|_| ()))
 }
 
 /// Save the mix as a station; a station of the listener's with that name is updated.

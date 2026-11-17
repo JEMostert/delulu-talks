@@ -468,21 +468,26 @@ impl Station {
     }
 
     /// Replace the mix. Applies to songs not written yet; queued songs keep theirs.
-    pub fn set_mix(&self, mix: Mix) -> Mix {
+    pub fn set_mix(&self, mix: Mix) -> Result<Mix, RadioError> {
         self.change_mix(|_| mix)
     }
 
-    fn change_mix(&self, f: impl FnOnce(&Mix) -> Mix) -> Mix {
+    fn change_mix(&self, f: impl FnOnce(&Mix) -> Mix) -> Result<Mix, RadioError> {
         let mut s = self.lock();
+        let previous_mix = s.mix.clone();
+        let previous_job = s.job.clone();
         s.mix = f(&s.mix).sanitized();
         Self::redraw(&mut s);
-        let mix = s.mix.clone();
-        self.persist(&s);
-        mix
+        if let Err(error) = self.save(&s) {
+            s.mix = previous_mix;
+            s.job = previous_job;
+            return Err(error);
+        }
+        Ok(s.mix.clone())
     }
 
     /// A random mix: a few genres and moods, a small surprise chance.
-    pub fn shuffle(&self) -> Mix {
+    pub fn shuffle(&self) -> Result<Mix, RadioError> {
         let seed = uuid::Uuid::new_v4().as_u64_pair().0;
         self.change_mix(|m| m.shuffled(&mut Rng::new(seed)))
     }
@@ -579,7 +584,7 @@ impl Station {
             .into_iter()
             .find(|st| st.id == id)
             .ok_or_else(|| invalid("That station no longer exists."))?;
-        Ok(self.change_mix(|m| m.with_preset(&station.preset)))
+        self.change_mix(|m| m.with_preset(&station.preset))
     }
 
     // ---- feedback, lock, saved songs ----
