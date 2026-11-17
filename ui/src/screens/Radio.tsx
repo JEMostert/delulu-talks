@@ -1019,7 +1019,7 @@ function useMix(radio: ipc.Radio, apply: Apply) {
     } catch (e) {
       setError(`Not applied: ${errorText(e)}`);
     } finally {
-      setSaving(writer.busy);
+      setSaving(false);
     }
   }, [apply, writer]);
 
@@ -1045,7 +1045,7 @@ function useMix(radio: ipc.Radio, apply: Apply) {
       setError(errorText(e));
       return false;
     } finally {
-      setSaving(writer.busy);
+      setSaving(false);
     }
   };
 

@@ -249,10 +249,12 @@ fn breaks_follow_songs_when_voice_is_ready() {
     let station = Station::open(&dir.0).unwrap();
     let mut fake = Fake::new();
     fake.voice = true;
-    station.set_mix(Mix {
-        host: Host::Often,
-        ..Mix::default()
-    });
+    station
+        .set_mix(Mix {
+            host: Host::Often,
+            ..Mix::default()
+        })
+        .unwrap();
     station.set_on_air(true);
     make_one(&station, &fake);
     make_one(&station, &fake);
@@ -276,11 +278,13 @@ fn a_dutch_station_has_its_host_write_and_speak_dutch() {
     let station = Station::open(&dir.0).unwrap();
     let mut fake = Fake::new();
     fake.voice = true;
-    station.set_mix(Mix {
-        host: Host::Often,
-        language: "Dutch".into(),
-        ..Mix::default()
-    });
+    station
+        .set_mix(Mix {
+            host: Host::Often,
+            language: "Dutch".into(),
+            ..Mix::default()
+        })
+        .unwrap();
     station.set_on_air(true);
     make_one(&station, &fake);
     make_one(&station, &fake);
@@ -333,11 +337,13 @@ fn the_engine_choice_reaches_the_next_song() {
     let dir = Dir::new();
     let station = Station::open(&dir.0).unwrap();
     let fake = Fake::new();
-    station.set_mix(Mix {
-        length_min_seconds: 180,
-        length_max_seconds: 180,
-        ..Mix::default()
-    });
+    station
+        .set_mix(Mix {
+            length_min_seconds: 180,
+            length_max_seconds: 180,
+            ..Mix::default()
+        })
+        .unwrap();
     station.set_on_air(true);
     make_one(&station, &fake);
     station.set_music(MusicEngine::AceStep, AceLm::Large);
@@ -686,7 +692,7 @@ fn each_song_gets_a_drawn_genre_that_reaches_the_writer_and_the_engine() {
     let station = Station::open(&dir.0).unwrap();
     let fake = Fake::new();
     let pool = ["Soul", "Jazz", "Folk", "Techno"];
-    station.set_mix(mix_of(&pool));
+    station.set_mix(mix_of(&pool)).unwrap();
     station.set_on_air(true);
     for _ in 0..6 {
         make_one(&station, &fake);
@@ -730,7 +736,7 @@ fn a_mix_change_redraws_only_the_song_not_written_yet() {
     let station = Station::open(&dir.0).unwrap();
     let mut fake = Fake::new();
     fake.seconds = 20.0;
-    station.set_mix(mix_of(&["Soul"]));
+    station.set_mix(mix_of(&["Soul"])).unwrap();
     station.set_on_air(true);
     make_one(&station, &fake);
     // The next job is planned but not written.
@@ -747,7 +753,7 @@ fn a_mix_change_redraws_only_the_song_not_written_yet() {
             .as_deref(),
         Some("Soul")
     );
-    station.set_mix(mix_of(&["Metal"]));
+    station.set_mix(mix_of(&["Metal"])).unwrap();
     let s = station.snapshot();
     assert_eq!(s.job.unwrap().draw.unwrap().genre.as_deref(), Some("Metal"));
     assert_eq!(s.queue[0].genre.as_deref(), Some("Soul"));
@@ -816,7 +822,7 @@ fn likes_and_dislikes_move_the_genre_weight_once() {
     let dir = Dir::new();
     let station = Station::open(&dir.0).unwrap();
     let fake = Fake::new();
-    station.set_mix(mix_of(&["Soul"]));
+    station.set_mix(mix_of(&["Soul"])).unwrap();
     station.set_on_air(true);
     make_one(&station, &fake);
     let id = station.snapshot().queue[0].id.clone();
@@ -854,13 +860,15 @@ fn a_genre_lock_holds_for_its_songs_then_lets_go() {
     let station = Station::open(&dir.0).unwrap();
     let mut fake = Fake::new();
     fake.seconds = 20.0;
-    station.set_mix(mix_of(&["Jazz"]));
+    station.set_mix(mix_of(&["Jazz"])).unwrap();
     station.set_on_air(true);
     // Nothing airs yet: nothing to lock.
     assert!(station.lock_genre(Some(2)).is_err());
     make_one(&station, &fake);
     station.advance();
-    station.set_mix(mix_of(&["Soul", "Folk", "Techno"]));
+    station
+        .set_mix(mix_of(&["Soul", "Folk", "Techno"]))
+        .unwrap();
     let lock = station.lock_genre(Some(2)).unwrap();
     assert_eq!((lock.genre.as_str(), lock.left), ("Jazz", Some(2)));
     make_one(&station, &fake);
@@ -1021,7 +1029,7 @@ fn stations_save_rename_delete_and_tune_the_mix() {
     assert!(station.save_station("groove").is_err());
     assert!(station.rename_station("groove", "Mine").is_err());
     assert!(station.delete_station("drift").is_err());
-    station.set_mix(mix_of(&["Metal", "Punk rock"]));
+    station.set_mix(mix_of(&["Metal", "Punk rock"])).unwrap();
     let mine = station.save_station(" Loud ").unwrap();
     assert_eq!(mine.name, "Loud");
     station.activate_station("drift").unwrap();
@@ -1033,11 +1041,46 @@ fn stations_save_rename_delete_and_tune_the_mix() {
     assert!(station.rename_station(&mine.id, "Drift").is_err());
     station.rename_station(&mine.id, "Louder").unwrap();
     // Saving under an existing name of the listener's updates that station.
-    station.set_mix(mix_of(&["Metal"]));
+    station.set_mix(mix_of(&["Metal"])).unwrap();
     station.save_station("louder").unwrap();
     let s = station.snapshot();
     assert_eq!(s.stations.len(), 1);
     assert_eq!(s.stations[0].preset.genres, ["Metal"]);
     station.delete_station(&mine.id).unwrap();
     assert!(station.snapshot().stations.is_empty());
+}
+
+#[test]
+fn failed_mix_write_keeps_the_previous_mix_and_draw_until_retry() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    station.set_mix(mix_of(&["Soul"])).unwrap();
+    {
+        let mut state = station.lock();
+        state.job = Some(station.plan(&mut state, false));
+        station.save(&state).unwrap();
+    }
+    let before = station.snapshot();
+    let blocked = dir.0.join("station.json.tmp");
+    std::fs::create_dir(&blocked).unwrap();
+    let next = mix_of(&["Metal"]);
+    assert!(station.set_mix(next.clone()).is_err());
+    assert_eq!(station.snapshot(), before);
+    let persisted: State =
+        serde_json::from_slice(&std::fs::read(dir.0.join("station.json")).unwrap()).unwrap();
+    assert_eq!(persisted, before);
+    std::fs::remove_dir(blocked).unwrap();
+    station.set_mix(next.clone()).unwrap();
+    assert_eq!(Station::open(&dir.0).unwrap().snapshot().mix, next);
+    assert_eq!(
+        station
+            .snapshot()
+            .job
+            .unwrap()
+            .draw
+            .unwrap()
+            .genre
+            .as_deref(),
+        Some("Metal")
+    );
 }

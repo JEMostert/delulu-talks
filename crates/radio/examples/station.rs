@@ -114,10 +114,12 @@ fn main() {
         station.set_music(MusicEngine::AceStep, AceLm::Auto);
     }
     if host {
-        station.set_mix(Mix {
-            host: Host::Often,
-            ..station.snapshot().mix
-        });
+        station
+            .set_mix(Mix {
+                host: Host::Often,
+                ..station.snapshot().mix
+            })
+            .unwrap();
     }
     let pool = std::env::var("DELULU_MIX_GENRES").ok();
     if let Some(pool) = &pool {
@@ -139,7 +141,7 @@ fn main() {
             mix.length_min_seconds = min;
             mix.length_max_seconds = max;
         }
-        let mix = station.set_mix(mix);
+        let mix = station.set_mix(mix).unwrap();
         eprintln!(
             "[mix] genres {:?}, moods {:?}",
             mix.enabled_genres(),
