@@ -422,6 +422,8 @@ export type MusicModelRow = {
   bytes: number;
   state: "missing" | "downloading" | "ready";
   terms: ModelTerms | null;
+  /** Why this model's last download failed. */
+  error?: string | null;
 };
 /** Every music model, and the download in progress (over all its models). */
 export type MusicModel = {

@@ -290,6 +290,7 @@ export function Models({ state }: { state: AppState }) {
     void state.radio.act(() => ipc.radioMusic(next, lm));
   const musicRows = (mm?.models ?? []).map((m): ModelRow => {
     const lm = lmOf[m.id];
+    const error = music.errorFor(m.id);
     const ace = engine?.engine === "acestep";
     const inUse = lm
       ? ace && (engine.aceLm === lm || engine.aceLm === "auto")
@@ -300,24 +301,27 @@ export function Models({ state }: { state: AppState }) {
         <Progress
           label={`${m.label} download`}
           percent={musicPercent}
-          onCancel={() => void music.run(ipc.cancelMusicDownload)}
+          onCancel={() => void music.run(ipc.cancelMusicDownload, [m.id])}
         />
       );
     else if (m.state === "missing")
       action = (
         <>
-          {music.error && <Failed error={music.error} />}
+          {error && <Failed error={error} />}
           <Download
             licence={m.license}
-            retry={Boolean(music.error)}
+            retry={Boolean(error)}
             disabled={musicBusy}
-            onClick={() => void music.run(() => ipc.downloadMusicModel([m.id]))}
+            onClick={() =>
+              void music.run(() => ipc.downloadMusicModel([m.id]), [m.id])
+            }
           />
         </>
       );
     else
       action = (
         <>
+          {error && <Failed error={error} />}
           {inUse && lm && engine?.aceLm === "auto" ? (
             <Tag tip="Automatic: 4B with 8 GB of free graphics memory, else 0.6B">
               Auto
@@ -362,7 +366,9 @@ export function Models({ state }: { state: AppState }) {
         <Delete
           name={m.label}
           disabled={musicBusy}
-          onDelete={() => void music.run(() => ipc.deleteMusicModel(m.id))}
+          onDelete={() =>
+            void music.run(() => ipc.deleteMusicModel(m.id), [m.id])
+          }
         />
       ),
     };
@@ -391,7 +397,7 @@ export function Models({ state }: { state: AppState }) {
           />
         </span>
       )}
-      {!mm && music.error && <Failed error={music.error} />}
+      {music.error && <Failed error={music.error} />}
     </>
   );
 
