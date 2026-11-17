@@ -63,7 +63,7 @@ export function TypingStep({ state }: Props) {
       <div className="setup-keys">
         <Keys trigger={status?.hotkey.trigger} large />
       </div>
-      <p className="muted">You can change it later in Settings.</p>
+      <p className="muted">You can change it later on the Dictate page.</p>
       <div className="permission">
         <div>
           <p className="permission-title">Typing into other apps</p>
