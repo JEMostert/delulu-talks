@@ -329,34 +329,42 @@ impl Mix {
             .filter(|c| !c.on)
             .map(|c| c.name.clone())
             .collect();
-        let (pool, surprise) = if on.is_empty() {
+        let chosen = !on.is_empty();
+        let listener: Vec<String> = if on.is_empty() {
             // Nothing chosen: any genre, which is what the listener asked for.
-            (self.genres.iter().map(|c| c.name.clone()).collect(), false)
-        } else if !off.is_empty() && rng.chance(self.surprise as f64 / 100.0) {
-            (off, true)
+            self.genres.iter().map(|c| c.name.clone()).collect()
         } else {
-            (on, false)
+            on
         };
-        if pool.is_empty() {
+        if listener.is_empty() {
             return (None, false);
         }
+        // The listener's pool sets the repeat rule, for surprise picks too.
         // Three or more: never the last genre again. Two: never three in a row.
         let last = ctx.recent.first();
-        let banned = match (pool.len(), last) {
+        let banned = match (listener.len(), last) {
             (3.., Some(last)) => Some(last),
             (2, Some(last)) if ctx.recent.get(1).is_some_and(|g| same(g, last)) => Some(last),
             _ => None,
         };
-        let candidates: Vec<&String> = pool
-            .iter()
-            .filter(|g| banned.is_none_or(|b| !same(b, g)))
-            .collect();
+        let allowed = |pool: &[String]| -> Vec<String> {
+            pool.iter()
+                .filter(|g| banned.is_none_or(|b| !same(b, g)))
+                .cloned()
+                .collect()
+        };
+        let surprising = chosen && !off.is_empty() && rng.chance(self.surprise as f64 / 100.0);
+        // A surprise that could only repeat the banned genre falls back to the pool.
+        let (candidates, surprise) = match surprising.then(|| allowed(&off)) {
+            Some(c) if !c.is_empty() => (c, true),
+            _ => (allowed(&listener), false),
+        };
         let weights: Vec<f64> = candidates
             .iter()
             .map(|g| weight(ctx.weights, g) as f64)
             .collect();
-        let pick = candidates[rng.weighted(&weights)];
-        (Some(pick.clone()), surprise)
+        let pick = candidates[rng.weighted(&weights)].clone();
+        (Some(pick), surprise)
     }
 
     /// A random mix: a few genres and moods, a small surprise chance; the rest kept.
@@ -417,15 +425,50 @@ pub fn weight(weights: &BTreeMap<String, f32>, genre: &str) -> f32 {
         .clamp(WEIGHT_MIN, WEIGHT_MAX)
 }
 
-/// Multiply a genre's weight by `factor`, within bounds; a weight back at 1 is removed.
-pub fn adjust(weights: &mut BTreeMap<String, f32>, genre: &str, factor: f32) {
+/// The draw weight of a genre with `score` net likes: ×`WEIGHT_STEP` per net
+/// like, within bounds.
+pub fn score_weight(score: i32) -> f32 {
+    WEIGHT_STEP
+        .powi(score.clamp(-64, 64))
+        .clamp(WEIGHT_MIN, WEIGHT_MAX)
+}
+
+/// Add `delta` net likes to a genre and set its weight from the total. Counting
+/// verdicts rather than multiplying a bounded weight makes taking one back exact,
+/// also after the weight reached a bound. A genre back at 0 is removed.
+pub fn add_score(
+    weights: &mut BTreeMap<String, f32>,
+    scores: &mut BTreeMap<String, i32>,
+    genre: &str,
+    delta: i32,
+) {
     let key = genre.to_lowercase();
-    let value = (weight(weights, &key) * factor).clamp(WEIGHT_MIN, WEIGHT_MAX);
-    if (value - 1.0).abs() < 0.01 {
+    let score = scores.get(&key).copied().unwrap_or(0) + delta;
+    if score == 0 {
+        scores.remove(&key);
         weights.remove(&key);
     } else {
-        weights.insert(key, value);
+        scores.insert(key.clone(), score);
+        weights.insert(key, score_weight(score));
     }
+}
+
+/// Scores for weights saved before scores were: the nearest whole number of net
+/// likes. Weights are then set from the scores again.
+pub fn sync_scores(weights: &mut BTreeMap<String, f32>, scores: &mut BTreeMap<String, i32>) {
+    for (genre, w) in weights.iter() {
+        if !scores.contains_key(genre) && w.is_finite() && *w > 0.0 {
+            let score = (w.ln() / WEIGHT_STEP.ln()).round() as i32;
+            if score != 0 {
+                scores.insert(genre.clone(), score);
+            }
+        }
+    }
+    scores.retain(|_, s| *s != 0);
+    *weights = scores
+        .iter()
+        .map(|(g, s)| (g.clone(), score_weight(*s)))
+        .collect();
 }
 
 static NO_WEIGHTS: BTreeMap<String, f32> = BTreeMap::new();
@@ -709,6 +752,29 @@ mod tests {
                 .windows(3)
                 .all(|w| !(w[0].genre == w[1].genre && w[1].genre == w[2].genre)));
         }
+        // Surprise picks keep the rules too, also when only one genre is off.
+        let off_one = |on: &[&str]| {
+            let mut m = mix(on);
+            for c in m.genres.iter_mut() {
+                c.on = c.on || c.name != "Metal";
+            }
+            m.surprise = 100;
+            m
+        };
+        for seed in 0..300 {
+            let three = run(&off_one(&[]), seed, 40, &weights);
+            assert_eq!(three.iter().filter(|d| d.surprise).count(), 20);
+            assert!(three.windows(2).all(|w| w[0].genre != w[1].genre));
+        }
+        let mut two = mix(&["Soul", "Jazz"]);
+        two.genres.retain(|c| c.on || c.name == "Metal");
+        two.surprise = 100;
+        for seed in 0..300 {
+            let drawn = run(&two, seed, 40, &weights);
+            assert!(drawn
+                .windows(3)
+                .all(|w| !(w[0].genre == w[1].genre && w[1].genre == w[2].genre)));
+        }
         // One genre: always that one.
         let one = run(&mix(&["Metal"]), 1, 5, &weights);
         assert!(one.iter().all(|d| d.genre.as_deref() == Some("Metal")));
@@ -784,9 +850,10 @@ mod tests {
     #[test]
     fn weights_shift_the_draw_within_bounds() {
         let mut weights = BTreeMap::new();
+        let mut scores = BTreeMap::new();
         for _ in 0..10 {
-            adjust(&mut weights, "Soul", WEIGHT_STEP);
-            adjust(&mut weights, "jazz", 1.0 / WEIGHT_STEP);
+            add_score(&mut weights, &mut scores, "Soul", 1);
+            add_score(&mut weights, &mut scores, "jazz", -1);
         }
         assert_eq!(weight(&weights, "soul"), WEIGHT_MAX);
         assert_eq!(weight(&weights, "Jazz"), WEIGHT_MIN);
@@ -802,10 +869,10 @@ mod tests {
             .count();
         assert!(soul > 3 * jazz, "soul {soul}, jazz {jazz}");
         // Back to neutral removes the entry.
-        let mut w = BTreeMap::new();
-        adjust(&mut w, "Soul", WEIGHT_STEP);
-        adjust(&mut w, "Soul", 1.0 / WEIGHT_STEP);
-        assert!(w.is_empty());
+        let (mut w, mut sc) = (BTreeMap::new(), BTreeMap::new());
+        add_score(&mut w, &mut sc, "Soul", 1);
+        add_score(&mut w, &mut sc, "Soul", -1);
+        assert!(w.is_empty() && sc.is_empty());
     }
 
     #[test]

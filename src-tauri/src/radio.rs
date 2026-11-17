@@ -283,8 +283,7 @@ fn on_player(app: &tauri::AppHandle, event: PlayerEvent) {
             let radio = app.state::<Radio>();
             let Ok(station) = radio.station() else { return };
             let _control = radio.control();
-            if station.snapshot().now.as_ref().map(|i| &i.id) == Some(&id) {
-                let next = station.advance();
+            if let Some(next) = station.advance_from(&id) {
                 if radio.listening.load(Ordering::SeqCst) {
                     play_item(app, next, false);
                 } else {
@@ -320,7 +319,7 @@ fn play_item(app: &tauri::AppHandle, item: Option<Item>, fresh: bool) {
             Ok(audio) => radio.player.play(&item.id, audio),
             Err(e) => {
                 eprintln!("radio: {} unplayable: {e}", item.id);
-                let next = station.advance();
+                let next = station.advance_from(&item.id).flatten();
                 if next.as_ref().is_some_and(|n| n.id != item.id) {
                     play_item(app, next, true);
                 }
@@ -645,12 +644,18 @@ fn skip(app: &tauri::AppHandle) -> Result<(), String> {
     let radio = app.state::<Radio>();
     let _control = radio.control();
     let next = radio.station()?.advance();
+    play_next(app, next);
+    Ok(())
+}
+
+/// After an advance, under the control lock: play `next` if listening.
+fn play_next(app: &tauri::AppHandle, next: Option<Item>) {
+    let radio = app.state::<Radio>();
     if radio.listening.load(Ordering::SeqCst) {
         play_item(app, next, true);
     } else {
         radio.player.stop();
     }
-    Ok(())
 }
 
 #[tauri::command]
@@ -733,10 +738,16 @@ pub(crate) fn radio_feedback(
 ) -> Result<RadioView, String> {
     let radio = app.state::<Radio>();
     let station = radio.station()?;
-    station.feedback(&id, feedback).map_err(|e| e.to_string())?;
-    let airing = station.snapshot().now.is_some_and(|i| i.id == id);
-    if feedback == Some(Feedback::Dislike) && airing {
-        skip(&app)?;
+    {
+        // Held from the verdict to the skip, so playback cannot move on between
+        // them; and the skip ends only this song, never the one after it.
+        let _control = radio.control();
+        station.feedback(&id, feedback).map_err(|e| e.to_string())?;
+        if feedback == Some(Feedback::Dislike) {
+            if let Some(next) = station.advance_from(&id) {
+                play_next(&app, next);
+            }
+        }
     }
     emit(&app);
     Ok(view(&app))
@@ -794,17 +805,25 @@ pub(crate) fn radio_play_saved(app: tauri::AppHandle, id: String) -> Result<Radi
     enabled(&app)?;
     let radio = app.state::<Radio>();
     let station = radio.station()?;
-    // Checked before going on air, so a stale id changes nothing.
-    if !station.snapshot().saved.iter().any(|i| i.id == id) {
-        return Err("That song is no longer saved.".into());
-    }
-    set_on_air(&app, true)?;
+    // Checked and decoded before going on air, so a stale id or a lost or broken
+    // file changes nothing.
+    let saved = station
+        .snapshot()
+        .saved
+        .into_iter()
+        .find(|i| i.id == id)
+        .ok_or("That song is no longer saved.")?;
+    let audio = station
+        .load_audio(&saved)
+        .map_err(|e| format!("That saved song can't be played: {e}"))?;
     {
         let _control = radio.control();
-        radio.listening.store(true, Ordering::SeqCst);
         let item = station.air_saved(&id).map_err(|e| e.to_string())?;
-        play_item(&app, Some(item), true);
+        radio.listening.store(true, Ordering::SeqCst);
+        radio.player.play(&item.id, audio);
+        preload(&app);
     }
+    set_on_air(&app, true)?;
     emit(&app);
     Ok(view(&app))
 }

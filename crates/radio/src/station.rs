@@ -243,19 +243,30 @@ impl Station {
         std::fs::create_dir_all(&convert).map_err(|e| io(&convert, e))?;
         let path = root.join("station.json");
         let mut state = match std::fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice::<State>(&bytes).unwrap_or_else(|e| {
-                let keep = root.join(format!("station.corrupt-{}.json", now_ms()));
-                // Not `{e}`: serde can quote a listener's request it choked on.
-                log::warn!(
-                    "radio state unreadable ({:?} error at line {} column {}); kept as {}",
-                    e.classify(),
-                    e.line(),
-                    e.column(),
-                    keep.display()
-                );
-                let _ = std::fs::rename(&path, &keep);
-                State::default()
-            }),
+            Ok(bytes) => match serde_json::from_slice::<State>(&bytes) {
+                Ok(state) => state,
+                Err(e) => {
+                    let stamp = now_ms();
+                    let keep = root.join(format!("station.corrupt-{stamp}.json"));
+                    // Not `{e}`: serde can quote a listener's request it choked on.
+                    log::warn!(
+                        "radio state unreadable ({:?} error at line {} column {}); kept as {}",
+                        e.classify(),
+                        e.line(),
+                        e.column(),
+                        keep.display()
+                    );
+                    // A fresh state refers to no audio, so clean-up would delete
+                    // every song, saved ones too. Their audio goes aside with the
+                    // file that listed them, where it can still be recovered.
+                    let audio = root.join("audio");
+                    let aside = root.join(format!("audio.corrupt-{stamp}"));
+                    std::fs::rename(&audio, &aside).map_err(|e| io(&audio, e))?;
+                    std::fs::create_dir_all(&audio).map_err(|e| io(&audio, e))?;
+                    let _ = std::fs::rename(&path, &keep);
+                    State::default()
+                }
+            },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => State::default(),
             Err(e) => return Err(io(&path, e)),
         };
@@ -265,6 +276,8 @@ impl Station {
         }
         state.version = SCHEMA;
         state.mix = state.mix.clone().sanitized();
+        let s = &mut state;
+        mix::sync_scores(&mut s.weights, &mut s.scores);
         let audio = root.join("audio");
         let exists = |i: &Item| audio.join(&i.file).is_file();
         state.now = state.now.take().filter(exists);
@@ -585,13 +598,19 @@ impl Station {
         if previous == feedback {
             return Ok(());
         }
-        let factor = |f: Option<Feedback>| match f {
-            Some(Feedback::Like) => mix::WEIGHT_STEP,
-            Some(Feedback::Dislike) => 1.0 / mix::WEIGHT_STEP,
-            None => 1.0,
+        let score = |f: Option<Feedback>| match f {
+            Some(Feedback::Like) => 1,
+            Some(Feedback::Dislike) => -1,
+            None => 0,
         };
         if let Some(genre) = genre {
-            mix::adjust(&mut s.weights, &genre, factor(feedback) / factor(previous));
+            let s = &mut *s;
+            mix::add_score(
+                &mut s.weights,
+                &mut s.scores,
+                &genre,
+                score(feedback) - score(previous),
+            );
         }
         for i in items_mut(&mut s).filter(|i| i.file == file) {
             i.feedback = feedback;
@@ -606,6 +625,7 @@ impl Station {
         match genre {
             Some(g) => {
                 s.weights.remove(&g.to_lowercase());
+                s.scores.remove(&g.to_lowercase());
                 for i in
                     items_mut(&mut s).filter(|i| i.genre.as_deref().is_some_and(|x| same(x, g)))
                 {
@@ -614,6 +634,7 @@ impl Station {
             }
             None => {
                 s.weights.clear();
+                s.scores.clear();
                 for i in items_mut(&mut s) {
                     i.feedback = None;
                 }
@@ -668,7 +689,12 @@ impl Station {
         }
         item.provenance.remove("replay");
         s.saved.insert(0, item);
-        self.persist(&s);
+        // Saved only once it is on disk: after a restart an unrecorded copy is
+        // gone, and clean-up would take its audio.
+        if let Err(e) = self.save(&s) {
+            s.saved.remove(0);
+            return Err(e);
+        }
         Ok(())
     }
 
@@ -694,6 +720,12 @@ impl Station {
             .find(|i| i.id == id)
             .cloned()
             .ok_or_else(|| invalid("That song is no longer saved."))?;
+        // Checked before anything changes, so a lost file leaves playback alone.
+        if !self.root.join("audio").join(&item.file).is_file() {
+            return Err(invalid(
+                "That saved song's audio is gone. Remove it from Saved.",
+            ));
+        }
         item.id = format!("replay-{}", short_id());
         item.provenance.insert("replay".into(), "true".into());
         Self::retire_now(&mut s);
@@ -785,7 +817,22 @@ impl Station {
     /// End the current item (finished or skipped) and air the next: the queue first,
     /// otherwise a labelled replay of an earlier song. None = nothing to play yet.
     pub fn advance(&self) -> Option<Item> {
-        let mut s = self.lock();
+        let s = self.lock();
+        self.advance_locked(s)
+    }
+
+    /// `advance`, but only while `id` is still airing: Some(next) when it ended,
+    /// None when something else airs by now. One check and change, so a caller
+    /// that learned of `id` earlier cannot end the song that followed it.
+    pub fn advance_from(&self, id: &str) -> Option<Option<Item>> {
+        let s = self.lock();
+        if s.now.as_ref().is_none_or(|i| i.id != id) {
+            return None;
+        }
+        Some(self.advance_locked(s))
+    }
+
+    fn advance_locked(&self, mut s: MutexGuard<'_, State>) -> Option<Item> {
         let previous = Self::retire_now(&mut s);
         let next = if s.queue.is_empty() {
             replay(&s.history, previous.as_ref())

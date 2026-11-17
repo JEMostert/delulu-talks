@@ -406,18 +406,32 @@ fn advance_airs_queue_then_labelled_replays() {
 }
 
 #[test]
-fn corrupt_state_is_kept_and_reset() {
+fn corrupt_state_is_kept_and_reset_without_losing_audio() {
     let dir = Dir::new();
-    std::fs::create_dir_all(&dir.0).unwrap();
+    std::fs::create_dir_all(dir.0.join("audio")).unwrap();
+    std::fs::write(dir.0.join("audio/saved-song.opus"), b"song").unwrap();
     std::fs::write(dir.0.join("station.json"), "{nope").unwrap();
     let station = Station::open(&dir.0).unwrap();
     assert!(station.snapshot().queue.is_empty());
-    let kept = std::fs::read_dir(&dir.0).unwrap().flatten().any(|e| {
-        e.file_name()
-            .to_string_lossy()
-            .starts_with("station.corrupt-")
-    });
-    assert!(kept);
+    let kept = |prefix: &str| -> Vec<PathBuf> {
+        std::fs::read_dir(&dir.0)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with(prefix))
+            .map(|e| e.path())
+            .collect()
+    };
+    assert_eq!(kept("station.corrupt-").len(), 1);
+    // The audio the unreadable file listed is set aside with it, not cleaned up.
+    let aside = kept("audio.corrupt-");
+    assert_eq!(aside.len(), 1);
+    assert_eq!(
+        std::fs::read(aside[0].join("saved-song.opus")).unwrap(),
+        b"song"
+    );
+    // The fresh station still cleans up its own folder as before.
+    station.advance();
+    assert!(aside[0].join("saved-song.opus").is_file());
 }
 
 // ---- WAV to Opus conversion ----
@@ -901,6 +915,95 @@ fn saved_songs_outlive_clean_up_and_play_again() {
     assert!(station.snapshot().saved.is_empty());
     station.advance();
     assert!(!station.audio_path(&song).is_file());
+}
+
+#[test]
+fn a_save_that_cannot_be_written_is_refused() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let fake = Fake::new();
+    station.set_on_air(true);
+    make_one(&station, &fake);
+    let song = station.snapshot().queue[0].clone();
+    // The state file cannot be replaced: its temporary name is taken by a folder.
+    let blocker = dir.0.join("station.json.tmp");
+    std::fs::create_dir(&blocker).unwrap();
+    assert!(station.save_song(&song.id).is_err());
+    assert!(station.snapshot().saved.is_empty());
+    std::fs::remove_dir(&blocker).unwrap();
+    station.save_song(&song.id).unwrap();
+    assert_eq!(saved(&dir.0).saved[0].id, song.id);
+}
+
+#[test]
+fn a_saved_song_whose_audio_is_gone_leaves_playback_alone() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let mut fake = Fake::new();
+    fake.seconds = 20.0;
+    station.set_on_air(true);
+    make_one(&station, &fake);
+    make_one(&station, &fake);
+    let airing = station.advance().unwrap();
+    let song = station.snapshot().queue[0].clone();
+    station.save_song(&song.id).unwrap();
+    std::fs::remove_file(station.audio_path(&song)).unwrap();
+    assert!(station.air_saved(&song.id).is_err());
+    let s = station.snapshot();
+    assert_eq!(s.now.unwrap().id, airing.id);
+    assert_eq!(s.queue[0].id, song.id);
+    assert!(s.history.is_empty());
+}
+
+#[test]
+fn ending_a_song_that_already_ended_leaves_the_next_one_on() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    let mut fake = Fake::new();
+    fake.seconds = 20.0;
+    station.set_on_air(true);
+    make_one(&station, &fake);
+    make_one(&station, &fake);
+    let disliked = station.advance().unwrap();
+    // Playback moves on between the listener's dislike and its skip.
+    let next = station.advance().unwrap();
+    assert!(station.advance_from(&disliked.id).is_none());
+    let s = station.snapshot();
+    assert_eq!(s.now.unwrap().id, next.id);
+    assert_eq!(s.history.len(), 1);
+    // While it still airs, it ends.
+    assert!(station.advance_from(&next.id).is_some());
+    assert_ne!(station.snapshot().now.map(|i| i.id), Some(next.id));
+}
+
+#[test]
+fn taking_back_a_verdict_past_the_weight_bound_is_exact() {
+    let dir = Dir::new();
+    let station = Station::open(&dir.0).unwrap();
+    {
+        let mut s = station.lock();
+        for n in 0..5 {
+            let mut item = stored(&format!("soul-{n}"), Kind::Song, &format!("soul-{n}.opus"));
+            item.genre = Some("Soul".into());
+            s.history.push(item);
+        }
+    }
+    for n in 0..5 {
+        station
+            .feedback(&format!("soul-{n}"), Some(Feedback::Like))
+            .unwrap();
+    }
+    let soul = |st: &Station| mix::weight(&st.snapshot().weights, "Soul");
+    assert_eq!(soul(&station), mix::WEIGHT_MAX);
+    // Four likes remain: still at the bound.
+    station.feedback("soul-4", None).unwrap();
+    assert_eq!(soul(&station), mix::WEIGHT_MAX);
+    station.feedback("soul-3", None).unwrap();
+    station.feedback("soul-2", None).unwrap();
+    assert!((soul(&station) - mix::WEIGHT_STEP.powi(2)).abs() < 1e-4);
+    // A dislike instead of a like moves two steps.
+    station.feedback("soul-1", Some(Feedback::Dislike)).unwrap();
+    assert!(station.snapshot().weights.is_empty());
 }
 
 #[test]
