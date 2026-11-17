@@ -254,3 +254,12 @@ export function restorePaste(
   if (!now.trim()) return list;
   return `${now.replace(/[,\s]*$/, "")}, ${list}`;
 }
+/**
+ * The `delulu speak` command for a text, quoted so a shell passes it as one
+ * argument and expands nothing in it. Whitespace runs become one space.
+ */
+export function speakCommand(text: string): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  if (/^[^"$`\\!]*$/.test(line)) return `delulu speak "${line}"`;
+  return `delulu speak '${line.replace(/'/g, `'\\''`)}'`;
+}

@@ -7,10 +7,11 @@ import { TooltipLayer } from "./components/Tooltip";
 import { Pearl } from "./pearl/Pearl";
 import { FirstRun } from "./screens/FirstRun";
 import { Dictate } from "./screens/Dictate";
-import { Cleanup } from "./screens/Cleanup";
+import { Vocabulary } from "./screens/Vocabulary";
 import { Radio } from "./screens/Radio";
-import { Settings, VoicePage } from "./screens/Settings";
+import { Settings } from "./screens/Settings";
 import { Models } from "./screens/Models";
+import { Voice } from "./screens/Voice";
 import "./styles/index.css";
 
 export default function App() {
@@ -50,9 +51,9 @@ export default function App() {
         key={shown}
       >
         {shown === "Dictate" && <Dictate state={state} />}
-        {shown === "Vocabulary" && <Cleanup state={state} />}
+        {shown === "Vocabulary" && <Vocabulary state={state} />}
         {shown === "Delulu FM" && <Radio state={state} />}
-        {shown === "Voice" && <VoicePage state={state} />}
+        {shown === "Voice" && <Voice state={state} />}
         {shown === "Models" && <Models state={state} />}
         {shown === "Settings" && <Settings state={state} />}
       </main>

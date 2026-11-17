@@ -1,82 +1,224 @@
-.page-settings {
+/*
+ * Settings, Voice and Vocabulary: a heading row, then panels that fill the
+ * window. The page never scrolls; lists and panels inside it do.
+ */
+.page-settings,
+.page-voice,
+.page-vocabulary {
   overflow: hidden;
 }
-.settings {
+.screen {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
   height: 100%;
+  padding: 14px 16px 16px;
 }
-.settings-index {
-  padding: 22px 0 0 28px;
+.screen-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
 }
-.settings-index h1 {
-  margin-bottom: 18px;
+.screen-head h1 {
+  margin-right: auto;
+  font-size: 1.2rem;
+  font-weight: 700;
 }
-.settings-index ul {
+/* Cards side by side, as many as fit, filling the width */
+.cards {
   display: grid;
-  gap: 2px;
-  border-left: 1px solid var(--line-strong);
-}
-.settings-index button {
-  position: relative;
-  width: 100%;
-  padding: 7px 14px;
-  border: 0;
-  background: none;
-  color: var(--ink-2);
-  font-weight: 540;
-  text-align: left;
-  transition: color 140ms;
-}
-.settings-index button:hover {
-  color: var(--ink);
-}
-.settings-index button[aria-current] {
-  color: var(--ink);
-  font-weight: 650;
-}
-.settings-index button[aria-current]::before {
-  content: "";
-  position: absolute;
-  left: -4px;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin-top: -3.5px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fff, #c2addb 60%, #75e4ff);
-  box-shadow: 0 0 0 3px var(--bg);
-}
-.settings-scroll {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  align-content: start;
+  align-items: start;
+  gap: 12px;
   min-height: 0;
   overflow: auto;
-  padding: 22px 28px 40vh 12px;
-  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
-.settings-section {
-  scroll-margin-top: 22px;
-}
-/* Voice and Models: one section under its page heading, no index. */
-.settings-single {
-  grid-template-columns: minmax(0, 1fr);
-}
-.settings-single .settings-scroll {
-  padding: 18px 24px 40px;
-}
-.settings-single h1 {
-  margin-bottom: 16px;
-}
-.settings-section + .settings-section {
-  margin-top: 34px;
-}
-.section-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.section-head p {
+.card-label {
+  padding: 11px 14px 4px;
   color: var(--ink-3);
+  font-size: 0.69rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+/* A plain value at the end of a line lines up with the controls above it */
+.cards .line-control > .line-value:last-child {
+  padding-right: 6px;
+}
+.feature-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.feature-label .icon {
+  color: var(--ink-3);
+}
+.data-path {
+  max-width: 220px;
+  color: var(--ink-2);
+  user-select: text;
+}
+/* A tag that is a button: it leads to where its state is fixed */
+.tag-button {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+.tag-button:hover {
+  filter: brightness(1.08);
+}
+.tag-button .icon {
+  margin-right: -2px;
+}
+
+/* Voice: try the agent voice through its command */
+.try {
+  display: grid;
+  gap: 8px;
+  padding: 4px 14px 14px;
+}
+.try-text {
+  height: 74px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+  outline: 0;
+  background: var(--sunken);
+  color: var(--ink);
+  font: 1.02rem / 1.4 var(--font-text);
+  resize: none;
+}
+.try-text:focus {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.try-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--sunken);
+}
+.try-command code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font:
+    0.8rem ui-monospace,
+    "JetBrains Mono",
+    monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+.try-command .icon-button {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+/* A dialog over the page, like the licences */
+.app-dialog {
+  /* The glass rule sets position: relative; a modal needs the top layer's fixed. */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(760px, calc(100vw - 40px));
+  height: fit-content;
+  max-height: min(680px, calc(100vh - 60px));
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--r-group);
+  background: var(--glass-strong);
+  color: var(--ink);
+}
+.app-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  animation: app-dialog-in 260ms var(--ease-out);
+}
+.app-dialog::backdrop {
+  background: rgba(2, 12, 22, 0.55);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+@keyframes app-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+.app-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 10px 8px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.app-dialog-head h2 {
+  flex: 1;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.app-dialog-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 4px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.licence-list li + li {
+  border-top: 1px solid var(--line);
+}
+.licence-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 2px 8px 2px 14px;
+}
+.licence-model {
+  flex: none;
+  font-size: var(--t-small);
+  font-weight: 600;
+}
+.licence-credit {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: var(--t-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.licence-row .icon-button {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+.licence-row .icon-button[aria-label^="Hide"] .icon {
+  transform: rotate(90deg);
+}
+.licence-text {
+  max-height: 200px;
+  margin: 0 14px 10px;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--sunken);
+  color: var(--ink-2);
+  font-size: var(--t-meta);
+  line-height: 1.5;
+  white-space: pre-line;
 }
 
 /* A group of rows on one surface, rows split by hairlines */
@@ -126,17 +268,6 @@
 .row-stack .row-control {
   justify-content: stretch;
 }
-.value {
-  color: var(--ink-2);
-}
-.path {
-  max-width: 320px;
-  overflow-wrap: anywhere;
-  text-align: right;
-  font-size: var(--t-small);
-  user-select: text;
-}
-
 /* Model picker, shared with first run */
 .model {
   display: grid;
@@ -173,38 +304,6 @@
 }
 .model-ready + .model-note {
   text-align: right;
-}
-
-/* Tiny recording pill next to its switch */
-.pill-preview {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 22px;
-  border-radius: var(--r-pill);
-  background: rgba(6, 25, 43, 0.95);
-  box-shadow: inset 0 0 0 1px rgba(117, 228, 255, 0.2);
-  transition: opacity 200ms;
-}
-.pill-preview span {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fff, #e8dff2 45%, #c2addb);
-  box-shadow: 0 0 8px 1px rgba(255, 111, 134, 0.75);
-}
-.row:has(.switch:not(:checked)) .pill-preview {
-  opacity: 0.35;
-}
-
-@media (max-width: 760px) {
-  .settings {
-    grid-template-columns: 1fr;
-  }
-  .settings-index ul {
-    display: none;
-  }
 }
 
 /* Engine choice at the top of the model picker */

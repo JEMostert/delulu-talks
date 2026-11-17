@@ -1,520 +1,235 @@
-.cleanup {
+/* Vocabulary: the shelves on the left, the open shelf fills the rest. */
+.vocab-panes {
   display: grid;
-  align-content: start;
-  gap: 28px;
-  padding: 18px 24px 40px;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
 }
-.cleanup .title-block {
-  gap: 6px;
+.shelf-list,
+.pane-scroll {
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
-.lead {
-  color: var(--ink-2);
-}
-.vocab {
-  display: grid;
-  gap: 14px;
-}
-.vocab .section-head {
-  margin-bottom: 0;
-}
-.vocab-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ink-2);
-  font-size: var(--t-small);
-}
-.vocab-note.warn {
-  color: var(--amber-ink);
-}
-/* The cleanup model's state, next to its switch */
-.cleanup-state {
-  flex: 1;
-  min-width: 0;
-}
-.cleanup-state .row-error {
-  color: var(--amber-ink);
-}
-
-.vocab-intro {
-  max-width: 58ch;
-  color: var(--ink-2);
-  font-family: var(--font-text);
-  font-size: var(--t-text);
-  line-height: 1.5;
-}
-
-/* A text field in the controls' style */
-.text-field {
-  width: 100%;
-  min-width: 0;
-  height: 38px;
-  padding: 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-control);
-  outline: 0;
-  background: var(--glass-strong);
-  color: var(--ink);
-  transition:
-    border-color 140ms,
-    box-shadow 140ms;
-}
-.text-field::placeholder {
-  color: var(--ink-3);
-}
-.text-field:hover {
-  border-color: color-mix(in srgb, var(--ink) 30%, transparent);
-}
-.text-field:focus {
-  border-color: var(--focus);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-/*
- * The reef: a recessed alcove with stone ledges. Every row of jars stands on
- * a ledge, drawn as a band at the bottom of each 216px row.
- */
-.reef {
-  --row: 216px;
-  --ledge: 16px;
-  --stone-top: #f4f8fb;
-  --stone: #c6d4e0;
-  --stone-deep: #a9bccc;
-  --alcove: linear-gradient(
-    180deg,
-    rgba(10, 106, 143, 0.1),
-    rgba(10, 106, 143, 0.03)
-  );
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
-  grid-auto-rows: var(--row);
-  padding: 0 18px;
-  border-radius: 24px;
-  background:
-    repeating-linear-gradient(
-      180deg,
-      transparent 0 calc(var(--row) - var(--ledge)),
-      var(--stone-top) calc(var(--row) - var(--ledge))
-        calc(var(--row) - var(--ledge) + 2px),
-      var(--stone) calc(var(--row) - var(--ledge) + 2px) calc(var(--row) - 5px),
-      var(--stone-deep) calc(var(--row) - 5px) var(--row)
-    ),
-    var(--alcove);
-  box-shadow:
-    inset 0 18px 30px -18px rgba(11, 33, 53, 0.35),
-    inset 0 0 0 1px var(--line);
-}
-:root[data-scheme="dark"] .reef {
-  --stone-top: #3d6f8c;
-  --stone: #163a54;
-  --stone-deep: #0b2539;
-  --alcove: linear-gradient(
-    180deg,
-    rgba(2, 10, 20, 0.55),
-    rgba(6, 30, 48, 0.35)
-  );
-  box-shadow:
-    inset 0 22px 34px -16px rgba(0, 0, 0, 0.7),
-    inset 0 0 0 1px rgba(117, 228, 255, 0.06);
-}
-.reef-slot {
-  position: relative;
-  display: grid;
-  place-items: end center;
-  padding-bottom: calc(var(--ledge) - 1px);
-}
-/* Light pooling on the ledge under each jar */
-.reef-slot::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: calc(var(--ledge) - 6px);
-  width: 120px;
-  height: 14px;
-  margin-left: -60px;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(3, 14, 26, 0.32), transparent);
-  pointer-events: none;
-}
-.reef-slot:has(.jar:not(.off):not(.jar-ghost):not(.jar-new))::after {
-  background: radial-gradient(
-    closest-side,
-    color-mix(in srgb, var(--foam) 55%, transparent),
-    transparent
-  );
-}
-
-/* A glass specimen jar */
-.jar {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-rows: auto 1fr;
-  justify-items: center;
-  width: 126px;
-  height: 182px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  text-align: center;
-  transition: transform 260ms var(--ease-spring);
-}
-button.jar:hover {
-  transform: translateY(-4px);
-}
-button.jar:active {
-  transform: translateY(-1px) scale(0.98);
-}
-button.jar:focus-visible {
-  outline: 0;
-}
-button.jar:focus-visible .jar-glass {
-  box-shadow:
-    0 0 0 3px var(--focus),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-}
-.jar-lid {
-  width: 74px;
-  height: 14px;
-  margin-bottom: -3px;
-  border-radius: 6px 6px 3px 3px;
-  background: linear-gradient(
-    180deg,
-    #2a5470 0%,
-    var(--shell) 70%,
-    #020a14 100%
-  );
-  box-shadow:
-    inset 0 1px 0 rgba(234, 246, 255, 0.25),
-    0 2px 4px rgba(3, 14, 26, 0.35);
-}
-.jar-glass {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-  width: 100%;
-  overflow: hidden;
-  border-radius: 24px 24px 20px 20px;
-  background:
-    linear-gradient(
-      100deg,
-      transparent 14%,
-      rgba(255, 255, 255, 0.45) 18%,
-      transparent 26%
-    ),
-    radial-gradient(
-      120% 60% at 50% 110%,
-      color-mix(in srgb, var(--foam) 32%, transparent),
-      transparent 70%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.5),
-      color-mix(in srgb, var(--foam) 12%, rgba(255, 255, 255, 0.25))
-    );
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.75),
-    inset 0 -10px 18px -10px color-mix(in srgb, var(--accent) 40%, transparent),
-    0 10px 18px -12px rgba(3, 14, 26, 0.5);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
-}
-:root[data-scheme="dark"] .jar-glass {
-  background:
-    linear-gradient(
-      100deg,
-      transparent 14%,
-      rgba(200, 240, 255, 0.16) 18%,
-      transparent 26%
-    ),
-    radial-gradient(
-      120% 60% at 50% 110%,
-      color-mix(in srgb, var(--foam) 26%, transparent),
-      transparent 70%
-    ),
-    linear-gradient(180deg, rgba(160, 225, 255, 0.1), rgba(60, 150, 190, 0.1));
-  box-shadow:
-    inset 0 0 0 1px rgba(160, 225, 255, 0.28),
-    inset 0 -12px 20px -10px rgba(117, 228, 255, 0.28),
-    0 12px 20px -12px rgba(0, 0, 0, 0.8);
-}
-/* The first few words float in the jar as little pearls */
-.jar-words {
+.shelf-list {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 12px 14px 0;
 }
-.jar-word {
-  max-width: calc(100% - 12px);
-  padding: 2px 8px;
+.shelf-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding-right: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.shelf-row:first-child {
+  border-top-left-radius: var(--r-group);
+  border-top-right-radius: var(--r-group);
+}
+.shelf-row.selected {
+  background: var(--accent-soft);
+}
+.shelf-pick {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  align-self: stretch;
+  padding: 0 4px 0 12px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+}
+.shelf-pick:hover .shelf-name {
+  color: var(--accent);
+}
+.shelf-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  border-radius: var(--r-pill);
-  background: radial-gradient(
-    140% 120% at 30% 20%,
-    #ffffff,
-    #eef0f8 45%,
-    #d9d3ee
-  );
-  box-shadow:
-    0 1px 2px rgba(3, 14, 26, 0.25),
-    inset 0 -1px 2px rgba(194, 173, 219, 0.6);
-  color: #18324a;
-  font-size: 0.72rem;
+  font-size: var(--t-small);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: transform 320ms var(--ease-spring);
 }
-.jar-word:nth-child(2n) {
-  transform: translateX(5px) rotate(2deg);
-}
-.jar-word:nth-child(2n + 1) {
-  transform: translateX(-5px) rotate(-2deg);
-}
-/* Hover: the words drift up as if the jar were lifted */
-button.jar:hover .jar-word {
-  transform: translateY(-3px);
-}
-button.jar:hover .jar-word:nth-child(2n) {
-  transform: translate(5px, -5px) rotate(1deg);
-}
-/* The paper tag hanging on the jar */
-.jar-tag {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 9px;
-  display: grid;
-  gap: 1px;
-  padding: 5px 6px 6px;
-  border-radius: 8px;
-  background: var(--glass-strong);
-  box-shadow:
-    0 2px 6px -2px rgba(3, 14, 26, 0.35),
-    inset 0 0 0 1px var(--line);
-}
-.jar-name {
-  display: -webkit-box;
-  overflow: hidden;
-  font-size: 0.8rem;
-  font-weight: 680;
-  line-height: 1.15;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-.jar-meta {
-  color: var(--ink-3);
-  font-size: 0.7rem;
-  font-variant-numeric: tabular-nums;
-}
-.jar.off .jar-glass {
-  filter: grayscale(0.7);
-  opacity: 0.55;
-}
-.jar.off .jar-tag {
-  opacity: 0.75;
-}
-
-/* A jar not on the reef yet: a ghost with a plus. `.jar.` outranks the dark
-   theme's .jar-glass rule. */
-.jar-ghost .jar-glass,
-.jar-ghost .jar-lid {
-  opacity: 0.6;
-}
-.jar.jar-ghost .jar-glass {
-  box-shadow: inset 0 0 0 1.5px var(--line-strong);
-}
-.jar-badge {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  margin: -30px 0 0 -17px;
-  border-radius: 50%;
-  background: var(--primary);
-  color: var(--primary-ink);
-  box-shadow: 0 6px 14px -6px rgba(3, 14, 26, 0.6);
-  opacity: 0;
-  transform: scale(0.7);
-  transition:
-    opacity 180ms,
-    transform 260ms var(--ease-spring);
-}
-.jar-ghost:hover .jar-glass,
-.jar-ghost:focus-visible .jar-glass,
-.jar-ghost:hover .jar-lid {
-  opacity: 1;
-}
-.jar-ghost:hover .jar-badge,
-.jar-ghost:focus-visible .jar-badge {
-  opacity: 1;
-  transform: scale(1);
-}
-.reef-ghost {
-  --row: 206px;
-  opacity: 0.92;
-}
-.starters {
-  display: grid;
-  gap: 8px;
-  margin-top: 8px;
-}
-.starters-title {
+.shelf-row.off .shelf-name {
   color: var(--ink-2);
-  font-size: var(--t-small);
-  font-weight: 600;
-}
-
-/* The empty jar that makes a new shelf */
-.jar-new .jar-lid {
-  opacity: 0.45;
-}
-.jar.jar-new .jar-glass {
-  align-content: center;
-  gap: 8px;
-  padding: 10px;
-  background: transparent;
-  box-shadow: none;
-  border: 1.5px dashed var(--line-strong);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-.jar-new:focus-within .jar-glass {
-  border-color: var(--focus);
-}
-.jar-new .text-field {
-  height: 34px;
-  padding: 0 10px;
-  font-size: var(--t-small);
-  text-align: center;
-}
-.jar-new .button {
-  height: 32px;
-  padding: 0 10px;
-  font-size: var(--t-small);
-}
-
-/* The shelf, opened: a glass panel over the dimmed reef */
-.vocab-dialog {
-  /* The glass rule sets position: relative; a modal needs the top layer's fixed. */
-  position: fixed;
-  inset: 0;
-  margin: auto;
-  height: fit-content;
-  width: min(580px, calc(100vw - 40px));
-  max-height: min(640px, calc(100vh - 60px));
-  padding: 0;
-  overflow: auto;
-  border: 0;
-  border-radius: 22px;
-  background: var(--glass-strong);
-  color: var(--ink);
-}
-.vocab-dialog[open] {
-  animation: dialog-in 340ms var(--ease-spring);
-}
-.vocab-dialog::backdrop {
-  background:
-    radial-gradient(80% 60% at 50% 0%, rgba(117, 228, 255, 0.12), transparent),
-    rgba(2, 12, 22, 0.55);
-  -webkit-backdrop-filter: blur(5px);
-  backdrop-filter: blur(5px);
-  animation: backdrop-in 260ms ease-out;
-}
-@keyframes dialog-in {
-  from {
-    opacity: 0;
-    transform: translateY(18px) scale(0.94);
-  }
-}
-@keyframes backdrop-in {
-  from {
-    opacity: 0;
-  }
-}
-.dialog-inner {
-  display: grid;
-  gap: 16px;
-  padding: 18px 20px 20px 24px;
-}
-.dialog-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.dialog-title {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-text);
-  font-size: 1.6rem;
-  font-weight: 560;
-  letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
-}
-.shelf-rename {
-  flex: 1;
-}
-.dialog-use {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--ink-2);
-}
-.dialog-use label {
-  flex: 1;
-  cursor: pointer;
+  font-weight: 540;
 }
 .shelf-count {
   color: var(--ink-3);
-  font-size: var(--t-small);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  font-size: var(--t-meta);
 }
-.terms-empty {
-  color: var(--ink-3);
-  font-family: var(--font-text);
+.shelf-switch {
+  display: inline-flex;
 }
-.dialog-foot {
+.shelf-switch .switch {
+  width: 34px;
+  height: 20px;
+}
+.shelf-switch .switch::after {
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+}
+.shelf-switch .switch:checked::after {
+  transform: translateX(14px);
+}
+/* A small jar: a lid and a glass, drawn in lines */
+.jar-glyph {
+  flex: none;
+  width: 13px;
+  height: 16px;
+  border: 1.5px solid var(--ink-3);
+  border-top-width: 3px;
+  border-radius: 4px 4px 5px 5px;
+}
+.shelf-row.selected .jar-glyph {
+  border-color: var(--accent);
+}
+.jar-glyph.large {
+  width: 26px;
+  height: 32px;
+  border-width: 2px;
+  border-top-width: 5px;
+  border-radius: 7px 7px 9px 9px;
+}
+.shelf-new,
+.shelf-new-form {
   display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding-top: 4px;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--line);
 }
-.button.danger-text {
-  color: var(--coral-ink);
+.shelf-new {
+  width: 100%;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  background: none;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  font-weight: 560;
+  text-align: left;
 }
-.vocab-dialog .confirm {
-  margin: 0;
+.shelf-new:hover {
+  color: var(--ink);
 }
-
-/* Terms as pearl chips */
-.terms {
+.presets {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 12px;
+}
+.presets .card-label {
+  padding-top: 10px;
+}
+.preset-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  max-height: 300px;
-  overflow: auto;
-  padding: 2px;
+  gap: 6px;
+  padding: 0 14px;
 }
+.preset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--ink-2);
+  font-size: var(--t-meta);
+  font-weight: 560;
+}
+.preset-chip:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* The open shelf: a bar to rename, add and delete; its terms below */
+.shelf-pane {
+  display: flex;
+  flex-direction: column;
+}
+.pane-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 10px 9px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.shelf-title {
+  max-width: 34%;
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shelf-rename {
+  max-width: 260px;
+}
+.term-field {
+  flex: 1;
+  margin-left: 6px;
+}
+.pane-bar .icon-button {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+.pane-confirm {
+  margin: 10px 12px 0;
+}
+.pane-scroll {
+  flex: 1;
+  min-height: 0;
+}
+.term-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 6px;
+  padding: 12px 14px;
+}
+.terms-empty {
+  padding: 14px;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+}
+.pane-empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  height: 100%;
+  color: var(--ink-2);
+}
+.pane-empty .jar-glyph {
+  margin-bottom: 4px;
+}
+
+/* Chips of terms: a small pearl, the word and remove */
 .term {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   max-width: 100%;
-  height: 30px;
-  padding: 0 4px 0 9px;
+  height: 26px;
+  padding: 0 3px 0 8px;
   border-radius: var(--r-pill);
   background: var(--glass);
   box-shadow: inset 0 0 0 1px var(--line-strong);
+  font-size: var(--t-small);
   font-weight: 540;
 }
 .term::before {
@@ -552,9 +267,48 @@ button.jar:hover .jar-word:nth-child(2n) {
   color: var(--coral-ink);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  button.jar:hover,
-  button.jar:hover .jar-word {
-    transform: none;
-  }
+.lead {
+  color: var(--ink-2);
+}
+/* The cleanup model's state, next to its switch */
+.cleanup-state {
+  flex: 1;
+  min-width: 0;
+}
+.cleanup-state .row-error {
+  color: var(--amber-ink);
+}
+
+/* A text field in the controls' style */
+.text-field {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+  outline: 0;
+  background: var(--glass-strong);
+  color: var(--ink);
+  transition:
+    border-color 140ms,
+    box-shadow 140ms;
+}
+.text-field::placeholder {
+  color: var(--ink-3);
+}
+.text-field:hover {
+  border-color: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+.text-field:focus {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.text-field.small {
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 8px;
+  background: var(--sunken);
+  font-size: var(--t-small);
 }
