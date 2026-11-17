@@ -71,10 +71,6 @@ fn run_client(socket: Option<std::path::PathBuf>) {
                 }
             }
         }))
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec!["--hidden"]),
-        ))
         .plugin(tauri_plugin_opener::init())
         .manage(client::Client::new(socket, toggle))
         .setup(move |app| {
@@ -200,10 +196,6 @@ fn run_app() {
                 }
             }
         }))
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec!["--hidden"]),
-        ))
         .plugin(tauri_plugin_opener::init())
         .manage(Shell {
             store,
