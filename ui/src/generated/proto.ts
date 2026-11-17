@@ -307,9 +307,9 @@ vocals: string,
  */
 energy: string, 
 /**
- * "any" | "short" | "medium" | "long"
+ * Each song's length is drawn between these (seconds, 60–300).
  */
-length: string, 
+lengthMinSeconds: number, lengthMaxSeconds: number, 
 /**
  * "off" | "sometimes" | "often"
  */

@@ -1,8 +1,11 @@
 //! Run the station headless with the real writer, music engine and voice, to measure it.
 //! `cargo run --release -p delulu-radio --example station -- <data-dir> <items> [host]`
-//! Needs the Gemma and YuE2 models in the app's models folder and `delulu-engine`
-//! (set `DELULU_ENGINE` in a checkout). `DELULU_MUSIC_ENGINE=acestep` makes the
-//! music with ACE-Step instead (its files in the same models folder).
+//! Needs the Gemma and YuE2 models in the app's models folder (or `DELULU_MODELS`)
+//! and `delulu-engine` (set `DELULU_ENGINE` in a checkout). `DELULU_MUSIC_ENGINE=acestep`
+//! makes the music with ACE-Step instead (its files in the same models folder).
+//! `DELULU_MIX_GENRES="Soul,Metal,…"` turns on exactly those genres, surprise 0, and
+//! listens to each song as it is ready, so `<items>` songs are drawn in a row; every
+//! song's draw and engine request is printed as a `[draw]` line.
 use delulu_cleanup::{Cleaner, Sampling};
 use delulu_radio::model::{AceLm, Draft, Host, Music, MusicEngine};
 use delulu_radio::music::{self, Composer, Order};
@@ -63,6 +66,16 @@ impl Backend for Real {
     ) -> Result<BTreeMap<String, String>, RadioError> {
         let helper = music::helper_path().expect("delulu-engine");
         let order = Order::new(draft, seed, seconds, settings, &models());
+        let request = match &order {
+            Order::AceStep { song, .. } => serde_json::to_value(song),
+            Order::Yue2 { song, .. } => serde_json::to_value(song),
+        }
+        .map(|mut v| {
+            v["lyrics"] = serde_json::Value::from("…");
+            v
+        })
+        .unwrap_or_default();
+        eprintln!("[order] {request}");
         let report = self
             .composer
             .compose(&helper, &order, out, &|| false, &mut |s| {
@@ -104,10 +117,26 @@ fn main() {
             ..station.snapshot().mix
         });
     }
+    let pool = std::env::var("DELULU_MIX_GENRES").ok();
+    if let Some(pool) = &pool {
+        let on: Vec<String> = pool.split(',').map(|g| g.trim().to_lowercase()).collect();
+        let mut mix = station.snapshot().mix;
+        for g in mix.genres.iter_mut() {
+            g.on = on.contains(&g.name.to_lowercase());
+        }
+        mix.surprise = 0;
+        let mix = station.set_mix(mix);
+        eprintln!(
+            "[mix] genres {:?}, moods {:?}",
+            mix.enabled_genres(),
+            mix.enabled_moods()
+        );
+    }
     station.set_on_air(true);
     let target = station.snapshot().queue.len() + items;
+    let mut drawn = 0;
     let started = Instant::now();
-    while station.snapshot().queue.len() < target {
+    while station.snapshot().queue.len() < target && drawn < items {
         let step = Instant::now();
         match station.work(&backend) {
             Next::Idle => break,
@@ -119,6 +148,23 @@ fn main() {
             eprintln!("[error] {e}");
         }
         let _ = step;
+        // With a pool: listen to each song as it is ready, so the next one is drawn.
+        if pool.is_some() && !s.queue.is_empty() {
+            let item = &s.queue[0];
+            drawn += 1;
+            eprintln!(
+                "[draw] {drawn}: {:?} genre={:?} mood={:?} surprise={} made {}s",
+                item.title,
+                item.genre,
+                item.mood,
+                item.surprise,
+                item.provenance
+                    .get("madeSeconds")
+                    .cloned()
+                    .unwrap_or_default()
+            );
+            station.advance();
+        }
     }
     station.set_on_air(false);
     let s = station.snapshot();
@@ -150,6 +196,9 @@ fn main() {
 }
 
 fn models() -> PathBuf {
+    if let Some(dir) = std::env::var_os("DELULU_MODELS") {
+        return PathBuf::from(dir);
+    }
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap();
     home.join(".local/share/delulu-talks/models")
 }

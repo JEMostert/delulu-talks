@@ -222,6 +222,7 @@ export const onModelDownload = (
   listen<ModelDownload>("model-download", (e) => fn(e.payload));
 
 export type RadioKind = "song" | "break";
+export type RadioFeedback = "like" | "dislike";
 export type RadioItem = {
   id: string;
   kind: RadioKind;
@@ -233,17 +234,48 @@ export type RadioItem = {
   request: string | null;
   replay: boolean;
   imported: boolean;
+  /** The genre and mood the song was drawn with; null for requests, host
+   * breaks and songs from before the mix. */
+  genre: string | null;
+  mood: string | null;
+  /** The genre came from outside the listener's pool (the surprise chance). */
+  surprise: boolean;
+  feedback: RadioFeedback | null;
+  /** Kept out of clean-up; listed in `Radio.saved`. */
+  saved: boolean;
 };
-export type RadioDirection = {
-  mood: string;
-  genres: string[];
-  energy: "low" | "medium" | "high";
-  vocals: "vocal" | "instrumental" | "either";
-  language: string;
-  length: "short" | "medium" | "long";
+/** One genre or mood of the mix. `custom` is set by the station: the listener
+ * added it. Catalogue entries cannot be removed, only turned off. */
+export type RadioChoice = { name: string; on: boolean; custom: boolean };
+/** What the listener steers. Each new song draws one enabled genre (or, with
+ * `surprise` percent chance, one that is off), one enabled mood, and a value for
+ * every "any". No genre on = any genre. Applies to songs not written yet. */
+export type RadioMix = {
+  genres: RadioChoice[];
+  moods: RadioChoice[];
+  /** 0–100. */
+  surprise: number;
+  vocals: "any" | "vocal" | "instrumental";
+  energy: "any" | "low" | "medium" | "high";
+  /** Each song's length is drawn between these, in seconds, within
+   * `Radio.lengthLimits`; equal values give a fixed length. */
+  lengthMinSeconds: number;
+  lengthMaxSeconds: number;
   host: "off" | "sometimes" | "often";
+  language: string;
+  /** Optional free text every song is written around. */
   theme: string;
 };
+/** A named mix. Built-in stations cannot be renamed or deleted. */
+export type RadioStation = {
+  id: string;
+  name: string;
+  builtin: boolean;
+  /** The mix sounds like this station now. */
+  active: boolean;
+};
+/** Only `genre` is drawn until unlocked, or for `left` more songs. */
+export type RadioLock = { genre: string; left: number | null };
 export type RadioRequest = {
   id: string;
   text: string;
@@ -291,10 +323,27 @@ export type Radio = {
     /** ACE-Step's first song with this engine build: the graphics driver
      * prepares its shaders once, which takes a few minutes. */
     preparing: boolean;
+    /** What the song being made was drawn to be (songs only). */
+    genre: string | null;
+    mood: string | null;
+    surprise: boolean;
   } | null;
   lastError: string | null;
   requests: RadioRequest[];
-  direction: RadioDirection;
+  mix: RadioMix;
+  /** Built-in stations first, then the listener's. */
+  stations: RadioStation[];
+  /** Saved songs, newest first. */
+  saved: RadioItem[];
+  lock: RadioLock | null;
+  /** Songs a genre lock lasts when `radioLock` gets no count. */
+  lockSongs: number;
+  /** Genre (lowercase) → draw weight from likes and dislikes, 0.25–4; a genre
+   * that is absent weighs 1. */
+  weights: Record<string, number>;
+  /** The song lengths the mix may ask for (seconds, 60–300); both engines reach
+   * them. */
+  lengthLimits: { min: number; max: number };
   lastSongSeconds: number | null;
   lastSongAudioSeconds: number | null;
   readiness: RadioReadiness | null;
@@ -317,8 +366,38 @@ export const radioOff = () => invoke<Radio>("radio_off");
 export const radioSkip = () => invoke<Radio>("radio_skip");
 export const radioVolume = (volume: number) =>
   invoke<void>("radio_volume", { volume });
-export const radioDirection = (direction: RadioDirection) =>
-  invoke<Radio>("radio_direction", { direction });
+export const radioMix = (mix: RadioMix) => invoke<Radio>("radio_mix", { mix });
+/** A random mix (a few genres and moods, surprise 0–40 %), rolled by the station. */
+export const radioShuffle = () => invoke<Radio>("radio_shuffle");
+/** Save the mix as a station; a station of yours with that name is updated. */
+export const radioStationSave = (name: string) =>
+  invoke<Radio>("radio_station_save", { name });
+export const radioStationRename = (id: string, name: string) =>
+  invoke<Radio>("radio_station_rename", { id, name });
+export const radioStationDelete = (id: string) =>
+  invoke<Radio>("radio_station_delete", { id });
+/** Tune the mix to a station; host and language stay. */
+export const radioStationActivate = (id: string) =>
+  invoke<Radio>("radio_station_activate", { id });
+/** Like or dislike a song (null takes it back); moves its genre's weight.
+ * Disliking the song on air also skips it. */
+export const radioFeedback = (id: string, feedback: RadioFeedback | null) =>
+  invoke<Radio>("radio_feedback", { id, feedback });
+/** Forget likes and dislikes of one genre, or all with null. */
+export const radioResetFeedback = (genre: string | null = null) =>
+  invoke<Radio>("radio_reset_feedback", { genre });
+/** Stay on the genre of the song on air: `songs` songs (null: `lockSongs`),
+ * or until unlocked with 0. */
+export const radioLock = (songs: number | null = null) =>
+  invoke<Radio>("radio_lock", { songs });
+export const radioUnlock = () => invoke<Radio>("radio_unlock");
+/** Keep a song (any item id) out of clean-up. */
+export const radioSave = (id: string) => invoke<Radio>("radio_save", { id });
+export const radioUnsave = (id: string) =>
+  invoke<Radio>("radio_unsave", { id });
+/** Play a saved song now, as a replay; starts the station if it was off. */
+export const radioPlaySaved = (id: string) =>
+  invoke<Radio>("radio_play_saved", { id });
 export const radioRequest = (text: string) =>
   invoke<Radio>("radio_request", { text });
 export type ModelTerms = {

@@ -11,6 +11,11 @@ pub const MAX_REQUEST_CHARS: usize = 160;
 pub const MAX_TEXT_CHARS: usize = 80;
 /// Saved songs keep their audio; this bounds the disk they take.
 pub const MAX_SAVED: usize = 100;
+/// The song lengths the listener may choose between, in seconds. Both engines
+/// reach them: ACE-Step makes 10–600 s; YuE2's context leaves room for at least
+/// 300 s of music after the longest score it writes.
+pub const MIN_SONG_SECONDS: u32 = 60;
+pub const MAX_SONG_SECONDS: u32 = 300;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -48,6 +53,24 @@ impl Length {
             Length::Short => 90,
             Length::Medium => 180,
             Length::Long => 240,
+        }
+    }
+
+    /// The length range an old fixed choice becomes in the mix.
+    pub fn range(self) -> (u32, u32) {
+        match self {
+            Length::Short => (75, 120),
+            Length::Medium => (150, 210),
+            Length::Long => (210, 300),
+        }
+    }
+
+    /// The bucket a length falls in, for the song forms of that size.
+    pub fn nearest(seconds: u32) -> Length {
+        match seconds {
+            0..=120 => Length::Short,
+            121..=210 => Length::Medium,
+            _ => Length::Long,
         }
     }
 }
@@ -132,9 +155,17 @@ pub struct Direction {
     pub energy: Energy,
     pub vocals: Vocals,
     pub language: String,
+    /// The old fixed choice; a brief's size bucket.
     pub length: Length,
     pub host: Host,
     pub theme: String,
+    /// The song's target length; 0 in old files, where `length` gives it.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub seconds: u32,
+}
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 impl Default for Direction {
@@ -148,6 +179,18 @@ impl Default for Direction {
             length: Length::Medium,
             host: Host::Sometimes,
             theme: String::new(),
+            seconds: 0,
+        }
+    }
+}
+
+impl Direction {
+    /// The target length in seconds: YuE2's maximum, ACE-Step's exact length.
+    pub fn seconds(&self) -> u32 {
+        if self.seconds > 0 {
+            self.seconds
+        } else {
+            self.length.seconds()
         }
     }
 }

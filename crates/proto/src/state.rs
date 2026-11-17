@@ -545,8 +545,9 @@ pub struct RadioMix {
     pub vocals: String,
     /// "any" | "low" | "medium" | "high"
     pub energy: String,
-    /// "any" | "short" | "medium" | "long"
-    pub length: String,
+    /// Each song's length is drawn between these (seconds, 60–300).
+    pub length_min_seconds: u32,
+    pub length_max_seconds: u32,
     /// "off" | "sometimes" | "often"
     pub host: String,
     pub language: String,

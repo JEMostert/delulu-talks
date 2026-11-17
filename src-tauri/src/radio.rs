@@ -119,6 +119,17 @@ impl ItemView {
 }
 
 #[derive(Clone, Serialize)]
+pub(crate) struct LengthLimits {
+    min: u32,
+    max: u32,
+}
+
+const LENGTH_LIMITS: LengthLimits = LengthLimits {
+    min: delulu_radio::model::MIN_SONG_SECONDS,
+    max: delulu_radio::model::MAX_SONG_SECONDS,
+};
+
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct StationView {
     id: String,
@@ -174,6 +185,8 @@ pub(crate) struct RadioView {
     lock_songs: u32,
     /// Genre (lowercase) → draw weight from likes and dislikes; absent = 1.
     weights: BTreeMap<String, f32>,
+    /// The song lengths the mix may ask for, in seconds; both engines reach them.
+    length_limits: LengthLimits,
     last_song_seconds: Option<f64>,
     last_song_audio_seconds: Option<f64>,
     readiness: Option<Readiness>,
@@ -353,6 +366,7 @@ pub(crate) fn unavailable(error: Option<String>, readiness: Option<Readiness>) -
         lock: None,
         lock_songs: mix::LOCK_SONGS,
         weights: BTreeMap::new(),
+        length_limits: LENGTH_LIMITS,
         last_song_seconds: None,
         last_song_audio_seconds: None,
         readiness,
@@ -431,10 +445,20 @@ fn view(app: &tauri::AppHandle) -> RadioView {
                 builtin: st.builtin,
             })
             .collect(),
-        saved: s.saved.iter().map(view_item).collect(),
+        // Without words: the list rides on every progress event.
+        saved: s
+            .saved
+            .iter()
+            .map(|i| ItemView {
+                lyrics: None,
+                script: None,
+                ..view_item(i)
+            })
+            .collect(),
         lock: s.lock.clone(),
         lock_songs: mix::LOCK_SONGS,
         weights: s.weights.clone(),
+        length_limits: LENGTH_LIMITS,
         last_song_seconds: s.stats.last_song_seconds,
         last_song_audio_seconds: s.stats.last_song_audio_seconds,
         readiness,

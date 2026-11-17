@@ -1035,13 +1035,11 @@ impl Station {
         let _ = std::fs::remove_file(&out);
         let (length, music) = {
             let s = self.lock();
-            let length = job
+            let seconds = job
                 .draw
                 .as_ref()
-                .map(|d| d.length)
-                .or(s.mix.length)
-                .unwrap_or_default();
-            (length.seconds(), s.music.clone())
+                .map_or_else(|| s.mix.middle_seconds(), |d| d.seconds);
+            (seconds, s.music.clone())
         };
         self.update_job(|j| j.step_started_at = now_ms());
         backend.changed();
@@ -1094,6 +1092,9 @@ impl Station {
         let loudness = write_opus(audio, content(job.kind), &temp, &|_| true)?;
         provenance.insert("writer".into(), "Gemma 4 E4B".into());
         provenance.insert("seed".into(), job.seed.to_string());
+        if let Some(draw) = &job.draw {
+            provenance.insert("targetSeconds".into(), draw.seconds.to_string());
+        }
         provenance.insert(
             "writerSeconds".into(),
             format!("{:.1}", job.writer_ms as f64 / 1000.0),

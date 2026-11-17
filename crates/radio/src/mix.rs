@@ -2,7 +2,10 @@
 //! that may be "any". Every new song draws one genre, one mood and a concrete value
 //! for every "any" from it (`Mix::draw`), so the station varies by itself. Named
 //! mixes are stations; a few are built in.
-use crate::model::{clean_text, Direction, Energy, Host, Length, Vocals, MAX_REQUEST_CHARS};
+use crate::model::{
+    clean_text, Direction, Energy, Host, Length, Vocals, MAX_REQUEST_CHARS, MAX_SONG_SECONDS,
+    MIN_SONG_SECONDS,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -51,6 +54,11 @@ pub const MAX_LOCK_SONGS: u32 = 50;
 pub const WEIGHT_STEP: f32 = 1.5;
 pub const WEIGHT_MIN: f32 = 0.25;
 pub const WEIGHT_MAX: f32 = 4.0;
+/// A new station's song lengths: 2:00 to 4:30.
+pub const LENGTH_MIN_SECONDS: u32 = 120;
+pub const LENGTH_MAX_SECONDS: u32 = 270;
+/// Drawn lengths fall on this grid.
+const LENGTH_STEP: u32 = 5;
 /// Shuffle picks a surprise chance up to this.
 pub const SHUFFLE_SURPRISE: u8 = 40;
 
@@ -100,8 +108,9 @@ pub struct Mix {
     pub vocals: Vocals,
     #[serde(with = "any")]
     pub energy: Option<Energy>,
-    #[serde(with = "any")]
-    pub length: Option<Length>,
+    /// Each song's length is drawn between these (seconds, 60–300); equal = fixed.
+    pub length_min_seconds: u32,
+    pub length_max_seconds: u32,
     pub host: Host,
     pub language: String,
     /// Optional free text every song is written around.
@@ -126,12 +135,20 @@ impl Default for Mix {
             surprise: 15,
             vocals: Vocals::Any,
             energy: None,
-            length: None,
+            length_min_seconds: LENGTH_MIN_SECONDS,
+            length_max_seconds: LENGTH_MAX_SECONDS,
             host: Host::Sometimes,
             language: "English".into(),
             theme: String::new(),
         }
     }
+}
+
+/// Within the lengths both engines reach, shortest first.
+fn length_range(min: u32, max: u32) -> (u32, u32) {
+    let clamp = |v: u32| v.clamp(MIN_SONG_SECONDS, MAX_SONG_SECONDS);
+    let (a, b) = (clamp(min), clamp(max));
+    (a.min(b), a.max(b))
 }
 
 fn same(a: &str, b: &str) -> bool {
@@ -212,6 +229,8 @@ impl Mix {
         self.genres = sanitize_pool(self.genres, GENRES, MAX_GENRES);
         self.moods = sanitize_pool(self.moods, MOODS, MAX_MOODS);
         self.surprise = self.surprise.min(100);
+        (self.length_min_seconds, self.length_max_seconds) =
+            length_range(self.length_min_seconds, self.length_max_seconds);
         self.language = clean_text(&self.language, 24).unwrap_or_else(|| "English".into());
         self.theme = clean_text(&self.theme, MAX_REQUEST_CHARS).unwrap_or_default();
         self
@@ -221,6 +240,7 @@ impl Mix {
     /// surprise, its fixed choices kept, so it sounds as it did.
     pub fn from_direction(direction: Direction) -> Mix {
         let d = direction.sanitized();
+        let (length_min_seconds, length_max_seconds) = d.length.range();
         let off = |list: &[(&str, bool)]| -> Vec<Choice> {
             catalogue(list)
                 .into_iter()
@@ -233,7 +253,8 @@ impl Mix {
             surprise: 0,
             vocals: d.vocals,
             energy: Some(d.energy),
-            length: Some(d.length),
+            length_min_seconds,
+            length_max_seconds,
             host: d.host,
             language: d.language,
             theme: d.theme,
@@ -279,15 +300,25 @@ impl Mix {
             energy: self
                 .energy
                 .unwrap_or_else(|| [Energy::Low, Energy::Medium, Energy::High][rng.below(3)]),
-            length: self
-                .length
-                .unwrap_or_else(|| [Length::Short, Length::Medium, Length::Long][rng.below(3)]),
+            seconds: self.draw_seconds(rng),
             vocals: match self.vocals {
                 Vocals::Any if rng.below(3) == 0 => Vocals::Instrumental,
                 Vocals::Any => Vocals::Vocal,
                 fixed => fixed,
             },
         }
+    }
+
+    /// A length on the 5-second grid within the range, every value equally likely.
+    fn draw_seconds(&self, rng: &mut Rng) -> u32 {
+        let (min, max) = length_range(self.length_min_seconds, self.length_max_seconds);
+        min + LENGTH_STEP * rng.below(((max - min) / LENGTH_STEP + 1) as usize) as u32
+    }
+
+    /// The middle of the length range, for a song written before lengths were drawn.
+    pub fn middle_seconds(&self) -> u32 {
+        let (min, max) = length_range(self.length_min_seconds, self.length_max_seconds);
+        (min + max) / 2
     }
 
     fn draw_genre(&self, rng: &mut Rng, ctx: &Context) -> (Option<String>, bool) {
@@ -354,7 +385,8 @@ impl Mix {
             surprise: self.surprise,
             vocals: self.vocals,
             energy: self.energy,
-            length: self.length,
+            length_min_seconds: self.length_min_seconds,
+            length_max_seconds: self.length_max_seconds,
             theme: self.theme.clone(),
         }
     }
@@ -367,7 +399,8 @@ impl Mix {
             surprise: preset.surprise,
             vocals: preset.vocals,
             energy: preset.energy,
-            length: preset.length,
+            length_min_seconds: preset.length_min_seconds,
+            length_max_seconds: preset.length_max_seconds,
             theme: preset.theme.clone(),
             ..self.clone()
         }
@@ -437,7 +470,8 @@ pub struct Draw {
     pub locked: bool,
     pub energy: Energy,
     pub vocals: Vocals,
-    pub length: Length,
+    /// The song's target length: ACE-Step's exact length, YuE2's maximum.
+    pub seconds: u32,
 }
 
 impl Draw {
@@ -449,9 +483,10 @@ impl Draw {
             energy: self.energy,
             vocals: self.vocals,
             language: mix.language.clone(),
-            length: self.length,
+            length: Length::nearest(self.seconds),
             host: mix.host,
             theme: mix.theme.clone(),
+            seconds: self.seconds,
         }
     }
 }
@@ -466,8 +501,8 @@ pub struct Preset {
     pub vocals: Vocals,
     #[serde(with = "any")]
     pub energy: Option<Energy>,
-    #[serde(with = "any")]
-    pub length: Option<Length>,
+    pub length_min_seconds: u32,
+    pub length_max_seconds: u32,
     pub theme: String,
 }
 
@@ -488,8 +523,19 @@ impl Preset {
         };
         key(&self.genres) == key(&other.genres)
             && key(&self.moods) == key(&other.moods)
-            && (self.surprise, self.vocals, self.energy, self.length)
-                == (other.surprise, other.vocals, other.energy, other.length)
+            && (
+                self.surprise,
+                self.vocals,
+                self.energy,
+                self.length_min_seconds,
+                self.length_max_seconds,
+            ) == (
+                other.surprise,
+                other.vocals,
+                other.energy,
+                other.length_min_seconds,
+                other.length_max_seconds,
+            )
             && self.theme == other.theme
     }
 }
@@ -526,7 +572,8 @@ pub fn builtin_stations() -> Vec<Station> {
                 surprise: 0,
                 vocals: Vocals::Instrumental,
                 energy: Some(Energy::Low),
-                length: None,
+                length_min_seconds: 180,
+                length_max_seconds: 300,
                 theme: String::new(),
             },
         ),
@@ -539,7 +586,8 @@ pub fn builtin_stations() -> Vec<Station> {
                 surprise: 10,
                 vocals: Vocals::Any,
                 energy: Some(Energy::Medium),
-                length: None,
+                length_min_seconds: 150,
+                length_max_seconds: 240,
                 theme: String::new(),
             },
         ),
@@ -552,7 +600,8 @@ pub fn builtin_stations() -> Vec<Station> {
                 surprise: 35,
                 vocals: Vocals::Any,
                 energy: None,
-                length: None,
+                length_min_seconds: LENGTH_MIN_SECONDS,
+                length_max_seconds: LENGTH_MAX_SECONDS,
                 theme: String::new(),
             },
         ),
@@ -680,6 +729,38 @@ mod tests {
     }
 
     #[test]
+    fn lengths_spread_over_the_range_and_stay_in_it() {
+        let m = Mix::default();
+        let drawn: Vec<u32> = run(&m, 11, 300, &BTreeMap::new())
+            .iter()
+            .map(|d| d.seconds)
+            .collect();
+        assert!(drawn
+            .iter()
+            .all(|s| (120..=270).contains(s) && s.is_multiple_of(5)));
+        // Both ends come up, and no single length dominates.
+        assert!(drawn.contains(&120) && drawn.contains(&270));
+        let short = drawn.iter().filter(|s| **s < 170).count();
+        assert!((60..140).contains(&short), "{short} of 300 under 2:50");
+        // Out of range or reversed bounds are clamped and ordered; equal = fixed.
+        let odd = Mix {
+            length_min_seconds: 900,
+            length_max_seconds: 10,
+            ..Mix::default()
+        }
+        .sanitized();
+        assert_eq!((odd.length_min_seconds, odd.length_max_seconds), (60, 300));
+        let fixed = Mix {
+            length_min_seconds: 200,
+            length_max_seconds: 200,
+            ..Mix::default()
+        };
+        assert!(run(&fixed, 2, 10, &BTreeMap::new())
+            .iter()
+            .all(|d| d.seconds == 200));
+    }
+
+    #[test]
     fn surprise_draws_from_genres_that_are_off() {
         let m = Mix {
             surprise: 100,
@@ -766,13 +847,12 @@ mod tests {
         assert_eq!(m.enabled_moods(), ["defiant"]);
         assert_eq!(m.surprise, 0);
         assert_eq!(
-            (m.vocals, m.energy, m.length, m.host),
-            (
-                Vocals::Any,
-                Some(Energy::High),
-                Some(Length::Short),
-                Host::Often
-            )
+            (m.vocals, m.energy, m.host),
+            (Vocals::Any, Some(Energy::High), Host::Often)
+        );
+        assert_eq!(
+            (m.length_min_seconds, m.length_max_seconds),
+            Length::Short.range()
         );
         assert_eq!(
             (m.language.as_str(), m.theme.as_str()),
@@ -781,7 +861,7 @@ mod tests {
         let drawn = run(&m, 5, 10, &BTreeMap::new());
         assert!(drawn.iter().all(|d| d.mood.as_deref() == Some("defiant")
             && d.energy == Energy::High
-            && d.length == Length::Short));
+            && (75..=120).contains(&d.seconds)));
     }
 
     #[test]
@@ -840,7 +920,7 @@ mod tests {
         for seed in 0..50 {
             let s = base.shuffled(&mut Rng::new(seed));
             assert!(s.enabled_genres().len() >= 2 && !s.enabled_moods().is_empty());
-            assert!(s.surprise <= SHUFFLE_SURPRISE && s.surprise % 5 == 0);
+            assert!(s.surprise <= SHUFFLE_SURPRISE && s.surprise.is_multiple_of(5));
             assert_eq!((s.host, s.language.as_str()), (Host::Off, "Dutch"));
         }
         for station in builtin_stations() {

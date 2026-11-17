@@ -334,7 +334,8 @@ fn the_engine_choice_reaches_the_next_song() {
     let station = Station::open(&dir.0).unwrap();
     let fake = Fake::new();
     station.set_mix(Mix {
-        length: Some(Length::Medium),
+        length_min_seconds: 180,
+        length_max_seconds: 180,
         ..Mix::default()
     });
     station.set_on_air(true);
@@ -681,7 +682,9 @@ fn each_song_gets_a_drawn_genre_that_reaches_the_writer_and_the_engine() {
     let songs: Vec<&Item> = s.now.iter().chain(&s.history).collect();
     assert_eq!(songs.len(), 6);
     let genres: HashSet<&str> = songs.iter().map(|i| i.genre.as_deref().unwrap()).collect();
-    assert!(genres.len() >= 3, "{genres:?}");
+    // Job seeds are random here; the rules guarantee no song repeats the last
+    // genre (the draw tests cover the spread under fixed seeds).
+    assert!(genres.len() >= 2, "{genres:?}");
     assert!(genres.iter().all(|g| pool.contains(g)));
     // Newest first in history, so the prompts and drafts run the other way.
     let writes = fake.writes.lock().unwrap();
@@ -698,6 +701,13 @@ fn each_song_gets_a_drawn_genre_that_reaches_the_writer_and_the_engine() {
         assert!(drafts[i].style.contains(genre), "{}", drafts[i].style);
         assert!(item.subtitle.contains(genre));
     }
+    // Each song's drawn length is what the engine was asked for, within the range.
+    let asked: Vec<u32> = fake.music.lock().unwrap().iter().map(|m| m.1).collect();
+    for (item, seconds) in songs.iter().rev().zip(&asked) {
+        assert_eq!(item.provenance["targetSeconds"], seconds.to_string());
+        assert!((120..=270).contains(seconds));
+    }
+    assert!(asked.iter().any(|s| *s != asked[0]), "{asked:?}");
 }
 
 #[test]
@@ -759,8 +769,12 @@ fn an_old_station_file_loads_and_sounds_as_before() {
     assert_eq!(s.mix.enabled_genres(), ["Folk", "acoustic ballad"]);
     assert_eq!(s.mix.enabled_moods(), ["tender"]);
     assert_eq!(
-        (s.mix.surprise, s.mix.energy, s.mix.length, s.mix.host),
-        (0, Some(Energy::Low), Some(Length::Short), Host::Off)
+        (s.mix.surprise, s.mix.energy, s.mix.host),
+        (0, Some(Energy::Low), Host::Off)
+    );
+    assert_eq!(
+        (s.mix.length_min_seconds, s.mix.length_max_seconds),
+        Length::Short.range()
     );
     assert_eq!(
         (s.mix.language.as_str(), s.mix.theme.as_str(), s.volume),
@@ -777,7 +791,10 @@ fn an_old_station_file_loads_and_sounds_as_before() {
     let song = &station.snapshot().queue[0];
     assert!(["Folk", "acoustic ballad"].contains(&song.genre.as_deref().unwrap()));
     assert_eq!(song.mood.as_deref(), Some("tender"));
-    assert_eq!(fake.music.lock().unwrap()[0].1, Length::Short.seconds());
+    // Its length is drawn from the range the old short songs became.
+    let seconds = fake.music.lock().unwrap()[0].1;
+    assert!((75..=120).contains(&seconds), "{seconds}");
+    assert_eq!(song.provenance["targetSeconds"], seconds.to_string());
 }
 
 #[test]

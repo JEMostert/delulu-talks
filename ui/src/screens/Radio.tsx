@@ -17,7 +17,6 @@ import {
   lyricSections,
   makingText,
   missingBytes,
-  radioPresets,
   readinessSteps,
 } from "../radio";
 import { downloadPercent, gigabytes, useMusicModels } from "../useMusicModels";
@@ -496,6 +495,7 @@ function Requests({
   );
 }
 
+/** The mix as plain controls until the Delulu FM page is rebuilt around it. */
 function DirectionPanel({
   radio,
   onChange,
@@ -503,85 +503,165 @@ function DirectionPanel({
   radio: ipc.Radio;
   onChange: (r: ipc.Radio) => void;
 }) {
-  const [draft, setDraft] = useState(radio.direction);
-  const [genres, setGenres] = useState(radio.direction.genres.join(", "));
+  const [draft, setDraft] = useState(radio.mix);
   const [saved, setSaved] = useState(true);
   const [error, setError] = useState<string>();
-  const set = <K extends keyof ipc.RadioDirection>(
+  const [custom, setCustom] = useState("");
+  const [stationName, setStationName] = useState("");
+  const set = <K extends keyof ipc.RadioMix>(
     key: K,
-    value: ipc.RadioDirection[K],
+    value: ipc.RadioMix[K],
   ) => {
     setDraft((d) => ({ ...d, [key]: value }));
     setSaved(false);
   };
-  const save = async (direction: ipc.RadioDirection) => {
+  const toggle = (key: "genres" | "moods", name: string) =>
+    set(
+      key,
+      draft[key].map((c) => (c.name === name ? { ...c, on: !c.on } : c)),
+    );
+  /** Run a station command; the answer replaces the draft. */
+  const run = async (call: Promise<ipc.Radio>) => {
     try {
-      const r = await ipc.radioDirection(direction);
+      const r = await call;
       onChange(r);
-      setDraft(r.direction);
-      setGenres(r.direction.genres.join(", "));
+      setDraft(r.mix);
       setSaved(true);
       setError(undefined);
+      return true;
     } catch (e) {
       setError(errorText(e));
+      return false;
     }
   };
-  const withGenres = (): ipc.RadioDirection => ({
-    ...draft,
-    genres: genres
-      .split(",")
-      .map((g) => g.trim())
-      .filter(Boolean),
-  });
+  const pool = (key: "genres" | "moods", label: string) => (
+    <div className="presets" role="group" aria-label={label}>
+      {draft[key].map((c) => (
+        <span key={c.name}>
+          <button
+            type="button"
+            className={c.on ? "button primary" : "button"}
+            aria-pressed={c.on}
+            onClick={() => toggle(key, c.name)}
+          >
+            {c.name}
+          </button>
+          {c.custom && (
+            <button
+              type="button"
+              className="button"
+              aria-label={`Remove ${c.name}`}
+              title={`Remove ${c.name}`}
+              onClick={() =>
+                set(
+                  key,
+                  draft[key].filter((x) => x.name !== c.name),
+                )
+              }
+            >
+              ×
+            </button>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+  const on = radio.mix.genres.filter((c) => c.on).map((c) => c.name);
   return (
     <details className="group radio-direction">
       <summary>
-        <h2>Direction</h2>
+        <h2>Mix</h2>
         <span className="muted">
-          {radio.direction.mood} ·{" "}
-          {radio.direction.genres.join(", ") || "any style"}
+          {on.join(", ") || "any genre"} · surprise {radio.mix.surprise}%
         </span>
       </summary>
       <div className="direction-body">
-        <div className="presets" role="group" aria-label="Presets">
-          {radioPresets.map((p) => (
-            <button
-              key={p.name}
-              type="button"
-              className="button"
-              onClick={() => {
-                const next = { ...draft, ...p.direction };
-                setDraft(next);
-                setGenres(next.genres.join(", "));
-                void save(next);
-              }}
-            >
-              {p.name}
-            </button>
+        <div className="presets" role="group" aria-label="Stations">
+          {radio.stations.map((st) => (
+            <span key={st.id}>
+              <button
+                type="button"
+                className={st.active ? "button primary" : "button"}
+                aria-pressed={st.active}
+                onClick={() => void run(ipc.radioStationActivate(st.id))}
+              >
+                {st.name}
+              </button>
+              {!st.builtin && (
+                <button
+                  type="button"
+                  className="button"
+                  aria-label={`Delete ${st.name}`}
+                  title={`Delete ${st.name}`}
+                  onClick={() => void run(ipc.radioStationDelete(st.id))}
+                >
+                  ×
+                </button>
+              )}
+            </span>
           ))}
+          <button
+            type="button"
+            className="button"
+            title="Roll a whole new mix"
+            onClick={() => void run(ipc.radioShuffle())}
+          >
+            Shuffle
+          </button>
         </div>
         <div className="direction-grid">
           <label>
-            <span>Mood</span>
+            <span>Save as station</span>
             <input
               className="text-field"
-              value={draft.mood}
-              maxLength={80}
-              onChange={(e) => set("mood", e.target.value)}
-            />
-          </label>
-          <label>
-            <span>Styles</span>
-            <input
-              className="text-field"
-              value={genres}
-              placeholder="soul, jazz"
-              onChange={(e) => {
-                setGenres(e.target.value);
-                setSaved(false);
+              value={stationName}
+              maxLength={24}
+              placeholder="Name"
+              onChange={(e) => setStationName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && stationName.trim())
+                  void run(ipc.radioStationSave(stationName)).then(
+                    (ok) => ok && setStationName(""),
+                  );
               }}
             />
           </label>
+          <label>
+            <span>Add genre</span>
+            <input
+              className="text-field"
+              value={custom}
+              maxLength={32}
+              placeholder="Genre"
+              onChange={(e) => setCustom(e.target.value)}
+              onKeyDown={(e) => {
+                const name = custom.trim();
+                if (e.key !== "Enter" || !name) return;
+                set("genres", [
+                  ...draft.genres.filter((c) => c.name !== name),
+                  { name, on: true, custom: true },
+                ]);
+                setCustom("");
+              }}
+            />
+          </label>
+        </div>
+        <Choice label="Genres">{pool("genres", "Genres")}</Choice>
+        <label className="choice">
+          <span title="How often a song comes from outside your genres">
+            Surprise {draft.surprise}%
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={draft.surprise}
+            onChange={(e) => set("surprise", Number(e.target.value))}
+          />
+        </label>
+        <Choice label="Moods">{pool("moods", "Moods")}</Choice>
+        <div className="direction-grid">
           <label>
             <span>Language</span>
             <input
@@ -610,6 +690,7 @@ function DirectionPanel({
               value={draft.energy}
               onChange={(v) => set("energy", v)}
               options={[
+                { value: "any", label: "Any" },
                 { value: "low", label: "Low" },
                 { value: "medium", label: "Medium" },
                 { value: "high", label: "High" },
@@ -624,22 +705,48 @@ function DirectionPanel({
               onChange={(v) => set("vocals", v)}
               options={[
                 { value: "vocal", label: "Sung" },
-                { value: "either", label: "Mixed" },
+                { value: "any", label: "Mixed" },
                 { value: "instrumental", label: "Instrumental" },
               ]}
             />
           </Choice>
           <Choice label="Length">
-            <Segmented
-              name="length"
-              label="Length"
-              value={draft.length}
-              onChange={(v) => set("length", v)}
-              options={[
-                { value: "short", label: "Short" },
-                { value: "medium", label: "Medium" },
-                { value: "long", label: "Long" },
-              ]}
+            <span className="muted">
+              {clock(draft.lengthMinSeconds)}–{clock(draft.lengthMaxSeconds)}
+            </span>
+            <input
+              type="range"
+              aria-label="Shortest song"
+              min={radio.lengthLimits.min}
+              max={radio.lengthLimits.max}
+              step={15}
+              value={draft.lengthMinSeconds}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setDraft((d) => ({
+                  ...d,
+                  lengthMinSeconds: v,
+                  lengthMaxSeconds: Math.max(v, d.lengthMaxSeconds),
+                }));
+                setSaved(false);
+              }}
+            />
+            <input
+              type="range"
+              aria-label="Longest song"
+              min={radio.lengthLimits.min}
+              max={radio.lengthLimits.max}
+              step={15}
+              value={draft.lengthMaxSeconds}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setDraft((d) => ({
+                  ...d,
+                  lengthMaxSeconds: v,
+                  lengthMinSeconds: Math.min(v, d.lengthMinSeconds),
+                }));
+                setSaved(false);
+              }}
             />
           </Choice>
           <Choice label="Host">
@@ -664,7 +771,7 @@ function DirectionPanel({
             type="button"
             className="button primary"
             disabled={saved}
-            onClick={() => void save(withGenres())}
+            onClick={() => void run(ipc.radioMix(draft))}
           >
             Apply
           </button>
