@@ -296,7 +296,10 @@ export function Models({ state }: { state: AppState }) {
       ? ace && (engine.aceLm === lm || engine.aceLm === "auto")
       : engine?.engine === (m.engine === "yue" ? "yue2" : "acestep");
     let action: ReactNode;
-    if (m.state === "downloading")
+    if (mm?.unavailable)
+      // Why is in the Music group's header (music.error).
+      action = null;
+    else if (m.state === "downloading")
       action = (
         <Progress
           label={`${m.label} download`}
@@ -362,7 +365,7 @@ export function Models({ state }: { state: AppState }) {
       bytes: m.bytes,
       present: m.state === "ready",
       action,
-      remove: m.state === "ready" && (
+      remove: m.state === "ready" && !mm?.unavailable && (
         <Delete
           name={m.label}
           disabled={musicBusy}

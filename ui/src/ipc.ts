@@ -431,6 +431,8 @@ export type MusicModel = {
   doneBytes: number;
   totalBytes: number;
   error: string | null;
+  /** This window cannot see or change the music models (a daemon's client). */
+  unavailable?: boolean;
 };
 export const getMusicModel = () => invoke<MusicModel>("get_music_model");
 /** Download these models one after another; already downloaded ones are skipped. */

@@ -66,6 +66,9 @@ pub(crate) struct MusicModelStatus {
     done_bytes: u64,
     total_bytes: u64,
     error: Option<String>,
+    /// This window cannot see or change the music models (a daemon's client):
+    /// the rows' states are unknown.
+    unavailable: bool,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -166,6 +169,7 @@ fn status(app: &tauri::AppHandle) -> MusicModelStatus {
             m.total_bytes.load(Ordering::SeqCst)
         },
         error: failed.map(|(_, error)| error),
+        unavailable: false,
     };
     status
 }
@@ -178,6 +182,7 @@ pub(crate) fn unavailable(error: &str) -> MusicModelStatus {
         done_bytes: 0,
         total_bytes: 0,
         error: Some(error.into()),
+        unavailable: true,
     }
 }
 
