@@ -966,6 +966,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.mix-retry {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.mix-retry:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
 
 /* A narrow window: genre tags in the programme keep only their colour */
 @media (max-width: 1150px) {

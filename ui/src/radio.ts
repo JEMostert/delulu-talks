@@ -1,4 +1,10 @@
-import type { MusicModel, Radio, RadioMusic, RadioReadiness } from "./ipc";
+import type {
+  MusicModel,
+  Radio,
+  RadioMix,
+  RadioMusic,
+  RadioReadiness,
+} from "./ipc";
 
 /** m:ss */
 export function clock(seconds: number): string {
@@ -254,4 +260,66 @@ export function genreWeight(radio: Radio, genre: string): number {
 /** "F1" → "Female 1", "M3" → "Male 3". */
 export function voiceName(voice: string): string {
   return `${voice.startsWith("F") ? "Female" : "Male"} ${voice.slice(1)}`;
+}
+
+/**
+ * Sends mix edits one write at a time. Each write sends the newest edit, so a
+ * burst of edits ends with the latest one on the station, and a station
+ * command runs only after every edit before it is written. A failed write
+ * keeps its edit for the next write, unless a newer edit replaced it.
+ */
+export class MixWriter {
+  private unsent: RadioMix | null = null;
+  private tail: Promise<void> = Promise.resolve();
+  private queued = 0;
+
+  constructor(private readonly send: (mix: RadioMix) => Promise<Radio>) {}
+
+  /** Keep `mix` as the newest edit; the next flush sends it. */
+  edit(mix: RadioMix) {
+    this.unsent = mix;
+  }
+
+  /** An edit waits or a write or command is still running or queued. */
+  get busy(): boolean {
+    return this.unsent !== null || this.queued > 0;
+  }
+
+  /** Send the newest edit after the writes before it. Null when none was
+   * waiting; rejects when the write failed. */
+  flush(): Promise<Radio | null> {
+    return this.enqueue(() => this.write());
+  }
+
+  /** Write any waiting edit, then run `call`; not run when that write fails. */
+  run<T>(call: () => Promise<T>): Promise<T> {
+    return this.enqueue(async () => {
+      await this.write();
+      return call();
+    });
+  }
+
+  private async write(): Promise<Radio | null> {
+    const mix = this.unsent;
+    if (!mix) return null;
+    this.unsent = null;
+    try {
+      return await this.send(mix);
+    } catch (e) {
+      this.unsent ??= mix;
+      throw e;
+    }
+  }
+
+  private enqueue<T>(step: () => Promise<T>): Promise<T> {
+    this.queued++;
+    const result = this.tail.then(step).finally(() => {
+      this.queued--;
+    });
+    this.tail = result.then(
+      () => {},
+      () => {},
+    );
+    return result;
+  }
 }

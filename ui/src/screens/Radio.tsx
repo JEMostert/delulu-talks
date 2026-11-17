@@ -22,6 +22,7 @@ import {
   makingShort,
   makingText,
   missingBytes,
+  MixWriter,
   readinessSteps,
   voiceName,
   type ReadinessStep,
@@ -981,73 +982,77 @@ function RowButton({
 /**
  * The mix as the listener edits it. Every change is sent on its own after a
  * short pause, so a slider drag or a burst of chip clicks is one command (the
- * song being written is drawn again on each). The station's answer replaces
- * the draft unless a newer edit is waiting.
+ * song being written is drawn again on each). Writes go one at a time with the
+ * newest edit, and the station's answer replaces the draft only when no newer
+ * edit or write is waiting. A failed write keeps the draft and says so; the
+ * next change, Retry or a station command sends it again.
  */
 function useMix(radio: ipc.Radio, apply: Apply) {
   const [draft, setDraft] = useState(radio.mix);
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const unsent = useRef<ipc.RadioMix | null>(null);
-  const inflight = useRef(0);
+  const [writer] = useState(() => new MixWriter(ipc.radioMix));
 
   useEffect(() => {
-    if (!unsent.current && inflight.current === 0) setDraft(radio.mix);
-  }, [radio.mix]);
+    if (!writer.busy) setDraft(radio.mix);
+  }, [radio.mix, writer]);
 
   const send = useCallback(async () => {
-    const mix = unsent.current;
-    if (!mix) return;
-    unsent.current = null;
-    inflight.current++;
+    clearTimeout(timer.current);
     setSaving(true);
     try {
-      const r = await ipc.radioMix(mix);
-      apply(r);
-      if (!unsent.current && inflight.current === 1) setDraft(r.mix);
+      const r = await writer.flush();
+      if (r && !writer.busy) {
+        apply(r);
+        setDraft(r.mix);
+      }
       setError(undefined);
     } catch (e) {
-      setError(errorText(e));
+      setError(`Not applied: ${errorText(e)}`);
     } finally {
-      inflight.current--;
-      if (inflight.current === 0) setSaving(false);
+      setSaving(writer.busy);
     }
-  }, [apply]);
+  }, [apply, writer]);
 
   const change = (next: ipc.RadioMix, delay = 450) => {
     setDraft(next);
-    unsent.current = next;
+    writer.edit(next);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => void send(), delay);
   };
 
-  /** A station command; a waiting edit goes first, so "save as" keeps it. */
+  /** A station command, after every edit before it is written, so "save as"
+   * keeps them; refused when an edit cannot be written. */
   const run = async (call: () => Promise<ipc.Radio>) => {
     clearTimeout(timer.current);
-    await send();
+    setSaving(true);
     try {
-      const r = await call();
+      const r = await writer.run(call);
       apply(r);
-      setDraft(r.mix);
+      if (!writer.busy) setDraft(r.mix);
       setError(undefined);
       return true;
     } catch (e) {
       setError(errorText(e));
       return false;
+    } finally {
+      setSaving(writer.busy);
     }
   };
 
-  // Leaving the page sends a waiting edit at once.
+  // Leaving the page sends a waiting edit at once, after the writes before it.
   useEffect(
     () => () => {
       clearTimeout(timer.current);
-      if (unsent.current) void ipc.radioMix(unsent.current).catch(() => {});
+      void writer.flush().catch(() => {});
     },
-    [],
+    [writer],
   );
 
-  return { draft, change, run, error, saving };
+  // An edit that did not reach the station is still waiting to be sent.
+  const unsent = Boolean(error) && writer.busy && !saving;
+  return { draft, change, run, retry: send, unsent, error, saving };
 }
 
 function MixPanel({
@@ -1059,7 +1064,10 @@ function MixPanel({
   onChange: Apply;
   onVoice: () => void;
 }) {
-  const { draft, change, run, error, saving } = useMix(radio, onChange);
+  const { draft, change, run, retry, unsent, error, saving } = useMix(
+    radio,
+    onChange,
+  );
   const set = <K extends keyof ipc.RadioMix>(
     key: K,
     value: ipc.RadioMix[K],
@@ -1283,7 +1291,16 @@ function MixPanel({
         {error ? (
           <span className="mix-error">
             <Icon name="alert" size={14} />
-            <span>{error}</span>
+            <span data-tip={error}>{error}</span>
+            {unsent ? (
+              <button
+                type="button"
+                className="mix-retry"
+                onClick={() => void retry()}
+              >
+                Retry
+              </button>
+            ) : null}
           </span>
         ) : (
           <>
