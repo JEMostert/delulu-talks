@@ -6,6 +6,8 @@
 //! `DELULU_MIX_GENRES="Soul,Metal,…"` turns on exactly those genres, surprise 0, and
 //! listens to each song as it is ready, so `<items>` songs are drawn in a row; every
 //! song's draw and engine request is printed as a `[draw]` line.
+//! `DELULU_MIX_SURPRISE` (0–100) and `DELULU_MIX_LENGTH="min,max"` (seconds) set
+//! the surprise chance and the length range of that mix.
 use delulu_cleanup::{Cleaner, Sampling};
 use delulu_radio::model::{AceLm, Draft, Host, Music, MusicEngine};
 use delulu_radio::music::{self, Composer, Order};
@@ -124,7 +126,19 @@ fn main() {
         for g in mix.genres.iter_mut() {
             g.on = on.contains(&g.name.to_lowercase());
         }
-        mix.surprise = 0;
+        mix.surprise = std::env::var("DELULU_MIX_SURPRISE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        // `DELULU_MIX_LENGTH="120,270"`: the song-length range in seconds.
+        if let Some((min, max)) = std::env::var("DELULU_MIX_LENGTH")
+            .ok()
+            .and_then(|v| v.split_once(',').map(|(a, b)| (a.parse(), b.parse())))
+            .and_then(|(a, b)| Some((a.ok()?, b.ok()?)))
+        {
+            mix.length_min_seconds = min;
+            mix.length_max_seconds = max;
+        }
         let mix = station.set_mix(mix);
         eprintln!(
             "[mix] genres {:?}, moods {:?}",
@@ -152,16 +166,16 @@ fn main() {
         if pool.is_some() && !s.queue.is_empty() {
             let item = &s.queue[0];
             drawn += 1;
+            let made = |key: &str| item.provenance.get(key).cloned().unwrap_or_default();
             eprintln!(
-                "[draw] {drawn}: {:?} genre={:?} mood={:?} surprise={} made {}s",
+                "[draw] {drawn}: {:?} genre={:?} mood={:?} surprise={} target {}s actual {:.1}s made in {}s",
                 item.title,
                 item.genre,
                 item.mood,
                 item.surprise,
-                item.provenance
-                    .get("madeSeconds")
-                    .cloned()
-                    .unwrap_or_default()
+                made("targetSeconds"),
+                item.seconds,
+                made("madeSeconds")
             );
             station.advance();
         }

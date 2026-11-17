@@ -369,7 +369,10 @@ pub struct State {
     #[serde(rename = "direction", skip_serializing)]
     pub legacy_direction: Option<Direction>,
     /// Genre (lowercase) → draw weight from likes and dislikes; absent = 1.
+    /// Follows `scores`.
     pub weights: BTreeMap<String, f32>,
+    /// Genre (lowercase) → likes minus dislikes; absent = 0.
+    pub scores: BTreeMap<String, i32>,
     pub lock: Option<GenreLock>,
     /// The listener's own stations; the built-in ones are not stored.
     pub stations: Vec<crate::mix::Station>,
@@ -399,6 +402,7 @@ impl Default for State {
             mix: Mix::default(),
             legacy_direction: None,
             weights: BTreeMap::new(),
+            scores: BTreeMap::new(),
             lock: None,
             stations: Vec::new(),
             saved: Vec::new(),
