@@ -159,11 +159,17 @@
 }
 
 /* Your languages: short codes, each removable */
+/* Codes wrap onto more lines instead of pushing "+" past the card's edge. */
 .line .lang-set {
   display: flex;
-  flex-wrap: nowrap;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 4px;
+  min-width: 0;
+}
+.line .lang-set + .select {
+  flex: none;
 }
 .lang-set .tag button {
   display: inline-grid;
