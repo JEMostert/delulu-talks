@@ -50,9 +50,7 @@
   transition: box-shadow 160ms;
 }
 .search:focus-within {
-  box-shadow:
-    inset 0 0 0 1px var(--focus),
-    0 0 0 3px var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--focus);
 }
 .search input {
   flex: 1;
@@ -85,6 +83,11 @@
 }
 .history > .confirm {
   margin: 8px 10px 0;
+}
+.history-list,
+.dictate-settings {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
 .history-list {
   flex: 1;
