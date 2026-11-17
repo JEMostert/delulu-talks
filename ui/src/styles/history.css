@@ -7,7 +7,7 @@
 .history-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 10px 10px 10px 12px;
   border-bottom: 1px solid var(--line);
 }
@@ -15,6 +15,10 @@
   margin-left: auto;
   color: var(--ink-3);
   font-size: var(--t-small);
+}
+/* At the narrowest window only the search box gives way; the rest keep their size. */
+.history-bar > :not(.search) {
+  flex-shrink: 0;
 }
 .history-bar .select select {
   min-width: 0;
@@ -40,7 +44,7 @@
   align-items: center;
   gap: 7px;
   max-width: 340px;
-  min-width: 120px;
+  min-width: 56px;
   height: 30px;
   padding: 0 10px;
   border-radius: 8px;
