@@ -34,16 +34,56 @@ export function Row({
   );
 }
 
+/**
+ * One compact setting: a short label on the left, the control on the right.
+ * A tip explains it on hover, and on keyboard focus of the control, which is
+ * described by the tip (pass `aria-describedby={tipId(htmlFor)}`).
+ */
+export function Line({
+  label,
+  htmlFor,
+  tip,
+  children,
+}: {
+  label: ReactNode;
+  htmlFor?: string;
+  tip?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="line">
+      {htmlFor ? (
+        <label className="line-label" htmlFor={htmlFor} data-tip={tip}>
+          {label}
+        </label>
+      ) : (
+        <span className="line-label" data-tip={tip}>
+          {label}
+        </span>
+      )}
+      {tip && htmlFor && (
+        <span id={tipId(htmlFor)} className="visually-hidden tip-text">
+          {tip}
+        </span>
+      )}
+      <div className="line-control">{children}</div>
+    </div>
+  );
+}
+export const tipId = (id: string) => `${id}-tip`;
+
 export function Switch({
   id,
   checked,
   onChange,
   label,
+  describedBy,
 }: {
   id: string;
   checked: boolean;
   onChange: (value: boolean) => void;
   label?: string;
+  describedBy?: string;
 }) {
   return (
     <input
@@ -52,6 +92,7 @@ export function Switch({
       type="checkbox"
       role="switch"
       aria-label={label}
+      aria-describedby={describedBy}
       checked={checked}
       onChange={(e) => onChange(e.target.checked)}
     />
@@ -107,12 +148,17 @@ export function Select({
   value,
   onChange,
   disabled,
+  label,
+  describedBy,
   children,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  /** For a select without a visible label. */
+  label?: string;
+  describedBy?: string;
   children: ReactNode;
 }) {
   return (
@@ -121,6 +167,8 @@ export function Select({
         id={id}
         value={value}
         disabled={disabled}
+        aria-label={label}
+        aria-describedby={describedBy}
         onChange={(e) => onChange(e.target.value)}
       >
         {children}
@@ -133,14 +181,18 @@ export function Select({
 export function Keys({
   trigger,
   large,
+  small,
 }: {
   trigger: string | null | undefined;
   large?: boolean;
+  small?: boolean;
 }) {
   const keys = hotkeyKeys(trigger);
   if (!keys.length) return <span className="keys-none">No hotkey yet</span>;
   return (
-    <span className={`keys ${large ? "keys-large" : ""}`}>
+    <span
+      className={`keys ${large ? "keys-large" : ""} ${small ? "keys-small" : ""}`}
+    >
       {keys.map((key, i) => (
         <kbd key={`${key}-${i}`}>{key}</kbd>
       ))}
@@ -148,26 +200,52 @@ export function Keys({
   );
 }
 
+/** An icon-only button; its label is its tooltip and its accessible name. */
 export function IconButton({
   icon,
   label,
   onClick,
   tone,
+  disabled,
+  pressed,
+  size = 17,
 }: {
   icon: IconName;
   label: string;
   onClick: () => void;
   tone?: "danger";
+  disabled?: boolean;
+  pressed?: boolean;
+  size?: number;
 }) {
   return (
     <button
       type="button"
       className={`icon-button ${tone ?? ""}`}
       aria-label={label}
-      title={label}
+      aria-pressed={pressed}
+      data-tip={label}
+      disabled={disabled}
       onClick={onClick}
     >
-      <Icon name={icon} size={17} />
+      <Icon name={icon} size={size} />
     </button>
+  );
+}
+
+/** A small rounded label, like a language or a state. */
+export function Tag({
+  tone,
+  tip,
+  children,
+}: {
+  tone?: "ok" | "warn" | "plain";
+  tip?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className={`tag ${tone ?? ""}`} data-tip={tip}>
+      {children}
+    </span>
   );
 }

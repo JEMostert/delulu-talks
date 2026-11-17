@@ -2,9 +2,7 @@
   display: grid;
   align-content: start;
   gap: 28px;
-  width: min(100%, 780px);
-  margin: 0 auto;
-  padding: 22px 28px 48px;
+  padding: 18px 24px 40px;
 }
 .cleanup .title-block {
   gap: 6px;

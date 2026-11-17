@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import * as ipc from "../ipc";
-import { Wordmark } from "../components/Header";
+import { Wordmark } from "../components/Rail";
 import { Toast } from "../components/Toast";
 import { Pearl } from "../pearl/Pearl";
 import { errorText, type AppState } from "../state";

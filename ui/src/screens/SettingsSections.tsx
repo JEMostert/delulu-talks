@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import * as ipc from "../ipc";
-import { languageName, toggleLanguage } from "../helpers";
-import { Keys, Row, Segmented, Select, Switch } from "../components/Controls";
+import { Row, Segmented, Select, Switch } from "../components/Controls";
 import { Icon } from "../components/Icon";
 import { errorText, type AppState } from "../state";
 import { downloadPercent, gigabytes, useMusicModels } from "../useMusicModels";
@@ -9,193 +8,6 @@ import { downloadPercent, gigabytes, useMusicModels } from "../useMusicModels";
 type Props = { state: AppState };
 /** From package.json, set by Vite. */
 declare const __APP_VERSION__: string;
-
-export function InputSection({ state }: Props) {
-  const { settings, status, microphones, update, hotkeyHint, setHotkeyHint } =
-    state;
-  if (!settings || !status) return null;
-  return (
-    <div className="group">
-      <Row label="Microphone" htmlFor="mic">
-        <Select
-          id="mic"
-          value={settings.microphone ?? ""}
-          onChange={(value) => void update("microphone", value || null)}
-        >
-          <option value="">System default</option>
-          {microphones.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-              {m.isDefault ? " (default)" : ""}
-            </option>
-          ))}
-        </Select>
-      </Row>
-      <Row
-        label="Hotkey"
-        help={
-          <>
-            {status.hotkey.error && (
-              <span className="row-error">{status.hotkey.error}</span>
-            )}
-            {hotkeyHint ? (
-              <span>
-                Pick a new key in the window that opened, or in your system’s
-                shortcut settings.
-              </span>
-            ) : (
-              <span>Hold to talk, or tap to start and stop.</span>
-            )}
-          </>
-        }
-      >
-        <Keys trigger={status.hotkey.trigger} />
-        <button
-          type="button"
-          className="button"
-          onClick={() =>
-            void ipc
-              .changeHotkey()
-              .then(() => setHotkeyHint(true))
-              .catch((e) => state.setNotice(errorText(e)))
-          }
-        >
-          Change…
-        </button>
-      </Row>
-      <Row
-        label="Start at login"
-        htmlFor="login"
-        help="Be ready to listen as soon as you sign in."
-      >
-        <Switch
-          id="login"
-          checked={settings.startAtLogin}
-          onChange={(value) => void update("startAtLogin", value)}
-        />
-      </Row>
-    </div>
-  );
-}
-
-export function DictationSection({ state }: Props) {
-  const { settings, update, modelControl, languages, models } = state;
-  if (!settings) return null;
-  const parakeet =
-    models.find((m) => m.id === settings.model)?.engine === "parakeet";
-  return (
-    <div className="group">
-      <Row
-        label="Speech engine"
-        help="Both run on this computer; nothing you say leaves it."
-        stack
-      >
-        {modelControl}
-      </Row>
-      <Row
-        label="Language"
-        htmlFor="language"
-        help={
-          parakeet
-            ? "Parakeet always hears the language itself. A fixed language tells cleanup what to expect."
-            : settings.language === "auto"
-              ? "Automatic picks whichever of your languages you speak."
-              : "Every dictation is heard as this language."
-        }
-      >
-        <Select
-          id="language"
-          value={settings.language}
-          onChange={(value) => void update("language", value)}
-        >
-          <option value="auto">Automatic</option>
-          {languages.map((l) => (
-            <option key={l.code} value={l.code}>
-              {languageName(l.code, languages)}
-            </option>
-          ))}
-        </Select>
-      </Row>
-      {settings.language === "auto" && !parakeet && (
-        <AllowedLanguagesRow state={state} />
-      )}
-      <Row
-        label="Smart context management"
-        htmlFor="smart-context"
-        help="Remembers what you were just talking about, so the next dictation gets names and terms right. Forgotten after 10 quiet minutes, a restart, or Clear topic in the tray."
-      >
-        <Switch
-          id="smart-context"
-          checked={settings.smartContext}
-          onChange={(value) => void update("smartContext", value)}
-        />
-      </Row>
-      <Row
-        label="Insert text with"
-        htmlFor="insert"
-        help="The keys used to paste into the app you’re in."
-      >
-        <Select
-          id="insert"
-          value={settings.insert}
-          onChange={(value) =>
-            void update("insert", value as ipc.Settings["insert"])
-          }
-        >
-          <option value="shift-insert">Shift+Insert</option>
-          <option value="ctrl-v">Ctrl+V</option>
-          <option value="ctrl-shift-v">Ctrl+Shift+V</option>
-          <option value="off">Off (copy only)</option>
-        </Select>
-      </Row>
-    </div>
-  );
-}
-
-/** The languages Automatic may pick from, so a short or quiet phrase can't come out
- * as a language the user never speaks. Parakeet can't be limited, so it isn't shown. */
-function AllowedLanguagesRow({ state }: Props) {
-  const { settings, update, languages } = state;
-  if (!settings) return null;
-  const allowed = settings.allowedLanguages;
-  const set = (code: string) =>
-    void update("allowedLanguages", toggleLanguage(allowed, code));
-  return (
-    <Row
-      label="Your languages"
-      htmlFor="add-language"
-      help="Automatic only chooses from these, so a short or quiet phrase can’t come out in a language you never speak."
-    >
-      <ul className="lang-set" aria-label="Your languages">
-        {allowed.map((code) => (
-          <li key={code} className="term">
-            <span>{languageName(code, languages)}</span>
-            {allowed.length > 1 && (
-              <button
-                type="button"
-                aria-label={`Remove ${languageName(code, languages)}`}
-                title={`Remove ${languageName(code, languages)}`}
-                onClick={() => set(code)}
-              >
-                <Icon name="close" size={13} />
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-      <Select id="add-language" value="" onChange={(code) => code && set(code)}>
-        <option value="">Add…</option>
-        {languages
-          .filter((l) => !allowed.includes(l.code))
-          .map((l) => (
-            <option key={l.code} value={l.code}>
-              {languageName(l.code, languages)}
-            </option>
-          ))}
-      </Select>
-    </Row>
-  );
-}
 
 /** "F1" → "Female 1", "M3" → "Male 3". */
 export function voiceLabel(voice: string) {
@@ -533,18 +345,11 @@ export function AppearanceSection({ state }: Props) {
           ]}
         />
       </Row>
-      <Row
-        label="Show recording pill"
-        htmlFor="overlay"
-        help="A small pearl at the bottom of the screen while you dictate."
-      >
-        <span className="pill-preview" aria-hidden="true">
-          <span />
-        </span>
+      <Row label="Start at login" htmlFor="login">
         <Switch
-          id="overlay"
-          checked={settings.overlay}
-          onChange={(value) => void update("overlay", value)}
+          id="login"
+          checked={settings.startAtLogin}
+          onChange={(value) => void update("startAtLogin", value)}
         />
       </Row>
     </div>

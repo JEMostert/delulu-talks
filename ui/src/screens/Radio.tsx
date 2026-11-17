@@ -21,54 +21,15 @@ import {
 } from "../radio";
 import { downloadPercent, gigabytes, useMusicModels } from "../useMusicModels";
 
-type View = { radio: ipc.Radio; at: number };
-
 export function Radio({ state }: { state: AppState }) {
-  const { setNotice } = state;
-  const [view, setView] = useState<View>();
+  const { view, apply, check, checking, act, busy, toggle, skip } = state.radio;
   const [now, setNow] = useState(() => Date.now());
-  const [checking, setChecking] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const apply = useCallback(
-    (radio: ipc.Radio) => setView({ radio, at: Date.now() }),
-    [],
-  );
-  const check = useCallback(async () => {
-    setChecking(true);
-    try {
-      apply(await ipc.checkRadio());
-    } catch (e) {
-      setNotice(errorText(e));
-    } finally {
-      setChecking(false);
-    }
-  }, [apply, setNotice]);
 
+  // Check what the station needs each time the page opens; the app keeps the
+  // radio's state itself, for the mini player on every page.
   useEffect(() => {
-    let active = true;
-    const unlisten: (() => void)[] = [];
-    const keep = (p: Promise<() => void>) =>
-      p.then((fn) => (active ? unlisten.push(fn) : fn())).catch(() => {});
-    keep(ipc.onRadio((r) => active && apply(r)));
-    keep(ipc.onRadioError((m) => active && setNotice(`Delulu FM: ${m}`)));
-    ipc
-      .getRadio()
-      .then((r) => active && apply(r))
-      .catch((e) => setNotice(errorText(e)));
     void check();
-    // Correct the local clock now and then; events carry every real change.
-    const poll = setInterval(() => {
-      ipc
-        .getRadio()
-        .then((r) => active && apply(r))
-        .catch(() => {});
-    }, 5000);
-    return () => {
-      active = false;
-      clearInterval(poll);
-      unlisten.forEach((fn) => fn());
-    };
-  }, [apply, check, setNotice]);
+  }, [check]);
 
   const playing = Boolean(view?.radio.playing && !view.radio.held);
   useEffect(() => {
@@ -76,26 +37,6 @@ export function Radio({ state }: { state: AppState }) {
     const timer = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(timer);
   }, [playing, view?.radio.making]);
-
-  const act = useCallback(
-    async (call: () => Promise<ipc.Radio>) => {
-      setBusy(true);
-      try {
-        apply(await call());
-      } catch (e) {
-        setNotice(errorText(e));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [apply, setNotice],
-  );
-
-  const toggle = useCallback(() => {
-    if (!view) return;
-    void act(view.radio.playing ? ipc.radioPause : ipc.radioPlay);
-  }, [act, view]);
-  const skip = useCallback(() => void act(ipc.radioSkip), [act]);
 
   // Space plays or pauses and N skips, unless you are typing or on a control.
   useEffect(() => {

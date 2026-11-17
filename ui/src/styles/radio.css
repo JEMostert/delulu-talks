@@ -1,11 +1,9 @@
-/* Delulu FM: the deck is a well like Home's, the rest are glass groups. */
+/* Delulu FM: the deck is a well like Dictate's, the rest are glass groups. */
 .radio {
   display: grid;
   align-content: start;
   gap: 20px;
-  width: min(100%, 860px);
-  margin: 0 auto;
-  padding: 22px 28px 48px;
+  padding: 18px 24px 40px;
 }
 .radio .title-block {
   gap: 6px;

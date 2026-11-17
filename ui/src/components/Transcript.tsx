@@ -6,7 +6,6 @@ import {
   formatTime,
   highlight,
   languageName,
-  whenLabel,
 } from "../helpers";
 import { IconButton } from "./Controls";
 
@@ -16,12 +15,15 @@ type Props = {
   onCopy: (text: string) => void;
   /** `raw`: insert what was said, as shown when Cleaned up is off. */
   onInsert: (entry: ipc.HistoryEntry, raw: boolean) => void;
-  onDelete?: () => void;
-  /** History rows put the time in a gutter and highlight the search. */
+  onDelete: () => void;
+  /** Highlighted in the text. */
   query?: string;
-  timeInGutter?: boolean;
 };
 
+/**
+ * One dictation on one line. Click or Enter opens the full text and the
+ * cleaned-up/raw toggle; copy, insert again and delete show on hover or focus.
+ */
 export function Transcript({
   entry,
   languages,
@@ -29,45 +31,77 @@ export function Transcript({
   onInsert,
   onDelete,
   query = "",
-  timeInGutter,
 }: Props) {
+  const [open, setOpen] = useState(false);
   const [cleaned, setCleaned] = useState(true);
   const shown = cleaned ? entry.text : (entry.raw ?? entry.text);
-  const when = timeInGutter
-    ? formatTime(entry.createdAt)
-    : whenLabel(entry.createdAt);
+  const actions = (
+    <div className="entry-actions">
+      <IconButton icon="copy" label="Copy" onClick={() => onCopy(shown)} />
+      <IconButton
+        icon="insert"
+        label="Insert again"
+        onClick={() => onInsert(entry, !cleaned && entry.raw != null)}
+      />
+      <IconButton
+        icon="trash"
+        label="Delete"
+        tone="danger"
+        onClick={onDelete}
+      />
+    </div>
+  );
   return (
-    <li className={`entry ${timeInGutter ? "entry-gutter" : ""}`}>
-      {timeInGutter && (
+    <li className={`entry ${open ? "open" : ""}`}>
+      <button
+        type="button"
+        className="entry-main"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
         <time
-          className="entry-time"
+          className="entry-time tabular"
           dateTime={new Date(entry.createdAt).toISOString()}
-          title={formatDate(entry.createdAt)}
+          data-tip={formatDate(entry.createdAt)}
         >
-          {when}
+          {formatTime(entry.createdAt)}
         </time>
-      )}
-      <div className="entry-body">
-        <p className="entry-text">
+        <span className="entry-text">
           {highlight(shown, query).map((part, i) =>
             part.match ? <mark key={i}>{part.text}</mark> : part.text,
           )}
-        </p>
-        <div className="entry-meta">
-          {!timeInGutter && (
-            <time
-              dateTime={new Date(entry.createdAt).toISOString()}
-              title={formatDate(entry.createdAt)}
-            >
-              {when}
-            </time>
+        </span>
+        <span className="entry-meta">
+          <span
+            className="tag plain entry-lang"
+            data-tip={languageName(entry.language, languages)}
+          >
+            <span aria-hidden="true">{entry.language.toUpperCase()}</span>
+            <span className="visually-hidden">
+              {languageName(entry.language, languages)}
+            </span>
+          </span>
+          {entry.topic && (
+            <span className="entry-topic" data-tip="Topic cleanup heard">
+              {entry.topic}
+            </span>
           )}
+          <span
+            className="tabular"
+            data-tip="From letting go of the hotkey to text inserted"
+          >
+            {formatMs(entry.totalMs)}
+          </span>
+        </span>
+      </button>
+      {open ? (
+        <div className="entry-more">
           {entry.raw && (
             <button
               type="button"
-              className="button"
+              className="entry-toggle"
               aria-pressed={cleaned}
-              title={
+              data-tip={
                 cleaned
                   ? "Showing the cleaned-up text. Click for what you said."
                   : "Showing what you said. Click for the cleaned-up text."
@@ -77,35 +111,11 @@ export function Transcript({
               Cleaned up
             </button>
           )}
-          <span className="entry-lang">
-            {languageName(entry.language, languages)}
-          </span>
-          {entry.topic && (
-            <span className="entry-topic" title="Topic cleanup heard">
-              {entry.topic}
-            </span>
-          )}
-          <span title="From letting go of the hotkey to text inserted">
-            {formatMs(entry.totalMs)}
-          </span>
+          {actions}
         </div>
-      </div>
-      <div className="entry-actions">
-        <IconButton icon="copy" label="Copy" onClick={() => onCopy(shown)} />
-        <IconButton
-          icon="insert"
-          label="Insert again"
-          onClick={() => onInsert(entry, !cleaned && entry.raw != null)}
-        />
-        {onDelete && (
-          <IconButton
-            icon="trash"
-            label="Delete"
-            tone="danger"
-            onClick={onDelete}
-          />
-        )}
-      </div>
+      ) : (
+        actions
+      )}
     </li>
   );
 }

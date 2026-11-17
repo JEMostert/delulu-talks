@@ -3,57 +3,64 @@ import type { AppState } from "../state";
 import {
   AboutSection,
   AppearanceSection,
-  DictationSection,
-  InputSection,
   ModelsSection,
   RadioSection,
   VoiceSection,
 } from "./SettingsSections";
 
-const sections: {
+type Section = {
   id: string;
   title: string;
   lead: string;
   Body: ComponentType<{ state: AppState }>;
-}[] = [
+};
+
+// Dictation's settings live on Dictate. Voice and Models have their own pages
+// in the rail until they get their own screens.
+const sections: Section[] = [
   {
-    id: "input",
-    title: "Input",
-    lead: "How you start talking.",
-    Body: InputSection,
-  },
-  {
-    id: "dictation",
-    title: "Dictation",
-    lead: "How speech becomes text.",
-    Body: DictationSection,
-  },
-  {
-    id: "voice",
-    title: "Voice replies",
-    lead: "Hear your agent when you ask.",
-    Body: VoiceSection,
+    id: "appearance",
+    title: "App",
+    lead: "",
+    Body: AppearanceSection,
   },
   {
     id: "radio",
     title: "Delulu FM",
-    lead: "A radio station of new songs.",
+    lead: "",
     Body: RadioSection,
-  },
-  {
-    id: "models",
-    title: "Models",
-    lead: "Optional models you download and delete yourself.",
-    Body: ModelsSection,
-  },
-  {
-    id: "appearance",
-    title: "Appearance",
-    lead: "How it looks.",
-    Body: AppearanceSection,
   },
   { id: "about", title: "About", lead: "", Body: AboutSection },
 ];
+
+/** A page made of one settings section, under its own heading. */
+export function SettingsPage({
+  state,
+  title,
+  Body,
+}: {
+  state: AppState;
+  title: string;
+  Body: ComponentType<{ state: AppState }>;
+}) {
+  return (
+    <div className="settings settings-single">
+      <div className="settings-scroll">
+        <h1>{title}</h1>
+        <section className="settings-section" aria-label={title}>
+          <Body state={state} />
+        </section>
+      </div>
+    </div>
+  );
+}
+
+export const VoicePage = ({ state }: { state: AppState }) => (
+  <SettingsPage state={state} title="Voice" Body={VoiceSection} />
+);
+export const ModelsPage = ({ state }: { state: AppState }) => (
+  <SettingsPage state={state} title="Models" Body={ModelsSection} />
+);
 
 export function Settings({ state }: { state: AppState }) {
   const scroller = useRef<HTMLDivElement>(null);

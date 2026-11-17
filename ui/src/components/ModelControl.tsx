@@ -1,7 +1,7 @@
 import type * as ipc from "../ipc";
-import { Segmented, Select } from "./Controls";
+import { IconButton, Line, Segmented, Select } from "./Controls";
 import { Icon } from "./Icon";
-type Props = {
+export type ModelProps = {
   settings: ipc.Settings | undefined;
   models: ipc.ModelStatus[];
   selectedModel: ipc.ModelStatus | undefined;
@@ -30,18 +30,14 @@ const engines: { value: ipc.Engine; label: string; about: string }[] = [
       "Fastest. Parakeet Ultra runs on your graphics card or the processor and hears 25 European languages on its own, but takes no vocabulary.",
   },
 ];
-/** Speech engine, then that engine's model, with its download state. */
-export function ModelControl({
+/** What both layouts of the speech model control need to know. */
+function useSpeechModel({
   settings,
   models,
   selectedModel,
   progress,
-  downloading,
-  modelReady,
   update,
-  download,
-  cancel,
-}: Props) {
+}: ModelProps) {
   const percent =
     progress?.totalBytes && progress.id === settings?.model
       ? Math.round((progress.doneBytes / progress.totalBytes) * 100)
@@ -56,6 +52,147 @@ export function ModelControl({
     const pick = choices.find((m) => m.downloaded) ?? choices[0];
     if (pick && pick.id !== settings?.model) void update("model", pick.id);
   };
+  return { percent, error, engine, engineModels, switchTo };
+}
+
+/** The speech model as compact setting lines: engine, model, download. */
+export function ModelLines(props: ModelProps & { onModels: () => void }) {
+  const {
+    settings,
+    selectedModel,
+    progress,
+    downloading,
+    modelReady,
+    update,
+    download,
+    cancel,
+    onModels,
+  } = props;
+  const { percent, error, engine, engineModels, switchTo } =
+    useSpeechModel(props);
+  const about = engines.find((e) => e.value === engine)?.about;
+  return (
+    <>
+      <Line label="Engine" tip={about}>
+        <Segmented
+          name="engine"
+          label="Speech engine"
+          value={engine}
+          disabled={downloading}
+          onChange={switchTo}
+          options={engines}
+        />
+        <IconButton icon="box" label="Manage in Models" onClick={onModels} />
+      </Line>
+      <Line
+        label="Model"
+        htmlFor={engineModels.length > 1 ? "model" : undefined}
+      >
+        {engineModels.length > 1 ? (
+          <Select
+            id="model"
+            value={settings?.model ?? ""}
+            disabled={downloading}
+            onChange={(value) => void update("model", value)}
+          >
+            {engineModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <span className="line-value">{selectedModel?.label}</span>
+        )}
+        {/* A model that asks for credit keeps its licence in view; any
+            other shows it at the download. */}
+        {selectedModel && (selectedModel.credit || !modelReady) && (
+          <LicenceTag model={selectedModel} />
+        )}
+      </Line>
+      {downloading ? (
+        <Line label="Downloading">
+          <div
+            className="bar mini-bar"
+            role="progressbar"
+            aria-label="Model download"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+          >
+            <span style={{ transform: `scaleX(${percent / 100})` }} />
+          </div>
+          <span className="line-note tabular">
+            {progress?.totalBytes ? `${percent}%` : "Starting"}
+          </span>
+          <IconButton icon="close" label="Cancel download" onClick={cancel} />
+        </Line>
+      ) : (
+        !modelReady &&
+        selectedModel && (
+          <Line label="Not downloaded">
+            <span className="line-note tabular">
+              {megabytes(selectedModel.bytes)}
+            </span>
+            <button
+              type="button"
+              className="button primary small"
+              data-tip="Download once, then it works offline"
+              onClick={() => void download()}
+            >
+              <Icon name="download" size={15} />
+              {error ? "Try again" : "Download"}
+            </button>
+          </Line>
+        )
+      )}
+      {error && (
+        <p className="line-error" role="alert" data-tip={error}>
+          <Icon name="alert" size={15} />
+          <span>{error}</span>
+        </p>
+      )}
+    </>
+  );
+}
+
+/** The licence's short name, shown at the download; opens the licence. */
+function LicenceTag({ model }: { model: ipc.ModelStatus }) {
+  const tip = model.credit
+    ? `${model.credit}. ${model.license} licence`
+    : `${model.license} licence`;
+  return model.licenseUrl ? (
+    <a
+      className="tag plain"
+      href={model.licenseUrl}
+      target="_blank"
+      rel="noreferrer"
+      data-tip={tip}
+    >
+      {model.license}
+      <Icon name="external" size={11} />
+    </a>
+  ) : (
+    <span className="tag plain" data-tip={tip}>
+      {model.license}
+    </span>
+  );
+}
+
+/** Speech engine, then that engine's model, with its download state. */
+export function ModelControl(props: ModelProps) {
+  const {
+    settings,
+    selectedModel,
+    progress,
+    downloading,
+    modelReady,
+    update,
+    download,
+    cancel,
+  } = props;
+  const { percent, error, engine, engineModels, switchTo } =
+    useSpeechModel(props);
   return (
     <div className="model">
       <Segmented

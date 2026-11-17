@@ -30,7 +30,9 @@ let settings: Settings = {
   language: "auto",
   allowedLanguages: ["nl", "en"],
   insert: "shift-insert",
-  theme: "system",
+  theme:
+    (new URLSearchParams(location.search).get("theme") as Settings["theme"]) ??
+    "system",
   overlay: true,
   firstRunDone: !new URLSearchParams(location.search).has("firstRun"),
   cleanup: true,
@@ -39,7 +41,10 @@ let settings: Settings = {
   radio: new URLSearchParams(location.search).has("radio"),
   historyRetentionDays: 0,
 };
-// Dev-only URL switches: ?firstRun, ?empty, ?phase=error|loadingModel|…
+// Dev-only URL switches: ?firstRun, ?empty, ?phase=error|loadingModel|…,
+// ?history=many (2,400 transcripts over 80 days), ?hotkey=none|error,
+// ?theme=light|dark,
+// ?radio&onair (Delulu FM already playing).
 const params = new URLSearchParams(location.search);
 const cleanupParam = params.get("cleanup") as CleanupStatus["state"] | null;
 let cleanupStatus: CleanupStatus = {
@@ -164,7 +169,17 @@ let status: Status = {
       ? "The microphone stopped sending sound. Check that it is plugged in."
       : null,
   dataDir: "/home/example/.local/share/delulu-talks",
-  hotkey: { bound: true, trigger: "Super+Z", error: null },
+  hotkey:
+    params.get("hotkey") === "none"
+      ? { bound: false, trigger: null, error: null }
+      : {
+          bound: true,
+          trigger: "Super+Z",
+          error:
+            params.get("hotkey") === "error"
+              ? "The desktop refused the shortcut. Pick another key."
+              : null,
+        },
   insert: { ready: false, error: null },
   backend: "Stub backend",
   model: null,
@@ -212,12 +227,16 @@ const sampleEntry = (i: number, createdAt: number): HistoryEntry => {
 };
 let history: HistoryEntry[] = params.has("empty")
   ? []
-  : samples.map((_, i) =>
-      sampleEntry(
-        i,
-        Date.now() - [4, 38, 190, 1500, 1700, 2900, 4400, 9000][i] * 60000,
-      ),
-    );
+  : params.get("history") === "many"
+    ? Array.from({ length: 2400 }, (_, i) =>
+        sampleEntry(i, Date.now() - 2 * 60000 - i * 48 * 60000),
+      )
+    : samples.map((_, i) =>
+        sampleEntry(
+          i,
+          Date.now() - [4, 38, 190, 1500, 1700, 2900, 4400, 9000][i] * 60000,
+        ),
+      );
 
 // Delulu FM: ?radio shows it; ?music=missing leaves YuE2 to download and
 // ?music=cpu pretends there is no graphics card. ?engine=acestep starts on
@@ -1295,7 +1314,17 @@ const simulate = {
     status = { ...status, phase, message };
     emit("status", status);
   },
+  /** A dictation that could neither be pasted nor copied. */
+  failInsert: () => {
+    const entry = sampleEntry(spoken++, Date.now());
+    history.unshift(entry);
+    emit("transcript", {
+      entry,
+      insert: { kind: "failed", reason: "the clipboard is not available" },
+    });
+  },
 };
+if (params.has("onair") && settings.radio) void invoke("radio_play");
 Object.assign(window, { __delulu: simulate });
 window.addEventListener("keydown", (e) => {
   if (e.key === "F8" && !e.repeat) void simulate.start();

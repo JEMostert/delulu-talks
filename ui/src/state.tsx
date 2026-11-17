@@ -2,7 +2,11 @@ import { ModelControl } from "./components/ModelControl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as ipc from "./ipc";
 import { insertMessage, meterLevel, settingsPatch } from "./helpers";
-export type Page = "Home" | "History" | "Cleanup" | "Delulu FM" | "Settings";
+import { useRadio } from "./useRadio";
+export type Page =
+  "Dictate" | "Vocabulary" | "Delulu FM" | "Voice" | "Models" | "Settings";
+/** The newest transcripts Dictate loads; search reaches older ones. */
+export const HISTORY_LIMIT = 1000;
 export const errorText = (error: unknown) => String(error);
 export function useAppState() {
   const [status, setStatus] = useState<ipc.Status>();
@@ -12,8 +16,13 @@ export function useAppState() {
   const [languages, setLanguages] = useState<ipc.Language[]>([]);
   const [models, setModels] = useState<ipc.ModelStatus[]>([]);
   const [history, setHistory] = useState<ipc.HistoryEntry[]>([]);
-  const [page, setPage] = useState<Page>("Home");
+  const [page, setPage] = useState<Page>("Dictate");
   const [query, setQuery] = useState("");
+  /** Opens a page with a fresh search. */
+  const navigate = useCallback((next: Page) => {
+    setPage(next);
+    setQuery("");
+  }, []);
   const [step, setStep] = useState(0);
   const [level, setLevel] = useState(0);
   const [progress, setProgress] = useState<ipc.ModelDownload>();
@@ -22,7 +31,6 @@ export function useAppState() {
   const [recovery, setRecovery] = useState<ipc.TranscriptEvent>();
   const [permission, setPermission] = useState<ipc.InsertStatus>();
   const [confirmClear, setConfirmClear] = useState(false);
-  const [hotkeyHint, setHotkeyHint] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const hasSettings = useRef(false);
   hasSettings.current = settings != null;
@@ -46,10 +54,10 @@ export function useAppState() {
   const refreshHistory = useCallback(
     () =>
       ipc
-        .getHistory(query || null, page === "Home" ? 5 : 1000)
+        .getHistory(query || null, HISTORY_LIMIT)
         .then(setHistory)
         .catch((e) => setNotice(errorText(e))),
-    [query, page],
+    [query],
   );
   useEffect(() => {
     let active = true;
@@ -127,10 +135,13 @@ export function useAppState() {
       unlisteners.forEach((fn) => fn());
     };
   }, [refreshModels]);
+  // Only Dictate shows history; it loads again whenever you come back.
+  const historyShown = page === "Dictate";
   useEffect(() => {
+    if (!historyShown) return;
     let active = true;
     ipc
-      .getHistory(query || null, page === "Home" ? 5 : 1000)
+      .getHistory(query || null, HISTORY_LIMIT)
       .then((entries) => {
         if (active) setHistory(entries);
       })
@@ -140,9 +151,9 @@ export function useAppState() {
     return () => {
       active = false;
     };
-  }, [query, page, historyVersion]);
+  }, [query, historyShown, historyVersion]);
   useEffect(() => {
-    if (page === "Settings" || step === 0) void refreshMicrophones();
+    if (page === "Dictate" || step === 0) void refreshMicrophones();
   }, [page, step, refreshMicrophones]);
   useEffect(() => {
     if (!settings) return;
@@ -167,7 +178,7 @@ export function useAppState() {
       !localStorage.getItem("cleanup-notice")
     ) {
       localStorage.setItem("cleanup-notice", "1");
-      setNotice("New: text cleanup. Download it (5.2 GB) on the Cleanup page.");
+      setNotice("New: text cleanup. Download it (5.2 GB) at Clean up text.");
     }
   }, [settings, cleanupStatus]);
   async function update<K extends keyof ipc.Settings>(
@@ -258,20 +269,22 @@ export function useAppState() {
       progress.finished &&
       !progress.error);
   const trigger = status?.hotkey.trigger ?? "Not assigned";
-  const modelControl = (
-    <ModelControl
-      {...{
-        settings,
-        models,
-        selectedModel,
-        progress,
-        downloading,
-        modelReady,
-        update,
-        download,
-        cancel,
-      }}
-    />
+  const modelProps = {
+    settings,
+    models,
+    selectedModel,
+    progress,
+    downloading,
+    modelReady,
+    update,
+    download,
+    cancel,
+  };
+  const modelControl = <ModelControl {...modelProps} />;
+  const radio = useRadio(
+    Boolean(settings?.radio),
+    page === "Delulu FM",
+    setNotice,
   );
   return {
     status,
@@ -283,7 +296,7 @@ export function useAppState() {
     models,
     history,
     page,
-    setPage,
+    navigate,
     query,
     setQuery,
     step,
@@ -292,19 +305,20 @@ export function useAppState() {
     notice,
     setNotice,
     recovery,
+    setRecovery,
     permission,
     setPermission,
     confirmClear,
     setConfirmClear,
-    hotkeyHint,
-    setHotkeyHint,
     refreshHistory,
     update,
     copy,
     insert,
     modelReady,
     trigger,
+    modelProps,
     modelControl,
+    radio,
   };
 }
 export type AppState = ReturnType<typeof useAppState>;

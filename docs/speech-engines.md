@@ -1,6 +1,6 @@
 # Whisper or Parakeet Ultra: test them on your own voice
 
-Delulu Talks offers two speech engines in **Settings → Dictation**:
+Delulu Talks offers two speech engines on the **Dictate** page:
 
 - **Whisper** (large-v3-turbo, the default) follows your language setting and reads your vocabulary and the end of your last dictation as a prompt, so names you add are spelled your way.
 - **Parakeet Ultra** is three to five times faster and, in a bake-off on public recordings, made fewer errors on spontaneous Dutch (7.3 % against 11.5 % word error rate) and English (5.1 % against 7.3 %), on short clips and on recordings over 30 seconds. It takes no vocabulary, so names rely on cleanup, and it hears the language itself.
@@ -21,7 +21,7 @@ Use the microphone you dictate with, in your normal room. For each item, write d
 
 ## Compare them in the app
 
-1. In **Settings → Dictation**, pick **Whisper** and dictate the script into a text window. Cleanup can stay on: what gets typed is what matters.
+1. On the **Dictate** page, pick **Whisper** and dictate the script into a text window. Cleanup can stay on: what gets typed is what matters.
 2. Pick **Parakeet** (download Parakeet Ultra if asked; the switch takes effect without a restart) and dictate the same script again.
 3. Open **History**. Each entry keeps the typed text and, with cleanup on, the raw transcript (the toggle on the entry). Entries do not show the engine, so the first round is Whisper's and the second Parakeet's. Compare item by item: words wrong or missing, names spelled right, anything typed for the non-speech items, the long items complete, and the switch test in the right language.
 
