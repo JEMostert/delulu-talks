@@ -196,7 +196,7 @@ function EngineButton({
     ? JSON.stringify([radio.readiness.music.model, radio.readiness.music.ace])
     : "";
   useEffect(() => {
-    if (open || found) void run(ipc.getMusicModel);
+    if (open || found) void run(ipc.getMusicModel, []);
   }, [open, found, run]);
   const [choosing, setChoosing] = useState(false);
   const [chooseError, setChooseError] = useState<string>();
