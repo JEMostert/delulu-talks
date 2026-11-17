@@ -5,6 +5,7 @@ import {
   RETENTION_DAYS,
   retentionLabel,
   shortensRetention,
+  hotkeyKeys,
 } from "../helpers";
 import { countLabel, inRange, type HistoryRange } from "../historyRange";
 import { errorText, HISTORY_LIMIT, type AppState } from "../state";
@@ -215,8 +216,14 @@ export function HistoryPanel({ state }: { state: AppState }) {
               <>
                 <p className="empty-title">Nothing said yet</p>
                 <p>
-                  Hold <Keys trigger={status?.hotkey.trigger} /> in any app and
-                  talk
+                  {hotkeyKeys(status?.hotkey.trigger).length ? (
+                    <>
+                      Hold <Keys trigger={status?.hotkey.trigger} /> in any app
+                      and talk
+                    </>
+                  ) : (
+                    "Set a hotkey to start talking"
+                  )}
                 </p>
               </>
             )}

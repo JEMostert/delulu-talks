@@ -356,6 +356,15 @@ a.tag:hover {
 .line-error .icon {
   flex: none;
 }
+/* WebKitGTK counts a select's clipped long text (a model or microphone name)
+ * as overflow of the card around it, which then scrolls sideways. The wrapper
+ * keeps it in; the focus ring is drawn inside so the wrapper does not cut it. */
+.line .select {
+  overflow: hidden;
+}
+.line .select select:focus-visible {
+  outline-offset: -2px;
+}
 .line .select select {
   min-width: 0;
   max-width: 170px;
