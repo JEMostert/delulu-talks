@@ -7,6 +7,7 @@ import {
   isTransientNotice,
   noticeTone,
   resultWord,
+  speakCommand,
   whenLabel,
   formatMs,
   formatDate,
@@ -380,4 +381,16 @@ test("Delulu FM lyrics split into sections, older run-on tags too", async () => 
   ]);
   // An instrumental keeps only its form.
   expect(hasWords(lyricSections("[Intro]\n\n[Verse]\n\n[Outro]"))).toBe(false);
+});
+
+test("speakCommand keeps the text one shell argument with nothing expanded", () => {
+  expect(speakCommand("The build  finished.\n")).toBe(
+    'delulu speak "The build finished."',
+  );
+  expect(speakCommand('Say "hi" for $5')).toBe(
+    `delulu speak 'Say "hi" for $5'`,
+  );
+  expect(speakCommand("It's `rm -rf` \\ done!")).toBe(
+    `delulu speak 'It'\\''s \`rm -rf\` \\ done!'`,
+  );
 });
