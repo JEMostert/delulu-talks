@@ -6,7 +6,9 @@ import type {
   CleanupStatus,
   Shelf,
   Radio,
+  RadioFeedback,
   RadioItem,
+  RadioMix,
   MusicModel,
   MusicModelRow,
   MusicEngine,
@@ -303,11 +305,16 @@ function musicUpdate(patch: Partial<MusicModel>) {
 }
 const setRows = (ids: string[], state: MusicModelRow["state"]) =>
   musicModel.models.map((m) => (ids.includes(m.id) ? { ...m, state } : m));
-const radioSong = (n: number, title: string, subtitle: string): RadioItem => ({
+const radioSong = (
+  n: number,
+  title: string,
+  genre: string | null,
+  mood: string | null = "Warm",
+): RadioItem => ({
   id: `song-${n}`,
   kind: "song",
   title,
-  subtitle,
+  subtitle: [mood, genre].filter(Boolean).join(" · ") || "On request",
   lyrics:
     "[Verse]\nLight on the window\nCoffee and rain\n\n[Chorus]\nCopper morning\nCall my name",
   script: null,
@@ -315,7 +322,168 @@ const radioSong = (n: number, title: string, subtitle: string): RadioItem => ({
   request: null,
   replay: false,
   imported: n > 4,
+  genre,
+  mood,
+  surprise: false,
+  feedback: null,
+  saved: false,
 });
+// The station's catalogue and built-in stations (crates/radio/src/mix.rs).
+const genreNames = [
+  "Soul",
+  "Jazz",
+  "Lo-fi",
+  "Ambient",
+  "House",
+  "Synthwave",
+  "Indie rock",
+  "Punk rock",
+  "Folk",
+  "Funk",
+  "Hip-hop",
+  "Classical",
+  "Reggae",
+  "Drum & bass",
+  "Dutch pop",
+  "Metal",
+  "Country",
+  "Techno",
+];
+const genresOn = [
+  "Soul",
+  "Jazz",
+  "Lo-fi",
+  "House",
+  "Synthwave",
+  "Indie rock",
+  "Funk",
+  "Drum & bass",
+];
+const moodNames = [
+  "Warm",
+  "Dreamlike",
+  "Upbeat",
+  "Melancholy",
+  "Driving",
+  "Playful",
+  "Dark",
+  "Calm",
+];
+const moodsOn = ["Warm", "Dreamlike", "Upbeat", "Driving", "Calm"];
+const builtinStations: Record<
+  string,
+  { name: string; genres: string[]; moods: string[]; surprise: number } & Pick<
+    RadioMix,
+    "vocals" | "energy" | "lengthMinSeconds" | "lengthMaxSeconds"
+  >
+> = {
+  drift: {
+    name: "Drift",
+    genres: ["Ambient", "Lo-fi", "Classical"],
+    moods: ["Dreamlike", "Calm"],
+    surprise: 0,
+    vocals: "instrumental",
+    energy: "low",
+    lengthMinSeconds: 180,
+    lengthMaxSeconds: 300,
+  },
+  groove: {
+    name: "Groove",
+    genres: ["Soul", "Jazz", "Funk", "House"],
+    moods: ["Warm", "Upbeat"],
+    surprise: 10,
+    vocals: "any",
+    energy: "medium",
+    lengthMinSeconds: 150,
+    lengthMaxSeconds: 240,
+  },
+  explore: {
+    name: "Explore",
+    genres: ["Synthwave", "Techno", "Drum & bass", "Hip-hop", "Reggae"],
+    moods: ["Playful", "Driving", "Dark", "Dreamlike"],
+    surprise: 35,
+    vocals: "any",
+    energy: "any",
+    lengthMinSeconds: 120,
+    lengthMaxSeconds: 270,
+  },
+};
+type MockStation = { id: string; name: string } & ReturnType<typeof preset>;
+let userStations: MockStation[] = [];
+const pool = (names: string[], on: string[]) =>
+  names.map((name) => ({ name, on: on.includes(name), custom: false }));
+const enabled = (choices: RadioMix["genres"]) =>
+  choices.filter((c) => c.on).map((c) => c.name);
+const preset = (mix: RadioMix) => ({
+  genres: enabled(mix.genres),
+  moods: enabled(mix.moods),
+  surprise: mix.surprise,
+  vocals: mix.vocals,
+  energy: mix.energy,
+  lengthMinSeconds: mix.lengthMinSeconds,
+  lengthMaxSeconds: mix.lengthMaxSeconds,
+});
+const presetKey = (p: ReturnType<typeof preset>) =>
+  JSON.stringify({
+    ...p,
+    genres: [...p.genres].sort(),
+    moods: [...p.moods].sort(),
+  });
+const pick = <T>(list: T[]) => list[Math.floor(Math.random() * list.length)];
+function withPreset(mix: RadioMix, p: ReturnType<typeof preset>): RadioMix {
+  const select = (choices: RadioMix["genres"], on: string[]) => [
+    ...choices.map((c) => ({ ...c, on: on.includes(c.name) })),
+    ...on
+      .filter((n) => !choices.some((c) => c.name === n))
+      .map((name) => ({ name, on: true, custom: true })),
+  ];
+  return {
+    ...mix,
+    ...p,
+    genres: select(mix.genres, p.genres),
+    moods: select(mix.moods, p.moods),
+  };
+}
+/** The stations with the one the mix sounds like marked. */
+function stationList(mix: RadioMix): Radio["stations"] {
+  const key = presetKey(preset(mix));
+  const all = [
+    ...Object.entries(builtinStations).map(([id, { name, ...p }]) => ({
+      id,
+      name,
+      builtin: true,
+      p,
+    })),
+    ...userStations.map(({ id, name, ...p }) => ({
+      id,
+      name,
+      builtin: false,
+      p,
+    })),
+  ];
+  const active = all.find((s) => presetKey(s.p) === key)?.id;
+  return all.map(({ id, name, builtin }) => ({
+    id,
+    name,
+    builtin,
+    active: id === active,
+  }));
+}
+/** Pretend draw: a random enabled genre (or an off one by surprise). */
+function radioDraw(): Pick<RadioItem, "genre" | "mood" | "surprise"> {
+  const on = enabled(radio.mix.genres);
+  const off = radio.mix.genres.filter((c) => !c.on).map((c) => c.name);
+  if (radio.lock)
+    return {
+      genre: radio.lock.genre,
+      mood: pick(enabled(radio.mix.moods)) ?? "Warm",
+      surprise: false,
+    };
+  const surprise =
+    off.length > 0 && on.length > 0 && Math.random() * 100 < radio.mix.surprise;
+  const genre = pick(surprise ? off : on.length ? on : genreNames);
+  return { genre, mood: pick(enabled(radio.mix.moods)) ?? "Warm", surprise };
+}
 let radio: Radio = {
   available: true,
   error: null,
@@ -327,22 +495,30 @@ let radio: Radio = {
   position: 0,
   queue: [],
   history: [
-    radioSong(5, "Orbital Echoes", "Warm · experimental"),
-    radioSong(6, "Ghost in the Wire", "Restless · electronic"),
+    radioSong(5, "Orbital Echoes", "Synthwave", "Dreamlike"),
+    radioSong(6, "Ghost in the Wire", "Drum & bass", "Driving"),
   ],
   making: null,
   lastError: null,
   requests: [],
-  direction: {
-    mood: "warm",
-    genres: ["electronic", "chamber pop"],
-    energy: "medium",
-    vocals: "vocal",
-    language: "English",
-    length: "medium",
+  mix: {
+    genres: pool(genreNames, genresOn),
+    moods: pool(moodNames, moodsOn),
+    surprise: 15,
+    vocals: "any",
+    energy: "any",
+    lengthMinSeconds: 120,
+    lengthMaxSeconds: 270,
     host: "sometimes",
+    language: "English",
     theme: "",
   },
+  stations: [],
+  saved: [],
+  lock: null,
+  lockSongs: 5,
+  weights: {},
+  lengthLimits: { min: 60, max: 300 },
   lastSongSeconds: null,
   lastSongAudioSeconds: null,
   readiness: {
@@ -367,6 +543,7 @@ let radio: Radio = {
     aceWarm: aceParam === "warm" ? "delulu-engine mock" : undefined,
   },
 };
+radio.stations = stationList(radio.mix);
 let radioSongs = 0;
 let radioMaking: ReturnType<typeof setTimeout> | undefined;
 const radioReady = () => {
@@ -379,7 +556,45 @@ const radioReady = () => {
 };
 function radioUpdate(patch: Partial<Radio>) {
   radio = { ...radio, ...patch };
+  const savedIds = new Set(radio.saved.map((i) => i.title));
+  const mark = (i: RadioItem) => ({ ...i, saved: savedIds.has(i.title) });
+  radio = {
+    ...radio,
+    stations: stationList(radio.mix),
+    now: radio.now && mark(radio.now),
+    queue: radio.queue.map(mark),
+    history: radio.history.map(mark),
+  };
   emit("radio", radio);
+}
+/** Every item, for lookups by id. */
+const radioItems = () => [
+  ...(radio.now ? [radio.now] : []),
+  ...radio.queue,
+  ...radio.history,
+  ...radio.saved,
+];
+function radioSetFeedback(id: string, feedback: RadioFeedback | null) {
+  const item = radioItems().find((i) => i.id === id);
+  if (!item) throw "That song is no longer on the station.";
+  const factor = (f: RadioFeedback | null) =>
+    f === "like" ? 1.5 : f === "dislike" ? 1 / 1.5 : 1;
+  const weights = { ...radio.weights };
+  if (item.genre) {
+    const key = item.genre.toLowerCase();
+    const w = (weights[key] ?? 1) * (factor(feedback) / factor(item.feedback));
+    weights[key] = Math.min(4, Math.max(0.25, w));
+    if (Math.abs(weights[key] - 1) < 0.01) delete weights[key];
+  }
+  const set = (i: RadioItem) =>
+    i.title === item.title ? { ...i, feedback } : i;
+  radioUpdate({
+    weights,
+    now: radio.now && set(radio.now),
+    queue: radio.queue.map(set),
+    history: radio.history.map(set),
+    saved: radio.saved.map(set),
+  });
 }
 /** Pretend production: a song is written, then composed, then ready. */
 function radioProduce() {
@@ -387,6 +602,9 @@ function radioProduce() {
     return;
   const n = ++radioSongs;
   const request = radio.requests.find((r) => !r.answeredBy);
+  const drawn = request
+    ? { genre: null, mood: null, surprise: false }
+    : radioDraw();
   radioUpdate({
     making: {
       kind: "song",
@@ -397,6 +615,7 @@ function radioProduce() {
       progress: null,
       phase: null,
       preparing: false,
+      ...drawn,
     },
   });
   radioMaking = setTimeout(() => {
@@ -411,13 +630,18 @@ function radioProduce() {
         ...(radio.music.engine === "acestep" && !radio.music.aceWarm
           ? { progress: null, phase: "loading" as const, preparing: true }
           : { progress: 0.54, phase: "shaping" as const, preparing: false }),
+        ...drawn,
       },
     });
     radioMaking = setTimeout(() => {
       const song = {
-        ...radioSong(n, `Song ${n}`, "Warm · electronic"),
+        ...radioSong(n, `Song ${n}`, drawn.genre, drawn.mood),
+        surprise: drawn.surprise,
         request: request?.text ?? null,
       };
+      const lock = radio.lock;
+      if (lock?.left != null)
+        radio.lock = lock.left > 1 ? { ...lock, left: lock.left - 1 } : null;
       radioUpdate({
         making: null,
         music:
@@ -668,10 +892,175 @@ export async function invoke<T>(
     case "radio_volume":
       radio = { ...radio, volume: args?.volume as number };
       break;
-    case "radio_direction":
-      radioUpdate({ direction: args?.direction as Radio["direction"] });
+    case "radio_mix":
+      radioUpdate({ mix: args?.mix as RadioMix });
       result = radio;
       break;
+    case "radio_shuffle": {
+      const roll = (choices: RadioMix["genres"], p: number) => {
+        const next = choices.map((c) => ({ ...c, on: Math.random() < p }));
+        if (!next.some((c) => c.on)) next[0].on = true;
+        return next;
+      };
+      radioUpdate({
+        mix: {
+          ...radio.mix,
+          genres: roll(radio.mix.genres, 0.3),
+          moods: roll(radio.mix.moods, 0.4),
+          surprise: Math.floor(Math.random() * 9) * 5,
+        },
+      });
+      result = radio;
+      break;
+    }
+    case "radio_station_save": {
+      const name = String(args?.name ?? "")
+        .trim()
+        .slice(0, 24);
+      if (!name) throw "Give the station a name.";
+      if (
+        Object.values(builtinStations).some(
+          (b) => b.name.toLowerCase() === name.toLowerCase(),
+        )
+      )
+        throw `${name} is a built-in station. Pick another name.`;
+      const existing = userStations.find(
+        (s) => s.name.toLowerCase() === name.toLowerCase(),
+      );
+      const id = existing?.id ?? crypto.randomUUID().slice(0, 12);
+      userStations = [
+        ...userStations.filter((s) => s.id !== id),
+        { id, name, ...preset(radio.mix) },
+      ];
+      radioUpdate({});
+      result = radio;
+      break;
+    }
+    case "radio_station_rename": {
+      const id = String(args?.id);
+      if (id in builtinStations) throw "Built-in stations keep their name.";
+      const name = String(args?.name ?? "")
+        .trim()
+        .slice(0, 24);
+      if (!name) throw "Give the station a name.";
+      userStations = userStations.map((s) =>
+        s.id === id ? { ...s, name } : s,
+      );
+      radioUpdate({});
+      result = radio;
+      break;
+    }
+    case "radio_station_delete": {
+      const id = String(args?.id);
+      if (id in builtinStations) throw "Built-in stations cannot be deleted.";
+      userStations = userStations.filter((s) => s.id !== id);
+      radioUpdate({});
+      result = radio;
+      break;
+    }
+    case "radio_station_activate": {
+      const id = String(args?.id);
+      const found =
+        builtinStations[id] ?? userStations.find((s) => s.id === id);
+      if (!found) throw "That station no longer exists.";
+      radioUpdate({
+        mix: withPreset(radio.mix, {
+          genres: found.genres,
+          moods: found.moods,
+          surprise: found.surprise,
+          vocals: found.vocals,
+          energy: found.energy,
+          lengthMinSeconds: found.lengthMinSeconds,
+          lengthMaxSeconds: found.lengthMaxSeconds,
+        }),
+      });
+      result = radio;
+      break;
+    }
+    case "radio_feedback": {
+      const id = String(args?.id);
+      const feedback = (args?.feedback ?? null) as RadioFeedback | null;
+      radioSetFeedback(id, feedback);
+      if (feedback === "dislike" && radio.now?.id === id) radioAdvance();
+      result = radio;
+      break;
+    }
+    case "radio_reset_feedback": {
+      const genre = (args?.genre as string | null) ?? null;
+      const clear = (i: RadioItem) =>
+        !genre || i.genre?.toLowerCase() === genre.toLowerCase()
+          ? { ...i, feedback: null }
+          : i;
+      const weights = genre
+        ? Object.fromEntries(
+            Object.entries(radio.weights).filter(
+              ([g]) => g !== genre.toLowerCase(),
+            ),
+          )
+        : {};
+      radioUpdate({
+        weights,
+        now: radio.now && clear(radio.now),
+        queue: radio.queue.map(clear),
+        history: radio.history.map(clear),
+        saved: radio.saved.map(clear),
+      });
+      result = radio;
+      break;
+    }
+    case "radio_lock": {
+      const genre = radio.now?.genre;
+      if (!genre) throw "This song has no genre to stay on.";
+      const songs = args?.songs as number | null | undefined;
+      radioUpdate({
+        lock: { genre, left: songs === 0 ? null : (songs ?? radio.lockSongs) },
+      });
+      result = radio;
+      break;
+    }
+    case "radio_unlock":
+      radioUpdate({ lock: null });
+      result = radio;
+      break;
+    case "radio_save": {
+      const item = radioItems().find((i) => i.id === args?.id);
+      if (!item || item.kind !== "song") throw "Only songs can be saved.";
+      if (!radio.saved.some((i) => i.title === item.title))
+        radioUpdate({
+          saved: [{ ...item, replay: false, saved: true }, ...radio.saved],
+        });
+      result = radio;
+      break;
+    }
+    case "radio_unsave": {
+      const item = radioItems().find((i) => i.id === args?.id);
+      radioUpdate({
+        saved: radio.saved.filter(
+          (i) => i.id !== args?.id && i.title !== item?.title,
+        ),
+      });
+      result = radio;
+      break;
+    }
+    case "radio_play_saved": {
+      if (!settings.radio) throw "Turn on Delulu FM in Settings first.";
+      const item = radio.saved.find((i) => i.id === args?.id);
+      if (!item) throw "That song is no longer saved.";
+      const history =
+        radio.now && !radio.now.replay
+          ? [radio.now, ...radio.history]
+          : radio.history;
+      radioUpdate({
+        onAir: true,
+        playing: true,
+        history,
+        now: { ...item, id: `replay-${Date.now()}`, replay: true },
+        position: 0,
+      });
+      radioProduce();
+      result = radio;
+      break;
+    }
     case "radio_request": {
       const text = String(args?.text ?? "").trim();
       if (!text) throw "Type what you would like to hear.";

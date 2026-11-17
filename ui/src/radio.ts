@@ -1,10 +1,4 @@
-import type {
-  MusicModel,
-  Radio,
-  RadioDirection,
-  RadioMusic,
-  RadioReadiness,
-} from "./ipc";
+import type { MusicModel, Radio, RadioMusic, RadioReadiness } from "./ipc";
 
 /** m:ss */
 export function clock(seconds: number): string {
@@ -153,39 +147,6 @@ export function makingText(radio: Radio, now: number): string | null {
       return `Recording the host · ${since} s`;
   }
 }
-
-export const radioPresets: {
-  name: string;
-  direction: Partial<RadioDirection>;
-}[] = [
-  {
-    name: "Drift",
-    direction: {
-      mood: "dreamlike",
-      genres: ["ambient"],
-      energy: "low",
-      vocals: "instrumental",
-    },
-  },
-  {
-    name: "Groove",
-    direction: {
-      mood: "warm",
-      genres: ["soul", "jazz"],
-      energy: "medium",
-      vocals: "either",
-    },
-  },
-  {
-    name: "Explore",
-    direction: {
-      mood: "curious",
-      genres: ["electronic", "experimental"],
-      energy: "medium",
-      vocals: "either",
-    },
-  },
-];
 
 export type LyricSection = { tag: string | null; lines: string[] };
 

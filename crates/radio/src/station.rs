@@ -9,6 +9,7 @@
 //! that holds WAV files; a background pass converts them one at a time (see
 //! `convert`), and both formats play meanwhile.
 use crate::audio::{self, Audio, Content};
+use crate::mix::{self, Context, Draw, GenreLock, Mix, Rng};
 use crate::model::*;
 use crate::writer;
 use crate::RadioError;
@@ -139,8 +140,13 @@ fn content(kind: Kind) -> Content {
     }
 }
 
+/// Every item the station holds, saved copies last.
 fn items(s: &State) -> impl Iterator<Item = &Item> {
-    s.now.iter().chain(&s.queue).chain(&s.history)
+    s.now
+        .iter()
+        .chain(&s.queue)
+        .chain(&s.history)
+        .chain(&s.saved)
 }
 
 fn items_mut(s: &mut State) -> impl Iterator<Item = &mut Item> {
@@ -148,6 +154,32 @@ fn items_mut(s: &mut State) -> impl Iterator<Item = &mut Item> {
         .iter_mut()
         .chain(s.queue.iter_mut())
         .chain(s.history.iter_mut())
+        .chain(s.saved.iter_mut())
+}
+
+fn same(a: &str, b: &str) -> bool {
+    a.to_lowercase() == b.to_lowercase()
+}
+
+/// Genres of the two latest songs, newest first; "" for a song without one
+/// (a request), which breaks a run. Replays do not count.
+fn recent_genres(s: &State) -> Vec<String> {
+    s.queue
+        .iter()
+        .rev()
+        .chain(s.now.iter())
+        .chain(s.history.iter())
+        .filter(|i| i.kind == Kind::Song && !i.is_replay())
+        .take(2)
+        .map(|i| i.genre.clone().unwrap_or_default())
+        .collect()
+}
+
+/// Seeds the draw apart from the writer's own use of the job seed.
+const DRAW_SALT: u64 = 0x6d69_7864_7261_7721;
+
+fn invalid(message: impl Into<String>) -> RadioError {
+    RadioError::Invalid(message.into())
 }
 
 /// Make a rename or new file in `dir` survive a power cut.
@@ -228,12 +260,17 @@ impl Station {
             Err(e) => return Err(io(&path, e)),
         };
         state.on_air = false;
-        state.direction = state.direction.clone().sanitized();
+        if let Some(old) = state.legacy_direction.take() {
+            state.mix = Mix::from_direction(old);
+        }
+        state.version = SCHEMA;
+        state.mix = state.mix.clone().sanitized();
         let audio = root.join("audio");
         let exists = |i: &Item| audio.join(&i.file).is_file();
         state.now = state.now.take().filter(exists);
         state.queue.retain(exists);
         state.history.retain(exists);
+        state.saved.retain(exists);
         let station = Station {
             root: root.to_path_buf(),
             state: Mutex::new(state),
@@ -325,13 +362,7 @@ impl Station {
 
     /// Delete audio no item refers to and job folders of finished jobs.
     fn prune(&self, state: &mut State) {
-        let keep: HashSet<&str> = state
-            .now
-            .iter()
-            .chain(&state.queue)
-            .chain(&state.history)
-            .map(|i| i.file.as_str())
-            .collect();
+        let keep: HashSet<&str> = items(state).map(|i| i.file.as_str()).collect();
         if let Ok(entries) = std::fs::read_dir(self.root.join("audio")) {
             for entry in entries.flatten() {
                 let name = entry.file_name();
@@ -396,16 +427,294 @@ impl Station {
         self.lock().on_air
     }
 
-    pub fn set_direction(&self, direction: Direction) -> Direction {
-        let mut s = self.lock();
-        s.direction = direction.sanitized();
-        // A job that is not written yet follows the new direction.
-        if let Some(job) = s.job.as_mut().filter(|j| j.draft.is_none()) {
-            job.seed = job.seed.wrapping_add(1);
+    /// Draw the next song from the mix as it is now.
+    fn draw(s: &State, seed: u64, request: bool) -> Draw {
+        let recent = recent_genres(s);
+        s.mix.draw(
+            &mut Rng::new(seed ^ DRAW_SALT),
+            &Context {
+                recent: &recent,
+                weights: &s.weights,
+                lock: s.lock.as_ref().map(|l| l.genre.as_str()),
+                request,
+            },
+        )
+    }
+
+    /// A job that is not written yet follows a changed mix or lock.
+    fn redraw(s: &mut State) {
+        let Some(job) = s.job.as_ref().filter(|j| j.draft.is_none()) else {
+            return;
+        };
+        let seed = job.seed.wrapping_add(1);
+        let draw = (job.kind == Kind::Song).then(|| Self::draw(s, seed, job.request.is_some()));
+        if let Some(job) = s.job.as_mut() {
+            job.seed = seed;
+            job.draw = draw;
         }
-        let d = s.direction.clone();
+    }
+
+    /// Replace the mix. Applies to songs not written yet; queued songs keep theirs.
+    pub fn set_mix(&self, mix: Mix) -> Mix {
+        self.change_mix(|_| mix)
+    }
+
+    fn change_mix(&self, f: impl FnOnce(&Mix) -> Mix) -> Mix {
+        let mut s = self.lock();
+        s.mix = f(&s.mix).sanitized();
+        Self::redraw(&mut s);
+        let mix = s.mix.clone();
         self.persist(&s);
-        d
+        mix
+    }
+
+    /// A random mix: a few genres and moods, a small surprise chance.
+    pub fn shuffle(&self) -> Mix {
+        let seed = uuid::Uuid::new_v4().as_u64_pair().0;
+        self.change_mix(|m| m.shuffled(&mut Rng::new(seed)))
+    }
+
+    // ---- stations ----
+
+    /// Built-in stations first, then the listener's.
+    pub fn stations(&self) -> Vec<mix::Station> {
+        let mut all = mix::builtin_stations();
+        all.extend(self.lock().stations.iter().cloned());
+        all
+    }
+
+    /// The station the mix sounds like now, if any.
+    pub fn active_station(stations: &[mix::Station], mix: &Mix) -> Option<String> {
+        let preset = mix.preset();
+        stations
+            .iter()
+            .find(|st| st.preset.matches(&preset))
+            .map(|st| st.id.clone())
+    }
+
+    /// Save the mix as a station; a station of the listener's with that name is updated.
+    pub fn save_station(&self, name: &str) -> Result<mix::Station, RadioError> {
+        let name = mix::station_name(name).ok_or_else(|| invalid("Give the station a name."))?;
+        if mix::builtin_stations().iter().any(|b| same(&b.name, &name)) {
+            return Err(invalid(format!(
+                "{name} is a built-in station. Pick another name."
+            )));
+        }
+        let mut s = self.lock();
+        let preset = s.mix.preset();
+        let station = if let Some(st) = s.stations.iter_mut().find(|st| same(&st.name, &name)) {
+            st.name = name;
+            st.preset = preset;
+            st.clone()
+        } else {
+            if s.stations.len() >= mix::MAX_STATIONS {
+                return Err(invalid(format!(
+                    "You have {} stations. Delete one first.",
+                    mix::MAX_STATIONS
+                )));
+            }
+            let st = mix::Station {
+                id: short_id(),
+                name,
+                preset,
+                builtin: false,
+            };
+            s.stations.push(st.clone());
+            st
+        };
+        self.persist(&s);
+        Ok(station)
+    }
+
+    pub fn rename_station(&self, id: &str, name: &str) -> Result<(), RadioError> {
+        let name = mix::station_name(name).ok_or_else(|| invalid("Give the station a name."))?;
+        if mix::builtin_stations().iter().any(|b| b.id == id) {
+            return Err(invalid("Built-in stations keep their name."));
+        }
+        let mut s = self.lock();
+        let taken = mix::builtin_stations()
+            .iter()
+            .chain(&s.stations)
+            .any(|st| st.id != id && same(&st.name, &name));
+        if taken {
+            return Err(invalid(format!("A station is already called {name}.")));
+        }
+        let st = s
+            .stations
+            .iter_mut()
+            .find(|st| st.id == id)
+            .ok_or_else(|| invalid("That station no longer exists."))?;
+        st.name = name;
+        self.persist(&s);
+        Ok(())
+    }
+
+    pub fn delete_station(&self, id: &str) -> Result<(), RadioError> {
+        if mix::builtin_stations().iter().any(|b| b.id == id) {
+            return Err(invalid("Built-in stations cannot be deleted."));
+        }
+        let mut s = self.lock();
+        s.stations.retain(|st| st.id != id);
+        self.persist(&s);
+        Ok(())
+    }
+
+    /// Tune the mix to a station; host and language stay.
+    pub fn activate_station(&self, id: &str) -> Result<Mix, RadioError> {
+        let station = self
+            .stations()
+            .into_iter()
+            .find(|st| st.id == id)
+            .ok_or_else(|| invalid("That station no longer exists."))?;
+        Ok(self.change_mix(|m| m.with_preset(&station.preset)))
+    }
+
+    // ---- feedback, lock, saved songs ----
+
+    /// Like or dislike a song (None takes it back). Moves its genre's draw weight
+    /// within bounds; a second press of the same verdict changes nothing.
+    pub fn feedback(&self, id: &str, feedback: Option<Feedback>) -> Result<(), RadioError> {
+        let mut s = self.lock();
+        let item = items(&s)
+            .find(|i| i.id == id)
+            .ok_or_else(|| invalid("That song is no longer on the station."))?;
+        if item.kind != Kind::Song {
+            return Err(invalid("Only songs can be liked or disliked."));
+        }
+        let (file, previous, genre) = (item.file.clone(), item.feedback, item.genre.clone());
+        if previous == feedback {
+            return Ok(());
+        }
+        let factor = |f: Option<Feedback>| match f {
+            Some(Feedback::Like) => mix::WEIGHT_STEP,
+            Some(Feedback::Dislike) => 1.0 / mix::WEIGHT_STEP,
+            None => 1.0,
+        };
+        if let Some(genre) = genre {
+            mix::adjust(&mut s.weights, &genre, factor(feedback) / factor(previous));
+        }
+        for i in items_mut(&mut s).filter(|i| i.file == file) {
+            i.feedback = feedback;
+        }
+        self.persist(&s);
+        Ok(())
+    }
+
+    /// Forget likes and dislikes, of one genre or all.
+    pub fn reset_feedback(&self, genre: Option<&str>) {
+        let mut s = self.lock();
+        match genre {
+            Some(g) => {
+                s.weights.remove(&g.to_lowercase());
+                for i in
+                    items_mut(&mut s).filter(|i| i.genre.as_deref().is_some_and(|x| same(x, g)))
+                {
+                    i.feedback = None;
+                }
+            }
+            None => {
+                s.weights.clear();
+                for i in items_mut(&mut s) {
+                    i.feedback = None;
+                }
+            }
+        }
+        self.persist(&s);
+    }
+
+    /// Draw only the airing song's genre for `songs` songs (None: until unlocked).
+    pub fn lock_genre(&self, songs: Option<u32>) -> Result<GenreLock, RadioError> {
+        let mut s = self.lock();
+        let genre = s
+            .now
+            .as_ref()
+            .and_then(|i| i.genre.clone())
+            .ok_or_else(|| invalid("This song has no genre to stay on."))?;
+        let lock = GenreLock {
+            genre,
+            left: songs.map(|n| n.clamp(1, mix::MAX_LOCK_SONGS)),
+        };
+        s.lock = Some(lock.clone());
+        Self::redraw(&mut s);
+        self.persist(&s);
+        Ok(lock)
+    }
+
+    pub fn unlock_genre(&self) {
+        let mut s = self.lock();
+        if s.lock.take().is_some() {
+            Self::redraw(&mut s);
+            self.persist(&s);
+        }
+    }
+
+    /// Keep a song's audio and words out of clean-up.
+    pub fn save_song(&self, id: &str) -> Result<(), RadioError> {
+        let mut s = self.lock();
+        let mut item = items(&s)
+            .find(|i| i.id == id)
+            .cloned()
+            .ok_or_else(|| invalid("That song is no longer on the station."))?;
+        if item.kind != Kind::Song {
+            return Err(invalid("Only songs can be saved."));
+        }
+        if s.saved.iter().any(|i| i.file == item.file) {
+            return Ok(());
+        }
+        if s.saved.len() >= MAX_SAVED {
+            return Err(invalid(format!(
+                "{MAX_SAVED} songs are saved already. Remove one first."
+            )));
+        }
+        item.provenance.remove("replay");
+        s.saved.insert(0, item);
+        self.persist(&s);
+        Ok(())
+    }
+
+    /// Let a song go again; its audio goes once nothing else plays or lists it.
+    pub fn unsave_song(&self, id: &str) {
+        let mut s = self.lock();
+        let file = items(&s).find(|i| i.id == id).map(|i| i.file.clone());
+        let before = s.saved.len();
+        s.saved
+            .retain(|i| i.id != id && Some(i.file.as_str()) != file.as_deref());
+        if s.saved.len() != before {
+            self.prune(&mut s);
+            self.persist(&s);
+        }
+    }
+
+    /// Air a saved song now, labelled as a replay; what was airing goes to history.
+    pub fn air_saved(&self, id: &str) -> Result<Item, RadioError> {
+        let mut s = self.lock();
+        let mut item = s
+            .saved
+            .iter()
+            .find(|i| i.id == id)
+            .cloned()
+            .ok_or_else(|| invalid("That song is no longer saved."))?;
+        item.id = format!("replay-{}", short_id());
+        item.provenance.insert("replay".into(), "true".into());
+        Self::retire_now(&mut s);
+        s.now = Some(item.clone());
+        self.prune(&mut s);
+        self.persist(&s);
+        drop(s);
+        self.notify();
+        Ok(item)
+    }
+
+    /// The airing item ends: into history unless it was a replay.
+    fn retire_now(s: &mut State) -> Option<Item> {
+        let previous = s.now.take();
+        if let Some(item) = previous.clone() {
+            if !item.is_replay() {
+                s.history.insert(0, item);
+                s.history.truncate(MAX_HISTORY);
+            }
+        }
+        previous
     }
 
     /// Choose the music engine and ACE-Step's language model. Applies from the next
@@ -477,13 +786,7 @@ impl Station {
     /// otherwise a labelled replay of an earlier song. None = nothing to play yet.
     pub fn advance(&self) -> Option<Item> {
         let mut s = self.lock();
-        let previous = s.now.take();
-        if let Some(item) = previous.clone() {
-            if !item.is_replay() {
-                s.history.insert(0, item);
-                s.history.truncate(MAX_HISTORY);
-            }
-        }
+        let previous = Self::retire_now(&mut s);
         let next = if s.queue.is_empty() {
             replay(&s.history, previous.as_ref())
         } else {
@@ -544,11 +847,7 @@ impl Station {
     }
 
     fn plan(&self, s: &mut State, voice_ready: bool) -> Job {
-        let wants_break = s
-            .direction
-            .host
-            .every()
-            .is_some_and(|n| s.songs_since_break >= n)
+        let wants_break = s.mix.host.every().is_some_and(|n| s.songs_since_break >= n)
             && voice_ready
             && s.queue
                 .last()
@@ -560,6 +859,8 @@ impl Station {
         } else {
             None
         };
+        let seed = uuid::Uuid::new_v4().as_u64_pair().0;
+        let draw = (kind == Kind::Song).then(|| Self::draw(s, seed, request.is_some()));
         Job {
             id: format!(
                 "{}-{}",
@@ -568,12 +869,13 @@ impl Station {
             ),
             kind,
             attempt: 0,
-            seed: uuid::Uuid::new_v4().as_u64_pair().0,
+            seed,
             request,
             draft: None,
             started_at: now_ms(),
             step_started_at: now_ms(),
             writer_ms: 0,
+            draw,
         }
     }
 
@@ -619,6 +921,18 @@ impl Station {
             if !s.on_air {
                 return Next::Idle;
             }
+            // A song planned before the mix existed is drawn now.
+            if let Some(job) = s
+                .job
+                .as_ref()
+                .filter(|j| j.kind == Kind::Song && j.draw.is_none() && j.draft.is_none())
+            {
+                let draw = Self::draw(&s, job.seed, job.request.is_some());
+                if let Some(job) = s.job.as_mut() {
+                    job.draw = Some(draw);
+                }
+                self.persist(&s);
+            }
             s.job.clone().expect("job")
         };
         let result = if job.draft.is_none() {
@@ -654,10 +968,10 @@ impl Station {
         if !backend.may_start() {
             return Err(RadioError::Busy);
         }
-        let (direction, recent, last) = {
+        let (mix, recent, last) = {
             let s = self.lock();
             (
-                s.direction.clone(),
+                s.mix.clone(),
                 writer::recent(&s.history, &s.queue),
                 Self::last_song(&s),
             )
@@ -666,6 +980,11 @@ impl Station {
         let seed32 = (job.seed ^ (job.seed >> 32)) as u32;
         let draft = match job.kind {
             Kind::Song => {
+                let direction = job
+                    .draw
+                    .clone()
+                    .unwrap_or_else(|| mix.draw(&mut Rng::new(job.seed), &Context::default()))
+                    .brief(&mix);
                 let instrumental = writer::instrumental(&direction, job.seed);
                 let (prompt, tokens) = writer::song_prompt(
                     &direction,
@@ -683,8 +1002,14 @@ impl Station {
                     self.update_job(|j| j.kind = Kind::Song);
                     return Ok(Next::Continue);
                 };
-                let lang = crate::voice::host_language(&direction.language);
-                let (prompt, tokens) = writer::break_prompt(&last, &direction.mood, lang);
+                let lang = crate::voice::host_language(&mix.language);
+                // The next song is not drawn yet: tease the mood of the one before.
+                let mood = last
+                    .mood
+                    .clone()
+                    .or_else(|| mix.enabled_moods().first().cloned())
+                    .unwrap_or_else(|| "warm".into());
+                let (prompt, tokens) = writer::break_prompt(&last, &mood, lang);
                 let reply = backend.write(prompt, tokens, seed32)?;
                 writer::parse_break(&reply, &last)?
             }
@@ -710,7 +1035,11 @@ impl Station {
         let _ = std::fs::remove_file(&out);
         let (length, music) = {
             let s = self.lock();
-            (s.direction.length.seconds(), s.music.clone())
+            let seconds = job
+                .draw
+                .as_ref()
+                .map_or_else(|| s.mix.middle_seconds(), |d| d.seconds);
+            (seconds, s.music.clone())
         };
         self.update_job(|j| j.step_started_at = now_ms());
         backend.changed();
@@ -736,7 +1065,7 @@ impl Station {
         std::fs::create_dir_all(&dir).map_err(|e| io(&dir, e))?;
         let out = dir.join("speech.wav");
         let _ = std::fs::remove_file(&out);
-        let lang = crate::voice::host_language(&self.lock().direction.language);
+        let lang = crate::voice::host_language(&self.lock().mix.language);
         let voice = backend.speak(draft.script.as_deref().unwrap_or_default(), lang, &out)?;
         let mut audio = audio::decode(&out)?;
         let checks = audio::check(&audio, MIN_BREAK_SECONDS)?;
@@ -763,6 +1092,9 @@ impl Station {
         let loudness = write_opus(audio, content(job.kind), &temp, &|_| true)?;
         provenance.insert("writer".into(), "Gemma 4 E4B".into());
         provenance.insert("seed".into(), job.seed.to_string());
+        if let Some(draw) = &job.draw {
+            provenance.insert("targetSeconds".into(), draw.seconds.to_string());
+        }
         provenance.insert(
             "writerSeconds".into(),
             format!("{:.1}", job.writer_ms as f64 / 1000.0),
@@ -782,6 +1114,10 @@ impl Station {
             request: job.request.as_ref().map(|r| r.text.clone()),
             provenance,
             loudness: Some(loudness),
+            genre: job.draw.as_ref().and_then(|d| d.genre.clone()),
+            mood: job.draw.as_ref().and_then(|d| d.mood.clone()),
+            surprise: job.draw.as_ref().is_some_and(|d| d.surprise),
+            feedback: None,
         };
         let target = self.root.join("audio").join(&file);
         let mut s = self.lock();
@@ -789,6 +1125,22 @@ impl Station {
         if let Some(request) = &job.request {
             if let Some(r) = s.requests.iter_mut().find(|r| r.id == request.id) {
                 r.answered_by = Some(item.title.clone());
+            }
+        }
+        // A song drawn under the lock uses up one of its songs.
+        let used = job
+            .draw
+            .as_ref()
+            .filter(|d| d.locked)
+            .and_then(|d| d.genre.as_deref());
+        if let (Some(genre), Some(lock)) = (used, s.lock.as_mut()) {
+            if same(genre, &lock.genre) {
+                if let Some(left) = lock.left.as_mut() {
+                    *left = left.saturating_sub(1);
+                    if *left == 0 {
+                        s.lock = None;
+                    }
+                }
             }
         }
         match job.kind {

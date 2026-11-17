@@ -3,10 +3,11 @@
 //! music or speech step starts while you dictate or just after.
 use super::*;
 use delulu_radio::{
+    mix::{self, GenreLock},
     model::{AceLm, Draft, Music, MusicEngine, Request},
     music::{self, Composer, Order, Stage},
     voice::Voice,
-    Backend, Direction, Item, Kind, Player, PlayerEvent, RadioError, Station,
+    Backend, Feedback, Item, Kind, Mix, Player, PlayerEvent, RadioError, Station,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -84,10 +85,19 @@ pub(crate) struct ItemView {
     request: Option<String>,
     replay: bool,
     imported: bool,
+    /// The genre and mood it was drawn with; null for requests, breaks and
+    /// songs from before the mix.
+    genre: Option<String>,
+    mood: Option<String>,
+    /// The genre came from outside the listener's pool.
+    surprise: bool,
+    feedback: Option<Feedback>,
+    /// Kept out of clean-up (listed under `saved`).
+    saved: bool,
 }
 
-impl From<&Item> for ItemView {
-    fn from(i: &Item) -> Self {
+impl ItemView {
+    fn new(i: &Item, saved: &[Item]) -> Self {
         ItemView {
             id: i.id.clone(),
             kind: i.kind,
@@ -99,8 +109,34 @@ impl From<&Item> for ItemView {
             request: i.request.clone(),
             replay: i.is_replay(),
             imported: i.provenance.contains_key("importedFrom"),
+            genre: i.genre.clone(),
+            mood: i.mood.clone(),
+            surprise: i.surprise,
+            feedback: i.feedback,
+            saved: saved.iter().any(|s| s.file == i.file),
         }
     }
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct LengthLimits {
+    min: u32,
+    max: u32,
+}
+
+const LENGTH_LIMITS: LengthLimits = LengthLimits {
+    min: delulu_radio::model::MIN_SONG_SECONDS,
+    max: delulu_radio::model::MAX_SONG_SECONDS,
+};
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StationView {
+    id: String,
+    name: String,
+    builtin: bool,
+    /// The mix sounds like this station now.
+    active: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -112,6 +148,10 @@ pub(crate) struct Making {
     title: Option<String>,
     request: Option<String>,
     since: i64,
+    /// What the song being made was drawn to be (songs only).
+    genre: Option<String>,
+    mood: Option<String>,
+    surprise: bool,
     /// Music only: overall 0..1 and the phase (score, composing, shaping, rendering).
     progress: Option<f32>,
     phase: Option<String>,
@@ -136,7 +176,17 @@ pub(crate) struct RadioView {
     making: Option<Making>,
     last_error: Option<String>,
     requests: Vec<Request>,
-    direction: Direction,
+    mix: Mix,
+    stations: Vec<StationView>,
+    /// Saved songs, newest first.
+    saved: Vec<ItemView>,
+    lock: Option<GenreLock>,
+    /// Songs a lock lasts when `radio_lock` gets no count.
+    lock_songs: u32,
+    /// Genre (lowercase) → draw weight from likes and dislikes; absent = 1.
+    weights: BTreeMap<String, f32>,
+    /// The song lengths the mix may ask for, in seconds; both engines reach them.
+    length_limits: LengthLimits,
     last_song_seconds: Option<f64>,
     last_song_audio_seconds: Option<f64>,
     readiness: Option<Readiness>,
@@ -310,7 +360,13 @@ pub(crate) fn unavailable(error: Option<String>, readiness: Option<Readiness>) -
         making: None,
         last_error: None,
         requests: Vec::new(),
-        direction: Direction::default(),
+        mix: Mix::default(),
+        stations: Vec::new(),
+        saved: Vec::new(),
+        lock: None,
+        lock_songs: mix::LOCK_SONGS,
+        weights: BTreeMap::new(),
+        length_limits: LENGTH_LIMITS,
         last_song_seconds: None,
         last_song_audio_seconds: None,
         readiness,
@@ -349,6 +405,9 @@ fn view(app: &tauri::AppHandle) -> RadioView {
         title: j.draft.as_ref().map(|d| d.title.clone()),
         request: j.request.as_ref().map(|r| r.text.clone()),
         since: j.step_started_at,
+        genre: j.draw.as_ref().and_then(|d| d.genre.clone()),
+        mood: j.draw.as_ref().and_then(|d| d.mood.clone()),
+        surprise: j.draw.as_ref().is_some_and(|d| d.surprise),
         // From the song being made: the station's engine may have changed since.
         preparing: j.kind == Kind::Song
             && composing
@@ -357,6 +416,9 @@ fn view(app: &tauri::AppHandle) -> RadioView {
             && s.music.ace_warm.as_deref() != Some(warm_key().as_str()),
     });
     let pending: Vec<Request> = s.requests.iter().rev().take(4).rev().cloned().collect();
+    let all = station.stations();
+    let active = Station::active_station(&all, &s.mix);
+    let view_item = |i: &Item| ItemView::new(i, &s.saved);
     RadioView {
         available: true,
         error: None,
@@ -367,13 +429,36 @@ fn view(app: &tauri::AppHandle) -> RadioView {
         position: position
             .filter(|p| Some(p.id.as_str()) == now_id)
             .map_or(0.0, |p| p.seconds),
-        now: s.now.as_ref().map(ItemView::from),
-        queue: s.queue.iter().map(ItemView::from).collect(),
-        history: s.history.iter().take(12).map(ItemView::from).collect(),
+        now: s.now.as_ref().map(view_item),
+        queue: s.queue.iter().map(view_item).collect(),
+        history: s.history.iter().take(12).map(view_item).collect(),
         making: if s.on_air { making } else { None },
         last_error: s.last_error.clone(),
         requests: pending,
-        direction: s.direction.clone(),
+        mix: s.mix.clone(),
+        stations: all
+            .into_iter()
+            .map(|st| StationView {
+                active: active.as_deref() == Some(st.id.as_str()),
+                id: st.id,
+                name: st.name,
+                builtin: st.builtin,
+            })
+            .collect(),
+        // Without words: the list rides on every progress event.
+        saved: s
+            .saved
+            .iter()
+            .map(|i| ItemView {
+                lyrics: None,
+                script: None,
+                ..view_item(i)
+            })
+            .collect(),
+        lock: s.lock.clone(),
+        lock_songs: mix::LOCK_SONGS,
+        weights: s.weights.clone(),
+        length_limits: LENGTH_LIMITS,
         last_song_seconds: s.stats.last_song_seconds,
         last_song_audio_seconds: s.stats.last_song_audio_seconds,
         readiness,
@@ -552,15 +637,20 @@ pub(crate) fn radio_off(app: tauri::AppHandle) -> Result<RadioView, String> {
 #[tauri::command]
 pub(crate) fn radio_skip(app: tauri::AppHandle) -> Result<RadioView, String> {
     enabled(&app)?;
+    skip(&app)?;
+    Ok(view(&app))
+}
+
+fn skip(app: &tauri::AppHandle) -> Result<(), String> {
     let radio = app.state::<Radio>();
     let _control = radio.control();
     let next = radio.station()?.advance();
     if radio.listening.load(Ordering::SeqCst) {
-        play_item(&app, next, true);
+        play_item(app, next, true);
     } else {
         radio.player.stop();
     }
-    Ok(view(&app))
+    Ok(())
 }
 
 #[tauri::command]
@@ -576,12 +666,146 @@ pub(crate) fn radio_volume(app: tauri::AppHandle, volume: f32) -> Result<(), Str
     Ok(())
 }
 
-#[tauri::command]
-pub(crate) fn radio_direction(
-    app: tauri::AppHandle,
-    direction: Direction,
+/// Run `f` on the station and answer with the new view; the window hears it too.
+fn with_station(
+    app: &tauri::AppHandle,
+    f: impl FnOnce(&Station) -> Result<(), RadioError>,
 ) -> Result<RadioView, String> {
-    app.state::<Radio>().station()?.set_direction(direction);
+    f(app.state::<Radio>().station()?).map_err(|e| e.to_string())?;
+    emit(app);
+    Ok(view(app))
+}
+
+/// Replace the mix (pools, surprise, choices, host, language, theme). Applies to
+/// songs not written yet.
+#[tauri::command]
+pub(crate) fn radio_mix(app: tauri::AppHandle, mix: Mix) -> Result<RadioView, String> {
+    with_station(&app, |s| {
+        s.set_mix(mix);
+        Ok(())
+    })
+}
+
+/// Roll a random mix on the station, so the window and any other client agree.
+#[tauri::command]
+pub(crate) fn radio_shuffle(app: tauri::AppHandle) -> Result<RadioView, String> {
+    with_station(&app, |s| {
+        s.shuffle();
+        Ok(())
+    })
+}
+
+/// Save the mix as a station; a station of the listener's with that name is updated.
+#[tauri::command]
+pub(crate) fn radio_station_save(app: tauri::AppHandle, name: String) -> Result<RadioView, String> {
+    with_station(&app, |s| s.save_station(&name).map(|_| ()))
+}
+
+#[tauri::command]
+pub(crate) fn radio_station_rename(
+    app: tauri::AppHandle,
+    id: String,
+    name: String,
+) -> Result<RadioView, String> {
+    with_station(&app, |s| s.rename_station(&id, &name))
+}
+
+#[tauri::command]
+pub(crate) fn radio_station_delete(app: tauri::AppHandle, id: String) -> Result<RadioView, String> {
+    with_station(&app, |s| s.delete_station(&id))
+}
+
+/// Tune the mix to a station; host and language stay.
+#[tauri::command]
+pub(crate) fn radio_station_activate(
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<RadioView, String> {
+    with_station(&app, |s| s.activate_station(&id).map(|_| ()))
+}
+
+/// Like or dislike a song (null takes it back). Disliking the airing song skips it.
+#[tauri::command]
+pub(crate) fn radio_feedback(
+    app: tauri::AppHandle,
+    id: String,
+    feedback: Option<Feedback>,
+) -> Result<RadioView, String> {
+    let radio = app.state::<Radio>();
+    let station = radio.station()?;
+    station.feedback(&id, feedback).map_err(|e| e.to_string())?;
+    let airing = station.snapshot().now.is_some_and(|i| i.id == id);
+    if feedback == Some(Feedback::Dislike) && airing {
+        skip(&app)?;
+    }
+    emit(&app);
+    Ok(view(&app))
+}
+
+/// Forget likes and dislikes of one genre, or of all when `genre` is null.
+#[tauri::command]
+pub(crate) fn radio_reset_feedback(
+    app: tauri::AppHandle,
+    genre: Option<String>,
+) -> Result<RadioView, String> {
+    with_station(&app, |s| {
+        s.reset_feedback(genre.as_deref());
+        Ok(())
+    })
+}
+
+/// Stay on the airing song's genre: for `songs` songs (null: `lockSongs`), or
+/// until unlocked when `songs` is 0.
+#[tauri::command]
+pub(crate) fn radio_lock(app: tauri::AppHandle, songs: Option<u32>) -> Result<RadioView, String> {
+    let songs = match songs {
+        None => Some(mix::LOCK_SONGS),
+        Some(0) => None,
+        Some(n) => Some(n),
+    };
+    with_station(&app, |s| s.lock_genre(songs).map(|_| ()))
+}
+
+#[tauri::command]
+pub(crate) fn radio_unlock(app: tauri::AppHandle) -> Result<RadioView, String> {
+    with_station(&app, |s| {
+        s.unlock_genre();
+        Ok(())
+    })
+}
+
+/// Keep a song (any item id: airing, queued, played) out of clean-up.
+#[tauri::command]
+pub(crate) fn radio_save(app: tauri::AppHandle, id: String) -> Result<RadioView, String> {
+    with_station(&app, |s| s.save_song(&id))
+}
+
+#[tauri::command]
+pub(crate) fn radio_unsave(app: tauri::AppHandle, id: String) -> Result<RadioView, String> {
+    with_station(&app, |s| {
+        s.unsave_song(&id);
+        Ok(())
+    })
+}
+
+/// Play a saved song now (labelled as a replay), starting the station if needed.
+#[tauri::command]
+pub(crate) fn radio_play_saved(app: tauri::AppHandle, id: String) -> Result<RadioView, String> {
+    enabled(&app)?;
+    let radio = app.state::<Radio>();
+    let station = radio.station()?;
+    // Checked before going on air, so a stale id changes nothing.
+    if !station.snapshot().saved.iter().any(|i| i.id == id) {
+        return Err("That song is no longer saved.".into());
+    }
+    set_on_air(&app, true)?;
+    {
+        let _control = radio.control();
+        radio.listening.store(true, Ordering::SeqCst);
+        let item = station.air_saved(&id).map_err(|e| e.to_string())?;
+        play_item(&app, Some(item), true);
+    }
+    emit(&app);
     Ok(view(&app))
 }
 

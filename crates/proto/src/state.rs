@@ -453,7 +453,10 @@ pub struct RadioState {
     pub history: Vec<RadioItem>,
     pub making: Option<RadioMaking>,
     pub requests: Vec<RadioRequest>,
-    pub direction: RadioDirection,
+    pub mix: RadioMix,
+    pub stations: Vec<RadioStation>,
+    /// Songs kept out of clean-up, newest first.
+    pub saved: Vec<RadioItem>,
     pub readiness: Option<RadioReadiness>,
 }
 
@@ -476,7 +479,15 @@ pub struct RadioItem {
     pub seconds: f64,
     /// The listener request this answers.
     pub request: Option<String>,
-    pub favourite: bool,
+    /// The genre and mood it was drawn with; None for requests and breaks.
+    pub genre: Option<String>,
+    pub mood: Option<String>,
+    /// The genre came from outside the listener's pool.
+    pub surprise: bool,
+    /// "like" | "dislike"
+    pub feedback: Option<String>,
+    /// Kept out of clean-up.
+    pub saved: bool,
     pub replay: bool,
     pub imported: bool,
 }
@@ -512,21 +523,46 @@ pub struct RadioRequest {
     pub answered_by: Option<String>,
 }
 
+/// One genre or mood of the mix.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-pub struct RadioDirection {
-    pub mood: String,
-    pub genres: Vec<String>,
-    /// "low" | "medium" | "high"
-    pub energy: String,
-    /// "vocal" | "instrumental" | "either"
+pub struct RadioChoice {
+    pub name: String,
+    pub on: bool,
+    /// Added by the listener, not from the catalogue.
+    pub custom: bool,
+}
+
+/// What the listener steers; each song draws one genre and mood from it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RadioMix {
+    pub genres: Vec<RadioChoice>,
+    pub moods: Vec<RadioChoice>,
+    /// Percent chance (0–100) that a song comes from a genre that is off.
+    pub surprise: u32,
+    /// "any" | "vocal" | "instrumental"
     pub vocals: String,
-    pub language: String,
-    /// "short" | "medium" | "long"
-    pub length: String,
+    /// "any" | "low" | "medium" | "high"
+    pub energy: String,
+    /// Each song's length is drawn between these (seconds, 60–300).
+    pub length_min_seconds: u32,
+    pub length_max_seconds: u32,
     /// "off" | "sometimes" | "often"
     pub host: String,
+    pub language: String,
     pub theme: String,
+}
+
+/// A named mix.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RadioStation {
+    pub id: String,
+    pub name: String,
+    pub builtin: bool,
+    /// The mix sounds like this station now.
+    pub active: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

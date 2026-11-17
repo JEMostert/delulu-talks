@@ -1,12 +1,21 @@
 //! What the station remembers in `radio/station.json`.
+use crate::mix::{Draw, GenreLock, Mix};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const SCHEMA: u32 = 1;
+/// 2: the mix replaced the single direction.
+pub const SCHEMA: u32 = 2;
 pub const MAX_HISTORY: usize = 60;
 pub const MAX_REQUESTS: usize = 10;
 pub const MAX_REQUEST_CHARS: usize = 160;
 pub const MAX_TEXT_CHARS: usize = 80;
+/// Saved songs keep their audio; this bounds the disk they take.
+pub const MAX_SAVED: usize = 100;
+/// The song lengths the listener may choose between, in seconds. Both engines
+/// reach them: ACE-Step makes 10–600 s; YuE2's context leaves room for at least
+/// 300 s of music after the longest score it writes.
+pub const MIN_SONG_SECONDS: u32 = 60;
+pub const MAX_SONG_SECONDS: u32 = 300;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -23,8 +32,9 @@ pub enum Vocals {
     #[default]
     Vocal,
     Instrumental,
-    /// The writer picks per song.
-    Either,
+    /// Drawn per song: about one in three instrumental.
+    #[serde(rename = "any", alias = "either")]
+    Any,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -43,6 +53,24 @@ impl Length {
             Length::Short => 90,
             Length::Medium => 180,
             Length::Long => 240,
+        }
+    }
+
+    /// The length range an old fixed choice becomes in the mix.
+    pub fn range(self) -> (u32, u32) {
+        match self {
+            Length::Short => (75, 120),
+            Length::Medium => (150, 210),
+            Length::Long => (210, 300),
+        }
+    }
+
+    /// The bucket a length falls in, for the song forms of that size.
+    pub fn nearest(seconds: u32) -> Length {
+        match seconds {
+            0..=120 => Length::Short,
+            121..=210 => Length::Medium,
+            _ => Length::Long,
         }
     }
 }
@@ -116,7 +144,9 @@ pub struct Music {
     pub ace_warm: Option<String>,
 }
 
-/// The listener's steering. Applies to songs not yet written.
+/// The brief one song is written to, drawn from the mix (`mix::Draw::brief`).
+/// Before the mix it was the listener's single direction; old state files still
+/// hold one, which `Mix::from_direction` migrates.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Direction {
@@ -125,9 +155,17 @@ pub struct Direction {
     pub energy: Energy,
     pub vocals: Vocals,
     pub language: String,
+    /// The old fixed choice; a brief's size bucket.
     pub length: Length,
     pub host: Host,
     pub theme: String,
+    /// The song's target length; 0 in old files, where `length` gives it.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub seconds: u32,
+}
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 impl Default for Direction {
@@ -141,6 +179,18 @@ impl Default for Direction {
             length: Length::Medium,
             host: Host::Sometimes,
             theme: String::new(),
+            seconds: 0,
+        }
+    }
+}
+
+impl Direction {
+    /// The target length in seconds: YuE2's maximum, ACE-Step's exact length.
+    pub fn seconds(&self) -> u32 {
+        if self.seconds > 0 {
+            self.seconds
+        } else {
+            self.length.seconds()
         }
     }
 }
@@ -209,6 +259,25 @@ pub struct Item {
     /// Measured from the stored audio; playback evens items out with it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loudness: Option<Loudness>,
+    /// The genre and mood the song was drawn with; None for requests, breaks and
+    /// songs from before the mix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mood: Option<String>,
+    /// The genre came from outside the listener's pool.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub surprise: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<Feedback>,
+}
+
+/// The listener's verdict on a song; it moves its genre's draw weight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Feedback {
+    Like,
+    Dislike,
 }
 
 /// EBU R128 measurement of an item's stored audio.
@@ -273,6 +342,9 @@ pub struct Job {
     pub step_started_at: i64,
     #[serde(default)]
     pub writer_ms: u64,
+    /// What this song was drawn to be; None for breaks and jobs from before the mix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draw: Option<Draw>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -292,7 +364,17 @@ pub struct State {
     pub version: u32,
     /// Making new items. Off on every start; Play turns it on.
     pub on_air: bool,
-    pub direction: Direction,
+    pub mix: Mix,
+    /// Read from a state file from before the mix, then migrated; never written.
+    #[serde(rename = "direction", skip_serializing)]
+    pub legacy_direction: Option<Direction>,
+    /// Genre (lowercase) → draw weight from likes and dislikes; absent = 1.
+    pub weights: BTreeMap<String, f32>,
+    pub lock: Option<GenreLock>,
+    /// The listener's own stations; the built-in ones are not stored.
+    pub stations: Vec<crate::mix::Station>,
+    /// Songs kept out of clean-up, newest first. Copies; their audio stays.
+    pub saved: Vec<Item>,
     pub now: Option<Item>,
     /// Ready, in airing order.
     pub queue: Vec<Item>,
@@ -314,7 +396,12 @@ impl Default for State {
         State {
             version: SCHEMA,
             on_air: false,
-            direction: Direction::default(),
+            mix: Mix::default(),
+            legacy_direction: None,
+            weights: BTreeMap::new(),
+            lock: None,
+            stations: Vec::new(),
+            saved: Vec::new(),
             now: None,
             queue: Vec::new(),
             history: Vec::new(),
@@ -373,7 +460,7 @@ mod tests {
         let s: State = serde_json::from_str(r#"{"onAir":true}"#).unwrap();
         assert!(s.on_air);
         assert_eq!(s.version, SCHEMA);
-        assert_eq!(s.direction, Direction::default());
+        assert_eq!(s.mix, Mix::default());
         // A station from before the engine choice keeps YuE2.
         assert_eq!(s.music.engine, MusicEngine::Yue2);
     }
