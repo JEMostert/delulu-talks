@@ -18,8 +18,8 @@ export function MiniPlayer({
     : r.now
       ? r.now.kind === "break"
         ? "Host"
-        : r.now.subtitle
-      : "Coming up";
+        : (r.now.genre ?? (r.now.request ? "Request" : r.now.subtitle))
+      : (r.making?.genre ?? "Coming up");
   return (
     <section className="mini" aria-label="Delulu FM">
       <button
