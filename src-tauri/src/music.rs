@@ -28,7 +28,8 @@ pub(crate) struct MusicModel {
     cancel: Arc<AtomicBool>,
     done_bytes: std::sync::atomic::AtomicU64,
     total_bytes: std::sync::atomic::AtomicU64,
-    error: Mutex<Option<String>>,
+    /// The model whose download failed last, and why.
+    failed: Mutex<Option<(&'static str, String)>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -53,6 +54,8 @@ pub(crate) struct MusicModelRow {
     state: &'static str,
     /// Shown before the download.
     terms: Option<TermsView>,
+    /// Why this model's last download failed.
+    error: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -63,6 +66,9 @@ pub(crate) struct MusicModelStatus {
     done_bytes: u64,
     total_bytes: u64,
     error: Option<String>,
+    /// This window cannot see or change the music models (a daemon's client):
+    /// the rows' states are unknown.
+    unavailable: bool,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -127,6 +133,7 @@ fn row(model: &'static Model, state: &'static str) -> MusicModelRow {
             credit: t.credit,
             text: t.text,
         }),
+        error: None,
     }
 }
 
@@ -134,6 +141,7 @@ fn status(app: &tauri::AppHandle) -> MusicModelStatus {
     let m = app.state::<MusicModel>();
     let downloading = lock(&m.downloading).clone();
     let dir = app.state::<Shell>().store.models_dir();
+    let failed = lock(&m.failed).clone();
     let status = MusicModelStatus {
         models: MODELS
             .iter()
@@ -145,7 +153,13 @@ fn status(app: &tauri::AppHandle) -> MusicModelStatus {
                 } else {
                     "missing"
                 };
-                row(model, state)
+                let mut row = row(model, state);
+                if let Some((id, error)) = &failed {
+                    if *id == model.id && state == "missing" {
+                        row.error = Some(error.clone());
+                    }
+                }
+                row
             })
             .collect(),
         done_bytes: m.done_bytes.load(Ordering::SeqCst),
@@ -154,7 +168,8 @@ fn status(app: &tauri::AppHandle) -> MusicModelStatus {
         } else {
             m.total_bytes.load(Ordering::SeqCst)
         },
-        error: lock(&m.error).clone(),
+        error: failed.map(|(_, error)| error),
+        unavailable: false,
     };
     status
 }
@@ -167,6 +182,7 @@ pub(crate) fn unavailable(error: &str) -> MusicModelStatus {
         done_bytes: 0,
         total_bytes: 0,
         error: Some(error.into()),
+        unavailable: true,
     }
 }
 
@@ -222,12 +238,12 @@ pub(crate) fn download_music_model(
     m.done_bytes.store(0, Ordering::SeqCst);
     m.total_bytes
         .store(models.iter().map(|m| m.bytes).sum(), Ordering::SeqCst);
-    *lock(&m.error) = None;
+    *lock(&m.failed) = None;
     let cancel = m.cancel.clone();
     let worker = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut before = 0u64;
-        let mut result = Ok(());
+        let mut failed = None;
         for model in models {
             let mut sent = Instant::now();
             let mut progress = |done: u64, _total: u64| {
@@ -240,17 +256,18 @@ pub(crate) fn download_music_model(
                     emit_status(&worker);
                 }
             };
-            result = delulu_models::download(&dir, model, &mut progress, &cancel);
-            if result.is_err() {
-                break;
+            match delulu_models::download(&dir, model, &mut progress, &cancel) {
+                Ok(()) => {}
+                Err(delulu_models::Error::Cancelled) => break,
+                Err(e) => {
+                    failed = Some((model.id, e.to_string()));
+                    break;
+                }
             }
             before += model.bytes;
         }
         let m = worker.state::<MusicModel>();
-        *lock(&m.error) = match result {
-            Ok(()) | Err(delulu_models::Error::Cancelled) => None,
-            Err(e) => Some(e.to_string()),
-        };
+        *lock(&m.failed) = failed;
         lock(&m.downloading).clear();
         emit_status(&worker);
         radio::models_changed(&worker);
@@ -297,7 +314,7 @@ pub(crate) fn delete_music_model(
     let removed = delulu_models::remove(&app.state::<Shell>().store.models_dir(), model);
     *lock(&m.removing) = None;
     removed.map_err(|e| format!("Could not delete {e}"))?;
-    *lock(&m.error) = None;
+    *lock(&m.failed) = None;
     emit_status(&app);
     radio::models_changed(&app);
     Ok(status(&app))

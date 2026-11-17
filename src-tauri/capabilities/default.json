@@ -1,1 +1,44 @@
-{"identifier":"default","windows":["main"],"permissions":["core:default",{"identifier":"opener:allow-open-url","allow":[{"url":"https://github.com/JEMostert/delulu-talks*"},{"url":"https://github.com/openai/whisper/*"},{"url":"https://huggingface.co/*"},{"url":"https://creativecommons.org/licenses/*"},{"url":"https://github.com/snakers4/silero-vad*"},{"url":"https://ai.google.dev/gemma/*"}]},{"identifier":"opener:allow-open-path","allow":[{"path":"$DATA/delulu-talks"},{"path":"$DATA/delulu-talks/**"}]}]}
+{
+  "identifier": "default",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://github.com/JEMostert/delulu-talks" },
+        { "url": "https://github.com/JEMostert/delulu-talks/*" },
+        { "url": "https://github.com/openai/whisper" },
+        { "url": "https://github.com/openai/whisper/*" },
+        { "url": "https://github.com/snakers4/silero-vad" },
+        { "url": "https://github.com/snakers4/silero-vad/*" },
+        { "url": "https://huggingface.co/handy-computer/parakeet-ultra-gguf" },
+        { "url": "https://huggingface.co/handy-computer/parakeet-ultra-gguf/*" },
+        { "url": "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf" },
+        { "url": "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/*" },
+        { "url": "https://huggingface.co/Supertone/supertonic-3" },
+        { "url": "https://huggingface.co/Supertone/supertonic-3/*" },
+        { "url": "https://huggingface.co/m-a-p/YuE2-3B" },
+        { "url": "https://huggingface.co/m-a-p/YuE2-3B/*" },
+        { "url": "https://huggingface.co/Serveurperso/ACE-Step-1.5-GGUF" },
+        { "url": "https://huggingface.co/Serveurperso/ACE-Step-1.5-GGUF/*" },
+        { "url": "https://creativecommons.org/licenses/by/4.0/" },
+        { "url": "https://creativecommons.org/licenses/by-nc/4.0/" },
+        { "url": "https://ai.google.dev/gemma/docs/gemma_4_license" }
+      ],
+      "deny": [
+        { "url": "*..*" },
+        { "url": "*%2[eE]*" },
+        { "url": "*%5[cC]*" },
+        { "url": "*[\\]*" }
+      ]
+    },
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$DATA/delulu-talks" },
+        { "path": "$DATA/delulu-talks/**" }
+      ]
+    }
+  ]
+}

@@ -57,6 +57,31 @@ pub fn run() {
 
 /// The window as the dictation daemon's client: no store, microphone, portals,
 /// speech model, cleanup helper, pill or radio of its own.
+/// Keep the page itself at least the configured minimum size. Tauri gives
+/// minWidth/minHeight to GTK as geometry hints, which GTK applies to the whole
+/// window, client-side header bar and shadow included, so the page could shrink
+/// to about 928×531 and clip. A size request on the window's content box makes
+/// GTK add the decorations on top.
+fn hold_min_size(app: &tauri::App) {
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::WidgetExt;
+        let min = app
+            .config()
+            .app
+            .windows
+            .first()
+            .and_then(|w| w.min_width.zip(w.min_height));
+        if let (Some(w), Some((width, height))) = (app.get_webview_window("main"), min) {
+            if let Ok(content) = w.default_vbox() {
+                content.set_size_request(width as i32, height as i32);
+            }
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = app;
+}
+
 fn run_client(socket: Option<std::path::PathBuf>) {
     eprintln!("delulu-talks: dictation runs in the daemon; this window is its client");
     let toggle = std::env::args().any(|a| a == "--toggle");
@@ -71,14 +96,11 @@ fn run_client(socket: Option<std::path::PathBuf>) {
                 }
             }
         }))
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec!["--hidden"]),
-        ))
         .plugin(tauri_plugin_opener::init())
         .manage(client::Client::new(socket, toggle))
         .setup(move |app| {
             tray::create(app)?;
+            hold_min_size(app);
             tauri::async_runtime::spawn(client::connect_forever(app.handle().clone()));
             if !std::env::args().any(|a| a == "--hidden" || a == "--toggle") {
                 if let Some(w) = app.get_webview_window("main") {
@@ -200,10 +222,6 @@ fn run_app() {
                 }
             }
         }))
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec!["--hidden"]),
-        ))
         .plugin(tauri_plugin_opener::init())
         .manage(Shell {
             store,
@@ -302,6 +320,7 @@ fn run_app() {
                 phase(&handle, "needsSetup", None);
                 cleanup::whisper_settled(&handle);
             }
+            hold_min_size(app);
             // `--toggle` on a cold start (GNOME custom shortcut fallback) records without a window.
             if !std::env::args().any(|a| a == "--hidden" || a == "--toggle") {
                 if let Some(w) = app.get_webview_window("main") {

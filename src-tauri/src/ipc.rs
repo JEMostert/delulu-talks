@@ -37,24 +37,69 @@ pub(crate) fn settings_diff(old: &Settings, new: &Settings) -> SettingsDiff {
         radio: old.radio != new.radio,
     }
 }
+/// Start at login: an XDG autostart entry in `$XDG_CONFIG_HOME/autostart`
+/// (`~/.config/autostart` when it is unset). The autostart plugin always wrote
+/// to `~/.config/autostart`, which a session with its own XDG_CONFIG_HOME never
+/// reads; the entry keeps the plugin's file name and contents. Debug builds
+/// leave it alone.
 pub(crate) fn apply_autostart(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    #[cfg(not(debug_assertions))]
-    {
-        use tauri_plugin_autostart::ManagerExt;
-        let manager = app.autolaunch();
-        if enabled {
-            manager.enable()
-        } else {
-            manager.disable()
-        }
-        .map_err(|e| e.to_string())?;
+    if cfg!(debug_assertions) {
+        return Ok(());
     }
-    #[cfg(debug_assertions)]
-    {
-        let _ = (app, enabled);
-    }
-    Ok(())
+    let dir = dirs::config_dir()
+        .ok_or("No configuration folder")?
+        .join("autostart");
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    autostart_entry(&dir, &app.package_info().name, &exe, enabled)
+        .map_err(|e| format!("Start at login: {e}"))
 }
+
+fn autostart_entry(
+    dir: &std::path::Path,
+    name: &str,
+    exe: &std::path::Path,
+    enabled: bool,
+) -> std::io::Result<()> {
+    let file = dir.join(format!("{name}.desktop"));
+    if !enabled {
+        return match std::fs::remove_file(&file) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        };
+    }
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(
+        &file,
+        format!(
+            "[Desktop Entry]\nType=Application\nVersion=1.0\nName={name}\n\
+             Comment={name} startup script\nExec=\"{}\" --hidden\n\
+             StartupNotify=false\nTerminal=false\n",
+            exe.display()
+        ),
+    )
+}
+
+#[cfg(test)]
+mod autostart_tests {
+    use super::autostart_entry;
+    use std::path::Path;
+
+    #[test]
+    fn start_at_login_writes_a_hidden_start_and_removes_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("autostart");
+        let exe = Path::new("/usr/bin/delulu-talks");
+        autostart_entry(&dir, "Delulu Talks", exe, true).unwrap();
+        let entry = std::fs::read_to_string(dir.join("Delulu Talks.desktop")).unwrap();
+        assert!(entry.starts_with("[Desktop Entry]\n"));
+        assert!(entry.contains("\nExec=\"/usr/bin/delulu-talks\" --hidden\n"));
+        autostart_entry(&dir, "Delulu Talks", exe, false).unwrap();
+        assert!(!dir.join("Delulu Talks.desktop").exists());
+        // Turning it off again, or with no entry, is not an error.
+        autostart_entry(&dir, "Delulu Talks", exe, false).unwrap();
+    }
+}
+
 #[tauri::command]
 pub(crate) fn set_settings(
     app: tauri::AppHandle,

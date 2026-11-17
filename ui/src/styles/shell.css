@@ -5,6 +5,9 @@
   height: 100%;
 }
 .page {
+  /* Holds its absolutely placed descendants (visually hidden labels), so they
+     never stretch the window past its height. */
+  position: relative;
   min-width: 0;
   min-height: 0;
   overflow: auto;

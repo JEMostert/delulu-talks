@@ -422,6 +422,8 @@ export type MusicModelRow = {
   bytes: number;
   state: "missing" | "downloading" | "ready";
   terms: ModelTerms | null;
+  /** Why this model's last download failed. */
+  error?: string | null;
 };
 /** Every music model, and the download in progress (over all its models). */
 export type MusicModel = {
@@ -429,6 +431,8 @@ export type MusicModel = {
   doneBytes: number;
   totalBytes: number;
   error: string | null;
+  /** This window cannot see or change the music models (a daemon's client). */
+  unavailable?: boolean;
 };
 export const getMusicModel = () => invoke<MusicModel>("get_music_model");
 /** Download these models one after another; already downloaded ones are skipped. */
