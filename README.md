@@ -20,8 +20,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/screenshots/home-light.png">
-    <img src="docs/assets/screenshots/home.png" width="100%" alt="The Delulu Talks home screen: a large pearl above the word Ready and “Hold Super Z and talk”, next to the five most recent transcripts, each marked Cleaned up with its language, topic and how long it took.">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/screenshots/dictate-light.png">
+    <img src="docs/assets/screenshots/dictate.png" width="100%" alt="The Dictate page: a sidebar with Dictate, Vocabulary, Delulu FM, Voice, Models and Settings; a pearl above the word Ready and “Hold Super Z and talk”; under it every dictation setting on one line each; and on the right the history, one line per dictation with its time, language, topic and how long it took.">
   </picture>
 </p>
 
@@ -29,19 +29,19 @@
 
 - **Cleans up what you said, not how you said it.** A small local model removes filler words and stutters, drops phrases you took back (“Monday, no sorry, Tuesday”), and adds punctuation. It never rephrases, and if anything goes wrong the raw text is typed instead.
 - **Hears what you are talking about.** Cleanup names the topic, such as programming, gaming or finance, and uses it to fix words that were clearly misheard: “merch conflict” becomes “merge conflict” and “nerve it” becomes “nerf it”.
-- **Spells your names and terms your way.** On the **Cleanup** page you keep shelves of names and terms you say often, shown as glass jars on a reef. Put “T3 Code” on a Programming shelf and “ghthree code” comes out as “T3 Code”. Starter shelves for Programming, Gaming & Discord, and Twitch & Streaming are one click away.
+- **Spells your names and terms your way.** On the **Vocabulary** page you keep shelves of names and terms you say often. Put “T3 Code” on a Programming shelf and “ghthree code” comes out as “T3 Code”. Starter shelves for Programming, Gaming & Discord, and Twitch & Streaming are one click away.
 - **Remembers the conversation.** The next dictation hands Whisper the topic’s vocabulary and your last sentence (only when you speak the same language again), so names come out right from the start. It is forgotten after 10 quiet minutes, on restart, or with **Clear topic** in the tray menu, and can be turned off on the **Dictate** page.
 - **Stays out of your way.** While you talk, a small click-through pearl at the bottom of the screen you are working on strings your voice as a row of pearls. It never takes focus.
-- **Keeps a history.** Every transcript is saved in **History** before it is typed, with its topic and the raw version behind a **Cleaned up** toggle.
+- **Keeps a history.** Every transcript is saved in the history on the **Dictate** page before it is typed, with its topic and the raw version behind a **Cleaned up** toggle.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/screenshots/cleanup.png" alt="The Cleanup page: the Clean up text switch is on and Ready on Vulkan, and below it three glass jars stand on a reef ledge: Programming, Gaming &amp; Discord, and Twitch &amp; Streaming, each showing its first terms."></td>
-    <td width="50%"><img src="docs/assets/screenshots/history.png" alt="The History page: six transcripts from today with their times, topics and processing times. The last one has Cleaned up switched off and shows the raw “So um, the merch conflict is on Monday, no sorry Tuesday.”"></td>
+    <td width="50%"><img src="docs/assets/screenshots/vocabulary.png" alt="The Vocabulary page: the shelves Programming, Gaming &amp; Discord and Twitch &amp; Streaming in a list with their term counts and switches, and the terms of the open shelf beside it."></td>
+    <td width="50%"><img src="docs/assets/screenshots/delulu-fm.png" alt="The Delulu FM page: the song on air with its genre and mood, lyrics, the songs up next each with a genre tag, and the mix panel with genre and mood chips, a Shuffle button, a surprise slider and a song length range."></td>
   </tr>
   <tr>
-    <td><sub>Vocabularies on the <b>Cleanup</b> page, with the three starter shelves added.</sub></td>
-    <td><sub><b>History</b>, with one entry switched back to what was actually heard.</sub></td>
+    <td><sub>The <b>Vocabulary</b> page, with the three starter shelves added.</sub></td>
+    <td><sub><b>Delulu FM</b>: the song on air, what comes next, and the mix it draws from.</sub></td>
   </tr>
   <tr>
     <td colspan="2"><img src="docs/assets/screenshots/pill.png" width="100%" alt="The recording pill over a text editor: a coral pearl with a string of pink beads, sending out ripples while it listens."></td>
@@ -71,10 +71,10 @@ You need a Wayland desktop (GNOME or KDE Plasma) and a Vulkan graphics driver; o
 
 ## Delulu FM
 
-An optional radio station made on this computer, hidden until you turn on **Settings → Delulu FM**. Every song is new: the cleanup model writes its title, style and lyrics, [YuE2](https://huggingface.co/m-a-p/YuE2-3B) composes it on your graphics card, and between songs an AI host speaks in the station's language through the native voice (Supertonic 3). The **Delulu FM** page shows what is on air with its lyrics, what comes next and what played, and lets you skip, request a song or steer the mood and style.
+An optional radio station made on this computer, hidden until you turn on **Settings → Delulu FM**. Every song is new: the cleanup model writes its title, style and lyrics, [YuE2](https://huggingface.co/m-a-p/YuE2-3B) composes it on your graphics card, and between songs an AI host speaks in the station's language through the native voice (Supertonic 3). The **Delulu FM** page shows what is on air with its lyrics, what comes next and what played, and lets you skip, request a song, and set the mix: you switch genres and moods on once, and every song draws one of each at random, at a random length between 2:00 and 4:30 unless you change the range. A surprise slider lets songs come from outside your picks, Shuffle rolls a new mix, and a mix can be saved as a station. You can like or dislike a song, stay on its genre for a while, or save it.
 
 - **What it needs:** a graphics card with a Vulkan driver, the music model and the cleanup model. The music model (YuE2 3B, 4 GB, CC BY-NC 4.0) is an explicit download on the **Models** page, where you can also cancel or delete it; nothing downloads on its own and dictation never needs it. The host is optional; without the voice model (the **Voice** page) the station plays music only.
-- **Native:** YuE2 runs in `delulu-engine music`, a helper process shipped with the app that runs the model on ggml with Vulkan (no Python, no ComfyUI). It loads one part of the model at a time and exits after each song, so its graphics memory is free between songs. See [the parity and performance notes](docs/benchmarks/yue2-native/README.md). The engine also carries a second, faster music engine, ACE-Step 1.5 turbo with MIT weights ([crates/music-ace](crates/music-ace/README.md)); the station does not offer it yet.
+- **Native:** YuE2 runs in `delulu-engine music`, a helper process shipped with the app that runs the model on ggml with Vulkan (no Python, no ComfyUI). It loads one part of the model at a time and exits after each song, so its graphics memory is free between songs. See [the parity and performance notes](docs/benchmarks/yue2-native/README.md). A second, faster music engine, ACE-Step 1.5 turbo with MIT weights ([crates/music-ace](crates/music-ace/README.md)), can be chosen on the Delulu FM page.
 - **Dictation comes first:** the radio goes quiet while you hold the hotkey, the music engine pauses while you dictate, and no new writing, music or speech starts while you dictate or just after.
 - **Buffering:** a short programme is made ahead of playback (two songs or six minutes, at most three items). When nothing new is ready it replays a recent song. Playback is native, so it keeps playing with the window closed.
 - **Recovery:** every step is saved. A song stopped half-way (off air, quit) keeps its words and is composed again later. A failed song is retried once, then the station pauses briefly.
