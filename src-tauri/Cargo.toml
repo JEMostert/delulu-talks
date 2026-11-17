@@ -26,6 +26,10 @@ delulu-overlay = { path = "../crates/overlay" }
 delulu-cleanup = { path = "../crates/cleanup" }
 delulu-radio = { path = "../crates/radio" }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# The window's content box, to hold the page's minimum size (lib.rs: hold_min_size).
+gtk = "0.18"
+
 [dev-dependencies]
 tempfile = "3"
 glob = "0.3"

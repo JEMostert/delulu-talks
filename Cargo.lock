@@ -1312,6 +1312,7 @@ dependencies = [
  "delulu-stt",
  "dirs 6.0.0",
  "glob",
+ "gtk",
  "log",
  "serde",
  "serde_json",
