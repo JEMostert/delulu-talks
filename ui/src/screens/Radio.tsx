@@ -189,7 +189,15 @@ function EngineButton({
   onModels: () => void;
 }) {
   const { open, setOpen, ref } = usePopover();
-  const { models, error } = useMusicModels();
+  const { models, error, run } = useMusicModels();
+  // Files can appear without a download event (put there by hand, or found by
+  // "Check again"): look again when the popover opens or the check finds more.
+  const found = radio.readiness
+    ? JSON.stringify([radio.readiness.music.model, radio.readiness.music.ace])
+    : "";
+  useEffect(() => {
+    if (open || found) void run(ipc.getMusicModel);
+  }, [open, found, run]);
   const [choosing, setChoosing] = useState(false);
   const [chooseError, setChooseError] = useState<string>();
   const { music } = radio;
