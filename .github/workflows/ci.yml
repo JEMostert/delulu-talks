@@ -42,12 +42,11 @@ jobs:
       - run: cargo test --release --locked -p delulu-talks --test updater
       - run: cargo test --release --locked -p delulu-core -p delulu-store -p delulu-engine -p delulu-desktop -p delulu-dictation -p delulu-voice-cli -p delulu-audio --lib --bins
       - run: cargo clippy --release --locked -p delulu-desktop -p delulu-voice-cli -p delulu-audio -- -D warnings
-      - run: bash scripts/verify-macos.sh target/release/bundle/dmg/*.dmg
-      - name: Archive the signed application for Settings updates
+      - name: Verify the DMG and archive its application for Settings updates
         run: |
           mkdir macos-assets
           cp target/release/bundle/dmg/*.dmg macos-assets/
-          COPYFILE_DISABLE=1 tar -czf macos-assets/Delulu-Talks_aarch64.app.tar.gz -C target/release/bundle/macos 'Delulu Talks.app'
+          bash scripts/verify-macos.sh macos-assets/*.dmg macos-assets/Delulu-Talks_aarch64.app.tar.gz
       - run: bash scripts/test-macos-update.sh macos-assets/*.app.tar.gz
       - uses: actions/upload-artifact@v4
         with:
