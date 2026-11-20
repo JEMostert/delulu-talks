@@ -41,6 +41,9 @@ fn stream_error(e: impl std::fmt::Display) -> AudioError {
     AudioError::Stream(e.to_string())
 }
 fn host() -> Result<cpal::Host, AudioError> {
+    #[cfg(target_os = "macos")]
+    return Ok(cpal::default_host());
+    #[cfg(target_os = "linux")]
     cpal::host_from_id(cpal::HostId::PulseAudio).map_err(stream_error)
 }
 fn id(device: &cpal::Device) -> Result<String, AudioError> {

@@ -75,5 +75,10 @@ fn main() {
         out.join("build/src").display()
     );
     println!("cargo:rustc-link-lib=static=transcribe");
-    println!("cargo:rustc-link-lib=dylib=stdc++");
+    let cpp = if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        "c++"
+    } else {
+        "stdc++"
+    };
+    println!("cargo:rustc-link-lib=dylib={cpp}");
 }

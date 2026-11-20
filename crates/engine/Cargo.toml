@@ -26,3 +26,11 @@ whisper-rs.workspace = true
 whisper-rs-sys = "=0.15.0"
 # Parakeet Ultra for the `stt` role: transcribe.cpp on the same ggml.
 delulu-transcribe = { path = "../transcribe" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+llama-cpp-2 = { workspace = true, features = ["vulkan"] }
+whisper-rs = { workspace = true, features = ["vulkan"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { workspace = true, features = ["metal"] }
+whisper-rs = { workspace = true, features = ["metal"] }

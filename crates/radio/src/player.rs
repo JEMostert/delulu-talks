@@ -313,6 +313,9 @@ fn open(
     deck: Arc<Mutex<Deck>>,
     failure: Arc<Mutex<Option<String>>>,
 ) -> Result<cpal::Stream, String> {
+    #[cfg(target_os = "macos")]
+    let host = cpal::default_host();
+    #[cfg(target_os = "linux")]
     let host = cpal::host_from_id(cpal::HostId::PulseAudio).map_err(|e| e.to_string())?;
     let device = host
         .default_output_device()

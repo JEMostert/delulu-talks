@@ -417,6 +417,8 @@ pub fn backend_label() -> String {
             |dev| {
                 let backend = if dev.name.starts_with("CUDA") {
                     "CUDA"
+                } else if dev.name.starts_with("MTL") {
+                    "Metal"
                 } else if dev.name.starts_with("Vulkan") {
                     "Vulkan"
                 } else {

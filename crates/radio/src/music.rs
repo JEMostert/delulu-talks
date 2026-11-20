@@ -282,6 +282,7 @@ impl Composer {
         let mut command = Command::new(helper);
         // A ggml crash would otherwise attach gdb and hang instead of exiting.
         command.env("GGML_NO_BACKTRACE", "1");
+        #[cfg(target_os = "linux")]
         // The helper dies with the app, even if the app is killed.
         unsafe {
             use std::os::unix::process::CommandExt;

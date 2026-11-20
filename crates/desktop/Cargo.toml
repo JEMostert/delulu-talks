@@ -8,10 +8,15 @@ serde.workspace = true
 thiserror.workspace = true
 log.workspace = true
 arboard.workspace = true
+tokio.workspace = true
+dirs.workspace = true
+delulu-core = { path = "../core" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
 ashpd.workspace = true
 zbus.workspace = true
-tokio.workspace = true
 futures-util.workspace = true
-dirs.workspace = true
 async-trait = "0.1"
-delulu-core = { path = "../core" }
+
+[build-dependencies]
+cc = "1"

@@ -8,3 +8,6 @@ thiserror.workspace = true
 log.workspace = true
 handy-cpal.workspace = true
 rubato.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+handy-cpal = { workspace = true, features = ["pulseaudio"] }

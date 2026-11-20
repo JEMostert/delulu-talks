@@ -22,10 +22,12 @@ export function Dictate({ state }: { state: AppState }) {
   const changeHotkey = () =>
     void ipc
       .changeHotkey()
-      .then(() =>
-        setNotice(
-          "Pick a new key in the window that opened, or in your system’s shortcut settings.",
-        ),
+      .then(
+        () =>
+          !ipc.isMac &&
+          setNotice(
+            "Pick a new key in the window that opened, or in your system’s shortcut settings.",
+          ),
       )
       .catch((e) => setNotice(errorText(e)));
   return (
@@ -173,15 +175,21 @@ function DictateSettings({
       >
         <Select
           id="dictate-insert"
-          value={settings.insert}
+          value={
+            ipc.isMac && settings.insert !== "off"
+              ? "shift-insert"
+              : settings.insert
+          }
           describedBy={tipId("dictate-insert")}
           onChange={(value) =>
             void update("insert", value as ipc.Settings["insert"])
           }
         >
-          <option value="shift-insert">Shift+Insert</option>
-          <option value="ctrl-v">Ctrl+V</option>
-          <option value="ctrl-shift-v">Ctrl+Shift+V</option>
+          <option value="shift-insert">
+            {ipc.isMac ? "Command+V" : "Shift+Insert"}
+          </option>
+          {!ipc.isMac && <option value="ctrl-v">Ctrl+V</option>}
+          {!ipc.isMac && <option value="ctrl-shift-v">Ctrl+Shift+V</option>}
           <option value="off">Copy only</option>
         </Select>
       </Line>

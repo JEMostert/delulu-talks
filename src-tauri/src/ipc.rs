@@ -43,7 +43,7 @@ pub(crate) fn settings_diff(old: &Settings, new: &Settings) -> SettingsDiff {
 /// reads; the entry keeps the plugin's file name and contents. Debug builds
 /// leave it alone.
 pub(crate) fn apply_autostart(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    if cfg!(debug_assertions) {
+    if cfg!(debug_assertions) || cfg!(target_os = "macos") {
         return Ok(());
     }
     let dir = dirs::config_dir()
@@ -229,7 +229,10 @@ pub(crate) async fn change_hotkey(app: tauri::AppHandle) -> Result<(), String> {
     }
     {
         let mut hotkey = s.hotkey.lock().await;
-        if let Some(h) = hotkey.as_ref().filter(|h| h.status().bound) {
+        if let Some(h) = hotkey
+            .as_ref()
+            .filter(|h| cfg!(target_os = "macos") || h.status().bound)
+        {
             return h.configure().await;
         }
         // Skipped or declined during first run: drop the unbound session and bind again.

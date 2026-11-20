@@ -1,0 +1,13 @@
+diff --git a/src/pipeline-synth-ops.cpp b/src/pipeline-synth-ops.cpp
+index 58bcd10..3b6afb8 100644
+--- a/src/pipeline-synth-ops.cpp
++++ b/src/pipeline-synth-ops.cpp
+@@ -33,7 +33,7 @@ static const char * scan_num(const char * first, const char * last, int & v) {
+ }
+ 
+ static const char * scan_num(const char * first, const char * last, float & v) {
+-#if defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 200000
++#if defined(__APPLE__) || (defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 200000)
+     const char * p   = first;
+     bool         neg = false;
+     if (p < last && (*p == '+' || *p == '-')) {

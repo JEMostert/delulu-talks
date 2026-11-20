@@ -1,4 +1,4 @@
-//! Linux on-demand speech CLI, independent of the desktop app.
+//! On-demand speech CLI, independent of the desktop app.
 //!
 //! The default voice is native: Supertonic 3 in `delulu-engine tts`, on the CPU, in
 //! Dutch and English, with no Python. Chatterbox Turbo stays as an explicit opt-in
@@ -32,7 +32,7 @@ extern "C" fn cancelled(signal: i32) {
 #[command(
     name = "delulu",
     version,
-    about = "On-demand spoken replies for Delulu Talks (Linux)"
+    about = "On-demand spoken replies for Delulu Talks"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -158,6 +158,7 @@ pub(crate) fn run(command: &mut Command, label: &str) -> Result<()> {
             if libc::setpgid(0, 0) != 0 {
                 return Err(io::Error::last_os_error());
             }
+            #[cfg(target_os = "linux")]
             if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
                 return Err(io::Error::last_os_error());
             }
@@ -215,12 +216,23 @@ fn install_cli(root: &Path) -> Result<()> {
     if current != bin {
         let dir = bin.parent().expect("has a parent");
         fs::create_dir_all(dir)?;
-        let mut temp = tempfile::NamedTempFile::new_in(dir)?;
-        io::copy(&mut File::open(current)?, &mut temp)?;
-        use std::os::unix::fs::PermissionsExt;
-        temp.as_file()
-            .set_permissions(fs::Permissions::from_mode(0o755))?;
-        temp.persist(&bin).map_err(|e| e.error)?;
+        #[cfg(target_os = "macos")]
+        {
+            // Keep the CLI next to the engine inside the installed application.
+            let temp = tempfile::tempdir_in(dir)?;
+            let link = temp.path().join("delulu");
+            std::os::unix::fs::symlink(&current, &link)?;
+            fs::rename(link, &bin)?;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let mut temp = tempfile::NamedTempFile::new_in(dir)?;
+            io::copy(&mut File::open(current)?, &mut temp)?;
+            use std::os::unix::fs::PermissionsExt;
+            temp.as_file()
+                .set_permissions(fs::Permissions::from_mode(0o755))?;
+            temp.persist(&bin).map_err(|e| e.error)?;
+        }
     }
     let codex = std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)

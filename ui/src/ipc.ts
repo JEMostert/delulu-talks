@@ -450,3 +450,6 @@ export const onRadio = (fn: (value: Radio) => void): Promise<UnlistenFn> =>
 export const onRadioError = (
   fn: (value: string) => void,
 ): Promise<UnlistenFn> => listen<string>("radio-error", (e) => fn(e.payload));
+
+export const isMac =
+  typeof navigator !== "undefined" && /Mac/.test(navigator.platform);

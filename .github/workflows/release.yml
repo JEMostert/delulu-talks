@@ -83,5 +83,5 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "$GITHUB_REF_NAME" bundles/pacman/*.pkg.tar.zst --clobber
+          gh release upload "$GITHUB_REF_NAME" bundles/pacman/*.pkg.tar.zst bundles/macos-arm64/*.dmg --clobber
           gh release edit "$GITHUB_REF_NAME" --notes-file "docs/releases/$GITHUB_REF_NAME.md" --draft=false

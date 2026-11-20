@@ -22,3 +22,6 @@ ogg = "0.9"
 ebur128 = "0.1"
 [dev-dependencies]
 delulu-cleanup = { path = "../cleanup" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+handy-cpal = { workspace = true, features = ["pulseaudio"] }
