@@ -223,8 +223,7 @@ test("Delulu FM clock, readiness and status text", async () => {
   const steps = readinessSteps({
     music: {
       engine: true,
-      model: false,
-      ace: { turbo: false, lmSmall: false, lmLarge: false },
+      ace: { xl: false, turbo: false, lmSmall: false, lmLarge: false },
       device: "CPU",
       gpu: false,
     },
@@ -242,8 +241,7 @@ test("Delulu FM clock, readiness and status text", async () => {
   const noEngine = readinessSteps({
     music: {
       engine: false,
-      model: true,
-      ace: { turbo: false, lmSmall: false, lmLarge: false },
+      ace: { xl: false, turbo: false, lmSmall: false, lmLarge: false },
       device: null,
       gpu: false,
     },
@@ -273,6 +271,7 @@ test("Delulu FM readiness and install follow the chosen engine", async () => {
   const { readinessSteps, engineModels, missingBytes } =
     await import("./radio");
   const readiness = (ace: {
+    xl: boolean;
     turbo: boolean;
     lmSmall: boolean;
     lmLarge: boolean;
@@ -282,36 +281,29 @@ test("Delulu FM readiness and install follow the chosen engine", async () => {
     voice: true,
   });
   const model = (
-    ace: { turbo: boolean; lmSmall: boolean; lmLarge: boolean },
+    ace: { xl: boolean; turbo: boolean; lmSmall: boolean; lmLarge: boolean },
     aceLm: "auto" | "0.6b" | "4b",
   ) =>
     readinessSteps(readiness(ace), { engine: "acestep", aceLm }).find(
       (s) => s.id === "model",
     )!;
-  const onlySmall = { turbo: true, lmSmall: true, lmLarge: false };
+  const onlySmall = { xl: false, turbo: true, lmSmall: true, lmLarge: false };
   // Automatic runs with whichever language model is there; a fixed one needs it.
   expect(model(onlySmall, "auto").ok).toBe(true);
   expect(model(onlySmall, "0.6b").ok).toBe(true);
   expect(model(onlySmall, "4b").ok).toBe(false);
-  expect(model({ turbo: false, lmSmall: true, lmLarge: true }, "auto").ok).toBe(
-    false,
-  );
-  // YuE2 installed does not make ACE-Step ready, nor the other way round.
-  expect(model(onlySmall, "4b").label).toContain("ACE-Step");
-  const yue = readinessSteps(
-    {
-      ...readiness({ turbo: true, lmSmall: true, lmLarge: true }),
-      music: {
-        ...readiness(onlySmall).music,
-        model: false,
-      },
-    },
-    { engine: "yue2", aceLm: "auto" },
-  ).find((s) => s.id === "model")!;
-  expect(yue.ok).toBe(false);
-
-  expect(engineModels({ engine: "yue2", aceLm: "4b" })).toEqual([
-    "yue2-3b-int8",
+  expect(
+    model({ xl: false, turbo: false, lmSmall: true, lmLarge: true }, "auto").ok,
+  ).toBe(false);
+  const xl = { engine: "acestep-xl", aceLm: "4b" } as const;
+  expect(
+    readinessSteps(readiness({ ...onlySmall, lmLarge: true }), xl).find(
+      (s) => s.id === "model",
+    )?.ok,
+  ).toBe(false);
+  expect(engineModels(xl)).toEqual([
+    "ace-step-1.5-xl-turbo",
+    "ace-step-1.5-lm-4b",
   ]);
   expect(engineModels({ engine: "acestep", aceLm: "auto" })).toEqual([
     "ace-step-1.5-turbo",

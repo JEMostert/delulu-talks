@@ -1,7 +1,6 @@
 # delulu-music-ace
 
-ACE-Step 1.5 turbo for Delulu FM, as the second engine of `delulu-engine music`
-(YuE2 stays the default). It wraps [acestep.cpp](https://github.com/ServeurpersoCom/acestep.cpp)
+ACE-Step 1.5 Turbo (2B, default) and XL Turbo (4B) for Delulu FM. It wraps [acestep.cpp](https://github.com/ServeurpersoCom/acestep.cpp)
 (MIT) instead of porting it: `build.rs` compiles its core library and `src/shim.cpp`
 into the engine, linked against the one ggml that llama-cpp-sys-2 builds.
 
@@ -11,6 +10,8 @@ echo '{"engine":"acestep","style":"English, synth-pop, 112 BPM, female vocal",
        "seconds":60,"language":"en","lm":"auto"}' |
   delulu-engine music generate --models ~/.local/share/delulu-talks/models --out song.wav
 ```
+
+Set `"xl":true` for XL Turbo. Its generator bundle lives in `<models>/ace-step-1.5-xl/`. Both generators read the planner from `<models>/ace-step-1.5/`.
 
 Request fields: `style` (the caption, sent as written), `lyrics` (section tags such
 as `[Verse]`), `seed`, `seconds` (10–600; ACE delivers exactly this length), and
@@ -54,6 +55,7 @@ compiled with the same value (`vendor/whisper-rs-sys/shared-ggml.cmake`); its te
   stopped after 1–126 s on 11 of 12 songs; the radio cannot hear every song.)
 
 - `0002-macos-float-parser.patch` selects the portable float parser on Apple platforms so the engine runs on macOS 15.
+- `0003-bf16-weight-upload.patch` converts BF16 weights to FP16 during upload when the device cannot store BF16 weights. The downloaded GGUF files retain their original quantization.
 
 Check the tree against upstream:
 

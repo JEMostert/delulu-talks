@@ -294,3 +294,29 @@ fn the_files_loaded_are_the_ones_the_registry_downloads() {
         [format!("{DIR}/{}", Lm::Large.file())]
     );
 }
+
+#[test]
+fn deleting_either_generator_keeps_the_other_and_its_planner_usable() {
+    use delulu_models::{remove, ACE_STEP_TURBO, ACE_STEP_XL_TURBO};
+    for (remove_model, xl, filename) in [
+        (&ACE_STEP_TURBO, true, XL_DIT),
+        (&ACE_STEP_XL_TURBO, false, DIT),
+    ] {
+        let dir = models(&[Lm::Small.file()]);
+        for model in [&ACE_STEP_TURBO, &ACE_STEP_XL_TURBO] {
+            for file in model.files {
+                let path = dir.join(file.file);
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(path, []).unwrap();
+            }
+        }
+        remove(&dir, remove_model).unwrap();
+        let request = song(serde_json::json!({
+            "style":"chamber pop", "seconds":10, "seed":42, "lm":"0.6b", "xl":xl
+        }));
+        let plan = plan(&dir, &request, gpu(8 * GIB)).unwrap();
+        assert!(plan.dit_path.ends_with(filename));
+        assert_eq!(plan.lm_path, dir.join(DIR).join(Lm::Small.file()));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}

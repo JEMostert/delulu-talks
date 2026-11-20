@@ -362,6 +362,10 @@ static int dit_ggml_generate(DiTGGML *           model,
                 uint32_t w = (uint32_t) bf16_buf[i] << 16;
                 memcpy(&null_emb[i], &w, 4);
             }
+        } else if (model->null_condition_emb->type == GGML_TYPE_F16) {
+            std::vector<ggml_fp16_t> fp16(emb_n);
+            ggml_backend_tensor_get(model->null_condition_emb, fp16.data(), 0, emb_n * sizeof(ggml_fp16_t));
+            ggml_fp16_to_fp32_row(fp16.data(), null_emb.data(), emb_n);
         } else {
             ggml_backend_tensor_get(model->null_condition_emb, null_emb.data(), 0, emb_n * sizeof(float));
         }

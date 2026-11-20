@@ -1,3 +1,4 @@
+import { aceReady } from "./radio";
 import type {
   Settings,
   Status,
@@ -238,7 +239,7 @@ let history: HistoryEntry[] = params.has("empty")
         ),
       );
 
-// Delulu FM: ?radio shows it; ?music=missing leaves YuE2 to download and
+// Delulu FM: ?radio shows it; ?music=missing leaves the generator to download and
 // ?music=cpu pretends there is no graphics card. ?engine=acestep starts on
 // ACE-Step; ?ace=ready has its files installed, ?ace=warm also prepared.
 const musicParam = params.get("music");
@@ -257,39 +258,39 @@ const musicRow = (
   ready: boolean,
 ): MusicModelRow => ({
   id,
-  engine: id.startsWith("yue") ? "yue" : "acestep",
+  engine: "acestep",
   label,
   license,
   bytes,
   state: ready ? "ready" : "missing",
-  terms: id.startsWith("yue") ? null : aceTerms,
+  terms: aceTerms,
 });
 let musicModel: MusicModel = {
   models: [
     musicRow(
-      "yue2-3b-int8",
-      "YuE2 3B",
-      "CC BY-NC 4.0",
-      3960938800,
-      musicParam !== "missing",
+      "ace-step-1.5-xl-turbo",
+      "ACE-Step 1.5 XL Turbo (4B)",
+      "MIT, Apache-2.0",
+      6427395688,
+      false,
     ),
     musicRow(
       "ace-step-1.5-turbo",
-      "ACE-Step 1.5 turbo",
+      "ACE-Step 1.5 Turbo (2B)",
       "MIT, Apache-2.0",
       3671094952,
       aceParam !== null,
     ),
     musicRow(
       "ace-step-1.5-lm-0.6b",
-      "ACE-Step language model 0.6B",
+      "Song Planner 0.6B",
       "MIT",
       709846656,
       aceParam !== null,
     ),
     musicRow(
       "ace-step-1.5-lm-4b",
-      "ACE-Step language model 4B",
+      "Song Planner 4B",
       "MIT",
       4457323648,
       aceParam !== null,
@@ -311,8 +312,8 @@ function musicUpdate(patch: Partial<MusicModel>) {
       ...radio.readiness!,
       music: {
         ...radio.readiness!.music,
-        model: musicReady("yue2-3b-int8"),
         ace: {
+          xl: musicReady("ace-step-1.5-xl-turbo"),
           turbo: musicReady("ace-step-1.5-turbo"),
           lmSmall: musicReady("ace-step-1.5-lm-0.6b"),
           lmLarge: musicReady("ace-step-1.5-lm-4b"),
@@ -543,8 +544,8 @@ let radio: Radio = {
   readiness: {
     music: {
       engine: true,
-      model: musicParam !== "missing",
       ace: {
+        xl: false,
         turbo: aceParam !== null,
         lmSmall: aceParam !== null,
         lmLarge: aceParam !== null,
@@ -557,7 +558,7 @@ let radio: Radio = {
     voice: params.get("voice") === "ready",
   },
   music: {
-    engine: params.get("engine") === "acestep" ? "acestep" : "yue2",
+    engine: params.get("engine") === "acestep-xl" ? "acestep-xl" : "acestep",
     aceLm: "auto",
     aceWarm: aceParam === "warm" ? "delulu-engine mock" : undefined,
   },
@@ -567,10 +568,7 @@ let radioSongs = 0;
 let radioMaking: ReturnType<typeof setTimeout> | undefined;
 const radioReady = () => {
   const m = radio.readiness!.music;
-  const model =
-    radio.music.engine === "acestep"
-      ? m.ace.turbo && (m.ace.lmSmall || m.ace.lmLarge)
-      : m.model;
+  const model = aceReady(m.ace, radio.music);
   return m.engine && m.gpu && model;
 };
 function radioUpdate(patch: Partial<Radio>) {

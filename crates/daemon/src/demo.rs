@@ -386,7 +386,7 @@ pub fn state(now: u64) -> AppState {
                 stt: "large-v3-turbo-q5_0".into(),
                 cleanup: Some("gemma-4-e4b-it-qat-q4_0".into()),
                 tts: Some("supertonic-3".into()),
-                music: Some("yue2".into()),
+                music: Some("ace-step-1.5-turbo".into()),
                 chat: None,
             },
         }),
@@ -437,11 +437,11 @@ pub fn state(now: u64) -> AppState {
                 model("supertonic-3", ModelRole::Tts, "Supertonic 3", 265_000_000, 400, "OpenRAIL-M", ModelState::Missing, true),
                 ModelInfo {
                     non_commercial: true,
-                    ..model("yue2", ModelRole::Music, "YuE2", 4_120_000_000, 7_900, "CC BY-NC 4.0", ModelState::Downloading, true)
+                    ..model("ace-step-1.5-turbo", ModelRole::Music, "ACE-Step 1.5 Turbo (2B)", 3_671_094_952, 3_671, "MIT, Apache-2.0", ModelState::Downloading, true)
                 },
             ],
             downloads: vec![Download {
-                model_id: "yue2".into(),
+                model_id: "ace-step-1.5-turbo".into(),
                 state: DownloadState::Running,
                 done_bytes: 1_310_000_000,
                 total_bytes: 4_120_000_000,

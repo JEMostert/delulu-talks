@@ -1283,6 +1283,7 @@ version = "1.8.0"
 dependencies = [
  "claxon",
  "delulu-cleanup",
+ "delulu-models",
  "ebur128",
  "handy-cpal",
  "hound",

@@ -1,15 +1,15 @@
 //! Run the station headless with the real writer, music engine and voice, to measure it.
 //! `cargo run --release -p delulu-radio --example station -- <data-dir> <items> [host]`
-//! Needs the Gemma and YuE2 models in the app's models folder (or `DELULU_MODELS`)
-//! and `delulu-engine` (set `DELULU_ENGINE` in a checkout). `DELULU_MUSIC_ENGINE=acestep`
-//! makes the music with ACE-Step instead (its files in the same models folder).
+//! Needs Gemma, an ACE-Step generator and a Song Planner in the models folder
+//! (or `DELULU_MODELS`) and `DELULU_ENGINE` in a checkout. Set
+//! `DELULU_MUSIC_ENGINE=acestep-xl` to use XL Turbo.
 //! `DELULU_MIX_GENRES="Soul,Metal,…"` turns on exactly those genres, surprise 0, and
 //! listens to each song as it is ready, so `<items>` songs are drawn in a row; every
 //! song's draw and engine request is printed as a `[draw]` line.
 //! `DELULU_MIX_SURPRISE` (0–100) and `DELULU_MIX_LENGTH="min,max"` (seconds) set
 //! the surprise chance and the length range of that mix.
 use delulu_cleanup::{Cleaner, Sampling};
-use delulu_radio::model::{AceLm, Draft, Host, Music, MusicEngine};
+use delulu_radio::model::{Draft, Host, Music, MusicEngine};
 use delulu_radio::music::{self, Composer, Order};
 use delulu_radio::voice::Voice;
 use delulu_radio::Mix;
@@ -110,8 +110,13 @@ fn main() {
         voice: Voice::new(),
     };
     let station = Station::open(&root).expect("open");
-    if std::env::var("DELULU_MUSIC_ENGINE").as_deref() == Ok("acestep") {
-        station.set_music(MusicEngine::AceStep, AceLm::Auto);
+    let generator = match std::env::var("DELULU_MUSIC_ENGINE").as_deref() {
+        Ok("acestep") => Some(MusicEngine::AceStep),
+        Ok("acestep-xl") => Some(MusicEngine::AceStepXl),
+        _ => None,
+    };
+    if let Some(engine) = generator {
+        station.set_music(engine, station.snapshot().music.ace_lm);
     }
     if host {
         station

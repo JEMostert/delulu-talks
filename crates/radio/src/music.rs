@@ -17,11 +17,7 @@ use std::time::{Duration, Instant};
 
 /// YuE2 3B in ComfyUI's INT8 ConvRot packaging (Comfy-Org/YuE2 at a fixed revision).
 pub const MODEL_FILE: &str = "yue2_3b_int8_convrot.safetensors";
-pub const MODEL_URL: &str = "https://huggingface.co/Comfy-Org/YuE2/resolve/2f76ca75e6ee094169de899cc7fc99d6887e2196/checkpoints/yue2_3b_int8_convrot.safetensors";
-pub const MODEL_SHA256: &str = "96fe199377309001ed8cd26a944baeee8cc31a20ba7c36d1d3c0a7e1f4149db6";
-pub const MODEL_BYTES: u64 = 3_960_938_800;
 pub const MODEL_LABEL: &str = "YuE2 3B";
-pub const MODEL_LICENSE: &str = "CC BY-NC 4.0";
 /// A song that takes longer than this (not counting pauses) is given up.
 const DEADLINE: Duration = Duration::from_secs(40 * 60);
 
@@ -68,6 +64,7 @@ impl Song {
 #[serde(rename_all = "camelCase")]
 pub struct AceSong {
     engine: &'static str,
+    xl: bool,
     pub style: String,
     pub lyrics: String,
     pub seed: u64,
@@ -85,6 +82,7 @@ impl AceSong {
     pub fn new(draft: &Draft, seed: u64, seconds: u32, lm: AceLm) -> AceSong {
         AceSong {
             engine: "acestep",
+            xl: false,
             style: draft.style.clone(),
             // ACE-Step keeps an instrumental instrumental with this, not with
             // "no vocals" in the caption.
@@ -116,15 +114,11 @@ impl Order {
     /// The song for `draft` with the station's music settings; `models` is the app's
     /// models folder.
     pub fn new(draft: &Draft, seed: u64, seconds: u32, music: &Music, models: &Path) -> Order {
-        match music.engine {
-            MusicEngine::Yue2 => Order::Yue2 {
-                model: models.join(MODEL_FILE),
-                song: Song::new(draft, seed, seconds),
-            },
-            MusicEngine::AceStep => Order::AceStep {
-                models: models.to_path_buf(),
-                song: AceSong::new(draft, seed, seconds, music.ace_lm),
-            },
+        let mut song = AceSong::new(draft, seed, seconds, music.ace_lm);
+        song.xl = music.engine == MusicEngine::AceStepXl;
+        Order::AceStep {
+            models: models.to_path_buf(),
+            song,
         }
     }
 
@@ -150,7 +144,8 @@ pub fn provenance(report: &Value) -> BTreeMap<String, String> {
     let ace = report["engine"].as_str() == Some("acestep");
     let label = if ace {
         format!(
-            "ACE-Step 1.5 turbo, LM {} (native)",
+            "ACE-Step 1.5 {}turbo, LM {} (native)",
+            if report["xl"] == true { "XL " } else { "" },
             report["lm"].as_str().unwrap_or("?")
         )
     } else {

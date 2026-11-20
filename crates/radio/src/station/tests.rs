@@ -1,4 +1,5 @@
 use super::*;
+use crate::music;
 use std::cell::Cell;
 use std::sync::atomic::AtomicUsize;
 
@@ -268,8 +269,9 @@ fn breaks_follow_songs_when_voice_is_ready() {
     assert_eq!(s.songs_since_break, 0);
     // Without a voice, songs only.
     fake.voice = false;
+    station.ensure_now();
     make_one(&station, &fake);
-    assert_eq!(station.snapshot().queue[2].kind, Kind::Song);
+    assert_eq!(station.snapshot().queue[1].kind, Kind::Song);
 }
 
 #[test]
@@ -317,22 +319,6 @@ fn requests_reach_the_next_song() {
 }
 
 #[test]
-fn buffer_is_bounded() {
-    let dir = Dir::new();
-    let station = Station::open(&dir.0).unwrap();
-    let mut fake = Fake::new();
-    fake.seconds = 200.0;
-    station.set_on_air(true);
-    make_one(&station, &fake);
-    make_one(&station, &fake);
-    // Two songs and 400 s of audio are enough.
-    assert_eq!(station.work(&fake), Next::Idle);
-    assert_eq!(station.snapshot().queue.len(), 2);
-}
-
-/// YuE2 stays the engine of a station that never chose; the choice reaches the
-/// next song with ACE-Step's language model and the station's length.
-#[test]
 fn the_engine_choice_reaches_the_next_song() {
     let dir = Dir::new();
     let station = Station::open(&dir.0).unwrap();
@@ -346,18 +332,18 @@ fn the_engine_choice_reaches_the_next_song() {
         .unwrap();
     station.set_on_air(true);
     make_one(&station, &fake);
-    station.set_music(MusicEngine::AceStep, AceLm::Large);
+    station.set_music(MusicEngine::AceStepXl, AceLm::Large);
     make_one(&station, &fake);
     let calls = fake.music.lock().unwrap().clone();
-    assert_eq!(calls[0].0.engine, MusicEngine::Yue2);
+    assert_eq!(calls[0].0.engine, MusicEngine::AceStep);
     assert_eq!(
         (calls[1].0.engine, calls[1].0.ace_lm, calls[1].1),
-        (MusicEngine::AceStep, AceLm::Large, 180)
+        (MusicEngine::AceStepXl, AceLm::Large, 180)
     );
     // The choice survives a restart.
     drop(station);
     let reopened = Station::open(&dir.0).unwrap();
-    assert_eq!(reopened.snapshot().music.engine, MusicEngine::AceStep);
+    assert_eq!(reopened.snapshot().music.engine, MusicEngine::AceStepXl);
 }
 
 /// ACE-Step makes a song in under a minute: the station keeps one song ready next
@@ -615,15 +601,19 @@ fn mixed_library_plays_in_order() {
     wav_station(&dir.0);
     let station = Station::open(&dir.0).unwrap();
     station.set_on_air(true);
-    make_one(&station, &Fake::new());
-    let made = station.snapshot().queue[2].clone();
-    assert!(made.file.ends_with(".opus"));
+    let mut made = None;
     let mut aired = Vec::new();
     let mut next = station.ensure_now();
     for _ in 0..5 {
         let item = next.expect("something to air");
         let audio = station.load_audio(&item).unwrap();
         assert!(audio.peak() > 0.01 && audio.seconds() > 2.0, "{}", item.id);
+        if aired.len() == 1 {
+            make_one(&station, &Fake::new());
+            let song = station.snapshot().queue.last().unwrap().clone();
+            assert!(song.file.ends_with(".opus"));
+            made = Some(song.id);
+        }
         aired.push(if item.is_replay() {
             format!("replay of {}", item.file)
         } else {
@@ -637,7 +627,7 @@ fn mixed_library_plays_in_order() {
             "replay of song-a.wav".to_string(),
             "break-b".into(),
             "song-c".into(),
-            made.id.clone(),
+            made.unwrap(),
             // Not the song that just ended.
             "replay of song-c.wav".into(),
         ]
@@ -1083,4 +1073,105 @@ fn failed_mix_write_keeps_the_previous_mix_and_draw_until_retry() {
             .as_deref(),
         Some("Metal")
     );
+}
+
+/// Write the station format emitted before ACE-Step Turbo became the default.
+fn open_yue2_station(root: &Path) -> Station {
+    let (before, _) = wav_station(root);
+    let models = root.join("models");
+    std::fs::create_dir_all(&models).unwrap();
+    let legacy = models.join(music::MODEL_FILE);
+    std::fs::write(&legacy, b"existing checkpoint").unwrap();
+    let path = root.join("station.json");
+    let mut json = serde_json::to_value(&before).unwrap();
+    json["music"] = serde_json::json!({"engine":"yue2","aceLm":"0.6b"});
+    std::fs::write(&path, json.to_string()).unwrap();
+    let station = Station::open(root).unwrap();
+    let after = station.snapshot();
+    assert_eq!(after.history, before.history);
+    for item in &after.history {
+        assert!(station.load_audio(item).unwrap().peak() > 0.01);
+    }
+    assert_eq!(after.music.engine, MusicEngine::AceStep);
+    assert_eq!(after.music.ace_lm, AceLm::Small);
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    assert_eq!(persisted["music"]["engine"], "acestep");
+    assert_eq!(std::fs::read(legacy).unwrap(), b"existing checkpoint");
+    station
+}
+
+#[test]
+fn upgraded_yue2_station_makes_its_next_song_with_turbo() {
+    let dir = Dir::new();
+    let station = open_yue2_station(&dir.0);
+    station.advance();
+    station.set_on_air(true);
+    let fake = Fake::new();
+    make_one(&station, &fake);
+    let music = &fake.music.lock().unwrap()[0].0;
+    assert_eq!(
+        (music.engine, music.ace_lm),
+        (MusicEngine::AceStep, AceLm::Small)
+    );
+    assert!(station
+        .snapshot()
+        .queue
+        .last()
+        .unwrap()
+        .file
+        .ends_with(".opus"));
+}
+
+/// Run explicitly with a native release helper. Downloads both real bundles.
+#[test]
+#[ignore = "requires the release engine and about 11 GB of model downloads"]
+fn native_fm_song_smoke() {
+    use delulu_models::{download, ACE_STEP_LM_SMALL, ACE_STEP_TURBO, ACE_STEP_XL_TURBO};
+    let dir = Dir::new();
+    let station = open_yue2_station(&dir.0);
+    let models = dir.0.join("models");
+    let cancel = AtomicBool::new(false);
+    assert!(!ACE_STEP_TURBO.installed(&models));
+    download(&models, &ACE_STEP_LM_SMALL, &mut |_, _| {}, &cancel).unwrap();
+    let draft = serde_json::from_value(serde_json::json!({
+        "title":"Pulse", "subtitle":"", "style":"instrumental synth pop, bright bass, drums, 110 BPM",
+        "instrumental":true
+    })).unwrap();
+    for generator in [&ACE_STEP_TURBO, &ACE_STEP_XL_TURBO] {
+        if generator.id == ACE_STEP_XL_TURBO.id {
+            station.set_music(MusicEngine::AceStepXl, station.snapshot().music.ace_lm);
+        }
+        download(&models, generator, &mut |_, _| {}, &cancel).unwrap();
+        let settings = station.snapshot().music;
+        let order = music::Order::new(&draft, 42, 10, &settings, &models);
+        let out = dir.0.join("song.wav");
+        let report = music::Composer::default()
+            .compose(
+                &music::helper_path().unwrap(),
+                &order,
+                &out,
+                &|| false,
+                &mut |_| {},
+            )
+            .unwrap();
+        assert_eq!(report["xl"], generator.id == ACE_STEP_XL_TURBO.id);
+        let audio = audio::decode(&out).unwrap();
+        let rms = (audio
+            .samples
+            .iter()
+            .map(|v| f64::from(*v).powi(2))
+            .sum::<f64>()
+            / audio.samples.len() as f64)
+            .sqrt();
+        assert!(audio.seconds() >= 9.0 && audio.rate == 48000 && rms > 0.0001);
+        eprintln!(
+            "{} seed=42 target=10s decoded={}s stereo {}Hz RMS={rms} peak={} {report}",
+            generator.id,
+            audio.seconds(),
+            audio.rate,
+            audio.peak()
+        );
+        std::fs::remove_file(out).unwrap();
+    }
 }

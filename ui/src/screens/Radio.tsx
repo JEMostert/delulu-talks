@@ -13,6 +13,7 @@ import { Icon, type IconName } from "../components/Icon";
 import { errorText, type AppState } from "../state";
 import {
   aceReady,
+  generators,
   clock,
   engineModels,
   genreColor,
@@ -172,12 +173,6 @@ function usePopover() {
   return { open, setOpen, ref };
 }
 
-const engineTip: Record<ipc.MusicEngine, string> = {
-  yue2: "YuE2 makes a song in about its own length. Non-commercial use only.",
-  acestep:
-    "ACE-Step makes a song in under a minute. Tested on NVIDIA graphics cards only.",
-};
-
 /** The engine's name; it opens the engine choice. Installing is on Models. */
 function EngineButton({
   radio,
@@ -193,7 +188,7 @@ function EngineButton({
   // Files can appear without a download event (put there by hand, or found by
   // "Check again"): look again when the popover opens or the check finds more.
   const found = radio.readiness
-    ? JSON.stringify([radio.readiness.music.model, radio.readiness.music.ace])
+    ? JSON.stringify(radio.readiness.music.ace)
     : "";
   useEffect(() => {
     if (open || found) void run(ipc.getMusicModel, []);
@@ -201,21 +196,19 @@ function EngineButton({
   const [choosing, setChoosing] = useState(false);
   const [chooseError, setChooseError] = useState<string>();
   const { music } = radio;
-  const ace = music.engine === "acestep";
   const ids = engineModels(music);
   const rows = models?.models ?? [];
   const has = (id: string) =>
     rows.some((m) => m.id === id && m.state === "ready");
-  const ready = ace
-    ? aceReady(
-        {
-          turbo: has("ace-step-1.5-turbo"),
-          lmSmall: has("ace-step-1.5-lm-0.6b"),
-          lmLarge: has("ace-step-1.5-lm-4b"),
-        },
-        music.aceLm,
-      )
-    : has("yue2-3b-int8");
+  const ready = aceReady(
+    {
+      xl: has(generators["acestep-xl"].id),
+      turbo: has("ace-step-1.5-turbo"),
+      lmSmall: has("ace-step-1.5-lm-0.6b"),
+      lmLarge: has("ace-step-1.5-lm-4b"),
+    },
+    music,
+  );
   const downloading = rows.some(
     (m) => ids.includes(m.id) && m.state === "downloading",
   );
@@ -244,13 +237,13 @@ function EngineButton({
         onClick={() => setOpen(!open)}
       >
         <Icon name="box" size={15} />
-        {ace ? "ACE-Step 1.5" : "YuE2"}
+        {generators[music.engine].label}
         {missing && <span className="warn-dot" aria-label="not installed" />}
       </button>
       {open && (
         <div className="pop engine-pop" role="dialog" aria-label="Music engine">
           <div className="pop-line">
-            <span data-tip={engineTip[music.engine]}>Engine</span>
+            <span>ACE-Step 1.5</span>
             <Segmented
               name="engine"
               label="Music engine"
@@ -258,30 +251,29 @@ function EngineButton({
               disabled={choosing}
               onChange={(v) => void choose(v, music.aceLm)}
               options={[
-                { value: "yue2", label: "YuE2" },
-                { value: "acestep", label: "ACE-Step" },
+                { value: "acestep", label: generators.acestep.label },
+                { value: "acestep-xl", label: generators["acestep-xl"].label },
               ]}
             />
           </div>
-          {ace && (
-            <div className="pop-line">
-              <span data-tip="Automatic takes 4B, which follows the lyrics best, when 8 GB of graphics memory is free, and 0.6B otherwise">
-                Language model
-              </span>
-              <Segmented
-                name="ace-lm"
-                label="ACE-Step language model"
-                value={music.aceLm}
-                disabled={choosing}
-                onChange={(v) => void choose(music.engine, v)}
-                options={[
-                  { value: "auto", label: "Auto" },
-                  { value: "0.6b", label: "0.6B" },
-                  { value: "4b", label: "4B" },
-                ]}
-              />
-            </div>
-          )}
+
+          <div className="pop-line">
+            <span data-tip="Automatic takes 4B, which follows the lyrics best, when 8 GB of graphics memory is free, and 0.6B otherwise">
+              Song Planner
+            </span>
+            <Segmented
+              name="ace-lm"
+              label="Song Planner"
+              value={music.aceLm}
+              disabled={choosing}
+              onChange={(v) => void choose(music.engine, v)}
+              options={[
+                { value: "auto", label: "Auto" },
+                { value: "0.6b", label: "0.6B" },
+                { value: "4b", label: "4B" },
+              ]}
+            />
+          </div>
           <div className="pop-state">
             {downloading ? (
               <>

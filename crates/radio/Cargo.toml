@@ -21,6 +21,7 @@ opus1 = "0.3"
 ogg = "0.9"
 ebur128 = "0.1"
 [dev-dependencies]
+delulu-models = { path = "../models" }
 delulu-cleanup = { path = "../cleanup" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
