@@ -15,14 +15,7 @@ Two optional extras, each with an explicit model download:
   `delulu-engine tts` (ONNX Runtime, no Python), Dutch and English; the model
   (about 400 MB, OpenRAIL-M) downloads only on an explicit Install. Chatterbox
   Turbo in an existing Python environment stays as an opt-in.
-- **Delulu FM** (radio): YuE2 music made natively by the `delulu-engine music`
-  helper (ggml, Vulkan), words from the cleanup model, an AI host speaking the
-  station's language through the native voice. The music model is an explicit
-  download on the Models page; missing pieces are shown as steps to do.
-  ACE-Step 1.5 turbo (acestep.cpp in the same engine, MIT weights, 3.5× real
-  time with its 4B LM on a 5060 Ti against YuE2's 0.9×) is built in as a second
-  engine; choosing it on the Delulu FM page follows. YuE2 stays the default until
-  a blind listening test.
+- **Delulu FM** uses ACE-Step 1.5 Turbo (2B) or XL Turbo (4B) for music, the cleanup model for lyrics and the native voice for its optional host. Both generators use the same Song Planner choices.
 
 ## Build order (each step gated on the previous one being used daily)
 

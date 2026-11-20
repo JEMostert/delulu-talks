@@ -22,6 +22,8 @@ pub const CODES_PER_SECOND: f32 = 5.0;
 /// Folder of the ACE files inside the app's models folder.
 pub const DIR: &str = "ace-step-1.5";
 pub const TEXT_ENCODER: &str = "Qwen3-Embedding-0.6B-Q8_0.gguf";
+pub const XL_DIR: &str = "ace-step-1.5-xl";
+pub const XL_DIT: &str = "acestep-v15-xl-turbo-Q8_0.gguf";
 pub const DIT: &str = "acestep-v15-turbo-Q8_0.gguf";
 pub const VAE: &str = "vae-BF16.gguf";
 
@@ -55,6 +57,8 @@ const MAX_SEQ_LIMIT: usize = 8192;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Song {
+    #[serde(default)]
+    pub xl: bool,
     /// Comma-separated caption: genre, mood, instruments, voice. Sent as written.
     pub style: String,
     /// Section-tagged lyrics (`[Verse]`, `[Chorus]`, …).
@@ -228,12 +232,16 @@ pub fn plan(models: &Path, song: &Song, device: Device) -> Result<Plan, String> 
         )
     };
 
-    let dir = models.join(DIR);
-    let mut missing: Vec<&str> = [TEXT_ENCODER, DIT, VAE]
+    let dir = models.join(if song.xl { XL_DIR } else { DIR });
+    let dit = if song.xl { XL_DIT } else { DIT };
+    let planners = models.join(DIR);
+    let mut missing: Vec<&str> = [TEXT_ENCODER, dit, VAE]
         .into_iter()
         .filter(|f| !dir.join(f).is_file())
         .collect();
-    let lm = match choose_lm(song.lm, device.free, |lm| dir.join(lm.file()).is_file()) {
+    let lm = match choose_lm(song.lm, device.free, |lm| {
+        planners.join(lm.file()).is_file()
+    }) {
         Ok(lm) => Some(lm),
         Err(MissingLm(lm)) => {
             missing.push(lm.file());
@@ -273,9 +281,9 @@ pub fn plan(models: &Path, song: &Song, device: Device) -> Result<Plan, String> 
         // acestep.cpp uses the low 32 bits of its seeds.
         seed: song.seed as u32,
         lm,
-        lm_path: dir.join(lm.file()),
+        lm_path: planners.join(lm.file()),
         text_encoder_path: dir.join(TEXT_ENCODER),
-        dit_path: dir.join(DIT),
+        dit_path: dir.join(dit),
         vae_path: dir.join(VAE),
         device,
         max_seq,
@@ -301,6 +309,7 @@ pub enum Progress {
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Report {
+    pub xl: bool,
     pub engine: &'static str,
     pub device: String,
     pub lm: Option<Lm>,
@@ -479,6 +488,7 @@ pub fn finish(plan: &Plan, raw: Raw, peak_gpu_bytes: Option<u64>) -> Result<Outp
         samples,
         report: Report {
             engine: "acestep",
+            xl: plan.dit_path.ends_with(XL_DIT),
             device: plan.device.description.clone(),
             lm: Some(plan.lm),
             seconds,

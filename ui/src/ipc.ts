@@ -295,10 +295,8 @@ export type RadioReadiness = {
   music: {
     /** The delulu-engine binary (music role) is installed. */
     engine: boolean;
-    /** The YuE2 model is downloaded (Settings → Models). */
-    model: boolean;
     /** ACE-Step's files: text encoder + turbo DiT + VAE, and its language models. */
-    ace: { turbo: boolean; lmSmall: boolean; lmLarge: boolean };
+    ace: { xl: boolean; turbo: boolean; lmSmall: boolean; lmLarge: boolean };
     /** The compute device the engine found. */
     device: string | null;
     /** A graphics card; the processor alone is far too slow. */
@@ -358,7 +356,7 @@ export type Radio = {
   readiness: RadioReadiness | null;
   music: RadioMusic;
 };
-export type MusicEngine = "yue2" | "acestep";
+export type MusicEngine = "acestep" | "acestep-xl";
 export type AceLm = "auto" | "0.6b" | "4b";
 export type RadioMusic = {
   engine: MusicEngine;
@@ -417,7 +415,7 @@ export type ModelTerms = {
 };
 export type MusicModelRow = {
   id: string;
-  engine: "yue" | "acestep";
+  engine: "acestep";
   label: string;
   license: string;
   bytes: number;

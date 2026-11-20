@@ -29,11 +29,16 @@ export type ReadinessStep = {
 
 /** ACE-Step's files are all here for this language-model choice; on auto either
  * language model will do. */
+export const generators = {
+  acestep: { label: "Turbo (2B)", id: "ace-step-1.5-turbo" },
+  "acestep-xl": { label: "XL Turbo (4B)", id: "ace-step-1.5-xl-turbo" },
+};
+
 export function aceReady(
   ace: RadioReadiness["music"]["ace"],
-  aceLm: RadioMusic["aceLm"],
+  { engine, aceLm }: RadioMusic,
 ): boolean {
-  if (!ace.turbo) return false;
+  if (!(engine === "acestep-xl" ? ace.xl : ace.turbo)) return false;
   if (aceLm === "0.6b") return ace.lmSmall;
   if (aceLm === "4b") return ace.lmLarge;
   return ace.lmSmall || ace.lmLarge;
@@ -42,13 +47,12 @@ export function aceReady(
 /** The registry models that installing an engine downloads. On auto both of
  * ACE-Step's language models come, so it can pick by free graphics memory. */
 export function engineModels(music: RadioMusic): string[] {
-  if (music.engine === "yue2") return ["yue2-3b-int8"];
   const lms = {
     auto: ["ace-step-1.5-lm-0.6b", "ace-step-1.5-lm-4b"],
     "0.6b": ["ace-step-1.5-lm-0.6b"],
     "4b": ["ace-step-1.5-lm-4b"],
   }[music.aceLm];
-  return ["ace-step-1.5-turbo", ...lms];
+  return [generators[music.engine].id, ...lms];
 }
 
 /** Bytes still to download for these models. */
@@ -61,26 +65,17 @@ export function missingBytes(models: MusicModel | null, ids: string[]): number {
 /** What Delulu FM needs, in the order to fix it. */
 export function readinessSteps(
   r: RadioReadiness | null,
-  music: RadioMusic = { engine: "yue2", aceLm: "auto" },
+  music: RadioMusic = { engine: "acestep", aceLm: "auto" },
 ): ReadinessStep[] {
   if (!r) return [];
   const { music: m } = r;
-  const modelStep: ReadinessStep =
-    music.engine === "acestep"
-      ? {
-          id: "model",
-          label: "Music model (ACE-Step 1.5)",
-          ok: aceReady(m.ace, music.aceLm),
-          models: true,
-          help: "Install ACE-Step on the Models page. Nothing downloads until you ask.",
-        }
-      : {
-          id: "model",
-          label: "Music model (YuE2, about 4 GB)",
-          ok: m.model,
-          models: true,
-          help: "Download YuE2 on the Models page. Nothing downloads until you ask.",
-        };
+  const modelStep: ReadinessStep = {
+    id: "model",
+    label: `ACE-Step 1.5 ${generators[music.engine].label}`,
+    ok: aceReady(m.ace, music),
+    models: true,
+    help: "Install ACE-Step on the Models page. Nothing downloads until you ask.",
+  };
   return [
     {
       id: "engine",

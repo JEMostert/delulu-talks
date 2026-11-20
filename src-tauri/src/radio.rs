@@ -53,8 +53,7 @@ pub(crate) struct Readiness {
 pub(crate) struct MusicReadiness {
     /// The `delulu-engine` binary, which runs the music helper, is installed.
     engine: bool,
-    /// The YuE2 model is downloaded.
-    model: bool,
+
     /// Which of ACE-Step's files are downloaded.
     ace: AceReadiness,
     /// The compute device the helper found, e.g. "Vulkan0 (NVIDIA GeForce RTX 5060 Ti)".
@@ -68,6 +67,7 @@ pub(crate) struct MusicReadiness {
 pub(crate) struct AceReadiness {
     /// Text encoder, turbo DiT and VAE.
     turbo: bool,
+    xl: bool,
     lm_small: bool,
     lm_large: bool,
 }
@@ -409,9 +409,7 @@ fn view(app: &tauri::AppHandle) -> RadioView {
         surprise: j.draw.as_ref().is_some_and(|d| d.surprise),
         // From the song being made: the station's engine may have changed since.
         preparing: j.kind == Kind::Song
-            && composing
-                .as_ref()
-                .is_some_and(|m| m.engine == MusicEngine::AceStep)
+            && composing.is_some()
             && s.music.ace_warm.as_deref() != Some(warm_key().as_str()),
     });
     let pending: Vec<Request> = s.requests.iter().rev().take(4).rev().cloned().collect();
@@ -515,15 +513,13 @@ fn probe(helper: &Path) -> Option<(String, bool)> {
 }
 
 /// Which music models are installed, for the readiness checklist.
-fn model_readiness(dir: &Path) -> (bool, AceReadiness) {
-    (
-        delulu_stt::file_ready(dir, &crate::music::MUSIC_MODEL),
-        AceReadiness {
-            turbo: delulu_models::ACE_STEP_TURBO.installed(dir),
-            lm_small: delulu_models::ACE_STEP_LM_SMALL.installed(dir),
-            lm_large: delulu_models::ACE_STEP_LM_LARGE.installed(dir),
-        },
-    )
+fn model_readiness(dir: &Path) -> AceReadiness {
+    AceReadiness {
+        xl: delulu_models::ACE_STEP_XL_TURBO.installed(dir),
+        turbo: delulu_models::ACE_STEP_TURBO.installed(dir),
+        lm_small: delulu_models::ACE_STEP_LM_SMALL.installed(dir),
+        lm_large: delulu_models::ACE_STEP_LM_LARGE.installed(dir),
+    }
 }
 
 /// A music model was downloaded or deleted: correct the checklist now rather
@@ -534,8 +530,7 @@ pub(crate) fn models_changed(app: &tauri::AppHandle) {
         // Read under the lock, like `check`, so neither stores an older view.
         let mut readiness = radio.readiness.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(r) = readiness.as_mut() {
-            (r.music.model, r.music.ace) =
-                model_readiness(&app.state::<Shell>().store.models_dir());
+            r.music.ace = model_readiness(&app.state::<Shell>().store.models_dir());
         }
     }
     emit(app);
@@ -551,11 +546,10 @@ fn check(app: &tauri::AppHandle) -> Readiness {
     // The model files are read under the lock, like `models_changed`, so a check
     // that started before a download or delete finished cannot store older facts.
     let mut cached = radio.readiness.lock().unwrap_or_else(|e| e.into_inner());
-    let (model, ace) = model_readiness(&s.store.models_dir());
+    let ace = model_readiness(&s.store.models_dir());
     let readiness = Readiness {
         music: MusicReadiness {
             engine: helper.is_some(),
-            model,
             ace,
             gpu: found.as_ref().is_some_and(|f| f.1),
             device: found.map(|f| f.0),
@@ -905,15 +899,10 @@ impl Backend for AppBackend {
         })?;
         let models = self.app.state::<Shell>().store.models_dir();
         if !crate::music::ready(settings, &models) || crate::music::changing(&self.app, settings) {
-            return Err(RadioError::Unavailable(match settings.engine {
-                MusicEngine::Yue2 => {
-                    "Download the music model in Settings → Models to make songs.".into()
-                }
-                MusicEngine::AceStep => {
-                    "Install ACE-Step under Music engine on the Delulu FM page to make songs."
-                        .into()
-                }
-            }));
+            return Err(RadioError::Unavailable(
+                "Download the generator and Song Planner in Settings → Models to make songs."
+                    .into(),
+            ));
         }
         let radio = self.radio();
         *radio.composing.lock().unwrap_or_else(|e| e.into_inner()) = Some(settings.clone());
@@ -938,10 +927,8 @@ impl Backend for AppBackend {
         *radio.stage.lock().unwrap_or_else(|e| e.into_inner()) = None;
         *radio.composing.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let report = result?;
-        if settings.engine == MusicEngine::AceStep {
-            if let Ok(station) = radio.station() {
-                station.set_ace_warm(warm_key());
-            }
+        if let Ok(station) = radio.station() {
+            station.set_ace_warm(warm_key());
         }
         Ok(music::provenance(&report))
     }

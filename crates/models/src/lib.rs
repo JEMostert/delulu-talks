@@ -29,7 +29,6 @@ pub enum Engine {
     Whisper,
     Parakeet,
     Llama,
-    Yue,
     AceStep,
     Supertonic,
 }
@@ -39,7 +38,6 @@ impl Engine {
             Self::Whisper => "whisper",
             Self::Parakeet => "parakeet",
             Self::Llama => "llama",
-            Self::Yue => "yue",
             Self::AceStep => "acestep",
             Self::Supertonic => "supertonic",
         }
@@ -250,24 +248,6 @@ pub static GEMMA_4_E4B: Model = Model {
     terms: None,
 };
 
-/// YuE2 3B in ComfyUI's INT8 ConvRot packaging (Comfy-Org/YuE2 at a fixed revision).
-pub static YUE2_3B: Model = Model {
-    id: "yue2-3b-int8",
-    role: Role::Music,
-    engine: Engine::Yue,
-    label: "YuE2 3B",
-    license: "CC BY-NC 4.0",
-    path: "yue2_3b_int8_convrot.safetensors",
-    files: &[ModelFile {
-        file: "yue2_3b_int8_convrot.safetensors",
-        url: "https://huggingface.co/Comfy-Org/YuE2/resolve/2f76ca75e6ee094169de899cc7fc99d6887e2196/checkpoints/yue2_3b_int8_convrot.safetensors",
-        sha256: "96fe199377309001ed8cd26a944baeee8cc31a20ba7c36d1d3c0a7e1f4149db6",
-        bytes: 3_960_938_800,
-    }],
-    bytes: 3_960_938_800,
-    terms: None,
-};
-
 macro_rules! ace_step {
     ($file:literal) => {
         concat!(
@@ -278,8 +258,11 @@ macro_rules! ace_step {
 }
 macro_rules! ace_step_file {
     ($file:literal, $sha:literal, $bytes:literal) => {
+        ace_step_file!(@entry "ace-step-1.5", $file, $sha, $bytes)
+    };
+    (@entry $dir:literal, $file:literal, $sha:literal, $bytes:literal) => {
         ModelFile {
-            file: concat!("ace-step-1.5/", $file),
+            file: concat!($dir, "/", $file),
             url: ace_step!($file),
             sha256: $sha,
             bytes: $bytes,
@@ -301,41 +284,53 @@ Songs you make may be used commercially. The ACE-Step authors ask that you check
 originality, say that they are AI-generated, and get permission before adapting protected material.",
 };
 
-static ACE_STEP_TURBO_FILES: [ModelFile; 4] = [
-    ace_step_file!(
-        "LICENSE",
-        "05a6bce42a62636d2cfb24139cc008b6b899754e244175814bb5dd2f4a485357",
-        1_064
-    ),
-    ace_step_file!(
-        "Qwen3-Embedding-0.6B-Q8_0.gguf",
-        "972f23255e46adfe744a0eb9a0039f3c63988f65753b0968d776e8b27168c321",
-        784_144_960
-    ),
-    ace_step_file!(
-        "acestep-v15-turbo-Q8_0.gguf",
-        "288f708a61cfc241013a98a62f98ba331f83fe34d0d3559acdd9b0f6a2f7cd6b",
-        2_549_528_000
-    ),
-    ace_step_file!(
-        "vae-BF16.gguf",
-        "0599862ac5d15cd308e1d2e368373aea6c02e25ebd1737ad4a4562a0901b0ef8",
-        337_420_928
-    ),
-];
+macro_rules! generator_files {
+    ($dir:literal, $dit:literal, $sha:literal, $bytes:literal) => {
+        [
+            ace_step_file!(@entry $dir, "LICENSE",
+                "05a6bce42a62636d2cfb24139cc008b6b899754e244175814bb5dd2f4a485357", 1_064),
+            ace_step_file!(@entry $dir, "Qwen3-Embedding-0.6B-Q8_0.gguf",
+                "972f23255e46adfe744a0eb9a0039f3c63988f65753b0968d776e8b27168c321", 784_144_960),
+            ace_step_file!(@entry $dir, $dit, $sha, $bytes),
+            ace_step_file!(@entry $dir, "vae-BF16.gguf",
+                "0599862ac5d15cd308e1d2e368373aea6c02e25ebd1737ad4a4562a0901b0ef8", 337_420_928),
+        ]
+    };
+}
 
+static ACE_STEP_TURBO_FILES: [ModelFile; 4] = generator_files!(
+    "ace-step-1.5",
+    "acestep-v15-turbo-Q8_0.gguf",
+    "288f708a61cfc241013a98a62f98ba331f83fe34d0d3559acdd9b0f6a2f7cd6b",
+    2_549_528_000
+);
+static ACE_STEP_XL_FILES: [ModelFile; 4] = generator_files!(
+    "ace-step-1.5-xl",
+    "acestep-v15-xl-turbo-Q8_0.gguf",
+    "4f1044fb646374fb5730e10f64325766883eb2fc02a643c1b403f2d61f39dc19",
+    5_305_828_736
+);
 /// ACE-Step 1.5 turbo for `delulu-engine music` (crates/music-ace): text encoder,
 /// turbo DiT and VAE. Every song also needs one of the two language models below.
 pub static ACE_STEP_TURBO: Model = Model {
     id: "ace-step-1.5-turbo",
     role: Role::Music,
     engine: Engine::AceStep,
-    label: "ACE-Step 1.5 turbo",
+    label: "ACE-Step 1.5 Turbo (2B)",
     license: "MIT, Apache-2.0",
     path: "ace-step-1.5",
     files: &ACE_STEP_TURBO_FILES,
     bytes: total(&ACE_STEP_TURBO_FILES),
     terms: Some(&ACE_STEP_TERMS),
+};
+
+pub static ACE_STEP_XL_TURBO: Model = Model {
+    id: "ace-step-1.5-xl-turbo",
+    label: "ACE-Step 1.5 XL Turbo (4B)",
+    path: "ace-step-1.5-xl",
+    files: &ACE_STEP_XL_FILES,
+    bytes: total(&ACE_STEP_XL_FILES),
+    ..ACE_STEP_TURBO
 };
 
 static ACE_STEP_LM_SMALL_FILES: [ModelFile; 1] = [ace_step_file!(
@@ -350,7 +345,7 @@ pub static ACE_STEP_LM_SMALL: Model = Model {
     id: "ace-step-1.5-lm-0.6b",
     role: Role::Music,
     engine: Engine::AceStep,
-    label: "ACE-Step language model 0.6B",
+    label: "Song Planner 0.6B",
     license: "MIT",
     path: "ace-step-1.5/acestep-5Hz-lm-0.6B-Q8_0.gguf",
     files: &ACE_STEP_LM_SMALL_FILES,
@@ -370,7 +365,7 @@ pub static ACE_STEP_LM_LARGE: Model = Model {
     id: "ace-step-1.5-lm-4b",
     role: Role::Music,
     engine: Engine::AceStep,
-    label: "ACE-Step language model 4B",
+    label: "Song Planner 4B",
     license: "MIT",
     path: "ace-step-1.5/acestep-5Hz-lm-4B-Q8_0.gguf",
     files: &ACE_STEP_LM_LARGE_FILES,
@@ -544,8 +539,8 @@ pub static MODELS: [&Model; 9] = [
     &WHISPER_SMALL,
     &PARAKEET_ULTRA,
     &GEMMA_4_E4B,
-    &YUE2_3B,
     &ACE_STEP_TURBO,
+    &ACE_STEP_XL_TURBO,
     &ACE_STEP_LM_SMALL,
     &ACE_STEP_LM_LARGE,
     &SUPERTONIC_3,

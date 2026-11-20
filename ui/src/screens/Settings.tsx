@@ -169,10 +169,6 @@ const AI_VOICE = {
   tag: "AI-generated voice",
   tip: "Use restrictions apply to everything the voices say. Say the audio is machine generated wherever you share it.",
 };
-const NON_COMMERCIAL = {
-  tag: "Non-commercial",
-  tip: "Songs made with it may not be used commercially",
-};
 
 /** The voice model's credit, also when the voice command cannot be asked. */
 const voiceFallback: Licence = {
@@ -184,13 +180,6 @@ const voiceFallback: Licence = {
 };
 /** Music credits, also when the music models cannot be listed. */
 const musicFallback: Licence[] = [
-  {
-    model: "YuE2 3B",
-    credit: "YuE2 by M-A-P",
-    name: "CC BY-NC 4.0",
-    url: "https://huggingface.co/m-a-p/YuE2-3B",
-    duty: NON_COMMERCIAL,
-  },
   {
     model: "ACE-Step 1.5",
     credit: "ACE-Step 1.5 by ACE Studio and StepFun",
@@ -217,17 +206,13 @@ function speechRows(models: ipc.ModelStatus[]): Licence[] {
 }
 
 function musicRows(music: ipc.MusicModel): Licence[] {
-  return music.models.map((m) =>
-    m.engine === "yue"
-      ? { ...musicFallback[0], model: m.label, name: m.license }
-      : {
-          model: m.label,
-          credit: m.terms?.credit ?? musicFallback[1].credit,
-          name: m.terms?.name ?? m.license,
-          url: m.terms?.url ?? musicFallback[1].url,
-          text: m.terms?.text,
-        },
-  );
+  return music.models.map((m) => ({
+    model: m.label,
+    credit: m.terms?.credit ?? musicFallback[0].credit,
+    name: m.terms?.name ?? m.license,
+    url: m.terms?.url ?? musicFallback[0].url,
+    text: m.terms?.text,
+  }));
 }
 
 function voiceRow(voice: ipc.VoiceStatus): Licence {

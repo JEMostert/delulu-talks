@@ -10,11 +10,11 @@ The backend lives in `crates/radio/src/mix.rs` (catalogue, draw, shuffle, statio
 - **Repeats:** with two or more genres in the pool, never the same genre three songs in a row. With three or more, never the same genre twice in a row.
 - **Mood:** one enabled mood (any mood when none is on).
 - **"Any" choices:** vocals is instrumental about one time in three. Energy is uniform.
-- **Length:** a length between `lengthMinSeconds` and `lengthMaxSeconds` (default 2:00–4:30, allowed 1:00–5:00), on a 5-second grid, every value equally likely. Equal bounds give a fixed length. ACE-Step makes exactly that length. For YuE2 it is the maximum, and the lyric writer sizes the words to it: about one sung line per 5–9 seconds, with writer tokens and the fallback form scaled to match. The item records the target as `provenance.targetSeconds`; `seconds` is the length actually made.
+- **Length:** a length between `lengthMinSeconds` and `lengthMaxSeconds` (default 2:00–4:30, allowed 1:00–5:00), on a 5-second grid, every value equally likely. Equal bounds give a fixed length. ACE-Step makes exactly that length. The lyric writer sizes the words to it: about one sung line per 5–9 seconds, with writer tokens and the fallback form scaled to match. The item records the target as `provenance.targetSeconds`; `seconds` is the length actually made.
 - **Lock:** while a genre lock holds, only that genre is drawn.
 - **Request:** a request song draws no genre or mood. The request decides its style, and it has `request` set and `genre`/`mood` null.
 - **Mix changes:** a change applies to songs not written yet. The song being written is drawn again. Ready songs keep their draw.
-- **Engine tags:** the drawn genre and mood reach the lyric writer's prompt and the music engine's style tags, for both YuE2 and ACE-Step.
+- **Engine tags:** the drawn genre and mood reach the lyric writer's prompt and the music engine's style tags, for both ACE-Step generators.
 
 ## Commands
 
@@ -53,7 +53,7 @@ Mix edits, shuffle and station activation return an error if the new mix cannot 
 
 ## Engine limits
 
-ACE-Step accepts 10–600 s. YuE2's context holds 24,576 positions. After the longest score it writes (8,192 tokens) and the prompt, room is left for at least 300 s of music. So 1:00–5:00 needs no per-engine clamp, and `lengthLimits` is the same for both engines. YuE2 may still end a song before its maximum.
+ACE-Step accepts 10–600 s. Both Turbo and XL Turbo support the full station length range.
 
 ## Upgrading a station
 

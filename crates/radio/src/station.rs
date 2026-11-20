@@ -20,12 +20,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-/// Ready programme with YuE2, which makes a song in about its own length: at most
-/// this many items…
-pub const BUFFER_ITEMS: usize = 3;
-/// …and at least two songs or this much audio.
-pub const BUFFER_SECONDS: f64 = 360.0;
-pub const BUFFER_SONGS: usize = 2;
 /// With ACE-Step a song takes under a minute, so one ready song next to the one on
 /// air covers it, dictation pauses included. A shorter programme lets a new
 /// direction or request reach the air a song sooner.
@@ -880,11 +874,8 @@ impl Station {
     fn needs_more(s: &State) -> bool {
         let songs = s.queue.iter().filter(|i| i.kind == Kind::Song).count();
         let seconds: f64 = s.queue.iter().map(|i| i.seconds).sum();
-        let (items, min_songs, min_seconds) = match s.music.engine {
-            MusicEngine::Yue2 => (BUFFER_ITEMS, BUFFER_SONGS, BUFFER_SECONDS),
-            MusicEngine::AceStep => (ACE_BUFFER_ITEMS, ACE_BUFFER_SONGS, ACE_BUFFER_SECONDS),
-        };
-        s.queue.len() < items && (songs < min_songs || seconds < min_seconds)
+        s.queue.len() < ACE_BUFFER_ITEMS
+            && (songs < ACE_BUFFER_SONGS || seconds < ACE_BUFFER_SECONDS)
     }
 
     /// The last finished song a break can talk about.

@@ -1,7 +1,6 @@
 # delulu-music-ace
 
-ACE-Step 1.5 turbo for Delulu FM, as the second engine of `delulu-engine music`
-(YuE2 stays the default). It wraps [acestep.cpp](https://github.com/ServeurpersoCom/acestep.cpp)
+ACE-Step 1.5 Turbo (2B, default) and XL Turbo (4B) for Delulu FM. It wraps [acestep.cpp](https://github.com/ServeurpersoCom/acestep.cpp)
 (MIT) instead of porting it: `build.rs` compiles its core library and `src/shim.cpp`
 into the engine, linked against the one ggml that llama-cpp-sys-2 builds.
 
@@ -11,6 +10,8 @@ echo '{"engine":"acestep","style":"English, synth-pop, 112 BPM, female vocal",
        "seconds":60,"language":"en","lm":"auto"}' |
   delulu-engine music generate --models ~/.local/share/delulu-talks/models --out song.wav
 ```
+
+Set `"xl":true` for XL Turbo. Its generator bundle lives in `<models>/ace-step-1.5-xl/`. Both generators read the planner from `<models>/ace-step-1.5/`.
 
 Request fields: `style` (the caption, sent as written), `lyrics` (section tags such
 as `[Verse]`), `seed`, `seconds` (10–600; ACE delivers exactly this length), and

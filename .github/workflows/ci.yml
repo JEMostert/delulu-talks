@@ -4,6 +4,11 @@ on:
   pull_request:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      fm_smoke:
+        description: Download both FM generators and render two native Apple Silicon songs
+        type: boolean
+        default: false
 jobs:
   check:
     runs-on: ubuntu-24.04
@@ -48,6 +53,11 @@ jobs:
           cp target/release/bundle/dmg/*.dmg macos-assets/
           bash scripts/verify-macos.sh macos-assets/*.dmg macos-assets/Delulu-Talks_aarch64.app.tar.gz
       - run: bash scripts/test-macos-update.sh macos-assets/*.app.tar.gz
+      - name: Render and decode both FM generators on Apple Silicon
+        if: github.event_name == 'workflow_dispatch' && inputs.fm_smoke
+        run: |
+          test "$(uname -m)" = arm64
+          DELULU_ENGINE="$PWD/target/release/delulu-engine" cargo test --release --locked -p delulu-radio native_fm_song_smoke -- --ignored --nocapture
       - uses: actions/upload-artifact@v4
         with:
           name: macos-arm64

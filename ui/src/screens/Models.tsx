@@ -280,7 +280,7 @@ export function Models({ state }: { state: AppState }) {
     action: voiceAction,
   };
 
-  // Music: YuE2 and ACE-Step's parts. Use picks Delulu FM's engine.
+  // Both generators use the same planner rows.
   const radio = state.radio.view?.radio;
   const engine = radio?.music;
   const mm = music.models;
@@ -291,10 +291,11 @@ export function Models({ state }: { state: AppState }) {
   const musicRows = (mm?.models ?? []).map((m): ModelRow => {
     const lm = lmOf[m.id];
     const error = music.errorFor(m.id);
-    const ace = engine?.engine === "acestep";
+    const generator =
+      m.id === "ace-step-1.5-xl-turbo" ? "acestep-xl" : "acestep";
     const inUse = lm
-      ? ace && (engine.aceLm === lm || engine.aceLm === "auto")
-      : engine?.engine === (m.engine === "yue" ? "yue2" : "acestep");
+      ? engine && (engine.aceLm === lm || engine.aceLm === "auto")
+      : engine?.engine === generator;
     let action: ReactNode;
     if (mm?.unavailable)
       // Why is in the Music group's header (music.error).
@@ -338,12 +339,7 @@ export function Models({ state }: { state: AppState }) {
                 type="button"
                 className="button small"
                 data-tip="Applies from the next song"
-                onClick={() =>
-                  choose(
-                    m.engine === "yue" ? "yue2" : "acestep",
-                    radio.music.aceLm,
-                  )
-                }
+                onClick={() => choose(generator, radio.music.aceLm)}
               >
                 Use
               </button>
@@ -353,8 +349,7 @@ export function Models({ state }: { state: AppState }) {
       );
     return {
       id: m.id,
-      name: m.label === "YuE2 3B" ? "YuE2" : m.label,
-      tip: m.engine === "yue" ? "Non-commercial use only" : undefined,
+      name: m.label,
       usedBy: "Delulu FM",
       licence: {
         name: m.license,
@@ -386,13 +381,14 @@ export function Models({ state }: { state: AppState }) {
           Engine missing
         </Tag>
       )}
-      {engine?.engine === "acestep" && (
-        <span data-tip="ACE-Step language model">
+      {engine && (
+        <span data-tip="Song Planner">
+          Song Planner{" "}
           <Segmented
             name="ace-lm"
-            label="ACE-Step language model"
+            label="Song Planner"
             value={engine.aceLm}
-            onChange={(lm) => choose("acestep", lm)}
+            onChange={(lm) => choose(engine.engine, lm)}
             options={(["auto", "0.6b", "4b"] as const).map((value) => ({
               value,
               label: lmLabels[value],

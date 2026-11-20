@@ -97,15 +97,14 @@ impl Host {
     }
 }
 
-/// Which engine makes the music. YuE2 stays the default until the owner's
-/// listening test; ACE-Step 1.5 is several times faster.
+/// The generator for future songs. Old YuE2 stations open on Turbo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum MusicEngine {
     #[default]
-    #[serde(rename = "yue2")]
-    Yue2,
-    #[serde(rename = "acestep")]
+    #[serde(rename = "acestep", alias = "yue2")]
     AceStep,
+    #[serde(rename = "acestep-xl")]
+    AceStepXl,
 }
 
 /// ACE-Step's language model: by free graphics memory, or fixed by the listener.
@@ -465,7 +464,7 @@ mod tests {
         assert!(s.on_air);
         assert_eq!(s.version, SCHEMA);
         assert_eq!(s.mix, Mix::default());
-        // A station from before the engine choice keeps YuE2.
-        assert_eq!(s.music.engine, MusicEngine::Yue2);
+        // A station from before the engine choice starts on Turbo.
+        assert_eq!(s.music.engine, MusicEngine::AceStep);
     }
 }

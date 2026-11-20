@@ -1,17 +1,18 @@
-//! The optional music models for Delulu FM: YuE2, and ACE-Step 1.5 (turbo plus a
-//! 0.6B or 4B language model). Explicit downloads into the app's own models folder,
+//! The optional music models for Delulu FM: ACE-Step 1.5 Turbo and XL Turbo plus a
+//! 0.6B or 4B Song Planner. Explicit downloads into the app's own models folder,
 //! cancel, and delete. Nothing downloads on its own, and only these app-owned files
 //! (and their partial downloads) are ever removed.
 use super::*;
-use delulu_models::{Model, ACE_STEP_LM_LARGE, ACE_STEP_LM_SMALL, ACE_STEP_TURBO, YUE2_3B};
+use delulu_models::{
+    Model, ACE_STEP_LM_LARGE, ACE_STEP_LM_SMALL, ACE_STEP_TURBO, ACE_STEP_XL_TURBO,
+};
 use delulu_radio::model::{AceLm, Music, MusicEngine};
 use std::path::Path;
 
-pub(crate) static MUSIC_MODEL: delulu_models::ModelFile = YUE2_3B.files[0];
 /// Every music model, in the order Settings → Models lists them.
 const MODELS: [&Model; 4] = [
-    &YUE2_3B,
     &ACE_STEP_TURBO,
+    &ACE_STEP_XL_TURBO,
     &ACE_STEP_LM_SMALL,
     &ACE_STEP_LM_LARGE,
 ];
@@ -45,7 +46,7 @@ pub(crate) struct TermsView {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MusicModelRow {
     id: &'static str,
-    /// yue or acestep
+    /// Native music runtime.
     engine: &'static str,
     label: &'static str,
     license: &'static str,
@@ -75,24 +76,31 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// The models a song with these settings may load: YuE2, or ACE-Step's turbo set
+/// The models a song with these settings may load: the selected generator
 /// and the language models its choice allows (auto takes whichever is installed).
 pub(crate) fn needed(music: &Music) -> Vec<&'static Model> {
-    match (music.engine, music.ace_lm) {
-        (MusicEngine::Yue2, _) => vec![&YUE2_3B],
-        (MusicEngine::AceStep, AceLm::Small) => vec![&ACE_STEP_TURBO, &ACE_STEP_LM_SMALL],
-        (MusicEngine::AceStep, AceLm::Large) => vec![&ACE_STEP_TURBO, &ACE_STEP_LM_LARGE],
-        (MusicEngine::AceStep, AceLm::Auto) => {
-            vec![&ACE_STEP_TURBO, &ACE_STEP_LM_SMALL, &ACE_STEP_LM_LARGE]
+    let generator = generator(music.engine);
+    match music.ace_lm {
+        AceLm::Small => vec![generator, &ACE_STEP_LM_SMALL],
+        AceLm::Large => vec![generator, &ACE_STEP_LM_LARGE],
+        AceLm::Auto => {
+            vec![generator, &ACE_STEP_LM_SMALL, &ACE_STEP_LM_LARGE]
         }
+    }
+}
+
+fn generator(engine: MusicEngine) -> &'static Model {
+    match engine {
+        MusicEngine::AceStep => &ACE_STEP_TURBO,
+        MusicEngine::AceStepXl => &ACE_STEP_XL_TURBO,
     }
 }
 
 /// Songs with these settings can be made from what is installed.
 pub(crate) fn ready(music: &Music, dir: &Path) -> bool {
-    match (music.engine, music.ace_lm) {
-        (MusicEngine::AceStep, AceLm::Auto) => {
-            ACE_STEP_TURBO.installed(dir)
+    match music.ace_lm {
+        AceLm::Auto => {
+            generator(music.engine).installed(dir)
                 && (ACE_STEP_LM_SMALL.installed(dir) || ACE_STEP_LM_LARGE.installed(dir))
         }
         _ => needed(music).iter().all(|m| m.installed(dir)),
@@ -214,7 +222,7 @@ pub(crate) fn get_music_model(app: tauri::AppHandle) -> MusicModelStatus {
     status(&app)
 }
 
-/// Download the given models one after another (YuE2 when none are given),
+/// Download the given models one after another (Turbo when none are given),
 /// skipping those already here. One download runs at a time.
 #[tauri::command]
 pub(crate) fn download_music_model(
@@ -222,7 +230,7 @@ pub(crate) fn download_music_model(
     ids: Option<Vec<String>>,
 ) -> Result<MusicModelStatus, String> {
     let dir = app.state::<Shell>().store.models_dir();
-    let ids = ids.unwrap_or_else(|| vec![YUE2_3B.id.to_string()]);
+    let ids = ids.unwrap_or_else(|| vec![ACE_STEP_TURBO.id.to_string()]);
     let models: Vec<&'static Model> = ids
         .iter()
         .map(|id| model(id))
@@ -286,14 +294,14 @@ pub(crate) fn cancel_music_download(app: tauri::AppHandle) {
         .store(true, Ordering::SeqCst);
 }
 
-/// Remove a downloaded model (YuE2 when none is given). A song in the making that
+/// Remove a downloaded model (Turbo when none is given). A song in the making that
 /// may use it stops first.
 #[tauri::command]
 pub(crate) fn delete_music_model(
     app: tauri::AppHandle,
     id: Option<String>,
 ) -> Result<MusicModelStatus, String> {
-    let model = model(id.as_deref().unwrap_or(YUE2_3B.id))?;
+    let model = model(id.as_deref().unwrap_or(ACE_STEP_TURBO.id))?;
     let m = app.state::<MusicModel>();
     if !lock(&m.downloading).is_empty() {
         return Err("Cancel the download first.".into());
@@ -327,7 +335,6 @@ mod tests {
     /// The engines open the files by these names; the registry downloads them.
     #[test]
     fn registry_names_the_files_the_engines_open() {
-        assert_eq!(super::MUSIC_MODEL.file, delulu_radio::music::MODEL_FILE);
         assert_eq!(
             crate::cleanup::CLEANUP_MODEL.file,
             delulu_cleanup::MODEL_FILE
@@ -342,7 +349,7 @@ mod tests {
         assert!(!claim(&downloading, &[]));
         assert!(downloading.try_lock().is_ok());
         assert!(claim(&downloading, &[&ACE_STEP_TURBO]));
-        assert!(!claim(&downloading, &[&YUE2_3B]));
+        assert!(!claim(&downloading, &[&ACE_STEP_XL_TURBO]));
         assert!(downloading.try_lock().is_ok());
         assert_eq!(*lock(&downloading), [ACE_STEP_TURBO.id]);
     }
@@ -361,11 +368,11 @@ mod tests {
         assert!(m.changing(&ace(AceLm::Auto)));
         assert!(m.changing(&ace(AceLm::Large)));
         assert!(!m.changing(&ace(AceLm::Small)));
-        assert!(!m.changing(&Music::default()));
+        assert!(m.changing(&Music::default()));
         *lock(&m.removing) = None;
         assert!(!m.changing(&ace(AceLm::Large)));
         // A download counts the same way.
-        lock(&m.downloading).push(YUE2_3B.id);
+        lock(&m.downloading).push(ACE_STEP_TURBO.id);
         assert!(m.changing(&Music::default()));
     }
 
@@ -394,8 +401,13 @@ mod tests {
         assert!(ready(&ace(AceLm::Auto), &dir));
         assert!(ready(&ace(AceLm::Small), &dir));
         assert!(!ready(&ace(AceLm::Large), &dir));
-        // YuE2 is not installed: ACE-Step's files do not make it ready.
-        assert!(!ready(&Music::default(), &dir));
+        let xl = Music {
+            engine: MusicEngine::AceStepXl,
+            ..Music::default()
+        };
+        assert!(!ready(&xl, &dir));
+        place(&ACE_STEP_XL_TURBO);
+        assert!(ready(&xl, &dir));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
