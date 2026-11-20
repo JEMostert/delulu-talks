@@ -14,5 +14,6 @@ package() {
   deb="$(find "$startdir" -maxdepth 1 -name '*.deb' | head -n1)"
   [ -n "$deb" ] || return 1
   bsdtar -xOf "$deb" 'data.tar.*' | bsdtar -xpf - -C "$pkgdir"
+  touch "$pkgdir/usr/lib/delulu-talks/arch-package"
   chmod -R u=rwX,go=rX "$pkgdir/usr"
 }

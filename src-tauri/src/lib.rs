@@ -23,6 +23,7 @@ mod music;
 mod radio;
 mod state;
 mod tray;
+mod updater;
 mod vocabulary;
 mod voice;
 use cleanup::{cancel_cleanup_download, get_cleanup_status, start_cleanup};
@@ -97,6 +98,8 @@ fn run_client(socket: Option<std::path::PathBuf>) {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::Pending::default())
         .manage(client::Client::new(socket, toggle))
         .setup(move |app| {
             tray::create(app)?;
@@ -116,6 +119,8 @@ fn run_client(socket: Option<std::path::PathBuf>) {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            updater::check_update,
+            updater::install_update,
             get_voice_status,
             install_voice_model,
             set_voice,
@@ -223,6 +228,8 @@ fn run_app() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::Pending::default())
         .manage(Shell {
             store,
             status: Mutex::new(Status {
@@ -336,6 +343,8 @@ fn run_app() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            updater::check_update,
+            updater::install_update,
             get_voice_status,
             install_voice_model,
             set_voice,
