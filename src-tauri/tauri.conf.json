@@ -38,26 +38,32 @@
     "linux": {
       "deb": {
         "depends": [
-          "libvulkan1"
+          "libvulkan1",
+          "minisign"
         ],
         "desktopTemplate": "linux/generated.desktop",
         "files": {
           "/usr/share/applications/com.joran.delulu-talks.desktop": "linux/com.joran.delulu-talks.desktop",
           "/usr/lib/delulu-talks/delulu-engine": "../target/release/delulu-engine",
           "/usr/lib/delulu-talks/delulu-pill": "../target/release/delulu-pill",
-          "/usr/bin/delulu": "../target/release/delulu"
+          "/usr/bin/delulu": "../target/release/delulu",
+          "/usr/libexec/delulu-talks/install-update": "../packaging/install-update",
+          "/usr/libexec/delulu-talks/updater.pub": "../packaging/updater.pub"
         }
       },
       "rpm": {
         "depends": [
-          "vulkan-loader"
+          "vulkan-loader",
+          "minisign"
         ],
         "desktopTemplate": "linux/generated.desktop",
         "files": {
           "/usr/share/applications/com.joran.delulu-talks.desktop": "linux/com.joran.delulu-talks.desktop",
           "/usr/lib/delulu-talks/delulu-engine": "../target/release/delulu-engine",
           "/usr/lib/delulu-talks/delulu-pill": "../target/release/delulu-pill",
-          "/usr/bin/delulu": "../target/release/delulu"
+          "/usr/bin/delulu": "../target/release/delulu",
+          "/usr/libexec/delulu-talks/install-update": "../packaging/install-update",
+          "/usr/libexec/delulu-talks/updater.pub": "../packaging/updater.pub"
         }
       }
     }

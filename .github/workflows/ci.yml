@@ -21,6 +21,7 @@ jobs:
           # this key on track the variable and rebuild when it changes.
           key: ggml-max-name
       - run: bun install --frozen-lockfile
+      - run: bash scripts/test-linux-updater.sh
       - name: Generated TypeScript protocol types are current
         run: cargo test -p delulu-proto --locked --test generated
       - run: bun run typecheck && bun run format:check && bun test ui && bun run build:web

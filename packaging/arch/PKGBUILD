@@ -7,7 +7,7 @@ url="https://github.com/JEMostert/delulu-talks"
 license=('MIT')
 provides=('delulu-talks')
 conflicts=('delulu-talks')
-depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'vulkan-icd-loader')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'vulkan-icd-loader' 'minisign')
 options=('!strip' '!debug')
 package() {
   local deb

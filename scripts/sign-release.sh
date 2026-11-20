@@ -9,6 +9,8 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 node -p 'require("./src-tauri/tauri.conf.json").plugins.updater.pubkey' | base64 -d > "$tmp/public.key"
 
+cmp "$tmp/public.key" packaging/updater.pub
+
 copy_asset() {
   local target=$1
   shift

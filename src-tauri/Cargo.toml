@@ -30,7 +30,6 @@ delulu-radio = { path = "../crates/radio" }
 [target.'cfg(target_os = "linux")'.dependencies]
 # The window's content box, to hold the page's minimum size (lib.rs: hold_min_size).
 gtk = "0.18"
-tempfile = "3"
 
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }

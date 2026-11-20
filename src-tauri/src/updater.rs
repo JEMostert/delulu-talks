@@ -119,7 +119,7 @@ const CHANGED: &str =
     "The installed app has changed. Quit and reopen Delulu Talks before updating.";
 
 #[cfg(target_os = "linux")]
-fn install_package(package: Package, _: &Update, bytes: Vec<u8>) -> Result<(), String> {
+fn install_package(package: Package, update: &Update, bytes: Vec<u8>) -> Result<(), String> {
     use std::os::unix::fs::MetadataExt;
     // A package manager may have replaced the installed executable since this
     // window started. /proc/self/exe still references the running inode.
@@ -130,24 +130,22 @@ fn install_package(package: Package, _: &Update, bytes: Vec<u8>) -> Result<(), S
     if (installed.dev(), installed.ino()) != (running.dev(), running.ino()) {
         return Err(CHANGED.into());
     }
-    // download() verified both the bytes and signed version. Leave all
-    // authentication to the system's polkit agent.
-    let args: &[&str] = match package.suffix {
-        ".deb" => &["/usr/bin/apt-get", "-y", "--no-remove", "install"],
-        ".rpm" => &["/usr/bin/rpm", "-U"],
-        ".pkg.tar.zst" => &["/usr/bin/pacman", "-U", "--noconfirm"],
-        _ => return Err("Unsupported Linux package.".into()),
+    use std::{
+        io::Write,
+        process::{Command, Stdio},
     };
-    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
-    let path = dir.path().join(format!("update{}", package.suffix));
-    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
-    let status = std::process::Command::new("/usr/bin/pkexec")
-        .args(args)
-        .arg(path)
-        .status()
+    let mut child = Command::new("/usr/bin/pkexec")
+        .arg("/usr/libexec/delulu-talks/install-update")
+        .args([package.suffix, &update.version, update.signature.trim()])
+        .stdin(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("Could not launch the system installer: {e}"))?;
+    // The authenticated helper stages and verifies its own private copy. Close
+    // the pipe before waiting so the helper sees EOF, including on write error.
+    let sent = child.stdin.take().unwrap().write_all(&bytes);
+    let status = child.wait().map_err(|e| e.to_string())?;
     if status.success() {
-        Ok(())
+        sent.map_err(|e| e.to_string())
     } else {
         Err(format!("The system installer exited with {status}. Check authorization and package dependencies."))
     }
