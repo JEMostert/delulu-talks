@@ -55,6 +55,7 @@ compiled with the same value (`vendor/whisper-rs-sys/shared-ggml.cmake`); its te
   stopped after 1–126 s on 11 of 12 songs; the radio cannot hear every song.)
 
 - `0002-macos-float-parser.patch` selects the portable float parser on Apple platforms so the engine runs on macOS 15.
+- `0003-bf16-weight-upload.patch` converts BF16 weights to FP16 during upload when the device cannot store BF16 weights. The downloaded GGUF files retain their original quantization.
 
 Check the tree against upstream:
 
