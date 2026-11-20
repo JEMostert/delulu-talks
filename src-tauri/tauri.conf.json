@@ -39,7 +39,8 @@
       "deb": {
         "depends": [
           "libvulkan1",
-          "minisign"
+          "minisign",
+          "pkexec"
         ],
         "desktopTemplate": "linux/generated.desktop",
         "files": {

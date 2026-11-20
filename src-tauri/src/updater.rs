@@ -26,7 +26,7 @@ fn package() -> Result<Package, String> {
         _ => return Err("Install a supported release package to use Settings updates.".into()),
     };
     #[cfg(target_os = "macos")]
-    installed_app_version()?;
+    installed_bundle()?;
     Ok(Package { target, suffix })
 }
 
@@ -115,6 +115,7 @@ pub async fn install_update(
         .map_err(|e| e.to_string())?
 }
 
+#[cfg(target_os = "linux")]
 const CHANGED: &str =
     "The installed app has changed. Quit and reopen Delulu Talks before updating.";
 
@@ -152,33 +153,58 @@ fn install_package(package: Package, update: &Update, bytes: Vec<u8>) -> Result<
 }
 
 #[cfg(target_os = "macos")]
-fn installed_app_version() -> Result<String, String> {
+fn installed_bundle() -> Result<std::path::PathBuf, String> {
     let exe = tauri::utils::platform::current_exe().map_err(|e| e.to_string())?;
     let bundle = exe
         .ancestors()
         .nth(3)
         .filter(|path| path.extension().is_some_and(|ext| ext == "app"))
         .ok_or("Copy the app to Applications and open it there before updating.")?;
-    if !exe.starts_with(bundle.join("Contents/MacOS")) {
-        return Err("Open the installed application bundle before updating.".into());
+    if !exe.starts_with(bundle.join("Contents/MacOS")) || bundle.starts_with("/Volumes") {
+        return Err("Copy the app to Applications and open it there before updating.".into());
     }
-    let version = std::process::Command::new("/usr/bin/plutil")
-        .args(["-extract", "CFBundleShortVersionString", "raw"])
-        .arg(bundle.join("Contents/Info.plist"))
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !version.status.success() {
-        return Err(CHANGED.into());
-    }
-    Ok(String::from_utf8_lossy(&version.stdout).trim().into())
+    Ok(bundle.to_path_buf())
 }
 
 #[cfg(target_os = "macos")]
 fn install_package(_: Package, update: &Update, bytes: Vec<u8>) -> Result<(), String> {
-    if installed_app_version()? != update.current_version {
-        return Err(CHANGED.into());
+    use sha2::{Digest, Sha256};
+    use std::{io::Write, path::Path, process::Command};
+
+    // download() verified these bytes and their signed version in memory. Pin
+    // their digest in the authorization request, independent of the temp file.
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let mut archive = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    archive.write_all(&bytes).map_err(|e| e.to_string())?;
+    let bundle = installed_bundle()?;
+    let script = include_str!("../../packaging/macos/install-update.sh");
+    let mut install = if bundle == Path::new("/Applications/Delulu Talks.app") {
+        let mut command = Command::new("/usr/bin/osascript");
+        command.args([
+            "-e",
+            include_str!("../../packaging/macos/authorize-update.applescript"),
+            script,
+        ]);
+        command
+    } else {
+        let mut command = Command::new("/bin/bash");
+        command.args(["-p", "-c", script, "install-update"]);
+        command
+    };
+    let output = install
+        .arg(archive.path())
+        .arg(digest)
+        .arg(&bundle)
+        .args([&update.current_version, &update.version])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "Could not replace the installed app. {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
     }
-    update.install(bytes).map_err(|e| e.to_string())
+    Ok(())
 }
 
 #[cfg(test)]

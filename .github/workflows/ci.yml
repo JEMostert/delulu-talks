@@ -48,6 +48,7 @@ jobs:
           mkdir macos-assets
           cp target/release/bundle/dmg/*.dmg macos-assets/
           COPYFILE_DISABLE=1 tar -czf macos-assets/Delulu-Talks_aarch64.app.tar.gz -C target/release/bundle/macos 'Delulu Talks.app'
+      - run: bash scripts/test-macos-update.sh macos-assets/*.app.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: macos-arm64

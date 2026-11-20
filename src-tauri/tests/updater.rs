@@ -33,9 +33,4 @@ fn a_signed_update_is_bound_to_its_contents_and_announced_version() {
     let forged = updater.restore_update(release("9.2.0")).unwrap().unwrap();
     assert!(forged.install(bytes).is_err());
     assert_eq!(std::fs::read_to_string(&exe).unwrap(), "old");
-    #[cfg(target_os = "macos")]
-    {
-        update.install(bytes).unwrap();
-        assert_eq!(std::fs::read_to_string(exe).unwrap().trim(), "updated");
-    }
 }
