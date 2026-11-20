@@ -24,6 +24,7 @@ pub struct Terms {
 pub struct VoiceStatus {
     /// `delulu speak` can speak now.
     ready: bool,
+    cli_path: PathBuf,
     installing: bool,
     /// The voice model is downloaded.
     model: bool,
@@ -99,6 +100,7 @@ fn status() -> Result<VoiceStatus, String> {
     let model = &delulu_models::SUPERTONIC_3;
     let terms = model.terms.expect("the voice model has terms");
     Ok(VoiceStatus {
+        cli_path: delulu_radio::voice::cli_path(),
         ready: cli["ready"].as_bool() == Some(true) && cli["model"].is_boolean(),
         installing: INSTALLING.load(Ordering::SeqCst),
         model: cli["model"].as_bool() == Some(true),

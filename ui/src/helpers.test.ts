@@ -383,6 +383,12 @@ test("Delulu FM lyrics split into sections, older run-on tags too", async () => 
   expect(hasWords(lyricSections("[Intro]\n\n[Verse]\n\n[Outro]"))).toBe(false);
 });
 
+test("the Mac voice command quotes the installed bundle path", () => {
+  expect(speakCommand("Hello", "/Applications/Ada's Apps/Delulu")).toBe(
+    "'/Applications/Ada'\\''s Apps/Delulu' speak \"Hello\"",
+  );
+});
+
 test("speakCommand keeps the text one shell argument with nothing expanded", () => {
   expect(speakCommand("The build  finished.\n")).toBe(
     'delulu speak "The build finished."',

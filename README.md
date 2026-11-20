@@ -11,7 +11,7 @@
 
 # Delulu Talks
 
-**Hold a key, say it, and it’s typed.** Delulu Talks is push-to-talk dictation for Linux and Apple Silicon Macs. Hold **Super+Z** on Linux or **Control+Option+Space** on a Mac, speak Dutch or English, let go, and the words land in the app you were using, cleaned up and spelled right. Speech recognition and cleanup both run on your own graphics card. Nothing you say leaves your computer.
+**Hold a key, say it, and it’s typed.** Delulu Talks is push-to-talk dictation for Linux and Apple Silicon Macs. Hold **Super+Z** on Linux or **Control+Shift+Space** on a Mac, speak Dutch or English, let go, and the words land in the app you were using, cleaned up and spelled right. Speech recognition and cleanup both run on your own graphics card. Nothing you say leaves your computer.
 
 <a href="docs/assets/delulu-talks-reel.mp4?raw=true">The reel with sound</a> (MP4, 15 s, 6 MB) ·
 [Install](#install) ·
@@ -63,9 +63,9 @@ You need a Wayland desktop (GNOME or KDE Plasma) and a Vulkan graphics driver; o
 
 Requires macOS 15 or later and an M-series chip. Open the arm64 DMG, drag **Delulu Talks** to Applications, eject the disk and launch the installed app. This build is ad-hoc signed. Apple has not notarized it, so Gatekeeper can block first launch. Managed Macs may require an administrator. [Apple’s guide to opening downloaded apps](https://support.apple.com/en-us/102445)
 
-Allow Microphone for dictation and Accessibility for pasting into another app. Without Accessibility, use Command+V to paste the copied transcript. Choose a speech model in setup and wait for it to load. In TextEdit, hold Control+Option+Space, speak and release. The recording pill should disappear, the words should appear at the cursor, and the same transcript should appear in Dictate history. Change the talk key on the Dictate page.
+Allow Microphone for dictation and Accessibility for pasting into another app. Without Accessibility, use Command+V to paste the copied transcript. Choose a speech model in setup and wait for it to load. In TextEdit, hold Control+Shift+Space, speak and release. The recording pill should disappear, the words should appear at the cursor, and the same transcript should appear in Dictate history. Change the talk key on the Dictate page.
 
-The DMG contains the app, recording pill, model engine and voice CLI. Models and history live outside the bundle in `~/Library/Application Support/delulu-talks`. Quit the app before replacing it to update. To start it at login, add it in System Settings → General → Login Items. For the terminal voice command, run `"/Applications/Delulu Talks.app/Contents/MacOS/delulu" setup`.
+The DMG contains the app, recording pill, model engine and voice CLI. Models and history live outside the bundle in `~/Library/Application Support/delulu-talks`. Quit the app before replacing it to update. If pasting stops after an update, remove Delulu Talks from Accessibility and add the updated app again. To start it at login, add it in System Settings → General → Login Items. For the terminal voice command, run `"/Applications/Delulu Talks.app/Contents/MacOS/delulu" setup`.
 
 ## How it works
 

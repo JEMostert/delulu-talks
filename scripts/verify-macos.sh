@@ -27,7 +27,10 @@ done
 codesign --verify --deep --strict "$app"
 test "$("$bin/delulu" --version)" = "delulu $version"
 "$bin/delulu-engine" probe > "$tmp/probe.json"
-HOME="$tmp/profile" "$bin/delulu" status > "$tmp/voice.json"
+codesign -d --entitlements - --xml "$app" > "$tmp/entitlements.plist"
+test "$(plutil -extract 'com\.apple\.security\.device\.audio-input' raw "$tmp/entitlements.plist")" = true
+env -u CODEX_HOME HOME="$tmp/profile" "$bin/delulu" setup
+HOME="$tmp/profile" "$tmp/profile/.local/bin/delulu" status > "$tmp/voice.json"
 node - "$tmp" "$version" "$bin/delulu-engine" <<'JS'
 const fs = require("node:fs");
 const [dir, version, engine] = process.argv.slice(2);

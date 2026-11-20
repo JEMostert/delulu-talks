@@ -5,7 +5,7 @@ extern "C" {
     fn delulu_paste() -> bool;
 }
 const PERMISSION: &str =
-    "Allow Delulu Talks in System Settings → Privacy & Security → Accessibility.";
+    "Allow Delulu Talks in System Settings → Privacy & Security → Accessibility. If pasting stops after an update, remove Delulu Talks from Accessibility and add it again.";
 pub struct Inserter;
 impl Inserter {
     pub fn new(_: Option<String>, _: Box<dyn Fn(Option<String>) + Send + Sync>) -> Self {

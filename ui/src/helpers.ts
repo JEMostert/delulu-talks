@@ -259,6 +259,7 @@ export function restorePaste(
  * argument and expands nothing in it. Whitespace runs become one space.
  */
 export function speakCommand(text: string, binary = "delulu"): string {
+  if (binary !== "delulu") binary = "'" + binary.replaceAll("'", "'\\''") + "'";
   const line = text.replace(/\s+/g, " ").trim();
   if (/^[^"$`\\!]*$/.test(line)) return `${binary} speak "${line}"`;
   return `${binary} speak '${line.replace(/'/g, `'\\''`)}'`;

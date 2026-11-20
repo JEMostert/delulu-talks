@@ -9,9 +9,9 @@ static EventHotKeyRef binding;
 static EventHandlerRef handler;
 static Edge edge;
 static const UInt32 keys[] = {kVK_Space, kVK_ANSI_D, kVK_ANSI_Z};
-static const UInt32 modifiers[] = {controlKey | optionKey, controlKey | optionKey, controlKey | shiftKey};
+static const UInt32 modifiers[] = {controlKey | shiftKey, controlKey | optionKey, controlKey | shiftKey};
 static NSArray<NSString *> *names(void) {
-    return @[@"Control+Option+Space", @"Control+Option+D", @"Control+Shift+Z"];
+    return @[@"Control+Shift+Space", @"Control+Option+D", @"Control+Shift+Z"];
 }
 static void onMain(dispatch_block_t work) {
     if (NSThread.isMainThread) work();
@@ -31,6 +31,14 @@ static int selected(void) {
     return index >= 0 && (NSUInteger)index < names().count ? (int)index : 0;
 }
 static bool install(int index) {
+    CFArrayRef shortcuts = NULL;
+    if (CopySymbolicHotKeys(&shortcuts) == noErr) {
+        for (NSDictionary *key in CFBridgingRelease(shortcuts)) {
+            if ([key[(__bridge NSString *)kHISymbolicHotKeyEnabled] boolValue] &&
+                [key[(__bridge NSString *)kHISymbolicHotKeyCode] unsignedIntValue] == keys[index] &&
+                [key[(__bridge NSString *)kHISymbolicHotKeyModifiers] unsignedIntValue] == modifiers[index]) return false;
+        }
+    }
     EventHotKeyID id = {'DlTk', 1};
     EventHotKeyRef replacement;
     if (RegisterEventHotKey(keys[index], modifiers[index], id, GetApplicationEventTarget(),

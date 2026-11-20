@@ -3,7 +3,7 @@ pub use delulu_core::gesture::{Command, Gesture, KeyEvent, HOLD_MS};
 use std::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 
-pub const DEFAULT_TRIGGER: &str = "Control+Option+Space";
+pub const DEFAULT_TRIGGER: &str = "Control+Shift+Space";
 const TRIGGERS: [&str; 3] = [DEFAULT_TRIGGER, "Control+Option+D", "Control+Shift+Z"];
 static EVENTS: Mutex<Option<UnboundedSender<KeyEvent>>> = Mutex::new(None);
 extern "C" {

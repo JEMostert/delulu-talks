@@ -53,6 +53,8 @@ compiled with the same value (`vendor/whisper-rs-sys/shared-ggml.cmake`); its te
   that would not stop early samples exactly as upstream. (The spike's 1.7B LM
   stopped after 1–126 s on 11 of 12 songs; the radio cannot hear every song.)
 
+- `0002-macos-float-parser.patch` selects the portable float parser on Apple platforms so the engine runs on macOS 15.
+
 Check the tree against upstream:
 
 ```sh

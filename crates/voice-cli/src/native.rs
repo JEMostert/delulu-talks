@@ -94,12 +94,17 @@ pub fn models_dir() -> Result<PathBuf> {
         .join("delulu-talks/models"))
 }
 
-/// `$DELULU_ENGINE`, next to this binary, then the packaged location.
+fn sibling_engine(executable: &Path) -> Option<PathBuf> {
+    let resolved = fs::canonicalize(executable).ok()?;
+    Some(resolved.parent()?.join(ENGINE_NAME))
+}
+
+/// `$DELULU_ENGINE`, next to the resolved binary, then the packaged location.
 pub fn engine_path() -> Option<PathBuf> {
     let from_env = std::env::var_os("DELULU_ENGINE").map(PathBuf::from);
     let sibling = std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|d| d.join(ENGINE_NAME)));
+        .and_then(|p| sibling_engine(&p));
     let system = Some(Path::new("/usr/lib/delulu-talks").join(ENGINE_NAME));
     [from_env, sibling, system]
         .into_iter()
@@ -793,6 +798,20 @@ pub fn wav_bytes(samples: &[f32], rate: u32) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn installed_cli_symlink_resolves_the_bundled_engine() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("Contents/MacOS");
+        std::fs::create_dir_all(&bundle).unwrap();
+        std::fs::write(bundle.join("delulu"), []).unwrap();
+        let link = tmp.path().join("delulu");
+        std::os::unix::fs::symlink(bundle.join("delulu"), &link).unwrap();
+        assert_eq!(
+            super::sibling_engine(&link),
+            Some(bundle.canonicalize().unwrap().join("delulu-engine"))
+        );
+    }
+
     use super::*;
 
     #[test]

@@ -212,12 +212,25 @@ pub(crate) async fn bind_hotkey(app: &tauri::AppHandle) {
 }
 #[tauri::command]
 pub(crate) async fn prepare_insert(app: tauri::AppHandle) -> delulu_desktop::insert::InsertStatus {
+    prepare_typing(app, true).await
+}
+
+pub(crate) async fn prepare_typing(
+    app: tauri::AppHandle,
+    prompt: bool,
+) -> delulu_desktop::insert::InsertStatus {
     let shell = app.state::<Shell>();
     if shell.no_portals {
         return status_value(&shell).insert;
     }
     bind_hotkey(&app).await;
-    let status = shell.inserter.prepare().await;
+    let status = if prompt
+        && (!cfg!(target_os = "macos") || shell.store.settings().insert != InsertMode::Off)
+    {
+        shell.inserter.prepare().await
+    } else {
+        shell.inserter.status()
+    };
     update(&app, |s| s.insert = status.clone());
     status
 }

@@ -80,6 +80,7 @@ export type ModelStatus = {
   replaces: string | null;
 };
 export type VoiceStatus = {
+  cliPath?: string;
   /** `delulu speak` can speak now. */
   ready: boolean;
   installing: boolean;
