@@ -45,6 +45,11 @@ use vocabulary::{
 };
 use voice::{get_voice_status, install_voice_model, set_voice};
 
+// macOS embeds the permission plist at this macro's expansion site.
+fn app_context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
+}
+
 pub fn run() {
     // One dictation path, whatever the start order: a daemon that runs dictation
     // makes this window its client; DELULU_DAEMON=1 waits for that daemon.
@@ -182,7 +187,7 @@ fn run_client(socket: Option<std::path::PathBuf>) {
             client::cmd_cancel_music_download,
             client::cmd_delete_music_model
         ])
-        .build(tauri::generate_context!())
+        .build(app_context())
         .expect("Tauri failed")
         .run(|_, _| {});
 }
@@ -406,7 +411,7 @@ fn run_app() {
             cancel_music_download,
             delete_music_model
         ])
-        .build(tauri::generate_context!())
+        .build(app_context())
         .expect("Tauri failed")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
