@@ -43,7 +43,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: bun install --frozen-lockfile
-      - run: bun run tauri build --bundles dmg
+      - id: macos_build
+        run: bun run tauri build --bundles dmg
       - run: cargo test --release --locked -p delulu-talks --test updater
       - run: cargo test --release --locked -p delulu-core -p delulu-store -p delulu-engine -p delulu-desktop -p delulu-dictation -p delulu-voice-cli -p delulu-audio --lib --bins
       - run: cargo clippy --release --locked -p delulu-desktop -p delulu-voice-cli -p delulu-audio -- -D warnings
@@ -53,8 +54,13 @@ jobs:
           cp target/release/bundle/dmg/*.dmg macos-assets/
           bash scripts/verify-macos.sh macos-assets/*.dmg macos-assets/Delulu-Talks_aarch64.app.tar.gz
       - run: bash scripts/test-macos-update.sh macos-assets/*.app.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: macos-assets/*
+          if-no-files-found: error
       - name: Render and decode both FM generators on Apple Silicon
-        if: github.event_name == 'workflow_dispatch' && inputs.fm_smoke
+        if: ${{ !cancelled() && steps.macos_build.outcome == 'success' && github.event_name == 'workflow_dispatch' && inputs.fm_smoke }}
         run: |
           test "$(uname -m)" = arm64
           # Keep engine diagnostics visible for these synthetic requests.
@@ -66,8 +72,3 @@ jobs:
           export DELULU_ENGINE="$RUNNER_TEMP/fm-engine"
           trap 'if [ "$?" -ne 0 ]; then tail -120 "$RUNNER_TEMP/fm-engine.log"; fi' EXIT
           cargo test --release --locked -p delulu-radio native_fm_song_smoke -- --ignored --nocapture
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-arm64
-          path: macos-assets/*
-          if-no-files-found: error
