@@ -314,9 +314,7 @@ pub(crate) fn delete_music_model(
     // The song being made keeps the settings it started with, which may differ
     // from the station's since an engine switch.
     let uses = |music: &Music| needed(music).iter().any(|m| m.id == model.id);
-    let in_use = radio.composing().as_ref().is_some_and(uses)
-        || radio.station().map_or(true, |s| uses(&s.snapshot().music));
-    if in_use {
+    if radio.composing().as_ref().is_some_and(uses) {
         radio.composer.stop();
     }
     let removed = delulu_models::remove(&app.state::<Shell>().store.models_dir(), model);
