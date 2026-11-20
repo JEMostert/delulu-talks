@@ -11,7 +11,7 @@
 
 # Delulu Talks
 
-**Hold a key, say it, and it’s typed.** Delulu Talks is push-to-talk dictation for Linux. Hold **Super+Z**, speak Dutch or English, let go, and the words land in the app you were using, cleaned up and spelled right. Speech recognition and cleanup both run on your own graphics card. Nothing you say leaves your computer.
+**Hold a key, say it, and it’s typed.** Delulu Talks is push-to-talk dictation for Linux and Apple Silicon Macs. Hold **Super+Z** on Linux or **Control+Shift+Space** on a Mac, speak Dutch or English, let go, and the words land in the app you were using, cleaned up and spelled right. Speech recognition and cleanup both run on your own graphics card. Nothing you say leaves your computer.
 
 <a href="docs/assets/delulu-talks-reel.mp4?raw=true">The reel with sound</a> (MP4, 15 s, 6 MB) ·
 [Install](#install) ·
@@ -53,9 +53,19 @@
 
 ## Install
 
+### Linux
+
 Download the package for your distribution from the [latest release](https://github.com/JEMostert/delulu-talks/releases/latest): `.pkg.tar.zst` for Arch and CachyOS, `.rpm` for Fedora, or `.deb` for Debian and Ubuntu.
 
 You need a Wayland desktop (GNOME or KDE Plasma) and a Vulkan graphics driver; on GNOME the recording pill also needs XWayland. Setup takes three steps: pick a microphone, allow the shortcut and typing into other apps, and download a speech model: Whisper (574 MB) or Parakeet Ultra (740 MB). The 5.2 GB cleanup model then downloads in the background.
+
+### Apple Silicon Mac
+
+Requires macOS 15 or later and an M-series chip. Open the arm64 DMG, drag **Delulu Talks** to Applications, eject the disk and launch the installed app. This build is ad-hoc signed. Apple has not notarized it, so Gatekeeper can block first launch. Managed Macs may require an administrator. [Apple’s guide to opening downloaded apps](https://support.apple.com/en-us/102445)
+
+Allow Microphone for dictation and Accessibility for pasting into another app. Without Accessibility, use Command+V to paste the copied transcript. Choose a speech model in setup and wait for it to load. In TextEdit, hold Control+Shift+Space, speak and release. The recording pill should disappear, the words should appear at the cursor, and the same transcript should appear in Dictate history. Change the talk key on the Dictate page.
+
+The DMG contains the app, recording pill, model engine and voice CLI. Models and history live outside the bundle in `~/Library/Application Support/delulu-talks`. Quit the app before replacing it to update. If pasting stops after an update, remove Delulu Talks from Accessibility and add the updated app again. To start it at login, add it in System Settings → General → Login Items. For the terminal voice command, run `"/Applications/Delulu Talks.app/Contents/MacOS/delulu" setup`.
 
 ## How it works
 
@@ -63,9 +73,9 @@ You need a Wayland desktop (GNOME or KDE Plasma) and a Vulkan graphics driver; o
   <img src="docs/assets/how-it-works.svg" alt="Hold and speak, Whisper turns speech into text, Gemma cleans it up, and it is typed for you. The topic and vocabulary flow back to Whisper for the next dictation." width="100%">
 </p>
 
-- **Whisper** (Large v3 Turbo, whisper.cpp on Vulkan) turns your speech into text. From letting go of the key to typed text usually takes well under a second.
+- **Whisper** (Large v3 Turbo, whisper.cpp on Vulkan or Metal) turns your speech into text. From letting go of the key to typed text usually takes well under a second.
 - **Or Parakeet Ultra** (Moondream's post-trained NVIDIA Parakeet TDT 0.6B v3, through [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp)), the faster engine: three to five times faster than Whisper, it runs on the graphics card or, without one, the processor, and recognizes 25 European languages on its own. It takes no vocabulary, so names rely on cleanup. Pick it during setup or on the **Dictate** page; switching takes effect right away and keeps both downloads. To decide between the two on your own voice, see [docs/speech-engines.md](docs/speech-engines.md). Parakeet v3 from earlier versions is replaced by Parakeet Ultra: the app downloads it once and removes the old files.
-- **Cleanup** runs Gemma 4 E4B in a separate helper process, `delulu-engine llm` (llama.cpp with Vulkan), with the topic and your vocabularies.
+- **Cleanup** runs Gemma 4 E4B in a separate helper process, `delulu-engine llm` (llama.cpp with Vulkan or Metal), with the topic and your vocabularies.
 - **Typing** pastes the result into the focused app through the desktop’s remote-desktop portal; when that is not allowed, the text is copied and you press Ctrl+V.
 - **The recording pill** is its own small program, `delulu-pill` (about 5 MB of memory, no GTK): a layer-shell overlay on KDE Plasma and wlroots desktops, an XWayland window on GNOME. If it cannot draw, the app's built-in GTK pill takes over.
 
@@ -73,8 +83,8 @@ You need a Wayland desktop (GNOME or KDE Plasma) and a Vulkan graphics driver; o
 
 An optional radio station made on this computer, hidden until you turn on **Settings → Delulu FM**. Every song is new: the cleanup model writes its title, style and lyrics, [YuE2](https://huggingface.co/m-a-p/YuE2-3B) composes it on your graphics card, and between songs an AI host speaks in the station's language through the native voice (Supertonic 3). The **Delulu FM** page shows what is on air with its lyrics, what comes next and what played, and lets you skip, request a song, and set the mix: you switch genres and moods on once, and every song draws one of each at random, at a random length between 2:00 and 4:30 unless you change the range. A surprise slider lets songs come from outside your picks, Shuffle rolls a new mix, and a mix can be saved as a station. You can like or dislike a song, stay on its genre for a while, or save it.
 
-- **What it needs:** a graphics card with a Vulkan driver, the music model and the cleanup model. The music model (YuE2 3B, 4 GB, CC BY-NC 4.0) is an explicit download on the **Models** page, where you can also cancel or delete it; nothing downloads on its own and dictation never needs it. The host is optional; without the voice model (the **Voice** page) the station plays music only.
-- **Native:** YuE2 runs in `delulu-engine music`, a helper process shipped with the app that runs the model on ggml with Vulkan (no Python, no ComfyUI). It loads one part of the model at a time and exits after each song, so its graphics memory is free between songs. See [the parity and performance notes](docs/benchmarks/yue2-native/README.md). A second, faster music engine, ACE-Step 1.5 turbo with MIT weights ([crates/music-ace](crates/music-ace/README.md)), can be chosen on the Delulu FM page.
+- **What it needs:** Apple Silicon or a graphics card with a Vulkan driver, the music model and the cleanup model. The music model (YuE2 3B, 4 GB, CC BY-NC 4.0) is an explicit download on the **Models** page, where you can also cancel or delete it; nothing downloads on its own and dictation never needs it. The host is optional; without the voice model (the **Voice** page) the station plays music only.
+- **Native:** YuE2 runs in `delulu-engine music`, a helper process shipped with the app that runs the model on ggml with Vulkan or Metal (no Python, no ComfyUI). It loads one part of the model at a time and exits after each song, so its graphics memory is free between songs. See [the parity and performance notes](docs/benchmarks/yue2-native/README.md). A second, faster music engine, ACE-Step 1.5 turbo with MIT weights ([crates/music-ace](crates/music-ace/README.md)), can be chosen on the Delulu FM page.
 - **Dictation comes first:** the radio goes quiet while you hold the hotkey, the music engine pauses while you dictate, and no new writing, music or speech starts while you dictate or just after.
 - **Buffering:** a short programme is made ahead of playback (two songs or six minutes, at most three items). When nothing new is ready it replays a recent song. Playback is native, so it keeps playing with the window closed.
 - **Recovery:** every step is saved. A song stopped half-way (off air, quit) keeps its words and is composed again later. A failed song is retried once, then the station pauses briefly.
@@ -92,7 +102,9 @@ Both models live on the graphics card. Process monitors such as htop show the cl
 
 ## Development
 
-You need Rust, Bun, the GTK and WebKitGTK development libraries, ALSA, Vulkan headers, glslc, SPIRV-Headers and clang.
+On an Apple Silicon Mac, install the Xcode Command Line Tools, CMake, Rust 1.98 or later, and Bun with lockfile v2 support. Run `bun install --frozen-lockfile` then `bun run tauri build --bundles dmg`. The DMG lands in `target/release/bundle/dmg/`.
+
+On Linux you need Rust, Bun, the GTK and WebKitGTK development libraries, ALSA, Vulkan headers, glslc, SPIRV-Headers and clang.
 
 ```sh
 bun install
@@ -114,7 +126,7 @@ The reel at the top is made in code: a canvas program draws every frame, a Pytho
 
 ## Spoken agent replies
 
-Linux packages include `delulu`, a small CLI that lets coding agents speak short replies, and gives Delulu FM its host. It does not start dictation or touch the microphone.
+The Linux packages and the macOS app bundle include `delulu`, a small CLI that lets coding agents speak short replies, and gives Delulu FM its host. It does not start dictation or touch the microphone.
 
 ```sh
 delulu setup             # installs ~/.local/bin/delulu and the delulu-speak agent skill

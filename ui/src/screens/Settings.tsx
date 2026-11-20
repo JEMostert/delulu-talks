@@ -42,18 +42,20 @@ export function Settings({ state }: { state: AppState }) {
               ]}
             />
           </Line>
-          <Line
-            label="Start at login"
-            htmlFor="login"
-            tip="Starts hidden in the tray when you log in"
-          >
-            <Switch
-              id="login"
-              checked={settings.startAtLogin}
-              describedBy={tipId("login")}
-              onChange={(value) => void update("startAtLogin", value)}
-            />
-          </Line>
+          {!ipc.isMac && (
+            <Line
+              label="Start at login"
+              htmlFor="login"
+              tip="Starts hidden in the tray when you log in"
+            >
+              <Switch
+                id="login"
+                checked={settings.startAtLogin}
+                describedBy={tipId("login")}
+                onChange={(value) => void update("startAtLogin", value)}
+              />
+            </Line>
+          )}
         </section>
         <section className="glass-card" aria-labelledby="settings-features">
           <h2 id="settings-features" className="card-label">

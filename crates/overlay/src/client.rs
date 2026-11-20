@@ -62,7 +62,11 @@ impl Pill {
     /// The native pill, else this binary's `--pill` helper. Cheap: nothing
     /// starts until the first message.
     pub fn new() -> Self {
-        Self::with_fallback(Fallback::OwnBinary)
+        Self::with_fallback(if cfg!(target_os = "macos") {
+            Fallback::None
+        } else {
+            Fallback::OwnBinary
+        })
     }
 
     /// The native pill, else `program --pill`.

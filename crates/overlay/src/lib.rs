@@ -6,10 +6,10 @@
 //! or cannot draw here. Both draw the same frames.
 
 mod client;
-#[cfg(feature = "helper")]
+#[cfg(all(feature = "helper", target_os = "linux"))]
 mod helper;
 
 pub use client::{native_pill, Pill};
 pub use delulu_pill::{audible_level, Message, PillState, UNAVAILABLE};
-#[cfg(feature = "helper")]
+#[cfg(all(feature = "helper", target_os = "linux"))]
 pub use helper::run_pill;

@@ -1,6 +1,7 @@
 fn main() {
     // The recording pill runs as a helper of this same binary. Handle it before
     // anything else, or the single-instance plugin would swallow the launch.
+    #[cfg(target_os = "linux")]
     if std::env::args().nth(1).as_deref() == Some("--pill") {
         std::process::exit(delulu_overlay::run_pill());
     }

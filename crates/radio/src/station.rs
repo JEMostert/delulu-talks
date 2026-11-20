@@ -1402,6 +1402,7 @@ impl Item {
 
 /// Conversion is background work; dictation and the desktop come first.
 fn lower_priority() {
+    #[cfg(target_os = "linux")]
     // On Linux a thread id here changes only this thread.
     // SAFETY: plain system calls without pointers.
     unsafe {

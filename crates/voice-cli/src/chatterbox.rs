@@ -193,6 +193,15 @@ pub fn speak(
         atomic_write(&absolute(&output)?, &bytes)?;
         println!("{}", output.display());
     } else {
+        #[cfg(target_os = "macos")]
+        run(
+            Command::new("/usr/bin/afplay")
+                .arg("-v")
+                .arg(volume.to_string())
+                .arg(&wav),
+            "audio playback",
+        )?;
+        #[cfg(target_os = "linux")]
         run(
             Command::new("pw-play")
                 .arg("--volume")

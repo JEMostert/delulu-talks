@@ -10,6 +10,8 @@ use delulu_proto::worker::{
     WORKER_PROTOCOL_VERSION,
 };
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "linux")]
+use std::sync::mpsc;
 use std::{
     fs,
     io::{self, BufRead, BufReader, Read, Write},
@@ -21,7 +23,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
+        Arc,
     },
     time::{Duration, Instant},
 };
@@ -92,12 +94,17 @@ pub fn models_dir() -> Result<PathBuf> {
         .join("delulu-talks/models"))
 }
 
-/// `$DELULU_ENGINE`, next to this binary, then the packaged location.
+fn sibling_engine(executable: &Path) -> Option<PathBuf> {
+    let resolved = fs::canonicalize(executable).ok()?;
+    Some(resolved.parent()?.join(ENGINE_NAME))
+}
+
+/// `$DELULU_ENGINE`, next to the resolved binary, then the packaged location.
 pub fn engine_path() -> Option<PathBuf> {
     let from_env = std::env::var_os("DELULU_ENGINE").map(PathBuf::from);
     let sibling = std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|d| d.join(ENGINE_NAME)));
+        .and_then(|p| sibling_engine(&p));
     let system = Some(Path::new("/usr/lib/delulu-talks").join(ENGINE_NAME));
     [from_env, sibling, system]
         .into_iter()
@@ -407,9 +414,11 @@ impl Connection {
         let parent = std::process::id() as i32;
         unsafe {
             command.pre_exec(move || {
-                if libc::setpgid(0, 0) != 0
-                    || libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0
-                {
+                if libc::setpgid(0, 0) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                #[cfg(target_os = "linux")]
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
                     return Err(io::Error::last_os_error());
                 }
                 if libc::getppid() != parent {
@@ -644,12 +653,14 @@ impl Sink {
 
 /// `pw-play` reading raw f32 from a pipe. A thread feeds it, so playback never stops
 /// the next sentence from arriving.
+#[cfg(target_os = "linux")]
 struct Player {
     child: Child,
     feed: Option<mpsc::Sender<Vec<u8>>>,
     writer: Option<std::thread::JoinHandle<io::Result<()>>>,
 }
 
+#[cfg(target_os = "linux")]
 impl Player {
     fn start(rate: u32, volume: f32) -> Result<Player> {
         let mut command = Command::new("pw-play");
@@ -664,9 +675,11 @@ impl Player {
             .stderr(Stdio::inherit());
         unsafe {
             command.pre_exec(|| {
-                if libc::setpgid(0, 0) != 0
-                    || libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0
-                {
+                if libc::setpgid(0, 0) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                #[cfg(target_os = "linux")]
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
                     return Err(io::Error::last_os_error());
                 }
                 Ok(())
@@ -726,6 +739,41 @@ impl Player {
     }
 }
 
+// afplay consumes a complete WAV. Keep the file private and use the shared
+// cancellable process runner for playback.
+#[cfg(target_os = "macos")]
+struct Player {
+    samples: Vec<f32>,
+    rate: u32,
+    volume: f32,
+}
+#[cfg(target_os = "macos")]
+impl Player {
+    fn start(rate: u32, volume: f32) -> Result<Self> {
+        Ok(Self {
+            samples: Vec::new(),
+            rate,
+            volume,
+        })
+    }
+    fn write(&mut self, samples: &[f32]) -> Result<()> {
+        self.samples.extend_from_slice(samples);
+        Ok(())
+    }
+    fn finish(self) -> Result<()> {
+        let mut wav = tempfile::Builder::new().suffix(".wav").tempfile()?;
+        wav.write_all(&wav_bytes(&self.samples, self.rate))?;
+        crate::run(
+            Command::new("/usr/bin/afplay")
+                .arg("-v")
+                .arg(self.volume.to_string())
+                .arg(wav.path()),
+            "audio playback",
+        )
+    }
+    fn kill(self) {}
+}
+
 /// Mono 16-bit PCM WAV.
 pub fn wav_bytes(samples: &[f32], rate: u32) -> Vec<u8> {
     let data = (samples.len() * 2) as u32;
@@ -750,6 +798,20 @@ pub fn wav_bytes(samples: &[f32], rate: u32) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn installed_cli_symlink_resolves_the_bundled_engine() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("Contents/MacOS");
+        std::fs::create_dir_all(&bundle).unwrap();
+        std::fs::write(bundle.join("delulu"), []).unwrap();
+        let link = tmp.path().join("delulu");
+        std::os::unix::fs::symlink(bundle.join("delulu"), &link).unwrap();
+        assert_eq!(
+            super::sibling_engine(&link),
+            Some(bundle.canonicalize().unwrap().join("delulu-engine"))
+        );
+    }
+
     use super::*;
 
     #[test]

@@ -68,7 +68,9 @@ export function TypingStep({ state }: Props) {
         <div>
           <p className="permission-title">Typing into other apps</p>
           <p className="muted">
-            Your desktop asks once whether Delulu Talks may type for you.
+            {ipc.isMac
+              ? "Allow Delulu Talks in System Settings → Privacy & Security → Accessibility."
+              : "Your desktop asks once whether Delulu Talks may type for you."}
           </p>
         </div>
         {permission?.ready ? (

@@ -47,7 +47,7 @@ export function Voice({ state }: { state: AppState }) {
       .then(refresh)
       .catch((e) => setNotice(errorText(e)));
 
-  const command = speakCommand(text);
+  const command = speakCommand(text, ipc.isMac ? status?.cliPath : undefined);
   const ready = Boolean(status?.ready && !status.installing);
   return (
     <div className="screen">

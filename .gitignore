@@ -3,3 +3,4 @@ target/
 /dist/
 /src-tauri/gen/
 /check.log
+/src-tauri/binaries/

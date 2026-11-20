@@ -1083,7 +1083,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-audio"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "handy-cpal",
  "log",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-cleanup"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "libc",
  "serde",
@@ -1104,11 +1104,11 @@ dependencies = [
 
 [[package]]
 name = "delulu-core"
-version = "1.7.0"
+version = "1.8.0"
 
 [[package]]
 name = "delulu-daemon"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "delulu-audio",
  "delulu-cleanup",
@@ -1131,11 +1131,12 @@ dependencies = [
 
 [[package]]
 name = "delulu-desktop"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "arboard",
  "ashpd",
  "async-trait",
+ "cc",
  "delulu-core",
  "dirs 6.0.0",
  "futures-util",
@@ -1148,7 +1149,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-dictation"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "delulu-cleanup",
  "delulu-desktop",
@@ -1166,7 +1167,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-engine"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "delulu-cleanup",
  "delulu-music",
@@ -1187,7 +1188,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-models"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "libc",
  "log",
@@ -1198,7 +1199,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-music"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "half",
  "llama-cpp-sys-2",
@@ -1209,7 +1210,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-music-ace"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cc",
  "delulu-models",
@@ -1220,7 +1221,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-overlay"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cairo-rs",
  "delulu-pill",
@@ -1231,7 +1232,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-pill"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "libc",
  "serde",
@@ -1244,7 +1245,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-proto"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1253,7 +1254,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-radio"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "claxon",
  "delulu-cleanup",
@@ -1275,7 +1276,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-store"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "delulu-models",
  "dirs 6.0.0",
@@ -1289,7 +1290,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-stt"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "delulu-models",
  "whatlang",
@@ -1297,7 +1298,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-talks"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "delulu-audio",
  "delulu-cleanup",
@@ -1327,7 +1328,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-transcribe"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cc",
  "cmake",
@@ -1336,7 +1337,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-tts"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "delulu-models",
  "hound",
@@ -1352,7 +1353,7 @@ dependencies = [
 
 [[package]]
 name = "delulu-voice-cli"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "anyhow",
  "clap",

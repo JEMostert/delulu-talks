@@ -1,0 +1,21 @@
+{
+  "build": {
+    "beforeBuildCommand": "bun run build:web && sh scripts/mac-helpers.sh",
+    "beforeDevCommand": "sh scripts/mac-helpers.sh && bun run dev:web"
+  },
+  "bundle": {
+    "targets": [
+      "dmg"
+    ],
+    "externalBin": [
+      "binaries/delulu-engine",
+      "binaries/delulu",
+      "binaries/delulu-pill"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "15.0",
+      "signingIdentity": "-",
+      "entitlements": "Entitlements.plist"
+    }
+  }
+}

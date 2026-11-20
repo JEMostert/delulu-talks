@@ -43,7 +43,7 @@ pub(crate) fn settings_diff(old: &Settings, new: &Settings) -> SettingsDiff {
 /// reads; the entry keeps the plugin's file name and contents. Debug builds
 /// leave it alone.
 pub(crate) fn apply_autostart(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    if cfg!(debug_assertions) {
+    if cfg!(debug_assertions) || cfg!(target_os = "macos") {
         return Ok(());
     }
     let dir = dirs::config_dir()
@@ -212,12 +212,25 @@ pub(crate) async fn bind_hotkey(app: &tauri::AppHandle) {
 }
 #[tauri::command]
 pub(crate) async fn prepare_insert(app: tauri::AppHandle) -> delulu_desktop::insert::InsertStatus {
+    prepare_typing(app, true).await
+}
+
+pub(crate) async fn prepare_typing(
+    app: tauri::AppHandle,
+    prompt: bool,
+) -> delulu_desktop::insert::InsertStatus {
     let shell = app.state::<Shell>();
     if shell.no_portals {
         return status_value(&shell).insert;
     }
     bind_hotkey(&app).await;
-    let status = shell.inserter.prepare().await;
+    let status = if prompt
+        && (!cfg!(target_os = "macos") || shell.store.settings().insert != InsertMode::Off)
+    {
+        shell.inserter.prepare().await
+    } else {
+        shell.inserter.status()
+    };
     update(&app, |s| s.insert = status.clone());
     status
 }
@@ -229,7 +242,10 @@ pub(crate) async fn change_hotkey(app: tauri::AppHandle) -> Result<(), String> {
     }
     {
         let mut hotkey = s.hotkey.lock().await;
-        if let Some(h) = hotkey.as_ref().filter(|h| h.status().bound) {
+        if let Some(h) = hotkey
+            .as_ref()
+            .filter(|h| cfg!(target_os = "macos") || h.status().bound)
+        {
             return h.configure().await;
         }
         // Skipped or declined during first run: drop the unbound session and bind again.

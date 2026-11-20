@@ -33,7 +33,7 @@ static const char * scan_num(const char * first, const char * last, int & v) {
 }
 
 static const char * scan_num(const char * first, const char * last, float & v) {
-#if defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 200000
+#if defined(__APPLE__) || (defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 200000)
     const char * p   = first;
     bool         neg = false;
     if (p < last && (*p == '+' || *p == '-')) {

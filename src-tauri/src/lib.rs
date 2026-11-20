@@ -294,10 +294,10 @@ fn run_app() {
                     event(&hot_app, ev);
                 }
             });
-            if initial_state.first_run_done {
+            if initial_state.first_run_done || cfg!(target_os = "macos") {
                 let a = handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = prepare_insert(a).await;
+                    let _ = prepare_typing(a, !cfg!(target_os = "macos")).await;
                 });
             }
             let models_dir = s.store.models_dir();

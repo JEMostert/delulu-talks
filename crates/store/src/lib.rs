@@ -85,7 +85,7 @@ impl Default for Settings {
         Self {
             version: SETTINGS_VERSION,
             microphone: None,
-            start_at_login: true,
+            start_at_login: !cfg!(target_os = "macos"),
             model: "large-v3-turbo-q5_0".into(),
             language: "auto".into(),
             allowed_languages: default_allowed_languages(),

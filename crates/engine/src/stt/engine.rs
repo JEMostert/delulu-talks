@@ -188,6 +188,8 @@ fn backend_name() -> String {
                     .to_string_lossy();
                 let backend = if name.starts_with("CUDA") {
                     "CUDA"
+                } else if name.starts_with("MTL") {
+                    "Metal"
                 } else if name.starts_with("Vulkan") {
                     "Vulkan"
                 } else {

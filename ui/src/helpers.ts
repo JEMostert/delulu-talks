@@ -258,8 +258,9 @@ export function restorePaste(
  * The `delulu speak` command for a text, quoted so a shell passes it as one
  * argument and expands nothing in it. Whitespace runs become one space.
  */
-export function speakCommand(text: string): string {
+export function speakCommand(text: string, binary = "delulu"): string {
+  if (binary !== "delulu") binary = "'" + binary.replaceAll("'", "'\\''") + "'";
   const line = text.replace(/\s+/g, " ").trim();
-  if (/^[^"$`\\!]*$/.test(line)) return `delulu speak "${line}"`;
-  return `delulu speak '${line.replace(/'/g, `'\\''`)}'`;
+  if (/^[^"$`\\!]*$/.test(line)) return `${binary} speak "${line}"`;
+  return `${binary} speak '${line.replace(/'/g, `'\\''`)}'`;
 }

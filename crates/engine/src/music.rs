@@ -160,6 +160,18 @@ fn run(mut args: impl Iterator<Item = String>) -> Result<(), String> {
 }
 
 pub fn main(args: impl Iterator<Item = String>) -> ExitCode {
+    #[cfg(target_os = "macos")]
+    if let Some(owner) = std::env::var("DELULU_RADIO_PARENT")
+        .ok()
+        .and_then(|pid| pid.parse::<libc::pid_t>().ok())
+    {
+        std::thread::spawn(move || loop {
+            if unsafe { libc::getppid() } != owner {
+                std::process::exit(1);
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        });
+    }
     match run(args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

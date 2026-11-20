@@ -7,6 +7,12 @@ edition.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # ggml from the same llama.cpp build as `delulu-engine llm`, Vulkan on.
-llama-cpp-sys-2 = { version = "=0.1.160", features = ["vulkan"] }
+llama-cpp-sys-2 = { version = "=0.1.160", default-features = false }
 tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
 half = "2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+llama-cpp-sys-2 = { version = "=0.1.160", features = ["vulkan"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-sys-2 = { version = "=0.1.160", features = ["metal"], default-features = false }

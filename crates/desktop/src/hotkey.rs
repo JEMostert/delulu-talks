@@ -1,15 +1,9 @@
 pub use crate::APP_ID;
 pub const SHORTCUT_ID: &str = "dictate";
 pub const DEFAULT_TRIGGER: &str = "Super+Z";
+pub use crate::hotkey_types::HotkeyStatus;
 /// The hold/tap rules live in `delulu-core` so the daemon shares them.
 pub use delulu_core::gesture::{Command, Gesture, KeyEvent, HOLD_MS};
-#[derive(Debug, Clone, Default, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HotkeyStatus {
-    pub bound: bool,
-    pub trigger: Option<String>,
-    pub error: Option<String>,
-}
 mod portal;
 
 use portal::{Portal, PortalEvent, PortalSession};

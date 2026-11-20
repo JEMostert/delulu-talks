@@ -353,9 +353,6 @@ fn main() {
             }
         }
     }
-    if cfg!(target_os = "macos") || cfg!(feature = "openblas") {
-        println!("cargo:rustc-link-lib=static=ggml-blas");
-    }
     if cfg!(feature = "vulkan") {
         if cfg!(feature = "intel-sycl") {
             println!("cargo:rustc-link-lib=ggml-vulkan");
@@ -366,9 +363,6 @@ fn main() {
         println!("cargo:rustc-link-lib=static=ggml-hip");
     }
 
-    if cfg!(feature = "metal") {
-        println!("cargo:rustc-link-lib=static=ggml-metal");
-    }
 
     if cfg!(feature = "cuda") {
         println!("cargo:rustc-link-lib=static=ggml-cuda");
