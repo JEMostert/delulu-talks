@@ -25,6 +25,8 @@ fn package() -> Result<Package, String> {
         ("x86_64", Some(BundleType::Rpm)) => ("linux-x86_64-rpm", ".rpm"),
         _ => return Err("Install a supported release package to use Settings updates.".into()),
     };
+    #[cfg(target_os = "macos")]
+    installed_app_version()?;
     Ok(Package { target, suffix })
 }
 
@@ -56,6 +58,11 @@ pub async fn check_update(
         .target(package.target)
         .version_comparator(|current, release| {
             release.version.pre.is_empty() && release.version > current
+        })
+        .configure_client(|client| {
+            client
+                .connect_timeout(Duration::from_secs(15))
+                .read_timeout(Duration::from_secs(30))
         })
         .timeout(Duration::from_secs(30))
         .build()
@@ -103,34 +110,77 @@ pub async fn install_update(
         .await
         .map_err(|e| e.to_string())?;
     let _ = progress.send("Installing update…".into());
-    tauri::async_runtime::spawn_blocking(move || {
-        #[cfg(target_os = "linux")]
-        {
-            // download() verified both the bytes and signed version. Leave all
-            // authentication to the system's polkit agent.
-            let (command, flag) = match package.suffix {
-                ".deb" => ("/usr/bin/dpkg", "-i"),
-                ".rpm" => ("/usr/bin/rpm", "-U"),
-                ".pkg.tar.zst" => ("/usr/bin/pacman", "-U"),
-                _ => return Err("Unsupported Linux package.".into()),
-            };
-            let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
-            let path = dir.path().join(format!("update{}", package.suffix));
-            std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
-            let mut install = std::process::Command::new("/usr/bin/pkexec");
-            install.arg(command).arg(flag);
-            if package.suffix == ".pkg.tar.zst" {
-                install.arg("--noconfirm");
-            }
-            let status = install.arg(path).status().map_err(|e| format!("Could not launch the system installer: {e}"))?;
-            if status.success() { Ok(()) } else { Err(format!("The system installer exited with {status}. Check authorization and package dependencies.")) }
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            let _ = package;
-            update.install(bytes).map_err(|e| e.to_string())
-        }
-    }).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || install_package(package, &update, bytes))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+const CHANGED: &str =
+    "The installed app has changed. Quit and reopen Delulu Talks before updating.";
+
+#[cfg(target_os = "linux")]
+fn install_package(package: Package, _: &Update, bytes: Vec<u8>) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+    // A package manager may have replaced the installed executable since this
+    // window started. /proc/self/exe still references the running inode.
+    let installed = tauri::utils::platform::current_exe()
+        .and_then(std::fs::metadata)
+        .map_err(|_| CHANGED)?;
+    let running = std::fs::metadata("/proc/self/exe").map_err(|e| e.to_string())?;
+    if (installed.dev(), installed.ino()) != (running.dev(), running.ino()) {
+        return Err(CHANGED.into());
+    }
+    // download() verified both the bytes and signed version. Leave all
+    // authentication to the system's polkit agent.
+    let args: &[&str] = match package.suffix {
+        ".deb" => &["/usr/bin/apt-get", "-y", "--no-remove", "install"],
+        ".rpm" => &["/usr/bin/rpm", "-U"],
+        ".pkg.tar.zst" => &["/usr/bin/pacman", "-U", "--noconfirm"],
+        _ => return Err("Unsupported Linux package.".into()),
+    };
+    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let path = dir.path().join(format!("update{}", package.suffix));
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    let status = std::process::Command::new("/usr/bin/pkexec")
+        .args(args)
+        .arg(path)
+        .status()
+        .map_err(|e| format!("Could not launch the system installer: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("The system installer exited with {status}. Check authorization and package dependencies."))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn installed_app_version() -> Result<String, String> {
+    let exe = tauri::utils::platform::current_exe().map_err(|e| e.to_string())?;
+    let bundle = exe
+        .ancestors()
+        .nth(3)
+        .filter(|path| path.extension().is_some_and(|ext| ext == "app"))
+        .ok_or("Copy the app to Applications and open it there before updating.")?;
+    if !exe.starts_with(bundle.join("Contents/MacOS")) {
+        return Err("Open the installed application bundle before updating.".into());
+    }
+    let version = std::process::Command::new("/usr/bin/plutil")
+        .args(["-extract", "CFBundleShortVersionString", "raw"])
+        .arg(bundle.join("Contents/Info.plist"))
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !version.status.success() {
+        return Err(CHANGED.into());
+    }
+    Ok(String::from_utf8_lossy(&version.stdout).trim().into())
+}
+
+#[cfg(target_os = "macos")]
+fn install_package(_: Package, update: &Update, bytes: Vec<u8>) -> Result<(), String> {
+    if installed_app_version()? != update.current_version {
+        return Err(CHANGED.into());
+    }
+    update.install(bytes).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
