@@ -23,6 +23,7 @@ mod music;
 mod radio;
 mod state;
 mod tray;
+mod updater;
 mod vocabulary;
 mod voice;
 use cleanup::{cancel_cleanup_download, get_cleanup_status, start_cleanup};
@@ -43,6 +44,11 @@ use vocabulary::{
     rename_shelf, set_shelf_enabled,
 };
 use voice::{get_voice_status, install_voice_model, set_voice};
+
+// macOS embeds the permission plist at this macro's expansion site.
+fn app_context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
+}
 
 pub fn run() {
     // One dictation path, whatever the start order: a daemon that runs dictation
@@ -97,6 +103,8 @@ fn run_client(socket: Option<std::path::PathBuf>) {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::Pending::default())
         .manage(client::Client::new(socket, toggle))
         .setup(move |app| {
             tray::create(app)?;
@@ -116,6 +124,8 @@ fn run_client(socket: Option<std::path::PathBuf>) {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            updater::check_update,
+            updater::install_update,
             get_voice_status,
             install_voice_model,
             set_voice,
@@ -177,7 +187,7 @@ fn run_client(socket: Option<std::path::PathBuf>) {
             client::cmd_cancel_music_download,
             client::cmd_delete_music_model
         ])
-        .build(tauri::generate_context!())
+        .build(app_context())
         .expect("Tauri failed")
         .run(|_, _| {});
 }
@@ -223,6 +233,8 @@ fn run_app() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::Pending::default())
         .manage(Shell {
             store,
             status: Mutex::new(Status {
@@ -336,6 +348,8 @@ fn run_app() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            updater::check_update,
+            updater::install_update,
             get_voice_status,
             install_voice_model,
             set_voice,
@@ -397,7 +411,7 @@ fn run_app() {
             cancel_music_download,
             delete_music_model
         ])
-        .build(tauri::generate_context!())
+        .build(app_context())
         .expect("Tauri failed")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {

@@ -1,3 +1,4 @@
+import { AppUpdates } from "../components/AppUpdates";
 import { useEffect, useRef, useState } from "react";
 import * as ipc from "../ipc";
 import {
@@ -100,6 +101,7 @@ export function Settings({ state }: { state: AppState }) {
               }
             />
           </Line>
+          <AppUpdates />
           <Line label="Runs on" tip="Where speech recognition runs">
             <span className="line-value">
               {status.backend ?? "Not loaded yet"}

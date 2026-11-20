@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
-dmg=${1:?usage: verify-macos.sh path/to/arm64.dmg}
+dmg=${1:?usage: verify-macos.sh path/to/arm64.dmg [output.app.tar.gz]}
+archive=${2:-}
 version=$(node -p 'require("./package.json").version')
 tmp=$(mktemp -d)
 mount="$tmp/volume"
@@ -58,4 +59,8 @@ for _ in 0..<60 {
 }
 fatalError("The packaged app did not show its main window")
 SWIFT
+fi
+
+if [[ -n $archive ]]; then
+    COPYFILE_DISABLE=1 /usr/bin/tar -czf "$archive" -C "$mount" 'Delulu Talks.app'
 fi

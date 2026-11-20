@@ -16,6 +16,8 @@ const deb = paths.find(p => p.endsWith('_amd64.deb'));
 const temp = await mkdtemp(join(tmpdir(), 'delulu-release-'));
 try {
   execFileSync('dpkg-deb', ['--extract', deb, temp]);
+  const helper = join(temp, 'usr/libexec/delulu-talks/install-update');
+  if (!((await stat(helper)).mode & 0o111)) throw new Error('Missing executable updater helper');
   const cli = join(temp, 'usr/bin/delulu');
   const env = { ...process.env, XDG_DATA_HOME: join(temp, 'empty-data') };
   const version = execFileSync(cli, ['--version'], { env, encoding: 'utf8' }).trim();

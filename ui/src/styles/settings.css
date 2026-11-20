@@ -51,6 +51,11 @@
 .cards .line-control > .line-value:last-child {
   padding-right: 6px;
 }
+.app-update-status:not(:empty) {
+  padding: 0 14px 8px;
+  overflow-wrap: anywhere;
+  font-size: var(--t-small);
+}
 .feature-label {
   display: flex;
   align-items: center;

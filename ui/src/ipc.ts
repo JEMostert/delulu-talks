@@ -1,4 +1,4 @@
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 // The mock is only reachable in Vite development outside a Tauri window.
@@ -454,3 +454,10 @@ export const onRadioError = (
 
 export const isMac =
   typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
+
+export const checkUpdate = () => invoke<string | null>("check_update");
+export async function installUpdate(onProgress: (message: string) => void) {
+  const progress = new Channel<string>();
+  progress.onmessage = onProgress;
+  await invoke("install_update", { progress });
+}

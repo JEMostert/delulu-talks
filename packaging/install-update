@@ -1,0 +1,47 @@
+#!/bin/bash -p
+# Installed under /usr/libexec. Polkit authenticates the user before starting
+# this helper. Only the installed helper and its public key are trusted.
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+umask 077
+format=$1
+version=$2
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+if [[ $format == --arch-newer ]]; then
+    # A PreTransaction hook runs with pacman's database lock already held.
+    installed=$(pacman -Q delulu-talks-bin)
+    installed=${installed#* }
+    [[ $(vercmp "$version" "${installed%-*}") == 1 ]]
+    exit
+fi
+
+case "$format" in .deb|.rpm|.pkg.tar.zst) ;; *) exit 2 ;; esac
+dir=$(mktemp -d /var/tmp/delulu-update.XXXXXXXX)
+trap 'rm -rf "$dir"' EXIT
+file="$dir/update$format"
+printf '%s' "$3" | base64 -d > "$dir/signature"
+cat > "$file"
+comment=$(minisign -VQ -m "$file" -x "$dir/signature" -p /usr/libexec/delulu-talks/updater.pub)
+# The Tauri signer includes these tab-separated fields in its signed comment.
+[[ $comment == *$'\t'file:*"$format"$'\t'version:"$version" ]]
+
+case "$format" in
+    .deb) apt-get -y --no-remove install "$file" ;;
+    .rpm) rpm -U "$file" ;;
+    .pkg.tar.zst)
+        mkdir "$dir/hooks"
+        cat > "$dir/hooks/check-version.hook" <<HOOK
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = delulu-talks-bin
+[Action]
+Description = Checking the installed Delulu Talks version
+When = PreTransaction
+Exec = /usr/libexec/delulu-talks/install-update --arch-newer $version
+AbortOnFail
+HOOK
+        pacman -U --noconfirm --hookdir "$dir/hooks" "$file"
+        ;;
+esac

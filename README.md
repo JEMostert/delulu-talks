@@ -143,3 +143,5 @@ delulu speak --output /tmp/reply.wav --lang en --voice M2 'Saved, not played.'
 - **Chatterbox:** the earlier Chatterbox Turbo voice remains as an opt-in for an existing Python environment: `delulu setup --python /path/to/venv/bin/python`, `delulu install-model --engine chatterbox`, `delulu speak --engine chatterbox …`.
 
 The voices are AI-generated. The model's [OpenRAIL-M licence](https://huggingface.co/Supertone/supertonic-3/blob/3cadd1ee6394adea1bd021217a0e650ede09a323/LICENSE) binds everything they say to its use restrictions, among them: no impersonation and no deception, and say that audio you share is machine generated.
+
+From v1.8.0, open **Settings → About → Check for updates**. Choose **Install update**, approve the system prompt if requested, then quit Delulu Talks from the tray and reopen it. If dictation runs in a separate daemon, restart that daemon too. Settings checks the latest stable GitHub release and verifies a signature bound to its version before installing. Apple Silicon updates replace the installed app bundle (copy it to Applications first). Debian, Fedora and Arch use the installed package format and require a working polkit agent.
